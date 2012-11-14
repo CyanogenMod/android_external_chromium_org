@@ -1,0 +1,18 @@
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// This is used by the app window API internally to pass through messages to
+// the shell window.
+[internal, nodoc] namespace app.currentWindowInternal {
+  interface Functions {
+    static void focus();
+    static void minimize();
+    static void maximize();
+    static void restore();
+    static void drawAttention();
+    static void clearAttention();
+    static void show();
+    static void hide();
+  };
+};

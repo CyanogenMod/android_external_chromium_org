@@ -1,0 +1,36 @@
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+namespace syncFileSystem {
+  dictionary StorageInfo {
+    long usage_bytes;
+    long quota_bytes;
+  };
+
+  // [nodoc] A callback type for requestFileSystem.
+  callback GetFileSystemCallback =
+      void ([instanceOf=DOMFileSystem] object fileSystem);
+      
+  // [nodoc] A callback type for getUsageAndQuota.
+  callback QuotaAndUsageCallback = void (StorageInfo info);
+
+  // Returns true if operation was successful.  
+  callback DeleteFileSystemCallback = void (boolean result);
+
+  interface Functions {
+    // Get a sync file system backed by |serviceName|.
+    // Calling this multiple times from the same app with the same |serviceName|
+    // will return the same handle to the same file system.
+    static void requestFileSystem(DOMString serviceName,
+                                  GetFileSystemCallback callback);
+                                  
+    // Get usage and quota in bytes for sync file system with |serviceName|.
+    static void getUsageAndQuota([instanceOf=DOMFileSystem] object fileSystem,
+                                 QuotaAndUsageCallback callback);
+                                 
+    // Deletes everything in the syncable filesystem.
+    static void deleteFileSystem([instanceOf=DOMFileSystem] object fileSystem,
+                                  DeleteFileSystemCallback callback);
+  };
+};
