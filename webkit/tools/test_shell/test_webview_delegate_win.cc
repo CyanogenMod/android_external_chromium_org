@@ -16,19 +16,19 @@
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/net_errors.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "webkit/glue/webdropdata.h"
-#include "webkit/glue/webpreferences.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/glue/window_open_disposition.h"
-#include "webkit/plugins/npapi/webplugin.h"
+#include "webkit/glue/webpreferences.h"
 #include "webkit/plugins/npapi/plugin_list.h"
+#include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 #include "webkit/tools/test_shell/drop_delegate.h"
 #include "webkit/tools/test_shell/test_navigation_controller.h"
@@ -133,7 +133,7 @@ void TestWebViewDelegate::runModal() {
 // WebPluginPageDelegate ------------------------------------------------------
 
 webkit::npapi::WebPluginDelegate* TestWebViewDelegate::CreatePluginDelegate(
-    const FilePath& path,
+    const base::FilePath& path,
     const std::string& mime_type) {
   HWND hwnd = shell_->webViewHost()->view_handle();
   if (!hwnd)

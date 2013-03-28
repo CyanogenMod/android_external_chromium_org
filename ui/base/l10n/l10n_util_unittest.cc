@@ -20,10 +20,10 @@
 #include "base/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+#include "third_party/icu/public/common/unicode/locid.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_collator.h"
 #include "ui/base/ui_base_paths.h"
-#include "unicode/locid.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -90,7 +90,7 @@ TEST_F(L10nUtilTest, GetAppLocale) {
   // Use a temporary locale dir so we don't have to actually build the locale
   // pak files for this test.
   base::ScopedPathOverride locale_dir_override(ui::DIR_LOCALES);
-  FilePath new_locale_dir;
+  base::FilePath new_locale_dir;
   ASSERT_TRUE(PathService::Get(ui::DIR_LOCALES, &new_locale_dir));
   // Make fake locale files.
   std::string filenames[] = {
@@ -110,13 +110,13 @@ TEST_F(L10nUtilTest, GetAppLocale) {
   };
 
   for (size_t i = 0; i < arraysize(filenames); ++i) {
-    FilePath filename = new_locale_dir.AppendASCII(
+    base::FilePath filename = new_locale_dir.AppendASCII(
         filenames[i] + ".pak");
     file_util::WriteFile(filename, "", 0);
   }
 
   // Keep a copy of ICU's default locale before we overwrite it.
-  icu::Locale locale = icu::Locale::getDefault();
+  const std::string original_locale = base::i18n::GetConfiguredLocale();
 
 #if defined(OS_POSIX) && !defined(OS_CHROMEOS)
   env.reset(base::Environment::Create());
@@ -280,8 +280,7 @@ TEST_F(L10nUtilTest, GetAppLocale) {
 #endif  // defined(OS_WIN)
 
   // Clean up.
-  UErrorCode error_code = U_ZERO_ERROR;
-  icu::Locale::setDefault(locale, error_code);
+  base::i18n::SetICUDefaultLocale(original_locale);
 }
 #endif  // !defined(OS_MACOSX)
 
@@ -307,8 +306,7 @@ TEST_F(L10nUtilTest, SortStringsUsingFunction) {
  */
 void CheckUiDisplayNameForLocale(const std::string& locale,
                                  const std::string& display_locale,
-                                 bool is_rtl)
-{
+                                 bool is_rtl) {
   EXPECT_EQ(true, base::i18n::IsRTL());
   string16 result = l10n_util::GetDisplayNameForLocale(locale,
                                                        display_locale,
@@ -359,15 +357,14 @@ TEST_F(L10nUtilTest, GetDisplayNameForLocale) {
   // direction neutral characters such as parentheses are properly formatted.
 
   // Keep a copy of ICU's default locale before we overwrite it.
-  icu::Locale locale = icu::Locale::getDefault();
+  const std::string original_locale = base::i18n::GetConfiguredLocale();
 
   base::i18n::SetICUDefaultLocale("he");
   CheckUiDisplayNameForLocale("en-US", "en", false);
   CheckUiDisplayNameForLocale("en-US", "he", true);
 
   // Clean up.
-  UErrorCode error_code = U_ZERO_ERROR;
-  icu::Locale::setDefault(locale, error_code);
+  base::i18n::SetICUDefaultLocale(original_locale);
 #endif
 
   // ToUpper and ToLower should work with embedded NULLs.

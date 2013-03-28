@@ -6,7 +6,7 @@
 
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/timer.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/io_thread.h"
@@ -23,7 +23,7 @@ using content::RenderViewHost;
 using content::ResourceRequestInfo;
 using std::string;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(chrome_browser_net::LoadTimeStatsTabHelper)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(chrome_browser_net::LoadTimeStatsTabHelper);
 
 namespace {
 
@@ -271,6 +271,7 @@ void LoadTimeStatsTabHelper::DidStartProvisionalLoadForFrame(
     bool is_main_frame,
     const GURL& validated_url,
     bool is_error_page,
+    bool is_iframe_srcdoc,
     content::RenderViewHost* render_view_host) {
   if (!is_main_frame)
     return;
@@ -316,7 +317,7 @@ LoadTimeStats::LoadTimeStats() {
         histograms_[status][histogram_type].push_back(
             base::LinearHistogram::FactoryGet(
                 histogram_name,
-                0, 101, 51, base::Histogram::kUmaTargetedHistogramFlag));
+                0, 101, 51, base::HistogramBase::kUmaTargetedHistogramFlag));
       }
       DCHECK_EQ(histograms_[status][histogram_type].size(),
                 arraysize(kStatsCollectionTimesMs));

@@ -4,13 +4,20 @@
 
 #include "chrome/browser/ui/gtk/zoom_bubble_gtk.h"
 
+#include "base/i18n/rtl.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/gtk/location_bar_view_gtk.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -34,9 +41,16 @@ const int kBubbleAnchorHeight = 25;
 }  // namespace
 
 // static
-void ZoomBubbleGtk::Show(GtkWidget* anchor,
-                         TabContents* tab_contents,
-                         bool auto_close) {
+void ZoomBubbleGtk::ShowBubble(content::WebContents* web_contents,
+                               bool auto_close) {
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
+  DCHECK(browser && browser->window() && browser->fullscreen_controller());
+
+  LocationBar* location_bar = browser->window()->GetLocationBar();
+  GtkWidget* anchor = browser->window()->IsFullscreen() ?
+      GTK_WIDGET(browser->window()->GetNativeWindow()) :
+      static_cast<LocationBarViewGtk*>(location_bar)->zoom_widget();
+
   // If the bubble is already showing and its |auto_close_| value is equal to
   // |auto_close|, the bubble can be reused and only the label text needs to
   // be updated.
@@ -48,28 +62,37 @@ void ZoomBubbleGtk::Show(GtkWidget* anchor,
     // If the bubble is already showing but its |auto_close_| value is not equal
     // to |auto_close|, the bubble's focus properties must change, so the
     // current bubble must be closed and a new one created.
-    Close();
+    CloseBubble();
     DCHECK(!g_bubble);
 
-    g_bubble = new ZoomBubbleGtk(anchor, tab_contents, auto_close);
+    g_bubble = new ZoomBubbleGtk(anchor,
+                                 web_contents,
+                                 auto_close,
+                                 browser->fullscreen_controller());
   }
 }
 
 // static
-void ZoomBubbleGtk::Close() {
+void ZoomBubbleGtk::CloseBubble() {
   if (g_bubble)
-    g_bubble->CloseBubble();
+    g_bubble->Close();
+}
+
+// static
+bool ZoomBubbleGtk::IsShowing() {
+  return g_bubble != NULL;
 }
 
 ZoomBubbleGtk::ZoomBubbleGtk(GtkWidget* anchor,
-                             TabContents* tab_contents,
-                             bool auto_close)
+                             content::WebContents* web_contents,
+                             bool auto_close,
+                             FullscreenController* fullscreen_controller)
     : auto_close_(auto_close),
       mouse_inside_(false),
-      tab_contents_(tab_contents) {
+      web_contents_(web_contents) {
   GtkThemeService* theme_service =
       GtkThemeService::GetFrom(Profile::FromBrowserContext(
-          tab_contents->web_contents()->GetBrowserContext()));
+          web_contents_->GetBrowserContext()));
 
   event_box_ = gtk_event_box_new();
   gtk_event_box_set_visible_window(GTK_EVENT_BOX(event_box_), FALSE);
@@ -77,7 +100,7 @@ ZoomBubbleGtk::ZoomBubbleGtk(GtkWidget* anchor,
   gtk_container_add(GTK_CONTAINER(event_box_), container);
 
   ZoomController* zoom_controller =
-      ZoomController::FromWebContents(tab_contents->web_contents());
+      ZoomController::FromWebContents(web_contents_);
   int zoom_percent = zoom_controller->zoom_percent();
   std::string percentage_text = UTF16ToUTF8(l10n_util::GetStringFUTF16Int(
       IDS_TOOLTIP_ZOOM, zoom_percent));
@@ -87,30 +110,29 @@ ZoomBubbleGtk::ZoomBubbleGtk(GtkWidget* anchor,
                        ui::kControlSpacing, ui::kControlSpacing);
   gtk_box_pack_start(GTK_BOX(container), label_, FALSE, FALSE, 0);
 
-  GtkWidget* separator = gtk_hseparator_new();
-  gtk_box_pack_start(GTK_BOX(container), separator, FALSE, FALSE, 0);
-
-  GtkWidget* set_default_button = theme_service->BuildChromeButton();
-  GtkWidget* label = theme_service->BuildLabel(
-      l10n_util::GetStringUTF8(IDS_ZOOM_SET_DEFAULT).c_str(), ui::kGdkBlack);
-  gtk_container_add(GTK_CONTAINER(set_default_button), label);
+  GtkWidget* set_default_button = gtk_button_new_with_label(
+      l10n_util::GetStringUTF8(IDS_ZOOM_SET_DEFAULT).c_str());
 
   GtkWidget* alignment = gtk_alignment_new(0, 0, 1, 1);
-  gtk_alignment_set_padding(
-      GTK_ALIGNMENT(alignment), 0, 0, ui::kControlSpacing, ui::kControlSpacing);
+  gtk_alignment_set_padding(GTK_ALIGNMENT(alignment),
+                            0,
+                            ui::kControlSpacing,
+                            ui::kControlSpacing,
+                            ui::kControlSpacing);
   gtk_container_add(GTK_CONTAINER(alignment), set_default_button);
 
   gtk_box_pack_start(GTK_BOX(container), alignment, FALSE, FALSE, 0);
+
   g_signal_connect(set_default_button, "clicked",
                    G_CALLBACK(&OnSetDefaultLinkClickThunk), this);
 
   gtk_container_set_focus_child(GTK_CONTAINER(container), NULL);
 
-  gfx::Rect rect(kBubbleAnchorWidth, kBubbleAnchorHeight);
-  BubbleGtk::ArrowLocationGtk arrow_location =
-      BubbleGtk::ARROW_LOCATION_TOP_MIDDLE;
+  gfx::Rect rect = gfx::Rect(kBubbleAnchorWidth, kBubbleAnchorHeight);
+  BubbleGtk::FrameStyle frame_style = gtk_widget_is_toplevel(anchor) ?
+      BubbleGtk::FIXED_TOP_RIGHT : BubbleGtk::ANCHOR_TOP_MIDDLE;
   int bubble_options = BubbleGtk::MATCH_SYSTEM_THEME | BubbleGtk::POPUP_WINDOW;
-  bubble_ = BubbleGtk::Show(anchor, &rect, event_box_, arrow_location,
+  bubble_ = BubbleGtk::Show(anchor, &rect, event_box_, frame_style,
       auto_close ? bubble_options : bubble_options | BubbleGtk::GRAB_INPUT,
       theme_service, NULL);
 
@@ -139,6 +161,10 @@ ZoomBubbleGtk::ZoomBubbleGtk(GtkWidget* anchor,
                      G_CALLBACK(&OnMouseLeaveThunk), this);
   }
 
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_FULLSCREEN_CHANGED,
+                 content::Source<FullscreenController>(fullscreen_controller));
+
   StartTimerIfNecessary();
 }
 
@@ -150,7 +176,7 @@ ZoomBubbleGtk::~ZoomBubbleGtk() {
 
 void ZoomBubbleGtk::Refresh() {
   ZoomController* zoom_controller =
-      ZoomController::FromWebContents(tab_contents_->web_contents());
+      ZoomController::FromWebContents(web_contents_);
   int zoom_percent = zoom_controller->zoom_percent();
   string16 text =
       l10n_util::GetStringFUTF16Int(IDS_TOOLTIP_ZOOM, zoom_percent);
@@ -169,7 +195,7 @@ void ZoomBubbleGtk::StartTimerIfNecessary() {
         FROM_HERE,
         base::TimeDelta::FromMilliseconds(kBubbleCloseDelay),
         this,
-        &ZoomBubbleGtk::CloseBubble);
+        &ZoomBubbleGtk::Close);
   }
 }
 
@@ -178,7 +204,7 @@ void ZoomBubbleGtk::StopTimerIfNecessary() {
     timer_.Stop();
 }
 
-void ZoomBubbleGtk::CloseBubble() {
+void ZoomBubbleGtk::Close() {
   DCHECK(bubble_);
   bubble_->Close();
 }
@@ -190,10 +216,9 @@ void ZoomBubbleGtk::OnDestroy(GtkWidget* widget) {
 
 void ZoomBubbleGtk::OnSetDefaultLinkClick(GtkWidget* widget) {
   double default_zoom_level = Profile::FromBrowserContext(
-      tab_contents_->web_contents()->GetBrowserContext())->
-          GetPrefs()->GetDouble(prefs::kDefaultZoomLevel);
-  tab_contents_->web_contents()->GetRenderViewHost()->
-      SetZoomLevel(default_zoom_level);
+      web_contents_->GetBrowserContext())->GetPrefs()->GetDouble(
+          prefs::kDefaultZoomLevel);
+  web_contents_->GetRenderViewHost()->SetZoomLevel(default_zoom_level);
 }
 
 gboolean ZoomBubbleGtk::OnMouseEnter(GtkWidget* widget,
@@ -208,4 +233,11 @@ gboolean ZoomBubbleGtk::OnMouseLeave(GtkWidget* widget,
   mouse_inside_ = false;
   StartTimerIfNecessary();
   return FALSE;
+}
+
+void ZoomBubbleGtk::Observe(int type,
+                            const content::NotificationSource& source,
+                            const content::NotificationDetails& details) {
+  DCHECK_EQ(type, chrome::NOTIFICATION_FULLSCREEN_CHANGED);
+  CloseBubble();
 }

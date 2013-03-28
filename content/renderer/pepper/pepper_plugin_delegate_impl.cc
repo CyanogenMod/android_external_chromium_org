@@ -12,10 +12,10 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
-#include "base/file_util_proxy.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util_proxy.h"
 #include "base/logging.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "base/sync_socket.h"
 #include "base/time.h"
 #include "content/common/child_process.h"
@@ -23,10 +23,12 @@
 #include "content/common/child_thread.h"
 #include "content/common/fileapi/file_system_dispatcher.h"
 #include "content/common/fileapi/file_system_messages.h"
+#include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/pepper_messages.h"
 #include "content/common/pepper_plugin_registry.h"
 #include "content/common/quota_dispatcher.h"
+#include "content/common/sandbox_util.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
@@ -35,7 +37,6 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/renderer_restrict_dispatch_group.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
-#include "content/renderer/media/audio_hardware.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
 #include "content/renderer/media/pepper_platform_video_decoder_impl.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
@@ -57,13 +58,13 @@
 #include "content/renderer/webplugin_delegate_proxy.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_channel_handle.h"
+#include "media/base/audio_hardware_config.h"
 #include "media/video/capture/video_capture_proxy.h"
 #include "ppapi/c/dev/pp_video_dev.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/host_dispatcher.h"
-#include "ppapi/proxy/pepper_file_messages.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/file_path.h"
 #include "ppapi/shared_impl/platform_file.h"
@@ -74,6 +75,7 @@
 #include "ppapi/thunk/ppb_tcp_server_socket_private_api.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
@@ -84,11 +86,9 @@
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
-#include "webkit/plugins/ppapi/ppb_file_io_impl.h"
-#include "webkit/plugins/ppapi/ppb_flash_impl.h"
+#include "webkit/plugins/ppapi/ppapi_webplugin_impl.h"
 #include "webkit/plugins/ppapi/ppb_tcp_server_socket_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_tcp_socket_private_impl.h"
-#include "webkit/plugins/ppapi/ppb_udp_socket_private_impl.h"
 #include "webkit/plugins/ppapi/resource_helper.h"
 #include "webkit/plugins/webplugininfo.h"
 
@@ -106,10 +106,12 @@ class HostDispatcherWrapper
     : public webkit::ppapi::PluginDelegate::OutOfProcessProxy {
  public:
   HostDispatcherWrapper(webkit::ppapi::PluginModule* module,
+                        base::ProcessId peer_pid,
                         int plugin_child_id,
                         const ppapi::PpapiPermissions& perms,
                         bool is_external)
       : module_(module),
+        peer_pid_(peer_pid),
         plugin_child_id_(plugin_child_id),
         permissions_(perms),
         is_external_(is_external) {
@@ -134,6 +136,7 @@ class HostDispatcherWrapper
         module_->pp_module(), local_get_interface, filter, permissions_));
 
     if (!dispatcher_->InitHostWithChannel(dispatcher_delegate_.get(),
+                                          peer_pid_,
                                           channel_handle,
                                           true,  // Client.
                                           preferences)) {
@@ -147,10 +150,10 @@ class HostDispatcherWrapper
   }
 
   // OutOfProcessProxy implementation.
-  virtual const void* GetProxiedInterface(const char* name) {
+  virtual const void* GetProxiedInterface(const char* name) OVERRIDE {
     return dispatcher_->GetProxiedInterface(name);
   }
-  virtual void AddInstance(PP_Instance instance) {
+  virtual void AddInstance(PP_Instance instance) OVERRIDE {
     ppapi::proxy::HostDispatcher::SetForInstance(instance, dispatcher_.get());
 
     RendererPpapiHostImpl* host =
@@ -161,14 +164,20 @@ class HostDispatcherWrapper
     // isn't true for browser tag support.
     if (host) {
       RenderView* render_view = host->GetRenderViewForInstance(instance);
+      webkit::ppapi::PluginInstance* plugin_instance =
+          host->GetPluginInstance(instance);
       render_view->Send(new ViewHostMsg_DidCreateOutOfProcessPepperInstance(
           plugin_child_id_,
           instance,
-          render_view->GetRoutingID(),
+          PepperRendererInstanceData(
+              0,  // The render process id will be supplied in the browser.
+              render_view->GetRoutingID(),
+              plugin_instance->container()->element().document().url(),
+              plugin_instance->plugin_url()),
           is_external_));
     }
   }
-  virtual void RemoveInstance(PP_Instance instance) {
+  virtual void RemoveInstance(PP_Instance instance) OVERRIDE {
     ppapi::proxy::HostDispatcher::RemoveForInstance(instance);
 
     RendererPpapiHostImpl* host =
@@ -182,11 +191,16 @@ class HostDispatcherWrapper
           is_external_));
     }
   }
+  virtual base::ProcessId GetPeerProcessId() OVERRIDE {
+    return peer_pid_;
+  }
 
   ppapi::proxy::HostDispatcher* dispatcher() { return dispatcher_.get(); }
 
  private:
   webkit::ppapi::PluginModule* module_;
+
+  base::ProcessId peer_pid_;
 
   // ID that the browser process uses to idetify the child process for the
   // plugin. This isn't directly useful from our process (the renderer) except
@@ -254,36 +268,41 @@ class AsyncOpenFileSystemURLCallbackTranslator
 
   virtual ~AsyncOpenFileSystemURLCallbackTranslator() {}
 
-  virtual void DidSucceed() {
+  virtual void DidSucceed() OVERRIDE {
     NOTREACHED();
   }
   virtual void DidReadMetadata(
       const base::PlatformFileInfo& file_info,
-      const FilePath& platform_path) {
+      const base::FilePath& platform_path) OVERRIDE {
+    NOTREACHED();
+  }
+  virtual void DidCreateSnapshotFile(
+      const base::PlatformFileInfo& file_info,
+      const base::FilePath& platform_path) OVERRIDE {
     NOTREACHED();
   }
   virtual void DidReadDirectory(
       const std::vector<base::FileUtilProxy::Entry>& entries,
-      bool has_more) {
+      bool has_more) OVERRIDE {
     NOTREACHED();
   }
   virtual void DidOpenFileSystem(const std::string& name,
-                                 const GURL& root) {
+                                 const GURL& root) OVERRIDE {
     NOTREACHED();
   }
 
-  virtual void DidFail(base::PlatformFileError error_code) {
+  virtual void DidFail(base::PlatformFileError error_code) OVERRIDE {
     base::PlatformFile invalid_file = base::kInvalidPlatformFileValue;
     callback_.Run(error_code,
                   base::PassPlatformFile(&invalid_file),
                   webkit::ppapi::PluginDelegate::NotifyCloseFileCallback());
   }
 
-  virtual void DidWrite(int64 bytes, bool complete) {
+  virtual void DidWrite(int64 bytes, bool complete) OVERRIDE {
     NOTREACHED();
   }
 
-  virtual void DidOpenFile(base::PlatformFile file) {
+  virtual void DidOpenFile(base::PlatformFile file) OVERRIDE {
     callback_.Run(base::PLATFORM_FILE_OK,
                   base::PassPlatformFile(&file),
                   close_file_callback_);
@@ -326,8 +345,6 @@ void CreateHostForInProcessModule(RenderViewImpl* render_view,
 PepperPluginDelegateImpl::PepperPluginDelegateImpl(RenderViewImpl* render_view)
     : RenderViewObserver(render_view),
       render_view_(render_view),
-      has_saved_context_menu_action_(false),
-      saved_context_menu_action_(0),
       focused_plugin_(NULL),
       last_mouse_event_target_(NULL),
       device_enumeration_event_handler_(
@@ -336,10 +353,23 @@ PepperPluginDelegateImpl::PepperPluginDelegateImpl(RenderViewImpl* render_view)
 
 PepperPluginDelegateImpl::~PepperPluginDelegateImpl() {
   DCHECK(mouse_lock_instances_.empty());
-  for (PendingContextMenuMap::iterator it = pending_context_menus_.begin();
-       it != pending_context_menus_.end(); ++it) {
-    render_view()->CancelContextMenu(it->first);
+}
+
+WebKit::WebPlugin* PepperPluginDelegateImpl::CreatePepperWebPlugin(
+    const webkit::WebPluginInfo& webplugin_info,
+    const WebKit::WebPluginParams& params) {
+  bool pepper_plugin_was_registered = false;
+  scoped_refptr<webkit::ppapi::PluginModule> pepper_module(
+      CreatePepperPluginModule(webplugin_info, &pepper_plugin_was_registered));
+
+  if (pepper_plugin_was_registered) {
+    if (!pepper_module)
+      return NULL;
+    return new webkit::ppapi::WebPluginImpl(
+        pepper_module.get(), params, AsWeakPtr());
   }
+
+  return NULL;
 }
 
 scoped_refptr<webkit::ppapi::PluginModule>
@@ -349,7 +379,7 @@ PepperPluginDelegateImpl::CreatePepperPluginModule(
   *pepper_plugin_was_registered = true;
 
   // See if a module has already been loaded for this plugin.
-  FilePath path(webplugin_info.path);
+  base::FilePath path(webplugin_info.path);
   scoped_refptr<webkit::ppapi::PluginModule> module =
       PepperPluginRegistry::GetInstance()->GetLiveModule(path);
   if (module) {
@@ -380,9 +410,10 @@ PepperPluginDelegateImpl::CreatePepperPluginModule(
 
   // Out of process: have the browser start the plugin process for us.
   IPC::ChannelHandle channel_handle;
+  base::ProcessId peer_pid;
   int plugin_child_id = 0;
   render_view_->Send(new ViewHostMsg_OpenChannelToPepperPlugin(
-      path, &channel_handle, &plugin_child_id));
+      path, &channel_handle, &peer_pid, &plugin_child_id));
   if (channel_handle.name.empty()) {
     // Couldn't be initialized.
     return scoped_refptr<webkit::ppapi::PluginModule>();
@@ -400,6 +431,7 @@ PepperPluginDelegateImpl::CreatePepperPluginModule(
                                 path,
                                 permissions,
                                 channel_handle,
+                                peer_pid,
                                 plugin_child_id,
                                 false))  // is_external = false
     return scoped_refptr<webkit::ppapi::PluginModule>();
@@ -409,9 +441,10 @@ PepperPluginDelegateImpl::CreatePepperPluginModule(
 
 RendererPpapiHost* PepperPluginDelegateImpl::CreateExternalPluginModule(
     scoped_refptr<webkit::ppapi::PluginModule> module,
-    const FilePath& path,
+    const base::FilePath& path,
     ppapi::PpapiPermissions permissions,
     const IPC::ChannelHandle& channel_handle,
+    base::ProcessId peer_pid,
     int plugin_child_id) {
   // We don't call PepperPluginRegistry::AddLiveModule, as this module is
   // managed externally.
@@ -419,6 +452,7 @@ RendererPpapiHost* PepperPluginDelegateImpl::CreateExternalPluginModule(
                                   path,
                                   permissions,
                                   channel_handle,
+                                  peer_pid,
                                   plugin_child_id,
                                   true);  // is_external = true
 }
@@ -429,7 +463,7 @@ scoped_refptr<PepperBrokerImpl> PepperPluginDelegateImpl::CreateBroker(
   DCHECK(!plugin_module->GetBroker());
 
   // The broker path is the same as the plugin.
-  const FilePath& broker_path = plugin_module->path();
+  const base::FilePath& broker_path = plugin_module->path();
 
   scoped_refptr<PepperBrokerImpl> broker =
       new PepperBrokerImpl(plugin_module, this);
@@ -452,9 +486,10 @@ scoped_refptr<PepperBrokerImpl> PepperPluginDelegateImpl::CreateBroker(
 
 RendererPpapiHost* PepperPluginDelegateImpl::CreateOutOfProcessModule(
     webkit::ppapi::PluginModule* module,
-    const FilePath& path,
+    const base::FilePath& path,
     ppapi::PpapiPermissions permissions,
     const IPC::ChannelHandle& channel_handle,
+    base::ProcessId peer_pid,
     int plugin_child_id,
     bool is_external) {
   scoped_refptr<PepperHungPluginFilter> hung_filter(
@@ -463,6 +498,7 @@ RendererPpapiHost* PepperPluginDelegateImpl::CreateOutOfProcessModule(
                                  plugin_child_id));
   scoped_ptr<HostDispatcherWrapper> dispatcher(
       new HostDispatcherWrapper(module,
+                                peer_pid,
                                 plugin_child_id,
                                 permissions,
                                 is_external));
@@ -482,47 +518,23 @@ RendererPpapiHost* PepperPluginDelegateImpl::CreateOutOfProcessModule(
   return host_impl;
 }
 
-void PepperPluginDelegateImpl::OnMenuAction(int request_id, unsigned action) {
-  // Just save the action.
-  DCHECK(!has_saved_context_menu_action_);
-  has_saved_context_menu_action_ = true;
-  saved_context_menu_action_ = action;
-}
-
-void PepperPluginDelegateImpl::OnMenuClosed(int request_id) {
-  PendingContextMenuMap::iterator found =
-      pending_context_menus_.find(request_id);
-  if (found == pending_context_menus_.end()) {
-    NOTREACHED() << "OnContextMenuClosed() called twice for the same menu.";
-    return;
-  }
-
-  if (has_saved_context_menu_action_) {
-    found->second->CompleteShow(PP_OK, saved_context_menu_action_);
-    has_saved_context_menu_action_ = false;
-    saved_context_menu_action_ = 0;
-  } else {
-    found->second->CompleteShow(PP_ERROR_USERCANCEL, 0);
-  }
-  pending_context_menus_.erase(found);
-}
-
 void PepperPluginDelegateImpl::OnPpapiBrokerChannelCreated(
     int request_id,
+    base::ProcessId broker_pid,
     const IPC::ChannelHandle& handle) {
   scoped_refptr<PepperBrokerImpl>* broker_ptr =
       pending_connect_broker_.Lookup(request_id);
   if (broker_ptr) {
     scoped_refptr<PepperBrokerImpl> broker = *broker_ptr;
     pending_connect_broker_.Remove(request_id);
-    broker->OnBrokerChannelConnected(handle);
+    broker->OnBrokerChannelConnected(broker_pid, handle);
   } else {
     // There is no broker waiting for this channel. Close it so the broker can
     // clean up and possibly exit.
     // The easiest way to clean it up is to just put it in an object
     // and then close them. This failure case is not performance critical.
     PepperBrokerDispatcherWrapper temp_dispatcher;
-    temp_dispatcher.Init(handle);
+    temp_dispatcher.Init(broker_pid, handle);
   }
 }
 
@@ -756,7 +768,8 @@ bool PepperPluginDelegateImpl::CanComposeInline() const {
 
 void PepperPluginDelegateImpl::PluginCrashed(
     webkit::ppapi::PluginInstance* instance) {
-  render_view_->PluginCrashed(instance->module()->path());
+  render_view_->PluginCrashed(instance->module()->path(),
+                              instance->module()->GetPeerProcessId());
   UnSetAndDeleteLockTargetAdapter(instance);
 }
 
@@ -792,7 +805,7 @@ SkBitmap* PepperPluginDelegateImpl::GetSadPluginBitmap() {
 }
 
 WebKit::WebPlugin* PepperPluginDelegateImpl::CreatePluginReplacement(
-    const FilePath& file_path) {
+    const base::FilePath& file_path) {
   return GetContentClient()->renderer()->CreatePluginReplacement(
       render_view_, file_path);
 }
@@ -802,15 +815,25 @@ PepperPluginDelegateImpl::CreateImage2D(int width, int height) {
   return PepperPlatformImage2DImpl::Create(width, height);
 }
 
+webkit::ppapi::PluginDelegate::PlatformGraphics2D*
+PepperPluginDelegateImpl::GetGraphics2D(
+    webkit::ppapi::PluginInstance* instance,
+    PP_Resource resource) {
+  RendererPpapiHostImpl* host_impl = static_cast<RendererPpapiHostImpl*>(
+      instance->module()->GetEmbedderState());
+  return host_impl->GetPlatformGraphics2D(resource);
+}
+
 webkit::ppapi::PluginDelegate::PlatformContext3D*
     PepperPluginDelegateImpl::CreateContext3D() {
 #ifdef ENABLE_GPU
   // If accelerated compositing of plugins is disabled, fail to create a 3D
   // context, because it won't be visible. This allows graceful fallback in the
   // modules.
-  if (!render_view_->webkit_preferences().accelerated_plugins_enabled)
+  const webkit_glue::WebPreferences& prefs = render_view_->webkit_preferences();
+  if (!prefs.accelerated_compositing_for_plugins_enabled)
     return NULL;
-  return new PlatformContext3DImpl(this);
+  return new PlatformContext3DImpl;
 #else
   return NULL;
 #endif
@@ -818,7 +841,8 @@ webkit::ppapi::PluginDelegate::PlatformContext3D*
 
 void PepperPluginDelegateImpl::ReparentContext(
     webkit::ppapi::PluginDelegate::PlatformContext3D* context) {
-  static_cast<PlatformContext3DImpl*>(context)->SetParentContext(this);
+  static_cast<PlatformContext3DImpl*>(context)->
+      SetParentAndCreateBackingTextureIfNeeded();
 }
 
 webkit::ppapi::PluginDelegate::PlatformVideoCapture*
@@ -848,11 +872,13 @@ void PepperPluginDelegateImpl::SelectedFindResultChanged(int identifier,
 }
 
 uint32_t PepperPluginDelegateImpl::GetAudioHardwareOutputSampleRate() {
-  return static_cast<uint32_t>(GetAudioOutputSampleRate());
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  return thread->GetAudioHardwareConfig()->GetOutputSampleRate();
 }
 
 uint32_t PepperPluginDelegateImpl::GetAudioHardwareOutputBufferSize() {
-  return static_cast<uint32_t>(GetAudioOutputBufferSize());
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  return thread->GetAudioHardwareConfig()->GetOutputBufferSize();
 }
 
 webkit::ppapi::PluginDelegate::PlatformAudioOutput*
@@ -861,7 +887,8 @@ PepperPluginDelegateImpl::CreateAudioOutput(
     uint32_t sample_count,
     webkit::ppapi::PluginDelegate::PlatformAudioOutputClient* client) {
   return PepperPlatformAudioOutputImpl::Create(
-      static_cast<int>(sample_rate), static_cast<int>(sample_count), client);
+      static_cast<int>(sample_rate), static_cast<int>(sample_count),
+      GetRoutingID(), client);
 }
 
 webkit::ppapi::PluginDelegate::PlatformAudioInput*
@@ -934,7 +961,7 @@ void PepperPluginDelegateImpl::OnPpapiBrokerPermissionResult(
 }
 
 bool PepperPluginDelegateImpl::AsyncOpenFile(
-    const FilePath& path,
+    const base::FilePath& path,
     int flags,
     const AsyncOpenFileCallback& callback) {
   int message_id = pending_async_open_files_.Add(
@@ -1092,88 +1119,8 @@ bool PepperPluginDelegateImpl::AsyncOpenFileSystemURL(
           base::Bind(&DoNotifyCloseFile, path)));
 }
 
-base::PlatformFileError PepperPluginDelegateImpl::OpenFile(
-    const ppapi::PepperFilePath& path,
-    int flags,
-    base::PlatformFile* file) {
-  IPC::PlatformFileForTransit transit_file;
-  base::PlatformFileError error;
-  IPC::Message* msg = new PepperFileMsg_OpenFile(
-      path, flags, &error, &transit_file);
-  if (!render_view_->Send(msg)) {
-    *file = base::kInvalidPlatformFileValue;
-    return base::PLATFORM_FILE_ERROR_FAILED;
-  }
-  *file = IPC::PlatformFileForTransitToPlatformFile(transit_file);
-  return error;
-}
-
-base::PlatformFileError PepperPluginDelegateImpl::RenameFile(
-    const ppapi::PepperFilePath& from_path,
-    const ppapi::PepperFilePath& to_path) {
-  base::PlatformFileError error;
-  IPC::Message* msg = new PepperFileMsg_RenameFile(from_path, to_path, &error);
-  if (!render_view_->Send(msg))
-    return base::PLATFORM_FILE_ERROR_FAILED;
-  return error;
-}
-
-base::PlatformFileError PepperPluginDelegateImpl::DeleteFileOrDir(
-    const ppapi::PepperFilePath& path,
-    bool recursive) {
-  base::PlatformFileError error;
-  IPC::Message* msg = new PepperFileMsg_DeleteFileOrDir(
-      path, recursive, &error);
-  if (!render_view_->Send(msg))
-    return base::PLATFORM_FILE_ERROR_FAILED;
-  return error;
-}
-
-base::PlatformFileError PepperPluginDelegateImpl::CreateDir(
-    const ppapi::PepperFilePath& path) {
-  base::PlatformFileError error;
-  IPC::Message* msg = new PepperFileMsg_CreateDir(path, &error);
-  if (!render_view_->Send(msg))
-    return base::PLATFORM_FILE_ERROR_FAILED;
-  return error;
-}
-
-base::PlatformFileError PepperPluginDelegateImpl::QueryFile(
-    const ppapi::PepperFilePath& path,
-    base::PlatformFileInfo* info) {
-  base::PlatformFileError error;
-  IPC::Message* msg = new PepperFileMsg_QueryFile(path, info, &error);
-  if (!render_view_->Send(msg))
-    return base::PLATFORM_FILE_ERROR_FAILED;
-  return error;
-}
-
-base::PlatformFileError PepperPluginDelegateImpl::GetDirContents(
-    const ppapi::PepperFilePath& path,
-    ppapi::DirContents* contents) {
-  base::PlatformFileError error;
-  IPC::Message* msg = new PepperFileMsg_GetDirContents(path, contents, &error);
-  if (!render_view_->Send(msg))
-    return base::PLATFORM_FILE_ERROR_FAILED;
-  return error;
-}
-
-base::PlatformFileError PepperPluginDelegateImpl::CreateTemporaryFile(
-    base::PlatformFile* file) {
-  IPC::PlatformFileForTransit transit_file;
-  base::PlatformFileError error;
-  IPC::Message* msg = new PepperFileMsg_CreateTemporaryFile(&error,
-                                                            &transit_file);
-  if (!render_view_->Send(msg)) {
-    *file = base::kInvalidPlatformFileValue;
-    return base::PLATFORM_FILE_ERROR_FAILED;
-  }
-  *file = IPC::PlatformFileForTransitToPlatformFile(transit_file);
-  return error;
-}
-
 void PepperPluginDelegateImpl::SyncGetFileSystemPlatformPath(
-    const GURL& url, FilePath* platform_path) {
+    const GURL& url, base::FilePath* platform_path) {
   RenderThreadImpl::current()->Send(new FileSystemHostMsg_SyncGetPlatformPath(
       url, platform_path));
 }
@@ -1236,70 +1183,26 @@ void PepperPluginDelegateImpl::TCPSocketWrite(uint32 socket_id,
 }
 
 void PepperPluginDelegateImpl::TCPSocketDisconnect(uint32 socket_id) {
-  // There are no DCHECK(tcp_sockets_.Lookup(socket_id)) because it
-  // can be called before
-  // TCPSocketConnect/TCPSocketConnectWithNetAddress is called.
+  // There is no DCHECK(tcp_sockets_.Lookup(socket_id)) because this method
+  // can be called before TCPSocketConnect or TCPSocketConnectWithNetAddress.
   render_view_->Send(new PpapiHostMsg_PPBTCPSocket_Disconnect(socket_id));
   if (tcp_sockets_.Lookup(socket_id))
     tcp_sockets_.Remove(socket_id);
+}
+
+void PepperPluginDelegateImpl::TCPSocketSetBoolOption(
+    uint32 socket_id,
+    PP_TCPSocketOption_Private name,
+    bool value) {
+  DCHECK(tcp_sockets_.Lookup(socket_id));
+  render_view_->Send(
+      new PpapiHostMsg_PPBTCPSocket_SetBoolOption(socket_id, name, value));
 }
 
 void PepperPluginDelegateImpl::RegisterTCPSocket(
     webkit::ppapi::PPB_TCPSocket_Private_Impl* socket,
     uint32 socket_id) {
   tcp_sockets_.AddWithID(socket, socket_id);
-}
-
-uint32 PepperPluginDelegateImpl::UDPSocketCreate() {
-  uint32 socket_id = 0;
-  render_view_->Send(new PpapiHostMsg_PPBUDPSocket_Create(
-      render_view_->routing_id(), 0, &socket_id));
-  return socket_id;
-}
-
-void PepperPluginDelegateImpl::UDPSocketSetBoolSocketFeature(
-    webkit::ppapi::PPB_UDPSocket_Private_Impl* socket,
-    uint32 socket_id,
-    int32_t name,
-    bool value) {
-  render_view_->Send(
-      new PpapiHostMsg_PPBUDPSocket_SetBoolSocketFeature(
-          render_view_->routing_id(), socket_id, name, value));
-}
-
-void PepperPluginDelegateImpl::UDPSocketBind(
-    webkit::ppapi::PPB_UDPSocket_Private_Impl* socket,
-    uint32 socket_id,
-    const PP_NetAddress_Private& addr) {
-  if (!udp_sockets_.Lookup(socket_id))
-    udp_sockets_.AddWithID(socket, socket_id);
-  render_view_->Send(new PpapiHostMsg_PPBUDPSocket_Bind(
-      render_view_->routing_id(), socket_id, addr));
-}
-
-void PepperPluginDelegateImpl::UDPSocketRecvFrom(uint32 socket_id,
-                                                 int32_t num_bytes) {
-  DCHECK(udp_sockets_.Lookup(socket_id));
-  render_view_->Send(
-      new PpapiHostMsg_PPBUDPSocket_RecvFrom(socket_id, num_bytes));
-}
-
-void PepperPluginDelegateImpl::UDPSocketSendTo(
-    uint32 socket_id,
-    const std::string& buffer,
-    const PP_NetAddress_Private& net_addr) {
-  DCHECK(udp_sockets_.Lookup(socket_id));
-  render_view_->Send(
-      new PpapiHostMsg_PPBUDPSocket_SendTo(render_view_->routing_id(),
-                                           socket_id, buffer, net_addr));
-}
-
-void PepperPluginDelegateImpl::UDPSocketClose(uint32 socket_id) {
-  // There are no DCHECK(udp_sockets_.Lookup(socket_id)) because it
-  // can be called before UDPSocketBind is called.
-  render_view_->Send(new PpapiHostMsg_PPBUDPSocket_Close(socket_id));
-  if (udp_sockets_.Lookup(socket_id))
-    udp_sockets_.Remove(socket_id);
 }
 
 void PepperPluginDelegateImpl::TCPServerSocketListen(
@@ -1324,43 +1227,6 @@ void PepperPluginDelegateImpl::TCPServerSocketStopListening(
     render_view_->Send(new PpapiHostMsg_PPBTCPServerSocket_Destroy(socket_id));
     tcp_server_sockets_.Remove(socket_id);
   }
-}
-
-void PepperPluginDelegateImpl::RegisterHostResolver(
-    ppapi::PPB_HostResolver_Shared* host_resolver,
-    uint32 host_resolver_id) {
-  host_resolvers_.AddWithID(host_resolver, host_resolver_id);
-}
-
-void PepperPluginDelegateImpl::HostResolverResolve(
-    uint32 host_resolver_id,
-    const ::ppapi::HostPortPair& host_port,
-    const PP_HostResolver_Private_Hint* hint) {
-  DCHECK(host_resolvers_.Lookup(host_resolver_id));
-  if (!hint) {
-    PP_HostResolver_Private_Hint empty_hint;
-    empty_hint.family = PP_NETADDRESSFAMILY_UNSPECIFIED;
-    empty_hint.flags = static_cast<PP_HostResolver_Private_Flags>(0);
-    render_view_->Send(
-        new PpapiHostMsg_PPBHostResolver_Resolve(
-            GetRoutingID(),
-            0,
-            host_resolver_id,
-            host_port,
-            empty_hint));
-  } else {
-    render_view_->Send(
-        new PpapiHostMsg_PPBHostResolver_Resolve(
-            GetRoutingID(),
-            0,
-            host_resolver_id,
-            host_port,
-            *hint));
-  }
-}
-
-void PepperPluginDelegateImpl::UnregisterHostResolver(uint32 host_resolver_id) {
-  host_resolvers_.Remove(host_resolver_id);
 }
 
 bool PepperPluginDelegateImpl::AddNetworkListObserver(
@@ -1397,43 +1263,6 @@ bool PepperPluginDelegateImpl::X509CertificateParseDER(
   return succeeded;
 }
 
-int32_t PepperPluginDelegateImpl::ShowContextMenu(
-    webkit::ppapi::PluginInstance* instance,
-    webkit::ppapi::PPB_Flash_Menu_Impl* menu,
-    const gfx::Point& position) {
-  int32 render_widget_id = render_view_->routing_id();
-  if (instance->flash_fullscreen()) {
-    webkit::ppapi::FullscreenContainer* container =
-        instance->fullscreen_container();
-    DCHECK(container);
-    render_widget_id =
-        static_cast<RenderWidgetFullscreenPepper*>(container)->routing_id();
-  }
-
-  ContextMenuParams params;
-  params.x = position.x();
-  params.y = position.y();
-  params.custom_context.is_pepper_menu = true;
-  params.custom_context.render_widget_id = render_widget_id;
-  params.custom_items = menu->menu_data();
-
-  // Transform the position to be in render view's coordinates.
-  if (instance->view_data().is_fullscreen || instance->flash_fullscreen()) {
-    WebKit::WebRect window_rect = render_view_->windowRect();
-    WebKit::WebRect screen_rect = render_view_->screenInfo().rect;
-    params.x = params.x - window_rect.x + screen_rect.x;
-    params.y = params.y - window_rect.y + screen_rect.y;
-  } else {
-    params.x += instance->view_data().rect.point.x;
-    params.y += instance->view_data().rect.point.y;
-  }
-
-  int request_id = render_view_->ShowContextMenu(this, params);
-  pending_context_menus_[request_id] =
-      scoped_refptr<webkit::ppapi::PPB_Flash_Menu_Impl>(menu);
-  return PP_OK_COMPLETIONPENDING;
-}
-
 webkit::ppapi::FullscreenContainer*
 PepperPluginDelegateImpl::CreateFullscreenContainer(
     webkit::ppapi::PluginInstance* instance) {
@@ -1454,14 +1283,6 @@ void PepperPluginDelegateImpl::ZoomLimitsChanged(double minimum_factor,
   double minimum_level = WebView::zoomFactorToZoomLevel(minimum_factor);
   double maximum_level = WebView::zoomFactorToZoomLevel(maximum_factor);
   render_view_->webview()->zoomLimitsChanged(minimum_level, maximum_level);
-}
-
-std::string PepperPluginDelegateImpl::ResolveProxy(const GURL& url) {
-  bool result;
-  std::string proxy_result;
-  RenderThreadImpl::current()->Send(
-      new ViewHostMsg_ResolveProxy(url, &result, &proxy_result));
-  return proxy_result;
 }
 
 void PepperPluginDelegateImpl::DidStartLoading() {
@@ -1485,44 +1306,9 @@ void PepperPluginDelegateImpl::SaveURLAs(const GURL& url) {
       render_view_->routing_id(), url, referrer));
 }
 
-double PepperPluginDelegateImpl::GetLocalTimeZoneOffset(base::Time t) {
-  double result = 0.0;
-  render_view_->Send(new PepperMsg_GetLocalTimeZoneOffset(
-      t, &result));
-  return result;
-}
-
-std::string PepperPluginDelegateImpl::GetDeviceID() {
-  std::string result;
-  render_view_->Send(new PepperMsg_GetDeviceID(&result));
-  return result;
-}
-
-PP_FlashLSORestrictions PepperPluginDelegateImpl::GetLocalDataRestrictions(
-    const GURL& document_url,
-    const GURL& plugin_url) {
-  PP_FlashLSORestrictions restrictions = PP_FLASHLSORESTRICTIONS_NONE;
-  render_view_->Send(
-      new PepperMsg_GetLocalDataRestrictions(document_url, plugin_url,
-                                             &restrictions));
-  return restrictions;
-}
-
 base::SharedMemory* PepperPluginDelegateImpl::CreateAnonymousSharedMemory(
-    uint32_t size) {
-  if (size == 0)
-    return NULL;
-  base::SharedMemoryHandle handle;
-  if (!render_view_->Send(
-          new ChildProcessHostMsg_SyncAllocateSharedMemory(size, &handle))) {
-    DLOG(WARNING) << "Browser allocation request message failed";
-    return NULL;
-  }
-  if (!base::SharedMemory::IsHandleValid(handle)) {
-    DLOG(WARNING) << "Browser failed to allocate shared memory";
-    return NULL;
-  }
-  return new base::SharedMemory(handle, false);
+    size_t size) {
+  return RenderThread::Get()->HostAllocateSharedMemoryBuffer(size).release();
 }
 
 ppapi::Preferences PepperPluginDelegateImpl::GetPreferences() {
@@ -1602,6 +1388,9 @@ int PepperPluginDelegateImpl::EnumerateDevices(
 }
 
 void PepperPluginDelegateImpl::StopEnumerateDevices(int request_id) {
+  device_enumeration_event_handler_->UnregisterEnumerateDevicesCallback(
+      request_id);
+
 #if defined(ENABLE_WEBRTC)
   // Need to post task since this function might be called inside the callback
   // of EnumerateDevices.
@@ -1623,16 +1412,12 @@ bool PepperPluginDelegateImpl::OnMessageReceived(const IPC::Message& message) {
                         OnTCPSocketSSLHandshakeACK)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_ReadACK, OnTCPSocketReadACK)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_WriteACK, OnTCPSocketWriteACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBUDPSocket_BindACK, OnUDPSocketBindACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBUDPSocket_RecvFromACK,
-                        OnUDPSocketRecvFromACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBUDPSocket_SendToACK, OnUDPSocketSendToACK)
+    IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPSocket_SetBoolOptionACK,
+                        OnTCPSocketSetBoolOptionACK)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPServerSocket_ListenACK,
                         OnTCPServerSocketListenACK)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBTCPServerSocket_AcceptACK,
                         OnTCPServerSocketAcceptACK)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPBHostResolver_ResolveACK,
-                        OnHostResolverResolveACK)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -1689,39 +1474,14 @@ void PepperPluginDelegateImpl::OnTCPSocketWriteACK(uint32 plugin_dispatcher_id,
     socket->OnWriteCompleted(succeeded, bytes_written);
 }
 
-void PepperPluginDelegateImpl::OnUDPSocketBindACK(
+void PepperPluginDelegateImpl::OnTCPSocketSetBoolOptionACK(
     uint32 plugin_dispatcher_id,
     uint32 socket_id,
-    bool succeeded,
-    const PP_NetAddress_Private& addr) {
-  webkit::ppapi::PPB_UDPSocket_Private_Impl* socket =
-      udp_sockets_.Lookup(socket_id);
+    bool succeeded) {
+  webkit::ppapi::PPB_TCPSocket_Private_Impl* socket =
+      tcp_sockets_.Lookup(socket_id);
   if (socket)
-    socket->OnBindCompleted(succeeded, addr);
-  if (!succeeded)
-    udp_sockets_.Remove(socket_id);
-}
-
-void PepperPluginDelegateImpl::OnUDPSocketRecvFromACK(
-    uint32 plugin_dispatcher_id,
-    uint32 socket_id,
-    bool succeeded,
-    const std::string& data,
-    const PP_NetAddress_Private& remote_addr) {
-  webkit::ppapi::PPB_UDPSocket_Private_Impl* socket =
-      udp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnRecvFromCompleted(succeeded, data, remote_addr);
-}
-
-void PepperPluginDelegateImpl::OnUDPSocketSendToACK(uint32 plugin_dispatcher_id,
-                                                    uint32 socket_id,
-                                                    bool succeeded,
-                                                    int32_t bytes_written) {
-  webkit::ppapi::PPB_UDPSocket_Private_Impl* socket =
-      udp_sockets_.Lookup(socket_id);
-  if (socket)
-    socket->OnSendToCompleted(succeeded, bytes_written);
+    socket->OnSetOptionCompleted(succeeded);
 }
 
 void PepperPluginDelegateImpl::OnTCPServerSocketListenACK(
@@ -1760,21 +1520,6 @@ void PepperPluginDelegateImpl::OnTCPServerSocketAcceptACK(
   } else if (accepted_socket_id != 0) {
     render_view_->Send(
         new PpapiHostMsg_PPBTCPSocket_Disconnect(accepted_socket_id));
-  }
-}
-
-void PepperPluginDelegateImpl::OnHostResolverResolveACK(
-    uint32 plugin_dispatcher_id,
-    uint32 host_resolver_id,
-    bool succeeded,
-    const std::string& canonical_name,
-    const std::vector<PP_NetAddress_Private>& net_address_list) {
-  ppapi::PPB_HostResolver_Shared* host_resolver =
-      host_resolvers_.Lookup(host_resolver_id);
-  if (host_resolver) {
-    host_resolver->OnResolveCompleted(succeeded,
-                                      canonical_name,
-                                      net_address_list);
   }
 }
 
@@ -1830,19 +1575,6 @@ int PepperPluginDelegateImpl::GetSessionID(PP_DeviceType_Dev type,
 #endif
 }
 
-WebGraphicsContext3DCommandBufferImpl*
-PepperPluginDelegateImpl::GetParentContextForPlatformContext3D() {
-  WebGraphicsContext3DCommandBufferImpl* context =
-      static_cast<WebGraphicsContext3DCommandBufferImpl*>(
-          render_view_->webview()->sharedGraphicsContext3D());
-  if (!context)
-    return NULL;
-  if (!context->makeContextCurrent() || context->isContextLost())
-    return NULL;
-
-  return context;
-}
-
 MouseLockDispatcher::LockTarget*
     PepperPluginDelegateImpl::GetOrCreateLockTargetAdapter(
     webkit::ppapi::PluginInstance* instance) {
@@ -1875,6 +1607,16 @@ MouseLockDispatcher* PepperPluginDelegateImpl::GetMouseLockDispatcher(
   } else {
     return render_view_->mouse_lock_dispatcher();
   }
+}
+
+IPC::PlatformFileForTransit PepperPluginDelegateImpl::ShareHandleWithRemote(
+    base::PlatformFile handle,
+    base::ProcessId target_process_id,
+    bool should_close_source) const {
+  return BrokerGetFileHandleForProcess(
+      handle,
+      target_process_id,
+      should_close_source);
 }
 
 }  // namespace content

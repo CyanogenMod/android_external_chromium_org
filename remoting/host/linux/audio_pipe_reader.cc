@@ -9,9 +9,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "base/eintr_wrapper.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/stl_util.h"
 
 namespace remoting {
@@ -20,12 +20,21 @@ namespace {
 
 // PulseAudio's module-pipe-sink must be configured to use the following
 // parameters for the sink we read from.
-const int kSamplingRate = 48000;
+const int kSamplesPerSecond = 48000;
 const int kChannels = 2;
 const int kBytesPerSample = 2;
+const int kSampleBytesPerSecond =
+    kSamplesPerSecond * kChannels * kBytesPerSample;
 
 // Read data from the pipe every 40ms.
 const int kCapturingPeriodMs = 40;
+
+// Size of the pipe buffer in milliseconds.
+const int kPipeBufferSizeMs = kCapturingPeriodMs * 2;
+
+// Size of the pipe buffer in bytes.
+const int kPipeBufferSizeBytes = kPipeBufferSizeMs * kSampleBytesPerSecond /
+    base::Time::kMillisecondsPerSecond;
 
 #if !defined(F_SETPIPE_SZ)
 // F_SETPIPE_SZ is supported only starting linux 2.6.35, but we want to be able
@@ -33,32 +42,23 @@ const int kCapturingPeriodMs = 40;
 #define F_SETPIPE_SZ 1031
 #endif  // defined(F_SETPIPE_SZ)
 
-const int IsPacketOfSilence(const std::string& data) {
-  const int64* int_buf = reinterpret_cast<const int64*>(data.data());
-  for (size_t i = 0; i < data.size() / sizeof(int64); i++) {
-    if (int_buf[i] != 0)
-      return false;
-  }
-  for (size_t i = data.size() - data.size() % sizeof(int64);
-       i < data.size(); i++) {
-    if (data.data()[i] != 0)
-      return false;
-  }
-  return true;
-}
-
 }  // namespace
 
-AudioPipeReader::AudioPipeReader(
+// static
+scoped_refptr<AudioPipeReader> AudioPipeReader::Create(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    const FilePath& pipe_name)
-    : task_runner_(task_runner),
-      observers_(new ObserverListThreadSafe<StreamObserver>()) {
-  task_runner_->PostTask(FROM_HERE, base::Bind(
-      &AudioPipeReader::StartOnAudioThread, this, pipe_name));
+    const base::FilePath& pipe_name) {
+  // Create a reference to the new AudioPipeReader before posting the
+  // StartOnAudioThread task, otherwise it may be deleted on the audio
+  // thread before we return.
+  scoped_refptr<AudioPipeReader> pipe_reader =
+      new AudioPipeReader(task_runner);
+  task_runner->PostTask(FROM_HERE, base::Bind(
+      &AudioPipeReader::StartOnAudioThread, pipe_reader, pipe_name));
+  return pipe_reader;
 }
 
-void AudioPipeReader::StartOnAudioThread(const FilePath& pipe_name) {
+void AudioPipeReader::StartOnAudioThread(const base::FilePath& pipe_name) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   pipe_fd_ = HANDLE_EINTR(open(
@@ -68,16 +68,20 @@ void AudioPipeReader::StartOnAudioThread(const FilePath& pipe_name) {
     return;
   }
 
-  // Set buffer size for the pipe to the double of what's required for samples
-  // of each capturing period.
-  int pipe_buffer_size = 2 * kCapturingPeriodMs * kSamplingRate * kChannels *
-     kBytesPerSample / base::Time::kMillisecondsPerSecond;
-  int result = HANDLE_EINTR(fcntl(pipe_fd_, F_SETPIPE_SZ, pipe_buffer_size));
+  // Set buffer size for the pipe.
+  int result = HANDLE_EINTR(
+      fcntl(pipe_fd_, F_SETPIPE_SZ, kPipeBufferSizeBytes));
   if (result < 0) {
     PLOG(ERROR) << "fcntl";
   }
 
   WaitForPipeReadable();
+}
+
+AudioPipeReader::AudioPipeReader(
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
+    : task_runner_(task_runner),
+      observers_(new ObserverListThreadSafe<StreamObserver>()) {
 }
 
 AudioPipeReader::~AudioPipeReader() {
@@ -102,7 +106,7 @@ void AudioPipeReader::OnFileCanWriteWithoutBlocking(int fd) {
 void AudioPipeReader::StartTimer() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   started_time_ = base::TimeTicks::Now();
-  last_capture_samples_ = 0;
+  last_capture_position_ = 0;
   timer_.Start(FROM_HERE, base::TimeDelta::FromMilliseconds(kCapturingPeriodMs),
                this, &AudioPipeReader::DoCapture);
 }
@@ -115,31 +119,28 @@ void AudioPipeReader::DoCapture() {
   // how much data it writes to the pipe, so we need to pace the stream, so
   // that we read the exact number of the samples per second we need.
   base::TimeDelta stream_position = base::TimeTicks::Now() - started_time_;
-  int64 stream_position_samples = stream_position.InMilliseconds() *
-      kSamplingRate / base::Time::kMillisecondsPerSecond;
-  int64 samples_to_capture =
-      stream_position_samples - last_capture_samples_;
-  last_capture_samples_ = stream_position_samples;
-  int64 read_size =
-      samples_to_capture * kChannels * kBytesPerSample;
+  int64 stream_position_bytes = stream_position.InMilliseconds() *
+      kSampleBytesPerSecond / base::Time::kMillisecondsPerSecond;
+  int64 bytes_to_read = stream_position_bytes - last_capture_position_;
 
   std::string data = left_over_bytes_;
-  int pos = data.size();
+  size_t pos = data.size();
   left_over_bytes_.clear();
-  data.resize(read_size);
+  data.resize(pos + bytes_to_read);
 
-  while (pos < read_size) {
+  while (pos < data.size()) {
     int read_result = HANDLE_EINTR(
-       read(pipe_fd_, string_as_array(&data) + pos, read_size - pos));
-    if (read_result >= 0) {
+       read(pipe_fd_, string_as_array(&data) + pos, data.size() - pos));
+    if (read_result > 0) {
       pos += read_result;
     } else {
-      if (errno != EWOULDBLOCK && errno != EAGAIN)
+      if (read_result < 0 && errno != EWOULDBLOCK && errno != EAGAIN)
         PLOG(ERROR) << "read";
       break;
     }
   }
 
+  // Stop reading from the pipe if PulseAudio isn't writing anything.
   if (pos == 0) {
     WaitForPipeReadable();
     return;
@@ -152,8 +153,14 @@ void AudioPipeReader::DoCapture() {
                           incomplete_samples_bytes);
   data.resize(pos - incomplete_samples_bytes);
 
-  if (IsPacketOfSilence(data))
-    return;
+  last_capture_position_ += data.size();
+  // Normally PulseAudio will keep pipe buffer full, so we should always be able
+  // to read |bytes_to_read| bytes, but in case it's misbehaving we need to make
+  // sure that |stream_position_bytes| doesn't go out of sync with the current
+  // stream position.
+  if (stream_position_bytes - last_capture_position_ > kPipeBufferSizeBytes)
+    last_capture_position_ = stream_position_bytes - kPipeBufferSizeBytes;
+  DCHECK_LE(last_capture_position_, stream_position_bytes);
 
   // Dispatch asynchronous notification to the stream observers.
   scoped_refptr<base::RefCountedString> data_ref =
@@ -166,6 +173,11 @@ void AudioPipeReader::WaitForPipeReadable() {
   MessageLoopForIO::current()->WatchFileDescriptor(
       pipe_fd_, false, MessageLoopForIO::WATCH_READ,
       &file_descriptor_watcher_, this);
+}
+
+// static
+void AudioPipeReaderTraits::Destruct(const AudioPipeReader* audio_pipe_reader) {
+  audio_pipe_reader->task_runner_->DeleteSoon(FROM_HERE, audio_pipe_reader);
 }
 
 }  // namespace remoting

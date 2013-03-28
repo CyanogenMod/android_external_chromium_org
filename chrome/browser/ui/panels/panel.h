@@ -9,9 +9,10 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/string16.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/extensions/image_loading_tracker.h"
+#include "chrome/browser/command_updater_delegate.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/base_window.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
@@ -22,10 +23,11 @@
 
 class GURL;
 class NativePanel;
+class PanelCollection;
 class PanelHost;
 class PanelManager;
-class PanelStrip;
 class Profile;
+class StackedPanelCollection;
 
 namespace content {
 class WebContents;
@@ -47,9 +49,8 @@ class WindowController;
 // - Invoke an appropriate PanelManager function to do stuff that might affect
 //   other Panels. For example deleting a panel would rearrange other panels.
 class Panel : public BaseWindow,
-              public CommandUpdater::CommandUpdaterDelegate,
-              public content::NotificationObserver,
-              public ImageLoadingTracker::Observer {
+              public CommandUpdaterDelegate,
+              public content::NotificationObserver {
  public:
   enum ExpansionState {
     // The panel is fully expanded with both title-bar and the client-area.
@@ -87,6 +88,8 @@ class Panel : public BaseWindow,
   CommandUpdater* command_updater();
   Profile* profile() const;
 
+  const extensions::Extension* GetExtension() const;
+
   // Returns web contents of the panel, if any. There may be none if web
   // contents have not been added to the panel yet.
   content::WebContents* GetWebContents() const;
@@ -102,16 +105,12 @@ class Panel : public BaseWindow,
   // b) it remains on top when an app exits full screen mode.
   void FullScreenModeChanged(bool is_full_screen);
 
-  // Ensures that the panel is fully visible, that is, not obscured by other
-  // top-most windows.
-  void EnsureFullyVisible();
-
   int TitleOnlyHeight() const;
 
-  // Returns true if the panel can be minimized or restored, depending on the
-  // strip the panel is in.
-  bool CanMinimize() const;
-  bool CanRestore() const;
+  // Returns true if the panel can show minimize or restore button in its
+  // titlebar, depending on its state.
+  bool CanShowMinimizeButton() const;
+  bool CanShowRestoreButton() const;
 
   // BaseWindow overrides.
   virtual bool IsActive() const OVERRIDE;
@@ -122,8 +121,8 @@ class Panel : public BaseWindow,
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
   virtual gfx::Rect GetBounds() const OVERRIDE;
   virtual void Show() OVERRIDE;
-  virtual void ShowInactive() OVERRIDE;
   virtual void Hide() OVERRIDE;
+  virtual void ShowInactive() OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual void Activate() OVERRIDE;
   virtual void Deactivate() OVERRIDE;
@@ -134,7 +133,7 @@ class Panel : public BaseWindow,
   virtual void FlashFrame(bool flash) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
 
-  // Overridden from CommandUpdater::CommandUpdaterDelegate:
+  // Overridden from CommandUpdaterDelegate:
   virtual void ExecuteCommandWithDisposition(
       int id,
       WindowOpenDisposition disposition) OVERRIDE;
@@ -168,10 +167,14 @@ class Panel : public BaseWindow,
   // * panel is newly created and has not been positioned yet.
   // * panel is being closed asynchronously.
   // Please use it with caution.
-  PanelStrip* panel_strip() const { return panel_strip_; }
+  PanelCollection* collection() const { return collection_; }
 
-  // Sets the current panel strip that contains this panel.
-  void set_panel_strip(PanelStrip* new_strip) { panel_strip_ = new_strip; }
+  // Sets the current panel collection that contains this panel.
+  void set_collection(PanelCollection* new_collection) {
+    collection_ = new_collection;
+  }
+
+  StackedPanelCollection* stack() const;
 
   ExpansionState expansion_state() const { return expansion_state_; }
   const gfx::Size& min_size() const { return min_size_; }
@@ -188,7 +191,7 @@ class Panel : public BaseWindow,
   }
 
   // The full size is the size of the panel when it is detached or expanded
-  // in the docked strip and squeezing mode is not on.
+  // in the docked collection and squeezing mode is not on.
   gfx::Size full_size() const { return full_size_; }
   void set_full_size(const gfx::Size& size) { full_size_ = size; }
 
@@ -206,12 +209,11 @@ class Panel : public BaseWindow,
   // Updates the panel bounds instantly without any animation.
   void SetPanelBoundsInstantly(const gfx::Rect& bounds);
 
-  // Ensures that the panel's size does not exceed the display area by
-  // updating maximum and full size of the panel. This is called each time
-  // when display settings are changed. Note that bounds are not updated here
-  // and the call of setting bounds or refreshing layout should be called after
-  // this.
-  void LimitSizeToDisplayArea(const gfx::Rect& display_area);
+  // Ensures that the panel's size does not exceed the work area by updating
+  // maximum and full size of the panel. This is called each time when display
+  // settings are changed. Note that bounds are not updated here and the call
+  // of setting bounds or refreshing layout should be called after this.
+  void LimitSizeToWorkArea(const gfx::Rect& work_area);
 
   // Sets whether the panel will auto resize according to its content.
   void SetAutoResizable(bool resizable);
@@ -292,6 +294,17 @@ class Panel : public BaseWindow,
   // Updates UI to reflect that the web cotents receives the focus.
   void WebContentsFocused(content::WebContents* contents);
 
+  // Moves the panel by delta instantly.
+  void MoveByInstantly(const gfx::Vector2d& delta_origin);
+
+  // Applies |corner_style| to the panel window.
+  void SetWindowCornerStyle(panel::CornerStyle corner_style);
+
+  // Performs the system minimize for the panel, i.e. becoming iconic.
+  void MinimizeBySystem();
+
+  bool IsMinimizedBySystem() const;
+
  protected:
   // Panel can only be created using PanelManager::CreatePanel() or subclass.
   // |app_name| is the default title for Panels when the page content does not
@@ -311,18 +324,13 @@ class Panel : public BaseWindow,
     CUSTOM_MAX_SIZE
   };
 
-  // ImageLoadingTracker::Observer implementation.
-  virtual void OnImageLoaded(const gfx::Image& image,
-                             const std::string& extension_id,
-                             int index) OVERRIDE;
+  void OnImageLoaded(const gfx::Image& image);
 
   // Initialize state for all supported commands.
   void InitCommandState();
 
   // Configures the renderer for auto resize (if auto resize is enabled).
   void ConfigureAutoResize(content::WebContents* web_contents);
-
-  const extensions::Extension* GetExtension() const;
 
   // Load the app's image, firing a load state change when loaded.
   void UpdateAppIcon();
@@ -339,12 +347,12 @@ class Panel : public BaseWindow,
 
   // Current collection of panels to which this panel belongs. This determines
   // the panel's screen layout.
-  PanelStrip* panel_strip_;  // Owned by PanelManager.
+  PanelCollection* collection_;  // Owned by PanelManager.
 
   bool initialized_;
 
   // Stores the full size of the panel so we can restore it after it's
-  // been minimized or squeezed due to lack of space in the strip.
+  // been minimized or squeezed due to lack of space in the collection.
   gfx::Size full_size_;
 
   // This is the minimum size that the panel can shrink to.
@@ -361,7 +369,7 @@ class Panel : public BaseWindow,
 
   // True if this panel is in preview mode. When in preview mode, panel bounds
   // should not be affected by layout refresh. This is currently used by drag
-  // controller to add a panel to the strip without causing its bounds to
+  // controller to add a panel to the collection without causing its bounds to
   // change.
   bool in_preview_mode_;
 
@@ -381,11 +389,10 @@ class Panel : public BaseWindow,
   scoped_ptr<extensions::WindowController> extension_window_controller_;
   scoped_ptr<PanelHost> panel_host_;
 
-  // Used for loading app_icon_.
-  scoped_ptr<ImageLoadingTracker> app_icon_loader_;
-
   // Icon showed in the task bar.
   gfx::Image app_icon_;
+
+  base::WeakPtrFactory<Panel> image_loader_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Panel);
 };

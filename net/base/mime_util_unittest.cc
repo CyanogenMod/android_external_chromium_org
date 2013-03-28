@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/mime_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -12,7 +12,7 @@ namespace net {
 
 TEST(MimeUtilTest, ExtensionTest) {
   const struct {
-    const FilePath::CharType* extension;
+    const base::FilePath::CharType* extension;
     const char* mime_type;
     bool valid;
   } tests[] = {
@@ -36,7 +36,7 @@ TEST(MimeUtilTest, ExtensionTest) {
 
 TEST(MimeUtilTest, FileTest) {
   const struct {
-    const FilePath::CharType* file_path;
+    const base::FilePath::CharType* file_path;
     const char* mime_type;
     bool valid;
   } tests[] = {
@@ -52,7 +52,7 @@ TEST(MimeUtilTest, FileTest) {
   bool rv;
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
-    rv = GetMimeTypeFromFile(FilePath(tests[i].file_path),
+    rv = GetMimeTypeFromFile(base::FilePath(tests[i].file_path),
                                   &mime_type);
     EXPECT_EQ(tests[i].valid, rv);
     if (rv)
@@ -70,6 +70,11 @@ TEST(MimeUtilTest, LookupTypes) {
   EXPECT_TRUE(IsSupportedNonImageMimeType("text/banana"));
   EXPECT_FALSE(IsSupportedNonImageMimeType("text/vcard"));
   EXPECT_FALSE(IsSupportedNonImageMimeType("application/virus"));
+  EXPECT_TRUE(IsSupportedNonImageMimeType("application/x-x509-user-cert"));
+#if defined(OS_ANDROID)
+  EXPECT_TRUE(IsSupportedNonImageMimeType("application/x-x509-ca-cert"));
+  EXPECT_TRUE(IsSupportedNonImageMimeType("application/x-pkcs12"));
+#endif
 
   EXPECT_TRUE(IsSupportedMimeType("image/jpeg"));
   EXPECT_FALSE(IsSupportedMimeType("image/lolcat"));
@@ -240,7 +245,7 @@ TEST(MimeUtilTest, TestGetExtensionsForMimeType) {
     { "MeSsAge/*",  1, "eml" },
     { "image/bmp",  1, "bmp" },
     { "video/*",    6, "mp4" },
-#if defined(OS_LINUX) || defined(OS_ANDROID)
+#if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_IOS)
     { "video/*",    6, "mpg" },
 #else
     { "video/*",    6, "mpeg" },
@@ -250,7 +255,7 @@ TEST(MimeUtilTest, TestGetExtensionsForMimeType) {
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
-    std::vector<FilePath::StringType> extensions;
+    std::vector<base::FilePath::StringType> extensions;
     GetExtensionsForMimeType(tests[i].mime_type, &extensions);
     ASSERT_TRUE(tests[i].min_expected_size <= extensions.size());
 
@@ -270,6 +275,25 @@ TEST(MimeUtilTest, TestGetExtensionsForMimeType) {
     ASSERT_TRUE(found) << "Must find at least the contained result within "
                        << tests[i].mime_type;
   }
+}
+
+TEST(MimeUtilTest, TestGetCertificateMimeTypeForMimeType) {
+  EXPECT_EQ(CERTIFICATE_MIME_TYPE_X509_USER_CERT,
+            GetCertificateMimeTypeForMimeType("application/x-x509-user-cert"));
+#if defined(OS_ANDROID)
+  // Only Android supports CA Certs and PKCS12 archives.
+  EXPECT_EQ(CERTIFICATE_MIME_TYPE_X509_CA_CERT,
+            GetCertificateMimeTypeForMimeType("application/x-x509-ca-cert"));
+  EXPECT_EQ(CERTIFICATE_MIME_TYPE_PKCS12_ARCHIVE,
+            GetCertificateMimeTypeForMimeType("application/x-pkcs12"));
+#else
+  EXPECT_EQ(CERTIFICATE_MIME_TYPE_UNKNOWN,
+            GetCertificateMimeTypeForMimeType("application/x-x509-ca-cert"));
+  EXPECT_EQ(CERTIFICATE_MIME_TYPE_UNKNOWN,
+            GetCertificateMimeTypeForMimeType("application/x-pkcs12"));
+#endif
+  EXPECT_EQ(CERTIFICATE_MIME_TYPE_UNKNOWN,
+            GetCertificateMimeTypeForMimeType("text/plain"));
 }
 
 }  // namespace net

@@ -59,6 +59,7 @@ class PolicyTemplateChecker(object):
     self.num_groups = 0
     self.num_policies_in_groups = 0
     self.options = None
+    self.features = []
 
   def _Error(self, message, parent_element=None, identifier=None,
              offending_snippet=None):
@@ -245,7 +246,28 @@ class PolicyTemplateChecker(object):
                         policy, supported_on)
 
       # Each policy must have a 'features' dict.
-      self._CheckContains(policy, 'features', dict)
+      features = self._CheckContains(policy, 'features', dict)
+
+      # All the features must have a documenting message.
+      if features:
+        for feature in features:
+          if not feature in self.features:
+            self._Error('Unknown feature "%s". Known features must have a '
+                        'documentation string in the messages dictionary.' %
+                        feature, 'policy', policy.get('name', policy))
+
+      # All user policies must have a per_profile feature flag.
+      if (not policy.get('device_only', False) and
+          not policy.get('deprecated', False) and
+          not filter(re.compile('^chrome_frame:.*').match, supported_on)):
+        self._CheckContains(features, 'per_profile', bool,
+                            container_name='features',
+                            identifier=policy.get('name'))
+
+      # All policies must declare whether they allow changes at runtime.
+      self._CheckContains(features, 'dynamic_refresh', bool,
+                          container_name='features',
+                          identifier=policy.get('name'))
 
       # Each policy must have an 'example_value' of appropriate type.
       if policy_type == 'main':
@@ -413,6 +435,17 @@ class PolicyTemplateChecker(object):
 
     # First part: check JSON structure.
 
+    # Check (non-policy-specific) message definitions.
+    messages = self._CheckContains(data, 'messages', dict,
+                                   parent_element=None,
+                                   container_name='The root element',
+                                   offending=None)
+    if messages is not None:
+      for message in messages:
+        self._CheckMessage(message, messages[message])
+        if message.startswith('doc_feature_'):
+          self.features.append(message[12:])
+
     # Check policy definitions.
     policy_definitions = self._CheckContains(data, 'policy_definitions', list,
                                              parent_element=None,
@@ -423,15 +456,6 @@ class PolicyTemplateChecker(object):
       for policy in policy_definitions:
         self._CheckPolicy(policy, False, policy_ids)
       self._CheckPolicyIDs(policy_ids)
-
-    # Check (non-policy-specific) message definitions.
-    messages = self._CheckContains(data, 'messages', dict,
-                                   parent_element=None,
-                                   container_name='The root element',
-                                   offending=None)
-    if messages is not None:
-      for message in messages:
-        self._CheckMessage(message, messages[message])
 
     # Second part: check formatting.
     self._CheckFormat(filename)

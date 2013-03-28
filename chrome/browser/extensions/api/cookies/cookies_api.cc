@@ -10,6 +10,7 @@
 
 #include "base/bind.h"
 #include "base/json/json_writer.h"
+#include "base/lazy_instance.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
@@ -20,13 +21,13 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/api/cookies.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/common/error_utils.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
@@ -45,7 +46,7 @@ namespace Set = extensions::api::cookies::Set;
 namespace extensions {
 namespace keys = cookies_api_constants;
 
-ExtensionCookiesEventRouter::ExtensionCookiesEventRouter(Profile* profile)
+CookiesEventRouter::CookiesEventRouter(Profile* profile)
     : profile_(profile) {
   CHECK(registrar_.IsEmpty());
   registrar_.Add(this,
@@ -53,10 +54,10 @@ ExtensionCookiesEventRouter::ExtensionCookiesEventRouter(Profile* profile)
                  content::NotificationService::AllBrowserContextsAndSources());
 }
 
-ExtensionCookiesEventRouter::~ExtensionCookiesEventRouter() {
+CookiesEventRouter::~CookiesEventRouter() {
 }
 
-void ExtensionCookiesEventRouter::Observe(
+void CookiesEventRouter::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
@@ -76,7 +77,7 @@ void ExtensionCookiesEventRouter::Observe(
   }
 }
 
-void ExtensionCookiesEventRouter::CookieChanged(
+void CookiesEventRouter::CookieChanged(
     Profile* profile,
     ChromeCookieDetails* details) {
   scoped_ptr<ListValue> args(new ListValue());
@@ -123,7 +124,7 @@ void ExtensionCookiesEventRouter::CookieChanged(
   DispatchEvent(profile, keys::kOnChanged, args.Pass(), cookie_domain);
 }
 
-void ExtensionCookiesEventRouter::DispatchEvent(
+void CookiesEventRouter::DispatchEvent(
     Profile* profile,
     const std::string& event_name,
     scoped_ptr<ListValue> event_args,
@@ -132,21 +133,23 @@ void ExtensionCookiesEventRouter::DispatchEvent(
       extensions::ExtensionSystem::Get(profile)->event_router() : NULL;
   if (!router)
     return;
-  router->DispatchEventToRenderers(event_name, event_args.Pass(), profile,
-                                   cookie_domain);
+  scoped_ptr<Event> event(new Event(event_name, event_args.Pass()));
+  event->restrict_to_profile = profile;
+  event->event_url = cookie_domain;
+  router->BroadcastEvent(event.Pass());
 }
 
 bool CookiesFunction::ParseUrl(const std::string& url_string, GURL* url,
                                bool check_host_permissions) {
   *url = GURL(url_string);
   if (!url->is_valid()) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = ErrorUtils::FormatErrorMessage(
         keys::kInvalidUrlError, url_string);
     return false;
   }
   // Check against host permissions if needed.
   if (check_host_permissions && !GetExtension()->HasHostPermission(*url)) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = ErrorUtils::FormatErrorMessage(
         keys::kNoHostPermissionsError, url->spec());
     return false;
   }
@@ -162,7 +165,7 @@ bool CookiesFunction::ParseStoreContext(
     store_profile = cookies_helpers::ChooseProfileFromStoreId(
         *store_id, profile(), include_incognito());
     if (!store_profile) {
-      error_ = ExtensionErrorUtils::FormatErrorMessage(
+      error_ = ErrorUtils::FormatErrorMessage(
           keys::kInvalidStoreIdError, *store_id);
       return false;
     }
@@ -186,13 +189,13 @@ bool CookiesFunction::ParseStoreContext(
   return true;
 }
 
-GetCookieFunction::GetCookieFunction() {
+CookiesGetFunction::CookiesGetFunction() {
 }
 
-GetCookieFunction::~GetCookieFunction() {
+CookiesGetFunction::~CookiesGetFunction() {
 }
 
-bool GetCookieFunction::RunImpl() {
+bool CookiesGetFunction::RunImpl() {
   parsed_args_ = Get::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(parsed_args_.get());
 
@@ -213,23 +216,23 @@ bool GetCookieFunction::RunImpl() {
 
   bool rv = BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&GetCookieFunction::GetCookieOnIOThread, this));
+      base::Bind(&CookiesGetFunction::GetCookieOnIOThread, this));
   DCHECK(rv);
 
   // Will finish asynchronously.
   return true;
 }
 
-void GetCookieFunction::GetCookieOnIOThread() {
+void CookiesGetFunction::GetCookieOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   net::CookieStore* cookie_store =
       store_context_->GetURLRequestContext()->cookie_store();
   cookies_helpers::GetCookieListFromStore(
       cookie_store, url_,
-      base::Bind(&GetCookieFunction::GetCookieCallback, this));
+      base::Bind(&CookiesGetFunction::GetCookieCallback, this));
 }
 
-void GetCookieFunction::GetCookieCallback(const net::CookieList& cookie_list) {
+void CookiesGetFunction::GetCookieCallback(const net::CookieList& cookie_list) {
   net::CookieList::const_iterator it;
   for (it = cookie_list.begin(); it != cookie_list.end(); ++it) {
     // Return the first matching cookie. Relies on the fact that the
@@ -249,22 +252,22 @@ void GetCookieFunction::GetCookieCallback(const net::CookieList& cookie_list) {
 
   bool rv = BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&GetCookieFunction::RespondOnUIThread, this));
+      base::Bind(&CookiesGetFunction::RespondOnUIThread, this));
   DCHECK(rv);
 }
 
-void GetCookieFunction::RespondOnUIThread() {
+void CookiesGetFunction::RespondOnUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   SendResponse(true);
 }
 
-GetAllCookiesFunction::GetAllCookiesFunction() {
+CookiesGetAllFunction::CookiesGetAllFunction() {
 }
 
-GetAllCookiesFunction::~GetAllCookiesFunction() {
+CookiesGetAllFunction::~CookiesGetAllFunction() {
 }
 
-bool GetAllCookiesFunction::RunImpl() {
+bool CookiesGetAllFunction::RunImpl() {
   parsed_args_ = GetAll::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(parsed_args_.get());
 
@@ -284,23 +287,23 @@ bool GetAllCookiesFunction::RunImpl() {
 
   bool rv = BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&GetAllCookiesFunction::GetAllCookiesOnIOThread, this));
+      base::Bind(&CookiesGetAllFunction::GetAllCookiesOnIOThread, this));
   DCHECK(rv);
 
   // Will finish asynchronously.
   return true;
 }
 
-void GetAllCookiesFunction::GetAllCookiesOnIOThread() {
+void CookiesGetAllFunction::GetAllCookiesOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   net::CookieStore* cookie_store =
       store_context_->GetURLRequestContext()->cookie_store();
   cookies_helpers::GetCookieListFromStore(
       cookie_store, url_,
-      base::Bind(&GetAllCookiesFunction::GetAllCookiesCallback, this));
+      base::Bind(&CookiesGetAllFunction::GetAllCookiesCallback, this));
 }
 
-void GetAllCookiesFunction::GetAllCookiesCallback(
+void CookiesGetAllFunction::GetAllCookiesCallback(
     const net::CookieList& cookie_list) {
   const extensions::Extension* extension = GetExtension();
   if (extension) {
@@ -313,22 +316,22 @@ void GetAllCookiesFunction::GetAllCookiesCallback(
   }
   bool rv = BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&GetAllCookiesFunction::RespondOnUIThread, this));
+      base::Bind(&CookiesGetAllFunction::RespondOnUIThread, this));
   DCHECK(rv);
 }
 
-void GetAllCookiesFunction::RespondOnUIThread() {
+void CookiesGetAllFunction::RespondOnUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   SendResponse(true);
 }
 
-SetCookieFunction::SetCookieFunction() : success_(false) {
+CookiesSetFunction::CookiesSetFunction() : success_(false) {
 }
 
-SetCookieFunction::~SetCookieFunction() {
+CookiesSetFunction::~CookiesSetFunction() {
 }
 
-bool SetCookieFunction::RunImpl() {
+bool CookiesSetFunction::RunImpl() {
   parsed_args_ = Set::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(parsed_args_.get());
 
@@ -347,14 +350,14 @@ bool SetCookieFunction::RunImpl() {
 
   bool rv = BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&SetCookieFunction::SetCookieOnIOThread, this));
+      base::Bind(&CookiesSetFunction::SetCookieOnIOThread, this));
   DCHECK(rv);
 
   // Will finish asynchronously.
   return true;
 }
 
-void SetCookieFunction::SetCookieOnIOThread() {
+void CookiesSetFunction::SetCookieOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   net::CookieMonster* cookie_monster =
       store_context_->GetURLRequestContext()->cookie_store()->
@@ -382,10 +385,10 @@ void SetCookieFunction::SetCookieOnIOThread() {
       parsed_args_->details.http_only.get() ?
           *parsed_args_->details.http_only :
           false,
-      base::Bind(&SetCookieFunction::PullCookie, this));
+      base::Bind(&CookiesSetFunction::PullCookie, this));
 }
 
-void SetCookieFunction::PullCookie(bool set_cookie_result) {
+void CookiesSetFunction::PullCookie(bool set_cookie_result) {
   // Pull the newly set cookie.
   net::CookieMonster* cookie_monster =
       store_context_->GetURLRequestContext()->cookie_store()->
@@ -393,10 +396,11 @@ void SetCookieFunction::PullCookie(bool set_cookie_result) {
   success_ = set_cookie_result;
   cookies_helpers::GetCookieListFromStore(
       cookie_monster, url_,
-      base::Bind(&SetCookieFunction::PullCookieCallback, this));
+      base::Bind(&CookiesSetFunction::PullCookieCallback, this));
 }
 
-void SetCookieFunction::PullCookieCallback(const net::CookieList& cookie_list) {
+void CookiesSetFunction::PullCookieCallback(
+    const net::CookieList& cookie_list) {
   net::CookieList::const_iterator it;
   for (it = cookie_list.begin(); it != cookie_list.end(); ++it) {
     // Return the first matching cookie. Relies on the fact that the
@@ -414,28 +418,28 @@ void SetCookieFunction::PullCookieCallback(const net::CookieList& cookie_list) {
 
   bool rv = BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&SetCookieFunction::RespondOnUIThread, this));
+      base::Bind(&CookiesSetFunction::RespondOnUIThread, this));
   DCHECK(rv);
 }
 
-void SetCookieFunction::RespondOnUIThread() {
+void CookiesSetFunction::RespondOnUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!success_) {
     std::string name = parsed_args_->details.name.get() ?
         *parsed_args_->details.name : "";
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = ErrorUtils::FormatErrorMessage(
         keys::kCookieSetFailedError, name);
   }
   SendResponse(success_);
 }
 
-RemoveCookieFunction::RemoveCookieFunction() {
+CookiesRemoveFunction::CookiesRemoveFunction() {
 }
 
-RemoveCookieFunction::~RemoveCookieFunction() {
+CookiesRemoveFunction::~CookiesRemoveFunction() {
 }
 
-bool RemoveCookieFunction::RunImpl() {
+bool CookiesRemoveFunction::RunImpl() {
   parsed_args_ = Remove::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(parsed_args_.get());
 
@@ -455,14 +459,14 @@ bool RemoveCookieFunction::RunImpl() {
   // Pass the work off to the IO thread.
   bool rv = BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&RemoveCookieFunction::RemoveCookieOnIOThread, this));
+      base::Bind(&CookiesRemoveFunction::RemoveCookieOnIOThread, this));
   DCHECK(rv);
 
   // Will return asynchronously.
   return true;
 }
 
-void RemoveCookieFunction::RemoveCookieOnIOThread() {
+void CookiesRemoveFunction::RemoveCookieOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   // Remove the cookie
@@ -470,10 +474,10 @@ void RemoveCookieFunction::RemoveCookieOnIOThread() {
       store_context_->GetURLRequestContext()->cookie_store();
   cookie_store->DeleteCookieAsync(
       url_, parsed_args_->details.name,
-      base::Bind(&RemoveCookieFunction::RemoveCookieCallback, this));
+      base::Bind(&CookiesRemoveFunction::RemoveCookieCallback, this));
 }
 
-void RemoveCookieFunction::RemoveCookieCallback() {
+void CookiesRemoveFunction::RemoveCookieCallback() {
   // Build the callback result
   Remove::Results::Details details;
   details.name = parsed_args_->details.name;
@@ -484,16 +488,16 @@ void RemoveCookieFunction::RemoveCookieCallback() {
   // Return to UI thread
   bool rv = BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&RemoveCookieFunction::RespondOnUIThread, this));
+      base::Bind(&CookiesRemoveFunction::RespondOnUIThread, this));
   DCHECK(rv);
 }
 
-void RemoveCookieFunction::RespondOnUIThread() {
+void CookiesRemoveFunction::RespondOnUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   SendResponse(true);
 }
 
-bool GetAllCookieStoresFunction::RunImpl() {
+bool CookiesGetAllCookieStoresFunction::RunImpl() {
   Profile* original_profile = profile();
   DCHECK(original_profile);
   scoped_ptr<ListValue> original_tab_ids(new ListValue());
@@ -509,9 +513,8 @@ bool GetAllCookieStoresFunction::RunImpl() {
   // Iterate through all browser instances, and for each browser,
   // add its tab IDs to either the regular or incognito tab ID list depending
   // whether the browser is regular or incognito.
-  for (BrowserList::const_iterator iter = BrowserList::begin();
-       iter != BrowserList::end(); ++iter) {
-    Browser* browser = *iter;
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
     if (browser->profile() == original_profile) {
       cookies_helpers::AppendToTabIdList(browser, original_tab_ids.get());
     } else if (incognito_tab_ids.get() &&
@@ -536,8 +539,35 @@ bool GetAllCookieStoresFunction::RunImpl() {
   return true;
 }
 
-void GetAllCookieStoresFunction::Run() {
+void CookiesGetAllCookieStoresFunction::Run() {
   SendResponse(RunImpl());
+}
+
+CookiesAPI::CookiesAPI(Profile* profile)
+    : profile_(profile) {
+  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
+      this, keys::kOnChanged);
+}
+
+CookiesAPI::~CookiesAPI() {
+}
+
+void CookiesAPI::Shutdown() {
+  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+}
+
+static base::LazyInstance<ProfileKeyedAPIFactory<CookiesAPI> >
+g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+ProfileKeyedAPIFactory<CookiesAPI>* CookiesAPI::GetFactoryInstance() {
+  return &g_factory.Get();
+}
+
+void CookiesAPI::OnListenerAdded(
+    const extensions::EventListenerInfo& details) {
+  cookies_event_router_.reset(new CookiesEventRouter(profile_));
+  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
 }
 
 }  // namespace extensions

@@ -7,9 +7,9 @@
 
 #include <vector>
 
-#include "chrome/common/favicon_url.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "content/public/common/favicon_url.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image_skia.h"
 
@@ -28,37 +28,36 @@ class MetroPinTabHelper
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
-
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void DidUpdateFaviconURL(
+      int32 page_id,
+      const std::vector<content::FaviconURL>& candidates) OVERRIDE;
 
  private:
   // The FaviconDownloader class handles downloading the favicons when a page
   // is being pinned. After it has downloaded any available favicons it will
   // continue on with the page pinning action.
-  class FaviconDownloader;
+  class FaviconChooser;
 
-  explicit MetroPinTabHelper(content::WebContents* tab_contents);
+  explicit MetroPinTabHelper(content::WebContents* web_contents);
   friend class content::WebContentsUserData<MetroPinTabHelper>;
 
-  // Message Handlers.
-  void OnUpdateFaviconURL(int32 page_id,
-                          const std::vector<FaviconURL>& candidates);
-  void OnDidDownloadFavicon(int id,
-                            const GURL& image_url,
-                            bool errored,
-                            int requested_size,
-                            const std::vector<SkBitmap>& bitmaps);
+  // Favicon download callback.
+  void DidDownloadFavicon(int id,
+                          const GURL& image_url,
+                          int requested_size,
+                          const std::vector<SkBitmap>& bitmaps);
 
   void UnPinPageFromStartScreen();
 
-  // Called by the |favicon_downloader_| when it has finished.
+  // Called by the |favicon_chooser_| when it has finished.
   void FaviconDownloaderFinished();
 
   // Candidate Favicon URLs for the current page.
-  std::vector<FaviconURL> favicon_url_candidates_;
+  std::vector<content::FaviconURL> favicon_url_candidates_;
 
-  // The currently active FaviconDownloader, if there is one.
-  scoped_ptr<FaviconDownloader> favicon_downloader_;
+  // The currently active FaviconChooser, if there is one.
+  scoped_ptr<FaviconChooser> favicon_chooser_;
+
 
   DISALLOW_COPY_AND_ASSIGN(MetroPinTabHelper);
 };

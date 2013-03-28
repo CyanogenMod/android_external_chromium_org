@@ -36,20 +36,23 @@ TestActivationDelegate::TestActivationDelegate(bool activate)
 void TestActivationDelegate::SetWindow(aura::Window* window) {
   window_ = window;
   aura::client::SetActivationDelegate(window, this);
+  aura::client::SetActivationChangeObserver(window, this);
 }
 
-bool TestActivationDelegate::ShouldActivate(const ui::Event* event) {
+bool TestActivationDelegate::ShouldActivate() const {
   should_activate_count_++;
   return activate_;
 }
 
-void TestActivationDelegate::OnActivated() {
-  activated_count_++;
-}
-
-void TestActivationDelegate::OnLostActive() {
-  if (lost_active_count_++ == 0)
-    window_was_active_ = wm::IsActiveWindow(window_);
+void TestActivationDelegate::OnWindowActivated(aura::Window* gained_active,
+                                               aura::Window* lost_active) {
+  DCHECK(window_ == gained_active || window_ == lost_active);
+  if (window_ == gained_active) {
+    activated_count_++;
+  } else if (window_ == lost_active) {
+    if (lost_active_count_++ == 0)
+      window_was_active_ = wm::IsActiveWindow(window_);
+  }
 }
 
 }  // namespace test

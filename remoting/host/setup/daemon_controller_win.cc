@@ -10,8 +10,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
@@ -26,11 +26,10 @@
 #include "base/win/windows_version.h"
 #include "remoting/base/scoped_sc_handle_win.h"
 #include "remoting/host/branding.h"
+// chromoting_lib.h contains MIDL-generated declarations.
+#include "remoting/host/chromoting_lib.h"
 #include "remoting/host/setup/daemon_installer_win.h"
 #include "remoting/host/usage_stats_consent.h"
-
-// MIDL-generated declarations and definitions.
-#include "remoting/host/elevated_controller.h"
 
 using base::win::ScopedBstr;
 using base::win::ScopedComPtr;
@@ -636,11 +635,9 @@ void DaemonControllerWin::DoGetUsageStatsConsent(
   // Activate the Daemon Controller and see if it supports |IDaemonControl2|.
   HRESULT hr = ActivateController();
   if (FAILED(hr)) {
-    // The host is not installed yet. Assume that the user's consent is not
-    // recorded yet and set the default value to true. This value will not come
-    // into effect until the user installs the host and agrees to crash
-    // dump reporting.
-    done.Run(true, true, false);
+    // The host is not installed yet. Assume that the user didn't consent to
+    // collecting crash dumps.
+    done.Run(true, false, false);
     return;
   }
 
@@ -655,10 +652,9 @@ void DaemonControllerWin::DoGetUsageStatsConsent(
   BOOL set_by_policy;
   hr = control2_->GetUsageStatsConsent(&allowed, &set_by_policy);
   if (FAILED(hr)) {
-    // If the user's consent is not recorded yet, set the default value to true.
-    // This value will not come into effect until the user agrees to crash
-    // dump reporting.
-    done.Run(true, true, false);
+    // If the user's consent is not recorded yet, assume that the user didn't
+    // consent to collecting crash dumps.
+    done.Run(true, false, false);
     return;
   }
 

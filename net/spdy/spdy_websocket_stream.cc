@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/compiler_specific.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/base/io_buffer.h"
@@ -18,7 +19,8 @@ namespace net {
 
 SpdyWebSocketStream::SpdyWebSocketStream(
     SpdySession* spdy_session, Delegate* delegate)
-    : stream_(NULL),
+    : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      stream_(NULL),
       spdy_session_(spdy_session),
       delegate_(delegate) {
   DCHECK(spdy_session_);
@@ -33,6 +35,9 @@ SpdyWebSocketStream::~SpdyWebSocketStream() {
     // For safe, we should eliminate |delegate_| for OnClose() calback.
     delegate_ = NULL;
     stream_->Close();
+    // The call to Close() should call into OnClose(), which should
+    // set |stream_| to NULL.
+    DCHECK(!stream_.get());
   }
 }
 
@@ -42,16 +47,17 @@ int SpdyWebSocketStream::InitializeStream(const GURL& url,
   if (spdy_session_->IsClosed())
     return ERR_SOCKET_NOT_CONNECTED;
 
-  int result = spdy_session_->CreateStream(
-      url, request_priority, &stream_, net_log,
+  int rv = stream_request_.StartRequest(
+      spdy_session_, url, request_priority, net_log,
       base::Bind(&SpdyWebSocketStream::OnSpdyStreamCreated,
-                 base::Unretained(this)));
+                 weak_ptr_factory_.GetWeakPtr()));
 
-  if (result == OK) {
+  if (rv == OK) {
+    stream_ = stream_request_.ReleaseStream();
     DCHECK(stream_);
     stream_->SetDelegate(this);
   }
-  return result;
+  return rv;
 }
 
 int SpdyWebSocketStream::SendRequest(scoped_ptr<SpdyHeaderBlock> headers) {
@@ -73,12 +79,11 @@ int SpdyWebSocketStream::SendData(const char* data, int length) {
   }
   scoped_refptr<IOBuffer> buf(new IOBuffer(length));
   memcpy(buf->data(), data, length);
-  return stream_->WriteStreamData(buf.get(), length, DATA_FLAG_NONE);
+  stream_->QueueStreamData(buf.get(), length, DATA_FLAG_NONE);
+  return ERR_IO_PENDING;
 }
 
 void SpdyWebSocketStream::Close() {
-  if (spdy_session_)
-    spdy_session_->CancelPendingCreateStreams(&stream_);
   if (stream_)
     stream_->Close();
 }
@@ -137,6 +142,7 @@ void SpdyWebSocketStream::OnClose(int status) {
 void SpdyWebSocketStream::OnSpdyStreamCreated(int result) {
   DCHECK_NE(ERR_IO_PENDING, result);
   if (result == OK) {
+    stream_ = stream_request_.ReleaseStream();
     DCHECK(stream_);
     stream_->SetDelegate(this);
   }

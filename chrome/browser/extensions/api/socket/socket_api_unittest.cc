@@ -27,7 +27,7 @@ class SocketUnitTest : public BrowserWithTestWindowTest {
     system->CreateSocketManager();
 
     extension_ = utils::CreateEmptyExtensionWithLocation(
-        extensions::Extension::LOAD);
+        extensions::Manifest::UNPACKED);
   }
 
   base::Value* RunFunctionWithExtension(
@@ -41,23 +41,6 @@ class SocketUnitTest : public BrowserWithTestWindowTest {
       UIThreadExtensionFunction* function, const std::string& args) {
     base::Value* result = RunFunctionWithExtension(function, args);
     return result ? utils::ToDictionary(result) : NULL;
-  }
-
-  base::ListValue* RunFunctionAndReturnList(
-      UIThreadExtensionFunction* function, const std::string& args) {
-    base::Value* result = RunFunctionWithExtension(function, args);
-    return result ? utils::ToList(result) : NULL;
-  }
-
-  void RunFunction(UIThreadExtensionFunction* function,
-                   const std::string& args) {
-    scoped_ptr<base::Value> result(RunFunctionWithExtension(function, args));
-  }
-
-  std::string RunFunctionAndReturnError(UIThreadExtensionFunction* function,
-                                        const std::string& args) {
-    function->set_extension(extension_.get());
-    return utils::RunFunctionAndReturnError(function, args, browser());
   }
 
  protected:

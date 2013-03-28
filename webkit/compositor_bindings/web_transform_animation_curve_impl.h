@@ -2,40 +2,49 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef WebTransformAnimationCurveImpl_h
-#define WebTransformAnimationCurveImpl_h
+#ifndef WEBKIT_COMPOSITOR_BINDINGS_WEB_TRANSFORM_ANIMATION_CURVE_IMPL_H_
+#define WEBKIT_COMPOSITOR_BINDINGS_WEB_TRANSFORM_ANIMATION_CURVE_IMPL_H_
 
 #include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebTransformAnimationCurve.h"
+#include "webkit/compositor_bindings/webkit_compositor_bindings_export.h"
 
 namespace cc {
 class AnimationCurve;
 class KeyframedTransformAnimationCurve;
 }
 
-namespace WebKit {
+namespace WebKit { class WebTransformKeyframe; }
 
-class WebTransformAnimationCurveImpl : public WebTransformAnimationCurve {
-public:
-    WebTransformAnimationCurveImpl();
-    virtual ~WebTransformAnimationCurveImpl();
+namespace webkit {
 
-    // WebAnimationCurve implementation.
-    virtual AnimationCurveType type() const OVERRIDE;
+class WebTransformAnimationCurveImpl
+    : public WebKit::WebTransformAnimationCurve {
+ public:
+  WEBKIT_COMPOSITOR_BINDINGS_EXPORT WebTransformAnimationCurveImpl();
+  virtual ~WebTransformAnimationCurveImpl();
 
-    // WebTransformAnimationCurve implementation.
-    virtual void add(const WebTransformKeyframe&) OVERRIDE;
-    virtual void add(const WebTransformKeyframe&, TimingFunctionType) OVERRIDE;
-    virtual void add(const WebTransformKeyframe&, double x1, double y1, double x2, double y2) OVERRIDE;
+  // WebKit::WebAnimationCurve implementation.
+  virtual AnimationCurveType type() const;
 
-    virtual WebTransformationMatrix getValue(double time) const OVERRIDE;
+  // WebKit::WebTransformAnimationCurve implementation.
+  virtual void add(const WebKit::WebTransformKeyframe& keyframe);
+  virtual void add(const WebKit::WebTransformKeyframe& keyframe,
+                   TimingFunctionType type);
+  virtual void add(const WebKit::WebTransformKeyframe& keyframe,
+                   double x1,
+                   double y1,
+                   double x2,
+                   double y2);
 
-    scoped_ptr<cc::AnimationCurve> cloneToAnimationCurve() const;
+  scoped_ptr<cc::AnimationCurve> CloneToAnimationCurve() const;
 
-private:
-    scoped_ptr<cc::KeyframedTransformAnimationCurve> m_curve;
+ private:
+  scoped_ptr<cc::KeyframedTransformAnimationCurve> curve_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebTransformAnimationCurveImpl);
 };
 
-}
+}  // namespace webkit
 
-#endif // WebTransformAnimationCurveImpl_h
+#endif  // WEBKIT_COMPOSITOR_BINDINGS_WEB_TRANSFORM_ANIMATION_CURVE_IMPL_H_

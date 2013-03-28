@@ -15,7 +15,7 @@ import org.chromium.net.test.util.TestWebServer;
 /**
  * A test suite for ContentView.getTitle().
  */
-public class GetTitleTest extends AndroidWebViewTestBase {
+public class GetTitleTest extends AwTestBase {
     private static final String TITLE = "TITLE";
 
     private static final String GET_TITLE_TEST_PATH = "/get_title_test.html";
@@ -118,12 +118,8 @@ public class GetTitleTest extends AndroidWebViewTestBase {
      * When url-file has the title info, the page title is set to it.
      * @throws Throwable
      */
-    /**
-     * @SmallTest
-     * @Feature({"AndroidWebView"})
-     * BUG 7228619
-     */
-    @DisabledTest
+    @SmallTest
+    @Feature({"AndroidWebView"})
     public void testLoadUrlGetTitle() throws Throwable {
         final PageInfo info = loadFromUrlAndGetTitle(getHtml(TITLE), GET_TITLE_TEST_PATH);
         assertEquals("Title should be " + TITLE, TITLE, info.mTitle);

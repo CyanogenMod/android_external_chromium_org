@@ -4,8 +4,8 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
 #include "base/process_util.h"
@@ -36,7 +36,7 @@ namespace content {
 // the actual implementation that lives in the browser side (in_process_webkit).
 class IndexedDBBrowserTest : public ContentBrowserTest {
  public:
-  IndexedDBBrowserTest() {}
+  IndexedDBBrowserTest() : disk_usage_(-1) {}
 
   void SimpleTest(const GURL& test_url, bool incognito = false) {
     // The test page will perform tests on IndexedDB, then navigate to either
@@ -49,9 +49,10 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
     std::string result = the_browser->web_contents()->GetURL().ref();
     if (result != "pass") {
       std::string js_result;
-      ASSERT_TRUE(ExecuteJavaScriptAndExtractString(
-          the_browser->web_contents()->GetRenderViewHost(), L"",
-          L"window.domAutomationController.send(getLog())", &js_result));
+      ASSERT_TRUE(ExecuteScriptAndExtractString(
+          the_browser->web_contents(),
+          "window.domAutomationController.send(getLog())",
+          &js_result));
       FAIL() << "Failed: " << js_result;
     }
   }
@@ -76,6 +77,52 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
             shell()->web_contents()->GetBrowserContext());
     return partition->GetIndexedDBContext();
   };
+
+  void SetQuota(int quotaKilobytes) {
+    const int kTemporaryStorageQuotaSize = quotaKilobytes
+        * 1024 * QuotaManager::kPerHostTemporaryPortion;
+    SetTempQuota(kTemporaryStorageQuotaSize,
+        BrowserContext::GetDefaultStoragePartition(
+            shell()->web_contents()->GetBrowserContext())->GetQuotaManager());
+  }
+
+  static void SetTempQuota(int64 bytes, scoped_refptr<QuotaManager> qm) {
+    if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+      BrowserThread::PostTask(
+          BrowserThread::IO, FROM_HERE,
+          base::Bind(&IndexedDBBrowserTest::SetTempQuota, bytes, qm));
+      return;
+    }
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    qm->SetTemporaryGlobalOverrideQuota(bytes, quota::QuotaCallback());
+    // Don't return until the quota has been set.
+    scoped_refptr<base::ThreadTestHelper> helper(
+        new base::ThreadTestHelper(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB)));
+    ASSERT_TRUE(helper->Run());
+  }
+
+  virtual int64 RequestDiskUsage() {
+    BrowserThread::PostTaskAndReplyWithResult(
+        BrowserThread::WEBKIT_DEPRECATED, FROM_HERE,
+        base::Bind(&IndexedDBContext::GetOriginDiskUsage, GetContext(),
+            GURL("file:///")), base::Bind(
+                &IndexedDBBrowserTest::DidGetDiskUsage, this));
+    scoped_refptr<base::ThreadTestHelper> helper(
+        new base::ThreadTestHelper(BrowserThread::GetMessageLoopProxyForThread(
+            BrowserThread::WEBKIT_DEPRECATED)));
+    EXPECT_TRUE(helper->Run());
+    // Wait for DidGetDiskUsage to be called.
+    MessageLoop::current()->RunUntilIdle();
+    return disk_usage_;
+  }
+ private:
+  virtual void DidGetDiskUsage(int64 bytes) {
+    EXPECT_GT(bytes, 0);
+    disk_usage_ = bytes;
+  }
+
+  int64 disk_usage_;
 };
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CursorTest) {
@@ -103,9 +150,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, TransactionGetTest) {
   SimpleTest(GetTestUrl("indexeddb", "transaction_get_test.html"));
 }
 
-// Needs to be disabled until after WK 129037 rolls into chromium and we can
-// update this expectation.
-IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, DISABLED_KeyTypesTest) {
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, KeyTypesTest) {
   SimpleTest(GetTestUrl("indexeddb", "key_types_test.html"));
 }
 
@@ -121,15 +166,18 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, TransactionTest) {
   SimpleTest(GetTestUrl("indexeddb", "transaction_test.html"));
 }
 
-// Appears flaky/slow, see: http://crbug.com/120298
-IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, DISABLED_ValueSizeTest) {
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, ValueSizeTest) {
   SimpleTest(GetTestUrl("indexeddb", "value_size_test.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CallbackAccounting) {
+  SimpleTest(GetTestUrl("indexeddb", "callback_accounting.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, DoesntHangTest) {
   SimpleTest(GetTestUrl("indexeddb", "transaction_run_forever.html"));
   CrashTab(shell()->web_contents());
-  SimpleTest(GetTestUrl("indexeddb", "transaction_test.html"));
+  SimpleTest(GetTestUrl("indexeddb", "transaction_not_blocked.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, Bug84933Test) {
@@ -155,33 +203,10 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, Bug109187Test) {
 
 class IndexedDBBrowserTestWithLowQuota : public IndexedDBBrowserTest {
  public:
-  virtual void SetUpOnMainThread() {
+  virtual void SetUpOnMainThread() OVERRIDE {
     const int kInitialQuotaKilobytes = 5000;
-    const int kTemporaryStorageQuotaMaxSize = kInitialQuotaKilobytes
-        * 1024 * QuotaManager::kPerHostTemporaryPortion;
-    SetTempQuota(
-        kTemporaryStorageQuotaMaxSize,
-        BrowserContext::GetDefaultStoragePartition(
-            shell()->web_contents()->GetBrowserContext())->GetQuotaManager());
+    SetQuota(kInitialQuotaKilobytes);
   }
-
-  static void SetTempQuota(int64 bytes, scoped_refptr<QuotaManager> qm) {
-    if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
-      BrowserThread::PostTask(
-          BrowserThread::IO, FROM_HERE,
-          base::Bind(&IndexedDBBrowserTestWithLowQuota::SetTempQuota, bytes,
-                     qm));
-      return;
-    }
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    qm->SetTemporaryGlobalOverrideQuota(bytes, quota::QuotaCallback());
-    // Don't return until the quota has been set.
-    scoped_refptr<base::ThreadTestHelper> helper(
-        new base::ThreadTestHelper(
-            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB)));
-    ASSERT_TRUE(helper->Run());
-  }
-
 };
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithLowQuota, QuotaTest) {
@@ -190,7 +215,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithLowQuota, QuotaTest) {
 
 class IndexedDBBrowserTestWithGCExposed : public IndexedDBBrowserTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitchASCII(switches::kJavaScriptFlags, "--expose-gc");
   }
 };
@@ -204,12 +229,12 @@ static void CopyLevelDBToProfile(Shell* shell,
                                  scoped_refptr<IndexedDBContext> context,
                                  const std::string& test_directory) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
-  FilePath leveldb_dir(FILE_PATH_LITERAL("file__0.indexeddb.leveldb"));
-  FilePath test_data_dir =
+  base::FilePath leveldb_dir(FILE_PATH_LITERAL("file__0.indexeddb.leveldb"));
+  base::FilePath test_data_dir =
       GetTestFilePath("indexeddb", test_directory.c_str()).Append(leveldb_dir);
   IndexedDBContextImpl* context_impl =
       static_cast<IndexedDBContextImpl*>(context.get());
-  FilePath dest = context_impl->data_path().Append(leveldb_dir);
+  base::FilePath dest = context_impl->data_path().Append(leveldb_dir);
   // If we don't create the destination directory first, the contents of the
   // leveldb directory are copied directly into profile/IndexedDB instead of
   // profile/IndexedDB/file__0.xxx/
@@ -222,9 +247,7 @@ static void CopyLevelDBToProfile(Shell* shell,
 
 class IndexedDBBrowserTestWithPreexistingLevelDB : public IndexedDBBrowserTest {
  public:
-  IndexedDBBrowserTestWithPreexistingLevelDB() : disk_usage_(-1) { }
-
-  virtual void SetUpOnMainThread() {
+  virtual void SetUpOnMainThread() OVERRIDE {
     scoped_refptr<IndexedDBContext> context = GetContext();
     BrowserThread::PostTask(
         BrowserThread::WEBKIT_DEPRECATED, FROM_HERE,
@@ -238,34 +261,11 @@ class IndexedDBBrowserTestWithPreexistingLevelDB : public IndexedDBBrowserTest {
 
   virtual std::string EnclosingLevelDBDir() = 0;
 
- protected:
-  virtual int64 RequestDiskUsage() {
-    BrowserThread::PostTaskAndReplyWithResult(
-        BrowserThread::WEBKIT_DEPRECATED, FROM_HERE,
-        base::Bind(&IndexedDBContext::GetOriginDiskUsage, GetContext(),
-            GURL("file:///")), base::Bind(
-                &IndexedDBBrowserTestWithPreexistingLevelDB::DidGetDiskUsage,
-                this));
-    scoped_refptr<base::ThreadTestHelper> helper(
-        new base::ThreadTestHelper(BrowserThread::GetMessageLoopProxyForThread(
-            BrowserThread::WEBKIT_DEPRECATED)));
-    EXPECT_TRUE(helper->Run());
-    // Wait for DidGetDiskUsage to be called.
-    MessageLoop::current()->RunUntilIdle();
-    return disk_usage_;
-  }
- private:
-  virtual void DidGetDiskUsage(int64 bytes) {
-    EXPECT_GT(bytes, 0);
-    disk_usage_ = bytes;
-  }
-
-  int64 disk_usage_;
 };
 
 class IndexedDBBrowserTestWithVersion0Schema : public
     IndexedDBBrowserTestWithPreexistingLevelDB {
-  virtual std::string EnclosingLevelDBDir() {
+  virtual std::string EnclosingLevelDBDir() OVERRIDE {
     return "migration_from_0";
   }
 };
@@ -276,7 +276,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithVersion0Schema, MigrationTest) {
 
 class IndexedDBBrowserTestWithVersion123456Schema : public
     IndexedDBBrowserTestWithPreexistingLevelDB {
-  virtual std::string EnclosingLevelDBDir() {
+  virtual std::string EnclosingLevelDBDir() OVERRIDE {
     return "schema_version_123456";
   }
 };
@@ -290,14 +290,46 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithVersion123456Schema,
   EXPECT_NE(original_size, new_size);
 }
 
+class IndexedDBBrowserTestWithVersion987654SSVData : public
+    IndexedDBBrowserTestWithPreexistingLevelDB {
+  virtual std::string EnclosingLevelDBDir() OVERRIDE {
+    return "ssv_version_987654";
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithVersion987654SSVData,
+                       DestroyTest) {
+  int64 original_size = RequestDiskUsage();
+  EXPECT_GT(original_size, 0);
+  SimpleTest(GetTestUrl("indexeddb", "open_bad_db.html"));
+  int64 new_size = RequestDiskUsage();
+  EXPECT_NE(original_size, new_size);
+}
+
 class IndexedDBBrowserTestWithCorruptLevelDB : public
     IndexedDBBrowserTestWithPreexistingLevelDB {
-  virtual std::string EnclosingLevelDBDir() {
+  virtual std::string EnclosingLevelDBDir() OVERRIDE {
     return "corrupt_leveldb";
   }
 };
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithCorruptLevelDB,
+                       DestroyTest) {
+  int64 original_size = RequestDiskUsage();
+  EXPECT_GT(original_size, 0);
+  SimpleTest(GetTestUrl("indexeddb", "open_bad_db.html"));
+  int64 new_size = RequestDiskUsage();
+  EXPECT_NE(original_size, new_size);
+}
+
+class IndexedDBBrowserTestWithMissingSSTFile : public
+    IndexedDBBrowserTestWithPreexistingLevelDB {
+  virtual std::string EnclosingLevelDBDir() OVERRIDE {
+    return "missing_sst";
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithMissingSSTFile,
                        DestroyTest) {
   int64 original_size = RequestDiskUsage();
   EXPECT_GT(original_size, 0);
@@ -315,13 +347,22 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, LevelDBLogFileTest) {
               GetIndexedDBContext();
   IndexedDBContextImpl* context_impl =
       static_cast<IndexedDBContextImpl*>(context.get());
-  FilePath leveldb_dir(FILE_PATH_LITERAL("file__0.indexeddb.leveldb"));
-  FilePath log_file(FILE_PATH_LITERAL("LOG"));
-  FilePath log_file_path =
+  base::FilePath leveldb_dir(FILE_PATH_LITERAL("file__0.indexeddb.leveldb"));
+  base::FilePath log_file(FILE_PATH_LITERAL("LOG"));
+  base::FilePath log_file_path =
       context_impl->data_path().Append(leveldb_dir).Append(log_file);
   int64 size;
   EXPECT_TRUE(file_util::GetFileSize(log_file_path, &size));
   EXPECT_GT(size, 0);
+}
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CanDeleteWhenOverQuotaTest) {
+  SimpleTest(GetTestUrl("indexeddb", "fill_up_5k.html"));
+  int64 size = RequestDiskUsage();
+  const int kQuotaKilobytes = 2;
+  EXPECT_GT(size, kQuotaKilobytes * 1024);
+  SetQuota(kQuotaKilobytes);
+  SimpleTest(GetTestUrl("indexeddb", "delete_over_quota.html"));
 }
 
 // Complex multi-step (converted from pyauto) tests begin here.
@@ -360,15 +401,15 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, VersionChangeCrashResilience) {
 // Verify that open DB connections are closed when a tab is destroyed.
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, ConnectionsClosedOnTabClose) {
   NavigateAndWaitForTitle(shell(), "version_change_blocked.html", "#tab1",
-                          "setVersion(1) complete");
+                          "setVersion(2) complete");
 
   // Start on a different URL to force a new renderer process.
   Shell* new_shell = CreateBrowser();
   NavigateToURL(new_shell, GURL(chrome::kAboutBlankURL));
   NavigateAndWaitForTitle(new_shell, "version_change_blocked.html", "#tab2",
-                          "setVersion(2) blocked");
+                          "setVersion(3) blocked");
 
-  string16 expected_title16(ASCIIToUTF16("setVersion(2) complete"));
+  string16 expected_title16(ASCIIToUTF16("setVersion(3) complete"));
   TitleWatcher title_watcher(new_shell->web_contents(), expected_title16);
 
   base::KillProcess(

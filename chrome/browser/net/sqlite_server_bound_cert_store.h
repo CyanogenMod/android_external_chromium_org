@@ -8,10 +8,13 @@
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "net/base/default_server_bound_cert_store.h"
+#include "net/ssl/default_server_bound_cert_store.h"
 
 class ClearOnExitPolicy;
+
+namespace base {
 class FilePath;
+}
 
 // Implements the net::DefaultServerBoundCertStore::PersistentStore interface
 // in terms of a SQLite database. For documentation about the actual member
@@ -24,19 +27,16 @@ class SQLiteServerBoundCertStore
  public:
   // If non-NULL, SQLiteServerBoundCertStore will keep a scoped_refptr to the
   // |clear_on_exit_policy| throughout its lifetime.
-  SQLiteServerBoundCertStore(const FilePath& path,
+  SQLiteServerBoundCertStore(const base::FilePath& path,
                              ClearOnExitPolicy* clear_on_exit_policy);
 
   // net::DefaultServerBoundCertStore::PersistentStore:
-  virtual bool Load(
-      std::vector<net::DefaultServerBoundCertStore::ServerBoundCert*>* certs)
-          OVERRIDE;
+  virtual void Load(const LoadedCallback& loaded_callback) OVERRIDE;
   virtual void AddServerBoundCert(
       const net::DefaultServerBoundCertStore::ServerBoundCert& cert) OVERRIDE;
   virtual void DeleteServerBoundCert(
       const net::DefaultServerBoundCertStore::ServerBoundCert& cert) OVERRIDE;
   virtual void SetForceKeepSessionState() OVERRIDE;
-  virtual void Flush(const base::Closure& completion_task) OVERRIDE;
 
  protected:
   virtual ~SQLiteServerBoundCertStore();

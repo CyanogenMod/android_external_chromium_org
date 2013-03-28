@@ -6,15 +6,21 @@
 
 #include <string>
 
+#include "base/lazy_instance.h"
 #include "base/values.h"
+#include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/speech/extension_api/tts_engine_extension_api.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api_constants.h"
-#include "chrome/browser/speech/extension_api/tts_extension_api_controller.h"
+#include "chrome/browser/speech/tts_controller.h"
+#include "chrome/common/extensions/api/speech/tts_engine_manifest_handler.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace constants = tts_extension_api_constants;
 
-bool ExtensionTtsSpeakFunction::RunImpl() {
+namespace extensions {
+
+bool TtsSpeakFunction::RunImpl() {
   std::string text;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &text));
   if (text.size() > 32768) {
@@ -152,23 +158,51 @@ bool ExtensionTtsSpeakFunction::RunImpl() {
   utterance->set_extension_id(voice_extension_id);
   utterance->set_options(options.get());
 
-  ExtensionTtsController* controller = ExtensionTtsController::GetInstance();
+  TtsController* controller = TtsController::GetInstance();
   controller->SpeakOrEnqueue(utterance);
   return true;
 }
 
-bool ExtensionTtsStopSpeakingFunction::RunImpl() {
-  ExtensionTtsController::GetInstance()->Stop();
+bool TtsStopSpeakingFunction::RunImpl() {
+  TtsController::GetInstance()->Stop();
   return true;
 }
 
-bool ExtensionTtsIsSpeakingFunction::RunImpl() {
+bool TtsIsSpeakingFunction::RunImpl() {
   SetResult(Value::CreateBooleanValue(
-      ExtensionTtsController::GetInstance()->IsSpeaking()));
+      TtsController::GetInstance()->IsSpeaking()));
   return true;
 }
 
-bool ExtensionTtsGetVoicesFunction::RunImpl() {
-  SetResult(ExtensionTtsController::GetInstance()->GetVoices(profile()));
+bool TtsGetVoicesFunction::RunImpl() {
+  SetResult(TtsController::GetInstance()->GetVoices(profile()));
   return true;
 }
+
+// static
+TtsAPI* TtsAPI::Get(Profile* profile) {
+  return ProfileKeyedAPIFactory<TtsAPI>::GetForProfile(profile);
+}
+
+TtsAPI::TtsAPI(Profile* profile) {
+  (new TtsEngineManifestHandler)->Register();
+  ExtensionFunctionRegistry* registry =
+      ExtensionFunctionRegistry::GetInstance();
+  registry->RegisterFunction<ExtensionTtsEngineSendTtsEventFunction>();
+  registry->RegisterFunction<TtsGetVoicesFunction>();
+  registry->RegisterFunction<TtsIsSpeakingFunction>();
+  registry->RegisterFunction<TtsSpeakFunction>();
+  registry->RegisterFunction<TtsStopSpeakingFunction>();
+}
+
+TtsAPI::~TtsAPI() {
+}
+
+static base::LazyInstance<ProfileKeyedAPIFactory<TtsAPI> >
+g_factory = LAZY_INSTANCE_INITIALIZER;
+
+ProfileKeyedAPIFactory<TtsAPI>* TtsAPI::GetFactoryInstance() {
+  return &g_factory.Get();
+}
+
+}  // namespace extensions

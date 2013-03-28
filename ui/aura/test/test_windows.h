@@ -32,9 +32,6 @@ Window* CreateTestWindowWithDelegateAndType(WindowDelegate* delegate,
                                             const gfx::Rect& bounds,
                                             Window* parent);
 
-// Creates a transient child window of |parent|.
-Window* CreateTransientChild(int id, Window* parent);
-
 // Returns true if |upper| is above |lower| in the window stacking order.
 bool WindowIsAbove(Window* upper, Window* lower);
 

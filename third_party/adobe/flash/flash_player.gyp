@@ -45,25 +45,6 @@
   # anything to be done in this file (instead of a higher-level .gyp file).
   'targets': [
     {
-      'target_name': 'flash_player',
-      'type': 'none',
-      'conditions': [
-        [ 'branding == "Chrome"', {
-          'copies': [{
-            'destination': '<(PRODUCT_DIR)',
-            'files': [],
-            'conditions': [
-              [ 'OS == "mac"', {
-                'files': [
-                  'binaries/mac/Flash Player Plugin for Chrome.plugin',
-                ]
-              }],
-            ],
-          }],
-        }],
-      ],
-    },
-    {
       'target_name': 'flapper_version_h',
       'type': 'none',
       'copies': [{

@@ -15,7 +15,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/animation/linear_animation.h"
@@ -113,8 +113,8 @@ class ExtensionAction {
   };
 
   ExtensionAction(const std::string& extension_id,
-                  extensions::Extension::ActionInfo::Type action_type,
-                  const extensions::Extension::ActionInfo& manifest_data);
+                  extensions::ActionInfo::Type action_type,
+                  const extensions::ActionInfo& manifest_data);
   ~ExtensionAction();
 
   // Gets a copy of this, ownership passed to caller.
@@ -124,13 +124,13 @@ class ExtensionAction {
   // Given the extension action type, returns the size the extension action icon
   // should have. The icon should be square, so only one dimension is
   // returned.
-  static int GetIconSizeForType(extensions::Extension::ActionInfo::Type type);
+  static int GetIconSizeForType(extensions::ActionInfo::Type type);
 
   // extension id
   const std::string& extension_id() const { return extension_id_; }
 
   // What kind of action is this?
-  extensions::Extension::ActionInfo::Type action_type() const {
+  extensions::ActionInfo::Type action_type() const {
     return action_type_;
   }
 
@@ -220,15 +220,20 @@ class ExtensionAction {
   // care of any appropriate transition animations.  Returns true if
   // the appearance has changed.
   bool SetAppearance(int tab_id, Appearance value);
+  // The declarative appearance overrides a default appearance but is overridden
+  // by an appearance set directly on the tab.
+  void DeclarativeShow(int tab_id);
+  void UndoDeclarativeShow(int tab_id);
+
   // Get the badge visibility for a tab, or the default badge visibility
   // if none was set.
   bool GetIsVisible(int tab_id) const {
-    return GetValue(&appearance_, tab_id) != INVISIBLE;
+    return GetAppearance(tab_id) != INVISIBLE;
   }
 
   // True if the tab's action wants the user's attention.
   bool WantsAttention(int tab_id) const {
-    return GetValue(&appearance_, tab_id) == WANTS_ATTENTION;
+    return GetAppearance(tab_id) == WANTS_ATTENTION;
   }
 
   // Remove all tab-specific state.
@@ -247,8 +252,6 @@ class ExtensionAction {
   base::WeakPtr<IconAnimation> GetIconAnimation(int tab_id) const;
 
  private:
-  class IconWithBadgeImageSource;
-
   // Runs an animation on a tab.
   void RunIconAnimation(int tab_id);
 
@@ -262,15 +265,6 @@ class ExtensionAction {
   // We should probably move this there too.
   int GetIconWidth(int tab_id) const;
 
-  // Paints badge with specified parameters to |canvas|.
-  static void DoPaintBadge(gfx::Canvas* canvas,
-                           const gfx::Rect& bounds,
-                           const std::string& text,
-                           const SkColor& text_color_in,
-                           const SkColor& background_color_in,
-                           int icon_width,
-                           extensions::Extension::ActionInfo::Type action_type);
-
   template <class T>
   struct ValueTraits {
     static T CreateEmpty() {
@@ -283,22 +277,52 @@ class ExtensionAction {
     (*map)[tab_id] = val;
   }
 
+  template<class Map>
+  static const typename Map::mapped_type* FindOrNull(
+      const Map* map,
+      const typename Map::key_type& key) {
+    typename Map::const_iterator iter = map->find(key);
+    if (iter == map->end())
+      return NULL;
+    return &iter->second;
+  }
+
   template<class T>
   T GetValue(const std::map<int, T>* map, int tab_id) const {
-    typename std::map<int, T>::const_iterator iter = map->find(tab_id);
-    if (iter != map->end()) {
-      return iter->second;
+    if (const T* tab_value = FindOrNull(map, tab_id)) {
+      return *tab_value;
+    } else if (const T* default_value = FindOrNull(map, kDefaultTabId)) {
+      return *default_value;
     } else {
-      iter = map->find(kDefaultTabId);
-      return iter != map->end() ? iter->second : ValueTraits<T>::CreateEmpty();
+      return ValueTraits<T>::CreateEmpty();
     }
+  }
+
+  // Gets the appearance of |tab_id|.  Returns the first of: a specific
+  // appearance set on the tab; a declarative appearance set on the tab; the
+  // default appearance set for all tabs; or INVISIBLE.  Don't return this
+  // result to an extension's background page because the declarative state can
+  // leak information about hosts the extension doesn't have permission to
+  // access.
+  Appearance GetAppearance(int tab_id) const {
+    if (const Appearance* tab_appearance = FindOrNull(&appearance_, tab_id))
+      return *tab_appearance;
+
+    if (ContainsKey(declarative_show_count_, tab_id))
+      return ACTIVE;
+
+    if (const Appearance* default_appearance =
+        FindOrNull(&appearance_, kDefaultTabId))
+      return *default_appearance;
+
+    return INVISIBLE;
   }
 
   // The id for the extension this action belongs to (as defined in the
   // extension manifest).
   const std::string extension_id_;
 
-  const extensions::Extension::ActionInfo::Type action_type_;
+  const extensions::ActionInfo::Type action_type_;
 
   // Each of these data items can have both a global state (stored with the key
   // kDefaultTabId), or tab-specific state (stored with the tab_id as the key).
@@ -309,6 +333,17 @@ class ExtensionAction {
   std::map<int, SkColor> badge_background_color_;
   std::map<int, SkColor> badge_text_color_;
   std::map<int, Appearance> appearance_;
+
+  // Declarative state exists for two reasons: First, we need to hide it from
+  // the extension's background/event page to avoid leaking data from hosts the
+  // extension doesn't have permission to access.  Second, the action's state
+  // gets both reset and given its declarative values in response to a
+  // WebContentsObserver::DidNavigateMainFrame event, and there's no way to set
+  // those up to be called in the right order.
+
+  // Maps tab_id to the number of active (applied-but-not-reverted)
+  // declarativeContent.ShowPageAction actions.
+  std::map<int, int> declarative_show_count_;
 
   // IconAnimations are destroyed by a delayed task on the UI message loop so
   // that even if the Extension and ExtensionAction are destroyed on a non-UI

@@ -16,7 +16,7 @@ using ppapi::NPObjectVar;
 namespace webkit {
 namespace ppapi {
 
-HostVarTracker::HostVarTracker() {
+HostVarTracker::HostVarTracker() : last_shared_memory_map_id_(0) {
 }
 
 HostVarTracker::~HostVarTracker() {
@@ -24,6 +24,12 @@ HostVarTracker::~HostVarTracker() {
 
 ArrayBufferVar* HostVarTracker::CreateArrayBuffer(uint32 size_in_bytes) {
   return new HostArrayBufferVar(size_in_bytes);
+}
+
+ArrayBufferVar* HostVarTracker::CreateShmArrayBuffer(
+    uint32 size_in_bytes,
+    base::SharedMemoryHandle handle) {
+  return new HostArrayBufferVar(size_in_bytes, handle);
 }
 
 void HostVarTracker::AddNPObjectVar(NPObjectVar* object_var) {
@@ -43,8 +49,7 @@ void HostVarTracker::AddNPObjectVar(NPObjectVar* object_var) {
 
   DCHECK(np_object_map->find(object_var->np_object()) ==
          np_object_map->end()) << "NPObjectVar already in map";
-  np_object_map->insert(
-      std::make_pair(object_var->np_object(), object_var->AsWeakPtr()));
+  np_object_map->insert(std::make_pair(object_var->np_object(), object_var));
 }
 
 void HostVarTracker::RemoveNPObjectVar(NPObjectVar* object_var) {
@@ -69,10 +74,6 @@ void HostVarTracker::RemoveNPObjectVar(NPObjectVar* object_var) {
     return;
   }
   np_object_map->erase(found_object);
-
-  // Clean up when the map is empty.
-  if (np_object_map->empty())
-    instance_map_.erase(found_instance);
 }
 
 NPObjectVar* HostVarTracker::NPObjectVarForNPObject(PP_Instance instance,
@@ -108,18 +109,11 @@ void HostVarTracker::DidDeleteInstance(PP_Instance instance) {
     return;  // Nothing to do.
   NPObjectToNPObjectVarMap* np_object_map = found_instance->second.get();
 
-  // Force delete all var references. It's possible that deleting an object "A"
-  // will cause it to delete another object "B" it references, thus removing "B"
-  // from instance_map_. Therefore, we need to make a copy over which we can
-  // iterate safely. Furthermore, the maps contain WeakPtrs so that we can
-  // detect if the object is gone so that we don't dereference invalid memory.
-  NPObjectToNPObjectVarMap np_object_map_copy = *np_object_map;
-  NPObjectToNPObjectVarMap::iterator cur_var =
-      np_object_map_copy.begin();
-  while (cur_var != np_object_map_copy.end()) {
-    NPObjectToNPObjectVarMap::iterator current = cur_var++;
-    ForceReleaseNPObject(current->second);
-    np_object_map->erase(current->first);
+  // Force delete all var references. ForceReleaseNPObject() will cause
+  // this object, and potentially others it references, to be removed from
+  // |np_object_map|.
+  while (!np_object_map->empty()) {
+    ForceReleaseNPObject(np_object_map->begin()->second);
   }
 
   // Remove the record for this instance since it should be empty.
@@ -127,15 +121,9 @@ void HostVarTracker::DidDeleteInstance(PP_Instance instance) {
   instance_map_.erase(found_instance);
 }
 
-void HostVarTracker::ForceReleaseNPObject(
-    const base::WeakPtr< ::ppapi::NPObjectVar>& object) {
-  // There's a chance that the object was already deleted before we got here.
-  // See DidDeleteInstance for further explanation. If the object was deleted,
-  // the WeakPtr will return NULL.
-  if (!object.get())
-    return;
-  object->InstanceDeleted();
-  VarMap::iterator iter = live_vars_.find(object->GetExistingVarID());
+void HostVarTracker::ForceReleaseNPObject(::ppapi::NPObjectVar* object_var) {
+  object_var->InstanceDeleted();
+  VarMap::iterator iter = live_vars_.find(object_var->GetExistingVarID());
   if (iter == live_vars_.end()) {
     NOTREACHED();
     return;
@@ -143,6 +131,40 @@ void HostVarTracker::ForceReleaseNPObject(
   iter->second.ref_count = 0;
   DCHECK(iter->second.track_with_no_reference_count == 0);
   DeleteObjectInfoIfNecessary(iter);
+}
+
+int HostVarTracker::TrackSharedMemoryHandle(PP_Instance instance,
+                                            base::SharedMemoryHandle handle,
+                                            uint32 size_in_bytes) {
+  SharedMemoryMapEntry entry;
+  entry.instance = instance;
+  entry.handle = handle;
+  entry.size_in_bytes = size_in_bytes;
+
+  // Find a free id for our map.
+  while (shared_memory_map_.find(last_shared_memory_map_id_) !=
+         shared_memory_map_.end()) {
+    ++last_shared_memory_map_id_;
+  }
+  shared_memory_map_[last_shared_memory_map_id_] = entry;
+  return last_shared_memory_map_id_;
+}
+
+bool HostVarTracker::StopTrackingSharedMemoryHandle(
+    int id,
+    PP_Instance instance,
+    base::SharedMemoryHandle* handle,
+    uint32* size_in_bytes) {
+  SharedMemoryMap::iterator it = shared_memory_map_.find(id);
+  if (it == shared_memory_map_.end())
+    return false;
+  if (it->second.instance != instance)
+    return false;
+
+  *handle = it->second.handle;
+  *size_in_bytes = it->second.size_in_bytes;
+  shared_memory_map_.erase(it);
+  return true;
 }
 
 }  // namespace ppapi

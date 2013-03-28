@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/observer_list.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
 
 namespace syncable {
@@ -16,7 +17,7 @@ class Id;
 
 namespace syncer {
 
-struct SyncEngineEvent {
+struct SYNC_EXPORT_PRIVATE SyncEngineEvent {
   enum EventCause {
     ////////////////////////////////////////////////////////////////
     // Sent on entry of Syncer state machine
@@ -43,6 +44,11 @@ struct SyncEngineEvent {
     // This event is sent when we receive an actionable error. It is upto
     // the listeners to figure out the action to take using the snapshot sent.
     ACTIONABLE_ERROR,
+
+    // This event is sent when scheduler decides to wait before next request
+    // either because it gets throttled by server or because it backs off after
+    // request failure. Retry time is passed in retry_time field of event.
+    RETRY_TIME_CHANGED,
   };
 
   explicit SyncEngineEvent(EventCause cause);
@@ -55,9 +61,12 @@ struct SyncEngineEvent {
 
   // Update-Client-Auth returns a new token for sync use.
   std::string updated_token;
+
+  // Time when scheduler will try to send request after backoff
+  base::Time retry_time;
 };
 
-class SyncEngineEventListener {
+class SYNC_EXPORT_PRIVATE SyncEngineEventListener {
  public:
   // TODO(tim): Consider splitting this up to multiple callbacks, rather than
   // have to do Event e(type); OnSyncEngineEvent(e); at all callsites,

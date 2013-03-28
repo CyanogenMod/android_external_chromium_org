@@ -5,7 +5,7 @@
 #ifndef ASH_LAUNCHER_OVERFLOW_BUTTON_H_
 #define ASH_LAUNCHER_OVERFLOW_BUTTON_H_
 
-#include "ash/wm/shelf_types.h"
+#include "ash/shelf/shelf_types.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ui/views/controls/button/custom_button.h"
@@ -23,7 +23,7 @@ class OverflowButton : public views::CustomButton {
   explicit OverflowButton(views::ButtonListener* listener);
   virtual ~OverflowButton();
 
-  void SetShelfAlignment(ShelfAlignment alignment);
+  void OnShelfAlignmentChanged();
 
  private:
   void PaintBackground(gfx::Canvas* canvas, int alpha);
@@ -31,7 +31,6 @@ class OverflowButton : public views::CustomButton {
   // views::View overrides:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
-  ShelfAlignment alignment_;
   const gfx::ImageSkia* image_;
 
   DISALLOW_COPY_AND_ASSIGN(OverflowButton);

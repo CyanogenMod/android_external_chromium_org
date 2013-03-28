@@ -7,8 +7,8 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/utf_string_conversions.h"
 #include "base/stringprintf.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_browser_main.h"
@@ -17,11 +17,12 @@
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/chrome_resource_dispatcher_host_delegate.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -33,8 +34,9 @@
 #include "content/public/browser/resource_throttle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/context_menu_params.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "webkit/glue/resource_type.h"
@@ -55,9 +57,9 @@ class TestRenderViewContextMenu : public RenderViewContextMenu {
   virtual ~TestRenderViewContextMenu() {}
 
  private:
-  virtual void PlatformInit() {}
-  virtual void PlatformCancel() {}
-  virtual bool GetAcceleratorForCommandId(int, ui::Accelerator*) {
+  virtual void PlatformInit() OVERRIDE {}
+  virtual void PlatformCancel() OVERRIDE {}
+  virtual bool GetAcceleratorForCommandId(int, ui::Accelerator*) OVERRIDE {
     return false;
   }
 
@@ -129,7 +131,7 @@ class TestNavigationListener
     }
 
     // content::ResourceThrottle implementation.
-    virtual void WillStartRequest(bool* defer) {
+    virtual void WillStartRequest(bool* defer) OVERRIDE {
       *defer = true;
     }
   };
@@ -188,6 +190,7 @@ class DelayLoadStartAndExecuteJavascript
       bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
+      bool is_iframe_srcdoc,
       content::RenderViewHost* render_view_host) OVERRIDE {
     if (validated_url != delay_url_ || !rvh_)
       return;
@@ -401,7 +404,9 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ServerRedirect) {
           << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ServerRedirectSingleProcess) {
+// Timing out. crbug.com/172258
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest,
+                       DISABLED_ServerRedirectSingleProcess) {
   // Set max renderers to 1 to force running out of processes.
   content::RenderProcessHost::SetMaxRendererProcessCount(1);
 
@@ -410,7 +415,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ServerRedirectSingleProcess) {
       "webnavigation", "test_serverRedirectSingleProcess.html"))
           << message_;
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   content::WaitForLoadStop(tab);
 
   ResultCatcher catcher;
@@ -440,6 +445,11 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, ForwardBack) {
 IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, IFrame) {
   ASSERT_TRUE(
       RunExtensionSubtest("webnavigation", "test_iframe.html")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, SrcDoc) {
+  ASSERT_TRUE(
+      RunExtensionSubtest("webnavigation", "test_srcdoc.html")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, OpenTab) {
@@ -473,12 +483,13 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, UserAction) {
   ASSERT_TRUE(
       RunExtensionSubtest("webnavigation", "test_userAction.html")) << message_;
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   content::WaitForLoadStop(tab);
 
   ResultCatcher catcher;
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   const extensions::Extension* extension =
       service->GetExtensionById(last_loaded_extension_id_, false);
   GURL url = extension->GetResourceURL("userAction/a.html");
@@ -496,7 +507,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, UserAction) {
 
   TestRenderViewContextMenu menu(tab, params);
   menu.Init();
-  menu.ExecuteCommand(IDC_CONTENT_CONTEXT_OPENLINKNEWTAB);
+  menu.ExecuteCommand(IDC_CONTENT_CONTEXT_OPENLINKNEWTAB, 0);
 
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
@@ -506,12 +517,13 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, RequestOpenTab) {
   ASSERT_TRUE(RunExtensionSubtest("webnavigation", "test_requestOpenTab.html"))
       << message_;
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   content::WaitForLoadStop(tab);
 
   ResultCatcher catcher;
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   const extensions::Extension* extension =
       service->GetExtensionById(last_loaded_extension_id_, false);
   GURL url = extension->GetResourceURL("requestOpenTab/a.html");
@@ -537,7 +549,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, TargetBlank) {
   ASSERT_TRUE(RunExtensionSubtest("webnavigation", "test_targetBlank.html"))
       << message_;
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   content::WaitForLoadStop(tab);
 
   ResultCatcher catcher;
@@ -563,7 +575,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, TargetBlank) {
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, DISABLED_TargetBlankIncognito) {
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, TargetBlankIncognito) {
   // Wait for the extension to set itself up and return control to us.
   ASSERT_TRUE(RunExtensionSubtest(
       "webnavigation", "test_targetBlank.html",
@@ -576,7 +588,7 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, DISABLED_TargetBlankIncognito) {
 
   Browser* otr_browser = ui_test_utils::OpenURLOffTheRecord(
       browser()->profile(), url);
-  WebContents* tab = chrome::GetActiveWebContents(otr_browser);
+  WebContents* tab = otr_browser->tab_strip_model()->GetActiveWebContents();
 
   // There's a link with target=_blank on a.html. Click on it to open it in a
   // new tab.
@@ -603,7 +615,8 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcess) {
   LoadExtension(test_data_dir_.AppendASCII("webnavigation").AppendASCII("app"));
   LoadExtension(test_data_dir_.AppendASCII("webnavigation"));
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   const extensions::Extension* extension =
       service->GetExtensionById(last_loaded_extension_id_, false);
 
@@ -622,7 +635,8 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcess) {
 IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcessFragment) {
   LoadExtension(test_data_dir_.AppendASCII("webnavigation"));
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   const extensions::Extension* extension =
       service->GetExtensionById(last_loaded_extension_id_, false);
 
@@ -652,7 +666,8 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcessFragment) {
 IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcessHistory) {
   LoadExtension(test_data_dir_.AppendASCII("webnavigation"));
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   const extensions::Extension* extension =
       service->GetExtensionById(last_loaded_extension_id_, false);
 
@@ -680,6 +695,33 @@ IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, CrossProcessHistory) {
   ASSERT_TRUE(RunPageTest(
       extension->GetResourceURL("test_crossProcessHistory.html").spec()))
           << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebNavigationApiTest, Crash) {
+  // Wait for the extension to set itself up and return control to us.
+  ASSERT_TRUE(RunExtensionSubtest("webnavigation", "test_crash.html"))
+      << message_;
+
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+  content::WaitForLoadStop(tab);
+
+  ResultCatcher catcher;
+
+  GURL url(base::StringPrintf(
+      "http://www.a.com:%d/"
+          "files/extensions/api_test/webnavigation/crash/a.html",
+      test_server()->host_port_pair().port()));
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kChromeUICrashURL));
+
+  url = GURL(base::StringPrintf(
+      "http://www.a.com:%d/"
+          "files/extensions/api_test/webnavigation/crash/b.html",
+      test_server()->host_port_pair().port()));
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
 }  // namespace extensions

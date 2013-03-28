@@ -22,11 +22,6 @@
 
 namespace {
 
-#if defined(GOOGLE_CHROME_BUILD)
-const int kAppListIconIndex = 5;
-#else
-const int kAppListIconIndex = 1;
-#endif
 const wchar_t kChromeAppHostGuid[] = L"{FDA71E6F-AC4C-4a00-8B70-9958A68906BF}";
 
 }  // namespace
@@ -40,18 +35,18 @@ string16 ChromeAppHostDistribution::GetAppGuid() {
 }
 
 string16 ChromeAppHostDistribution::GetBaseAppName() {
-  return L"Google Chrome App Host";
+  return L"Google Chrome App Launcher";
 }
 
 string16 ChromeAppHostDistribution::GetAppShortCutName() {
   const string16& product_name =
-      installer::GetLocalizedString(IDS_PRODUCT_APP_HOST_NAME_BASE);
+      installer::GetLocalizedString(IDS_PRODUCT_APP_LAUNCHER_NAME_BASE);
   return product_name;
 }
 
 string16 ChromeAppHostDistribution::GetAlternateApplicationName() {
   const string16& product_name =
-      installer::GetLocalizedString(IDS_PRODUCT_APP_HOST_NAME_BASE);
+      installer::GetLocalizedString(IDS_PRODUCT_APP_LAUNCHER_NAME_BASE);
   return product_name;
 }
 
@@ -121,7 +116,7 @@ string16 ChromeAppHostDistribution::GetUninstallLinkName() {
 
 string16 ChromeAppHostDistribution::GetUninstallRegPath() {
   return L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
-         L"Google Chrome App Host";
+         L"Google Chrome App Launcher";
 }
 
 string16 ChromeAppHostDistribution::GetVersionKey() {
@@ -139,8 +134,8 @@ bool ChromeAppHostDistribution::CanCreateDesktopShortcuts() {
   return true;
 }
 
-int ChromeAppHostDistribution::GetIconIndex() {
-  return kAppListIconIndex;
+string16 ChromeAppHostDistribution::GetIconFilename() {
+  return installer::kChromeAppHostExe;
 }
 
 bool ChromeAppHostDistribution::GetCommandExecuteImplClsid(

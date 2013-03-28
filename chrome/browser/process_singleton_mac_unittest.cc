@@ -8,9 +8,9 @@
 
 #include "chrome/browser/process_singleton.h"
 
-#include "base/eintr_wrapper.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
+#include "base/posix/eintr_wrapper.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_profile.h"
@@ -61,8 +61,8 @@ class ProcessSingletonMacTest : public PlatformTest {
     return false;
   }
 
-  ScopedTempDir temp_dir_;
-  FilePath lock_path_;
+  base::ScopedTempDir temp_dir_;
+  base::FilePath lock_path_;
 };
 
 // Test that the base case doesn't blow up.

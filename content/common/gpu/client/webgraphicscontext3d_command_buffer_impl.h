@@ -14,15 +14,11 @@
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gl/gpu_preference.h"
 #include "ui/gfx/native_widget_types.h"
-
-#if defined(USE_SKIA)
-#define FLIP_FRAMEBUFFER_VERTICALLY
-#endif
 
 namespace gpu {
 
@@ -31,6 +27,7 @@ class TransferBuffer;
 namespace gles2 {
 class GLES2CmdHelper;
 class GLES2Implementation;
+class GLES2Interface;
 }
 }
 
@@ -103,7 +100,7 @@ class WebGraphicsContext3DCommandBufferImpl
 
   CommandBufferProxyImpl* GetCommandBufferProxy() { return command_buffer_; }
 
-  gpu::gles2::GLES2Implementation* GetImplementation() { return gl_; }
+  gpu::gles2::GLES2Implementation* GetImplementation() { return real_gl_; }
 
   // Return true if GPU process reported context lost or there was a
   // problem communicating with the GPU process.
@@ -516,7 +513,8 @@ class WebGraphicsContext3DCommandBufferImpl
   virtual void discardFramebufferEXT(WGC3Denum target,
                                      WGC3Dsizei numAttachments,
                                      const WGC3Denum* attachments);
-  virtual void ensureFramebufferCHROMIUM();
+  virtual void discardBackbufferCHROMIUM();
+  virtual void ensureBackbufferCHROMIUM();
 
   virtual void setMemoryAllocationChangedCallbackCHROMIUM(
       WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback);
@@ -603,6 +601,37 @@ class WebGraphicsContext3DCommandBufferImpl
   virtual WebGLId createStreamTextureCHROMIUM(WebGLId texture);
   virtual void destroyStreamTextureCHROMIUM(WebGLId texture);
 
+  virtual void* mapBufferCHROMIUM(WGC3Denum target, WGC3Denum access);
+  virtual WGC3Dboolean unmapBufferCHROMIUM(WGC3Denum target);
+
+  // Async pixel transfer functions.
+  virtual void asyncTexImage2DCHROMIUM(
+      WGC3Denum target,
+      WGC3Dint level,
+      WGC3Denum internalformat,
+      WGC3Dsizei width,
+      WGC3Dsizei height,
+      WGC3Dint border,
+      WGC3Denum format,
+      WGC3Denum type,
+      const void* pixels);
+  virtual void asyncTexSubImage2DCHROMIUM(
+      WGC3Denum target,
+      WGC3Dint level,
+      WGC3Dint xoffset,
+      WGC3Dint yoffset,
+      WGC3Dsizei width,
+      WGC3Dsizei height,
+      WGC3Denum format,
+      WGC3Denum type,
+      const void* pixels);
+  virtual void waitAsyncTexImage2DCHROMIUM(WGC3Denum target);
+
+  // GL_EXT_draw_buffers
+  virtual void drawBuffersEXT(
+      WGC3Dsizei n,
+      const WGC3Denum* bufs);
+
  protected:
   virtual GrGLInterface* onCreateGrGLInterface();
 
@@ -674,8 +703,9 @@ class WebGraphicsContext3DCommandBufferImpl
   bool ShouldUseSwapClient();
 
   // MemoryAllocationChanged callback.
-  void OnMemoryAllocationChanged(const GpuMemoryAllocationForRenderer&
-      allocation);
+  void OnMemoryAllocationChanged(
+      WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback,
+      const GpuMemoryAllocationForRenderer& allocation);
 
   // Convert the gpu cutoff enum to the WebKit enum.
   static WebGraphicsMemoryAllocation::PriorityCutoff WebkitPriorityCutoff(
@@ -694,9 +724,6 @@ class WebGraphicsContext3DCommandBufferImpl
   int32 surface_id_;
   GURL active_url_;
   base::WeakPtr<WebGraphicsContext3DSwapBuffersClient> swap_client_;
-
-  WebGraphicsMemoryAllocationChangedCallbackCHROMIUM*
-      memory_allocation_changed_callback_;
 
   WebGraphicsContext3D::WebGraphicsContextLostCallback* context_lost_callback_;
   WGC3Denum context_lost_reason_;
@@ -721,12 +748,10 @@ class WebGraphicsContext3DCommandBufferImpl
 
   base::WeakPtrFactory<WebGraphicsContext3DCommandBufferImpl> weak_ptr_factory_;
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
   std::vector<uint8> scanline_;
   void FlipVertically(uint8* framebuffer,
                       unsigned int width,
                       unsigned int height);
-#endif
 
   bool initialized_;
   WebGraphicsContext3DCommandBufferImpl* parent_;
@@ -734,7 +759,9 @@ class WebGraphicsContext3DCommandBufferImpl
   CommandBufferProxyImpl* command_buffer_;
   gpu::gles2::GLES2CmdHelper* gles2_helper_;
   gpu::TransferBuffer* transfer_buffer_;
-  gpu::gles2::GLES2Implementation* gl_;
+  gpu::gles2::GLES2Interface* gl_;
+  gpu::gles2::GLES2Implementation* real_gl_;
+  gpu::gles2::GLES2Interface* trace_gl_;
   Error last_error_;
   int frame_number_;
   bool bind_generates_resources_;

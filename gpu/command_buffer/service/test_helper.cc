@@ -4,16 +4,19 @@
 
 #include "gpu/command_buffer/service/test_helper.h"
 
-#include <string>
 #include <algorithm>
+#include <string>
 
 #include "base/string_number_conversions.h"
-#include "base/string_tokenizer.h"
-#include "gpu/command_buffer/common/gl_mock.h"
+#include "base/strings/string_tokenizer.h"
 #include "gpu/command_buffer/common/types.h"
+#include "gpu/command_buffer/service/buffer_manager.h"
 #include "gpu/command_buffer/service/gl_utils.h"
+#include "gpu/command_buffer/service/gles2_cmd_decoder_mock.h"
 #include "gpu/command_buffer/service/program_manager.h"
+#include "gpu/command_buffer/service/texture_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gl/gl_mock.h"
 
 using ::testing::_;
 using ::testing::DoAll;
@@ -143,7 +146,7 @@ void TestHelper::SetupTextureManagerInitExpectations(
 
   bool ext_image_external = false;
   bool arb_texture_rectangle = false;
-  CStringTokenizer t(extensions, extensions + strlen(extensions), " ");
+  base::CStringTokenizer t(extensions, extensions + strlen(extensions), " ");
   while (t.GetNext()) {
     if (t.token() == "GL_OES_EGL_image_external") {
       ext_image_external = true;
@@ -196,7 +199,7 @@ void TestHelper::SetupTextureManagerDestructionExpectations(
 
   bool ext_image_external = false;
   bool arb_texture_rectangle = false;
-  CStringTokenizer t(extensions, extensions + strlen(extensions), " ");
+  base::CStringTokenizer t(extensions, extensions + strlen(extensions), " ");
   while (t.GetNext()) {
     if (t.token() == "GL_OES_EGL_image_external") {
       ext_image_external = true;
@@ -269,14 +272,15 @@ void TestHelper::SetupContextGroupInitExpectations(
 
 void TestHelper::SetupFeatureInfoInitExpectations(
       ::gfx::MockGLInterface* gl, const char* extensions) {
-  SetupFeatureInfoInitExpectationsWithVendor(gl, extensions, "", "");
+  SetupFeatureInfoInitExpectationsWithVendor(gl, extensions, "", "", "");
 }
 
 void TestHelper::SetupFeatureInfoInitExpectationsWithVendor(
      ::gfx::MockGLInterface* gl,
      const char* extensions,
      const char* vendor,
-     const char* renderer) {
+     const char* renderer,
+     const char* version) {
   InSequence sequence;
 
   EXPECT_CALL(*gl, GetString(GL_EXTENSIONS))
@@ -287,6 +291,9 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithVendor(
       .RetiresOnSaturation();
   EXPECT_CALL(*gl, GetString(GL_RENDERER))
       .WillOnce(Return(reinterpret_cast<const uint8*>(renderer)))
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl, GetString(GL_VERSION))
+      .WillOnce(Return(reinterpret_cast<const uint8*>(version)))
       .RetiresOnSaturation();
 }
 
@@ -489,6 +496,62 @@ void TestHelper::SetupShader(
 
   SetupProgramSuccessExpectations(
       gl, attribs, num_attribs, uniforms, num_uniforms, service_id);
+}
+
+void TestHelper::DoBufferData(
+    ::gfx::MockGLInterface* gl, MockGLES2Decoder* decoder,
+    BufferManager* manager, Buffer* buffer, GLsizeiptr size, GLenum usage,
+    const GLvoid* data, GLenum error) {
+  EXPECT_CALL(*decoder, CopyRealGLErrorsToWrapper(_, _, _))
+      .Times(1)
+      .RetiresOnSaturation();
+  if (manager->IsUsageClientSideArray(usage)) {
+    EXPECT_CALL(*gl, BufferData(
+        buffer->target(), 0, _, usage))
+        .Times(1)
+        .RetiresOnSaturation();
+  } else {
+    EXPECT_CALL(*gl, BufferData(
+        buffer->target(), size, _, usage))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
+  EXPECT_CALL(*decoder, PeekGLError(_, _, _))
+      .WillOnce(Return(error))
+      .RetiresOnSaturation();
+  manager->DoBufferData(decoder, buffer, size, usage, data);
+}
+
+void TestHelper::SetTexParameterWithExpectations(
+    ::gfx::MockGLInterface* gl, MockGLES2Decoder* decoder,
+    TextureManager* manager, Texture* texture,
+    GLenum pname, GLint value, GLenum error) {
+  if (error == GL_NO_ERROR) {
+    if (pname != GL_TEXTURE_POOL_CHROMIUM) {
+      EXPECT_CALL(*gl, TexParameteri(texture->target(), pname, value))
+          .Times(1)
+          .RetiresOnSaturation();
+    }
+  } else if (error == GL_INVALID_ENUM) {
+    EXPECT_CALL(*decoder, SetGLErrorInvalidEnum(_, _, _, value, _))
+        .Times(1)
+        .RetiresOnSaturation();
+  } else {
+    EXPECT_CALL(*decoder, SetGLErrorInvalidParam(_, _, error, _, _, _))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
+  manager->SetParameter("", decoder, texture, pname, value);
+}
+
+ScopedGLImplementationSetter::ScopedGLImplementationSetter(
+    gfx::GLImplementation implementation)
+    : old_implementation_(gfx::GetGLImplementation()) {
+  gfx::SetGLImplementation(implementation);
+}
+
+ScopedGLImplementationSetter::~ScopedGLImplementationSetter() {
+  gfx::SetGLImplementation(old_implementation_);
 }
 
 }  // namespace gles2

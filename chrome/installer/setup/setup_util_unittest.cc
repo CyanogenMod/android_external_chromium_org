@@ -7,11 +7,11 @@
 #include <string>
 
 #include "base/file_util.h"
-#include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
-#include "base/time.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/path_service.h"
 #include "base/threading/platform_thread.h"
+#include "base/time.h"
 #include "base/win/scoped_handle.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/installer/setup/setup_util.h"
@@ -36,10 +36,10 @@ class SetupUtilTestWithDir : public testing::Test {
   }
 
   // The temporary directory used to contain the test operations.
-  ScopedTempDir test_dir_;
+  base::ScopedTempDir test_dir_;
 
   // The path to input data used in tests.
-  FilePath data_dir_;
+  base::FilePath data_dir_;
 };
 
 // The privilege tested in ScopeTokenPrivilege tests below.
@@ -91,27 +91,28 @@ bool CurrentProcessHasPrivilege(const wchar_t* privilege_name) {
 
 // Test that we are parsing Chrome version correctly.
 TEST_F(SetupUtilTestWithDir, ApplyDiffPatchTest) {
-  FilePath work_dir(test_dir_.path());
+  base::FilePath work_dir(test_dir_.path());
   work_dir = work_dir.AppendASCII("ApplyDiffPatchTest");
   ASSERT_FALSE(file_util::PathExists(work_dir));
   EXPECT_TRUE(file_util::CreateDirectory(work_dir));
   ASSERT_TRUE(file_util::PathExists(work_dir));
 
-  FilePath src = data_dir_.AppendASCII("archive1.7z");
-  FilePath patch = data_dir_.AppendASCII("archive.diff");
-  FilePath dest = work_dir.AppendASCII("archive2.7z");
+  base::FilePath src = data_dir_.AppendASCII("archive1.7z");
+  base::FilePath patch = data_dir_.AppendASCII("archive.diff");
+  base::FilePath dest = work_dir.AppendASCII("archive2.7z");
   EXPECT_EQ(installer::ApplyDiffPatch(src, patch, dest, NULL), 0);
-  FilePath base = data_dir_.AppendASCII("archive2.7z");
+  base::FilePath base = data_dir_.AppendASCII("archive2.7z");
   EXPECT_TRUE(file_util::ContentsEqual(dest, base));
 
-  EXPECT_EQ(installer::ApplyDiffPatch(FilePath(), FilePath(), FilePath(), NULL),
+  EXPECT_EQ(installer::ApplyDiffPatch(base::FilePath(), base::FilePath(),
+                                      base::FilePath(), NULL),
             6);
 }
 
 // Test that we are parsing Chrome version correctly.
 TEST_F(SetupUtilTestWithDir, GetMaxVersionFromArchiveDirTest) {
   // Create a version dir
-  FilePath chrome_dir = test_dir_.path().AppendASCII("1.0.0.0");
+  base::FilePath chrome_dir = test_dir_.path().AppendASCII("1.0.0.0");
   file_util::CreateDirectory(chrome_dir);
   ASSERT_TRUE(file_util::PathExists(chrome_dir));
   scoped_ptr<Version> version(
@@ -146,7 +147,7 @@ TEST_F(SetupUtilTestWithDir, GetMaxVersionFromArchiveDirTest) {
 }
 
 TEST_F(SetupUtilTestWithDir, DeleteFileFromTempProcess) {
-  FilePath test_file;
+  base::FilePath test_file;
   file_util::CreateTemporaryFileInDir(test_dir_.path(), &test_file);
   ASSERT_TRUE(file_util::PathExists(test_file));
   file_util::WriteFile(test_file, "foo", 3);

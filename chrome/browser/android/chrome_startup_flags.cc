@@ -12,6 +12,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "chrome/common/chrome_switches.h"
+#include "media/base/media_switches.h"
 
 namespace {
 
@@ -31,13 +32,11 @@ void SetCommandLineSwitchASCII(const std::string& switch_string,
 }  // namespace
 
 void SetChromeSpecificCommandLineFlags() {
-  // Turn on autofill.
-  // TODO(nileshagrawal): Remove this flag once Android stops relying on
-  // tab_contents.cc.
-  SetCommandLineSwitch(switches::kEnableNewAutofillUi);
-
   // Turn on autologin.
   SetCommandLineSwitch(switches::kEnableAutologin);
+
+  // Turn on query extraction on omnibox searches.
+  SetCommandLineSwitch(switches::kEnableInstantExtendedAPI);
 
   // Enable prerender for the omnibox.
   SetCommandLineSwitchASCII(
@@ -45,4 +44,7 @@ void SetChromeSpecificCommandLineFlags() {
   SetCommandLineSwitchASCII(
       switches::kPrerenderFromOmnibox,
       switches::kPrerenderFromOmniboxSwitchValueEnabled);
+#if !defined(GOOGLE_TV)
+  SetCommandLineSwitch(switches::kDisableEncryptedMedia);
+#endif
 }

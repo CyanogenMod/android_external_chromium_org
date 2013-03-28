@@ -6,12 +6,10 @@
 
 #include "ui/views/widget/widget.h"
 
-namespace browser {
+namespace chrome {
 
 void HandleAppExitingForPlatform() {
-#if !defined(USE_AURA)
   views::Widget::CloseAllSecondaryWidgets();
-#endif
 }
 
-}  // namespace browser
+}  // namespace chrome

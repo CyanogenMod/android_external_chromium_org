@@ -10,9 +10,9 @@
 #include "base/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileError.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileWriterClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 
 namespace fileapi {
 
@@ -65,7 +65,7 @@ class TestableFileWriter : public WebFileWriterBase {
   bool received_cancel_;
 
  protected:
-  virtual void DoTruncate(const GURL& path, int64 offset) {
+  virtual void DoTruncate(const GURL& path, int64 offset) OVERRIDE {
     received_truncate_ = true;
     received_truncate_path_ = path;
     received_truncate_offset_ = offset;
@@ -88,7 +88,7 @@ class TestableFileWriter : public WebFileWriterBase {
   }
 
   virtual void DoWrite(const GURL& path, const GURL& blob_url,
-                       int64 offset) {
+                       int64 offset) OVERRIDE {
     received_write_ = true;
     received_write_path_ = path;
     received_write_offset_ = offset;
@@ -121,7 +121,7 @@ class TestableFileWriter : public WebFileWriterBase {
     }
   }
 
-  virtual void DoCancel() {
+  virtual void DoCancel() OVERRIDE {
     received_cancel_ = true;
   }
 };

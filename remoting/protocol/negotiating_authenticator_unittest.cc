@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "net/base/net_errors.h"
+#include "remoting/base/rsa_key_pair.h"
 #include "remoting/protocol/authenticator_test_base.h"
 #include "remoting/protocol/channel_authenticator.h"
 #include "remoting/protocol/connection_tester.h"
@@ -48,7 +49,7 @@ class NegotiatingAuthenticatorTest : public AuthenticatorTestBase {
     std::string host_secret_hash = AuthenticationMethod::ApplyHashFunction(
         hash_function, kTestHostId, host_secret);
     host_ = NegotiatingAuthenticator::CreateForHost(
-        host_cert_, *private_key_, host_secret_hash, hash_function);
+        host_cert_, key_pair_, host_secret_hash, hash_function);
 
     std::vector<AuthenticationMethod> methods;
     methods.push_back(AuthenticationMethod::Spake2(
@@ -58,9 +59,15 @@ class NegotiatingAuthenticatorTest : public AuthenticatorTestBase {
           AuthenticationMethod::NONE));
     }
     client_ = NegotiatingAuthenticator::CreateForClient(
-        kTestHostId, client_secret, methods);
+        kTestHostId, base::Bind(&NegotiatingAuthenticatorTest::FetchSecret,
+                                client_secret), methods);
   }
 
+  static void FetchSecret(
+      const std::string& client_secret,
+      const protocol::SecretFetchedCallback& secret_fetched_callback) {
+    secret_fetched_callback.Run(client_secret);
+  }
   void VerifyRejected(Authenticator::RejectionReason reason) {
     ASSERT_TRUE((client_->state() == Authenticator::REJECTED &&
                  (client_->rejection_reason() == reason)) ||
@@ -68,6 +75,28 @@ class NegotiatingAuthenticatorTest : public AuthenticatorTestBase {
                  (host_->rejection_reason() == reason)));
   }
 
+  void VerifyAccepted() {
+    ASSERT_NO_FATAL_FAILURE(RunAuthExchange());
+
+    ASSERT_EQ(Authenticator::ACCEPTED, host_->state());
+    ASSERT_EQ(Authenticator::ACCEPTED, client_->state());
+
+    client_auth_ = client_->CreateChannelAuthenticator();
+    host_auth_ = host_->CreateChannelAuthenticator();
+    RunChannelAuth(false);
+
+    EXPECT_TRUE(client_socket_.get() != NULL);
+    EXPECT_TRUE(host_socket_.get() != NULL);
+
+    StreamConnectionTester tester(host_socket_.get(), client_socket_.get(),
+                                  kMessageSize, kMessages);
+
+    tester.Start();
+    message_loop_.Run();
+    tester.CheckResults();
+  }
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(NegotiatingAuthenticatorTest);
 };
 
@@ -75,48 +104,14 @@ TEST_F(NegotiatingAuthenticatorTest, SuccessfulAuthHmac) {
   ASSERT_NO_FATAL_FAILURE(InitAuthenticators(
       kTestSharedSecret, kTestSharedSecret,
       AuthenticationMethod::HMAC_SHA256, false));
-  ASSERT_NO_FATAL_FAILURE(RunAuthExchange());
-
-  ASSERT_EQ(Authenticator::ACCEPTED, host_->state());
-  ASSERT_EQ(Authenticator::ACCEPTED, client_->state());
-
-  client_auth_ = client_->CreateChannelAuthenticator();
-  host_auth_ = host_->CreateChannelAuthenticator();
-  RunChannelAuth(false);
-
-  EXPECT_TRUE(client_socket_.get() != NULL);
-  EXPECT_TRUE(host_socket_.get() != NULL);
-
-  StreamConnectionTester tester(host_socket_.get(), client_socket_.get(),
-                                kMessageSize, kMessages);
-
-  tester.Start();
-  message_loop_.Run();
-  tester.CheckResults();
+  VerifyAccepted();
 }
 
 TEST_F(NegotiatingAuthenticatorTest, SuccessfulAuthPlain) {
   ASSERT_NO_FATAL_FAILURE(InitAuthenticators(
       kTestSharedSecret, kTestSharedSecret,
       AuthenticationMethod::NONE, false));
-  ASSERT_NO_FATAL_FAILURE(RunAuthExchange());
-
-  ASSERT_EQ(Authenticator::ACCEPTED, host_->state());
-  ASSERT_EQ(Authenticator::ACCEPTED, client_->state());
-
-  client_auth_ = client_->CreateChannelAuthenticator();
-  host_auth_ = host_->CreateChannelAuthenticator();
-  RunChannelAuth(false);
-
-  EXPECT_TRUE(client_socket_.get() != NULL);
-  EXPECT_TRUE(host_socket_.get() != NULL);
-
-  StreamConnectionTester tester(host_socket_.get(), client_socket_.get(),
-                                kMessageSize, kMessages);
-
-  tester.Start();
-  message_loop_.Run();
-  tester.CheckResults();
+  VerifyAccepted();
 }
 
 TEST_F(NegotiatingAuthenticatorTest, InvalidSecretHmac) {

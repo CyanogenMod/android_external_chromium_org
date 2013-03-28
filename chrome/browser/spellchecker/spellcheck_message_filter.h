@@ -7,10 +7,10 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/spellchecker/spelling_service_client.h"
 #include "content/public/browser/browser_message_filter.h"
 
 struct SpellCheckResult;
-class SpellingServiceClient;
 
 // A message filter implementation that receives spell checker requests from
 // SpellCheckProvider.
@@ -50,10 +50,7 @@ class SpellCheckMessageFilter : public content::BrowserMessageFilter {
   // OnTextCheckComplete. When this function is called before we receive a
   // response for the previous request, this function cancels the previous
   // request and sends a new one.
-  bool CallSpellingService(int route_id,
-                           int identifier,
-                           int document_tag,
-                           const string16& text);
+  void CallSpellingService(int document_tag, const string16& text);
 #endif
 
   int render_process_id_;

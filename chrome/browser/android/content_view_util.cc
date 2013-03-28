@@ -9,21 +9,19 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "content/public/browser/web_contents.h"
-#include "ipc/ipc_message.h"
 #include "jni/ContentViewUtil_jni.h"
 
 static jint CreateNativeWebContents(
     JNIEnv* env, jclass clazz, jboolean incognito) {
-  Profile* profile = g_browser_process->profile_manager()->GetDefaultProfile();
+  Profile* profile = g_browser_process->profile_manager()->GetLastUsedProfile();
   if (incognito)
     profile = profile->GetOffTheRecordProfile();
 
   content::WebContents* web_contents =
-      content::WebContents::Create(profile, 0, MSG_ROUTING_NONE, 0);
+      content::WebContents::Create(content::WebContents::CreateParams(profile));
   return reinterpret_cast<jint>(web_contents);
 }
 
 bool RegisterContentViewUtil(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
-

@@ -76,14 +76,14 @@ SpdyFrame* ConstructSpdyWebSocketHandshakeRequestFrame(
     ConvertRequestPriorityToSpdyPriority(request_priority, 2),
     CONTROL_FLAG_NONE,
     kDefaultCompressed,
-    INVALID,
+    RST_STREAM_INVALID,
     kDefaultDataPointer,
     kDefaultDataLength,
     DATA_FLAG_NONE
   };
 
   // Construct SPDY SYN_STREAM control frame.
-  return ConstructSpdyPacket(
+  return ConstructSpdyFrame(
       kSynStreamHeader,
       kDefaultExtraHeaders,
       kDefaultExtraHeaderCount,
@@ -105,14 +105,14 @@ SpdyFrame* ConstructSpdyWebSocketHandshakeResponseFrame(
     ConvertRequestPriorityToSpdyPriority(request_priority, 2),
     CONTROL_FLAG_NONE,
     kDefaultCompressed,
-    INVALID,
+    RST_STREAM_INVALID,
     kDefaultDataPointer,
     kDefaultDataLength,
     DATA_FLAG_NONE
   };
 
   // Construct SPDY SYN_REPLY control frame.
-  return ConstructSpdyPacket(
+  return ConstructSpdyFrame(
       kSynReplyHeader,
       kDefaultExtraHeaders,
       kDefaultExtraHeaderCount,
@@ -149,7 +149,7 @@ SpdyFrame* ConstructSpdyWebSocketDataFrame(
     bool fin) {
 
   // Construct SPDY data frame.
-  BufferedSpdyFramer framer(2);
+  BufferedSpdyFramer framer(2, false);
   return framer.CreateDataFrame(
       stream_id,
       data,

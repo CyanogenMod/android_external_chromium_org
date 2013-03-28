@@ -12,20 +12,29 @@ namespace content {
 
 // static
 BrowserAccessibilityManager* BrowserAccessibilityManager::Create(
-    gfx::NativeView parent_view,
     const AccessibilityNodeData& src,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory) {
-  return new BrowserAccessibilityManagerMac(
-      parent_view, src, delegate, factory);
+  return new BrowserAccessibilityManagerMac(NULL, src, delegate, factory);
 }
 
 BrowserAccessibilityManagerMac::BrowserAccessibilityManagerMac(
-    gfx::NativeView parent_window,
+    NSView* parent_view,
     const AccessibilityNodeData& src,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
-        : BrowserAccessibilityManager(parent_window, src, delegate, factory) {
+    : BrowserAccessibilityManager(src, delegate, factory),
+      parent_view_(parent_view) {
+}
+
+// static
+AccessibilityNodeData BrowserAccessibilityManagerMac::GetEmptyDocument() {
+  AccessibilityNodeData empty_document;
+  empty_document.id = 0;
+  empty_document.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
+  empty_document.state =
+      1 << AccessibilityNodeData::STATE_READONLY;
+  return empty_document;
 }
 
 void BrowserAccessibilityManagerMac::NotifyAccessibilityEvent(
@@ -42,6 +51,7 @@ void BrowserAccessibilityManagerMac::NotifyAccessibilityEvent(
         event_id = NSAccessibilitySelectedRowsChangedNotification;
       else
         event_id = NSAccessibilityFocusedUIElementChangedNotification;
+      break;
     case AccessibilityNotificationAlert:
       // Not used on Mac.
       return;

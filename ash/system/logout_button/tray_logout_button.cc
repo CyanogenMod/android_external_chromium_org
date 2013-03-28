@@ -8,20 +8,24 @@
 
 #include "ash/shell.h"
 #include "ash/system/tray/system_tray_delegate.h"
+#include "ash/system/tray/system_tray_notifier.h"
+#include "ash/system/tray/tray_constants.h"
 #include "ash/system/user/login_status.h"
 #include "base/logging.h"
 #include "base/string16.h"
 #include "grit/ash_resources.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/views/controls/button/border_images.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/label_button_border.h"
+#include "ui/views/layout/box_layout.h"
+#include "ui/views/view.h"
 
 namespace {
 
-const int kLogoutButtonBorderNormalImages[] = {
+const int kLogoutButtonNormalImages[] = {
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_NORMAL_TOP_LEFT,
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_NORMAL_TOP,
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_NORMAL_TOP_RIGHT,
@@ -32,7 +36,7 @@ const int kLogoutButtonBorderNormalImages[] = {
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_NORMAL_BOTTOM,
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_NORMAL_BOTTOM_RIGHT
 };
-const int kLogoutButtonBorderHotImages[] = {
+const int kLogoutButtonHotImages[] = {
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_HOT_TOP_LEFT,
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_HOT_TOP,
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_HOT_TOP_RIGHT,
@@ -43,7 +47,7 @@ const int kLogoutButtonBorderHotImages[] = {
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_HOT_BOTTOM,
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_HOT_BOTTOM_RIGHT
 };
-const int kLogoutButtonBorderPushedImages[] = {
+const int kLogoutButtonPushedImages[] = {
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_PUSHED_TOP_LEFT,
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_PUSHED_TOP,
   IDR_AURA_UBER_TRAY_LOGOUT_BUTTON_PUSHED_TOP_RIGHT,
@@ -62,31 +66,44 @@ namespace internal {
 
 namespace tray {
 
-class LogoutButton : public views::LabelButton,
+class LogoutButton : public views::View,
                      public views::ButtonListener {
  public:
-  LogoutButton(user::LoginStatus status) : views::LabelButton(this, string16()),
+  LogoutButton(user::LoginStatus status) : button_(NULL),
                                            login_status_(user::LOGGED_IN_NONE),
                                            show_logout_button_in_tray_(false) {
-    for (size_t state = 0; state < views::CustomButton::BS_COUNT; ++state) {
-      SetTextColor(static_cast<views::CustomButton::ButtonState>(state),
-                   SK_ColorWHITE);
+    views::BoxLayout* layout = new views::BoxLayout(
+        views::BoxLayout::kHorizontal, 0, 0, 0);
+    layout->set_spread_blank_space(true);
+    SetLayoutManager(layout);
+    set_border(views::Border::CreateEmptyBorder(
+        0, kTrayLabelItemHorizontalPaddingBottomAlignment, 0, 0));
+
+    button_ = new views::LabelButton(this, string16());
+    for (size_t state = 0; state < views::Button::STATE_COUNT; ++state) {
+      button_->SetTextColor(
+          static_cast<views::Button::ButtonState>(state), SK_ColorWHITE);
     }
-    SetFont(GetFont().DeriveFont(1));
-    views::LabelButtonBorder* border = new views::LabelButtonBorder();
-    border->SetImages(views::CustomButton::BS_NORMAL,
-                      views::BorderImages(kLogoutButtonBorderNormalImages));
-    border->SetImages(views::CustomButton::BS_HOT,
-                      views::BorderImages(kLogoutButtonBorderHotImages));
-    border->SetImages(views::CustomButton::BS_PUSHED,
-                      views::BorderImages(kLogoutButtonBorderPushedImages));
-    set_border(border);
+    button_->SetFont(button_->GetFont().DeriveFont(1));
+    views::LabelButtonBorder* border =
+        new views::LabelButtonBorder(views::Button::STYLE_TEXTBUTTON);
+    border->SetPainter(false, views::Button::STATE_NORMAL,
+        views::Painter::CreateImageGridPainter(kLogoutButtonNormalImages));
+    border->SetPainter(false, views::Button::STATE_HOVERED,
+        views::Painter::CreateImageGridPainter(kLogoutButtonHotImages));
+    border->SetPainter(false, views::Button::STATE_PRESSED,
+        views::Painter::CreateImageGridPainter(kLogoutButtonPushedImages));
+    button_->set_border(border);
+    AddChildView(button_);
     OnLoginStatusChanged(status);
   }
 
   void OnLoginStatusChanged(user::LoginStatus status) {
     login_status_ = status;
-    SetText(GetLocalizedSignOutStringForStatus(login_status_));
+    const string16 title = GetLocalizedSignOutStringForStatus(login_status_,
+                                                              false);
+    button_->SetText(title);
+    button_->SetAccessibleName(title);
     UpdateVisibility();
   }
 
@@ -96,9 +113,10 @@ class LogoutButton : public views::LabelButton,
   }
 
   // Overridden from views::ButtonListener.
-  void ButtonPressed(views::Button* sender, const ui::Event& event) OVERRIDE {
-    DCHECK_EQ(sender, this);
-    Shell::GetInstance()->tray_delegate()->SignOut();
+  virtual void ButtonPressed(views::Button* sender,
+                             const ui::Event& event) OVERRIDE {
+    DCHECK_EQ(sender, button_);
+    Shell::GetInstance()->system_tray_delegate()->SignOut();
   }
 
  private:
@@ -108,6 +126,7 @@ class LogoutButton : public views::LabelButton,
                login_status_ != user::LOGGED_IN_LOCKED);
   }
 
+  views::LabelButton* button_;
   user::LoginStatus login_status_;
   bool show_logout_button_in_tray_;
 
@@ -116,7 +135,15 @@ class LogoutButton : public views::LabelButton,
 
 }  // namespace tray
 
-TrayLogoutButton::TrayLogoutButton() : logout_button_(NULL) {
+TrayLogoutButton::TrayLogoutButton(SystemTray* system_tray)
+    : SystemTrayItem(system_tray),
+      logout_button_(NULL) {
+  Shell::GetInstance()->system_tray_notifier()->AddLogoutButtonObserver(this);
+}
+
+TrayLogoutButton::~TrayLogoutButton() {
+  Shell::GetInstance()->system_tray_notifier()->
+      RemoveLogoutButtonObserver(this);
 }
 
 views::View* TrayLogoutButton::CreateTrayView(user::LoginStatus status) {

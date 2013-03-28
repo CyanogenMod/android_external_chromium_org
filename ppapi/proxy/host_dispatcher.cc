@@ -87,10 +87,12 @@ HostDispatcher::~HostDispatcher() {
 
 bool HostDispatcher::InitHostWithChannel(
     Delegate* delegate,
+    base::ProcessId peer_pid,
     const IPC::ChannelHandle& channel_handle,
     bool is_client,
     const ppapi::Preferences& preferences) {
-  if (!Dispatcher::InitWithChannel(delegate, channel_handle, is_client))
+  if (!Dispatcher::InitWithChannel(delegate, peer_pid, channel_handle,
+                                   is_client))
     return false;
   AddIOThreadMessageFilter(sync_status_.get());
 
@@ -247,7 +249,7 @@ void HostDispatcher::OnHostMsgLogWithSource(PP_Instance instance,
                                             int int_log_level,
                                             const std::string& source,
                                             const std::string& value) {
-  PP_LogLevel_Dev level = static_cast<PP_LogLevel_Dev>(int_log_level);
+  PP_LogLevel level = static_cast<PP_LogLevel>(int_log_level);
   if (instance) {
     PpapiGlobals::Get()->LogWithSource(instance, level, source, value);
   } else {

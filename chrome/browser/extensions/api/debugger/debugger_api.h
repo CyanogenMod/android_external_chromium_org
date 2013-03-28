@@ -11,6 +11,9 @@
 #include <string>
 
 #include "chrome/browser/extensions/extension_function.h"
+#include "chrome/common/extensions/api/debugger.h"
+
+using extensions::api::debugger::Debuggee;
 
 // Base debugger function.
 
@@ -30,52 +33,54 @@ class DebuggerFunction : public AsyncExtensionFunction {
   DebuggerFunction();
   virtual ~DebuggerFunction() {}
 
+  void FormatErrorMessage(const std::string& format);
+
   bool InitWebContents();
   bool InitClientHost();
 
   content::WebContents* contents_;
-  int tab_id_;
+  Debuggee debuggee_;
   ExtensionDevToolsClientHost* client_host_;
 };
 
 // Implements the debugger.attach() extension function.
-class AttachDebuggerFunction : public DebuggerFunction {
+class DebuggerAttachFunction : public DebuggerFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("debugger.attach")
+  DECLARE_EXTENSION_FUNCTION("debugger.attach", DEBUGGER_ATTACH)
 
-  AttachDebuggerFunction();
+  DebuggerAttachFunction();
 
  protected:
-  virtual ~AttachDebuggerFunction();
+  virtual ~DebuggerAttachFunction();
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
 // Implements the debugger.detach() extension function.
-class DetachDebuggerFunction : public DebuggerFunction {
+class DebuggerDetachFunction : public DebuggerFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("debugger.detach")
+  DECLARE_EXTENSION_FUNCTION("debugger.detach", DEBUGGER_DETACH)
 
-  DetachDebuggerFunction();
+  DebuggerDetachFunction();
 
  protected:
-  virtual ~DetachDebuggerFunction();
+  virtual ~DebuggerDetachFunction();
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
 // Implements the debugger.sendCommand() extension function.
-class SendCommandDebuggerFunction : public DebuggerFunction {
+class DebuggerSendCommandFunction : public DebuggerFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("debugger.sendCommand")
+  DECLARE_EXTENSION_FUNCTION("debugger.sendCommand", DEBUGGER_SENDCOMMAND)
 
-  SendCommandDebuggerFunction();
+  DebuggerSendCommandFunction();
   void SendResponseBody(base::DictionaryValue* result);
 
  protected:
-  virtual ~SendCommandDebuggerFunction();
+  virtual ~DebuggerSendCommandFunction();
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;

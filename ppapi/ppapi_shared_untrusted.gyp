@@ -24,7 +24,6 @@
             'build_glibc': 0,
             'build_newlib': 1,
             'defines': [
-              'NACL_PPAPI_IPC_PROXY',
               # Enable threading for the untrusted side of the proxy.
               # TODO(bbudge) remove when this is the default.
               'ENABLE_PEPPER_THREADING',
@@ -32,7 +31,6 @@
           },
           'include_dirs': [
             '..',
-            '../third_party/khronos',
           ],
           'dependencies': [
             '../native_client/tools.gyp:prep_toolchain',
@@ -41,6 +39,7 @@
             '../gpu/gpu_untrusted.gyp:command_buffer_client_untrusted',
             '../gpu/gpu_untrusted.gyp:gles2_implementation_untrusted',
             '../media/media_untrusted.gyp:shared_memory_support_untrusted',
+            '../third_party/khronos/khronos.gyp:khronos_headers',
           ],
         },
       ],

@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/message_bundle.h"
@@ -17,6 +18,7 @@
 #include "chrome/renderer/extensions/chrome_v8_extension.h"
 #include "chrome/renderer/extensions/dispatcher.h"
 #include "chrome/renderer/extensions/event_bindings.h"
+#include "chrome/renderer/extensions/scoped_persistent.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "grit/renderer_resources.h"
@@ -26,7 +28,7 @@
 // Message passing API example (in a content script):
 // var extension =
 //    new chrome.Extension('00123456789abcdef0123456789abcdef0123456');
-// var port = extension.connect();
+// var port = runtime.connect();
 // port.postMessage('Can you hear me now?');
 // port.onmessage.addListener(function(msg, port) {
 //   alert('response=' + msg);
@@ -62,23 +64,31 @@ static void ClearPortData(int port_id) {
 }
 
 const char kPortClosedError[] = "Attempting to use a disconnected port object";
+const char kReceivingEndDoesntExistError[] =
+    "Could not establish connection. Receiving end does not exist.";
 
 class ExtensionImpl : public extensions::ChromeV8Extension {
  public:
-  explicit ExtensionImpl(extensions::Dispatcher* dispatcher)
-      : extensions::ChromeV8Extension(dispatcher) {
-    RouteStaticFunction("CloseChannel", &CloseChannel);
-    RouteStaticFunction("PortAddRef", &PortAddRef);
-    RouteStaticFunction("PortRelease", &PortRelease);
-    RouteStaticFunction("PostMessage", &PostMessage);
-    RouteStaticFunction("BindToGC", &BindToGC);
+  explicit ExtensionImpl(extensions::Dispatcher* dispatcher,
+                         v8::Handle<v8::Context> context)
+      : extensions::ChromeV8Extension(dispatcher, context) {
+    RouteFunction("CloseChannel",
+        base::Bind(&ExtensionImpl::CloseChannel, base::Unretained(this)));
+    RouteFunction("PortAddRef",
+        base::Bind(&ExtensionImpl::PortAddRef, base::Unretained(this)));
+    RouteFunction("PortRelease",
+        base::Bind(&ExtensionImpl::PortRelease, base::Unretained(this)));
+    RouteFunction("PostMessage",
+        base::Bind(&ExtensionImpl::PostMessage, base::Unretained(this)));
+    RouteFunction("BindToGC",
+        base::Bind(&ExtensionImpl::BindToGC, base::Unretained(this)));
   }
 
-  ~ExtensionImpl() {}
+  virtual ~ExtensionImpl() {}
 
   // Sends a message along the given channel.
-  static v8::Handle<v8::Value> PostMessage(const v8::Arguments& args) {
-    content::RenderView* renderview = GetCurrentRenderView();
+  v8::Handle<v8::Value> PostMessage(const v8::Arguments& args) {
+    content::RenderView* renderview = GetRenderView();
     if (!renderview)
       return v8::Undefined();
 
@@ -96,7 +106,7 @@ class ExtensionImpl : public extensions::ChromeV8Extension {
   }
 
   // Forcefully disconnects a port.
-  static v8::Handle<v8::Value> CloseChannel(const v8::Arguments& args) {
+  v8::Handle<v8::Value> CloseChannel(const v8::Arguments& args) {
     if (args.Length() >= 2 && args[0]->IsInt32() && args[1]->IsBoolean()) {
       int port_id = args[0]->Int32Value();
       if (!HasPortData(port_id)) {
@@ -106,7 +116,7 @@ class ExtensionImpl : public extensions::ChromeV8Extension {
       bool notify_browser = args[1]->BooleanValue();
       if (notify_browser)
         content::RenderThread::Get()->Send(
-            new ExtensionHostMsg_CloseChannel(port_id, false));
+            new ExtensionHostMsg_CloseChannel(port_id, std::string()));
       ClearPortData(port_id);
     }
     return v8::Undefined();
@@ -114,7 +124,7 @@ class ExtensionImpl : public extensions::ChromeV8Extension {
 
   // A new port has been created for a context.  This occurs both when script
   // opens a connection, and when a connection is opened to this script.
-  static v8::Handle<v8::Value> PortAddRef(const v8::Arguments& args) {
+  v8::Handle<v8::Value> PortAddRef(const v8::Arguments& args) {
     if (args.Length() >= 1 && args[0]->IsInt32()) {
       int port_id = args[0]->Int32Value();
       ++GetPortData(port_id).ref_count;
@@ -125,13 +135,13 @@ class ExtensionImpl : public extensions::ChromeV8Extension {
   // The frame a port lived in has been destroyed.  When there are no more
   // frames with a reference to a given port, we will disconnect it and notify
   // the other end of the channel.
-  static v8::Handle<v8::Value> PortRelease(const v8::Arguments& args) {
+  v8::Handle<v8::Value> PortRelease(const v8::Arguments& args) {
     if (args.Length() >= 1 && args[0]->IsInt32()) {
       int port_id = args[0]->Int32Value();
       if (HasPortData(port_id) && --GetPortData(port_id).ref_count == 0) {
         // Send via the RenderThread because the RenderView might be closing.
         content::RenderThread::Get()->Send(
-            new ExtensionHostMsg_CloseChannel(port_id, false));
+            new ExtensionHostMsg_CloseChannel(port_id, std::string()));
         ClearPortData(port_id);
       }
     }
@@ -139,32 +149,39 @@ class ExtensionImpl : public extensions::ChromeV8Extension {
   }
 
   struct GCCallbackArgs {
-    v8::Persistent<v8::Object> object;
-    v8::Persistent<v8::Function> callback;
+    GCCallbackArgs(v8::Handle<v8::Object> object,
+                   v8::Handle<v8::Function> callback)
+        : object(object), callback(callback) {}
+
+    extensions::ScopedPersistent<v8::Object> object;
+    extensions::ScopedPersistent<v8::Function> callback;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(GCCallbackArgs);
   };
 
-  static void GCCallback(v8::Persistent<v8::Value> object, void* parameter) {
+  static void GCCallback(v8::Isolate* isolate,
+                         v8::Persistent<v8::Value> object,
+                         void* parameter) {
     v8::HandleScope handle_scope;
-    GCCallbackArgs* args = reinterpret_cast<GCCallbackArgs*>(parameter);
+    GCCallbackArgs* args = static_cast<GCCallbackArgs*>(parameter);
+    v8::Handle<v8::Context> context = args->callback->CreationContext();
+    v8::Context::Scope context_scope(context);
     WebKit::WebScopedMicrotaskSuppression suppression;
-    args->callback->Call(args->callback->CreationContext()->Global(), 0, NULL);
-    args->callback.Dispose();
-    args->object.Dispose();
+    // Wrap in try/catch here so that we don't call into any message/exception
+    // handlers during GC. That is a recipe for pain.
+    v8::TryCatch trycatch;
+    args->callback->Call(context->Global(), 0, NULL);
     delete args;
   }
 
   // Binds a callback to be invoked when the given object is garbage collected.
-  static v8::Handle<v8::Value> BindToGC(const v8::Arguments& args) {
-    if (args.Length() == 2 && args[0]->IsObject() && args[1]->IsFunction()) {
-      GCCallbackArgs* context = new GCCallbackArgs;
-      context->callback = v8::Persistent<v8::Function>::New(
-          v8::Handle<v8::Function>::Cast(args[1]));
-      context->object = v8::Persistent<v8::Object>::New(
-          v8::Handle<v8::Object>::Cast(args[0]));
-      context->object.MakeWeak(context, GCCallback);
-    } else {
-      NOTREACHED();
-    }
+  v8::Handle<v8::Value> BindToGC(const v8::Arguments& args) {
+    CHECK(args.Length() == 2 && args[0]->IsObject() && args[1]->IsFunction());
+    GCCallbackArgs* context = new GCCallbackArgs(
+        v8::Handle<v8::Object>::Cast(args[0]),
+        v8::Handle<v8::Function>::Cast(args[1]));
+    context->object.MakeWeak(context, GCCallback);
     return v8::Undefined();
   }
 };
@@ -173,8 +190,10 @@ class ExtensionImpl : public extensions::ChromeV8Extension {
 
 namespace extensions {
 
-ChromeV8Extension* MiscellaneousBindings::Get(Dispatcher* dispatcher) {
-  return new ExtensionImpl(dispatcher);
+ChromeV8Extension* MiscellaneousBindings::Get(
+    Dispatcher* dispatcher,
+    v8::Handle<v8::Context> context) {
+  return new ExtensionImpl(dispatcher, context);
 }
 
 // static
@@ -234,7 +253,8 @@ void MiscellaneousBindings::DispatchOnConnect(
   // as a disconnect).
   if (!port_created) {
     content::RenderThread::Get()->Send(
-        new ExtensionHostMsg_CloseChannel(target_port_id, true));
+        new ExtensionHostMsg_CloseChannel(
+            target_port_id, kReceivingEndDoesntExistError));
   }
 }
 
@@ -286,7 +306,7 @@ void MiscellaneousBindings::DeliverMessage(
 void MiscellaneousBindings::DispatchOnDisconnect(
     const ChromeV8ContextSet::ContextSet& contexts,
     int port_id,
-    bool connection_error,
+    const std::string& error_message,
     content::RenderView* restrict_to_render_view) {
   v8::HandleScope handle_scope;
 
@@ -299,7 +319,11 @@ void MiscellaneousBindings::DispatchOnDisconnect(
 
     std::vector<v8::Handle<v8::Value> > arguments;
     arguments.push_back(v8::Integer::New(port_id));
-    arguments.push_back(v8::Boolean::New(connection_error));
+    if (!error_message.empty()) {
+      arguments.push_back(v8::String::New(error_message.c_str()));
+    } else {
+      arguments.push_back(v8::Null());
+    }
     (*it)->CallChromeHiddenMethod("Port.dispatchOnDisconnect",
                                   arguments.size(), &arguments[0],
                                   NULL);

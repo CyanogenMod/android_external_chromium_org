@@ -11,14 +11,15 @@
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/content_settings/content_settings_rule.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -39,14 +40,18 @@ const ContentSetting kDefaultSettings[] = {
   CONTENT_SETTING_BLOCK,    // CONTENT_SETTINGS_TYPE_POPUPS
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_GEOLOCATION
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_NOTIFICATIONS
-  CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_INTENTS
   CONTENT_SETTING_DEFAULT,  // CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_FULLSCREEN
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_MOUSELOCK
   CONTENT_SETTING_DEFAULT,  // CONTENT_SETTINGS_TYPE_MIXEDSCRIPT
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_MEDIASTREAM
+  CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC
+  CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA
   CONTENT_SETTING_DEFAULT,  // CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS
   CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_PPAPI_BROKER
+#if defined(OS_WIN)
+  CONTENT_SETTING_ASK,      // CONTENT_SETTINGS_TYPE_METRO_SWITCH_TO_DESKTOP
+#endif
 };
 COMPILE_ASSERT(arraysize(kDefaultSettings) == CONTENT_SETTINGS_NUM_TYPES,
                default_settings_incorrect_size);
@@ -64,11 +69,11 @@ class DefaultRuleIterator : public RuleIterator {
       value_.reset(value->DeepCopy());
   }
 
-  bool HasNext() const {
+  virtual bool HasNext() const OVERRIDE {
     return value_.get() != NULL;
   }
 
-  Rule Next() {
+  virtual Rule Next() OVERRIDE {
     DCHECK(value_.get());
     return Rule(ContentSettingsPattern::Wildcard(),
                 ContentSettingsPattern::Wildcard(),
@@ -82,7 +87,7 @@ class DefaultRuleIterator : public RuleIterator {
 }  // namespace
 
 // static
-void DefaultProvider::RegisterUserPrefs(PrefService* prefs) {
+void DefaultProvider::RegisterUserPrefs(PrefRegistrySyncable* registry) {
   // The registration of the preference prefs::kDefaultContentSettings should
   // also include the default values for default content settings. This allows
   // functional tests to get default content settings by reading the preference
@@ -90,19 +95,9 @@ void DefaultProvider::RegisterUserPrefs(PrefService* prefs) {
   // TODO(markusheintz): Write pyauto hooks for the content settings map as
   // content settings should be read from the host content settings map.
   DictionaryValue* default_content_settings = new DictionaryValue();
-  prefs->RegisterDictionaryPref(prefs::kDefaultContentSettings,
-                                default_content_settings,
-                                PrefService::SYNCABLE_PREF);
-
-  // Obsolete prefs, for migrations:
-  prefs->RegisterIntegerPref(
-      prefs::kDesktopNotificationDefaultContentSetting,
-      kDefaultSettings[CONTENT_SETTINGS_TYPE_NOTIFICATIONS],
-      PrefService::SYNCABLE_PREF);
-  prefs->RegisterIntegerPref(
-      prefs::kGeolocationDefaultContentSetting,
-      kDefaultSettings[CONTENT_SETTINGS_TYPE_GEOLOCATION],
-      PrefService::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(prefs::kDefaultContentSettings,
+                                   default_content_settings,
+                                   PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
 DefaultProvider::DefaultProvider(PrefService* prefs, bool incognito)
@@ -110,8 +105,6 @@ DefaultProvider::DefaultProvider(PrefService* prefs, bool incognito)
       is_incognito_(incognito),
       updating_preferences_(false) {
   DCHECK(prefs_);
-  MigrateObsoleteNotificationPref();
-  MigrateObsoleteGeolocationPref();
 
   // Read global defaults.
   ReadDefaultSettings(true);
@@ -152,11 +145,6 @@ DefaultProvider::DefaultProvider(PrefService* prefs, bool incognito)
           default_settings_[CONTENT_SETTINGS_TYPE_NOTIFICATIONS].get()),
       CONTENT_SETTING_NUM_SETTINGS);
   UMA_HISTOGRAM_ENUMERATION(
-      "ContentSettings.DefaultHandlersSetting",
-      ValueToContentSetting(
-          default_settings_[CONTENT_SETTINGS_TYPE_INTENTS].get()),
-      CONTENT_SETTING_NUM_SETTINGS);
-  UMA_HISTOGRAM_ENUMERATION(
       "ContentSettings.DefaultMouseCursorSetting",
       ValueToContentSetting(
           default_settings_[CONTENT_SETTINGS_TYPE_MOUSELOCK].get()),
@@ -168,8 +156,9 @@ DefaultProvider::DefaultProvider(PrefService* prefs, bool incognito)
       CONTENT_SETTING_NUM_SETTINGS);
 
   pref_change_registrar_.Init(prefs_);
-  pref_change_registrar_.Add(prefs::kDefaultContentSettings, this);
-  pref_change_registrar_.Add(prefs::kGeolocationDefaultContentSetting, this);
+  PrefChangeRegistrar::NamedChangeCallback callback = base::Bind(
+      &DefaultProvider::OnPreferenceChanged, base::Unretained(this));
+  pref_change_registrar_.Add(prefs::kDefaultContentSettings, callback);
 }
 
 DefaultProvider::~DefaultProvider() {
@@ -199,16 +188,7 @@ bool DefaultProvider::SetWebsiteSetting(
   // properly if we don't pass on the ownership.
   scoped_ptr<base::Value> value(in_value);
   {
-    AutoReset<bool> auto_reset(&updating_preferences_, true);
-    // Keep the obsolete pref in sync as long as backwards compatibility is
-    // required. This is required to keep sync working correctly.
-    if (content_type == CONTENT_SETTINGS_TYPE_GEOLOCATION) {
-      if (value.get()) {
-        prefs_->Set(prefs::kGeolocationDefaultContentSetting, *value);
-      } else {
-        prefs_->ClearPref(prefs::kGeolocationDefaultContentSetting);
-      }
-    }
+    base::AutoReset<bool> auto_reset(&updating_preferences_, true);
 
     // |DefaultProvider| should not send any notifications when holding
     // |lock_|. |DictionaryPrefUpdate| destructor and
@@ -276,21 +256,13 @@ void DefaultProvider::ShutdownOnUIThread() {
   prefs_ = NULL;
 }
 
-void DefaultProvider::OnPreferenceChanged(PrefServiceBase* service,
-                                          const std::string& name) {
+void DefaultProvider::OnPreferenceChanged(const std::string& name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(prefs_, service);
   if (updating_preferences_)
     return;
 
   if (name == prefs::kDefaultContentSettings) {
     ReadDefaultSettings(true);
-  } else if (name == prefs::kGeolocationDefaultContentSetting) {
-    MigrateObsoleteGeolocationPref();
-    // Return and don't send a notifications. Migrating the obsolete
-    // geolocation pref will change the prefs::kDefaultContentSettings and
-    // cause the notification to be fired.
-    return;
   } else {
     NOTREACHED() << "Unexpected preference observed";
     return;
@@ -330,15 +302,13 @@ void DefaultProvider::ForceDefaultsToBeExplicit() {
 
 void DefaultProvider::GetSettingsFromDictionary(
     const DictionaryValue* dictionary) {
-  for (DictionaryValue::key_iterator i(dictionary->begin_keys());
-       i != dictionary->end_keys(); ++i) {
-    const std::string& content_type(*i);
+  for (DictionaryValue::Iterator i(*dictionary); !i.IsAtEnd(); i.Advance()) {
+    const std::string& content_type(i.key());
     for (size_t type = 0; type < CONTENT_SETTINGS_NUM_TYPES; ++type) {
       if (content_type == GetTypeName(ContentSettingsType(type))) {
         int int_value = CONTENT_SETTING_DEFAULT;
-        bool found = dictionary->GetIntegerWithoutPathExpansion(content_type,
-                                                                &int_value);
-        DCHECK(found);
+        bool is_integer = i.value().GetAsInteger(&int_value);
+        DCHECK(is_integer);
         default_settings_[ContentSettingsType(type)].reset(
             Value::CreateIntegerValue(int_value));
         break;
@@ -351,37 +321,6 @@ void DefaultProvider::GetSettingsFromDictionary(
               CONTENT_SETTING_ASK) {
     default_settings_[CONTENT_SETTINGS_TYPE_COOKIES].reset(
         Value::CreateIntegerValue(CONTENT_SETTING_BLOCK));
-  }
-}
-
-void DefaultProvider::MigrateObsoleteNotificationPref() {
-  if (prefs_->HasPrefPath(prefs::kDesktopNotificationDefaultContentSetting)) {
-    const base::Value* value = prefs_->FindPreference(
-        prefs::kDesktopNotificationDefaultContentSetting)->GetValue();
-    // Do not clear the old preference yet as long as we need to maintain
-    // backward compatibility.
-    SetWebsiteSetting(
-        ContentSettingsPattern::Wildcard(),
-        ContentSettingsPattern::Wildcard(),
-        CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
-        std::string(),
-        value->DeepCopy());
-    prefs_->ClearPref(prefs::kDesktopNotificationDefaultContentSetting);
-  }
-}
-
-void DefaultProvider::MigrateObsoleteGeolocationPref() {
-  if (prefs_->HasPrefPath(prefs::kGeolocationDefaultContentSetting)) {
-    const base::Value* value = prefs_->FindPreference(
-        prefs::kGeolocationDefaultContentSetting)->GetValue();
-    // Do not clear the old preference yet as long as we need to maintain
-    // backward compatibility.
-    SetWebsiteSetting(
-        ContentSettingsPattern::Wildcard(),
-        ContentSettingsPattern::Wildcard(),
-        CONTENT_SETTINGS_TYPE_GEOLOCATION,
-        std::string(),
-        value->DeepCopy());
   }
 }
 

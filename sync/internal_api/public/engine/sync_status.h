@@ -48,8 +48,6 @@ struct SYNC_EXPORT SyncStatus {
   int committed_count;
 
   bool syncing;
-  // True after a client has done a first sync.
-  bool initial_sync_ended;
 
   // Total updates available.  If zero, nothing left to download.
   int64 updates_available;
@@ -95,8 +93,18 @@ struct SYNC_EXPORT SyncStatus {
   // Per-datatype throttled status.
   ModelTypeSet throttled_types;
 
-  // The unique identifer for this client.
-  std::string unique_id;
+  // The unique identifer for the sync store.
+  std::string sync_id;
+
+  // The unique identifier for the invalidation client.
+  std::string invalidator_client_id;
+
+  // Counters grouped by model type
+  std::vector<int> num_entries_by_type;
+  std::vector<int> num_to_delete_entries_by_type;
+
+  // Time of next retry if sync scheduler is throttled or in backoff.
+  base::Time retry_time;
 };
 
 }  // namespace syncer

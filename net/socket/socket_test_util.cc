@@ -12,17 +12,19 @@
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
+#include "base/run_loop.h"
 #include "base/time.h"
 #include "net/base/address_family.h"
 #include "net/base/address_list.h"
 #include "net/base/auth.h"
-#include "net/base/ssl_cert_request_info.h"
-#include "net/base/ssl_info.h"
+#include "net/base/load_timing_info.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/socket/client_socket_pool_histograms.h"
 #include "net/socket/socket.h"
+#include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 // Socket events are easier to debug if you log individual reads and writes.
@@ -450,13 +452,17 @@ DeterministicSocketData::DeterministicSocketData(MockRead* reads,
       current_write_(),
       stopping_sequence_number_(0),
       stopped_(false),
-      print_debug_(false) {
+      print_debug_(false),
+      is_running_(false) {
   VerifyCorrectSequenceNumbers(reads, reads_count, writes, writes_count);
 }
 
 DeterministicSocketData::~DeterministicSocketData() {}
 
 void DeterministicSocketData::Run() {
+  DCHECK(!is_running_);
+  is_running_ = true;
+
   SetStopped(false);
   int counter = 0;
   // Continue to consume data until all data has run out, or the stopped_ flag
@@ -466,7 +472,7 @@ void DeterministicSocketData::Run() {
   // since they can change in either.
   while ((!at_write_eof() || !at_read_eof()) && !stopped()) {
     if (counter % 2 == 0)
-      MessageLoop::current()->RunAllPending();
+      base::RunLoop().RunUntilIdle();
     if (counter % 2 == 1) {
       InvokeCallbacks();
     }
@@ -477,9 +483,10 @@ void DeterministicSocketData::Run() {
   while (socket_ && (socket_->write_pending() || socket_->read_pending()) &&
          !stopped()) {
     InvokeCallbacks();
-    MessageLoop::current()->RunAllPending();
+    base::RunLoop().RunUntilIdle();
   }
   SetStopped(false);
+  is_running_ = false;
 }
 
 void DeterministicSocketData::RunFor(int steps) {
@@ -499,7 +506,6 @@ void DeterministicSocketData::StopAfter(int seq) {
 
 MockRead DeterministicSocketData::GetNextRead() {
   current_read_ = StaticSocketDataProvider::PeekRead();
-  EXPECT_LE(sequence_number_, current_read_.sequence_number);
 
   // Synchronous read while stopped is an error
   if (stopped() && current_read_.mode == SYNCHRONOUS) {
@@ -585,14 +591,14 @@ void DeterministicSocketData::Reset() {
 void DeterministicSocketData::InvokeCallbacks() {
   if (socket_ && socket_->write_pending() &&
       (current_write().sequence_number == sequence_number())) {
-    socket_->CompleteWrite();
     NextStep();
+    socket_->CompleteWrite();
     return;
   }
   if (socket_ && socket_->read_pending() &&
       (current_read().sequence_number == sequence_number())) {
-    socket_->CompleteRead();
     NextStep();
+    socket_->CompleteRead();
     return;
   }
 }
@@ -688,10 +694,10 @@ void MockClientSocketFactory::ClearSSLSessionCache() {
 
 const char MockClientSocket::kTlsUnique[] = "MOCK_TLSUNIQ";
 
-MockClientSocket::MockClientSocket(net::NetLog* net_log)
+MockClientSocket::MockClientSocket(const BoundNetLog& net_log)
     : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       connected_(false),
-      net_log_(BoundNetLog::Make(net_log, net::NetLog::SOURCE_NONE)) {
+      net_log_(net_log) {
   IPAddressNumber ip;
   CHECK(ParseIPLiteralToNumber("192.0.2.33", &ip));
   peer_addr_ = IPEndPoint(ip, 0);
@@ -782,7 +788,7 @@ void MockClientSocket::RunCallback(const net::CompletionCallback& callback,
 MockTCPClientSocket::MockTCPClientSocket(const AddressList& addresses,
                                          net::NetLog* net_log,
                                          SocketDataProvider* data)
-    : MockClientSocket(net_log),
+    : MockClientSocket(BoundNetLog::Make(net_log, net::NetLog::SOURCE_NONE)),
       addresses_(addresses),
       data_(data),
       read_offset_(0),
@@ -881,7 +887,11 @@ bool MockTCPClientSocket::IsConnectedAndIdle() const {
 }
 
 int MockTCPClientSocket::GetPeerAddress(IPEndPoint* address) const {
-  return MockClientSocket::GetPeerAddress(address);
+  if (addresses_.empty())
+    return MockClientSocket::GetPeerAddress(address);
+
+  *address = addresses_[0];
+  return OK;
 }
 
 bool MockTCPClientSocket::WasEverUsed() const {
@@ -973,7 +983,7 @@ int MockTCPClientSocket::CompleteRead() {
 
 DeterministicMockTCPClientSocket::DeterministicMockTCPClientSocket(
     net::NetLog* net_log, DeterministicSocketData* data)
-    : MockClientSocket(net_log),
+    : MockClientSocket(BoundNetLog::Make(net_log, net::NetLog::SOURCE_NONE)),
       write_pending_(false),
       write_result_(0),
       read_data_(),
@@ -1135,7 +1145,10 @@ MockSSLClientSocket::MockSSLClientSocket(
     const HostPortPair& host_port_pair,
     const SSLConfig& ssl_config,
     SSLSocketDataProvider* data)
-    : MockClientSocket(transport_socket->socket()->NetLog().net_log()),
+    : MockClientSocket(
+         // Have to use the right BoundNetLog for LoadTimingInfo regression
+         // tests.
+         transport_socket->socket()->NetLog()),
       transport_(transport_socket),
       data_(data),
       is_npn_state_set_(false),
@@ -1284,6 +1297,7 @@ MockUDPClientSocket::MockUDPClientSocket(SocketDataProvider* data,
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   DCHECK(data_);
   data_->Reset();
+  peer_addr_ = data->connect_data().peer_addr;
 }
 
 MockUDPClientSocket::~MockUDPClientSocket() {}
@@ -1347,7 +1361,7 @@ void MockUDPClientSocket::Close() {
 }
 
 int MockUDPClientSocket::GetPeerAddress(IPEndPoint* address) const {
-  NOTIMPLEMENTED();
+  *address = peer_addr_;
   return OK;
 }
 
@@ -1483,7 +1497,7 @@ bool ClientSocketPoolTest::ReleaseOneConnection(KeepAlive keep_alive) {
       if (keep_alive == NO_KEEP_ALIVE)
         (*i)->handle()->socket()->Disconnect();
       (*i)->handle()->Reset();
-      MessageLoop::current()->RunAllPending();
+      base::RunLoop().RunUntilIdle();
       return true;
     }
   }
@@ -1533,6 +1547,16 @@ void MockTransportClientSocketPool::MockConnectJob::OnConnect(int rv) {
     return;
   if (rv == OK) {
     handle_->set_socket(socket_.release());
+
+    // Needed for socket pool tests that layer other sockets on top of mock
+    // sockets.
+    LoadTimingInfo::ConnectTiming connect_timing;
+    base::TimeTicks now = base::TimeTicks::Now();
+    connect_timing.dns_start = now;
+    connect_timing.dns_end = now;
+    connect_timing.connect_start = now;
+    connect_timing.connect_end = now;
+    handle_->set_connect_timing(connect_timing);
   } else {
     socket_.reset();
   }

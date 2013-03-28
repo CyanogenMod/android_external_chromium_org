@@ -7,8 +7,8 @@
 #include <algorithm>
 #include <vector>
 
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler_delegate.h"
 #include "chrome/browser/sync/invalidation_frontend.h"
 #include "chrome/common/extensions/extension.h"
@@ -79,19 +79,24 @@ bool ObjectIdToExtensionAndSubchannel(const invalidation::ObjectId& object_id,
 
 PushMessagingInvalidationHandler::PushMessagingInvalidationHandler(
     InvalidationFrontend* service,
-    PushMessagingInvalidationHandlerDelegate* delegate,
-    const std::set<std::string>& extension_ids)
+    PushMessagingInvalidationHandlerDelegate* delegate)
     : service_(service),
-      registered_extensions_(extension_ids),
       delegate_(delegate) {
   DCHECK(service_);
   service_->RegisterInvalidationHandler(this);
-  UpdateRegistrations();
 }
 
 PushMessagingInvalidationHandler::~PushMessagingInvalidationHandler() {
   DCHECK(thread_checker_.CalledOnValidThread());
   service_->UnregisterInvalidationHandler(this);
+}
+
+void PushMessagingInvalidationHandler::SuppressInitialInvalidationsForExtension(
+    const std::string& extension_id) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  const syncer::ObjectIdSet& suppressed_ids =
+      ExtensionIdToObjectIds(extension_id);
+  suppressed_ids_.insert(suppressed_ids.begin(), suppressed_ids.end());
 }
 
 void PushMessagingInvalidationHandler::RegisterExtension(
@@ -117,11 +122,19 @@ void PushMessagingInvalidationHandler::OnInvalidatorStateChange(
 }
 
 void PushMessagingInvalidationHandler::OnIncomingInvalidation(
-    const syncer::ObjectIdInvalidationMap& invalidation_map,
-    syncer::IncomingInvalidationSource source) {
+    const syncer::ObjectIdInvalidationMap& invalidation_map) {
   DCHECK(thread_checker_.CalledOnValidThread());
   for (syncer::ObjectIdInvalidationMap::const_iterator it =
            invalidation_map.begin(); it != invalidation_map.end(); ++it) {
+    service_->AcknowledgeInvalidation(it->first, it->second.ack_handle);
+
+    syncer::ObjectIdSet::iterator suppressed_id =
+        suppressed_ids_.find(it->first);
+    if (suppressed_id != suppressed_ids_.end()) {
+      suppressed_ids_.erase(suppressed_id);
+      continue;
+    }
+
     std::string extension_id;
     int subchannel;
     if (ObjectIdToExtensionAndSubchannel(it->first,

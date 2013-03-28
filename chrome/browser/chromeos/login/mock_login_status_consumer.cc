@@ -15,13 +15,13 @@ MockConsumer::MockConsumer() {}
 MockConsumer::~MockConsumer() {}
 
 // static
-void MockConsumer::OnDemoUserSuccessQuit() {
+void MockConsumer::OnRetailModeSuccessQuit() {
   MessageLoop::current()->Quit();
 }
 
 // static
-void MockConsumer::OnDemoUserSuccessQuitAndFail() {
-  ADD_FAILURE() << "Demo Login should have failed!";
+void MockConsumer::OnRetailModeSuccessQuitAndFail() {
+  ADD_FAILURE() << "Retail mode login should have failed!";
   MessageLoop::current()->Quit();
 }
 
@@ -32,14 +32,13 @@ void MockConsumer::OnGuestSuccessQuit() {
 
 // static
 void MockConsumer::OnGuestSuccessQuitAndFail() {
-  ADD_FAILURE() << "Guest Login should have failed!";
+  ADD_FAILURE() << "Guest login should have failed!";
   MessageLoop::current()->Quit();
 }
 
 // static
 void MockConsumer::OnSuccessQuit(
-    const std::string& username,
-    const std::string& password,
+    const UserCredentials& credentials,
     bool pending_requests,
     bool using_oauth) {
   MessageLoop::current()->Quit();
@@ -47,8 +46,7 @@ void MockConsumer::OnSuccessQuit(
 
 // static
 void MockConsumer::OnSuccessQuitAndFail(
-    const std::string& username,
-    const std::string& password,
+    const UserCredentials& credentials,
     bool pending_requests,
     bool using_oauth) {
   ADD_FAILURE() << "Login should NOT have succeeded!";

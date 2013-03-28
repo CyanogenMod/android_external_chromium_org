@@ -11,14 +11,14 @@
 #include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
-#include "chrome/browser/policy/cloud_policy_constants.h"
-#include "chrome/browser/policy/proto/chrome_device_policy.pb.h"
-#include "chrome/browser/policy/proto/device_management_backend.pb.h"
+#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
+#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
+#include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chrome/test/base/testing_pref_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -31,7 +31,7 @@ class CrosSettingsTest : public testing::Test {
   CrosSettingsTest()
       : message_loop_(MessageLoop::TYPE_UI),
         ui_thread_(content::BrowserThread::UI, &message_loop_),
-        local_state_(static_cast<TestingBrowserProcess*>(g_browser_process)),
+        local_state_(TestingBrowserProcess::GetGlobal()),
         weak_factory_(this) {}
 
   virtual ~CrosSettingsTest() {}
@@ -119,7 +119,7 @@ TEST_F(CrosSettingsTest, SetWhitelist) {
   // Setting the whitelist should also switch the value of
   // kAccountsPrefAllowNewUser to false.
   base::ListValue whitelist;
-  whitelist.Append(base::Value::CreateStringValue("me@owner"));
+  whitelist.Append(new base::StringValue("me@owner"));
   AddExpectation(kAccountsPrefAllowNewUser,
                  base::Value::CreateBooleanValue(false));
   AddExpectation(kAccountsPrefUsers, whitelist.DeepCopy());
@@ -163,12 +163,11 @@ TEST_F(CrosSettingsTest, SetWhitelistWithListOps2) {
 }
 
 TEST_F(CrosSettingsTest, SetEmptyWhitelist) {
-  // Setting the whitelist empty should switch the value of
-  // kAccountsPrefAllowNewUser to true.
+  // An empty whitelist should result in nobody being able to log in.
   base::ListValue whitelist;
   base::FundamentalValue disallow_new(false);
   AddExpectation(kAccountsPrefAllowNewUser,
-                 base::Value::CreateBooleanValue(true));
+                 base::Value::CreateBooleanValue(false));
   SetPref(kAccountsPrefUsers, &whitelist);
   SetPref(kAccountsPrefAllowNewUser, &disallow_new);
   FetchPref(kAccountsPrefAllowNewUser);
@@ -179,7 +178,7 @@ TEST_F(CrosSettingsTest, SetWhitelistAndNoNewUsers) {
   // Setting the whitelist should allow us to set kAccountsPrefAllowNewUser to
   // false (which is the implicit value too).
   base::ListValue whitelist;
-  whitelist.Append(base::Value::CreateStringValue("me@owner"));
+  whitelist.Append(new base::StringValue("me@owner"));
   AddExpectation(kAccountsPrefUsers, whitelist.DeepCopy());
   AddExpectation(kAccountsPrefAllowNewUser,
                  base::Value::CreateBooleanValue(false));
@@ -209,10 +208,10 @@ TEST_F(CrosSettingsTest, SetEphemeralUsersEnabled) {
 
 TEST_F(CrosSettingsTest, FindEmailInList) {
   base::ListValue list;
-  list.Append(base::Value::CreateStringValue("user@example.com"));
-  list.Append(base::Value::CreateStringValue("nodomain"));
-  list.Append(base::Value::CreateStringValue("with.dots@gmail.com"));
-  list.Append(base::Value::CreateStringValue("Upper@example.com"));
+  list.Append(new base::StringValue("user@example.com"));
+  list.Append(new base::StringValue("nodomain"));
+  list.Append(new base::StringValue("with.dots@gmail.com"));
+  list.Append(new base::StringValue("Upper@example.com"));
 
   CrosSettings* cs = &settings_;
   cs->Set(kAccountsPrefUsers, list);

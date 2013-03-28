@@ -8,38 +8,44 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/policy/cloud_policy_constants.h"
+#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chrome/browser/policy/configuration_policy_handler_list.h"
-#include "chrome/browser/policy/enterprise_install_attributes.h"
-#include "chrome/browser/policy/proxy_policy_provider.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/policy/proxy_policy_provider.h"
+#endif
+
+class PrefRegistrySimple;
+class PrefService;
 class Profile;
-class TokenService;
+
+namespace net {
+class URLRequestContextGetter;
+}
 
 namespace policy {
 
-class AppPackUpdater;
-class CloudPolicyDataStore;
-class CloudPolicyProvider;
-class CloudPolicySubsystem;
 class ConfigurationPolicyProvider;
-class DeviceCloudPolicyManagerChromeOS;
 class DeviceManagementService;
-class NetworkConfigurationUpdater;
 class PolicyService;
 class PolicyStatisticsCollector;
-class UserCloudPolicyManager;
-class UserPolicyTokenCache;
+
+#if defined(OS_CHROMEOS)
+class AppPackUpdater;
+class DeviceCloudPolicyManagerChromeOS;
+class DeviceLocalAccountPolicyProvider;
+class DeviceLocalAccountPolicyService;
+class EnterpriseInstallAttributes;
+class NetworkConfigurationUpdater;
+class UserCloudPolicyManagerChromeOS;
+#endif
 
 // Manages the lifecycle of browser-global policy infrastructure, such as the
 // platform policy providers, device- and the user-cloud policy infrastructure.
-// TODO(gfeher,mnissler): Factor out device and user specific methods into their
-// respective classes.
-class BrowserPolicyConnector : public content::NotificationObserver {
+class BrowserPolicyConnector {
  public:
   // Builds an uninitialized BrowserPolicyConnector, suitable for testing.
   // Init() should be called to create and start the policy machinery.
@@ -48,10 +54,10 @@ class BrowserPolicyConnector : public content::NotificationObserver {
   // Invoke Shutdown() before deleting, see below.
   virtual ~BrowserPolicyConnector();
 
-  // Creates the policy providers and finalizes the initialization of the
-  // connector. This call can be skipped on tests that don't require the full
-  // policy system running.
-  void Init();
+  // Finalizes the initialization of the connector. This call can be skipped on
+  // tests that don't require the full policy system running.
+  void Init(PrefService* local_state,
+            scoped_refptr<net::URLRequestContextGetter> request_context);
 
   // Stops the policy providers and cleans up the connector before it can be
   // safely deleted. This must be invoked before the destructor and while the
@@ -62,10 +68,6 @@ class BrowserPolicyConnector : public content::NotificationObserver {
   // Returns true if Init() has been called but Shutdown() hasn't been yet.
   bool is_initialized() const { return is_initialized_; }
 
-  // Creates a UserCloudPolicyManager for the given profile, or returns NULL if
-  // it is not supported on this platform.
-  scoped_ptr<UserCloudPolicyManager> CreateCloudPolicyManager(Profile* profile);
-
   // Creates a new policy service for the given profile.
   scoped_ptr<PolicyService> CreatePolicyService(Profile* profile);
 
@@ -73,40 +75,10 @@ class BrowserPolicyConnector : public content::NotificationObserver {
   // whole browser.
   PolicyService* GetPolicyService();
 
-  // Returns a weak pointer to the CloudPolicySubsystem corresponding to the
-  // device policy managed by this policy connector, or NULL if no such
-  // subsystem exists (i.e. when running outside ChromeOS).
-  CloudPolicySubsystem* device_cloud_policy_subsystem() {
 #if defined(OS_CHROMEOS)
-    return device_cloud_policy_subsystem_.get();
-#else
-    return NULL;
-#endif
-  }
-
-  // Returns a weak pointer to the CloudPolicySubsystem corresponding to the
-  // user policy managed by this policy connector, or NULL if no such
-  // subsystem exists (i.e. when user cloud policy is not active due to
-  // unmanaged or not logged in).
-  CloudPolicySubsystem* user_cloud_policy_subsystem() {
-    return user_cloud_policy_subsystem_.get();
-  }
-
-  // Triggers registration for device policy, using the |owner_email| account.
-  // |token| is an oauth token to authenticate the registration request, and
-  // |known_machine_id| is true if the server should do additional checks based
-  // on the machine_id used for the request.
-  void RegisterForDevicePolicy(const std::string& owner_email,
-                               const std::string& token,
-                               bool known_machine_id,
-                               bool reregister);
-
   // Returns true if this device is managed by an enterprise (as opposed to
   // a local owner).
   bool IsEnterpriseManaged();
-
-  // Locks the device to an enterprise domain.
-  EnterpriseInstallAttributes::LockResult LockDevice(const std::string& user);
 
   // Returns the enterprise domain if device is managed.
   std::string GetEnterpriseDomain();
@@ -116,39 +88,21 @@ class BrowserPolicyConnector : public content::NotificationObserver {
   // locked empty, or DEVICE_MODE_UNKNOWN if the device has not been owned yet.
   // For other OSes the function will always return DEVICE_MODE_CONSUMER.
   DeviceMode GetDeviceMode();
-
-  // Reset the device policy machinery. This stops any automatic retry behavior
-  // and clears the error flags, so potential retries have a chance to succeed.
-  void ResetDevicePolicy();
-
-  // Initiates device and user policy fetches, if possible. Pending fetches
-  // will be cancelled.
-  void FetchCloudPolicy();
+#endif
 
   // Schedules initialization of the cloud policy backend services, if the
   // services are already constructed.
   void ScheduleServiceInitialization(int64 delay_milliseconds);
 
+#if defined(OS_CHROMEOS)
   // Initializes the user cloud policy infrastructure.
   // If |wait_for_policy_fetch| is true, the user policy will only become fully
   // initialized after a policy fetch is attempted. Note that Profile creation
   // is blocked until this initialization is complete.
   void InitializeUserPolicy(const std::string& user_name,
+                            bool is_public_account,
                             bool wait_for_policy_fetch);
-
-  // Installs a token service for user policy.
-  void SetUserPolicyTokenService(TokenService* token_service);
-
-  // Registers for user policy (if not already registered), using the passed
-  // OAuth V2 token for authentication. |oauth_token| can be empty to signal
-  // that an attempt to fetch the token was made but failed, or that oauth
-  // isn't being used.
-  void RegisterForUserPolicy(const std::string& oauth_token);
-
-  // The data stores should be considered read-only for everyone except for
-  // tests.
-  CloudPolicyDataStore* GetDeviceCloudPolicyDataStore();
-  CloudPolicyDataStore* GetUserCloudPolicyDataStore();
+#endif
 
   const ConfigurationPolicyHandlerList* GetHandlerList() const;
 
@@ -156,19 +110,33 @@ class BrowserPolicyConnector : public content::NotificationObserver {
   // the installation attributes.
   UserAffiliation GetUserAffiliation(const std::string& user_name);
 
-  AppPackUpdater* GetAppPackUpdater();
-
-  NetworkConfigurationUpdater* GetNetworkConfigurationUpdater();
-
   DeviceManagementService* device_management_service() {
     return device_management_service_.get();
   }
 
 #if defined(OS_CHROMEOS)
+  AppPackUpdater* GetAppPackUpdater();
+
+  NetworkConfigurationUpdater* GetNetworkConfigurationUpdater();
+
   DeviceCloudPolicyManagerChromeOS* GetDeviceCloudPolicyManager() {
     return device_cloud_policy_manager_.get();
   }
+  UserCloudPolicyManagerChromeOS* GetUserCloudPolicyManager() {
+    return user_cloud_policy_manager_.get();
+  }
+  DeviceLocalAccountPolicyService* GetDeviceLocalAccountPolicyService() {
+    return device_local_account_policy_service_.get();
+  }
+  EnterpriseInstallAttributes* GetInstallAttributes() {
+    return install_attributes_.get();
+  }
 #endif
+
+  // Allows setting a DeviceManagementService (for injecting mocks in
+  // unit tests).
+  void SetDeviceManagementServiceForTesting(
+      scoped_ptr<DeviceManagementService> service);
 
   // Sets a |provider| that will be included in PolicyServices returned by
   // CreatePolicyService. This is a static method because local state is
@@ -183,19 +151,15 @@ class BrowserPolicyConnector : public content::NotificationObserver {
   // command line).
   static std::string GetDeviceManagementUrl();
 
+  // Check whether a user is known to be non-enterprise. Domains such as
+  // gmail.com and googlemail.com are known to not be managed. Also returns
+  // false if the username is empty.
+  static bool IsNonEnterpriseUser(const std::string& username);
+
+  // Registers refresh rate prefs.
+  static void RegisterPrefs(PrefRegistrySimple* registry);
+
  private:
-  // content::NotificationObserver method overrides:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
-  // Initializes the device cloud policy infrasturcture.
-  void InitializeDevicePolicy();
-
-  // Complete initialization once the message loops are running and the
-  // local_state is initialized.
-  void CompleteInitialization();
-
   // Set the timezone as soon as the policies are available.
   void SetTimezoneIfPolicyAvailable();
 
@@ -211,6 +175,9 @@ class BrowserPolicyConnector : public content::NotificationObserver {
   // Whether Init() but not Shutdown() has been invoked.
   bool is_initialized_;
 
+  PrefService* local_state_;
+  scoped_refptr<net::URLRequestContextGetter> request_context_;
+
   // Used to convert policies to preferences. The providers declared below
   // may trigger policy updates during shutdown, which will result in
   // |handler_list_| being consulted for policy translation.
@@ -218,7 +185,6 @@ class BrowserPolicyConnector : public content::NotificationObserver {
   ConfigurationPolicyHandlerList handler_list_;
 
   scoped_ptr<ConfigurationPolicyProvider> platform_provider_;
-  scoped_ptr<CloudPolicyProvider> cloud_provider_;
 
   // Components of the new-style cloud policy implementation.
   // TODO(mnissler): Remove the old-style components below once we have
@@ -226,20 +192,21 @@ class BrowserPolicyConnector : public content::NotificationObserver {
 #if defined(OS_CHROMEOS)
   scoped_ptr<EnterpriseInstallAttributes> install_attributes_;
   scoped_ptr<DeviceCloudPolicyManagerChromeOS> device_cloud_policy_manager_;
+  scoped_ptr<DeviceLocalAccountPolicyService>
+      device_local_account_policy_service_;
+  scoped_ptr<DeviceLocalAccountPolicyProvider>
+      device_local_account_policy_provider_;
+  scoped_ptr<UserCloudPolicyManagerChromeOS> user_cloud_policy_manager_;
+
+  // This policy provider is used on Chrome OS to feed user policy into the
+  // global PolicyService instance. This works by installing
+  // |user_cloud_policy_manager_| or |device_local_account_policy_provider_|,
+  // respectively as the delegate after login.
+  ProxyPolicyProvider global_user_cloud_policy_provider_;
 #endif
-  ProxyPolicyProvider user_cloud_policy_provider_;
 
   // Must be deleted before all the policy providers.
   scoped_ptr<PolicyService> policy_service_;
-
-#if defined(OS_CHROMEOS)
-  scoped_ptr<CloudPolicyDataStore> device_data_store_;
-  scoped_ptr<CloudPolicySubsystem> device_cloud_policy_subsystem_;
-#endif
-
-  scoped_ptr<UserPolicyTokenCache> user_policy_token_cache_;
-  scoped_ptr<CloudPolicyDataStore> user_data_store_;
-  scoped_ptr<CloudPolicySubsystem> user_cloud_policy_subsystem_;
 
   scoped_ptr<PolicyStatisticsCollector> policy_statistics_collector_;
 
@@ -248,13 +215,6 @@ class BrowserPolicyConnector : public content::NotificationObserver {
   // Used to initialize the device policy subsystem once the message loops
   // are spinning.
   base::WeakPtrFactory<BrowserPolicyConnector> weak_ptr_factory_;
-
-  // Registers the provider for notification of successful Gaia logins.
-  content::NotificationRegistrar registrar_;
-
-  // Weak reference to the TokenService we are listening to for user cloud
-  // policy authentication tokens.
-  TokenService* token_service_;
 
 #if defined(OS_CHROMEOS)
   scoped_ptr<AppPackUpdater> app_pack_updater_;

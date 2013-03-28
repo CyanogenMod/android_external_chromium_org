@@ -3,22 +3,23 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ssl/ssl_client_auth_requestor_mock.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/ssl_client_certificate_selector.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/base/cert_test_util.h"
-#include "net/base/ssl_cert_request_info.h"
 #include "net/base/test_data_directory.h"
 #include "net/base/x509_certificate.h"
 #include "net/http/http_transaction_factory.h"
+#include "net/ssl/ssl_cert_request_info.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -38,7 +39,7 @@ class SSLClientCertificateSelectorTest : public InProcessBrowserTest {
   }
 
   virtual void SetUpInProcessBrowserTestFixture() {
-    FilePath certs_dir = net::GetTestCertsDirectory();
+    base::FilePath certs_dir = net::GetTestCertsDirectory();
 
     mit_davidben_cert_ = net::ImportCertFromFile(certs_dir, "mit.davidben.der");
     ASSERT_NE(static_cast<net::X509Certificate*>(NULL), mit_davidben_cert_);
@@ -63,9 +64,10 @@ class SSLClientCertificateSelectorTest : public InProcessBrowserTest {
 
     io_loop_finished_event_.Wait();
 
-    content::WaitForLoadStop(chrome::GetActiveWebContents(browser()));
+    content::WaitForLoadStop(
+        browser()->tab_strip_model()->GetActiveWebContents());
     selector_ = new SSLClientCertificateSelector(
-        chrome::GetActiveTabContents(browser()),
+        browser()->tab_strip_model()->GetActiveWebContents(),
         auth_requestor_->http_network_session_,
         auth_requestor_->cert_request_info_,
         base::Bind(&SSLClientAuthRequestorMock::CertificateSelected,
@@ -148,28 +150,28 @@ class SSLClientCertificateSelectorMultiTabTest
 
     AddTabAtIndex(1, GURL("about:blank"), content::PAGE_TRANSITION_LINK);
     AddTabAtIndex(2, GURL("about:blank"), content::PAGE_TRANSITION_LINK);
-    ASSERT_TRUE(NULL != chrome::GetWebContentsAt(browser(), 0));
-    ASSERT_TRUE(NULL != chrome::GetWebContentsAt(browser(), 1));
-    ASSERT_TRUE(NULL != chrome::GetWebContentsAt(browser(), 2));
-    content::WaitForLoadStop(chrome::GetWebContentsAt(browser(), 1));
-    content::WaitForLoadStop(chrome::GetWebContentsAt(browser(), 2));
+    ASSERT_TRUE(NULL != browser()->tab_strip_model()->GetWebContentsAt(0));
+    ASSERT_TRUE(NULL != browser()->tab_strip_model()->GetWebContentsAt(1));
+    ASSERT_TRUE(NULL != browser()->tab_strip_model()->GetWebContentsAt(2));
+    content::WaitForLoadStop(browser()->tab_strip_model()->GetWebContentsAt(1));
+    content::WaitForLoadStop(browser()->tab_strip_model()->GetWebContentsAt(2));
 
     selector_1_ = new SSLClientCertificateSelector(
-        chrome::GetTabContentsAt(browser(), 1),
+        browser()->tab_strip_model()->GetWebContentsAt(1),
         auth_requestor_1_->http_network_session_,
         auth_requestor_1_->cert_request_info_,
         base::Bind(&SSLClientAuthRequestorMock::CertificateSelected,
                    auth_requestor_1_));
     selector_1_->Init();
     selector_2_ = new SSLClientCertificateSelector(
-        chrome::GetTabContentsAt(browser(), 2),
+        browser()->tab_strip_model()->GetWebContentsAt(2),
         auth_requestor_2_->http_network_session_,
         auth_requestor_2_->cert_request_info_,
         base::Bind(&SSLClientAuthRequestorMock::CertificateSelected,
                    auth_requestor_2_));
     selector_2_->Init();
 
-    EXPECT_EQ(2, browser()->active_index());
+    EXPECT_EQ(2, browser()->tab_strip_model()->active_index());
     EXPECT_EQ(mit_davidben_cert_.get(), selector_1_->GetSelectedCert());
     EXPECT_EQ(mit_davidben_cert_.get(), selector_2_->GetSelectedCert());
   }
@@ -231,7 +233,7 @@ class SSLClientCertificateSelectorMultiProfileTest
     SSLClientCertificateSelectorTest::SetUpOnMainThread();
 
     selector_1_ = new SSLClientCertificateSelector(
-        chrome::GetActiveTabContents(browser_1_),
+        browser_1_->tab_strip_model()->GetActiveWebContents(),
         auth_requestor_1_->http_network_session_,
         auth_requestor_1_->cert_request_info_,
         base::Bind(&SSLClientAuthRequestorMock::CertificateSelected,
@@ -286,7 +288,9 @@ IN_PROC_BROWSER_TEST_F(SSLClientCertificateSelectorTest, DISABLED_Escape) {
   Mock::VerifyAndClear(auth_requestor_.get());
 }
 
-IN_PROC_BROWSER_TEST_F(SSLClientCertificateSelectorTest, SelectDefault) {
+// Flaky, http://crbug.com/103534 .
+IN_PROC_BROWSER_TEST_F(SSLClientCertificateSelectorTest,
+                       DISABLED_SelectDefault) {
   EXPECT_CALL(*auth_requestor_, CertificateSelected(mit_davidben_cert_.get()));
 
   EXPECT_TRUE(ui_test_utils::SendKeyPressSync(

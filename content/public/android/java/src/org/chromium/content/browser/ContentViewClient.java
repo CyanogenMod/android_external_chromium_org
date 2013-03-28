@@ -34,6 +34,37 @@ public class ContentViewClient {
     public void onUpdateTitle(String title) {
     }
 
+    /**
+     * Called whenever the background color of the page changes as notified by WebKit.
+     * @param color The new ARGB color of the page background.
+     */
+    public void onBackgroundColorChanged(int color) {
+    }
+
+    /**
+     * Notifies that the content size has changed.
+     * @param widthCss The width of the content in CSS pixels.
+     * @param heightCss The height of the content in CSS pixels.
+     */
+    public void onContentSizeChanged(float widthCss, float heightCss) {
+    }
+
+    /**
+      * Lets client listen on the scaling changes on delayed, throttled
+      * and best-effort basis. Used for WebView.onScaleChanged.
+      */
+    public void onScaleChanged(float oldScale, float newScale) {
+    }
+
+    /**
+     * Notifies the client that the position of the top controls has changed.
+     * @param topControlsOffsetYPix The Y offset of the top controls in physical pixels.
+     * @param contentOffsetYPix The Y offset of the content in physical pixels.
+     */
+    public void onOffsetsForFullscreenChanged(
+            float topControlsOffsetYPix, float contentOffsetYPix) {
+    }
+
     public void onTabCrash() {
     }
 
@@ -78,22 +109,22 @@ public class ContentViewClient {
     }
 
     /**
-     * A callback invoked after the JavaScript code passed to evaluateJavaScript
-     * has finished execution.
-     * Used in automation tests.
-     * @hide
+     * Notified when a change to the IME was requested.
+     *
+     * @param requestShow Whether the IME was requested to be shown (may already be showing
+     *                    though).
      */
-    public void onEvaluateJavaScriptResult(int id, String jsonResult) {
+    public void onImeStateChangeRequested(boolean requestShow) {
     }
 
     // TODO (dtrainor): Should expose getScrollX/Y from ContentView or make
     // computeHorizontalScrollOffset()/computeVerticalScrollOffset() public.
     /**
      * Gives the UI the chance to override each scroll event.
-     * @param dx The amount scrolled in the X direction.
-     * @param dy The amount scrolled in the Y direction.
-     * @param scrollX The current X scroll offset.
-     * @param scrollY The current Y scroll offset.
+     * @param dx The amount scrolled in the X direction (in physical pixels).
+     * @param dy The amount scrolled in the Y direction (in physical pixels).
+     * @param scrollX The current X scroll offset (in physical pixels).
+     * @param scrollY The current Y scroll offset (in physical pixels).
      * @return Whether or not the UI consumed and handled this event.
      */
     public boolean shouldOverrideScroll(float dx, float dy, float scrollX, float scrollY) {
@@ -138,5 +169,8 @@ public class ContentViewClient {
         } catch (ActivityNotFoundException ex) {
             Log.w(TAG, "No application can handle " + intentUrl);
         }
+    }
+
+    public void onExternalVideoSurfaceRequested(int playerId) {
     }
 }

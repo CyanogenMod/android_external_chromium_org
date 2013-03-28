@@ -7,29 +7,26 @@
 #include <utility>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/string_search.h"
 #include "base/metrics/histogram.h"
-#include "base/prefs/public/pref_service_base.h"
+#include "base/prefs/pref_service.h"
 #include "base/string16.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/history/query_parser.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/user_metrics.h"
-#include "grit/ui_strings.h"
 #include "net/base/net_util.h"
-#include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/events/event.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/tree_node_iterator.h"
 
 using base::Time;
+using content::UserMetricsAction;
 
 namespace {
 
@@ -85,10 +82,19 @@ const BookmarkNode* CreateNewNode(BookmarkModel* model,
                                   const string16& new_title,
                                   const GURL& new_url) {
   const BookmarkNode* node;
+  // When create the new one to right-clicked folder, add it to the next to the
+  // folder's position. Because |details.index| has a index of the folder when
+  // it was right-clicked, it might cause out of range exception when another
+  // bookmark manager edits contents of the folder.
+  // So we must check the range.
+  int child_count = parent->child_count();
+  int insert_index = (parent == details.parent_node && details.index >= 0 &&
+                      details.index <= child_count) ?
+                      details.index : child_count;
   if (details.type == BookmarkEditor::EditDetails::NEW_URL) {
-    node = model->AddURL(parent, parent->child_count(), new_title, new_url);
+    node = model->AddURL(parent, insert_index, new_title, new_url);
   } else if (details.type == BookmarkEditor::EditDetails::NEW_FOLDER) {
-    node = model->AddFolder(parent, parent->child_count(), new_title);
+    node = model->AddFolder(parent, insert_index, new_title);
     for (size_t i = 0; i < details.urls.size(); ++i) {
       model->AddURL(node, node->child_count(), details.urls[i].second,
                     details.urls[i].first);
@@ -102,119 +108,9 @@ const BookmarkNode* CreateNewNode(BookmarkModel* model,
   return node;
 }
 
-#if defined(OS_WIN) || defined(OS_CHROMEOS) || defined(USE_AURA)
-bool g_bookmark_bar_view_animations_disabled = false;
-#endif
-
 }  // namespace
 
 namespace bookmark_utils {
-
-int num_urls_before_prompting = 15;
-
-int PreferredDropOperation(int source_operations, int operations) {
-  int common_ops = (source_operations & operations);
-  if (!common_ops)
-    return 0;
-  if (ui::DragDropTypes::DRAG_COPY & common_ops)
-    return ui::DragDropTypes::DRAG_COPY;
-  if (ui::DragDropTypes::DRAG_LINK & common_ops)
-    return ui::DragDropTypes::DRAG_LINK;
-  if (ui::DragDropTypes::DRAG_MOVE & common_ops)
-    return ui::DragDropTypes::DRAG_MOVE;
-  return ui::DragDropTypes::DRAG_NONE;
-}
-
-int BookmarkDragOperation(Profile* profile, const BookmarkNode* node) {
-  PrefServiceBase* prefs = PrefServiceBase::FromBrowserContext(profile);
-
-  int move = ui::DragDropTypes::DRAG_MOVE;
-  if (!prefs->GetBoolean(prefs::kEditBookmarksEnabled))
-    move = 0;
-  if (node->is_url()) {
-    return ui::DragDropTypes::DRAG_COPY | ui::DragDropTypes::DRAG_LINK | move;
-  }
-  return ui::DragDropTypes::DRAG_COPY | move;
-}
-
-#if defined(TOOLKIT_VIEWS)
-int BookmarkDropOperation(Profile* profile,
-                          const ui::DropTargetEvent& event,
-                          const BookmarkNodeData& data,
-                          const BookmarkNode* parent,
-                          int index) {
-  if (data.IsFromProfile(profile) && data.size() > 1)
-    // Currently only accept one dragged node at a time.
-    return ui::DragDropTypes::DRAG_NONE;
-
-  if (!bookmark_utils::IsValidDropLocation(profile, data, parent, index))
-    return ui::DragDropTypes::DRAG_NONE;
-
-  if (data.GetFirstNode(profile)) {
-    // User is dragging from this profile: move.
-    return ui::DragDropTypes::DRAG_MOVE;
-  }
-  // User is dragging from another app, copy.
-  return PreferredDropOperation(event.source_operations(),
-      ui::DragDropTypes::DRAG_COPY | ui::DragDropTypes::DRAG_LINK);
-}
-#endif  // defined(TOOLKIT_VIEWS)
-
-int PerformBookmarkDrop(Profile* profile,
-                        const BookmarkNodeData& data,
-                        const BookmarkNode* parent_node,
-                        int index) {
-  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
-  if (data.IsFromProfile(profile)) {
-    const std::vector<const BookmarkNode*> dragged_nodes =
-        data.GetNodes(profile);
-    if (!dragged_nodes.empty()) {
-      // Drag from same profile. Move nodes.
-      for (size_t i = 0; i < dragged_nodes.size(); ++i) {
-        model->Move(dragged_nodes[i], parent_node, index);
-        index = parent_node->GetIndexOf(dragged_nodes[i]) + 1;
-      }
-      return ui::DragDropTypes::DRAG_MOVE;
-    }
-    return ui::DragDropTypes::DRAG_NONE;
-  }
-  // Dropping a folder from different profile. Always accept.
-  bookmark_utils::CloneBookmarkNode(model, data.elements, parent_node, index);
-  return ui::DragDropTypes::DRAG_COPY;
-}
-
-bool IsValidDropLocation(Profile* profile,
-                         const BookmarkNodeData& data,
-                         const BookmarkNode* drop_parent,
-                         int index) {
-  if (!drop_parent->is_folder()) {
-    NOTREACHED();
-    return false;
-  }
-
-  if (!data.is_valid())
-    return false;
-
-  if (data.IsFromProfile(profile)) {
-    std::vector<const BookmarkNode*> nodes = data.GetNodes(profile);
-    for (size_t i = 0; i < nodes.size(); ++i) {
-      // Don't allow the drop if the user is attempting to drop on one of the
-      // nodes being dragged.
-      const BookmarkNode* node = nodes[i];
-      int node_index = (drop_parent == node->parent()) ?
-          drop_parent->GetIndexOf(nodes[i]) : -1;
-      if (node_index != -1 && (index == node_index || index == node_index + 1))
-        return false;
-
-      // drop_parent can't accept a child that is an ancestor.
-      if (drop_parent->HasAncestor(node))
-        return false;
-    }
-    return true;
-  }
-  // From the same profile, always accept.
-  return true;
-}
 
 void CloneBookmarkNode(BookmarkModel* model,
                        const std::vector<BookmarkNodeData::Element>& elements,
@@ -258,22 +154,13 @@ void PasteFromClipboard(BookmarkModel* model,
 
   if (index == -1)
     index = parent->child_count();
-  bookmark_utils::CloneBookmarkNode(
-      model, bookmark_data.elements, parent, index);
+  CloneBookmarkNode(model, bookmark_data.elements, parent, index);
 }
 
 bool CanPasteFromClipboard(const BookmarkNode* node) {
   if (!node)
     return false;
   return BookmarkNodeData::ClipboardContainsBookmarks();
-}
-
-string16 GetNameForURL(const GURL& url) {
-  if (url.is_valid()) {
-    return net::GetSuggestedFilename(url, "", "", "", "", std::string());
-  } else {
-    return l10n_util::GetStringUTF16(IDS_APP_UNTITLED_SHORTCUT_FILE_NAME);
-  }
 }
 
 // This is used with a tree iterator to skip subtrees which are not visible.
@@ -433,22 +320,16 @@ const BookmarkNode* ApplyEditsWithPossibleFolderChange(
   return node;
 }
 
-// Formerly in BookmarkBarView.
-void ToggleWhenVisible(Profile* profile) {
-  PrefServiceBase* prefs = PrefServiceBase::FromBrowserContext(profile);
-  const bool always_show = !prefs->GetBoolean(prefs::kShowBookmarkBar);
-
-  // The user changed when the bookmark bar is shown, update the preferences.
-  prefs->SetBoolean(prefs::kShowBookmarkBar, always_show);
-}
-
-void RegisterUserPrefs(PrefServiceBase* prefs) {
-  prefs->RegisterBooleanPref(prefs::kShowBookmarkBar,
-                             false,
-                             PrefServiceBase::SYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kEditBookmarksEnabled,
-                             true,
-                             PrefServiceBase::UNSYNCABLE_PREF);
+void RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(prefs::kShowBookmarkBar,
+                                false,
+                                PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kEditBookmarksEnabled,
+                                true,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kShowAppsShortcutInBookmarkBar,
+                                true,
+                                PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
 const BookmarkNode* GetParentForNewNodes(
@@ -517,23 +398,23 @@ void RemoveAllBookmarks(BookmarkModel* model, const GURL& url) {
   }
 }
 
+void RecordBookmarkFolderOpen(BookmarkLaunchLocation location) {
+  if (location == LAUNCH_DETACHED_BAR || location == LAUNCH_ATTACHED_BAR)
+    content::RecordAction(UserMetricsAction("ClickedBookmarkBarFolder"));
+}
+
 void RecordBookmarkLaunch(BookmarkLaunchLocation location) {
-#if defined(OS_WIN)
-  // TODO(estade): do this on other platforms too. For now it's compiled out
-  // so that stats from platforms for which this is incompletely implemented
-  // don't mix in with Windows, where it should be implemented exhaustively.
+  if (location == LAUNCH_DETACHED_BAR || location == LAUNCH_ATTACHED_BAR)
+    content::RecordAction(UserMetricsAction("ClickedBookmarkBarURLButton"));
+
   UMA_HISTOGRAM_ENUMERATION("Bookmarks.LaunchLocation", location, LAUNCH_LIMIT);
-#endif
 }
 
-#if defined(OS_WIN) || defined(OS_CHROMEOS) || defined(USE_AURA)
-void DisableBookmarkBarViewAnimationsForTesting(bool disabled) {
-  g_bookmark_bar_view_animations_disabled = disabled;
+void RecordAppsPageOpen(BookmarkLaunchLocation location) {
+  if (location == LAUNCH_DETACHED_BAR || location == LAUNCH_ATTACHED_BAR) {
+    content::RecordAction(
+        UserMetricsAction("ClickedBookmarkBarAppsShortcutButton"));
+  }
 }
-
-bool IsBookmarkBarViewAnimationsDisabled() {
-  return g_bookmark_bar_view_animations_disabled;
-}
-#endif
 
 }  // namespace bookmark_utils

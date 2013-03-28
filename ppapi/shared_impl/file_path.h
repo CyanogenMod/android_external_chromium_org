@@ -5,9 +5,7 @@
 #ifndef PPAPI_SHARED_IMPL_FILE_PATH_H_
 #define PPAPI_SHARED_IMPL_FILE_PATH_H_
 
-#include <string>
-
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "ppapi/shared_impl/ppapi_shared_export.h"
 
 namespace ppapi {
@@ -28,18 +26,14 @@ class PPAPI_SHARED_EXPORT PepperFilePath {
   };
 
   PepperFilePath();
-  PepperFilePath(Domain d, const FilePath& p);
-
-  static PepperFilePath MakeAbsolute(const FilePath& path);
-  static PepperFilePath MakeModuleLocal(const std::string& name,
-                                        const char* utf8_path);
+  PepperFilePath(Domain d, const base::FilePath& p);
 
   Domain domain() const { return domain_; }
-  const FilePath& path() const { return path_; }
+  const base::FilePath& path() const { return path_; }
 
  private:
   Domain domain_;
-  FilePath path_;
+  base::FilePath path_;
 };
 
 }  // namespace ppapi

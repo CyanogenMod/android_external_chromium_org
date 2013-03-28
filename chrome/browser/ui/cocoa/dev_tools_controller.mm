@@ -8,32 +8,59 @@
 
 #include <Cocoa/Cocoa.h>
 
+#import "base/mac/foundation_util.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 
 using content::WebContents;
 
-@interface GraySplitView : NSSplitView
+@interface GraySplitView : NSSplitView {
+  CGFloat topContentOffset_;
+}
+
+@property(assign, nonatomic) CGFloat topContentOffset;
+
 - (NSColor*)dividerColor;
+
 @end
 
 
 @implementation GraySplitView
+
+@synthesize topContentOffset = topContentOffset_;
+
 - (NSColor*)dividerColor {
   return [NSColor darkGrayColor];
 }
-@end
 
+- (void)drawDividerInRect:(NSRect)aRect {
+  NSRect dividerRect = aRect;
+  if ([self isVertical]) {
+    dividerRect.size.height -= topContentOffset_;
+    dividerRect.origin.y += topContentOffset_;
+  }
+  [super drawDividerInRect:dividerRect];
+}
+
+- (NSView*)hitTest:(NSPoint)point {
+  NSPoint viewPoint = [self convertPoint:point fromView:[self superview]];
+  if (viewPoint.y < topContentOffset_)
+    return nil;
+  return [super hitTest:point];
+}
+
+@end
 
 @interface DevToolsController (Private)
 - (void)showDevToolsContainer;
 - (void)hideDevToolsContainer;
 - (void)updateDevToolsSplitPosition;
+- (void)updateDevToolsViewFrame;
 @end
 
 
@@ -74,6 +101,8 @@ using content::WebContents;
   if (devToolsWindow_ == newDevToolsWindow) {
     if (!newDevToolsWindow ||
         (newDevToolsWindow->dock_side() == dockSide_)) {
+      if (newDevToolsWindow)
+        [self updateDevToolsSplitPosition];
       return;
     }
   }
@@ -100,18 +129,30 @@ using content::WebContents;
   }
 }
 
+- (void)setTopContentOffset:(CGFloat)offset {
+  [splitView_ setTopContentOffset:offset];
+  if ([[splitView_ subviews] count] > 1)
+    [self updateDevToolsViewFrame];
+}
+
 - (void)showDevToolsContainer {
   NSArray* subviews = [splitView_ subviews];
   DCHECK_EQ([subviews count], 1u);
-  WebContents* devToolsContents =
-      devToolsWindow_->tab_contents()->web_contents();
+  WebContents* devToolsContents = devToolsWindow_->web_contents();
 
   // |devToolsView| is a TabContentsViewCocoa object, whose ViewID was
   // set to VIEW_ID_TAB_CONTAINER initially, so we need to change it to
   // VIEW_ID_DEV_TOOLS_DOCKED here.
-  NSView* devToolsView = devToolsContents->GetNativeView();
+  NSView* devToolsView = devToolsContents->GetView()->GetNativeView();
   view_id_util::SetID(devToolsView, VIEW_ID_DEV_TOOLS_DOCKED);
-  [splitView_ addSubview:devToolsView];
+  [devToolsView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+
+  NSRect containerRect = NSMakeRect(0, 0, 100, 100);
+  scoped_nsobject<NSView> devToolsContainerView(
+      [[NSView alloc] initWithFrame:containerRect]);
+  [devToolsContainerView addSubview:devToolsView];
+  [splitView_ addSubview:devToolsContainerView];
+  [self updateDevToolsViewFrame];
 
   BOOL isVertical = devToolsWindow_->dock_side() == DEVTOOLS_DOCK_SIDE_RIGHT;
   [splitView_ setVertical:isVertical];
@@ -150,10 +191,20 @@ using content::WebContents;
         NSHeight([splitView_ frame]) - ([splitView_ dividerThickness] + size);
   }
 
+  [[splitView_ window] disableScreenUpdatesUntilFlush];
   [webView setFrame:webFrame];
   [devToolsView setFrame:devToolsFrame];
 
   [splitView_ adjustSubviews];
+}
+
+- (void)updateDevToolsViewFrame {
+  NSView* devToolsView =
+      devToolsWindow_->web_contents()->GetView()->GetNativeView();
+  NSRect devToolsRect = [[devToolsView superview] bounds];
+  if (devToolsWindow_->dock_side() == DEVTOOLS_DOCK_SIDE_RIGHT)
+    devToolsRect.size.height -= [splitView_ topContentOffset];
+  [devToolsView setFrame:devToolsRect];
 }
 
 // NSSplitViewDelegate protocol.
@@ -166,6 +217,28 @@ using content::WebContents;
   if ([[splitView_ subviews] indexOfObject:subview] == 1)
     return NO;
   return YES;
+}
+
+- (CGFloat)splitView:(NSSplitView*)splitView
+    constrainSplitPosition:(CGFloat)proposedPosition
+               ofSubviewAt:(NSInteger)dividerIndex {
+  if (![splitView_ isVertical] &&
+      proposedPosition < [splitView_ topContentOffset]) {
+    return [splitView_ topContentOffset];
+  }
+  return proposedPosition;
+}
+
+- (CGFloat)splitView:(NSSplitView*)splitView
+    constrainMaxCoordinate:(CGFloat)proposedMax
+               ofSubviewAt:(NSInteger)dividerIndex {
+  if ([splitView_ isVertical]) {
+    return NSWidth([splitView_ frame]) - [splitView_ dividerThickness] -
+        devToolsWindow_->GetMinimumWidth();
+  } else {
+    return NSHeight([splitView_ frame]) - [splitView_ dividerThickness] -
+        devToolsWindow_->GetMinimumHeight();
+  }
 }
 
 -(void)splitViewWillResizeSubviews:(NSNotification *)notification {

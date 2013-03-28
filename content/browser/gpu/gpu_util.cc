@@ -24,11 +24,13 @@ const char kGpuFeatureNameWebgl[] = "webgl";
 const char kGpuFeatureNameMultisampling[] = "multisampling";
 const char kGpuFeatureNameFlash3d[] = "flash_3d";
 const char kGpuFeatureNameFlashStage3d[] = "flash_stage3d";
+const char kGpuFeatureNameFlashStage3dBaseline[] = "flash_stage3d_baseline";
 const char kGpuFeatureNameTextureSharing[] = "texture_sharing";
 const char kGpuFeatureNameAcceleratedVideoDecode[] = "accelerated_video_decode";
 const char kGpuFeatureName3dCss[] = "3d_css";
 const char kGpuFeatureNameAcceleratedVideo[] = "accelerated_video";
 const char kGpuFeatureNamePanelFitting[] = "panel_fitting";
+const char kGpuFeatureNameForceCompositingMode[] = "force_compositing_mode";
 const char kGpuFeatureNameAll[] = "all";
 const char kGpuFeatureNameUnknown[] = "unknown";
 
@@ -98,6 +100,8 @@ GpuFeatureType StringToGpuFeatureType(const std::string& feature_string) {
     return GPU_FEATURE_TYPE_FLASH3D;
   if (feature_string == kGpuFeatureNameFlashStage3d)
     return GPU_FEATURE_TYPE_FLASH_STAGE3D;
+  if (feature_string == kGpuFeatureNameFlashStage3dBaseline)
+    return GPU_FEATURE_TYPE_FLASH_STAGE3D_BASELINE;
   if (feature_string == kGpuFeatureNameTextureSharing)
     return GPU_FEATURE_TYPE_TEXTURE_SHARING;
   if (feature_string == kGpuFeatureNameAcceleratedVideoDecode)
@@ -108,6 +112,8 @@ GpuFeatureType StringToGpuFeatureType(const std::string& feature_string) {
     return GPU_FEATURE_TYPE_ACCELERATED_VIDEO;
   if (feature_string == kGpuFeatureNamePanelFitting)
     return GPU_FEATURE_TYPE_PANEL_FITTING;
+  if (feature_string == kGpuFeatureNameForceCompositingMode)
+    return GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE;
   if (feature_string == kGpuFeatureNameAll)
     return GPU_FEATURE_TYPE_ALL;
   return GPU_FEATURE_TYPE_UNKNOWN;
@@ -130,6 +136,8 @@ std::string GpuFeatureTypeToString(GpuFeatureType type) {
       matches.push_back(kGpuFeatureNameFlash3d);
     if (type & GPU_FEATURE_TYPE_FLASH_STAGE3D)
       matches.push_back(kGpuFeatureNameFlashStage3d);
+    if (type & GPU_FEATURE_TYPE_FLASH_STAGE3D_BASELINE)
+      matches.push_back(kGpuFeatureNameFlashStage3dBaseline);
     if (type & GPU_FEATURE_TYPE_TEXTURE_SHARING)
       matches.push_back(kGpuFeatureNameTextureSharing);
     if (type & GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE)
@@ -140,6 +148,8 @@ std::string GpuFeatureTypeToString(GpuFeatureType type) {
       matches.push_back(kGpuFeatureNameAcceleratedVideo);
     if (type & GPU_FEATURE_TYPE_PANEL_FITTING)
       matches.push_back(kGpuFeatureNamePanelFitting);
+    if (type & GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE)
+      matches.push_back(kGpuFeatureNameForceCompositingMode);
     if (!matches.size())
       matches.push_back(kGpuFeatureNameUnknown);
   }
@@ -239,17 +249,17 @@ void UpdateStats(const GpuBlacklist* blacklist,
       value = kGpuFeatureBlacklisted;
     else if (kGpuFeatureUserFlags[i])
       value = kGpuFeatureDisabled;
-    base::Histogram* histogram_pointer = base::LinearHistogram::FactoryGet(
+    base::HistogramBase* histogram_pointer = base::LinearHistogram::FactoryGet(
         kGpuBlacklistFeatureHistogramNames[i],
         1, kGpuFeatureNumStatus, kGpuFeatureNumStatus + 1,
-        base::Histogram::kUmaTargetedHistogramFlag);
+        base::HistogramBase::kUmaTargetedHistogramFlag);
     histogram_pointer->Add(value);
 #if defined(OS_WIN)
     histogram_pointer = base::LinearHistogram::FactoryGet(
         kGpuBlacklistFeatureHistogramNamesWin[i],
         1, kNumWinSubVersions * kGpuFeatureNumStatus,
         kNumWinSubVersions * kGpuFeatureNumStatus + 1,
-        base::Histogram::kUmaTargetedHistogramFlag);
+        base::HistogramBase::kUmaTargetedHistogramFlag);
     histogram_pointer->Add(GetGpuBlacklistHistogramValueWin(value));
 #endif
   }

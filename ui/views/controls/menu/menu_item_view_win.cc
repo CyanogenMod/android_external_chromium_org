@@ -8,13 +8,13 @@
 #include <Vssym32.h>
 
 #include "grit/ui_strings.h"
-#include "ui/base/native_theme/native_theme_win.h"
 #include "ui/gfx/canvas.h"
+#include "ui/native_theme/native_theme_win.h"
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/submenu_view.h"
 
 #if defined(USE_AURA)
-#include "ui/base/native_theme/native_theme_aura.h"
+#include "ui/native_theme/native_theme_aura.h"
 #endif
 
 using ui::NativeTheme;
@@ -24,9 +24,13 @@ namespace views {
 void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
   const MenuConfig& config = GetMenuConfig();
 
+  if (NativeTheme::IsNewMenuStyleEnabled()) {
+    PaintButtonCommon(canvas, mode);
+    return;
+  }
 #if defined(USE_AURA)
   if (config.native_theme == ui::NativeThemeAura::instance()) {
-    PaintButtonAura(canvas, mode);
+    PaintButtonCommon(canvas, mode);
     return;
   }
 #endif
@@ -38,8 +42,6 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
   int default_sys_color;
   int state;
   NativeTheme::State control_state;
-
-  ui::NativeTheme* native_theme = GetNativeTheme();
 
   if (enabled()) {
     if (render_selection) {
@@ -57,7 +59,7 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
     control_state = NativeTheme::kDisabled;
   }
 
-  // The gutter is rendered before the background.
+  // Render the gutter.
   if (config.render_gutter && mode == PB_NORMAL) {
     gfx::Rect gutter_bounds(label_start_ - config.gutter_to_label -
                             config.gutter_width, 0, config.gutter_width,
@@ -71,12 +73,12 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
                                extra);
   }
 
-  // Render the background.
+  // If using native theme then background (especialy when item is selected)
+  // need to be rendered after the gutter.
   if (mode == PB_NORMAL) {
     gfx::Rect item_bounds(0, 0, width(), height());
     NativeTheme::ExtraParams extra;
     extra.menu_item.is_selected = render_selection;
-    AdjustBoundsForRTLUI(&item_bounds);
     config.native_theme->Paint(canvas->sk_canvas(),
         NativeTheme::kMenuItemBackground, control_state, item_bounds, extra);
   }
@@ -101,7 +103,10 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
   int width = this->width() - item_right_margin_ - label_start_ - accel_width;
   int height = this->height() - GetTopMargin() - GetBottomMargin();
   int flags = GetDrawStringFlags();
-  gfx::Rect text_bounds(label_start_, top_margin, width, height);
+  int label_start = label_start_;
+  if ((type_ == CHECKBOX || type_ == RADIO) && icon_view_)
+    label_start += icon_view_->size().width() + config.icon_to_label_padding;
+  gfx::Rect text_bounds(label_start, top_margin, width, height);
   text_bounds.set_x(GetMirroredXForRect(text_bounds));
   if (mode == PB_FOR_DRAG) {
     // With different themes, it's difficult to tell what the correct

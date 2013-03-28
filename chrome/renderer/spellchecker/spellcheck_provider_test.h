@@ -10,9 +10,9 @@
 #include "base/string16.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingCompletion.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingResult.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 
 namespace IPC {
   class Message;
@@ -31,7 +31,6 @@ class FakeTextCheckingCompletion : public WebKit::WebTextCheckingCompletion {
 
   size_t completion_count_;
   size_t cancellation_count_;
-  WebKit::WebVector<WebKit::WebTextCheckingResult> last_results_;
 };
 
 // Faked test target, which stores sent message for verification.
@@ -50,6 +49,7 @@ class TestingSpellCheckProvider : public SpellCheckProvider {
   int offset_;
   string16 text_;
   std::vector<IPC::Message*> messages_;
+  size_t spelling_service_call_count_;
 };
 
 // SpellCheckProvider test fixture.

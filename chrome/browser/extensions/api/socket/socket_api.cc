@@ -33,11 +33,8 @@ const char kResultCodeKey[] = "resultCode";
 const char kSocketIdKey[] = "socketId";
 
 const char kSocketNotFoundError[] = "Socket not found";
-const char kSocketTypeInvalidError[] = "Socket type is not supported";
 const char kDnsLookupFailedError[] = "DNS resolution failed";
 const char kPermissionError[] = "App does not have permission";
-const char kExperimentalPermissionError[] =
-    "App does not have permission for experimental API";
 const char kNetworkListError[] = "Network lookup failed or unsupported";
 const char kTCPSocketBindError[] =
     "TCP socket does not support bind. For TCP server please use listen.";
@@ -123,13 +120,13 @@ bool SocketCreateFunction::Prepare() {
   EXTENSION_FUNCTION_VALIDATE(params_.get());
 
   switch (params_->type) {
-    case extensions::api::socket::SOCKET_SOCKET_TYPE_TCP:
+    case extensions::api::socket::SOCKET_TYPE_TCP:
       socket_type_ = kSocketTypeTCP;
       break;
-    case extensions::api::socket::SOCKET_SOCKET_TYPE_UDP:
+    case extensions::api::socket::SOCKET_TYPE_UDP:
       socket_type_ = kSocketTypeUDP;
       break;
-    case extensions::api::socket::SOCKET_SOCKET_TYPE_NONE:
+    case extensions::api::socket::SOCKET_TYPE_NONE:
       NOTREACHED();
       break;
   }
@@ -286,11 +283,6 @@ SocketListenFunction::SocketListenFunction()
 SocketListenFunction::~SocketListenFunction() {}
 
 bool SocketListenFunction::Prepare() {
-  if (!GetExtension()->HasAPIPermission(APIPermission::kExperimental)) {
-    error_ = kExperimentalPermissionError;
-    return false;
-  }
-
   params_ = api::socket::Listen::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_.get());
   return true;
@@ -329,11 +321,6 @@ SocketAcceptFunction::SocketAcceptFunction()
 SocketAcceptFunction::~SocketAcceptFunction() {}
 
 bool SocketAcceptFunction::Prepare() {
-  if (!GetExtension()->HasAPIPermission(APIPermission::kExperimental)) {
-    error_ = kExperimentalPermissionError;
-    return false;
-  }
-
   params_ = api::socket::Accept::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_.get());
   return true;
@@ -395,9 +382,7 @@ void SocketReadFunction::OnCompleted(int bytes_read,
                 base::BinaryValue::CreateWithCopiedBuffer(io_buffer->data(),
                                                           bytes_read));
   } else {
-    // BinaryValue does not support NULL buffer. Workaround it with new char[1].
-    // http://crbug.com/127630
-    result->Set(kDataKey, base::BinaryValue::Create(new char[1], 0));
+    result->Set(kDataKey, new base::BinaryValue());
   }
   SetResult(result);
 
@@ -478,9 +463,7 @@ void SocketRecvFromFunction::OnCompleted(int bytes_read,
                 base::BinaryValue::CreateWithCopiedBuffer(io_buffer->data(),
                                                           bytes_read));
   } else {
-    // BinaryValue does not support NULL buffer. Workaround it with new char[1].
-    // http://crbug.com/127630
-    result->Set(kDataKey, base::BinaryValue::Create(new char[1], 0));
+    result->Set(kDataKey, new base::BinaryValue());
   }
   result->SetString(kAddressKey, address);
   result->SetInteger(kPortKey, port);
@@ -622,9 +605,9 @@ void SocketGetInfoFunction::Work() {
     // This represents what we know about the socket, and does not call through
     // to the system.
     if (socket->GetSocketType() == Socket::TYPE_TCP)
-      info.socket_type = extensions::api::socket::SOCKET_SOCKET_TYPE_TCP;
+      info.socket_type = extensions::api::socket::SOCKET_TYPE_TCP;
     else
-      info.socket_type = extensions::api::socket::SOCKET_SOCKET_TYPE_UDP;
+      info.socket_type = extensions::api::socket::SOCKET_TYPE_UDP;
     info.connected = socket->IsConnected();
 
     // Grab the peer address as known by the OS. This and the call below will

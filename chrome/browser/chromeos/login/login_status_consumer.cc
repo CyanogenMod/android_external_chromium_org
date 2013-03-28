@@ -7,8 +7,12 @@
 
 namespace chromeos {
 
-void LoginStatusConsumer::OnDemoUserLoginSuccess() {
-  OnLoginSuccess(kDemoUser, "", false, false);
+void LoginStatusConsumer::OnRetailModeLoginSuccess() {
+  OnLoginSuccess(UserCredentials(kRetailModeUserEMail,
+                                 "",   // password
+                                 ""),  // auth_code
+                 false,   // pending_requests
+                 false);  // using_oauth
 }
 
 void LoginStatusConsumer::OnPasswordChangeDetected() {

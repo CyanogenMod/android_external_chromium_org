@@ -67,7 +67,10 @@ AUAudioInputStream::AUAudioInputStream(
   // Note that we  use the same native buffer size as for the output side here
   // since the AUHAL implementation requires that both capture and render side
   // use the same buffer size. See http://crbug.com/154352 for more details.
-  number_of_frames_ = GetAudioHardwareBufferSize();
+  // TODO(xians): Get the audio parameters from the right device.
+  const AudioParameters parameters =
+      manager_->GetInputStreamParameters(AudioManagerBase::kDefaultDeviceId);
+  number_of_frames_ = parameters.frames_per_buffer();
   DVLOG(1) << "Size of data buffer in frames : " << number_of_frames_;
 
   // Derive size (in bytes) of the buffers that we will render to.
@@ -225,7 +228,8 @@ bool AUAudioInputStream::Open() {
   // Set the desired number of frames in the IO buffer (output scope).
   // WARNING: Setting this value changes the frame size for all audio units in
   // the current process.  It's imperative that the input and output frame sizes
-  // be the same as audio_util::GetAudioHardwareBufferSize().
+  // be the same as the frames_per_buffer() returned by
+  // GetInputStreamParameters().
   // TODO(henrika): Due to http://crrev.com/159666 this is currently not true
   // and should be fixed, a CHECK() should be added at that time.
   result = AudioUnitSetProperty(audio_unit_,
@@ -493,17 +497,13 @@ OSStatus AUAudioInputStream::Provide(UInt32 number_of_frames,
   if (!audio_data)
     return kAudioUnitErr_InvalidElement;
 
-  // See http://crbug.com/154352 for details.
-  CHECK_EQ(number_of_frames, static_cast<UInt32>(number_of_frames_));
-
   // Accumulate captured audio in FIFO until we can match the output size
   // requested by the client.
-  DCHECK_LE(fifo_->forward_bytes(), requested_size_bytes_);
   fifo_->Append(audio_data, buffer.mDataByteSize);
 
   // Deliver recorded data to the client as soon as the FIFO contains a
   // sufficient amount.
-  if (fifo_->forward_bytes() >= requested_size_bytes_) {
+  while (fifo_->forward_bytes() >= requested_size_bytes_) {
     // Read from FIFO into temporary data buffer.
     fifo_->Read(data_->GetWritableData(), requested_size_bytes_);
 
@@ -534,8 +534,7 @@ int AUAudioInputStream::HardwareSampleRate() {
                                                0,
                                                &info_size,
                                                &device_id);
-  OSSTATUS_DCHECK(result == noErr, result);
-  if (result)
+  if (result != noErr)
     return 0.0;
 
   Float64 nominal_sample_rate;
@@ -552,8 +551,7 @@ int AUAudioInputStream::HardwareSampleRate() {
                                       0,
                                       &info_size,
                                       &nominal_sample_rate);
-  DCHECK_EQ(result, 0);
-  if (result)
+  if (result != noErr)
     return 0.0;
 
   return static_cast<int>(nominal_sample_rate);
@@ -639,7 +637,7 @@ void AUAudioInputStream::HandleError(OSStatus err) {
   NOTREACHED() << "error " << GetMacOSStatusErrorString(err)
                << " (" << err << ")";
   if (sink_)
-    sink_->OnError(this, static_cast<int>(err));
+    sink_->OnError(this);
 }
 
 bool AUAudioInputStream::IsVolumeSettableOnChannel(int channel) {

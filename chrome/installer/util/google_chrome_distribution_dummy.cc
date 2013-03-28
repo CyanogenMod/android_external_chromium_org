@@ -12,7 +12,7 @@
 
 #include <windows.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/values.h"
 
@@ -22,8 +22,13 @@ GoogleChromeDistribution::GoogleChromeDistribution()
 
 void GoogleChromeDistribution::DoPostUninstallOperations(
     const Version& version,
-    const FilePath& local_data_path,
+    const base::FilePath& local_data_path,
     const string16& distribution_data) {
+}
+
+string16 GoogleChromeDistribution::GetActiveSetupGuid() {
+  NOTREACHED();
+  return string16();
 }
 
 string16 GoogleChromeDistribution::GetAppGuid() {
@@ -116,12 +121,21 @@ string16 GoogleChromeDistribution::GetVersionKey() {
   return string16();
 }
 
+string16 GoogleChromeDistribution::GetIconFilename() {
+  NOTREACHED();
+  return string16();
+}
+
 bool GoogleChromeDistribution::GetCommandExecuteImplClsid(
     string16* handler_class_uuid) {
   NOTREACHED();
   return false;
 }
 
+bool GoogleChromeDistribution::AppHostIsSupported() {
+  NOTREACHED();
+  return false;
+}
 
 void GoogleChromeDistribution::UpdateInstallStatus(bool system_install,
     installer::ArchiveType archive_type,
@@ -129,28 +143,13 @@ void GoogleChromeDistribution::UpdateInstallStatus(bool system_install,
   NOTREACHED();
 }
 
-bool GoogleChromeDistribution::GetExperimentDetails(
-    UserExperiment* experiment, int flavor) {
+bool GoogleChromeDistribution::ShouldSetExperimentLabels() {
   NOTREACHED();
   return false;
 }
 
-void GoogleChromeDistribution::LaunchUserExperiment(
-    const FilePath& setup_path, installer::InstallStatus status,
-    const Version& version, const installer::Product& product,
-    bool system_level) {
-  NOTREACHED();
-}
-
-void GoogleChromeDistribution::InactiveUserToastExperiment(int flavor,
-    const string16& experiment_group,
-    const installer::Product& installation,
-    const FilePath& application_path) {
-  NOTREACHED();
-}
-
 bool GoogleChromeDistribution::ExtractUninstallMetricsFromFile(
-    const FilePath& file_path, string16* uninstall_metrics_string) {
+    const base::FilePath& file_path, string16* uninstall_metrics_string) {
   NOTREACHED();
   return false;
 }
@@ -163,6 +162,11 @@ bool GoogleChromeDistribution::ExtractUninstallMetrics(
 
 bool GoogleChromeDistribution::BuildUninstallMetricsString(
     const DictionaryValue* uninstall_metrics_dict, string16* metrics) {
+  NOTREACHED();
+  return false;
+}
+
+bool GoogleChromeDistribution::HasUserExperiments() {
   NOTREACHED();
   return false;
 }

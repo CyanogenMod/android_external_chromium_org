@@ -27,8 +27,13 @@
 #include "ui/base/ui_base_paths.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/test/compositor_test_support.h"
+#include "ui/gfx/screen.h"
 #include "ui/views/focus/accelerator_handler.h"
 #include "ui/views/test/test_views_delegate.h"
+
+#if defined(ENABLE_MESSAGE_CENTER)
+#include "ui/message_center/message_center.h"
+#endif
 
 #if defined(OS_LINUX)
 #include "ui/base/touch/touch_factory.h"
@@ -53,9 +58,18 @@ class ShellViewsDelegate : public views::TestViewsDelegate {
       views::Widget* widget) OVERRIDE {
     return ash::Shell::GetInstance()->CreateDefaultNonClientFrameView(widget);
   }
-  bool UseTransparentWindows() const OVERRIDE {
+  virtual bool UseTransparentWindows() const OVERRIDE {
     // Ash uses transparent window frames.
     return true;
+  }
+  virtual void OnBeforeWidgetInit(
+      views::Widget::InitParams* params,
+      views::internal::NativeWidgetDelegate* delegate) OVERRIDE {
+    if (params->native_widget)
+      return;
+
+    if (!params->parent && !params->context && params->top_level)
+      params->context = Shell::GetPrimaryRootWindow();
   }
 
  private:
@@ -66,7 +80,8 @@ class ShellViewsDelegate : public views::TestViewsDelegate {
 
 ShellBrowserMainParts::ShellBrowserMainParts(
     const content::MainFunctionParams& parameters)
-    : BrowserMainParts() {
+    : BrowserMainParts(),
+      delegate_(NULL) {
 }
 
 ShellBrowserMainParts::~ShellBrowserMainParts() {
@@ -93,25 +108,46 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   if (!views::ViewsDelegate::views_delegate)
     views::ViewsDelegate::views_delegate = new ShellViewsDelegate;
 
-  ash::shell::ShellDelegateImpl* delegate = new ash::shell::ShellDelegateImpl;
-  ash::Shell::CreateInstance(delegate);
+  delegate_ = new ash::shell::ShellDelegateImpl;
+#if defined(ENABLE_MESSAGE_CENTER)
+  // The global message center state must be initialized absent
+  // g_browser_process.
+  message_center::MessageCenter::Initialize();
+#endif
+  ash::Shell::CreateInstance(delegate_);
   ash::Shell::GetInstance()->set_browser_context(browser_context_.get());
 
   window_watcher_.reset(new ash::shell::WindowWatcher);
-  delegate->SetWatcher(window_watcher_.get());
+  gfx::Screen* screen = Shell::GetInstance()->GetScreen();
+  screen->AddObserver(window_watcher_.get());
+  delegate_->SetWatcher(window_watcher_.get());
 
   ash::shell::InitWindowTypeLauncher();
 
-  Shell::GetInstance()->desktop_background_controller()->SetDefaultWallpaper(0);
+  DesktopBackgroundController* controller =
+      Shell::GetInstance()->desktop_background_controller();
+  if (controller->GetAppropriateResolution() == WALLPAPER_RESOLUTION_LARGE)
+    controller->SetDefaultWallpaper(kDefaultLargeWallpaper);
+  else
+    controller->SetDefaultWallpaper(kDefaultSmallWallpaper);
 
   ash::Shell::GetPrimaryRootWindow()->ShowRootWindow();
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {
   browser_context_.reset();
+  gfx::Screen* screen = Shell::GetInstance()->GetScreen();
+  screen->RemoveObserver(window_watcher_.get());
 
   window_watcher_.reset();
+  delegate_->SetWatcher(NULL);
+  delegate_ = NULL;
   ash::Shell::DeleteInstance();
+#if defined(ENABLE_MESSAGE_CENTER)
+  // The global message center state must be shutdown absent
+  // g_browser_process.
+  message_center::MessageCenter::Shutdown();
+#endif
   aura::Env::DeleteInstance();
 }
 

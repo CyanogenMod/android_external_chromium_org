@@ -13,7 +13,7 @@ gfx::ImageSkia CreateTestImage(int width, int height) {
   SkBitmap bitmap;
   bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
   bitmap.allocPixels();
-  return gfx::ImageSkia(bitmap);
+  return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
 }
 
 }  // namespace
@@ -37,7 +37,7 @@ TEST_F(ImageButtonTest, Basics) {
 
   // Set a normal image.
   gfx::ImageSkia normal_image = CreateTestImage(10, 20);
-  button.SetImage(CustomButton::BS_NORMAL, &normal_image);
+  button.SetImage(CustomButton::STATE_NORMAL, &normal_image);
 
   // Image uses normal image for painting.
   EXPECT_FALSE(button.GetImageToPaint().isNull());
@@ -49,7 +49,7 @@ TEST_F(ImageButtonTest, Basics) {
 
   // Set a pushed image.
   gfx::ImageSkia pushed_image = CreateTestImage(11, 21);
-  button.SetImage(CustomButton::BS_PUSHED, &pushed_image);
+  button.SetImage(CustomButton::STATE_PRESSED, &pushed_image);
 
   // By convention, preferred size doesn't change, even though pushed image
   // is bigger.
@@ -80,10 +80,36 @@ TEST_F(ImageButtonTest, Basics) {
   EXPECT_TRUE(button.overlay_image_.isNull());
 }
 
+TEST_F(ImageButtonTest, SetAndGetImage) {
+  ImageButton button(NULL);
+
+  // Images start as null.
+  EXPECT_TRUE(button.GetImage(Button::STATE_NORMAL).isNull());
+  EXPECT_TRUE(button.GetImage(Button::STATE_HOVERED).isNull());
+  EXPECT_TRUE(button.GetImage(Button::STATE_PRESSED).isNull());
+  EXPECT_TRUE(button.GetImage(Button::STATE_DISABLED).isNull());
+
+  // Setting images works as expected.
+  gfx::ImageSkia image1 = CreateTestImage(10, 11);
+  gfx::ImageSkia image2 = CreateTestImage(20, 21);
+  button.SetImage(Button::STATE_NORMAL, &image1);
+  button.SetImage(Button::STATE_HOVERED, &image2);
+  EXPECT_TRUE(
+      button.GetImage(Button::STATE_NORMAL).BackedBySameObjectAs(image1));
+  EXPECT_TRUE(
+      button.GetImage(Button::STATE_HOVERED).BackedBySameObjectAs(image2));
+  EXPECT_TRUE(button.GetImage(Button::STATE_PRESSED).isNull());
+  EXPECT_TRUE(button.GetImage(Button::STATE_DISABLED).isNull());
+
+  // ImageButton supports NULL image pointers.
+  button.SetImage(Button::STATE_NORMAL, NULL);
+  EXPECT_TRUE(button.GetImage(Button::STATE_NORMAL).isNull());
+}
+
 TEST_F(ImageButtonTest, ImagePositionWithBorder) {
   ImageButton button(NULL);
   gfx::ImageSkia image = CreateTestImage(20, 30);
-  button.SetImage(CustomButton::BS_NORMAL, &image);
+  button.SetImage(CustomButton::STATE_NORMAL, &image);
 
   // The image should be painted at the top-left corner.
   EXPECT_EQ(gfx::Point().ToString(),

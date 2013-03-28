@@ -4,94 +4,113 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/timer.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/system_info_storage/storage_info_provider.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/extensions/system_info_event_router.h"
+#include "chrome/browser/storage_monitor/storage_info.h"
+#include "chrome/browser/storage_monitor/storage_monitor.h"
+#include "chrome/browser/storage_monitor/test_storage_monitor.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 
-namespace extensions {
+using chrome::StorageMonitor;
+using chrome::test::TestStorageMonitor;
+using extensions::api::experimental_system_info_storage::ParseStorageUnitType;
+using extensions::api::experimental_system_info_storage::StorageUnitInfo;
+using extensions::StorageInfoProvider;
+using extensions::StorageInfo;
 
-using api::experimental_system_info_storage::StorageUnitInfo;
+struct TestUnitInfo {
+  std::string id;
+  std::string type;
+  double capacity;
+  double available_capacity;
+  // The change step of free space.
+  int change_step;
+};
 
-const int kDefaultIntervalMs = 200;
-const int kAvailableCapacityBytes = 10000;
-const int kChangeDelta = 10;
+struct TestUnitInfo kTestingData[] = {
+  {"0xbeaf", "unknown", 4098, 1000, 0},
+  {"/home","harddisk", 4098, 1000, 10},
+  {"/data", "harddisk", 10000, 1000, 4097}
+};
 
-class MockStorageInfoProvider : public StorageInfoProvider {
+struct TestUnitInfo kRemovableStorageData[] = {
+  {"/media/usb1", "removable", 4098, 1000, 1}
+};
+
+const char kRemovableStorageDeviceName[] = "deviceName";
+const char kRemovableStorageDeviceId[] = "path://0xbeaf1";
+const base::FilePath::CharType kRemovableStorageLocation[] =
+    FILE_PATH_LITERAL("/media/usb1");
+const size_t kTestingIntervalMS = 10;
+
+class TestStorageInfoProvider : public StorageInfoProvider {
  public:
-  MockStorageInfoProvider() : is_watching_(false) {
+  TestStorageInfoProvider(struct TestUnitInfo testing_data[], size_t n)
+      : testing_data_(testing_data, testing_data + n) {
+    SetWatchingIntervalForTesting(kTestingIntervalMS);
   }
-  virtual ~MockStorageInfoProvider() {
-    StopWatching();
-  }
+
+ private:
+  virtual ~TestStorageInfoProvider() {}
 
   virtual bool QueryInfo(StorageInfo* info) OVERRIDE {
     info->clear();
 
-    linked_ptr<StorageUnitInfo> unit(new StorageUnitInfo());
-    unit->id = "0xbeaf";
-    unit->type = api::experimental_system_info_storage::
-        EXPERIMENTAL_SYSTEM_INFO_STORAGE_STORAGE_UNIT_TYPE_UNKNOWN;
-    unit->capacity = 4098;
-    unit->available_capacity = 1024;
-
-    info->push_back(unit);
+    for (size_t i = 0; i < testing_data_.size(); i++) {
+      linked_ptr<StorageUnitInfo> unit(new StorageUnitInfo());
+      QueryUnitInfo(testing_data_[i].id, unit.get());
+      info->push_back(unit);
+    }
     return true;
   }
 
   virtual bool QueryUnitInfo(const std::string& id,
                              StorageUnitInfo* info) OVERRIDE {
+    for (size_t i = 0; i < testing_data_.size(); i++) {
+      if (testing_data_[i].id == id) {
+        info->id = testing_data_[i].id;
+        info->type = ParseStorageUnitType(testing_data_[i].type);
+        info->capacity = testing_data_[i].capacity;
+        info->available_capacity = testing_data_[i].available_capacity;
+        // Increase the available capacity with a fixed change step.
+        testing_data_[i].available_capacity += testing_data_[i].change_step;
+        return true;
+      }
+    }
     return false;
   }
 
-  bool StartWatching() {
-    if (is_watching_) return false;
-
-    // Start the timer to emulate storage.onChanged event.
-    timer_.Start(FROM_HERE,
-                  base::TimeDelta::FromMilliseconds(kDefaultIntervalMs),
-                  this, &MockStorageInfoProvider::OnTimeoutEvent);
-
-    is_watching_ = true;
-    return true;
-  }
-
-  bool StopWatching() {
-    if (!is_watching_) return false;
-    is_watching_ = false;
-    timer_.Stop();
-    return true;
-  }
-
  private:
-  void OnTimeoutEvent() {
-    static int count;
-    SystemInfoEventRouter::GetInstance()->
-      OnStorageAvailableCapacityChanged("/dev/sda1",
-          kAvailableCapacityBytes - count * kChangeDelta);
-    count++;
-  }
-
-  // Use a repeating timer to emulate storage free space change event.
-  base::RepeatingTimer<MockStorageInfoProvider> timer_;
-  bool is_watching_;
+  std::vector<struct TestUnitInfo> testing_data_;
 };
 
 class SystemInfoStorageApiTest: public ExtensionApiTest {
  public:
   SystemInfoStorageApiTest() {}
-  ~SystemInfoStorageApiTest() {}
+  virtual ~SystemInfoStorageApiTest() {}
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kEnableExperimentalExtensionApis);
   }
 
-  virtual void SetUpInProcessBrowserTestFixture() {
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
     message_loop_.reset(new MessageLoop(MessageLoop::TYPE_UI));
+  }
+
+  void ProcessAttach(const std::string& device_id,
+                     const string16& name,
+                     const base::FilePath::StringType& location) {
+    chrome::StorageInfo info(device_id, name, location);
+    StorageMonitor::GetInstance()->receiver()->ProcessAttach(info);
+  }
+
+  void ProcessDetach(const std::string& id) {
+    StorageMonitor::GetInstance()->receiver()->ProcessDetach(id);
   }
 
  private:
@@ -99,20 +118,36 @@ class SystemInfoStorageApiTest: public ExtensionApiTest {
 };
 
 IN_PROC_BROWSER_TEST_F(SystemInfoStorageApiTest, Storage) {
-  ResultCatcher catcher;
-  MockStorageInfoProvider* provider = new MockStorageInfoProvider();
+  TestStorageInfoProvider* provider =
+      new TestStorageInfoProvider(kTestingData, arraysize(kTestingData));
   StorageInfoProvider::InitializeForTesting(provider);
-
-  ExtensionTestMessageListener listener("ready", true);
-  const extensions::Extension* extension =
-    LoadExtension(test_data_dir_.AppendASCII("systeminfo/storage"));
-  GURL page_url = extension->GetResourceURL("test_storage_api.html");
-  ui_test_utils::NavigateToURL(browser(), page_url);
-  EXPECT_TRUE(listener.WaitUntilSatisfied());
-
-  provider->StartWatching();
-  listener.Reply("go");
-  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+  ASSERT_TRUE(RunPlatformAppTest("systeminfo/storage")) << message_;
 }
 
-} // namespace extensions
+IN_PROC_BROWSER_TEST_F(SystemInfoStorageApiTest, StorageAttachment) {
+  scoped_ptr<TestStorageMonitor> monitor(
+      TestStorageMonitor::CreateForBrowserTests());
+
+  TestStorageInfoProvider* provider =
+      new TestStorageInfoProvider(kRemovableStorageData,
+                                  arraysize(kRemovableStorageData));
+  StorageInfoProvider::InitializeForTesting(provider);
+
+  ResultCatcher catcher;
+  ExtensionTestMessageListener attach_listener("attach", false);
+  ExtensionTestMessageListener detach_listener("detach", false);
+
+  EXPECT_TRUE(LoadExtension(
+      test_data_dir_.AppendASCII("systeminfo/storage_attachment")));
+
+  // Simulate triggering onAttached event.
+  ASSERT_TRUE(attach_listener.WaitUntilSatisfied());
+  ProcessAttach(kRemovableStorageDeviceId,
+                ASCIIToUTF16(kRemovableStorageDeviceName),
+                kRemovableStorageLocation);
+  // Simulate triggering onDetached event.
+  ASSERT_TRUE(detach_listener.WaitUntilSatisfied());
+  ProcessDetach(kRemovableStorageDeviceId);
+
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}

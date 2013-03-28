@@ -10,22 +10,15 @@
 #include <string>
 #include <vector>
 
-#include "base/string16.h"
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/chromeos/input_method/input_method_descriptor.h"
+#include "base/string16.h"
+#include "chromeos/ime/input_method_descriptor.h"
 
 namespace chromeos {
 namespace input_method {
 
-// The list of language that do not have associated input methods in IBus.
-// For these languages, we associate input methods here.
-struct ExtraLanguage {
-  const char* language_code;
-  const char* input_method_id;
-};
-extern const ExtraLanguage kExtraLanguages[];
-extern const size_t kExtraLanguagesLength;
+class InputMethodDelegate;
 
 enum InputMethodType {
   kKeyboardLayoutsOnly,
@@ -37,8 +30,9 @@ class InputMethodUtil {
  public:
   // |supported_input_methods| is a list of all input methods supported,
   // including ones not active. The list is used to initialize member variables
-  // in this class. The class takes ownership of |supported_input_methods|.
-  explicit InputMethodUtil(InputMethodDescriptors* supported_input_methods);
+  // in this class.
+  InputMethodUtil(InputMethodDelegate* delegate,
+                  scoped_ptr<InputMethodDescriptors> supported_input_methods);
   ~InputMethodUtil();
 
   // Converts a string sent from IBus IME engines, which is written in English,
@@ -128,9 +122,6 @@ class InputMethodUtil {
   // changed, so that the internal maps of this library is reloaded.
   void OnLocaleChanged();
 
-  // Sets an input method ID of the hardware keyboard for testing.
-  void SetHardwareInputMethodIdForTesting(const std::string& input_method_id);
-
   // Returns true if the given input method id is supported.
   bool IsValidInputMethodId(const std::string& input_method_id) const;
 
@@ -145,7 +136,7 @@ class InputMethodUtil {
   // internally.
   // Examples: "fi"    => "Finnish"
   //           "en-US" => "English (United States)"
-  static string16 GetLanguageDisplayNameFromCode(
+  string16 GetLanguageDisplayNameFromCode(
       const std::string& language_code);
 
   // Converts a language code to a language native display name.
@@ -154,6 +145,14 @@ class InputMethodUtil {
   //           "en-US" => "English (United States)"
   static string16 GetLanguageNativeDisplayNameFromCode(
       const std::string& language_code);
+
+  // Returns extra language code list associated with |input_method_id|. If
+  // there is no associated langauge code, this function returns empty list.
+  std::vector<std::string> GetExtraLanguageCodesFromId(
+      const std::string& input_method_id) const;
+
+  // Returns all extra language code list.
+  std::vector<std::string> GetExtraLanguageCodeList() const;
 
  protected:
   // This method is ONLY for unit testing. Returns true if the given string is
@@ -174,7 +173,7 @@ class InputMethodUtil {
   // Sorts the given language codes by their corresponding language names, using
   // the unicode string comparator. Uses unstable sorting. protected: for unit
   // testing as well.
-  static void SortLanguageCodesByNames(
+  void SortLanguageCodesByNames(
       std::vector<std::string>* language_codes);
 
   // All input methods that are supported, including ones not active.
@@ -201,7 +200,9 @@ class InputMethodUtil {
   typedef base::hash_map<std::string, int> HashType;
   HashType english_to_resource_id_;
 
-  std::string hardware_input_method_id_for_testing_;
+  InputMethodDelegate* delegate_;
+
+  DISALLOW_COPY_AND_ASSIGN(InputMethodUtil);
 };
 
 }  // namespace input_method

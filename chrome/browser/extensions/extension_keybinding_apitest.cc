@@ -10,10 +10,10 @@
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
@@ -72,12 +72,11 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, Basic) {
       test_server()->GetURL("files/extensions/test_file.txt"));
 
   // activeTab shouldn't have been granted yet.
-  TabContents* tab = chrome::GetActiveTabContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(tab);
 
   ActiveTabPermissionGranter* granter =
-      TabHelper::FromWebContents(tab->web_contents())->
-          active_tab_permission_granter();
+      TabHelper::FromWebContents(tab)->active_tab_permission_granter();
   EXPECT_FALSE(granter->IsGranted(extension));
 
   // Activate the shortcut (Ctrl+Shift+F).
@@ -89,11 +88,11 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, Basic) {
 
   // Verify the command worked.
   bool result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->web_contents()->GetRenderViewHost(), L"",
-      L"setInterval(function(){"
-      L"  if(document.body.bgColor == 'red'){"
-      L"    window.domAutomationController.send(true)}}, 100)",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "setInterval(function(){"
+      "  if(document.body.bgColor == 'red'){"
+      "    window.domAutomationController.send(true)}}, 100)",
       &result));
   ASSERT_TRUE(result);
 
@@ -102,16 +101,22 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, Basic) {
       browser(), ui::VKEY_Y, true, true, false, false));
 
   result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->web_contents()->GetRenderViewHost(), L"",
-      L"setInterval(function(){"
-      L"  if(document.body.bgColor == 'blue'){"
-      L"    window.domAutomationController.send(true)}}, 100)",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "setInterval(function(){"
+      "  if(document.body.bgColor == 'blue'){"
+      "    window.domAutomationController.send(true)}}, 100)",
       &result));
   ASSERT_TRUE(result);
 }
 
-IN_PROC_BROWSER_TEST_F(CommandsApiTest, PageAction) {
+// Flaky on linux and chromeos, http://crbug.com/165825
+#if defined(OS_MACOSX) || defined(OS_WIN)
+#define MAYBE_PageAction PageAction
+#else
+#define MAYBE_PageAction DISABLED_PageAction
+#endif
+IN_PROC_BROWSER_TEST_F(CommandsApiTest, MAYBE_PageAction) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(RunExtensionTest("keybinding/page_action")) << message_;
   const Extension* extension = GetSingleLoadedExtension();
@@ -129,7 +134,7 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, PageAction) {
   // Make sure it appears and is the right one.
   ASSERT_TRUE(WaitForPageActionVisibilityChangeTo(1));
   int tab_id = SessionTabHelper::FromWebContents(
-      chrome::GetActiveWebContents(browser()))->session_id().id();
+      browser()->tab_strip_model()->GetActiveWebContents())->session_id().id();
   ExtensionAction* action =
       ExtensionActionManager::Get(browser()->profile())->
       GetPageAction(*extension);
@@ -141,13 +146,13 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, PageAction) {
       browser(), ui::VKEY_F, false, true, true, false));
 
   // Verify the command worked (the page action turns the page red).
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   bool result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), L"",
-      L"setInterval(function(){"
-      L"  if(document.body.bgColor == 'red'){"
-      L"    window.domAutomationController.send(true)}}, 100)",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "setInterval(function(){"
+      "  if(document.body.bgColor == 'red'){"
+      "    window.domAutomationController.send(true)}}, 100)",
       &result));
   ASSERT_TRUE(result);
 }
@@ -159,7 +164,7 @@ IN_PROC_BROWSER_TEST_F(CommandsApiTest, PageAction) {
 // popup for script badges appear. When bug 140016 has been fixed, the popup
 // code can signal to the test that the test passed.
 // TODO(finnur): Enable this test once the bug is fixed.
-IN_PROC_BROWSER_TEST_F(ScriptBadgesCommandsApiTest, ScriptBadge_DISABLED) {
+IN_PROC_BROWSER_TEST_F(ScriptBadgesCommandsApiTest, DISABLED_ScriptBadge) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(RunExtensionTest("keybinding/script_badge")) << message_;
   const Extension* extension = GetSingleLoadedExtension();

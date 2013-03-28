@@ -14,13 +14,13 @@ function gotNativeMessage(message) {
 
 function sendNativeMessage() {
   if (!port) {
-    port = chrome.extension.connectNative('echo.py', {"message": "Hi there!"});
+    port = chrome.extension.connectNative('com.google.chrome.test.echo');
     port.onMessage.addListener(gotNativeMessage);
     document.getElementById('input-text').style.display = 'block';
     document.getElementById('send-native-message').innerHTML = 'Send Message';
-  } else {
-    port.postMessage({"message": document.getElementById('input-text').value});
   }
+
+  port.postMessage({"message": document.getElementById('input-text').value});
 }
 
 document.addEventListener('DOMContentLoaded', function () {

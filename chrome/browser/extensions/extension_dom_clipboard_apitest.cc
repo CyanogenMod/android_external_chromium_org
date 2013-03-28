@@ -5,12 +5,12 @@
 #include "base/stringprintf.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
 
 namespace {
 
@@ -22,7 +22,7 @@ class ClipboardApiTest : public ExtensionApiTest {
   bool ExecutePasteInSelectedTab(bool* result);
 
  private:
-  bool ExecuteScriptInSelectedTab(const std::wstring& script, bool* result);
+  bool ExecuteScriptInSelectedTab(const std::string& script, bool* result);
 };
 
 bool ClipboardApiTest::LoadHostedApp(const std::string& app_name,
@@ -54,22 +54,21 @@ bool ClipboardApiTest::LoadHostedApp(const std::string& app_name,
 }
 
 bool ClipboardApiTest::ExecuteCopyInSelectedTab(bool* result) {
-  const wchar_t kScript[] =
-      L"window.domAutomationController.send(document.execCommand('copy'))";
+  const char kScript[] =
+      "window.domAutomationController.send(document.execCommand('copy'))";
   return ExecuteScriptInSelectedTab(kScript, result);
 }
 
 bool ClipboardApiTest::ExecutePasteInSelectedTab(bool* result) {
-  const wchar_t kScript[] =
-      L"window.domAutomationController.send(document.execCommand('paste'))";
+  const char kScript[] =
+      "window.domAutomationController.send(document.execCommand('paste'))";
   return ExecuteScriptInSelectedTab(kScript, result);
 }
 
-bool ClipboardApiTest::ExecuteScriptInSelectedTab(const std::wstring& script,
+bool ClipboardApiTest::ExecuteScriptInSelectedTab(const std::string& script,
                                                   bool* result) {
-  if (!content::ExecuteJavaScriptAndExtractBool(
-          chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-          L"",
+  if (!content::ExecuteScriptAndExtractBool(
+          browser()->tab_strip_model()->GetActiveWebContents(),
           script,
           result)) {
     message_ = "Failed to execute script in selected tab.";

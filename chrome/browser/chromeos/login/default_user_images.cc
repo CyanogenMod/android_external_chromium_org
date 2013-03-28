@@ -6,14 +6,14 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace chromeos {
@@ -76,7 +76,7 @@ std::string GetDefaultImageString(int index, const std::string& prefix) {
     NOTREACHED();
     return std::string();
   }
-  return StringPrintf("%s%d", prefix.c_str(), index);
+  return base::StringPrintf("%s%d", prefix.c_str(), index);
 }
 
 // Returns true if the string specified consists of the prefix and one of

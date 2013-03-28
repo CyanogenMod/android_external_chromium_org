@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
-#include "ipc/ipc_message.h"
 #include "webkit/glue/resource_type.h"
 
 class GURL;
@@ -22,8 +22,13 @@ class AppCacheService;
 namespace content {
 class ResourceContext;
 class ResourceThrottle;
+class StreamHandle;
 struct Referrer;
 struct ResourceResponse;
+}
+
+namespace IPC {
+class Sender;
 }
 
 namespace net {
@@ -63,11 +68,7 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
       ScopedVector<ResourceThrottle>* throttles);
 
   // Allows an embedder to add additional resource handlers for a download.
-  // |is_new_request| is true if this is a request that is just starting, i.e.
-  // the content layer has just added its own resource handlers; it's false if
-  // this was originally a non-download request that had some resource handlers
-  // applied already and now we found out it's a download.
-  // |in_complete| is true if this is invoked from |OnResponseCompleted|.
+  // |must_download| is set if the request must be handled as a download.
   virtual void DownloadStarting(
       net::URLRequest* request,
       ResourceContext* resource_context,
@@ -75,6 +76,7 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
       int route_id,
       int request_id,
       bool is_content_initiated,
+      bool must_download,
       ScopedVector<ResourceThrottle>* throttles);
 
   // Called when an SSL Client Certificate is requested. If false is returned,
@@ -106,6 +108,30 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
   // Otherwise, the content layer decides.
   virtual bool ShouldForceDownloadResource(
       const GURL& url, const std::string& mime_type);
+
+  // Returns true and sets |security_origin| and |target_id| if a Stream should
+  // be created for the resource.
+  // If true is returned, a new Stream will be created and OnStreamCreated will
+  // be called with the |target_id| returned by this function and a URL to read
+  // the Stream which is accessible from the |security_origin| returned by this
+  // function.
+  virtual bool ShouldInterceptResourceAsStream(
+      content::ResourceContext* resource_context,
+      const GURL& url,
+      const std::string& mime_type,
+      GURL* security_origin,
+      std::string* target_id);
+
+  // Informs the delegate that a stream was created. |target_id| will be filled
+  // with the parameter returned by ShouldInterceptResourceAsStream(). The
+  // Stream can be read from the blob URL owned by |stream|, but can only be
+  // read once.
+  virtual void OnStreamCreated(
+      content::ResourceContext* resource_context,
+      int render_process_id,
+      int render_view_id,
+      const std::string& target_id,
+      scoped_ptr<StreamHandle> stream);
 
   // Informs the delegate that a response has started.
   virtual void OnResponseStarted(

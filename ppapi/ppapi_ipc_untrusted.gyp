@@ -24,7 +24,6 @@
             'build_glibc': 0,
             'build_newlib': 1,
             'defines': [
-              'NACL_PPAPI_IPC_PROXY',
               # Enable threading for the untrusted side of the proxy.
               # TODO(bbudge) remove when this is the default.
               'ENABLE_PEPPER_THREADING',
@@ -39,6 +38,7 @@
             '../gpu/gpu_untrusted.gyp:gpu_ipc_untrusted',
             '../ipc/ipc_untrusted.gyp:ipc_untrusted',
             '../ppapi/ppapi_shared_untrusted.gyp:ppapi_shared_untrusted',
+            '../components/tracing_untrusted.gyp:tracing_untrusted',
           ],
         },
       ],

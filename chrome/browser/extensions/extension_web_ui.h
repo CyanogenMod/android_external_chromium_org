@@ -8,16 +8,20 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/bookmarks/bookmark_manager_extension_api.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest_url_handler.h"
 #include "content/public/browser/web_ui_controller.h"
 
 namespace content {
+class BrowserContext;
 class WebContents;
 }
 
-class PrefService;
+namespace extensions {
+class BookmarkManagerPrivateEventRouter;
+}
+
+class PrefRegistrySyncable;
 class Profile;
 
 // This class implements WebUI for extensions and allows extensions to put UI in
@@ -32,8 +36,8 @@ class ExtensionWebUI : public content::WebUIController {
 
   virtual ~ExtensionWebUI();
 
-  virtual BookmarkManagerExtensionEventRouter*
-      bookmark_manager_extension_event_router();
+  virtual extensions::BookmarkManagerPrivateEventRouter*
+      bookmark_manager_private_event_router();
 
   // BrowserURLHandler
   static bool HandleChromeURLOverride(GURL* url,
@@ -45,20 +49,22 @@ class ExtensionWebUI : public content::WebUIController {
   // Page names are the keys, and chrome-extension: URLs are the values.
   // (e.g. { "newtab": "chrome-extension://<id>/my_new_tab.html" }
   static void RegisterChromeURLOverrides(Profile* profile,
-      const extensions::Extension::URLOverrideMap& overrides);
+      const extensions::URLOverrides::URLOverrideMap& overrides);
   static void UnregisterChromeURLOverrides(Profile* profile,
-      const extensions::Extension::URLOverrideMap& overrides);
+      const extensions::URLOverrides::URLOverrideMap& overrides);
   static void UnregisterChromeURLOverride(const std::string& page,
                                           Profile* profile,
                                           const base::Value* override);
 
   // Called from BrowserPrefs
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
   // Get the favicon for the extension by getting an icon from the manifest.
-  static void GetFaviconForURL(Profile* profile,
-                               FaviconService::GetFaviconRequest* request,
-                               const GURL& page_url);
+  // Note. |callback| is always run asynchronously.
+  static void GetFaviconForURL(
+      Profile* profile,
+      const GURL& page_url,
+      const FaviconService::FaviconResultsCallback& callback);
 
  private:
   // Unregister the specified override, and if it's the currently active one,
@@ -70,8 +76,8 @@ class ExtensionWebUI : public content::WebUIController {
 
   // TODO(aa): This seems out of place. Why is it not with the event routers for
   // the other extension APIs?
-  scoped_ptr<BookmarkManagerExtensionEventRouter>
-      bookmark_manager_extension_event_router_;
+  scoped_ptr<extensions::BookmarkManagerPrivateEventRouter>
+      bookmark_manager_private_event_router_;
 
   // The URL this WebUI was created for.
   GURL url_;

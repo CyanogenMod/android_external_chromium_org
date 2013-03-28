@@ -15,7 +15,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 
 namespace content {
-WebContentsView* CreateWebContentsView(
+WebContentsViewPort* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
     RenderViewHostDelegateView** render_view_host_delegate_view) {
@@ -54,27 +54,9 @@ void WebContentsViewAndroid::SetContentViewCore(
   }
 }
 
-void WebContentsViewAndroid::CreateView(const gfx::Size& initial_size) {
-}
-
-RenderWidgetHostView* WebContentsViewAndroid::CreateViewForWidget(
-    RenderWidgetHost* render_widget_host) {
-  if (render_widget_host->GetView()) {
-    // During testing, the view will already be set up in most cases to the
-    // test view, so we don't want to clobber it with a real one. To verify that
-    // this actually is happening (and somebody isn't accidentally creating the
-    // view twice), we check for the RVH Factory, which will be set when we're
-    // making special ones (which go along with the special views).
-    DCHECK(RenderViewHostFactory::has_factory());
-    return render_widget_host->GetView();
-  }
-  // Note that while this instructs the render widget host to reference
-  // |native_view_|, this has no effect without also instructing the
-  // native view (i.e. ContentView) how to obtain a reference to this widget in
-  // order to paint it. See ContentView::GetRenderWidgetHostViewAndroid for an
-  // example of how this is achieved for InterstitialPages.
-  RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(render_widget_host);
-  return new RenderWidgetHostViewAndroid(rwhi, content_view_core_);
+void WebContentsViewAndroid::RequestExternalVideoSurface(int player_id) {
+  if (content_view_core_)
+    content_view_core_->RequestExternalVideoSurface(player_id);
 }
 
 gfx::NativeView WebContentsViewAndroid::GetNativeView() const {
@@ -117,9 +99,6 @@ void WebContentsViewAndroid::SizeContents(const gfx::Size& size) {
     rwhv->SetSize(size);
 }
 
-void WebContentsViewAndroid::RenderViewCreated(RenderViewHost* host) {
-}
-
 void WebContentsViewAndroid::Focus() {
   if (web_contents_->ShowingInterstitialPage())
     web_contents_->GetInterstitialPage()->Focus();
@@ -147,21 +126,52 @@ WebDropData* WebContentsViewAndroid::GetDropData() const {
   return NULL;
 }
 
-bool WebContentsViewAndroid::IsEventTracking() const {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void WebContentsViewAndroid::CloseTabAfterEventTracking() {
-  NOTIMPLEMENTED();
-}
-
 gfx::Rect WebContentsViewAndroid::GetViewBounds() const {
   RenderWidgetHostView* rwhv = web_contents_->GetRenderWidgetHostView();
   if (rwhv)
     return rwhv->GetViewBounds();
   else
     return gfx::Rect();
+}
+
+void WebContentsViewAndroid::CreateView(
+    const gfx::Size& initial_size, gfx::NativeView context) {
+}
+
+RenderWidgetHostView* WebContentsViewAndroid::CreateViewForWidget(
+    RenderWidgetHost* render_widget_host) {
+  if (render_widget_host->GetView()) {
+    // During testing, the view will already be set up in most cases to the
+    // test view, so we don't want to clobber it with a real one. To verify that
+    // this actually is happening (and somebody isn't accidentally creating the
+    // view twice), we check for the RVH Factory, which will be set when we're
+    // making special ones (which go along with the special views).
+    DCHECK(RenderViewHostFactory::has_factory());
+    return render_widget_host->GetView();
+  }
+  // Note that while this instructs the render widget host to reference
+  // |native_view_|, this has no effect without also instructing the
+  // native view (i.e. ContentView) how to obtain a reference to this widget in
+  // order to paint it. See ContentView::GetRenderWidgetHostViewAndroid for an
+  // example of how this is achieved for InterstitialPages.
+  RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(render_widget_host);
+  RenderWidgetHostView* view = new RenderWidgetHostViewAndroid(
+      rwhi, content_view_core_);
+  return view;
+}
+
+RenderWidgetHostView* WebContentsViewAndroid::CreateViewForPopupWidget(
+    RenderWidgetHost* render_widget_host) {
+  return RenderWidgetHostViewPort::CreateViewForWidget(render_widget_host);
+}
+
+void WebContentsViewAndroid::RenderViewCreated(RenderViewHost* host) {
+}
+
+void WebContentsViewAndroid::RenderViewSwappedIn(RenderViewHost* host) {
+}
+
+void WebContentsViewAndroid::SetOverscrollControllerEnabled(bool enabled) {
 }
 
 void WebContentsViewAndroid::ShowContextMenu(

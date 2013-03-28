@@ -5,17 +5,18 @@
 #include "ash/system/chromeos/tray_display.h"
 
 #include "ash/display/display_controller.h"
-#include "ash/display/multi_display_manager.h"
+#include "ash/display/display_manager.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
+#include "ash/system/tray/fixed_sized_image_view.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_views.h"
+#include "base/chromeos/chromeos_version.h"
 #include "base/utf_string_conversions.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
-#include "ui/aura/display_manager.h"
 #include "ui/aura/env.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -23,6 +24,11 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
+
+#if defined(USE_X11)
+#include "chromeos/display/output_configurator.h"
+#include "ui/base/x/x11_util.h"
+#endif
 
 namespace ash {
 namespace internal {
@@ -37,12 +43,14 @@ class DisplayView : public ash::internal::ActionableView {
         ash::kTrayPopupPaddingBetweenItems));
 
     ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
-    views::ImageView* image =
+    image_ =
         new ash::internal::FixedSizedImageView(0, ash::kTrayPopupItemHeight);
-    image->SetImage(
+    image_->SetImage(
         bundle.GetImageNamed(IDR_AURA_UBER_TRAY_DISPLAY).ToImageSkia());
-    AddChildView(image);
+    AddChildView(image_);
     label_ = new views::Label();
+    label_->SetMultiLine(true);
+    label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     AddChildView(label_);
     Update();
   }
@@ -50,7 +58,11 @@ class DisplayView : public ash::internal::ActionableView {
   virtual ~DisplayView() {}
 
   void Update() {
-    switch (Shell::GetInstance()->output_configurator()->output_state()) {
+    chromeos::OutputState state =
+        base::chromeos::IsRunningOnChromeOS() ?
+        Shell::GetInstance()->output_configurator()->output_state() :
+        InferOutputState();
+    switch (state) {
       case chromeos::STATE_INVALID:
       case chromeos::STATE_HEADLESS:
       case chromeos::STATE_SINGLE:
@@ -62,8 +74,7 @@ class DisplayView : public ash::internal::ActionableView {
         SetVisible(true);
         return;
       }
-      case chromeos::STATE_DUAL_PRIMARY_ONLY:
-      case chromeos::STATE_DUAL_SECONDARY_ONLY:
+      case chromeos::STATE_DUAL_EXTENDED:
       case chromeos::STATE_DUAL_UNKNOWN: {
         label_->SetText(l10n_util::GetStringFUTF16(
             IDS_ASH_STATUS_TRAY_DISPLAY_EXTENDED, GetExternalDisplayName()));
@@ -75,28 +86,31 @@ class DisplayView : public ash::internal::ActionableView {
     }
   }
 
+  chromeos::OutputState InferOutputState() const {
+    return Shell::GetScreen()->GetNumDisplays() == 1 ?
+        chromeos::STATE_SINGLE : chromeos::STATE_DUAL_EXTENDED;
+  }
+
  private:
   // Returns the name of the currently connected external display.
-  string16 GetExternalDisplayName() {
-    MultiDisplayManager* display_manager = static_cast<MultiDisplayManager*>(
-        aura::Env::GetInstance()->display_manager());
+  string16 GetExternalDisplayName() const {
+    DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+    int64 external_id = display_manager->mirrored_display_id();
 
-    gfx::Display external_display(gfx::Display::kInvalidDisplayID);
-    if (display_manager->HasInternalDisplay()) {
+    if (external_id == gfx::Display::kInvalidDisplayID) {
+      int64 internal_display_id = gfx::Display::InternalDisplayId();
+      int64 first_display_id = display_manager->first_display_id();
       for (size_t i = 0; i < display_manager->GetNumDisplays(); ++i) {
-        gfx::Display* display = display_manager->GetDisplayAt(i);
-        if (!display_manager->IsInternalDisplayId(display->id())) {
-          external_display = *display;
+        int64 id = display_manager->GetDisplayAt(i)->id();
+        if (id != internal_display_id && id != first_display_id) {
+          external_id = id;
           break;
         }
       }
-    } else {
-      // Falls back to the secondary display since the system doesn't
-      // distinguish the displays.
-      external_display = ScreenAsh::GetSecondaryDisplay();
     }
-
-    return UTF8ToUTF16(display_manager->GetDisplayNameFor(external_display));
+    if (external_id != gfx::Display::kInvalidDisplayID)
+      return UTF8ToUTF16(display_manager->GetDisplayNameForId(external_id));
+    return l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_UNKNOWN_DISPLAY_NAME);
   }
 
   // Overridden from ActionableView.
@@ -104,27 +118,36 @@ class DisplayView : public ash::internal::ActionableView {
     if (login_status_ == ash::user::LOGGED_IN_USER ||
         login_status_ == ash::user::LOGGED_IN_OWNER ||
         login_status_ == ash::user::LOGGED_IN_GUEST) {
-      ash::Shell::GetInstance()->tray_delegate()->ShowDisplaySettings();
+      ash::Shell::GetInstance()->system_tray_delegate()->ShowDisplaySettings();
     }
 
     return true;
   }
 
+  virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE {
+    int label_max_width = bounds().width() - kTrayPopupPaddingHorizontal * 2 -
+        kTrayPopupPaddingBetweenItems - image_->GetPreferredSize().width();
+    label_->SizeToFit(label_max_width);
+    PreferredSizeChanged();
+  }
+
   user::LoginStatus login_status_;
+  views::ImageView* image_;
   views::Label* label_;
 
   DISALLOW_COPY_AND_ASSIGN(DisplayView);
 };
 
-TrayDisplay::TrayDisplay()
-    : default_(NULL) {
-  aura::Env::GetInstance()->display_manager()->AddObserver(this);
-  ash::Shell::GetInstance()->output_configurator()->AddObserver(this);
+TrayDisplay::TrayDisplay(SystemTray* system_tray)
+    : SystemTrayItem(system_tray),
+      default_(NULL) {
+  Shell::GetScreen()->AddObserver(this);
+  Shell::GetInstance()->output_configurator()->AddObserver(this);
 }
 
 TrayDisplay::~TrayDisplay() {
-  aura::Env::GetInstance()->display_manager()->RemoveObserver(this);
-  ash::Shell::GetInstance()->output_configurator()->RemoveObserver(this);
+  Shell::GetScreen()->RemoveObserver(this);
+  Shell::GetInstance()->output_configurator()->RemoveObserver(this);
 }
 
 views::View* TrayDisplay::CreateDefaultView(user::LoginStatus status) {
@@ -151,10 +174,12 @@ void TrayDisplay::OnDisplayRemoved(const gfx::Display& old_display) {
     default_->Update();
 }
 
+#if defined(OS_CHROMEOS)
 void TrayDisplay::OnDisplayModeChanged() {
   if (default_)
     default_->Update();
 }
+#endif
 
 }  // namespace internal
 }  // namespace ash

@@ -31,15 +31,6 @@ class VIEWS_EXPORT CustomButton : public Button,
 
   virtual ~CustomButton();
 
-  // Possible states
-  enum ButtonState {
-    BS_NORMAL = 0,
-    BS_HOT,
-    BS_PUSHED,
-    BS_DISABLED,
-    BS_COUNT
-  };
-
   // Get/sets the current display state of the button.
   ButtonState state() const { return state_; }
   void SetState(ButtonState state);
@@ -90,12 +81,13 @@ class VIEWS_EXPORT CustomButton : public Button,
   virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
   virtual void ShowContextMenu(const gfx::Point& p,
                                bool is_mouse_gesture) OVERRIDE;
   virtual void OnDragDone() OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void VisibilityChanged(View* starting_from, bool is_visible) OVERRIDE;
 
   // Overridden from ui::AnimationDelegate:
   virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
@@ -158,7 +150,7 @@ class VIEWS_EXPORT CustomButton : public Button,
 class VIEWS_EXPORT CustomButtonStateChangedDelegate {
 public:
   virtual ~CustomButtonStateChangedDelegate() {}
-  virtual void StateChanged(CustomButton::ButtonState state) = 0;
+  virtual void StateChanged(Button::ButtonState state) = 0;
 
 protected:
   CustomButtonStateChangedDelegate() {}

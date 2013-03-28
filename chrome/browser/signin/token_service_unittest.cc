@@ -11,11 +11,11 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/synchronization/waitable_event.h"
-#include "chrome/browser/password_manager/encryptor.h"
 #include "chrome/browser/signin/token_service_factory.h"
-#include "chrome/browser/webdata/web_data_service_factory.h"
+#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/webdata/encryptor/encryptor.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/mock_url_fetcher_factory.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -97,16 +97,14 @@ void TokenServiceTestHarness::TearDown() {
   BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
       base::Bind(&base::WaitableEvent::Signal, base::Unretained(&done)));
   done.Wait();
-
-  db_thread_.Stop();
   MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   MessageLoop::current()->Run();
+  db_thread_.Stop();
 }
 
 void TokenServiceTestHarness::WaitForDBLoadCompletion() {
   // Force the loading of the WebDataService.
-  WebDataServiceFactory::GetForProfile(profile_.get(),
-                                       Profile::IMPLICIT_ACCESS);
+  WebDataService::FromBrowserContext(profile_.get());
 
   // The WebDB does all work on the DB thread. This will add an event
   // to the end of the DB thread, so when we reach this task, all DB
@@ -119,7 +117,7 @@ void TokenServiceTestHarness::WaitForDBLoadCompletion() {
   done.Wait();
 
   // Notifications should be returned from the DB thread onto the UI thread.
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
 }
 
 class TokenServiceTest : public TokenServiceTestHarness {
@@ -320,8 +318,6 @@ TEST_F(TokenServiceTest, LoadTokensIntoMemoryBasic) {
     TestLoadSingleToken(&db_tokens, &memory_tokens, service);
   }
   std::string service = GaiaConstants::kGaiaOAuth2LoginRefreshToken;
-  TestLoadSingleToken(&db_tokens, &memory_tokens, service);
-  service = GaiaConstants::kGaiaOAuth2LoginAccessToken;
   TestLoadSingleToken(&db_tokens, &memory_tokens, service);
 }
 

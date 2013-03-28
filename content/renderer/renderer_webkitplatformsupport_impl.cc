@@ -5,19 +5,23 @@
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
 #include "base/shared_memory.h"
 #include "base/utf_string_conversions.h"
 #include "content/common/database_util.h"
+#include "content/common/file_utilities_messages.h"
 #include "content/common/fileapi/webblobregistry_impl.h"
 #include "content/common/fileapi/webfilesystem_impl.h"
-#include "content/common/file_utilities_messages.h"
+#include "content/common/gpu/client/context_provider_command_buffer.h"
+#include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/indexed_db/proxy_webidbfactory_impl.h"
 #include "content/common/mime_registry_messages.h"
 #include "content/common/npobject_util.h"
+#include "content/common/thread_safe_sender.h"
 #include "content/common/view_messages.h"
 #include "content/common/webmessageportchannel_impl.h"
 #include "content/public/common/content_switches.h"
@@ -26,7 +30,6 @@
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/hyphenator/hyphenator.h"
-#include "content/renderer/media/audio_hardware.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
 #include "content/renderer/render_thread_impl.h"
@@ -35,41 +38,43 @@
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/audio/audio_output_device.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebBlobRegistry.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFileInfo.h"
+#include "media/base/audio_hardware_config.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebBlobRegistry.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFileInfo.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebHyphenator.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamCenter.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamCenterClient.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamCenter.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamCenterClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/glue/simple_webmimeregistry_impl.h"
 #include "webkit/glue/webclipboard_impl.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
+#include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
 
 #if defined(OS_WIN)
 #include "content/common/child_process_messages.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/win/WebSandboxSupport.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/win/WebSandboxSupport.h"
 #endif
 
 #if defined(OS_MACOSX)
 #include "content/common/mac/font_descriptor.h"
 #include "content/common/mac/font_loader.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/mac/WebSandboxSupport.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/mac/WebSandboxSupport.h"
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
-#include <string>
 #include <map>
+#include <string>
 
 #include "base/synchronization/lock.h"
 #include "content/common/child_process_sandbox_support_impl_linux.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/linux/WebFontFamily.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/linux/WebSandboxSupport.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/linux/WebFontFamily.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/linux/WebSandboxSupport.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -83,7 +88,7 @@ using WebKit::WebFileSystem;
 using WebKit::WebFrame;
 using WebKit::WebGamepads;
 using WebKit::WebIDBFactory;
-using WebKit::WebKitPlatformSupport;
+using WebKit::Platform;
 using WebKit::WebMediaStreamCenter;
 using WebKit::WebMediaStreamCenterClient;
 using WebKit::WebRTCPeerConnectionHandler;
@@ -96,6 +101,8 @@ using WebKit::WebVector;
 namespace content {
 
 static bool g_sandbox_enabled = true;
+base::LazyInstance<WebGamepads>::Leaky g_test_gamepads =
+    LAZY_INSTANCE_INITIALIZER;
 
 //------------------------------------------------------------------------------
 
@@ -111,9 +118,32 @@ class RendererWebKitPlatformSupportImpl::MimeRegistry
 class RendererWebKitPlatformSupportImpl::FileUtilities
     : public webkit_glue::WebFileUtilitiesImpl {
  public:
+  explicit FileUtilities(ThreadSafeSender* sender)
+      : thread_safe_sender_(sender) {}
   virtual bool getFileInfo(const WebString& path, WebFileInfo& result);
   virtual base::PlatformFile openFile(const WebKit::WebString& path,
                                       int mode);
+ private:
+  bool SendSyncMessageFromAnyThread(IPC::SyncMessage* msg) const;
+  scoped_refptr<ThreadSafeSender> thread_safe_sender_;
+};
+
+class RendererWebKitPlatformSupportImpl::Hyphenator
+    : public WebKit::WebHyphenator {
+ public:
+  Hyphenator();
+  virtual ~Hyphenator();
+
+  virtual bool canHyphenate(const WebKit::WebString& locale) OVERRIDE;
+  virtual size_t computeLastHyphenLocation(
+      const char16* characters,
+      size_t length,
+      size_t before_index,
+      const WebKit::WebString& locale) OVERRIDE;
+ private:
+  scoped_ptr<content::Hyphenator> hyphenator_;
+
+  DISALLOW_COPY_AND_ASSIGN(Hyphenator);
 };
 
 #if defined(OS_ANDROID)
@@ -160,6 +190,7 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
     : clipboard_client_(new RendererClipboardClient),
       clipboard_(new webkit_glue::WebClipboardImpl(clipboard_client_.get())),
       mime_registry_(new RendererWebKitPlatformSupportImpl::MimeRegistry),
+      hyphenator_(new RendererWebKitPlatformSupportImpl::Hyphenator),
       sudden_termination_disables_(0),
       plugin_refresh_allowed_(true),
       shared_worker_repository_(new WebSharedWorkerRepositoryImpl) {
@@ -169,6 +200,10 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
   } else {
     DVLOG(1) << "Disabling sandbox support for testing.";
   }
+
+  // ChildThread may not exist in some tests.
+  if (ChildThread::current())
+    thread_safe_sender_ = ChildThread::current()->thread_safe_sender();
 }
 
 RendererWebKitPlatformSupportImpl::~RendererWebKitPlatformSupportImpl() {
@@ -176,39 +211,26 @@ RendererWebKitPlatformSupportImpl::~RendererWebKitPlatformSupportImpl() {
 
 //------------------------------------------------------------------------------
 
-namespace {
-
-bool SendSyncMessageFromAnyThreadInternal(IPC::SyncMessage* msg) {
-  RenderThread* render_thread = RenderThread::Get();
-  if (render_thread)
-    return render_thread->Send(msg);
-  scoped_refptr<IPC::SyncMessageFilter> sync_msg_filter(
-      ChildThread::current()->sync_message_filter());
-  return sync_msg_filter->Send(msg);
-}
-
-bool SendSyncMessageFromAnyThread(IPC::SyncMessage* msg) {
-  base::TimeTicks begin = base::TimeTicks::Now();
-  const bool success = SendSyncMessageFromAnyThreadInternal(msg);
-  base::TimeDelta delta = base::TimeTicks::Now() - begin;
-  UMA_HISTOGRAM_TIMES("RendererSyncIPC.ElapsedTime", delta);
-  return success;
-}
-
-}  // namespace
-
 WebKit::WebClipboard* RendererWebKitPlatformSupportImpl::clipboard() {
+  WebKit::WebClipboard* clipboard =
+      GetContentClient()->renderer()->OverrideWebClipboard();
+  if (clipboard)
+    return clipboard;
   return clipboard_.get();
 }
 
 WebKit::WebMimeRegistry* RendererWebKitPlatformSupportImpl::mimeRegistry() {
+  WebKit::WebMimeRegistry* mime_registry =
+      GetContentClient()->renderer()->OverrideWebMimeRegistry();
+  if (mime_registry)
+    return mime_registry;
   return mime_registry_.get();
 }
 
 WebKit::WebFileUtilities*
 RendererWebKitPlatformSupportImpl::fileUtilities() {
   if (!file_utilities_.get()) {
-    file_utilities_.reset(new FileUtilities);
+    file_utilities_.reset(new FileUtilities(thread_safe_sender_));
     file_utilities_->set_sandbox_enabled(sandboxEnabled());
   }
   return file_utilities_.get();
@@ -228,12 +250,20 @@ WebKit::WebCookieJar* RendererWebKitPlatformSupportImpl::cookieJar() {
   return NULL;
 }
 
+WebKit::WebThemeEngine* RendererWebKitPlatformSupportImpl::themeEngine() {
+  WebKit::WebThemeEngine* theme_engine =
+      GetContentClient()->renderer()->OverrideThemeEngine();
+  if (theme_engine)
+    return theme_engine;
+  return WebKitPlatformSupportImpl::themeEngine();
+}
+
 bool RendererWebKitPlatformSupportImpl::sandboxEnabled() {
-  // As explained in WebKitPlatformSupport.h, this function is used to decide
+  // As explained in Platform.h, this function is used to decide
   // whether to allow file system operations to come out of WebKit or not.
   // Even if the sandbox is disabled, there's no reason why the code should
   // act any differently...unless we're in single process mode.  In which
-  // case, we have no other choice.  WebKitPlatformSupport.h discourages using
+  // case, we have no other choice.  Platform.h discourages using
   // this switch unless absolutely necessary, so hopefully we won't end up
   // with too many code paths being different in single-process mode.
   return !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
@@ -360,7 +390,6 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeForExtension(
       new MimeRegistryMsg_GetMimeTypeFromExtension(
           webkit_base::WebStringToFilePathString(file_extension), &mime_type));
   return ASCIIToUTF16(mime_type);
-
 }
 
 WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
@@ -372,10 +401,9 @@ WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
   // these calls over to the browser process.
   std::string mime_type;
   RenderThread::Get()->Send(new MimeRegistryMsg_GetMimeTypeFromFile(
-      FilePath(webkit_base::WebStringToFilePathString(file_path)),
+      base::FilePath(webkit_base::WebStringToFilePathString(file_path)),
       &mime_type));
   return ASCIIToUTF16(mime_type);
-
 }
 
 WebString
@@ -386,7 +414,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::preferredExtensionForMIMEType(
 
   // The sandbox restricts our access to the registry, so we need to proxy
   // these calls over to the browser process.
-  FilePath::StringType file_extension;
+  base::FilePath::StringType file_extension;
   RenderThread::Get()->Send(
       new MimeRegistryMsg_GetPreferredExtensionForMimeType(
           UTF16ToASCII(mime_type), &file_extension));
@@ -417,6 +445,51 @@ base::PlatformFile RendererWebKitPlatformSupportImpl::FileUtilities::openFile(
   SendSyncMessageFromAnyThread(new FileUtilitiesMsg_OpenFile(
       webkit_base::WebStringToFilePath(path), mode, &handle));
   return IPC::PlatformFileForTransitToPlatformFile(handle);
+}
+
+bool RendererWebKitPlatformSupportImpl::FileUtilities::
+SendSyncMessageFromAnyThread(IPC::SyncMessage* msg) const {
+  base::TimeTicks begin = base::TimeTicks::Now();
+  const bool success = thread_safe_sender_->Send(msg);
+  base::TimeDelta delta = base::TimeTicks::Now() - begin;
+  UMA_HISTOGRAM_TIMES("RendererSyncIPC.ElapsedTime", delta);
+  return success;
+}
+
+//------------------------------------------------------------------------------
+
+RendererWebKitPlatformSupportImpl::Hyphenator::Hyphenator() {}
+
+RendererWebKitPlatformSupportImpl::Hyphenator::~Hyphenator() {}
+
+bool RendererWebKitPlatformSupportImpl::Hyphenator::canHyphenate(
+    const WebKit::WebString& locale) {
+  // Return false unless WebKit asks for US English dictionaries because WebKit
+  // can currently hyphenate only English words.
+  if (!locale.isEmpty() && !locale.equals("en-US"))
+    return false;
+
+  // Create a hyphenator object and attach it to the render thread so it can
+  // receive a dictionary file opened by a browser.
+  if (!hyphenator_.get()) {
+    hyphenator_.reset(new content::Hyphenator(base::kInvalidPlatformFileValue));
+    if (!hyphenator_.get())
+      return false;
+    return hyphenator_->Attach(RenderThreadImpl::current(), locale);
+  }
+  return hyphenator_->CanHyphenate(locale);
+}
+
+size_t RendererWebKitPlatformSupportImpl::Hyphenator::computeLastHyphenLocation(
+    const char16* characters,
+    size_t length,
+    size_t before_index,
+    const WebKit::WebString& locale) {
+  // Crash if WebKit calls this function when canHyphenate returns false.
+  DCHECK(locale.isEmpty() || locale.equals("en-US"));
+  DCHECK(hyphenator_.get());
+  return hyphenator_->ComputeLastHyphenLocation(string16(characters, length),
+                                                before_index);
 }
 
 //------------------------------------------------------------------------------
@@ -504,7 +577,7 @@ RendererWebKitPlatformSupportImpl::SandboxSupport::getRenderStyleForStrike(
 
 //------------------------------------------------------------------------------
 
-WebKitPlatformSupport::FileHandle
+Platform::FileHandle
 RendererWebKitPlatformSupportImpl::databaseOpenFile(
     const WebString& vfs_file_name, int desired_flags) {
   return DatabaseUtil::DatabaseOpenFile(vfs_file_name, desired_flags);
@@ -554,28 +627,89 @@ bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
   return true;
 }
 
+bool RendererWebKitPlatformSupportImpl::isThreadedCompositingEnabled() {
+  return !!RenderThreadImpl::current()->compositor_message_loop_proxy();
+}
+
 double RendererWebKitPlatformSupportImpl::audioHardwareSampleRate() {
-  return GetAudioOutputSampleRate();
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  int sample_rate = thread->GetAudioHardwareConfig()->GetOutputSampleRate();
+
+  // In some rare cases it has been found that Windows returns
+  // a sample-rate of 0.
+  // Let's make sure to return a sane fallback sample-rate.
+  // http://crbug.com/222718
+  static const int kMinSampleRate = 22050;
+  static const int kMaxSampleRate = 192000;
+#if defined(OS_MACOSX)
+  static const int kFallbackSampleRate = 44100;
+#else
+  static const int kFallbackSampleRate = 48000;
+#endif
+  if (sample_rate < kMinSampleRate || sample_rate > kMaxSampleRate)
+    sample_rate = kFallbackSampleRate;
+
+  return sample_rate;
 }
 
 size_t RendererWebKitPlatformSupportImpl::audioHardwareBufferSize() {
-  return GetAudioOutputBufferSize();
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  return thread->GetAudioHardwareConfig()->GetOutputBufferSize();
+}
+
+unsigned RendererWebKitPlatformSupportImpl::audioHardwareOutputChannels() {
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  return thread->GetAudioHardwareConfig()->GetOutputChannels();
+}
+
+// TODO(crogers): remove deprecated API as soon as WebKit calls new API.
+WebAudioDevice*
+RendererWebKitPlatformSupportImpl::createAudioDevice(
+    size_t buffer_size,
+    unsigned channels,
+    double sample_rate,
+    WebAudioDevice::RenderCallback* callback) {
+  return createAudioDevice(
+      buffer_size, 0, channels, sample_rate, callback, "default");
+}
+
+// TODO(crogers): remove deprecated API as soon as WebKit calls new API.
+WebAudioDevice*
+RendererWebKitPlatformSupportImpl::createAudioDevice(
+    size_t buffer_size,
+    unsigned input_channels,
+    unsigned channels,
+    double sample_rate,
+    WebAudioDevice::RenderCallback* callback) {
+  return createAudioDevice(
+      buffer_size, input_channels, channels, sample_rate, callback, "default");
 }
 
 WebAudioDevice*
 RendererWebKitPlatformSupportImpl::createAudioDevice(
-    size_t bufferSize,
-    unsigned numberOfChannels,
-    double sampleRate,
-    WebAudioDevice::RenderCallback* callback) {
-  media::ChannelLayout layout = media::CHANNEL_LAYOUT_UNSUPPORTED;
+    size_t buffer_size,
+    unsigned input_channels,
+    unsigned channels,
+    double sample_rate,
+    WebAudioDevice::RenderCallback* callback,
+    const WebKit::WebString& input_device_id) {
+  if (input_device_id != "default") {
+    // Only allow audio input if we know for sure that WebKit is giving us the
+    // "default" input device.
+    // TODO(crogers): add support for non-default audio input devices when
+    // using synchronized audio I/O in WebAudio.
+    if (input_channels > 0)
+      DLOG(WARNING) << "createAudioDevice(): request for audio input ignored";
+    input_channels = 0;
+  }
 
-  // The |numberOfChannels| does not exactly identify the channel layout of the
+  // The |channels| does not exactly identify the channel layout of the
   // device. The switch statement below assigns a best guess to the channel
   // layout based on number of channels.
   // TODO(crogers): WebKit should give the channel layout instead of the hard
   // channel count.
-  switch (numberOfChannels) {
+  media::ChannelLayout layout = media::CHANNEL_LAYOUT_UNSUPPORTED;
+  switch (channels) {
     case 1:
       layout = media::CHANNEL_LAYOUT_MONO;
       break;
@@ -605,8 +739,9 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
   }
 
   media::AudioParameters params(
-      media::AudioParameters::AUDIO_PCM_LOW_LATENCY, layout,
-      static_cast<int>(sampleRate), 16, bufferSize);
+      media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
+      layout, input_channels,
+      static_cast<int>(sample_rate), 16, buffer_size);
 
   return new RendererWebAudioDeviceImpl(params, callback);
 }
@@ -640,32 +775,38 @@ void RendererWebKitPlatformSupportImpl::screenColorProfile(
 //------------------------------------------------------------------------------
 
 WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
-  // ChildThread::current can be NULL when running some tests.
-  if (!blob_registry_.get() && ChildThread::current()) {
-    blob_registry_.reset(new WebBlobRegistryImpl(ChildThread::current()));
-  }
+  // thread_safe_sender_ can be NULL when running some tests.
+  if (!blob_registry_.get() && thread_safe_sender_.get())
+    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_));
   return blob_registry_.get();
 }
 
 //------------------------------------------------------------------------------
 
 void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
-  if (!gamepad_shared_memory_reader_.get())
-    gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
-  gamepad_shared_memory_reader_->SampleGamepads(gamepads);
+  if (g_test_gamepads == 0) {
+    if (!gamepad_shared_memory_reader_.get())
+      gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
+    gamepad_shared_memory_reader_->SampleGamepads(gamepads);
+  } else {
+    gamepads = g_test_gamepads.Get();
+    return;
+  }
 }
 
 WebKit::WebString RendererWebKitPlatformSupportImpl::userAgent(
     const WebKit::WebURL& url) {
- return WebKitPlatformSupportImpl::userAgent(url);
+  return WebKitPlatformSupportImpl::userAgent(url);
 }
 
 void RendererWebKitPlatformSupportImpl::GetPlugins(
     bool refresh, std::vector<webkit::WebPluginInfo>* plugins) {
+#if defined(ENABLE_PLUGINS)
   if (!plugin_refresh_allowed_)
     refresh = false;
   RenderThread::Get()->Send(
       new ViewHostMsg_GetPlugins(refresh, plugins));
+#endif
 }
 
 //------------------------------------------------------------------------------
@@ -677,7 +818,14 @@ RendererWebKitPlatformSupportImpl::createRTCPeerConnectionHandler(
   DCHECK(render_thread);
   if (!render_thread)
     return NULL;
+
 #if defined(ENABLE_WEBRTC)
+  WebRTCPeerConnectionHandler* peer_connection_handler =
+      GetContentClient()->renderer()->OverrideCreateWebRTCPeerConnectionHandler(
+          client);
+  if (peer_connection_handler)
+    return peer_connection_handler;
+
   MediaStreamDependencyFactory* rtc_dependency_factory =
       render_thread->GetMediaStreamDependencyFactory();
   return rtc_dependency_factory->CreateRTCPeerConnectionHandler(client);
@@ -706,41 +854,63 @@ bool RendererWebKitPlatformSupportImpl::SetSandboxEnabledForTesting(
   return was_enabled;
 }
 
-GpuChannelHostFactory*
-RendererWebKitPlatformSupportImpl::GetGpuChannelHostFactory() {
-  return RenderThreadImpl::current();
+// static
+void RendererWebKitPlatformSupportImpl::SetMockGamepadsForTesting(
+    const WebGamepads& pads) {
+  g_test_gamepads.Get() = pads;
 }
 
 //------------------------------------------------------------------------------
 
-bool RendererWebKitPlatformSupportImpl::canHyphenate(
-    const WebKit::WebString& locale) {
-  // Return false unless WebKit asks for US English dictionaries because WebKit
-  // can currently hyphenate only English words.
-  if (!locale.isEmpty() && !locale.equals("en-US"))
-    return false;
+WebKit::WebHyphenator* RendererWebKitPlatformSupportImpl::hyphenator() {
+  WebKit::WebHyphenator* hyphenator =
+      GetContentClient()->renderer()->OverrideWebHyphenator();
+  if (hyphenator)
+    return hyphenator;
+  return hyphenator_.get();
+}
 
-  // Create a hyphenator object and attach it to the render thread so it can
-  // receive a dictionary file opened by a browser.
-  if (!hyphenator_.get()) {
-    hyphenator_.reset(new Hyphenator(base::kInvalidPlatformFileValue));
-    if (!hyphenator_.get())
-      return false;
-    return hyphenator_->Attach(RenderThreadImpl::current(), locale);
+//------------------------------------------------------------------------------
+
+bool RendererWebKitPlatformSupportImpl::processMemorySizesInBytes(
+    size_t* private_bytes, size_t* shared_bytes) {
+  content::RenderThread::Get()->Send(
+      new ViewHostMsg_GetProcessMemorySizes(private_bytes, shared_bytes));
+  return true;
+}
+
+//------------------------------------------------------------------------------
+
+WebKit::WebGraphicsContext3D*
+RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
+    const WebKit::WebGraphicsContext3D::Attributes& attributes) {
+  return WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
+      RenderThreadImpl::current(),
+      attributes,
+      GURL(attributes.topDocumentURL));
+}
+
+//------------------------------------------------------------------------------
+
+WebKit::WebGraphicsContext3D* RendererWebKitPlatformSupportImpl::
+    sharedOffscreenGraphicsContext3D() {
+  if (!shared_offscreen_context_ ||
+      shared_offscreen_context_->DestroyedOnMainThread()) {
+    shared_offscreen_context_ =
+        RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
   }
-  return hyphenator_->CanHyphenate(locale);
+  if (!shared_offscreen_context_)
+    return NULL;
+  return shared_offscreen_context_->Context3d();
 }
 
-size_t RendererWebKitPlatformSupportImpl::computeLastHyphenLocation(
-    const char16* characters,
-    size_t length,
-    size_t before_index,
-    const WebKit::WebString& locale) {
-  // Crash if WebKit calls this function when canHyphenate returns false.
-  DCHECK(locale.isEmpty() || locale.equals("en-US"));
-  DCHECK(hyphenator_.get());
-  return hyphenator_->ComputeLastHyphenLocation(string16(characters, length),
-                                                before_index);
+//------------------------------------------------------------------------------
+
+GrContext* RendererWebKitPlatformSupportImpl::sharedOffscreenGrContext() {
+  if (!shared_offscreen_context_)
+    return NULL;
+  return shared_offscreen_context_->GrContext();
 }
+
 
 }  // namespace content

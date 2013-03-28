@@ -11,19 +11,13 @@
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/login/webui_login_display.h"
+#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/url_constants.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/widget/widget.h"
-
-namespace {
-
-// Eula screen id.
-const char kEulaScreen[] = "eula";
-
-}  // namespace
 
 namespace chromeos {
 
@@ -44,7 +38,7 @@ void EulaScreenHandler::Show() {
     show_on_init_ = true;
     return;
   }
-  ShowScreen(kEulaScreen, NULL);
+  ShowScreen(OobeUI::kScreenOobeEula, NULL);
 }
 
 void EulaScreenHandler::Hide() {
@@ -66,16 +60,29 @@ void EulaScreenHandler::GetLocalizedStrings(
       l10n_util::GetStringUTF16(IDS_EULA_BACK_BUTTON));
   localized_strings->SetString("acceptAgreement",
       l10n_util::GetStringUTF16(IDS_EULA_ACCEPT_AND_CONTINUE_BUTTON));
-  localized_strings->SetString("eulaSystemSecuritySetting",
+  localized_strings->SetString("eulaSystemInstallationSettings",
       l10n_util::GetStringUTF16(IDS_EULA_SYSTEM_SECURITY_SETTING));
   localized_strings->SetString("eulaTpmDesc",
-      l10n_util::GetStringUTF16(IDS_EULA_SYSTEM_SECURITY_SETTING_DESCRIPTION));
+      l10n_util::GetStringUTF16(IDS_EULA_TPM_DESCRIPTION));
   localized_strings->SetString("eulaTpmKeyDesc",
-      l10n_util::GetStringUTF16(
-          IDS_EULA_SYSTEM_SECURITY_SETTING_DESCRIPTION_KEY));
+      l10n_util::GetStringUTF16(IDS_EULA_TPM_KEY_DESCRIPTION));
+  localized_strings->SetString("eulaTpmDescPowerwash",
+      l10n_util::GetStringUTF16(IDS_EULA_TPM_KEY_DESCRIPTION_POWERWASH));
   localized_strings->SetString("eulaTpmBusy",
       l10n_util::GetStringUTF16(IDS_EULA_TPM_BUSY));
-  localized_strings->SetString("eulaTpmOkButton",
+#if defined(ENABLE_RLZ)
+  localized_strings->SetString("eulaRlzDesc",
+      l10n_util::GetStringFUTF16(IDS_EULA_RLZ_DESCRIPTION,
+          l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME),
+          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
+  localized_strings->SetString("eulaRlzEnable",
+      l10n_util::GetStringFUTF16(IDS_EULA_RLZ_ENABLE,
+          l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_OS_NAME)));
+  localized_strings->SetString("rlzEnabled", "enabled");
+#else
+  localized_strings->SetString("rlzEnabled", "disabled");
+#endif
+  localized_strings->SetString("eulaSystemInstallationSettingsOkButton",
       l10n_util::GetStringUTF16(IDS_OK));
 }
 
@@ -104,8 +111,8 @@ void EulaScreenHandler::RegisterMessages() {
       base::Bind(&EulaScreenHandler::HandleOnExit,base::Unretained(this)));
   web_ui()->RegisterMessageCallback("eulaOnLearnMore",
       base::Bind(&EulaScreenHandler::HandleOnLearnMore,base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("eulaOnTpmPopupOpened",
-      base::Bind(&EulaScreenHandler::HandleOnTpmPopupOpened,
+  web_ui()->RegisterMessageCallback("eulaOnInstallationSettingsPopupOpened",
+      base::Bind(&EulaScreenHandler::HandleOnInstallationSettingsPopupOpened,
                  base::Unretained(this)));
 }
 
@@ -122,14 +129,14 @@ void EulaScreenHandler::HandleOnExit(const base::ListValue* args) {
   if (!args->GetBoolean(0, &accepted))
     NOTREACHED();
 
-  bool is_usage_stats_checked = false;
-  if (!args->GetBoolean(1, &is_usage_stats_checked))
+  bool usage_stats_enabled = false;
+  if (!args->GetBoolean(1, &usage_stats_enabled))
     NOTREACHED();
 
   if (!delegate_)
     return;
 
-  delegate_->OnExit(accepted, is_usage_stats_checked);
+  delegate_->OnExit(accepted, usage_stats_enabled);
 }
 
 void EulaScreenHandler::HandleOnLearnMore(const base::ListValue* args) {
@@ -139,7 +146,8 @@ void EulaScreenHandler::HandleOnLearnMore(const base::ListValue* args) {
   help_app_->ShowHelpTopic(HelpAppLauncher::HELP_STATS_USAGE);
 }
 
-void EulaScreenHandler::HandleOnTpmPopupOpened(const base::ListValue* args) {
+void EulaScreenHandler::HandleOnInstallationSettingsPopupOpened(
+    const base::ListValue* args) {
   if (!delegate_)
     return;
   delegate_->InitiatePasswordFetch();

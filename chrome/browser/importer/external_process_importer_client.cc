@@ -5,7 +5,7 @@
 #include "chrome/browser/importer/external_process_importer_client.h"
 
 #include "base/bind.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/firefox_importer_utils.h"
@@ -261,7 +261,9 @@ void ExternalProcessImporterClient::NotifyItemFinishedOnIOThread(
 void ExternalProcessImporterClient::StartProcessOnIOThread(
     BrowserThread::ID thread_id) {
   utility_process_host_ =
-      UtilityProcessHost::Create(this, thread_id)->AsWeakPtr();
+      UtilityProcessHost::Create(
+          this,
+          BrowserThread::GetMessageLoopProxyForThread(thread_id))->AsWeakPtr();
   utility_process_host_->DisableSandbox();
 
 #if defined(OS_MACOSX)

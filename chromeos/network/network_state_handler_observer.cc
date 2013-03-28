@@ -15,22 +15,21 @@ NetworkStateHandlerObserver::~NetworkStateHandlerObserver() {
 void NetworkStateHandlerObserver::NetworkManagerChanged() {
 }
 
-void NetworkStateHandlerObserver::NetworkListChanged(
-    const NetworkStateList& networks) {
+void NetworkStateHandlerObserver::NetworkListChanged() {
 }
 
 void NetworkStateHandlerObserver::DeviceListChanged() {
 }
 
-void NetworkStateHandlerObserver::ActiveNetworkChanged(
+void NetworkStateHandlerObserver::DefaultNetworkChanged(
     const NetworkState* network) {
 }
 
-void NetworkStateHandlerObserver::ActiveNetworkStateChanged(
+void NetworkStateHandlerObserver::NetworkConnectionStateChanged(
     const NetworkState* network) {
 }
 
-void NetworkStateHandlerObserver::NetworkServiceChanged(
+void NetworkStateHandlerObserver::NetworkPropertiesUpdated(
     const NetworkState* network) {
 }
 

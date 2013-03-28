@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/startup/default_browser_prompt.h"
 
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/browser.h"
@@ -54,7 +54,7 @@ void SetMetroBrowserFlowLauncher::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   DCHECK_EQ(type, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME);
-  Browser* browser = browser::FindBrowserWithWebContents(
+  Browser* browser = chrome::FindBrowserWithWebContents(
       content::Source<content::WebContents>(source).ptr());
 
   if (!browser || !browser->is_type_tabbed())
@@ -77,8 +77,7 @@ bool ShowFirstRunDefaultBrowserPrompt(Profile* profile) {
   bool show_status =
       (ShellIntegration::CanSetAsDefaultBrowser() ==
        ShellIntegration::SET_DEFAULT_INTERACTIVE) &&
-      (ShellIntegration::IsDefaultBrowser() ==
-       ShellIntegration::NOT_DEFAULT_WEB_CLIENT);
+      (ShellIntegration::GetDefaultBrowser() == ShellIntegration::NOT_DEFAULT);
 
   if (show_status) {
     startup_metric_utils::SetNonBrowserUIDisplayed();

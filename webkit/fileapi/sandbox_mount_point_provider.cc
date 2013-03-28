@@ -9,13 +9,10 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
-#include "base/rand_util.h"
-#include "base/single_thread_task_runner.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/task_runner_util.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
+#include "webkit/fileapi/async_file_util_adapter.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_file_stream_reader.h"
 #include "webkit/fileapi/file_system_operation_context.h"
@@ -25,12 +22,10 @@
 #include "webkit/fileapi/file_system_usage_cache.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/local_file_system_operation.h"
-#include "webkit/fileapi/native_file_util.h"
 #include "webkit/fileapi/obfuscated_file_util.h"
 #include "webkit/fileapi/sandbox_file_stream_writer.h"
 #include "webkit/fileapi/sandbox_quota_observer.h"
 #include "webkit/fileapi/syncable/syncable_file_system_operation.h"
-#include "webkit/glue/webkit_glue.h"
 #include "webkit/quota/quota_manager.h"
 
 using quota::QuotaManagerProxy;
@@ -42,17 +37,16 @@ namespace {
 const char kChromeScheme[] = "chrome";
 const char kExtensionScheme[] = "chrome-extension";
 
-const FilePath::CharType kOldFileSystemUniqueNamePrefix[] =
-    FILE_PATH_LITERAL("chrome-");
-const size_t kOldFileSystemUniqueLength = 16;
-const size_t kOldFileSystemUniqueDirectoryNameLength =
-    kOldFileSystemUniqueLength + arraysize(kOldFileSystemUniqueNamePrefix) - 1;
-
 const char kOpenFileSystemLabel[] = "FileSystem.OpenFileSystem";
 const char kOpenFileSystemDetailLabel[] = "FileSystem.OpenFileSystemDetail";
 const char kOpenFileSystemDetailNonThrottledLabel[] =
     "FileSystem.OpenFileSystemDetailNonthrottled";
 int64 kMinimumStatsCollectionIntervalHours = 1;
+
+// A command switch to enable syncing directory operations in Sync FileSystem
+// API. (http://crbug.com/161442)
+// TODO(kinuko): this command-line switch should be temporary.
+const char kEnableSyncDirectoryOperation[]  = "enable-sync-directory-operation";
 
 enum FileSystemError {
   kOK = 0,
@@ -69,50 +63,14 @@ const char kPersistentOriginsCountLabel[] = "FileSystem.PersistentOriginsCount";
 
 // Restricted names.
 // http://dev.w3.org/2009/dap/file-system/file-dir-sys.html#naming-restrictions
-const FilePath::CharType* const kRestrictedNames[] = {
+const base::FilePath::CharType* const kRestrictedNames[] = {
   FILE_PATH_LITERAL("."), FILE_PATH_LITERAL(".."),
 };
 
 // Restricted chars.
-const FilePath::CharType kRestrictedChars[] = {
+const base::FilePath::CharType kRestrictedChars[] = {
   FILE_PATH_LITERAL('/'), FILE_PATH_LITERAL('\\'),
 };
-
-FilePath::StringType OldCreateUniqueDirectoryName(const GURL& origin_url) {
-  // This can be anything but need to be unpredictable.
-  static const FilePath::CharType letters[] = FILE_PATH_LITERAL(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
-  FilePath::StringType unique(kOldFileSystemUniqueNamePrefix);
-  for (size_t i = 0; i < kOldFileSystemUniqueLength; ++i)
-    unique += letters[base::RandInt(0, arraysize(letters) - 2)];
-  return unique;
-}
-
-base::PlatformFileError OldReadOriginDirectory(const FilePath& base_path,
-                                               FilePath* unique) {
-  file_util::FileEnumerator file_enum(
-      base_path, false /* recursive */,
-      file_util::FileEnumerator::DIRECTORIES,
-      FilePath::StringType(kOldFileSystemUniqueNamePrefix) +
-          FILE_PATH_LITERAL("*"));
-  FilePath current;
-  bool found = false;
-  while (!(current = file_enum.Next()).empty()) {
-    if (current.BaseName().value().length() !=
-        kOldFileSystemUniqueDirectoryNameLength)
-      continue;
-    if (found) {
-      LOG(WARNING) << "Unexpectedly found more than one FileSystem "
-                   << "directory";
-      return base::PLATFORM_FILE_ERROR_FAILED;
-    }
-    found = true;
-    *unique = current;
-  }
-  if (unique->empty())
-    return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-  return base::PLATFORM_FILE_OK;
-}
 
 class ObfuscatedOriginEnumerator
     : public SandboxMountPointProvider::OriginEnumerator {
@@ -134,145 +92,6 @@ class ObfuscatedOriginEnumerator
   scoped_ptr<ObfuscatedFileUtil::AbstractOriginEnumerator> enum_;
 };
 
-class OldSandboxOriginEnumerator
-    : public SandboxMountPointProvider::OriginEnumerator {
- public:
-  explicit OldSandboxOriginEnumerator(const FilePath& base_path)
-      : enumerator_(base_path, false /* recursive */,
-                    file_util::FileEnumerator::DIRECTORIES) {}
-  virtual ~OldSandboxOriginEnumerator() {}
-
-  virtual GURL Next() OVERRIDE {
-    current_ = enumerator_.Next();
-    if (current_.empty())
-      return GURL();
-    return GetOriginURLFromIdentifier(current_.BaseName().MaybeAsASCII());
-  }
-
-  virtual bool HasFileSystemType(fileapi::FileSystemType type) const OVERRIDE {
-    if (current_.empty())
-      return false;
-    std::string directory = GetFileSystemTypeString(type);
-    DCHECK(!directory.empty());
-    return file_util::DirectoryExists(current_.AppendASCII(directory));
-  }
-
- private:
-  file_util::FileEnumerator enumerator_;
-  FilePath current_;
-};
-
-FilePath OldGetBaseDirectoryForOrigin(
-    const FilePath& old_base_path,
-    const GURL& origin_url) {
-  std::string id = GetOriginIdentifierFromURL(origin_url);
-  if (!id.empty())
-    return old_base_path.AppendASCII(id);
-  return FilePath();
-}
-
-FilePath OldGetBaseDirectoryForOriginAndType(
-    const FilePath& old_base_path,
-    const GURL& origin_url, fileapi::FileSystemType type) {
-  std::string type_string = GetFileSystemTypeString(type);
-  if (type_string.empty()) {
-    NOTREACHED();
-    return FilePath();
-  }
-  FilePath base_path = OldGetBaseDirectoryForOrigin(
-      old_base_path, origin_url);
-  if (base_path.empty()) {
-    NOTREACHED();
-    return FilePath();
-  }
-  return base_path.AppendASCII(type_string);
-}
-
-bool MigrateOneOldFileSystem(
-    ObfuscatedFileUtil* file_util,
-    const FilePath& old_base_path, const GURL& origin,
-    fileapi::FileSystemType type) {
-  FilePath base_path = OldGetBaseDirectoryForOriginAndType(
-      old_base_path, origin, type);
-  if (base_path.empty())
-    return false;
-
-  FilePath root;
-  base::PlatformFileError result = OldReadOriginDirectory(base_path, &root);
-  if (base::PLATFORM_FILE_ERROR_NOT_FOUND == result)
-    return true;  // There was nothing to migrate; call that a success.
-
-  // If we found more than one filesystem [a problem we don't know how to
-  // solve], the data is already not accessible through Chrome, so it won't do
-  // any harm not to migrate it.  Just flag it as an error, so that we don't
-  // delete it.
-  if (base::PLATFORM_FILE_OK != result)
-    return false;
-
-  if (!file_util->MigrateFromOldSandbox(origin, type, root)) {
-    LOG(WARNING) << "Failed to migrate filesystem for origin " << origin <<
-        " and type " << type;
-    return false;
-  }
-  return true;
-}
-
-void MigrateAllOldFileSystems(
-    ObfuscatedFileUtil* file_util,
-    const FilePath& old_base_path) {
-  scoped_ptr<OldSandboxOriginEnumerator> old_origins(
-      new OldSandboxOriginEnumerator(old_base_path));
-  GURL origin;
-  int failures = 0;
-  while (!(origin = old_origins->Next()).is_empty()) {
-    int failures_this_origin = 0;
-    if (old_origins->HasFileSystemType(kFileSystemTypeTemporary) &&
-        !MigrateOneOldFileSystem(
-            file_util, old_base_path, origin,
-            kFileSystemTypeTemporary))
-      ++failures_this_origin;
-    if (old_origins->HasFileSystemType(kFileSystemTypePersistent) &&
-        !MigrateOneOldFileSystem(
-            file_util, old_base_path, origin,
-            kFileSystemTypePersistent))
-      ++failures_this_origin;
-    if (!failures_this_origin) {
-      FilePath origin_base_path =
-          OldGetBaseDirectoryForOrigin(old_base_path, origin);
-      // Yes, that's an rm -rf.  Make sure that path looks valid, just in case.
-      if (!origin_base_path.empty())
-        file_util::Delete(origin_base_path, true);
-    }
-    failures += failures_this_origin;
-  }
-  if (!failures)
-    file_util::Delete(old_base_path, true);
-  if (file_util::DirectoryExists(old_base_path)) {
-    // Move it out of the way so that we won't keep trying to migrate it.  You
-    // get only one chance at this; the bits we couldn't do this time, we're
-    // unlikely to be able to do in the future.  This way you can now use the
-    // new filesystem, but have a way to recover your old files if absolutely
-    // necessary.
-    FilePath new_path =
-        old_base_path.DirName().Append(
-            SandboxMountPointProvider::kRenamedOldFileSystemDirectory);
-    file_util::ReplaceFile(old_base_path, new_path);
-  }
-}
-
-// A migration, whether successful or not, will try to move this directory out
-// of the way so that we never try to migrate it again.  We need to do this
-// check on all public entry points in this file, so that it's guaranteed to be
-// done before anyone looks up a filesystem.  Most entry points start by trying
-// to look up the filesystem's root, so we can take care of most of them by
-// putting a check there.
-void MigrateIfNeeded(
-    ObfuscatedFileUtil* file_util,
-    const FilePath& old_base_path) {
-  if (file_util::DirectoryExists(old_base_path))
-    MigrateAllOldFileSystems(file_util, old_base_path);
-}
-
 void DidValidateFileSystemRoot(
     base::WeakPtr<SandboxMountPointProvider> mount_point_provider,
     const FileSystemMountPointProvider::ValidateFileSystemCallback& callback,
@@ -286,13 +105,11 @@ void ValidateRootOnFileThread(
     ObfuscatedFileUtil* file_util,
     const GURL& origin_url,
     FileSystemType type,
-    const FilePath& old_base_path,
     bool create,
     base::PlatformFileError* error_ptr) {
   DCHECK(error_ptr);
-  MigrateIfNeeded(file_util, old_base_path);
 
-  FilePath root_path =
+  base::FilePath root_path =
       file_util->GetDirectoryForOriginAndType(
           origin_url, type, create, error_ptr);
   if (*error_ptr != base::PLATFORM_FILE_OK) {
@@ -309,15 +126,9 @@ void ValidateRootOnFileThread(
 
 }  // anonymous namespace
 
-const FilePath::CharType SandboxMountPointProvider::kOldFileSystemDirectory[] =
-    FILE_PATH_LITERAL("FileSystem");
-
-const FilePath::CharType SandboxMountPointProvider::kNewFileSystemDirectory[] =
+const base::FilePath::CharType
+SandboxMountPointProvider::kFileSystemDirectory[] =
     FILE_PATH_LITERAL("File System");
-
-const FilePath::CharType
-    SandboxMountPointProvider::kRenamedOldFileSystemDirectory[] =
-        FILE_PATH_LITERAL("FS.old");
 
 // static
 bool SandboxMountPointProvider::CanHandleType(FileSystemType type) {
@@ -329,17 +140,24 @@ bool SandboxMountPointProvider::CanHandleType(FileSystemType type) {
 SandboxMountPointProvider::SandboxMountPointProvider(
     quota::QuotaManagerProxy* quota_manager_proxy,
     base::SequencedTaskRunner* file_task_runner,
-    const FilePath& profile_path,
+    const base::FilePath& profile_path,
     const FileSystemOptions& file_system_options)
     : file_task_runner_(file_task_runner),
       profile_path_(profile_path),
       file_system_options_(file_system_options),
-      sandbox_file_util_(new ObfuscatedFileUtil(
-                         profile_path.Append(kNewFileSystemDirectory))),
+      sandbox_file_util_(
+          new AsyncFileUtilAdapter(
+              new ObfuscatedFileUtil(
+                  profile_path.Append(kFileSystemDirectory)))),
+      file_system_usage_cache_(new FileSystemUsageCache(file_task_runner)),
       quota_observer_(new SandboxQuotaObserver(
                       quota_manager_proxy,
                       file_task_runner,
-                      sandbox_file_util_.get())),
+                      sandbox_sync_file_util(),
+                      file_system_usage_cache_.get())),
+      enable_sync_directory_operation_(
+          CommandLine::ForCurrentProcess()->HasSwitch(
+              kEnableSyncDirectoryOperation)),
       weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
   // Set quota observers.
   UpdateObserverList::Source update_observers_src;
@@ -355,12 +173,16 @@ SandboxMountPointProvider::SandboxMountPointProvider(
 
 SandboxMountPointProvider::~SandboxMountPointProvider() {
   if (!file_task_runner_->RunsTasksOnCurrentThread()) {
-    ObfuscatedFileUtil* sandbox_file_util = sandbox_file_util_.release();
+    AsyncFileUtilAdapter* sandbox_file_util = sandbox_file_util_.release();
     SandboxQuotaObserver* quota_observer = quota_observer_.release();
+    FileSystemUsageCache* file_system_usage_cache =
+        file_system_usage_cache_.release();
     if (!file_task_runner_->DeleteSoon(FROM_HERE, sandbox_file_util))
       delete sandbox_file_util;
     if (!file_task_runner_->DeleteSoon(FROM_HERE, quota_observer))
       delete quota_observer;
+    if (!file_task_runner_->DeleteSoon(FROM_HERE, file_system_usage_cache))
+      delete file_system_usage_cache;
   }
 }
 
@@ -388,66 +210,69 @@ void SandboxMountPointProvider::ValidateFileSystemRoot(
   file_task_runner_->PostTaskAndReply(
       FROM_HERE,
       base::Bind(&ValidateRootOnFileThread,
-                 sandbox_file_util_.get(),
-                 origin_url, type, old_base_path(), create,
+                 sandbox_sync_file_util(),
+                 origin_url, type, create,
                  base::Unretained(error_ptr)),
       base::Bind(&DidValidateFileSystemRoot,
                  weak_factory_.GetWeakPtr(),
                  callback, base::Owned(error_ptr)));
 };
 
-FilePath
+base::FilePath
 SandboxMountPointProvider::GetFileSystemRootPathOnFileThread(
-    const GURL& origin_url, FileSystemType type, const FilePath& unused,
+    const FileSystemURL& url,
     bool create) {
   if (file_system_options_.is_incognito())
     // TODO(kinuko): return an isolated temporary directory.
-    return FilePath();
+    return base::FilePath();
 
-  if (!IsAllowedScheme(origin_url))
-    return FilePath();
+  if (!IsAllowedScheme(url.origin()))
+    return base::FilePath();
 
-  return GetBaseDirectoryForOriginAndType(origin_url, type, create);
-}
-
-bool SandboxMountPointProvider::IsAccessAllowed(const FileSystemURL& url) {
-  if (!CanHandleType(url.type()))
-    return false;
-  // We essentially depend on quota to do our access controls, so here
-  // we only check if the requested scheme is allowed or not.
-  return IsAllowedScheme(url.origin());
-}
-
-bool SandboxMountPointProvider::IsRestrictedFileName(const FilePath& filename)
-    const {
-  if (filename.value().empty())
-    return false;
-
-  for (size_t i = 0; i < arraysize(kRestrictedNames); ++i) {
-    // Exact match.
-    if (filename.value() == kRestrictedNames[i])
-      return true;
-  }
-
-  for (size_t i = 0; i < arraysize(kRestrictedChars); ++i) {
-    if (filename.value().find(kRestrictedChars[i]) !=
-        FilePath::StringType::npos)
-      return true;
-  }
-
-  return false;
+  return GetBaseDirectoryForOriginAndType(url.origin(), url.type(), create);
 }
 
 FileSystemFileUtil* SandboxMountPointProvider::GetFileUtil(
     FileSystemType type) {
+  DCHECK(sandbox_file_util_.get());
+  return sandbox_file_util_->sync_file_util();
+}
+
+AsyncFileUtil* SandboxMountPointProvider::GetAsyncFileUtil(
+    FileSystemType type) {
   return sandbox_file_util_.get();
 }
 
-FilePath SandboxMountPointProvider::GetPathForPermissionsCheck(
-    const FilePath& virtual_path) const {
-  // We simply return the very top directory of the sandbox
-  // filesystem regardless of the input path.
-  return new_base_path();
+FilePermissionPolicy SandboxMountPointProvider::GetPermissionPolicy(
+    const FileSystemURL& url, int permissions) const {
+  if (!CanHandleType(url.type()) || !IsAllowedScheme(url.origin()))
+    return FILE_PERMISSION_ALWAYS_DENY;
+
+  if (url.path().ReferencesParent())
+    return FILE_PERMISSION_ALWAYS_DENY;
+
+  // Any write access is disallowed on the root path.
+  if ((url.path().empty() || VirtualPath::DirName(url.path()) == url.path())
+      && (permissions & ~kReadFilePermissions))
+    return FILE_PERMISSION_ALWAYS_DENY;
+
+  if ((permissions & kCreateFilePermissions) == kCreateFilePermissions) {
+    base::FilePath filename = VirtualPath::BaseName(url.path());
+    // See if the name is allowed to create.
+    for (size_t i = 0; i < arraysize(kRestrictedNames); ++i) {
+      if (filename.value() == kRestrictedNames[i])
+        return FILE_PERMISSION_ALWAYS_DENY;
+    }
+    for (size_t i = 0; i < arraysize(kRestrictedChars); ++i) {
+      if (filename.value().find(kRestrictedChars[i]) !=
+          base::FilePath::StringType::npos)
+        return FILE_PERMISSION_ALWAYS_DENY;
+    }
+  }
+
+  // Access to the sandbox directory (and only to the directory) should be
+  // always allowed.
+  return FILE_PERMISSION_ALWAYS_ALLOW;
 }
 
 FileSystemOperation* SandboxMountPointProvider::CreateFileSystemOperation(
@@ -462,9 +287,8 @@ FileSystemOperation* SandboxMountPointProvider::CreateFileSystemOperation(
     operation_context->set_update_observers(syncable_update_observers_);
     operation_context->set_change_observers(syncable_change_observers_);
     operation_context->set_access_observers(access_observers_);
-    return new SyncableFileSystemOperation(
-        context,
-        new LocalFileSystemOperation(context, operation_context.Pass()));
+    return new sync_file_system::SyncableFileSystemOperation(
+        context, operation_context.Pass());
   }
 
   // For regular sandboxed types.
@@ -513,34 +337,19 @@ void SandboxMountPointProvider::DeleteFileSystem(
       callback);
 }
 
-FilePath SandboxMountPointProvider::old_base_path() const {
-  return profile_path_.Append(kOldFileSystemDirectory);
-}
-
-FilePath SandboxMountPointProvider::new_base_path() const {
-  return profile_path_.Append(kNewFileSystemDirectory);
-}
-
-FilePath SandboxMountPointProvider::renamed_old_base_path() const {
-  return profile_path_.Append(kRenamedOldFileSystemDirectory);
-}
-
 SandboxMountPointProvider::OriginEnumerator*
-SandboxMountPointProvider::CreateOriginEnumerator() const {
-  MigrateIfNeeded(sandbox_file_util_.get(), old_base_path());
-  return new ObfuscatedOriginEnumerator(sandbox_file_util_.get());
+SandboxMountPointProvider::CreateOriginEnumerator() {
+  return new ObfuscatedOriginEnumerator(sandbox_sync_file_util());
 }
 
-FilePath SandboxMountPointProvider::GetBaseDirectoryForOriginAndType(
-    const GURL& origin_url, fileapi::FileSystemType type, bool create) const {
-
-  MigrateIfNeeded(sandbox_file_util_.get(), old_base_path());
+base::FilePath SandboxMountPointProvider::GetBaseDirectoryForOriginAndType(
+    const GURL& origin_url, fileapi::FileSystemType type, bool create) {
 
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  FilePath path = sandbox_file_util_->GetDirectoryForOriginAndType(
+  base::FilePath path = sandbox_sync_file_util()->GetDirectoryForOriginAndType(
       origin_url, type, create, &error);
   if (error != base::PLATFORM_FILE_OK)
-    return FilePath();
+    return base::FilePath();
   return path;
 }
 
@@ -550,13 +359,13 @@ SandboxMountPointProvider::DeleteOriginDataOnFileThread(
     QuotaManagerProxy* proxy,
     const GURL& origin_url,
     fileapi::FileSystemType type) {
-  MigrateIfNeeded(sandbox_file_util_.get(), old_base_path());
 
   int64 usage = GetOriginUsageOnFileThread(file_system_context,
                                            origin_url, type);
 
-  bool result =
-      sandbox_file_util_->DeleteDirectoryForOriginAndType(origin_url, type);
+  file_system_usage_cache_->CloseCacheFiles();
+  bool result = sandbox_sync_file_util()->DeleteDirectoryForOriginAndType(
+          origin_url, type);
   if (result && proxy) {
     proxy->NotifyStorageModified(
         quota::QuotaClient::kFileSystem,
@@ -611,41 +420,39 @@ int64 SandboxMountPointProvider::GetOriginUsageOnFileThread(
     const GURL& origin_url,
     fileapi::FileSystemType type) {
   DCHECK(CanHandleType(type));
-  FilePath base_path =
+  base::FilePath base_path =
       GetBaseDirectoryForOriginAndType(origin_url, type, false);
   if (base_path.empty() || !file_util::DirectoryExists(base_path)) return 0;
-  FilePath usage_file_path =
+  base::FilePath usage_file_path =
       base_path.Append(FileSystemUsageCache::kUsageFileName);
 
-  bool is_valid = FileSystemUsageCache::IsValid(usage_file_path);
-  int32 dirty_status = FileSystemUsageCache::GetDirty(usage_file_path);
+  bool is_valid = file_system_usage_cache_->IsValid(usage_file_path);
+  int32 dirty_status = file_system_usage_cache_->GetDirty(usage_file_path);
   bool visited = (visited_origins_.find(origin_url) != visited_origins_.end());
   visited_origins_.insert(origin_url);
   if (is_valid && (dirty_status == 0 || (dirty_status > 0 && visited))) {
     // The usage cache is clean (dirty == 0) or the origin is already
     // initialized and running.  Read the cache file to get the usage.
-    return FileSystemUsageCache::GetUsage(usage_file_path);
+    return file_system_usage_cache_->GetUsage(usage_file_path);
   }
   // The usage cache has not been initialized or the cache is dirty.
   // Get the directory size now and update the cache.
-  FileSystemUsageCache::Delete(usage_file_path);
-
+  file_system_usage_cache_->Delete(usage_file_path);
   FileSystemOperationContext context(file_system_context);
-  FileSystemURL url(origin_url, type, FilePath());
+  FileSystemURL url = file_system_context->CreateCrackedFileSystemURL(
+      origin_url, type, base::FilePath());
   scoped_ptr<FileSystemFileUtil::AbstractFileEnumerator> enumerator(
-      sandbox_file_util_->CreateFileEnumerator(&context, url, true));
+      sandbox_sync_file_util()->CreateFileEnumerator(&context, url, true));
 
-  FilePath file_path_each;
+  base::FilePath file_path_each;
   int64 usage = 0;
 
   while (!(file_path_each = enumerator->Next()).empty()) {
-    base::PlatformFileInfo file_info;
-    FilePath platform_file_path;
     usage += enumerator->Size();
     usage += ObfuscatedFileUtil::ComputeFilePathCost(file_path_each);
   }
   // This clears the dirty flag too.
-  FileSystemUsageCache::UpdateUsage(usage_file_path, usage);
+  file_system_usage_cache_->UpdateUsage(usage_file_path, usage);
   return usage;
 }
 
@@ -653,11 +460,11 @@ void SandboxMountPointProvider::InvalidateUsageCache(
     const GURL& origin_url, fileapi::FileSystemType type) {
   DCHECK(CanHandleType(type));
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
-  FilePath usage_file_path = GetUsageCachePathForOriginAndType(
-      sandbox_file_util_.get(), origin_url, type, &error);
+  base::FilePath usage_file_path = GetUsageCachePathForOriginAndType(
+      sandbox_sync_file_util(), origin_url, type, &error);
   if (error != base::PLATFORM_FILE_OK)
     return;
-  FileSystemUsageCache::IncrementDirty(usage_file_path);
+  file_system_usage_cache_->IncrementDirty(usage_file_path);
 }
 
 void SandboxMountPointProvider::CollectOpenFileSystemMetrics(
@@ -734,55 +541,30 @@ SandboxMountPointProvider::CreateFileSystemOperationForSync(
                                       operation_context.Pass());
 }
 
-FilePath SandboxMountPointProvider::GetUsageCachePathForOriginAndType(
+base::FilePath SandboxMountPointProvider::GetUsageCachePathForOriginAndType(
     const GURL& origin_url,
-    FileSystemType type) const {
+    FileSystemType type) {
   base::PlatformFileError error;
-  FilePath path = GetUsageCachePathForOriginAndType(
-      sandbox_file_util_.get(), origin_url, type, &error);
+  base::FilePath path = GetUsageCachePathForOriginAndType(
+      sandbox_sync_file_util(), origin_url, type, &error);
   if (error != base::PLATFORM_FILE_OK)
-    return FilePath();
+    return base::FilePath();
   return path;
 }
 
 // static
-FilePath SandboxMountPointProvider::GetUsageCachePathForOriginAndType(
+base::FilePath SandboxMountPointProvider::GetUsageCachePathForOriginAndType(
     ObfuscatedFileUtil* sandbox_file_util,
     const GURL& origin_url,
     fileapi::FileSystemType type,
     base::PlatformFileError* error_out) {
   DCHECK(error_out);
   *error_out = base::PLATFORM_FILE_OK;
-  FilePath base_path = sandbox_file_util->GetDirectoryForOriginAndType(
+  base::FilePath base_path = sandbox_file_util->GetDirectoryForOriginAndType(
       origin_url, type, false /* create */, error_out);
   if (*error_out != base::PLATFORM_FILE_OK)
-    return FilePath();
+    return base::FilePath();
   return base_path.Append(FileSystemUsageCache::kUsageFileName);
-}
-
-FilePath SandboxMountPointProvider::OldCreateFileSystemRootPath(
-    const GURL& origin_url, fileapi::FileSystemType type) {
-  FilePath origin_base_path =
-      OldGetBaseDirectoryForOriginAndType(old_base_path(), origin_url, type);
-  DCHECK(!origin_base_path.empty());
-
-  FilePath root;
-  base::PlatformFileError result =
-      OldReadOriginDirectory(origin_base_path, &root);
-  if (base::PLATFORM_FILE_OK == result)
-    return root;
-
-  // We found more than on filesystem there already--we don't know how to
-  // recover from this.
-  if (base::PLATFORM_FILE_ERROR_NOT_FOUND != result)
-    return FilePath();
-
-  // Creates the root directory.
-  root = origin_base_path.Append(OldCreateUniqueDirectoryName(origin_url));
-  if (!file_util::CreateDirectory(root))
-    return FilePath();
-
-  return root;
 }
 
 bool SandboxMountPointProvider::IsAllowedScheme(const GURL& url) const {
@@ -801,6 +583,11 @@ bool SandboxMountPointProvider::IsAllowedScheme(const GURL& url) const {
       return true;
   }
   return false;
+}
+
+ObfuscatedFileUtil* SandboxMountPointProvider::sandbox_sync_file_util() {
+  DCHECK(sandbox_file_util_.get());
+  return static_cast<ObfuscatedFileUtil*>(sandbox_file_util_->sync_file_util());
 }
 
 }  // namespace fileapi

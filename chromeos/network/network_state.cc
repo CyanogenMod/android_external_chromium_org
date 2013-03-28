@@ -19,12 +19,13 @@ NetworkState::~NetworkState() {
 
 bool NetworkState::PropertyChanged(const std::string& key,
                                    const base::Value& value) {
+  // Keep care that these properties are the same as in |GetProperties|.
   if (ManagedStatePropertyChanged(key, value))
     return true;
   if (key == flimflam::kSignalStrengthProperty) {
     return GetIntegerValue(key, value, &signal_strength_);
   } else if (key == flimflam::kStateProperty) {
-    return GetStringValue(key, value, &state_);
+    return GetStringValue(key, value, &connection_state_);
   } else if (key == flimflam::kErrorProperty) {
     return GetStringValue(key, value, &error_);
   } else if (key == flimflam::kActivationStateProperty) {
@@ -37,30 +38,65 @@ bool NetworkState::PropertyChanged(const std::string& key,
     return GetStringValue(key, value, &technology_);
   } else if (key == flimflam::kDeviceProperty) {
     return GetStringValue(key, value, &device_path_);
+  } else if (key == flimflam::kGuidProperty) {
+    return GetStringValue(key, value, &guid_);
+  } else if (key == shill::kActivateOverNonCellularNetworkProperty) {
+    return GetBooleanValue(key, value, &activate_over_non_cellular_networks_);
+  } else if (key == shill::kOutOfCreditsProperty) {
+    return GetBooleanValue(key, value, &cellular_out_of_credits_);
   }
   return false;
 }
 
+void NetworkState::GetProperties(base::DictionaryValue* dictionary) const {
+  // Keep care that these properties are the same as in |PropertyChanged|.
+  dictionary->SetStringWithoutPathExpansion(flimflam::kNameProperty, name());
+  dictionary->SetStringWithoutPathExpansion(flimflam::kTypeProperty, type());
+  dictionary->SetIntegerWithoutPathExpansion(flimflam::kSignalStrengthProperty,
+                                             signal_strength());
+  dictionary->SetStringWithoutPathExpansion(flimflam::kStateProperty,
+                                            connection_state());
+  dictionary->SetStringWithoutPathExpansion(flimflam::kErrorProperty,
+                                            error());
+  dictionary->SetStringWithoutPathExpansion(flimflam::kActivationStateProperty,
+                                            activation_state());
+  dictionary->SetStringWithoutPathExpansion(flimflam::kRoamingStateProperty,
+                                            roaming());
+  dictionary->SetStringWithoutPathExpansion(flimflam::kSecurityProperty,
+                                            security());
+  dictionary->SetStringWithoutPathExpansion(
+      flimflam::kNetworkTechnologyProperty,
+      technology());
+  dictionary->SetStringWithoutPathExpansion(flimflam::kDeviceProperty,
+                                            device_path());
+  dictionary->SetStringWithoutPathExpansion(flimflam::kGuidProperty, guid());
+  dictionary->SetBooleanWithoutPathExpansion(
+      shill::kActivateOverNonCellularNetworkProperty,
+      activate_over_non_cellular_networks());
+  dictionary->SetBooleanWithoutPathExpansion(shill::kOutOfCreditsProperty,
+                                             cellular_out_of_credits());
+}
+
 bool NetworkState::IsConnectedState() const {
-  return StateIsConnected(state_);
+  return StateIsConnected(connection_state_);
 }
 
 bool NetworkState::IsConnectingState() const {
-  return StateIsConnecting(state_);
+  return StateIsConnecting(connection_state_);
 }
 
 // static
-bool NetworkState::StateIsConnected(const std::string& state) {
-  return (state == flimflam::kStateReady ||
-          state == flimflam::kStateOnline ||
-          state == flimflam::kStatePortal);
+bool NetworkState::StateIsConnected(const std::string& connection_state) {
+  return (connection_state == flimflam::kStateReady ||
+          connection_state == flimflam::kStateOnline ||
+          connection_state == flimflam::kStatePortal);
 }
 
 // static
-bool NetworkState::StateIsConnecting(const std::string& state) {
-  return (state == flimflam::kStateAssociation ||
-          state == flimflam::kStateConfiguration ||
-          state == flimflam::kStateCarrier);
+bool NetworkState::StateIsConnecting(const std::string& connection_state) {
+  return (connection_state == flimflam::kStateAssociation ||
+          connection_state == flimflam::kStateConfiguration ||
+          connection_state == flimflam::kStateCarrier);
 }
 
 }  // namespace chromeos

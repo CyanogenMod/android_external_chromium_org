@@ -9,12 +9,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/browser_thread.h"
 #include "webkit/appcache/appcache_policy.h"
 #include "webkit/appcache/appcache_service.h"
 #include "webkit/quota/special_storage_policy.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace net {
 class URLRequestContextGetter;
@@ -45,7 +46,7 @@ class CONTENT_EXPORT ChromeAppCacheService
   explicit ChromeAppCacheService(quota::QuotaManagerProxy* proxy);
 
   void InitializeOnIOThread(
-      const FilePath& cache_path,  // may be empty to use in-memory structures
+      const base::FilePath& cache_path,  // May be empty to use in-memory structs.
       ResourceContext* resource_context,
       net::URLRequestContextGetter* request_context_getter,
       scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy);
@@ -68,7 +69,7 @@ class CONTENT_EXPORT ChromeAppCacheService
   void DeleteOnCorrectThread() const;
 
   ResourceContext* resource_context_;
-  FilePath cache_path_;
+  base::FilePath cache_path_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeAppCacheService);
 };

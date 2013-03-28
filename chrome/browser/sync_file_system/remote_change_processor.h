@@ -10,16 +10,19 @@
 #include "webkit/fileapi/syncable/sync_callbacks.h"
 #include "webkit/fileapi/syncable/sync_status_code.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace fileapi {
-class FileChange;
-class FileChangeList;
 class FileSystemURL;
-class SyncFileMetadata;
 }
 
 namespace sync_file_system {
+
+class FileChange;
+class FileChangeList;
+class SyncFileMetadata;
 
 // Represents an interface to process one remote change and applies
 // it to the local file system.
@@ -32,20 +35,22 @@ class RemoteChangeProcessor {
   // set to SYNC_FILE_TYPE_UNKNOWN.
   // |changes| indicates a set of pending changes for the target URL.
   typedef base::Callback<void(
-      fileapi::SyncStatusCode status,
-      const fileapi::SyncFileMetadata& metadata,
-      const fileapi::FileChangeList& changes)> PrepareChangeCallback;
+      SyncStatusCode status,
+      const SyncFileMetadata& metadata,
+      const FileChangeList& changes)> PrepareChangeCallback;
 
   RemoteChangeProcessor() {}
   virtual ~RemoteChangeProcessor() {}
 
-  // This must be called before processing the change for the |url|.
+  // This must be called before processing the change for the |url|
+  // for sync service |service_name|.
   // This tries to lock the target |url| and returns the local changes
   // if any. (The change returned by the callback is to make a decision
   // on conflict resolution, but NOT for applying local changes to the remote,
   // which is supposed to be done by LocalChangeProcessor)
   virtual void PrepareForProcessRemoteChange(
       const fileapi::FileSystemURL& url,
+      const std::string& service_name,
       const PrepareChangeCallback& callback) = 0;
 
   // This is called to apply the remote |change|. If the change type is
@@ -56,10 +61,27 @@ class RemoteChangeProcessor {
   // (as we must have checked the change status in PrepareRemoteSync and
   // have disabled any further writing).
   virtual void ApplyRemoteChange(
-      const fileapi::FileChange& change,
-      const FilePath& local_path,
+      const FileChange& change,
+      const base::FilePath& local_path,
       const fileapi::FileSystemURL& url,
-      const fileapi::SyncStatusCallback& callback) = 0;
+      const SyncStatusCallback& callback) = 0;
+
+  // Clears all local changes. This should be called when the remote sync
+  // service reconciled or processed the existing local changes while
+  // processing a remote change.
+  virtual void ClearLocalChanges(
+      const fileapi::FileSystemURL& url,
+      const base::Closure& completion_callback) = 0;
+
+  // Records a fake local change so that the change will be processed in the
+  // next local sync.
+  // This is called when the remote side wants to trigger a local sync
+  // to propagate the local change to the remote change (e.g. to
+  // resolve a conflict by uploading the local file).
+  virtual void RecordFakeLocalChange(
+      const fileapi::FileSystemURL& url,
+      const FileChange& change,
+      const SyncStatusCallback& callback) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RemoteChangeProcessor);

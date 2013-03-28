@@ -9,6 +9,9 @@
     'use_vtable_verify%': 0,
   },
   'targets': [
+    # Only executables and not libraries should depend on the
+    # allocator target; only the application (the final executable)
+    # knows what allocator makes sense.
     {
       'target_name': 'allocator',
       'type': 'static_library',
@@ -203,6 +206,7 @@
 
         'allocator_shim.cc',
         'allocator_shim.h',
+        'debugallocation_shim.cc',
         'generic_allocators.cc',
         'win_allocator.cc',
       ],
@@ -211,6 +215,10 @@
         # Included by allocator_shim.cc for maximal inlining.
         'generic_allocators.cc',
         'win_allocator.cc',
+
+        # Included by debugallocation_shim.cc.
+        '<(tcmalloc_dir)/src/debugallocation.cc',
+        '<(tcmalloc_dir)/src/tcmalloc.cc',
 
         # We simply don't use these, but list them above so that IDE
         # users can view the full available source for reference, etc.
@@ -286,8 +294,6 @@
         # TODO(sgk):  merge this with build/common.gypi settings
         'VCLibrarianTool': {
           'AdditionalOptions': ['/ignore:4006,4221'],
-          'AdditionalLibraryDirectories':
-            ['<(DEPTH)/third_party/platformsdk_win7/files/Lib'],
         },
         'VCLinkerTool': {
           'AdditionalOptions': ['/ignore:4006'],
@@ -300,6 +306,22 @@
               'RuntimeLibrary': '0',
             },
           },
+          'variables': {
+            # Provide a way to force disable debugallocation in Debug builds,
+            # e.g. for profiling (it's more rare to profile Debug builds,
+            # but people sometimes need to do that).
+            'disable_debugallocation%': 0,
+          },
+          'conditions': [
+            # TODO(phajdan.jr): Also enable on Windows.
+            ['disable_debugallocation==0 and OS!="win"', {
+              'defines': [
+                # Use debugallocation for Debug builds to catch problems early
+                # and cleanly, http://crbug.com/30715 .
+                'TCMALLOC_FOR_DEBUGALLOCATION',
+              ],
+            }],
+          ],
         },
       },
       'conditions': [
@@ -346,7 +368,7 @@
             '<(tcmalloc_dir)/src/system-alloc.h',
 
             # included by allocator_shim.cc
-            '<(tcmalloc_dir)/src/tcmalloc.cc',
+            'debugallocation_shim.cc',
 
             # heap-profiler/checker/cpuprofiler
             '<(tcmalloc_dir)/src/base/thread_lister.c',
@@ -365,9 +387,6 @@
             '<(tcmalloc_dir)/src/profile-handler.cc',
             '<(tcmalloc_dir)/src/profile-handler.h',
             '<(tcmalloc_dir)/src/profiler.cc',
-
-            # debugallocation
-            '<(tcmalloc_dir)/src/debugallocation.cc',
           ],
         }],
         ['OS=="linux" or OS=="freebsd" or OS=="solaris"', {
@@ -412,20 +431,6 @@
         [ 'use_vtable_verify==1', {
           'cflags': [
             '-fvtable-verify=preinit',
-          ],
-        }],
-        [ 'linux_use_debugallocation==1', {
-          'sources!': [
-            # debugallocation.cc #includes tcmalloc.cc,
-            # so only one of them should be used.
-            '<(tcmalloc_dir)/src/tcmalloc.cc',
-          ],
-          'defines': [
-            'TCMALLOC_FOR_DEBUGALLOCATION',
-          ],
-        }, { # linux_use_debugallocation != 1
-          'sources!': [
-            '<(tcmalloc_dir)/src/debugallocation.cc',
           ],
         }],
         [ 'linux_keep_shadow_stacks==1', {
@@ -514,6 +519,7 @@
                 'prep_libc.py',
                 '$(VCInstallDir)lib',
                 '<(SHARED_INTERMEDIATE_DIR)/allocator',
+                '<(target_arch)',
               ],
             },
           ],
@@ -539,6 +545,27 @@
           ],
         },
         {
+          'target_name': 'tcmalloc_unittest',
+          'type': 'executable',
+          'sources': [
+            'tcmalloc_unittest.cc',
+          ],
+          'include_dirs': [
+            '../..',
+            # For constants of TCMalloc.
+            '<(tcmalloc_dir)/src',
+          ],
+          'dependencies': [
+            '../../testing/gtest.gyp:gtest',
+            '../base.gyp:base',
+            'allocator',
+          ],
+        },
+      ],
+    }],
+    ['OS=="win" and target_arch=="ia32"', {
+      'targets': [
+        {
           'target_name': 'allocator_extension_thunks_win64',
           'type': 'static_library',
           'sources': [
@@ -555,23 +582,6 @@
             },
           },
         },
-      {
-        'target_name': 'tcmalloc_unittest',
-        'type': 'executable',
-        'sources': [
-          'tcmalloc_unittest.cc',
-        ],
-        'include_dirs': [
-          '../..',
-          # For constants of TCMalloc.
-          '<(tcmalloc_dir)/src',
-        ],
-        'dependencies': [
-          '../../testing/gtest.gyp:gtest',
-          '../base.gyp:base',
-          'allocator',
-        ],
-      },
       ],
     }],
     ['OS=="linux" and clang_type_profiler==1', {

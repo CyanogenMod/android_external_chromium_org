@@ -52,7 +52,8 @@ TEST_F(PinnedTabServiceTest, Popup) {
   browser()->tab_strip_model()->SetTabPinned(0, true);
 
   // Create a popup.
-  Browser::CreateParams params(Browser::TYPE_POPUP, profile());
+  Browser::CreateParams params(Browser::TYPE_POPUP, profile(),
+                               browser()->host_desktop_type());
   scoped_ptr<Browser> popup(
       chrome::CreateBrowserWithTestWindowForParams(&params));
 
@@ -65,7 +66,7 @@ TEST_F(PinnedTabServiceTest, Popup) {
   EXPECT_EQ("http://www.google.com/::pinned:", result);
 
   // Close the popup. This shouldn't reset the saved state.
-  chrome::CloseAllTabs(popup.get());
+  popup->tab_strip_model()->CloseAllTabs();
   popup.reset(NULL);
 
   // Check the state to make sure it hasn't changed.

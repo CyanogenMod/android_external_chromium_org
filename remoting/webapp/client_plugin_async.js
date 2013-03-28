@@ -41,6 +41,7 @@ remoting.ClientPluginAsync = function(plugin) {
   /** @param {boolean} ready Connection ready state. */
   this.onConnectionReadyHandler = function(ready) {};
   this.onDesktopSizeUpdateHandler = function () {};
+  this.fetchPinHandler = function () {};
 
   /** @type {number} */
   this.pluginApiVersion_ = -1;
@@ -205,8 +206,10 @@ remoting.ClientPluginAsync.prototype.handleMessage_ = function(messageStr) {
     }
     var ready = /** @type {boolean} */ message.data['ready'];
     this.onConnectionReadyHandler(ready);
+  } else if (message.method == 'fetchPin') {
+    this.fetchPinHandler();
   }
-}
+};
 
 /**
  * Deletes the plugin.
@@ -347,6 +350,20 @@ remoting.ClientPluginAsync.prototype.remapKey =
 };
 
 /**
+ * Enable/disable redirection of the specified key to the web-app.
+ *
+ * @param {number} keycode The USB-style code of the key.
+ * @param {Boolean} trap True to enable trapping, False to disable.
+ */
+remoting.ClientPluginAsync.prototype.trapKey = function(keycode, trap) {
+  this.plugin.postMessage(JSON.stringify(
+      { method: 'trapKey', data: {
+          'keycode': keycode,
+          'trap': trap}
+      }));
+};
+
+/**
  * Returns an associative array with a set of stats for this connecton.
  *
  * @return {remoting.ClientSession.PerfStats} The connection statistics.
@@ -371,18 +388,27 @@ remoting.ClientPluginAsync.prototype.sendClipboardItem =
 };
 
 /**
- * Notifies the host that the client has the specified dimensions.
+ * Notifies the host that the client has the specified size and pixel density.
  *
- * @param {number} width The available client width.
- * @param {number} height The available client height.
+ * @param {number} width The available client width in DIPs.
+ * @param {number} height The available client height in DIPs.
+ * @param {number} device_scale The number of device pixels per DIP.
  */
-remoting.ClientPluginAsync.prototype.notifyClientDimensions =
-    function(width, height) {
-  if (!this.hasFeature(remoting.ClientPlugin.Feature.NOTIFY_CLIENT_DIMENSIONS))
-    return;
-  this.plugin.postMessage(JSON.stringify(
-      { method: 'notifyClientDimensions',
-        data: { width: width, height: height }}));
+remoting.ClientPluginAsync.prototype.notifyClientResolution =
+    function(width, height, device_scale) {
+  if (this.hasFeature(remoting.ClientPlugin.Feature.NOTIFY_CLIENT_RESOLUTION)) {
+    var dpi = device_scale * 96;
+    this.plugin.postMessage(JSON.stringify(
+        { method: 'notifyClientResolution',
+          data: { width: width * device_scale,
+                  height: height * device_scale,
+                  x_dpi: dpi, y_dpi: dpi }}));
+  } else if (this.hasFeature(
+                 remoting.ClientPlugin.Feature.NOTIFY_CLIENT_DIMENSIONS)) {
+    this.plugin.postMessage(JSON.stringify(
+        { method: 'notifyClientDimensions',
+          data: { width: width, height: height }}));
+  }
 };
 
 /**
@@ -409,6 +435,32 @@ remoting.ClientPluginAsync.prototype.pauseAudio =
     return;
   this.plugin.postMessage(JSON.stringify(
       { method: 'pauseAudio', data: { pause: pause }}));
+};
+
+/**
+ * Called when a PIN is obtained from the user.
+ *
+ * @param {string} pin The PIN.
+ */
+remoting.ClientPluginAsync.prototype.onPinFetched =
+    function(pin) {
+  if (!this.hasFeature(remoting.ClientPlugin.Feature.ASYNC_PIN)) {
+    return;
+  }
+  this.plugin.postMessage(JSON.stringify(
+      { method: 'onPinFetched', data: { pin: pin }}));
+};
+
+/**
+ * Tells the plugin to ask for the PIN asynchronously.
+ */
+remoting.ClientPluginAsync.prototype.useAsyncPinDialog =
+    function() {
+  if (!this.hasFeature(remoting.ClientPlugin.Feature.ASYNC_PIN)) {
+    return;
+  }
+  this.plugin.postMessage(JSON.stringify(
+      { method: 'useAsyncPinDialog', data: {} }));
 };
 
 /**

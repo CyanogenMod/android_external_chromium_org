@@ -18,18 +18,20 @@
 
 class Profile;
 
+namespace base {
+class Clock;
+}  // namespace base
+
 namespace extensions {
 
 class ExtensionAlarmsSchedulingTest;
 
 struct Alarm {
-  typedef base::Time (*TimeProvider)();
-
   Alarm();
   Alarm(const std::string& name,
         const api::alarms::AlarmCreateInfo& create_info,
         base::TimeDelta min_granularity,
-        TimeProvider now);
+        base::Time now);
   ~Alarm();
 
   linked_ptr<api::alarms::Alarm> js_alarm;
@@ -47,7 +49,6 @@ class AlarmManager
     : public content::NotificationObserver,
       public base::SupportsWeakPtr<AlarmManager> {
  public:
-  typedef base::Time (*TimeProvider)();
   typedef std::vector<Alarm> AlarmList;
 
   class Delegate {
@@ -58,8 +59,9 @@ class AlarmManager
                          const Alarm& alarm) = 0;
   };
 
-  // 'now' is usually &base::Time::Now.
-  explicit AlarmManager(Profile* profile, TimeProvider now);
+  // |clock| is usually a base::DefaultClock, but can be something
+  // else for testing.
+  explicit AlarmManager(Profile* profile, base::Clock* clock);
   virtual ~AlarmManager();
 
   // Override the default delegate. Callee assumes onwership. Used for testing.
@@ -123,8 +125,8 @@ class AlarmManager
                        scoped_ptr<base::Value> value);
 
   // Schedules the next poll of alarms for when the next soonest alarm runs,
-  // but do not more often than min_period.
-  void ScheduleNextPoll(base::TimeDelta min_period);
+  // but not more often than the minimum granularity of all alarms.
+  void ScheduleNextPoll();
 
   // Polls the alarms, running any that have elapsed. After running them and
   // rescheduling repeating alarms, schedule the next poll.
@@ -135,8 +137,8 @@ class AlarmManager
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  Profile* profile_;
-  const TimeProvider now_;
+  Profile* const profile_;
+  base::Clock* const clock_;
   content::NotificationRegistrar registrar_;
   scoped_ptr<Delegate> delegate_;
 

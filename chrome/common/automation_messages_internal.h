@@ -200,7 +200,7 @@ IPC_SYNC_MESSAGE_CONTROL2_1(AutomationMsg_SetWindowBounds,
 //         defined in chrome/views/event.h
 // Response:
 //   bool - true if the drag could be performed
-IPC_SYNC_MESSAGE_CONTROL4_1(AutomationMsg_WindowDrag,
+IPC_SYNC_MESSAGE_CONTROL4_1(AutomationMsg_DEPRECATED_WindowDrag,
                            int,
                            std::vector<gfx::Point>,
                            int,
@@ -220,7 +220,7 @@ IPC_MESSAGE_CONTROL1(AutomationMsg_DEPRECATED_SetFilteredInet,
 // Gets the directory that downloads will occur in for the active profile.
 IPC_SYNC_MESSAGE_CONTROL1_1(AutomationMsg_DEPRECATED_DownloadDirectory,
                             int /* tab_handle */,
-                            FilePath /* directory */)
+                            base::FilePath /* directory */)
 
 // Opens a new browser window.
 // TODO(sky): remove this and replace with OpenNewBrowserWindowOfType.
@@ -247,22 +247,22 @@ IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_WindowForBrowser,
 //   int - the ui::KeyboardCode of the key that was pressed.
 //   int - the flags which identify the modifiers (shift, ctrl, alt)
 //         associated for, as defined in chrome/views/event.h
-IPC_MESSAGE_CONTROL3(AutomationMsg_WindowKeyPress,
+IPC_MESSAGE_CONTROL3(AutomationMsg_DEPRECATED_WindowKeyPress,
                      int,
                      int,
                      int)
-
+#if defined(OS_WIN)
 // This message notifies the AutomationProvider to create a tab which is
 // hosted by an external process.
 // Request:
 //   ExternalTabSettings - settings for external tab
 IPC_SYNC_MESSAGE_CONTROL1_4(AutomationMsg_CreateExternalTab,
                             ExternalTabSettings  /* settings*/,
-                            gfx::NativeWindow  /* Tab container window */,
-                            gfx::NativeWindow  /* Tab window */,
+                            HWND  /* Tab container window */,
+                            HWND  /* Tab window */,
                             int  /* Handle to the new tab */,
                             int  /* Session Id of the new tab */)
-
+#endif  // defined(OS_WIN)
 // This message notifies the AutomationProvider to navigate to a specified
 // url in the external tab with given handle. The first parameter is the
 // handle to the tab resource. The second parameter is the target url.
@@ -557,7 +557,7 @@ IPC_MESSAGE_ROUTED2(AutomationMsg_NavigationFailed,
                     int,
                     GURL)
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
 // This message is an outgoing message from an automation client to Chrome.
 // It is used to reposition a chrome tab window.
 IPC_MESSAGE_CONTROL2(AutomationMsg_TabReposition,
@@ -717,17 +717,17 @@ IPC_SYNC_MESSAGE_CONTROL2_1(
 
 IPC_MESSAGE_ROUTED1(AutomationMsg_AttachExternalTab,
                     AttachExternalTabParams)
-
+#if defined(OS_WIN)
 // Sent when the automation client connects to an existing tab.
 IPC_SYNC_MESSAGE_CONTROL3_4(AutomationMsg_ConnectExternalTab,
                             uint64 /* cookie */,
                             bool   /* allow/block tab*/,
-                            gfx::NativeWindow  /* parent window */,
-                            gfx::NativeWindow  /* Tab container window */,
-                            gfx::NativeWindow  /* Tab window */,
+                            HWND  /* parent window */,
+                            HWND  /* Tab container window */,
+                            HWND  /* Tab window */,
                             int  /* Handle to the new tab */,
                             int  /* Session Id of the new tab */)
-
+#endif  // defined(OS_WIN)
 // Simulate an end of session. Normally this happens when the user
 // shuts down the machine or logs off.
 // Request:
@@ -769,7 +769,7 @@ IPC_SYNC_MESSAGE_CONTROL2_0(AutomationMsg_OpenNewBrowserWindowOfType,
 // Request:
 //   int - the handle of the window that's the context for this click
 //   gfx::Point - the location to move to
-IPC_MESSAGE_CONTROL2(AutomationMsg_WindowMouseMove,
+IPC_MESSAGE_CONTROL2(AutomationMsg_DEPRECATED_WindowMouseMove,
                      int,
                      gfx::Point)
 
@@ -957,6 +957,14 @@ IPC_SYNC_MESSAGE_CONTROL2_2(AutomationMsg_SendJSONRequest,
                             std::string /* JSON request */,
                             std::string /* JSON response */,
                             bool /* success */)
+
+// This message requests that a key press be performed.
+// Request:
+//   int - tab handle
+//   int - the ui::KeyboardCode of the key that was pressed.
+IPC_MESSAGE_CONTROL2(AutomationMsg_KeyPress,
+                     int /* tab_handle */,
+                     int /* key */)
 
 // Browser -> renderer messages.
 

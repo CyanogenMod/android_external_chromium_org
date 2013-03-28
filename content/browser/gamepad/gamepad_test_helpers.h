@@ -10,7 +10,7 @@
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "content/browser/gamepad/gamepad_data_fetcher.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
 
 namespace base {
 class SystemMonitor;
@@ -69,7 +69,7 @@ class GamepadTestHelper {
 // global singleton for the gamepad service.
 class GamepadServiceTestConstructor : public GamepadTestHelper {
  public:
-  GamepadServiceTestConstructor(const WebKit::WebGamepads& test_data);
+  explicit GamepadServiceTestConstructor(const WebKit::WebGamepads& test_data);
   virtual ~GamepadServiceTestConstructor();
 
   GamepadService* gamepad_service() { return gamepad_service_; }

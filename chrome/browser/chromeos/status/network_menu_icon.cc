@@ -9,11 +9,13 @@
 #include <map>
 #include <utility>
 
+#include "ash/system/chromeos/network/network_icon_animation.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
+#include "grit/ash_resources.h"
+#include "grit/ash_strings.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -24,15 +26,14 @@
 using std::max;
 using std::min;
 
+using ash::network_icon::NetworkIconAnimation;
+
 namespace chromeos {
 
 namespace {
 
 // Amount to fade icons while connecting.
 const double kConnectingImageAlpha = 0.5;
-
-// Animation cycle length.
-const int kThrobDurationMs = 750;
 
 // Images for strength bars for wired networks.
 const int kNumBarsImages = 5;
@@ -72,10 +73,7 @@ int WimaxStrengthIndex(const WimaxNetwork* wimax) {
 }
 
 int CellularStrengthIndex(const CellularNetwork* cellular) {
-  if (cellular->data_left() == CellularNetwork::DATA_NONE)
-    return 0;
-  else
-    return StrengthIndex(cellular->strength(), kNumBarsImages - 1);
+  return StrengthIndex(cellular->strength(), kNumBarsImages - 1);
 }
 
 const gfx::ImageSkia* BadgeForNetworkTechnology(
@@ -85,67 +83,52 @@ const gfx::ImageSkia* BadgeForNetworkTechnology(
   int id = kUnknownBadgeType;
   switch (cellular->network_technology()) {
     case NETWORK_TECHNOLOGY_EVDO:
-      switch (cellular->data_left()) {
-        case CellularNetwork::DATA_NONE:
-          id = IDR_STATUSBAR_NETWORK_3G_ERROR;
-          break;
-        case CellularNetwork::DATA_VERY_LOW:
-        case CellularNetwork::DATA_LOW:
-        case CellularNetwork::DATA_NORMAL:
-          id = (color == NetworkMenuIcon::COLOR_DARK) ?
-              IDR_STATUSBAR_NETWORK_3G_DARK :
-              IDR_STATUSBAR_NETWORK_3G_LIGHT;
-          break;
-        case CellularNetwork::DATA_UNKNOWN:
-          id = IDR_STATUSBAR_NETWORK_3G_UNKNOWN;
-          break;
-      }
+      id = (color == NetworkMenuIcon::COLOR_DARK) ?
+          IDR_AURA_UBER_TRAY_NETWORK_3G_DARK :
+          IDR_AURA_UBER_TRAY_NETWORK_3G_LIGHT;
       break;
     case NETWORK_TECHNOLOGY_1XRTT:
-      switch (cellular->data_left()) {
-        case CellularNetwork::DATA_NONE:
-          id = IDR_STATUSBAR_NETWORK_1X_ERROR;
-          break;
-        case CellularNetwork::DATA_VERY_LOW:
-        case CellularNetwork::DATA_LOW:
-        case CellularNetwork::DATA_NORMAL:
-          id = IDR_STATUSBAR_NETWORK_1X;
-          break;
-        case CellularNetwork::DATA_UNKNOWN:
-          id = IDR_STATUSBAR_NETWORK_1X_UNKNOWN;
-          break;
-      }
+      id = IDR_AURA_UBER_TRAY_NETWORK_1X;
       break;
-      // Note: we may not be able to obtain data usage info from GSM carriers,
-      // so there may not be a reason to create _ERROR or _UNKNOWN versions
-      // of the following icons.
     case NETWORK_TECHNOLOGY_GPRS:
-      id = IDR_STATUSBAR_NETWORK_GPRS;
+      id = (color == NetworkMenuIcon::COLOR_DARK) ?
+          IDR_AURA_UBER_TRAY_NETWORK_GPRS_DARK :
+          IDR_AURA_UBER_TRAY_NETWORK_GPRS_LIGHT;
       break;
     case NETWORK_TECHNOLOGY_EDGE:
       id = (color == NetworkMenuIcon::COLOR_DARK) ?
-          IDR_STATUSBAR_NETWORK_EDGE_DARK :
-          IDR_STATUSBAR_NETWORK_EDGE_LIGHT;
+          IDR_AURA_UBER_TRAY_NETWORK_EDGE_DARK :
+          IDR_AURA_UBER_TRAY_NETWORK_EDGE_LIGHT;
       break;
     case NETWORK_TECHNOLOGY_UMTS:
-      id =  (color == NetworkMenuIcon::COLOR_DARK) ?
-          IDR_STATUSBAR_NETWORK_3G_DARK :
-          IDR_STATUSBAR_NETWORK_3G_LIGHT;
+      id = (color == NetworkMenuIcon::COLOR_DARK) ?
+          IDR_AURA_UBER_TRAY_NETWORK_3G_DARK :
+          IDR_AURA_UBER_TRAY_NETWORK_3G_LIGHT;
       break;
     case NETWORK_TECHNOLOGY_HSPA:
-      id = IDR_STATUSBAR_NETWORK_HSPA;
+      id = (color == NetworkMenuIcon::COLOR_DARK) ?
+          IDR_AURA_UBER_TRAY_NETWORK_HSPA_DARK :
+          IDR_AURA_UBER_TRAY_NETWORK_HSPA_LIGHT;
       break;
     case NETWORK_TECHNOLOGY_HSPA_PLUS:
-      id = IDR_STATUSBAR_NETWORK_HSPA_PLUS;
+      id = (color == NetworkMenuIcon::COLOR_DARK) ?
+          IDR_AURA_UBER_TRAY_NETWORK_HSPA_PLUS_DARK :
+          IDR_AURA_UBER_TRAY_NETWORK_HSPA_PLUS_LIGHT;
       break;
     case NETWORK_TECHNOLOGY_LTE:
-      id = IDR_STATUSBAR_NETWORK_LTE;
+      id = (color == NetworkMenuIcon::COLOR_DARK) ?
+          IDR_AURA_UBER_TRAY_NETWORK_LTE_DARK :
+          IDR_AURA_UBER_TRAY_NETWORK_LTE_LIGHT;
       break;
     case NETWORK_TECHNOLOGY_LTE_ADVANCED:
-      id = IDR_STATUSBAR_NETWORK_LTE_ADVANCED;
+      id = (color == NetworkMenuIcon::COLOR_DARK) ?
+          IDR_AURA_UBER_TRAY_NETWORK_LTE_ADVANCED_DARK :
+          IDR_AURA_UBER_TRAY_NETWORK_LTE_ADVANCED_LIGHT;
       break;
     case NETWORK_TECHNOLOGY_GSM:
-      id = IDR_STATUSBAR_NETWORK_GPRS;
+      id = (color == NetworkMenuIcon::COLOR_DARK) ?
+          IDR_AURA_UBER_TRAY_NETWORK_GPRS_DARK :
+          IDR_AURA_UBER_TRAY_NETWORK_GPRS_LIGHT;
       break;
     case NETWORK_TECHNOLOGY_UNKNOWN:
       break;
@@ -299,6 +282,7 @@ class NetworkIcon {
 
   bool ShouldShowInTray() const;
 
+  ConnectionType type() { return type_; }
   void set_type(ConnectionType type) { type_ = type; }
   void set_state(ConnectionState state) { state_ = state; }
   void set_icon(const gfx::ImageSkia& icon) { icon_ = icon; }
@@ -467,7 +451,7 @@ void NetworkIcon::SetIcon(const Network* network) {
 
   switch (type_) {
     case TYPE_ETHERNET: {
-      icon_ = *rb.GetImageSkiaNamed(IDR_STATUSBAR_WIRED);
+      icon_ = *rb.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_WIRED);
       break;
     }
     case TYPE_WIFI: {
@@ -496,12 +480,12 @@ void NetworkIcon::SetIcon(const Network* network) {
       break;
     }
     case TYPE_VPN: {
-      icon_ = *rb.GetImageSkiaNamed(IDR_STATUSBAR_VPN);
+      icon_ = *rb.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_VPN);
       break;
     }
     default: {
       LOG(WARNING) << "Request for icon for unsupported type: " << type_;
-      icon_ = *rb.GetImageSkiaNamed(IDR_STATUSBAR_WIRED);
+      icon_ = *rb.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_WIRED);
       break;
     }
   }
@@ -520,13 +504,15 @@ void NetworkIcon::SetBadges(const Network* network) {
       const WifiNetwork* wifi = static_cast<const WifiNetwork*>(network);
       if (wifi->encrypted() && use_dark_icons) {
         bottom_right_badge_ = rb.GetImageSkiaNamed(
-            IDR_STATUSBAR_NETWORK_SECURE_DARK);
+            IDR_AURA_UBER_TRAY_NETWORK_SECURE_DARK);
       }
       break;
     }
     case TYPE_WIMAX: {
-      top_left_badge_ = rb.GetImageSkiaNamed(use_dark_icons ?
-          IDR_STATUSBAR_NETWORK_4G_DARK : IDR_STATUSBAR_NETWORK_4G_LIGHT);
+      top_left_badge_ = rb.GetImageSkiaNamed(
+          use_dark_icons ?
+          IDR_AURA_UBER_TRAY_NETWORK_4G_DARK :
+          IDR_AURA_UBER_TRAY_NETWORK_4G_LIGHT);
       break;
     }
     case TYPE_CELLULAR: {
@@ -536,8 +522,8 @@ void NetworkIcon::SetBadges(const Network* network) {
           !cros->IsCellularAlwaysInRoaming()) {
         // For cellular that always in roaming don't show roaming badge.
         bottom_right_badge_ = rb.GetImageSkiaNamed(use_dark_icons ?
-            IDR_STATUSBAR_NETWORK_ROAMING_DARK :
-            IDR_STATUSBAR_NETWORK_ROAMING_LIGHT);
+            IDR_AURA_UBER_TRAY_NETWORK_ROAMING_DARK :
+            IDR_AURA_UBER_TRAY_NETWORK_ROAMING_LIGHT);
       }
       if (!cellular->connecting()) {
         top_left_badge_ = BadgeForNetworkTechnology(cellular,
@@ -548,8 +534,10 @@ void NetworkIcon::SetBadges(const Network* network) {
     default:
       break;
   }
-  if (vpn_connected_ && network->type() != TYPE_VPN)
-    bottom_left_badge_ = rb.GetImageSkiaNamed(IDR_STATUSBAR_VPN_BADGE);
+  if (vpn_connected_ && network->type() != TYPE_VPN) {
+    bottom_left_badge_ = rb.GetImageSkiaNamed(
+        IDR_AURA_UBER_TRAY_NETWORK_VPN_BADGE);
+  }
 }
 
 void NetworkIcon::UpdateIcon(const Network* network) {
@@ -559,9 +547,10 @@ void NetworkIcon::UpdateIcon(const Network* network) {
 }
 
 void NetworkIcon::GenerateImage() {
-  if (icon_.isNull())
-    return;
-
+  if (icon_.isNull()) {
+    set_icon(NetworkMenuIcon::GetDisconnectedImage(
+        NetworkMenuIcon::ARCS, resource_color_theme_));
+  }
   image_ = NetworkMenuIcon::GenerateImageFromComponents(icon_, top_left_badge_,
       top_right_badge_, bottom_left_badge_, bottom_right_badge_);
 }
@@ -620,17 +609,15 @@ NetworkMenuIcon::NetworkMenuIcon(Delegate* delegate, Mode mode)
     : mode_(mode),
       delegate_(delegate),
       resource_color_theme_(COLOR_DARK),
-      ALLOW_THIS_IN_INITIALIZER_LIST(animation_connecting_(this)),
-      connecting_network_(NULL) {
-  // Set up the connection animation throbber.
-  animation_connecting_.SetThrobDuration(kThrobDurationMs);
-  animation_connecting_.SetTweenType(ui::Tween::LINEAR);
-
+      connecting_index_(-1) {
   // Initialize the icon.
   icon_.reset(new NetworkIcon(resource_color_theme_));
 }
 
 NetworkMenuIcon::~NetworkMenuIcon() {
+  // Remove itself from NetworkIconAnimation's observer list just in case
+  // it has been added before and not been removed yet.
+  NetworkIconAnimation::GetInstance()->RemoveObserver(this);
 }
 
 // Public methods:
@@ -650,7 +637,10 @@ bool NetworkMenuIcon::ShouldShowIconInTray() {
 }
 
 const gfx::ImageSkia NetworkMenuIcon::GetIconAndText(string16* text) {
-  SetIconAndText();
+  if (SetIconAndText())
+    NetworkIconAnimation::GetInstance()->AddObserver(this);
+  else
+    NetworkIconAnimation::GetInstance()->RemoveObserver(this);
   if (text)
     *text = text_;
   icon_->GenerateImage();
@@ -658,69 +648,95 @@ const gfx::ImageSkia NetworkMenuIcon::GetIconAndText(string16* text) {
 }
 
 const gfx::ImageSkia NetworkMenuIcon::GetVpnIconAndText(string16* text) {
-  SetVpnIconAndText();
+  if (SetVpnIconAndText())
+    NetworkIconAnimation::GetInstance()->AddObserver(this);
+  else
+    NetworkIconAnimation::GetInstance()->RemoveObserver(this);
   if (text)
     *text = text_;
   icon_->GenerateImage();
   return icon_->GetImage();
 }
 
-void NetworkMenuIcon::AnimationProgressed(const ui::Animation* animation) {
-  if (animation == &animation_connecting_ && delegate_) {
-    // Only update the connecting network from here.
-    if (GetConnectingNetwork() == connecting_network_)
-      delegate_->NetworkMenuIconChanged();
+void NetworkMenuIcon::NetworkIconChanged() {
+  if (!delegate_ || !icon_.get())
+    return;
+  // Only send a message when the icon would change.
+  int connecting_index = GetConnectingIndex();
+  if (connecting_index != connecting_index_) {
+    connecting_index_ = connecting_index;
+    delegate_->NetworkMenuIconChanged();
   }
 }
 
 // Private methods:
 
-// In menu mode, returns any connecting network.
-// In dropdown mode, only returns connecting network if not connected.
+// If disconnected: returns any connecting non-ethernet network.
+// Otherwise, only return a network if the conenction was user initiated.
 const Network* NetworkMenuIcon::GetConnectingNetwork() {
   NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
-  if ((mode_ == MENU_MODE) ||
-      (mode_ == DROPDOWN_MODE && !cros->connected_network())) {
-    const Network* connecting_network = cros->connecting_network();
-    // Only show connecting icon for wireless networks.
-    if (connecting_network && connecting_network->type() != TYPE_ETHERNET) {
-      return connecting_network;
-    }
+  const Network* connecting_network = cros->connecting_network();
+  if (connecting_network &&
+      connecting_network->type() != TYPE_ETHERNET &&
+      (!cros->connected_network() ||
+       connecting_network->connection_started())) {
+    return connecting_network;
   }
   return NULL;
 }
 
 double NetworkMenuIcon::GetAnimation() {
-  if (!animation_connecting_.is_animating()) {
-    animation_connecting_.Reset();
-    animation_connecting_.StartThrobbing(-1 /*throb indefinitely*/);
-    return 0;
-  }
-  return animation_connecting_.GetCurrentValue();
+  return NetworkIconAnimation::GetInstance()->GetAnimation();
 }
 
+int NetworkMenuIcon::GetConnectingIndex() {
+  DCHECK(icon_.get());
+  double animation = GetAnimation();
+  int image_count =
+      (icon_->type() == TYPE_WIFI) ? kNumArcsImages - 1 : kNumBarsImages - 1;
+  int index = animation * nextafter(static_cast<float>(image_count), 0);
+  return std::max(std::min(index, image_count - 1), 0);
+}
+
+
 // TODO(stevenjb): move below SetIconAndText.
-void NetworkMenuIcon::SetConnectingIconAndText() {
-  int image_count;
+void NetworkMenuIcon::SetConnectingIconAndText(
+    const Network* connecting_network) {
+  connecting_network_ = connecting_network;
+  ConnectionType type;
+  ConnectionState state;
+  if (connecting_network_) {
+    type = connecting_network_->type();
+    state = connecting_network_->state();
+    if (mode_ == MENU_MODE) {
+      text_ = l10n_util::GetStringFUTF16(
+          IDS_STATUSBAR_NETWORK_CONNECTING_TOOLTIP,
+          UTF8ToUTF16(connecting_network_->name()));
+    } else {
+      text_ = UTF8ToUTF16(connecting_network_->name());
+    }
+  } else {
+    // When called with no connecting network, cellular is initializing.
+    type = TYPE_CELLULAR;
+    state = STATE_ASSOCIATION;
+    text_ = l10n_util::GetStringUTF16(
+        IDS_ASH_STATUS_TRAY_INITIALIZING_CELLULAR);
+  }
+  icon_->set_type(type);
+  icon_->set_state(state);
+
   ImageType image_type;
   gfx::ImageSkia** images;
-
-  icon_->set_type(connecting_network_->type());
-  icon_->set_state(connecting_network_->state());
-
-  if (connecting_network_->type() == TYPE_WIFI) {
-    image_count = kNumArcsImages - 1;
+  if (type == TYPE_WIFI) {
     image_type = ARCS;
     images = resource_color_theme_ == COLOR_DARK ? kArcsImagesAnimatingDark :
                                                    kArcsImagesAnimatingLight;
   } else {
-    image_count = kNumBarsImages - 1;
     image_type = BARS;
     images = resource_color_theme_ == COLOR_DARK ? kBarsImagesAnimatingDark :
                                                    kBarsImagesAnimatingLight;
   }
-  int index = GetAnimation() * nextafter(static_cast<float>(image_count), 0);
-  index = std::max(std::min(index, image_count - 1), 0);
+  int index = GetConnectingIndex();
 
   // Lazily cache images.
   if (!images[index]) {
@@ -730,31 +746,23 @@ void NetworkMenuIcon::SetConnectingIconAndText() {
         new gfx::ImageSkia(NetworkMenuIcon::GenerateConnectingImage(source));
   }
   icon_->set_icon(*images[index]);
-  icon_->SetBadges(connecting_network_);
-  if (mode_ == MENU_MODE) {
-    text_ = l10n_util::GetStringFUTF16(
-        IDS_STATUSBAR_NETWORK_CONNECTING_TOOLTIP,
-        UTF8ToUTF16(connecting_network_->name()));
-  } else {
-    text_ = UTF8ToUTF16(connecting_network_->name());
-  }
+  if (connecting_network_)
+    icon_->SetBadges(connecting_network_);
 }
 
 // Sets up the icon and badges for GenerateBitmap().
-void NetworkMenuIcon::SetIconAndText() {
+bool NetworkMenuIcon::SetIconAndText() {
   NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
   DCHECK(cros);
 
-  if (cros->wifi_scanning())
-    return;  // Don't update icon while scanning
-
   icon_->ClearIconAndBadges();
 
-  // If we are connecting to a network, display that.
-  connecting_network_ = GetConnectingNetwork();
-  if (connecting_network_) {
-    SetConnectingIconAndText();
-    return;
+  // If we are connecting to a network and it was user-initiated or we are
+  // not connected, display that.
+  const Network* connecting_network = GetConnectingNetwork();
+  if (connecting_network) {
+    SetConnectingIconAndText(connecting_network);
+    return true;
   }
 
   // If not connecting to a network, show the active or connected network.
@@ -762,41 +770,52 @@ void NetworkMenuIcon::SetIconAndText() {
   if (mode_ == DROPDOWN_MODE && cros->connected_network())
     network = cros->connected_network();
   else
-    network = cros->active_network();
-  if (network) {
-    SetActiveNetworkIconAndText(network);
-    return;
-  }
+    network = cros->active_nonvirtual_network();
+  if (network)
+    return SetActiveNetworkIconAndText(network);
 
-  // Not connecting, so stop animation.
-  animation_connecting_.Stop();
+  // If no connected network, check if we are initializing Cellular.
+  if (mode_ != DROPDOWN_MODE && cros->cellular_initializing()) {
+    initialize_state_time_ = base::Time::Now();
+    SetConnectingIconAndText(NULL);
+    return true;
+  }
+  // There can be a delay between leaving the Initializing state and when a
+  // Cellular device shows up, so keep showing the initializing animation
+  // for a few extra seconds to avoid flashing the disconnect icon.
+  const int kInitializingDelaySeconds = 1;
+  base::TimeDelta dtime = base::Time::Now() - initialize_state_time_;
+  if (dtime.InSeconds() < kInitializingDelaySeconds) {
+    SetConnectingIconAndText(NULL);
+    return true;
+  }
 
   // No connecting, connected, or active network.
   SetDisconnectedIconAndText();
+  return false;
 }
 
-void NetworkMenuIcon::SetVpnIconAndText() {
+bool NetworkMenuIcon::SetVpnIconAndText() {
   NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
   DCHECK(cros);
 
   icon_->ClearIconAndBadges();
   const VirtualNetwork* vpn = cros->virtual_network();
   if (!vpn) {
-    NOTREACHED();
+    LOG(WARNING) << "SetVpnIconAndText called with no VPN";
     SetDisconnectedIconAndText();
-    return;
+    return false;
   }
   if (vpn->connecting()) {
-    connecting_network_ = vpn;
-    SetConnectingIconAndText();
-    return;
+    SetConnectingIconAndText(vpn);
+    return true;
   }
 
-  // If not connecting to a network, show the active/connected VPN.
-  SetActiveNetworkIconAndText(vpn);
+  // If not connecting to a VPN, show the active/connected VPN.
+  return SetActiveNetworkIconAndText(vpn);
 }
 
-void NetworkMenuIcon::SetActiveNetworkIconAndText(const Network* network) {
+bool NetworkMenuIcon::SetActiveNetworkIconAndText(const Network* network) {
   NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   bool animating = false;
@@ -809,7 +828,7 @@ void NetworkMenuIcon::SetActiveNetworkIconAndText(const Network* network) {
   if (network->type() != TYPE_VPN &&
       cros->virtual_network() && cros->virtual_network()->connecting()) {
     const gfx::ImageSkia* vpn_badge =
-        rb.GetImageSkiaNamed(IDR_STATUSBAR_VPN_BADGE);
+        rb.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_VPN_BADGE);
     const double animation = GetAnimation();
     animating = true;
     // Even though this is the only place we use vpn_connecting_badge_,
@@ -819,8 +838,6 @@ void NetworkMenuIcon::SetActiveNetworkIconAndText(const Network* network) {
         GetEmptyImage(vpn_badge->size()), *vpn_badge, animation);
     icon_->set_bottom_left_badge(&vpn_connecting_badge_);
   }
-  if (!animating)
-    animation_connecting_.Stop();
 
   // Set the text to display.
   if (network->type() == TYPE_ETHERNET) {
@@ -841,14 +858,17 @@ void NetworkMenuIcon::SetActiveNetworkIconAndText(const Network* network) {
       text_ = UTF8ToUTF16(network->name());
     }
   }
+  return animating;
 }
 
 void NetworkMenuIcon::SetDisconnectedIconAndText() {
   icon_->set_icon(GetDisconnectedImage(ARCS, resource_color_theme_));
-  if (mode_ == MENU_MODE)
-    text_ = l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_NO_NETWORK_TOOLTIP);
-  else
+  if (mode_ == MENU_MODE) {
+    text_ = l10n_util::GetStringUTF16(
+        IDS_ASH_STATUS_TRAY_NETWORK_NOT_CONNECTED);
+  } else {
     text_ = l10n_util::GetStringUTF16(IDS_NETWORK_SELECTION_NONE_SELECTED);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -922,7 +942,8 @@ const gfx::ImageSkia NetworkMenuIcon::GetImage(ImageType type,
       return gfx::ImageSkia();
     images = ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
         color == NetworkMenuIcon::COLOR_DARK ?
-        IDR_STATUSBAR_NETWORK_ARCS_DARK : IDR_STATUSBAR_NETWORK_ARCS_LIGHT);
+        IDR_AURA_UBER_TRAY_NETWORK_ARCS_DARK :
+        IDR_AURA_UBER_TRAY_NETWORK_ARCS_LIGHT);
     width = images->width();
     height = images->height() / kNumArcsImages;
   } else {
@@ -931,7 +952,8 @@ const gfx::ImageSkia NetworkMenuIcon::GetImage(ImageType type,
 
     images = ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
         color == NetworkMenuIcon::COLOR_DARK ?
-        IDR_STATUSBAR_NETWORK_BARS_DARK : IDR_STATUSBAR_NETWORK_BARS_LIGHT);
+        IDR_AURA_UBER_TRAY_NETWORK_BARS_DARK :
+        IDR_AURA_UBER_TRAY_NETWORK_BARS_LIGHT);
     width = images->width();
     height = images->height() / kNumBarsImages;
   }
@@ -952,7 +974,7 @@ const gfx::ImageSkia NetworkMenuIcon::GetConnectedImage(ImageType type,
 
 gfx::ImageSkia* NetworkMenuIcon::GetVirtualNetworkImage() {
   return ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-      IDR_STATUSBAR_VPN);
+      IDR_AURA_UBER_TRAY_NETWORK_VPN);
 }
 
 int NetworkMenuIcon::NumImages(ImageType type) {

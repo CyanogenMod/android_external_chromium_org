@@ -9,48 +9,49 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
+#include "content/public/browser/download_item.h"
 #include "ui/base/models/simple_menu_model.h"
 
-class BaseDownloadItemModel;
-
 namespace content {
-class DownloadItem;
 class PageNavigator;
 }
 
 // This class is responsible for the download shelf context menu. Platform
 // specific subclasses are responsible for creating and running the menu.
-class DownloadShelfContextMenu : public ui::SimpleMenuModel::Delegate {
+//
+// The DownloadItem corresponding to the context menu is observed for removal or
+// destruction.
+class DownloadShelfContextMenu : public ui::SimpleMenuModel::Delegate,
+                                 public content::DownloadItem::Observer {
  public:
   enum ContextMenuCommands {
-    SHOW_IN_FOLDER = 1,  // Open a file explorer window with the item selected.
-    OPEN_WHEN_COMPLETE,  // Open the download when it's finished.
-    ALWAYS_OPEN_TYPE,    // Default this file extension to always open.
-    CANCEL,              // Cancel the download.
-    TOGGLE_PAUSE,        // Temporarily pause a download.
-    DISCARD,             // Discard the malicious download.
-    KEEP,                // Keep the malicious download.
-    LEARN_MORE,          // Show information about download scanning.
-    MENU_LAST
+    SHOW_IN_FOLDER = 1,    // Open a folder view window with the item selected.
+    OPEN_WHEN_COMPLETE,    // Open the download when it's finished.
+    ALWAYS_OPEN_TYPE,      // Default this file extension to always open.
+    CANCEL,                // Cancel the download.
+    TOGGLE_PAUSE,          // Temporarily pause a download.
+    DISCARD,               // Discard the malicious download.
+    KEEP,                  // Keep the malicious download.
+    LEARN_MORE_SCANNING,   // Show information about download scanning.
+    LEARN_MORE_INTERRUPTED,// Show information about interrupted downloads.
   };
 
   virtual ~DownloadShelfContextMenu();
 
   content::DownloadItem* download_item() const { return download_item_; }
-  void set_download_item(content::DownloadItem* item) { download_item_ = item; }
 
  protected:
-  DownloadShelfContextMenu(BaseDownloadItemModel* download_model,
+  DownloadShelfContextMenu(content::DownloadItem* download_item,
                            content::PageNavigator* navigator);
 
-  // Returns the correct menu model depending whether the download item is
-  // completed or not.
+  // Returns the correct menu model depending on the state of the download item.
+  // Returns NULL if the download was destroyed.
   ui::SimpleMenuModel* GetMenuModel();
 
   // ui::SimpleMenuModel::Delegate:
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
   virtual bool GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
@@ -58,18 +59,24 @@ class DownloadShelfContextMenu : public ui::SimpleMenuModel::Delegate {
   virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE;
 
  private:
+  // Detaches self from |download_item_|. Called when the DownloadItem is
+  // destroyed or when this object is being destroyed.
+  void DetachFromDownloadItem();
+
+  // content::DownloadItem::Observer
+  virtual void OnDownloadDestroyed(content::DownloadItem* download) OVERRIDE;
+
   ui::SimpleMenuModel* GetInProgressMenuModel();
   ui::SimpleMenuModel* GetFinishedMenuModel();
+  ui::SimpleMenuModel* GetInterruptedMenuModel();
   ui::SimpleMenuModel* GetMaliciousMenuModel();
 
   // We show slightly different menus if the download is in progress vs. if the
   // download has finished.
   scoped_ptr<ui::SimpleMenuModel> in_progress_download_menu_model_;
   scoped_ptr<ui::SimpleMenuModel> finished_download_menu_model_;
+  scoped_ptr<ui::SimpleMenuModel> interrupted_download_menu_model_;
   scoped_ptr<ui::SimpleMenuModel> malicious_download_menu_model_;
-
-  // A model to control the cancel behavior.
-  BaseDownloadItemModel* download_model_;
 
   // Information source.
   content::DownloadItem* download_item_;

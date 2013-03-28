@@ -11,9 +11,9 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -21,22 +21,28 @@
 class Browser;
 template<typename T>
 struct DefaultSingletonTraits;
+class ManagedModeSiteList;
 class ManagedModeURLFilter;
-class PrefService;
+class PrefChangeRegistrar;
+class PrefRegistrySimple;
+class PrefRegistrySyncable;
 class Profile;
 
-// Managed mode allows one person to manage the Chrome experience for another
-// person by pre-configuring and then locking a managed User profile.
+namespace policy {
+class URLBlacklist;
+}
+
+// Managed mode locks the UI to a certain managed user profile, preventing the
+// user from accessing other profiles.
 // The ManagedMode class provides methods to check whether the browser is in
 // managed mode, and to attempt to enter or leave managed mode.
 // Except where otherwise noted, this class should be used on the UI thread.
 class ManagedMode : public chrome::BrowserListObserver,
-                    public extensions::ManagementPolicy::Provider,
                     public content::NotificationObserver {
  public:
   typedef base::Callback<void(bool)> EnterCallback;
 
-  static void RegisterPrefs(PrefService* prefs);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // Initializes the singleton, setting the managed_profile_. Must be called
   // after g_browser_process and the LocalState have been created.
@@ -47,16 +53,6 @@ class ManagedMode : public chrome::BrowserListObserver,
   // sucessfully.
   static void EnterManagedMode(Profile* profile, const EnterCallback& callback);
   static void LeaveManagedMode();
-
-  // Returns the URL filter. This method should only be called on the IO thread.
-  static const ManagedModeURLFilter* GetURLFilter();
-
-  // ExtensionManagementPolicy::Provider implementation:
-  virtual std::string GetDebugPolicyProviderName() const OVERRIDE;
-  virtual bool UserMayLoad(const extensions::Extension* extension,
-                           string16* error) const OVERRIDE;
-  virtual bool UserMayModifySettings(const extensions::Extension* extension,
-                                     string16* error) const OVERRIDE;
 
   // chrome::BrowserListObserver implementation:
   virtual void OnBrowserAdded(Browser* browser) OVERRIDE;
@@ -76,26 +72,18 @@ class ManagedMode : public chrome::BrowserListObserver,
   Profile* managed_profile_;
 
  private:
-  class URLFilterContext;
-
   friend class Singleton<ManagedMode, LeakySingletonTraits<ManagedMode> >;
   friend struct DefaultSingletonTraits<ManagedMode>;
   FRIEND_TEST_ALL_PREFIXES(ExtensionApiTest, ManagedModeOnChange);
   FRIEND_TEST_ALL_PREFIXES(ExtensionServiceTest,
                            ManagedModeProhibitsModification);
+  FRIEND_TEST_ALL_PREFIXES(ManagedModeContentPackTest, InstallContentPacks);
 
   static ManagedMode* GetInstance();
 
   virtual void InitImpl(Profile* profile);
 
-  // Internal implementation for ExtensionManagementPolicy::Delegate methods.
-  // If |error| is not NULL, it will be filled with an error message if the
-  // requested extension action (install, modify status, etc.) is not permitted.
-  bool ExtensionManagementPolicyImpl(string16* error) const;
-
   void LeaveManagedModeImpl();
-
-  const ManagedModeURLFilter* GetURLFilterImpl();
 
   void FinalizeEnter(bool result);
 
@@ -113,12 +101,7 @@ class ManagedMode : public chrome::BrowserListObserver,
   // testing).
   virtual void SetInManagedMode(Profile* newly_managed_profile);
 
-  void UpdateWhitelist();
-
   content::NotificationRegistrar registrar_;
-
-  scoped_ptr<URLFilterContext> url_filter_context_;
-
   std::set<Browser*> browsers_to_close_;
   std::vector<EnterCallback> callbacks_;
 

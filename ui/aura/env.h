@@ -9,7 +9,6 @@
 #include "base/message_loop.h"
 #include "base/observer_list.h"
 #include "ui/aura/aura_export.h"
-#include "ui/aura/client/stacking_client.h"
 #include "ui/base/events/event_handler.h"
 #include "ui/base/events/event_target.h"
 #include "ui/gfx/point.h"
@@ -20,13 +19,8 @@
 
 namespace aura {
 class EnvObserver;
-class EventFilter;
-class DisplayManager;
+class RootWindow;
 class Window;
-
-namespace internal {
-class DisplayChangeObserverX11;
-}
 
 #if !defined(USE_X11)
 // Creates a platform-specific native event dispatcher.
@@ -54,12 +48,9 @@ class AURA_EXPORT Env : public ui::EventTarget {
   // Gets/sets the last mouse location seen in a mouse event in the screen
   // coordinates.
   const gfx::Point& last_mouse_location() const { return last_mouse_location_; }
-  void SetLastMouseLocation(const Window& window,
-                            const gfx::Point& location_in_root);
-
-  // If |cursor_shown| is false, sets the last_mouse_position to an invalid
-  // location. If |cursor_shown| is true, restores the last_mouse_position.
-  void SetCursorShown(bool cursor_shown);
+  void set_last_mouse_location(const gfx::Point& last_mouse_location) {
+    last_mouse_location_ = last_mouse_location;
+  }
 
   // Whether any touch device is currently down.
   bool is_touch_down() const { return is_touch_down_; }
@@ -72,16 +63,6 @@ class AURA_EXPORT Env : public ui::EventTarget {
   bool render_white_bg() const { return render_white_bg_; }
   void set_render_white_bg(bool value) { render_white_bg_ = value; }
 
-  client::StackingClient* stacking_client() { return stacking_client_; }
-  void set_stacking_client(client::StackingClient* stacking_client) {
-    stacking_client_ = stacking_client;
-  }
-
-  // Gets/sets DisplayManager. The DisplayManager's ownership is
-  // transfered.
-  DisplayManager* display_manager() { return display_manager_.get(); }
-  void SetDisplayManager(DisplayManager* display_manager);
-
   // Returns the native event dispatcher. The result should only be passed to
   // base::RunLoop(dispatcher), or used to dispatch an event by
   // |Dispatch(const NativeEvent&)| on it. It must never be stored.
@@ -89,16 +70,23 @@ class AURA_EXPORT Env : public ui::EventTarget {
   MessageLoop::Dispatcher* GetDispatcher();
 #endif
 
+  // Invoked by RootWindow when its host is activated.
+  void RootWindowActivated(RootWindow* root_window);
+
  private:
   friend class Window;
+  friend class RootWindow;
 
   void Init();
 
   // Called by the Window when it is initialized. Notifies observers.
   void NotifyWindowInitialized(Window* window);
 
+  // Called by the RootWindow when it is initialized. Notifies observers.
+  void NotifyRootWindowInitialized(RootWindow* root_window);
+
   // Overridden from ui::EventTarget:
-  virtual bool CanAcceptEvents() OVERRIDE;
+  virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
   virtual ui::EventTarget* GetParentTarget() OVERRIDE;
 
   ObserverList<EnvObserver> observers_;
@@ -110,16 +98,10 @@ class AURA_EXPORT Env : public ui::EventTarget {
   int mouse_button_flags_;
   // Location of last mouse event, in screen coordinates.
   gfx::Point last_mouse_location_;
-  // If the cursor is hidden, saves the previous last_mouse_position.
-  gfx::Point hidden_cursor_location_;
-  bool is_cursor_hidden_;
   bool is_touch_down_;
   bool render_white_bg_;
-  client::StackingClient* stacking_client_;
-  scoped_ptr<DisplayManager> display_manager_;
 
 #if defined(USE_X11)
-  scoped_ptr<internal::DisplayChangeObserverX11> display_change_observer_;
   DeviceListUpdaterAuraX11 device_list_updater_aurax11_;
 #endif
 

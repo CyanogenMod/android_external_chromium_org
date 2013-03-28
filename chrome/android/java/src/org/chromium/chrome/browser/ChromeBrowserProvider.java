@@ -17,13 +17,11 @@ import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Looper;
-import android.os.Message;
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.os.Parcelable.Creator;
 import android.preference.PreferenceManager;
 import android.provider.BaseColumns;
 import android.provider.Browser;
@@ -31,6 +29,8 @@ import android.provider.Browser.BookmarkColumns;
 import android.provider.Browser.SearchColumns;
 import android.text.TextUtils;
 import android.util.Log;
+
+import com.google.common.annotations.VisibleForTesting;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.CalledByNativeUnchecked;
@@ -51,6 +51,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class ChromeBrowserProvider extends ContentProvider {
     private static final String TAG = "ChromeBrowserProvider";
+
+    // The permission required for using the bookmark folders API. Android build system does
+    // not generate Manifest.java for java libraries, hence use the permission name string. When
+    // making changes to this permission, also update the permission in AndroidManifest.xml.
+    private static final String
+            PERMISSION_READ_WRITE_BOOKMARKS = "com.android.chrome.READ_WRITE_BOOKMARK_FOLDERS";
 
     // Defines the API methods that the Client can call by name.
     static final String CLIENT_API_BOOKMARK_NODE_EXISTS = "BOOKMARK_NODE_EXISTS";
@@ -241,7 +247,7 @@ public class ChromeBrowserProvider extends ContentProvider {
     private Cursor getBookmarkHistorySuggestions(String selection, String[] selectionArgs,
             String sortOrder, boolean excludeHistory) {
         boolean matchTitles = false;
-        Vector<String> args = new Vector();
+        Vector<String> args = new Vector<String>();
         String like = selectionArgs[0] + "%";
         if (selectionArgs[0].startsWith("http") || selectionArgs[0].startsWith("file")) {
             args.add(like);
@@ -664,6 +670,11 @@ public class ChromeBrowserProvider extends ContentProvider {
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
+        // TODO(shashishekhar): Refactor this code into a separate class.
+
+        // Caller must have the READ_WRITE_BOOKMARK_FOLDERS permission.
+        getContext().enforcePermission(PERMISSION_READ_WRITE_BOOKMARKS, Binder.getCallingPid(),
+                                       Binder.getCallingUid(), TAG);
         if (isInUiThread()) return null;
         if (!ensureNativeChromeLoaded()) return null;
         if (method == null || extras == null) return null;
@@ -727,8 +738,7 @@ public class ChromeBrowserProvider extends ContentProvider {
         private byte[] mThumbnail;
 
         /** Used to pass structured data back from the native code. */
-        // TODO(leandrogracia): remove public when VisibleForTesting works.
-        // @VisibleForTesting
+        @VisibleForTesting
         public BookmarkNode(long id, Type type, String name, String url, BookmarkNode parent) {
             mId = id;
             mName = name;
@@ -792,8 +802,7 @@ public class ChromeBrowserProvider extends ContentProvider {
          * <p>
          * Used solely by the native code.
          */
-        // TODO(leandrogracia): remove public when VisibleForTesting works.
-        // @VisibleForTesting
+        @VisibleForTesting
         @CalledByNativeUnchecked("BookmarkNode")
         public void addChild(BookmarkNode child) {
             mChildren.add(child);
@@ -843,14 +852,12 @@ public class ChromeBrowserProvider extends ContentProvider {
             return new BookmarkNode(id, Type.values()[type], name, url, parent);
         }
 
-        // TODO(leandrogracia): remove public when VisibleForTesting works.
-        // @VisibleForTesting
+        @VisibleForTesting
         public void setFavicon(byte[] favicon) {
             mFavicon = favicon;
         }
 
-        // TODO(leandrogracia): remove public when VisibleForTesting works.
-        // @VisibleForTesting
+        @VisibleForTesting
         public void setThumbnail(byte[] thumbnail) {
             mThumbnail = thumbnail;
         }
@@ -869,8 +876,7 @@ public class ChromeBrowserProvider extends ContentProvider {
             getHierarchyRoot().writeNodeContentsRecursive(dest);
         }
 
-        // TODO(leandrogracia): remove public when VisibleForTesting works.
-        // @VisibleForTesting
+        @VisibleForTesting
         public BookmarkNode getHierarchyRoot() {
             BookmarkNode root = this;
             while (root.parent() != null) {

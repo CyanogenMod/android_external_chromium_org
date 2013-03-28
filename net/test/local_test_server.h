@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,17 +27,38 @@ class LocalTestServer : public BaseTestServer {
   // |document_root| must be a relative path under the root tree.
   LocalTestServer(Type type,
                   const std::string& host,
-                  const FilePath& document_root);
+                  const base::FilePath& document_root);
 
   // Initialize a TestServer with a specific set of SSLOptions.
   // |document_root| must be a relative path under the root tree.
   LocalTestServer(Type type,
                   const SSLOptions& ssl_options,
-                  const FilePath& document_root);
+                  const base::FilePath& document_root);
 
   virtual ~LocalTestServer();
 
+  // Start the test server and block until it's ready. Returns true on success.
   bool Start() WARN_UNUSED_RESULT;
+
+  // Start the test server without blocking. Use this if you need multiple test
+  // servers (such as WebSockets and HTTP, or HTTP and HTTPS). You must call
+  // BlockUntilStarted on all servers your test requires before executing the
+  // test. For example:
+  //
+  //   // Start the servers in parallel.
+  //   ASSERT_TRUE(http_server.StartInBackground());
+  //   ASSERT_TRUE(websocket_server.StartInBackground());
+  //   // Wait for both servers to be ready.
+  //   ASSERT_TRUE(http_server.BlockUntilStarted());
+  //   ASSERT_TRUE(websocket_server.BlockUntilStarted());
+  //   RunMyTest();
+  //
+  // Returns true on success.
+  bool StartInBackground() WARN_UNUSED_RESULT;
+
+  // Block until ths test server is ready. Returns true on success. See
+  // StartInBackground() documentation for more information.
+  bool BlockUntilStarted() WARN_UNUSED_RESULT;
 
   // Stop the server started by Start().
   bool Stop();
@@ -45,18 +66,9 @@ class LocalTestServer : public BaseTestServer {
   // Modify PYTHONPATH to contain libraries we need.
   virtual bool SetPythonPath() const WARN_UNUSED_RESULT;
 
-  // This is a static version so that RunSyncTest in run_testserver.cc can use
-  // it.
-  // TODO(mattm): We should refactor so this isn't necessary (crbug.com/159731).
-  static bool SetPythonPathStatic() WARN_UNUSED_RESULT;
-
-  // Returns true if successfully stored the FilePath for the directory of the
-  // testserver python script in |*directory|.
-  static bool GetTestServerDirectory(FilePath* directory) WARN_UNUSED_RESULT;
-
-  // Returns true if successfully stored the FilePath for the testserver python
-  // script in |*testserver_path|.
-  virtual bool GetTestServerPath(FilePath* testserver_path) const
+  // Returns true if the base::FilePath for the testserver python script is
+  // successfully stored  in |*testserver_path|.
+  virtual bool GetTestServerPath(base::FilePath* testserver_path) const
       WARN_UNUSED_RESULT;
 
   // Adds the command line arguments for the Python test server to
@@ -66,13 +78,13 @@ class LocalTestServer : public BaseTestServer {
 
   // Returns the actual path of document root for test cases. This function
   // should be called by test cases to retrieve the actual document root path.
-  FilePath GetDocumentRoot() const { return document_root(); };
+  base::FilePath GetDocumentRoot() const { return document_root(); };
 
  private:
-  bool Init(const FilePath& document_root);
+  bool Init(const base::FilePath& document_root);
 
   // Launches the Python test server. Returns true on success.
-  bool LaunchPython(const FilePath& testserver_path) WARN_UNUSED_RESULT;
+  bool LaunchPython(const base::FilePath& testserver_path) WARN_UNUSED_RESULT;
 
   // Waits for the server to start. Returns true on success.
   bool WaitToStart() WARN_UNUSED_RESULT;

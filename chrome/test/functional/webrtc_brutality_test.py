@@ -3,6 +3,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import platform
+
 import pyauto_functional
 import webrtc_test_base
 
@@ -20,12 +22,10 @@ class WebrtcBrutalityTest(webrtc_test_base.WebrtcTestBase):
     The test will make repeated getUserMedia requests with refreshes between
     them. Sometimes it will click past the bar and then refresh.
     """
-    url = self.GetFileURLForDataPath('webrtc', 'webrtc_jsep01_test.html')
-    self.NavigateToURL(url)
-
+    self.LoadTestPageInOneTab()
     for i in range(1, 100):
       if i % 10 == 0:
-        self.GetUserMedia(tab_index=0, action='allow')
+        self.GetUserMedia(tab_index=0, action='accept')
       else:
         self._GetUserMediaWithoutTakingAction(tab_index=0)
       self.ReloadTab(tab_index=0)
@@ -35,37 +35,32 @@ class WebrtcBrutalityTest(webrtc_test_base.WebrtcTestBase):
 
     The test will alternate unanswered requests with requests that get answered.
     """
-    url = self.GetFileURLForDataPath('webrtc', 'webrtc_jsep01_test.html')
-    self.NavigateToURL(url)
-
+    if platform.system() == 'Windows' and platform.release() == 'XP':
+      print 'Skipping this test on Windows XP due to flakiness.'
+      return
+    self.LoadTestPageInOneTab()
     for i in range(1, 100):
       if i % 10 == 0:
-        self.GetUserMedia(tab_index=0, action='allow')
+        self.GetUserMedia(tab_index=0, action='accept')
       else:
         self._GetUserMediaWithoutTakingAction(tab_index=0)
 
   def testSuccessfulGetUserMediaAndThenReload(self):
     """Waits for WebRTC to respond, and immediately reloads the tab."""
-    url = self.GetFileURLForDataPath('webrtc', 'webrtc_jsep01_test.html')
-    self.NavigateToURL(url)
-
-    self.GetUserMedia(tab_index=0, action='allow')
+    self.LoadTestPageInOneTab()
+    self.GetUserMedia(tab_index=0, action='accept')
     self.ReloadTab(tab_index=0)
 
   def testClosingTabAfterGetUserMedia(self):
     """Tests closing the tab right after a getUserMedia call."""
-    url = self.GetFileURLForDataPath('webrtc', 'webrtc_jsep01_test.html')
-    self.NavigateToURL(url)
-
+    self.LoadTestPageInOneTab()
     self._GetUserMediaWithoutTakingAction(tab_index=0)
     self.CloseTab(tab_index=0)
 
   def testSuccessfulGetUserMediaAndThenClose(self):
     """Waits for WebRTC to respond, and closes the tab."""
-    url = self.GetFileURLForDataPath('webrtc', 'webrtc_jsep01_test.html')
-    self.NavigateToURL(url)
-
-    self.GetUserMedia(tab_index=0, action='allow')
+    self.LoadTestPageInOneTab()
+    self.GetUserMedia(tab_index=0, action='accept')
     self.CloseTab(tab_index=0)
 
   def _GetUserMediaWithoutTakingAction(self, tab_index):

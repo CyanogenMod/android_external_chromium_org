@@ -17,13 +17,11 @@
 #include "chrome/browser/google_apis/drive_entry_kinds.h"
 #include "googleurl/src/gurl.h"
 
-class FilePath;
-class Profile;
-class XmlReader;
-
 namespace base {
-class Value;
+class FilePath;
 class DictionaryValue;
+class Value;
+
 template <class StructType>
 class JSONValueConverter;
 
@@ -80,9 +78,6 @@ class Link {
   // this class.
   static void RegisterJSONConverter(base::JSONValueConverter<Link>* converter);
 
-  // Creates document entry from parsed XML.
-  static Link* CreateFromXml(XmlReader* xml_reader);
-
   // Type of the link.
   LinkType type() const { return type_; }
 
@@ -90,7 +85,7 @@ class Link {
   const GURL& href() const { return href_; }
 
   // Title of the link.
-  const string16& title() const { return title_; }
+  const std::string& title() const { return title_; }
 
   // For OPEN_WITH links, this contains the application ID. For all other link
   // types, it is the empty string.
@@ -99,8 +94,14 @@ class Link {
   // Link MIME type.
   const std::string& mime_type() const { return mime_type_; }
 
+  void set_type(LinkType type) { type_ = type; }
+  void set_href(const GURL& href) { href_ = href; }
+  void set_title(const std::string& title) { title_ = title; }
+  void set_app_id(const std::string& app_id) { app_id_ = app_id; }
+  void set_mime_type(const std::string& mime_type) { mime_type_ = mime_type; }
+
  private:
-  friend class DocumentEntry;
+  friend class ResourceEntry;
   // Converts value of link.rel into LinkType. Outputs to |type| and returns
   // true when |rel| has a valid value. Otherwise does nothing and returns
   // false.
@@ -113,7 +114,7 @@ class Link {
 
   LinkType type_;
   GURL href_;
-  string16 title_;
+  std::string title_;
   std::string app_id_;
   std::string mime_type_;
 
@@ -122,40 +123,41 @@ class Link {
 
 // Feed links define links (URLs) to special list of entries (i.e. list of
 // previous document revisions).
-class FeedLink {
+class ResourceLink {
  public:
-  enum FeedLinkType {
+  enum ResourceLinkType {
     FEED_LINK_UNKNOWN,
     FEED_LINK_ACL,
     FEED_LINK_REVISIONS,
   };
-  FeedLink();
+  ResourceLink();
 
   // Registers the mapping between JSON field names and the members in
   // this class.
   static void RegisterJSONConverter(
-      base::JSONValueConverter<FeedLink>* converter);
-
-  static FeedLink* CreateFromXml(XmlReader* xml_reader);
+      base::JSONValueConverter<ResourceLink>* converter);
 
   // MIME type of the feed.
-  FeedLinkType type() const { return type_; }
+  ResourceLinkType type() const { return type_; }
 
   // URL of the feed.
   const GURL& href() const { return href_; }
 
+  void set_type(ResourceLinkType type) { type_ = type; }
+  void set_href(const GURL& href) { href_ = href; }
+
  private:
-  friend class DocumentEntry;
-  // Converts value of gd$feedLink.rel into FeedLinkType enum.
+  friend class ResourceEntry;
+  // Converts value of gd$feedLink.rel into ResourceLinkType enum.
   // Outputs to |result| and returns true when |rel| has a valid
   // value.  Otherwise does nothing and returns false.
   static bool GetFeedLinkType(
-      const base::StringPiece& rel, FeedLinkType* result);
+      const base::StringPiece& rel, ResourceLinkType* result);
 
-  FeedLinkType type_;
+  ResourceLinkType type_;
   GURL href_;
 
-  DISALLOW_COPY_AND_ASSIGN(FeedLink);
+  DISALLOW_COPY_AND_ASSIGN(ResourceLink);
 };
 
 // Author represents an author of an entity.
@@ -168,16 +170,17 @@ class Author {
   static void RegisterJSONConverter(
       base::JSONValueConverter<Author>* converter);
 
-  static Author* CreateFromXml(XmlReader* xml_reader);
-
   // Getters.
-  const string16& name() const { return name_; }
+  const std::string& name() const { return name_; }
   const std::string& email() const { return email_; }
 
- private:
-  friend class DocumentEntry;
+  void set_name(const std::string& name) { name_ = name; }
+  void set_email(const std::string& email) { email_ = email; }
 
-  string16 name_;
+ private:
+  friend class ResourceEntry;
+
+  std::string name_;
   std::string email_;
 
   DISALLOW_COPY_AND_ASSIGN(Author);
@@ -200,10 +203,8 @@ class Category {
   static void RegisterJSONConverter(
       base::JSONValueConverter<Category>* converter);
 
-  static Category* CreateFromXml(XmlReader* xml_reader);
-
   // Category label.
-  const string16& label() const { return label_; }
+  const std::string& label() const { return label_; }
 
   // Category type.
   CategoryType type() const { return type_; }
@@ -211,8 +212,12 @@ class Category {
   // Category term.
   const std::string& term() const { return term_; }
 
+  void set_label(const std::string& label) { label_ = label; }
+  void set_type(CategoryType type) { type_ = type; }
+  void set_term(const std::string& term) { term_ = term; }
+
  private:
-  friend class DocumentEntry;
+  friend class ResourceEntry;
   // Converts category scheme into CategoryType enum. For example,
   // http://schemas.google.com/g/2005#kind => Category::CATEGORY_KIND
   // Returns false and does not change |result| when |scheme| has an
@@ -220,14 +225,14 @@ class Category {
   static bool GetCategoryTypeFromScheme(
       const base::StringPiece& scheme, CategoryType* result);
 
-  string16 label_;
+  std::string label_;
   CategoryType type_;
   std::string term_;
 
   DISALLOW_COPY_AND_ASSIGN(Category);
 };
 
-// Content details of a document: mime-type, url, and so on.
+// Content details of a resource: mime-type, url, and so on.
 class Content {
  public:
   Content();
@@ -237,13 +242,18 @@ class Content {
   static void RegisterJSONConverter(
       base::JSONValueConverter<Content>* converter);
 
-  static Content* CreateFromXml(XmlReader* xml_reader);
-
+  // The URL to download the file content.
+  // Note that the url can expire, so we'll fetch the latest resource
+  // entry before starting a download to get the download URL. See also
+  // DriveFileSystem::OnGetFileFromCache for details.
   const GURL& url() const { return url_; }
   const std::string& mime_type() const { return mime_type_; }
 
+  void set_url(const GURL& url) { url_ = url; }
+  void set_mime_type(const std::string& mime_type) { mime_type_ = mime_type; }
+
  private:
-  friend class DocumentEntry;
+  friend class ResourceEntry;
 
   GURL url_;
   std::string mime_type_;
@@ -284,6 +294,12 @@ class AppIcon {
   // icon URL found in the list.
   GURL GetIconURL() const;
 
+  void set_category(IconCategory category) { category_ = category; }
+  void set_icon_side_length(int icon_side_length) {
+    icon_side_length_ = icon_side_length;
+  }
+  void set_links(ScopedVector<Link>* links) { links_.swap(*links); }
+
  private:
   // Extracts the icon category from the given string. Returns false and does
   // not change |result| when |scheme| has an unrecognizable value.
@@ -297,11 +313,12 @@ class AppIcon {
   DISALLOW_COPY_AND_ASSIGN(AppIcon);
 };
 
-// Base class for feed entries.
-class FeedEntry {
+// Base class for feed entries. This class defines fields commonly used by
+// various feeds.
+class CommonMetadata {
  public:
-  FeedEntry();
-  virtual ~FeedEntry();
+  CommonMetadata();
+  virtual ~CommonMetadata();
 
   // Returns a link of a given |type| for this entry. If not found, it returns
   // NULL.
@@ -318,29 +335,47 @@ class FeedEntry {
 
   // List of entry links.
   const ScopedVector<Link>& links() const { return links_; }
+  ScopedVector<Link>* mutable_links() { return &links_; }
 
   // List of entry categories.
   const ScopedVector<Category>& categories() const { return categories_; }
 
-  // Registers the mapping between JSON field names and the members in
-  // this class.
-  static void RegisterJSONConverter(
-      base::JSONValueConverter<FeedEntry>* converter);
+  void set_etag(const std::string& etag) { etag_ = etag; }
+  void set_authors(ScopedVector<Author>* authors) {
+    authors_.swap(*authors);
+  }
+  void set_links(ScopedVector<Link>* links) {
+    links_.swap(*links);
+  }
+  void set_categories(ScopedVector<Category>* categories) {
+    categories_.swap(*categories);
+  }
+  void set_updated_time(const base::Time& updated_time) {
+    updated_time_ = updated_time;
+  }
 
  protected:
+  // Registers the mapping between JSON field names and the members in
+  // this class.
+  template<typename CommonMetadataDescendant>
+  static void RegisterJSONConverter(
+      base::JSONValueConverter<CommonMetadataDescendant>* converter);
+
   std::string etag_;
   ScopedVector<Author> authors_;
   ScopedVector<Link> links_;
   ScopedVector<Category> categories_;
   base::Time updated_time_;
 
-  DISALLOW_COPY_AND_ASSIGN(FeedEntry);
+  DISALLOW_COPY_AND_ASSIGN(CommonMetadata);
 };
 
-// Document feed entry.
-class DocumentEntry : public FeedEntry {
+// This class represents a resource entry. A resource is a generic term which
+// refers to a file and a directory.
+class ResourceEntry : public CommonMetadata {
  public:
-  virtual ~DocumentEntry();
+  ResourceEntry();
+  virtual ~ResourceEntry();
 
   // Extracts "entry" dictionary from the JSON value, and parse the contents,
   // using CreateFrom(). Returns NULL on failure. The input JSON data, coming
@@ -353,25 +388,22 @@ class DocumentEntry : public FeedEntry {
   // }
   //
   // The caller should delete the returned object.
-  static scoped_ptr<DocumentEntry> ExtractAndParse(const base::Value& value);
+  static scoped_ptr<ResourceEntry> ExtractAndParse(const base::Value& value);
 
-  // Creates document entry from parsed JSON Value.  You should call
+  // Creates resource entry from parsed JSON Value.  You should call
   // this instead of instantiating JSONValueConverter by yourself
   // because this method does some post-process for some fields.  See
   // FillRemainingFields comment and implementation for the details.
-  static scoped_ptr<DocumentEntry> CreateFrom(const base::Value& value);
+  static scoped_ptr<ResourceEntry> CreateFrom(const base::Value& value);
 
-  // Creates document entry from parsed XML.
-  static scoped_ptr<DocumentEntry> CreateFromXml(XmlReader* xml_reader);
-
-  // Creates document entry from FileResource.
+  // Creates resource entry from FileResource.
   // TODO(kochi): This should go away soon. http://crbug.com/142293
-  static scoped_ptr<DocumentEntry> CreateFromFileResource(
+  static scoped_ptr<ResourceEntry> CreateFromFileResource(
       const FileResource& file);
 
-  // Creates document entry from ChangeResource.
+  // Creates resource entry from ChangeResource.
   // Todo(Kochi): This should go away soon. http://crbug.com/142293
-  static scoped_ptr<DocumentEntry> CreateFromChangeResource(
+  static scoped_ptr<ResourceEntry> CreateFromChangeResource(
       const ChangeResource& change);
 
   // Returns name of entry node.
@@ -380,61 +412,68 @@ class DocumentEntry : public FeedEntry {
   // Registers the mapping between JSON field names and the members in
   // this class.
   static void RegisterJSONConverter(
-      base::JSONValueConverter<DocumentEntry>* converter);
+      base::JSONValueConverter<ResourceEntry>* converter);
 
-  // Helper function for parsing bool fields based on presence of
-  // their value nodes.
+  // Sets true to |result| if the field exists.
+  // Always returns true even when the field does not exist.
   static bool HasFieldPresent(const base::Value* value, bool* result);
 
-  // Returns true if |file| has one of the hosted document extensions.
-  static bool HasHostedDocumentExtension(const FilePath& file);
+  // Parses |value| as int64 and sets it to |result|. If the field does not
+  // exist, sets 0 to |result| as default value.
+  // Returns true if |value| is NULL or it is parsed as int64 successfully.
+  static bool ParseChangestamp(const base::Value* value, int64* result);
 
-  // Document entry resource id.
+  // Returns true if |file| has one of the hosted document extensions.
+  static bool HasHostedDocumentExtension(const base::FilePath& file);
+
+  // The resource ID is used to identify a resource, which looks like:
+  // file:d41d8cd98f00b204e9800998ecf8
   const std::string& resource_id() const { return resource_id_; }
 
-  // Document entry id.
+  // This is a URL looks like:
+  // https://docs.google.com/feeds/id/file%3Ad41d8cd98f00b204e9800998ecf8.
+  // The URL is currently not used.
   const std::string& id() const { return id_; }
 
-  // Document entry kind.
   DriveEntryKind kind() const { return kind_; }
-
-  // Document entry title.
-  const string16& title() const { return title_; }
-
-  // Document entry published time.
+  const std::string& title() const { return title_; }
   base::Time published_time() const { return published_time_; }
-
-  // Document entry last viewed time.
   base::Time last_viewed_time() const { return last_viewed_time_; }
+  const std::vector<std::string>& labels() const { return labels_; }
 
-  // List of document feed labels.
-  const std::vector<string16>& labels() const { return labels_; }
+  // The URL to download a file content.
+  // Search for 'download_url' in gdata_wapi_operations.h for details.
+  const GURL& download_url() const { return content_.url(); }
 
-  // Document entry content URL.
-  const GURL& content_url() const { return content_.url(); }
-
-  // Document entry MIME type.
   const std::string& content_mime_type() const { return content_.mime_type(); }
 
-  // List of document feed links.
-  const ScopedVector<FeedLink>& feed_links() const { return feed_links_; }
+  // The resource links contain extra links for revisions and access control,
+  // etc.  Note that links() contain more basic links like edit URL,
+  // alternative URL, etc.
+  const ScopedVector<ResourceLink>& resource_links() const {
+    return resource_links_;
+  }
 
-  // Document feed file name (exists only for kinds FILE and PDF).
-  const string16& filename() const { return filename_; }
+  // File name (exists only for kinds FILE and PDF).
+  const std::string& filename() const { return filename_; }
 
-  // Document feed suggested file name (exists only for kinds FILE and PDF).
-  const string16& suggested_filename() const { return suggested_filename_; }
+  // Suggested file name (exists only for kinds FILE and PDF).
+  const std::string& suggested_filename() const { return suggested_filename_; }
 
-  // Document feed file content MD5 (exists only for kinds FILE and PDF).
+  // File content MD5 (exists only for kinds FILE and PDF).
   const std::string& file_md5() const { return file_md5_; }
 
-  // Document feed file size (exists only for kinds FILE and PDF).
+  // File size (exists only for kinds FILE and PDF).
   int64 file_size() const { return file_size_; }
 
-  // True if the file or directory is deleted (applicable to change feeds only).
+  // True if the file or directory is deleted (applicable to change list only).
   bool deleted() const { return deleted_ || removed_; }
 
-  // Text version of document entry kind. Returns an empty string for
+  // Changestamp (exists only for change query results).
+  // If not exists, defaults to 0.
+  int64 changestamp() const { return changestamp_; }
+
+  // Text version of resource entry kind. Returns an empty string for
   // unknown entry kind.
   std::string GetEntryKindText() const;
 
@@ -442,27 +481,27 @@ class DocumentEntry : public FeedEntry {
   // a hosted document, this call returns an empty string.
   std::string GetHostedDocumentExtension() const;
 
-  // True if document entry is remotely hosted.
+  // True if resource entry is remotely hosted.
   bool is_hosted_document() const {
     return (ClassifyEntryKind(kind_) & KIND_OF_HOSTED_DOCUMENT) > 0;
   }
-  // True if document entry hosted by Google Documents.
+  // True if resource entry hosted by Google Documents.
   bool is_google_document() const {
     return (ClassifyEntryKind(kind_) & KIND_OF_GOOGLE_DOCUMENT) > 0;
   }
-  // True if document entry is hosted by an external application.
+  // True if resource entry is hosted by an external application.
   bool is_external_document() const {
     return (ClassifyEntryKind(kind_) & KIND_OF_EXTERNAL_DOCUMENT) > 0;
   }
-  // True if document entry is a folder (collection).
+  // True if resource entry is a folder (collection).
   bool is_folder() const {
     return (ClassifyEntryKind(kind_) & KIND_OF_FOLDER) > 0;
   }
-  // True if document entry is regular file.
+  // True if resource entry is regular file.
   bool is_file() const {
     return (ClassifyEntryKind(kind_) & KIND_OF_FILE) > 0;
   }
-  // True if document entry can't be mapped to the file system.
+  // True if resource entry can't be mapped to the file system.
   bool is_special() const {
     return !is_file() && !is_folder() && !is_hosted_document();
   }
@@ -485,12 +524,41 @@ class DocumentEntry : public FeedEntry {
   // value is KIND_OF_HOSTED_DOCUMENT | KIND_OF_GOOGLE_DOCUMENT.
   static int ClassifyEntryKind(DriveEntryKind kind);
 
- private:
-  friend class base::internal::RepeatedMessageConverter<DocumentEntry>;
-  friend class DocumentFeed;
-  friend class ResumeUploadOperation;
+  void set_resource_id(const std::string& resource_id) {
+    resource_id_ = resource_id;
+  }
+  void set_id(const std::string& id) { id_ = id; }
+  void set_kind(DriveEntryKind kind) { kind_ = kind; }
+  void set_title(const std::string& title) { title_ = title; }
+  void set_published_time(const base::Time& published_time) {
+    published_time_ = published_time;
+  }
+  void set_last_viewed_time(const base::Time& last_viewed_time) {
+    last_viewed_time_ = last_viewed_time;
+  }
+  void set_labels(const std::vector<std::string>& labels) {
+    labels_ = labels;
+  }
+  void set_content(const Content& content) {
+    content_ = content;
+  }
+  void set_resource_links(ScopedVector<ResourceLink>* resource_links) {
+    resource_links_.swap(*resource_links);
+  }
+  void set_filename(const std::string& filename) { filename_ = filename; }
+  void set_suggested_filename(const std::string& suggested_filename) {
+    suggested_filename_ = suggested_filename;
+  }
+  void set_file_md5(const std::string& file_md5) { file_md5_ = file_md5; }
+  void set_file_size(int64 file_size) { file_size_ = file_size; }
+  void set_deleted(bool deleted) { deleted_ = deleted; }
+  void set_removed(bool removed) { removed_ = removed; }
+  void set_changestamp(int64 changestamp) { changestamp_ = changestamp; }
 
-  DocumentEntry();
+ private:
+  friend class base::internal::RepeatedMessageConverter<ResourceEntry>;
+  friend class ResourceList;
+  friend class ResumeUploadOperation;
 
   // Fills the remaining fields where JSONValueConverter cannot catch.
   void FillRemainingFields();
@@ -503,30 +571,33 @@ class DocumentEntry : public FeedEntry {
   std::string resource_id_;
   std::string id_;
   DriveEntryKind kind_;
-  string16 title_;
+  std::string title_;
   base::Time published_time_;
   // Last viewed value may be unreliable. See: crbug.com/152628.
   base::Time last_viewed_time_;
-  std::vector<string16> labels_;
+  std::vector<std::string> labels_;
   Content content_;
-  ScopedVector<FeedLink> feed_links_;
+  ScopedVector<ResourceLink> resource_links_;
   // Optional fields for files only.
-  string16 filename_;
-  string16 suggested_filename_;
+  std::string filename_;
+  std::string suggested_filename_;
   std::string file_md5_;
   int64 file_size_;
   bool deleted_;
   bool removed_;
+  int64 changestamp_;
 
-  DISALLOW_COPY_AND_ASSIGN(DocumentEntry);
+  DISALLOW_COPY_AND_ASSIGN(ResourceEntry);
 };
 
-// Document feed represents a list of entries. The feed is paginated and
-// the rest of the feed can be fetched by retrieving the remaining parts of the
-// feed from URLs provided by GetNextFeedURL() method.
-class DocumentFeed : public FeedEntry {
+// This class represents a list of resource entries with some extra metadata
+// such as the root upload URL. The feed is paginated and the rest of the
+// feed can be fetched by retrieving the remaining parts of the feed from
+// URLs provided by GetNextFeedURL() method.
+class ResourceList : public CommonMetadata {
  public:
-  virtual ~DocumentFeed();
+  ResourceList();
+  virtual ~ResourceList();
 
   // Extracts "feed" dictionary from the JSON value, and parse the contents,
   // using CreateFrom(). Returns NULL on failure. The input JSON data, coming
@@ -537,62 +608,77 @@ class DocumentFeed : public FeedEntry {
   //   "feed": { ... },   // This function will extract this and parse.
   //   "version": "1.0"
   // }
-  static scoped_ptr<DocumentFeed> ExtractAndParse(const base::Value& value);
+  static scoped_ptr<ResourceList> ExtractAndParse(const base::Value& value);
 
   // Creates feed from parsed JSON Value.  You should call this
   // instead of instantiating JSONValueConverter by yourself because
   // this method does some post-process for some fields.  See
-  // FillRemainingFields comment and implementation in DocumentEntry
+  // FillRemainingFields comment and implementation in ResourceEntry
   // class for the details.
-  static scoped_ptr<DocumentFeed> CreateFrom(const base::Value& value);
+  static scoped_ptr<ResourceList> CreateFrom(const base::Value& value);
   // Variant of CreateFrom() above, creates feed from parsed ChangeList.
   // TODO(kochi): This should go away soon. http://crbug.com/142293
-  static scoped_ptr<DocumentFeed> CreateFromChangeList(
+  static scoped_ptr<ResourceList> CreateFromChangeList(
       const ChangeList& changelist);
 
   // Registers the mapping between JSON field names and the members in
   // this class.
   static void RegisterJSONConverter(
-      base::JSONValueConverter<DocumentFeed>* converter);
+      base::JSONValueConverter<ResourceList>* converter);
 
   // Returns true and passes|url| of the next feed if the current entry list
   // does not completed this feed.
-  bool GetNextFeedURL(GURL* url);
+  bool GetNextFeedURL(GURL* url) const;
 
-  // List of document entries.
-  const ScopedVector<DocumentEntry>& entries() const { return entries_; }
+  // List of resource entries.
+  const ScopedVector<ResourceEntry>& entries() const { return entries_; }
+  ScopedVector<ResourceEntry>* mutable_entries() { return &entries_; }
 
   // Releases entries_ into |entries|. This is a transfer of ownership, so the
   // caller is responsible for deleting the elements of |entries|.
-  void ReleaseEntries(std::vector<DocumentEntry*>* entries);
+  void ReleaseEntries(std::vector<ResourceEntry*>* entries);
 
-  // Start index of the document entry list.
+  // Start index of the resource entry list.
   int start_index() const { return start_index_; }
 
-  // Number of items per feed of the document entry list.
+  // Number of items per feed of the resource entry list.
   int items_per_page() const { return items_per_page_; }
 
-  // The largest changestamp. Next time the documents should be fetched
+  // The largest changestamp. Next time the resource list should be fetched
   // from this changestamp.
   int64 largest_changestamp() const { return largest_changestamp_; }
 
-  // Document entry list title.
+  // Resource entry list title.
   const std::string& title() { return title_; }
 
- private:
-  DocumentFeed();
+  void set_entries(ScopedVector<ResourceEntry>* entries) {
+    entries_.swap(*entries);
+  }
+  void set_start_index(int start_index) {
+    start_index_ = start_index;
+  }
+  void set_items_per_page(int items_per_page) {
+    items_per_page_ = items_per_page;
+  }
+  void set_title(const std::string& title) {
+    title_ = title;
+  }
+  void set_largest_changestamp(int64 largest_changestamp) {
+    largest_changestamp_ = largest_changestamp;
+  }
 
+ private:
   // Parses and initializes data members from content of |value|.
   // Return false if parsing fails.
   bool Parse(const base::Value& value);
 
-  ScopedVector<DocumentEntry> entries_;
+  ScopedVector<ResourceEntry> entries_;
   int start_index_;
   int items_per_page_;
   std::string title_;
   int64 largest_changestamp_;
 
-  DISALLOW_COPY_AND_ASSIGN(DocumentFeed);
+  DISALLOW_COPY_AND_ASSIGN(ResourceList);
 };
 
 // Metadata representing installed Google Drive application.
@@ -604,13 +690,13 @@ class InstalledApp {
   virtual ~InstalledApp();
 
   // WebApp name.
-  const string16& app_name() const { return app_name_; }
+  const std::string& app_name() const { return app_name_; }
 
   // Drive app id
   const std::string& app_id() const { return app_id_; }
 
   // Object (file) type name that is generated by this WebApp.
-  const string16& object_type() const { return object_type_; }
+  const std::string& object_type() const { return object_type_; }
 
   // True if WebApp supports creation of new file instances.
   bool supports_create() const { return supports_create_; }
@@ -663,6 +749,37 @@ class InstalledApp {
   static void RegisterJSONConverter(
       base::JSONValueConverter<InstalledApp>* converter);
 
+  void set_app_id(const std::string& app_id) { app_id_ = app_id; }
+  void set_app_name(const std::string& app_name) { app_name_ = app_name; }
+  void set_object_type(const std::string& object_type) {
+    object_type_ = object_type;
+  }
+  void set_supports_create(bool supports_create) {
+    supports_create_ = supports_create;
+  }
+  void set_primary_mimetypes(
+      ScopedVector<std::string>* primary_mimetypes) {
+    primary_mimetypes_.swap(*primary_mimetypes);
+  }
+  void set_secondary_mimetypes(
+      ScopedVector<std::string>* secondary_mimetypes) {
+    secondary_mimetypes_.swap(*secondary_mimetypes);
+  }
+  void set_primary_extensions(
+      ScopedVector<std::string>* primary_extensions) {
+    primary_extensions_.swap(*primary_extensions);
+  }
+  void set_secondary_extensions(
+      ScopedVector<std::string>* secondary_extensions) {
+    secondary_extensions_.swap(*secondary_extensions);
+  }
+  void set_links(ScopedVector<Link>* links) {
+    links_.swap(*links);
+  }
+  void set_app_icons(ScopedVector<AppIcon>* app_icons) {
+    app_icons_.swap(*app_icons);
+  }
+
  private:
   // Extracts "$t" value from the dictionary |value| and returns it in |result|.
   // If the string value can't be found, it returns false.
@@ -670,8 +787,8 @@ class InstalledApp {
                              std::string* result);
 
   std::string app_id_;
-  string16 app_name_;
-  string16 object_type_;
+  std::string app_name_;
+  std::string object_type_;
   bool supports_create_;
   ScopedVector<std::string> primary_mimetypes_;
   ScopedVector<std::string> secondary_mimetypes_;
@@ -683,16 +800,17 @@ class InstalledApp {
 
 // Account metadata feed represents the metadata object attached to the user's
 // account.
-class AccountMetadataFeed {
+class AccountMetadata {
  public:
-  virtual ~AccountMetadataFeed();
+  AccountMetadata();
+  virtual ~AccountMetadata();
 
   // Creates feed from parsed JSON Value.  You should call this
   // instead of instantiating JSONValueConverter by yourself because
   // this method does some post-process for some fields.  See
-  // FillRemainingFields comment and implementation in DocumentEntry
+  // FillRemainingFields comment and implementation in ResourceEntry
   // class for the details.
-  static scoped_ptr<AccountMetadataFeed> CreateFrom(const base::Value& value);
+  static scoped_ptr<AccountMetadata> CreateFrom(const base::Value& value);
 
   int64 quota_bytes_total() const {
     return quota_bytes_total_;
@@ -710,14 +828,25 @@ class AccountMetadataFeed {
     return installed_apps_;
   }
 
+  void set_quota_bytes_total(int64 quota_bytes_total) {
+    quota_bytes_total_ = quota_bytes_total;
+  }
+  void set_quota_bytes_used(int64 quota_bytes_used) {
+    quota_bytes_used_ = quota_bytes_used;
+  }
+  void set_largest_changestamp(int64 largest_changestamp) {
+    largest_changestamp_ = largest_changestamp;
+  }
+  void set_installed_apps(ScopedVector<InstalledApp>* installed_apps) {
+    installed_apps_.swap(*installed_apps);
+  }
+
   // Registers the mapping between JSON field names and the members in
   // this class.
   static void RegisterJSONConverter(
-      base::JSONValueConverter<AccountMetadataFeed>* converter);
+      base::JSONValueConverter<AccountMetadata>* converter);
 
  private:
-  AccountMetadataFeed();
-
   // Parses and initializes data members from content of |value|.
   // Return false if parsing fails.
   bool Parse(const base::Value& value);
@@ -727,7 +856,7 @@ class AccountMetadataFeed {
   int64 largest_changestamp_;
   ScopedVector<InstalledApp> installed_apps_;
 
-  DISALLOW_COPY_AND_ASSIGN(AccountMetadataFeed);
+  DISALLOW_COPY_AND_ASSIGN(AccountMetadata);
 };
 
 

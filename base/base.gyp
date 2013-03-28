@@ -62,7 +62,6 @@
           'dependencies': [
             'symbolize',
             '../build/linux/system.gyp:glib',
-            '../build/linux/system.gyp:x11',
             'xdg_mime',
           ],
           'defines': [
@@ -73,7 +72,6 @@
           ],
           'export_dependent_settings': [
             '../build/linux/system.gyp:glib',
-            '../build/linux/system.gyp:x11',
           ],
         }, {  # use_glib!=1
             'sources/': [
@@ -81,7 +79,23 @@
               ['exclude', '_nss\\.cc$'],
             ],
         }],
+        ['use_x11==1', {
+          'dependencies': [
+            '../build/linux/system.gyp:x11',
+          ],
+          'export_dependent_settings': [
+            '../build/linux/system.gyp:x11',
+          ],
+        }],
         ['OS == "android" and _toolset == "host"', {
+          # Always build base as a static_library for host toolset, even if
+          # we're doing a component build. Specifically, we only care about the
+          # target toolset using components since that's what developers are
+          # focusing on. In theory we should do this more generally for all
+          # targets when building for host, but getting the gyp magic
+          # per-toolset for the "component" variable is hard, and we really only
+          # need base on host.
+          'type': 'static_library',
           # Base for host support is the minimum required to run the
           # ssl false start blacklist tool. It requires further changes
           # to generically support host builds (and tests).
@@ -141,8 +155,11 @@
           'sources!': [
             'debug/stack_trace_posix.cc',
           ],
+          'includes': [
+            '../build/android/cpufeatures.gypi',
+          ],
         }],
-        ['OS == "android" and _toolset == "target" and android_build_type == 0', {
+        ['OS == "android" and _toolset == "target" and android_webview_build == 0', {
           'dependencies': [
             'base_java',
           ],
@@ -194,7 +211,7 @@
             ],
           },
         }],
-        ['OS != "win"', {
+        ['OS != "win" and OS != "ios"', {
             'dependencies': ['../third_party/libevent/libevent.gyp:libevent'],
         },],
         ['component=="shared_library"', {
@@ -204,6 +221,11 @@
                 'debug/debug_on_start_win.cc',
               ],
             }],
+          ],
+        }],
+        ['use_system_nspr==1', {
+          'dependencies': [
+            'third_party/nspr/nspr.gyp:nspr',
           ],
         }],
       ],
@@ -227,6 +249,8 @@
         'message_pump_glib.h',
         'message_pump_gtk.cc',
         'message_pump_gtk.h',
+        'message_pump_io_ios.cc',
+        'message_pump_io_ios.h',
         'message_pump_observer.h',
         'message_pump_aurax11.cc',
         'message_pump_aurax11.h',
@@ -261,6 +285,12 @@
           'dependencies': [
             # i18n/rtl.cc uses gtk
             '../build/linux/system.gyp:gtk',
+          ],
+        }],
+        ['OS == "win"', {
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [
+            4267,
           ],
         }],
       ],
@@ -315,6 +345,7 @@
         'BASE_PREFS_IMPLEMENTATION',
       ],
       'sources': [
+        'prefs/base_prefs_export.h',
         'prefs/default_pref_store.cc',
         'prefs/default_pref_store.h',
         'prefs/json_pref_store.cc',
@@ -322,17 +353,48 @@
         'prefs/overlay_user_pref_store.cc',
         'prefs/overlay_user_pref_store.h',
         'prefs/persistent_pref_store.h',
+        'prefs/pref_change_registrar.cc',
+        'prefs/pref_change_registrar.h',
+        'prefs/pref_member.cc',
+        'prefs/pref_member.h',
         'prefs/pref_notifier.h',
+        'prefs/pref_notifier_impl.cc',
+        'prefs/pref_notifier_impl.h',
+        'prefs/pref_observer.h',
+        'prefs/pref_registry.cc',
+        'prefs/pref_registry.h',
+        'prefs/pref_registry_simple.cc',
+        'prefs/pref_registry_simple.h',
+        'prefs/pref_service.cc',
+        'prefs/pref_service.h',
+        'prefs/pref_service_builder.cc',
+        'prefs/pref_service_builder.h',
         'prefs/pref_store.cc',
         'prefs/pref_store.h',
         'prefs/pref_value_map.cc',
         'prefs/pref_value_map.h',
-        'prefs/public/pref_change_registrar.cc',
-        'prefs/public/pref_change_registrar.h',
-        'prefs/public/pref_observer.h',
-        'prefs/public/pref_service_base.h',
+        'prefs/pref_value_store.cc',
+        'prefs/pref_value_store.h',
         'prefs/value_map_pref_store.cc',
         'prefs/value_map_pref_store.h',
+      ],
+    },
+    {
+      'target_name': 'base_prefs_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        'base',
+        'base_prefs',
+        '../testing/gmock.gyp:gmock',
+      ],
+      'sources': [
+        'prefs/mock_pref_change_callback.cc',
+        'prefs/pref_store_observer_mock.cc',
+        'prefs/pref_store_observer_mock.h',
+        'prefs/testing_pref_service.cc',
+        'prefs/testing_pref_service.h',
+        'prefs/testing_pref_store.cc',
+        'prefs/testing_pref_store.h',
       ],
     },
     {
@@ -356,37 +418,6 @@
         '..',
       ],
     },
-    {
-      # TODO(rvargas): Remove this when gyp finally supports a clean model.
-      # See bug 36232.
-      'target_name': 'base_static_win64',
-      'type': 'static_library',
-      'sources': [
-        'base_switches.cc',
-        'base_switches.h',
-        'win/pe_image.cc',
-        'win/pe_image.h',
-      ],
-      'sources!': [
-        # base64.cc depends on modp_b64.
-        'base64.cc',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      'configurations': {
-        'Common_Base': {
-          'msvs_target_platform': 'x64',
-        },
-      },
-      'defines': [
-        'NACL_WIN64',
-      ],
-      # TODO(rvargas): Bug 78117. Remove this.
-      'msvs_disabled_warnings': [
-        4244,
-      ],
-    },
     # Include this target for a main() function that simply instantiates
     # and runs a base::TestSuite.
     {
@@ -406,6 +437,7 @@
         # Tests.
         'android/jni_android_unittest.cc',
         'android/jni_array_unittest.cc',
+        'android/jni_string_unittest.cc',
         'android/path_utils_unittest.cc',
         'android/scoped_java_ref_unittest.cc',
         'at_exit_unittest.cc',
@@ -421,21 +453,24 @@
         'cancelable_callback_unittest.cc',
         'command_line_unittest.cc',
         'containers/linked_list_unittest.cc',
+        'containers/mru_cache_unittest.cc',
         'containers/small_map_unittest.cc',
         'containers/stack_container_unittest.cc',
         'cpu_unittest.cc',
+        'debug/crash_logging_unittest.cc',
         'debug/leak_tracker_unittest.cc',
         'debug/stack_trace_unittest.cc',
         'debug/trace_event_unittest.cc',
         'debug/trace_event_unittest.h',
         'debug/trace_event_win_unittest.cc',
         'environment_unittest.cc',
-        'file_path_unittest.cc',
-        'file_util_proxy_unittest.cc',
         'file_util_unittest.cc',
         'file_version_info_unittest.cc',
         'files/dir_reader_posix_unittest.cc',
+        'files/file_path_unittest.cc',
+        'files/file_util_proxy_unittest.cc',
         'files/important_file_writer_unittest.cc',
+        'files/scoped_temp_dir_unittest.cc',
         'gmock_unittest.cc',
         'guid_unittest.cc',
         'hi_res_timer_manager_unittest.cc',
@@ -460,13 +495,14 @@
         'logging_unittest.cc',
         'mac/bind_objc_block_unittest.mm',
         'mac/foundation_util_unittest.mm',
+        'mac/libdispatch_task_runner_unittest.cc',
         'mac/mac_util_unittest.mm',
         'mac/objc_property_releaser_unittest.mm',
         'mac/scoped_sending_event_unittest.mm',
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
+        'memory/discardable_memory_unittest.cc',
         'memory/linked_ptr_unittest.cc',
-        'memory/mru_cache_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
         'memory/ref_counted_unittest.cc',
         'memory/scoped_nsobject_unittest.mm',
@@ -480,11 +516,13 @@
         'message_loop_proxy_unittest.cc',
         'message_loop_unittest.cc',
         'message_pump_glib_unittest.cc',
+        'message_pump_io_ios_unittest.cc',
         'message_pump_libevent_unittest.cc',
         'metrics/sample_map_unittest.cc',
         'metrics/sample_vector_unittest.cc',
         'metrics/bucket_ranges_unittest.cc',
         'metrics/field_trial_unittest.cc',
+        'metrics/histogram_base_unittest.cc',
         'metrics/histogram_unittest.cc',
         'metrics/sparse_histogram_unittest.cc',
         'metrics/stats_table_unittest.cc',
@@ -495,39 +533,56 @@
         'pickle_unittest.cc',
         'platform_file_unittest.cc',
         'posix/file_descriptor_shuffle_unittest.cc',
+        'posix/unix_domain_socket_linux_unittest.cc',
         'pr_time_unittest.cc',
+        'prefs/default_pref_store_unittest.cc',
+        'prefs/json_pref_store_unittest.cc',
+        'prefs/mock_pref_change_callback.h',
+        'prefs/overlay_user_pref_store_unittest.cc',
+        'prefs/pref_change_registrar_unittest.cc',
+        'prefs/pref_member_unittest.cc',
+        'prefs/pref_notifier_impl_unittest.cc',
+        'prefs/pref_service_unittest.cc',
+        'prefs/pref_value_map_unittest.cc',
+        'prefs/pref_value_store_unittest.cc',
         'process_util_unittest.cc',
         'process_util_unittest_ios.cc',
         'process_util_unittest_mac.h',
         'process_util_unittest_mac.mm',
         'profiler/tracked_time_unittest.cc',
         'rand_util_unittest.cc',
+        'safe_numerics_unittest.cc',
+        'safe_numerics_unittest.nc',
         'scoped_native_library_unittest.cc',
         'scoped_observer.h',
-        'scoped_temp_dir_unittest.cc',
+        'security_unittest.cc',
+        'sequence_checker_unittest.cc',
+        'sequence_checker_impl_unittest.cc',
         'sha1_unittest.cc',
         'shared_memory_unittest.cc',
+        'stl_util_unittest.cc',
         'string16_unittest.cc',
-        'string_number_conversions_unittest.cc',
         'string_piece_unittest.cc',
-        'string_split_unittest.cc',
-        'string_tokenizer_unittest.cc',
         'string_util_unittest.cc',
-        'stringize_macros_unittest.cc',
         'stringprintf_unittest.cc',
+        'strings/string_number_conversions_unittest.cc',
+        'strings/string_split_unittest.cc',
+        'strings/string_tokenizer_unittest.cc',
+        'strings/stringize_macros_unittest.cc',
+        'strings/sys_string_conversions_mac_unittest.mm',
+        'strings/sys_string_conversions_unittest.cc',
+        'strings/utf_offset_string_conversions_unittest.cc',
         'synchronization/cancellation_flag_unittest.cc',
         'synchronization/condition_variable_unittest.cc',
         'synchronization/lock_unittest.cc',
         'synchronization/waitable_event_unittest.cc',
         'synchronization/waitable_event_watcher_unittest.cc',
         'sys_info_unittest.cc',
-        'sys_string_conversions_mac_unittest.mm',
-        'sys_string_conversions_unittest.cc',
         'system_monitor/system_monitor_unittest.cc',
         'task_runner_util_unittest.cc',
         'template_util_unittest.cc',
-        'test/sequenced_worker_pool_owner.cc',
-        'test/sequenced_worker_pool_owner.h',
+        'test/expectations/expectation_unittest.cc',
+        'test/expectations/parser_unittest.cc',
         'test/trace_event_analyzer_unittest.cc',
         'threading/non_thread_safe_unittest.cc',
         'threading/platform_thread_unittest.cc',
@@ -535,6 +590,7 @@
         'threading/simple_thread_unittest.cc',
         'threading/thread_checker_unittest.cc',
         'threading/thread_collision_warner_unittest.cc',
+        'threading/thread_id_name_manager_unittest.cc',
         'threading/thread_local_storage_unittest.cc',
         'threading/thread_local_unittest.cc',
         'threading/thread_unittest.cc',
@@ -547,7 +603,6 @@
         'tools_sanity_unittest.cc',
         'tracked_objects_unittest.cc',
         'tuple_unittest.cc',
-        'utf_offset_string_conversions_unittest.cc',
         'utf_string_conversions_unittest.cc',
         'values_unittest.cc',
         'version_unittest.cc',
@@ -565,6 +620,7 @@
         'win/sampling_profiler_unittest.cc',
         'win/scoped_bstr_unittest.cc',
         'win/scoped_comptr_unittest.cc',
+        'win/scoped_handle_unittest.cc',
         'win/scoped_process_information_unittest.cc',
         'win/shortcut_unittest.cc',
         'win/startup_information_unittest.cc',
@@ -575,6 +631,8 @@
       'dependencies': [
         'base',
         'base_i18n',
+        'base_prefs',
+        'base_prefs_test_support',
         'base_static',
         'run_all_unittests',
         'test_support_base',
@@ -601,6 +659,10 @@
               ],
             }],
           ],
+          'sources!': [
+            # Broken on Android, and already disabled there.
+            'debug/stack_trace_unittest.cc',
+          ],
         }],
         ['OS == "ios"', {
           'sources/': [
@@ -609,11 +671,10 @@
             ['include', '^process_util_unittest_ios\\.cc$'],
             # Requires spawning processes.
             ['exclude', '^metrics/stats_table_unittest\\.cc$'],
-            # TODO(ios): Remove these as base/ is unforked.
-            # For now, exclude everything that doesn't build as-is, just to
-            # get a minimal target building.
-            # Unittests that don't pass.
-            ['exclude', '^message_loop_unittest\\.cc$'],
+            # iOS does not use message_pump_libevent.
+            ['exclude', '^message_pump_libevent_unittest\\.cc$'],
+            ['exclude', '^prefs/json_pref_store_unittest.\\cc$'],
+
           ],
           'conditions': [
             ['coverage != 0', {
@@ -691,6 +752,10 @@
             'threading/worker_pool_posix_unittest.cc',
             'message_pump_libevent_unittest.cc',
           ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [
+            4267,
+          ],
         }, {  # OS != "win"
           'dependencies': [
             '../third_party/libevent/libevent.gyp:libevent'
@@ -702,6 +767,11 @@
             'debug/trace_event_win_unittest.cc',
             'time_win_unittest.cc',
             'win/win_util_unittest.cc',
+          ],
+        }],
+        ['use_system_nspr==1', {
+          'dependencies': [
+            'third_party/nspr/nspr.gyp:nspr',
           ],
         }],
       ],  # conditions
@@ -748,23 +818,13 @@
             'test/test_file_util_linux.cc',
           ],
         }],
-        ['OS=="win"', {
-          'direct_dependent_settings': {
-            'msvs_settings': {
-              'VCLinkerTool': {
-                'DelayLoadDLLs': [
-                  'propsys.dll',
-                ],
-              },
-            },
-          },
-        }],
       ],
       'sources': [
         'perftimer.cc',
-        'test/main_hook.cc',
-        'test/main_hook.h',
-        'test/main_hook_ios.mm',
+        'test/expectations/expectation.cc',
+        'test/expectations/expectation.h',
+        'test/expectations/parser.cc',
+        'test/expectations/parser.h',
         'test/mock_chrome_application_mac.h',
         'test/mock_chrome_application_mac.mm',
         'test/mock_devices_changed_observer.cc',
@@ -774,6 +834,8 @@
         'test/multiprocess_test.cc',
         'test/multiprocess_test.h',
         'test/multiprocess_test_android.cc',
+        'test/null_task_runner.cc',
+        'test/null_task_runner.h',
         'test/perf_test_suite.cc',
         'test/perf_test_suite.h',
         'test/scoped_locale.cc',
@@ -782,6 +844,12 @@
         'test/scoped_path_override.h',
         'test/sequenced_task_runner_test_template.cc',
         'test/sequenced_task_runner_test_template.h',
+        'test/sequenced_worker_pool_owner.cc',
+        'test/sequenced_worker_pool_owner.h',
+        'test/simple_test_clock.cc',
+        'test/simple_test_clock.h',
+        'test/simple_test_tick_clock.cc',
+        'test/simple_test_tick_clock.h',
         'test/task_runner_test_template.cc',
         'test/task_runner_test_template.h',
         'test/test_file_util.h',
@@ -791,10 +859,16 @@
         'test/test_file_util_win.cc',
         'test/test_listener_ios.h',
         'test/test_listener_ios.mm',
+        'test/test_pending_task.cc',
+        'test/test_pending_task.h',
+        'test/test_process_killer_win.cc',
+        'test/test_process_killer_win.h',
         'test/test_reg_util_win.cc',
         'test/test_reg_util_win.h',
         'test/test_shortcut_win.cc',
         'test/test_shortcut_win.h',
+        'test/test_simple_task_runner.cc',
+        'test/test_simple_task_runner.h',
         'test/test_suite.cc',
         'test/test_suite.h',
         'test/test_support_android.cc',
@@ -866,7 +940,7 @@
         },
       ],
     }],
-    ['OS == "win"', {
+    ['OS == "win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'base_nacl_win64',
@@ -931,6 +1005,37 @@
               'msvs_target_platform': 'x64',
             },
           },
+        },
+        {
+          # TODO(rvargas): Remove this when gyp finally supports a clean model.
+          # See bug 36232.
+          'target_name': 'base_static_win64',
+          'type': 'static_library',
+          'sources': [
+            'base_switches.cc',
+            'base_switches.h',
+            'win/pe_image.cc',
+            'win/pe_image.h',
+          ],
+          'sources!': [
+            # base64.cc depends on modp_b64.
+            'base64.cc',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'configurations': {
+            'Common_Base': {
+              'msvs_target_platform': 'x64',
+            },
+          },
+          'defines': [
+            'NACL_WIN64',
+          ],
+          # TODO(rvargas): Bug 78117. Remove this.
+          'msvs_disabled_warnings': [
+            4244,
+          ],
         },
       ],
     }],
@@ -1009,14 +1114,17 @@
           'type': 'none',
           'sources': [
             'android/java/src/org/chromium/base/BuildInfo.java',
+            'android/java/src/org/chromium/base/CpuFeatures.java',
+            'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
             'android/java/src/org/chromium/base/LocaleUtils.java',
             'android/java/src/org/chromium/base/PathService.java',
             'android/java/src/org/chromium/base/PathUtils.java',
             'android/java/src/org/chromium/base/SystemMessageHandler.java',
             'android/java/src/org/chromium/base/SystemMonitor.java',
+            'android/java/src/org/chromium/base/ThreadUtils.java',
           ],
           'variables': {
-            'jni_gen_dir': 'base',
+            'jni_gen_package': 'base',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -1024,10 +1132,16 @@
           'target_name': 'base_java',
           'type': 'none',
           'variables': {
-            'package_name': 'base',
             'java_in_dir': '../base/android/java',
           },
           'includes': [ '../build/java.gypi' ],
+          'conditions': [
+            ['android_webview_build==0', {
+              'dependencies': [
+                '../third_party/jsr-305/jsr-305.gyp:jsr_305_javalib',
+              ],
+            }]
+          ],
         },
         {
           'target_name': 'base_java_test_support',
@@ -1036,8 +1150,19 @@
             'base_java',
           ],
           'variables': {
-            'package_name': 'base_javatests',
             'java_in_dir': '../base/test/android/javatests',
+          },
+          'includes': [ '../build/java.gypi' ],
+        },
+        {
+          'target_name': 'base_javatests',
+          'type': 'none',
+          'dependencies': [
+            'base_java',
+            'base_java_test_support',
+          ],
+          'variables': {
+            'java_in_dir': '../base/android/javatests',
           },
           'includes': [ '../build/java.gypi' ],
         },

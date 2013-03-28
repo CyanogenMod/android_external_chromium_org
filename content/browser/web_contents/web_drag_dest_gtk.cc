@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -27,6 +27,7 @@ using WebKit::WebDragOperationNone;
 namespace content {
 
 namespace {
+const int kNumGtkHandlers = 5;
 
 int GetModifierFlags(GtkWidget* widget) {
   int modifier_state = 0;
@@ -58,25 +59,30 @@ WebDragDestGtk::WebDragDestGtk(WebContents* web_contents, GtkWidget* widget)
                     static_cast<GdkDragAction>(GDK_ACTION_COPY |
                                                GDK_ACTION_LINK |
                                                GDK_ACTION_MOVE));
-  g_signal_connect(widget, "drag-motion",
-                   G_CALLBACK(OnDragMotionThunk), this);
-  g_signal_connect(widget, "drag-leave",
-                   G_CALLBACK(OnDragLeaveThunk), this);
-  g_signal_connect(widget, "drag-drop",
-                   G_CALLBACK(OnDragDropThunk), this);
-  g_signal_connect(widget, "drag-data-received",
-                   G_CALLBACK(OnDragDataReceivedThunk), this);
+
+  // If adding a handler, make sure to update kNumGtkHandlers and add it to the
+  // |handlers_| array so that it can be disconnected later on.
+  handlers_.reset(new int[kNumGtkHandlers]);
+  handlers_.get()[0] = g_signal_connect(
+      widget, "drag-motion", G_CALLBACK(OnDragMotionThunk), this);
+  handlers_.get()[1] = g_signal_connect(
+      widget, "drag-leave", G_CALLBACK(OnDragLeaveThunk), this);
+  handlers_.get()[2] = g_signal_connect(
+      widget, "drag-drop", G_CALLBACK(OnDragDropThunk), this);
+  handlers_.get()[3] = g_signal_connect(
+      widget, "drag-data-received", G_CALLBACK(OnDragDataReceivedThunk), this);
   // TODO(tony): Need a drag-data-delete handler for moving content out of
   // the WebContents.  http://crbug.com/38989
 
-  destroy_handler_ = g_signal_connect(
+  handlers_.get()[4] = g_signal_connect(
       widget, "destroy", G_CALLBACK(gtk_widget_destroyed), &widget_);
 }
 
 WebDragDestGtk::~WebDragDestGtk() {
   if (widget_) {
     gtk_drag_dest_unset(widget_);
-    g_signal_handler_disconnect(widget_, destroy_handler_);
+    for (int i = 0; i < kNumGtkHandlers; ++i)
+      g_signal_handler_disconnect(widget_, handlers_.get()[i]);
   }
 }
 
@@ -189,7 +195,7 @@ void WebDragDestGtk::OnDragDataReceived(
           // file URLs are never set as the URL content for the drop.
           // TODO(estade): Can the filenames have a non-UTF8 encoding?
           GURL url(*uri_iter);
-          FilePath file_path;
+          base::FilePath file_path;
           if (url.SchemeIs(chrome::kFileScheme) &&
               net::FileURLToFilePath(url, &file_path)) {
             drop_data_->filenames.push_back(

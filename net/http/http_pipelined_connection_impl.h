@@ -16,11 +16,11 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
-#include "net/base/ssl_config_service.h"
 #include "net/http/http_pipelined_connection.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_stream_parser.h"
 #include "net/proxy/proxy_info.h"
+#include "net/ssl/ssl_config_service.h"
 
 namespace net {
 
@@ -31,9 +31,9 @@ class HttpNetworkSession;
 class HttpRequestHeaders;
 class HttpResponseInfo;
 class IOBuffer;
+struct LoadTimingInfo;
 class SSLCertRequestInfo;
 class SSLInfo;
-class UploadDataStream;
 
 // This class manages all of the state for a single pipelined connection. It
 // tracks the order that HTTP requests are sent and enforces that the
@@ -100,7 +100,6 @@ class NET_EXPORT_PRIVATE HttpPipelinedConnectionImpl
   int SendRequest(int pipeline_id,
                   const std::string& request_line,
                   const HttpRequestHeaders& headers,
-                  UploadDataStream* request_body,
                   HttpResponseInfo* response,
                   const CompletionCallback& callback);
 
@@ -122,14 +121,14 @@ class NET_EXPORT_PRIVATE HttpPipelinedConnectionImpl
 
   bool CanFindEndOfResponse(int pipeline_id) const;
 
-  bool IsMoreDataBuffered(int pipeline_id) const;
-
   bool IsConnectionReused(int pipeline_id) const;
 
   void SetConnectionReused(int pipeline_id);
 
-  void GetSSLInfo(int pipeline_id,
-                  SSLInfo* ssl_info);
+  bool GetLoadTimingInfo(int pipeline_id,
+                         LoadTimingInfo* load_timing_info) const;
+
+  void GetSSLInfo(int pipeline_id, SSLInfo* ssl_info);
 
   void GetSSLCertRequestInfo(int pipeline_id,
                              SSLCertRequestInfo* cert_request_info);
@@ -176,7 +175,6 @@ class NET_EXPORT_PRIVATE HttpPipelinedConnectionImpl
     int pipeline_id;
     std::string request_line;
     HttpRequestHeaders headers;
-    UploadDataStream* request_body;
     HttpResponseInfo* response;
     CompletionCallback callback;
   };

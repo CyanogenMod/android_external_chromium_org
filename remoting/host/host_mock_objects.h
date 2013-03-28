@@ -6,52 +6,40 @@
 #define REMOTING_HOST_HOST_MOCK_OBJECTS_H_
 
 #include "net/base/ip_endpoint.h"
-#include "remoting/base/capture_data.h"
-#include "remoting/host/video_frame_capturer.h"
 #include "remoting/host/chromoting_host_context.h"
 #include "remoting/host/client_session.h"
+#include "remoting/host/client_session_control.h"
 #include "remoting/host/continue_window.h"
 #include "remoting/host/desktop_environment.h"
-#include "remoting/host/desktop_environment_factory.h"
 #include "remoting/host/disconnect_window.h"
-#include "remoting/host/event_executor.h"
 #include "remoting/host/host_status_observer.h"
-#include "remoting/host/local_input_monitor.h"
-#include "remoting/host/user_authenticator.h"
+#include "remoting/host/input_injector.h"
+#include "remoting/host/screen_controls.h"
+#include "remoting/host/screen_resolution.h"
 #include "remoting/proto/control.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
+namespace base {
+class SingleThreadTaskRunner;
+}  // namespace base
+
 namespace remoting {
 
-class MockVideoFrameCapturer : public VideoFrameCapturer {
+class MockDesktopEnvironment : public DesktopEnvironment {
  public:
-  MockVideoFrameCapturer();
-  virtual ~MockVideoFrameCapturer();
+  MockDesktopEnvironment();
+  virtual ~MockDesktopEnvironment();
 
-  MOCK_METHOD1(Start, void(Delegate* delegate));
-  MOCK_METHOD0(Stop, void());
-  MOCK_CONST_METHOD0(pixel_format, media::VideoFrame::Format());
-  MOCK_METHOD1(InvalidateRegion, void(const SkRegion& invalid_region));
-  MOCK_METHOD0(CaptureInvalidRegion, void());
-  MOCK_CONST_METHOD0(size_most_recent, const SkISize&());
+  MOCK_METHOD0(CreateAudioCapturerPtr, AudioCapturer*());
+  MOCK_METHOD0(CreateInputInjectorPtr, InputInjector*());
+  MOCK_METHOD0(CreateScreenControlsPtr, ScreenControls*());
+  MOCK_METHOD0(CreateVideoCapturerPtr, media::ScreenCapturer*());
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockVideoFrameCapturer);
-};
-
-class MockVideoFrameCapturerDelegate : public VideoFrameCapturer::Delegate {
- public:
-  MockVideoFrameCapturerDelegate();
-  virtual ~MockVideoFrameCapturerDelegate();
-
-  virtual void OnCursorShapeChanged(
-      scoped_ptr<protocol::CursorShapeInfo> cursor_shape) OVERRIDE;
-
-  MOCK_METHOD1(OnCaptureCompleted, void(scoped_refptr<CaptureData>));
-  MOCK_METHOD1(OnCursorShapeChangedPtr, void(protocol::CursorShapeInfo*));
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockVideoFrameCapturerDelegate);
+  // DesktopEnvironment implementation.
+  virtual scoped_ptr<AudioCapturer> CreateAudioCapturer() OVERRIDE;
+  virtual scoped_ptr<InputInjector> CreateInputInjector() OVERRIDE;
+  virtual scoped_ptr<ScreenControls> CreateScreenControls() OVERRIDE;
+  virtual scoped_ptr<media::ScreenCapturer> CreateVideoCapturer() OVERRIDE;
 };
 
 class MockDisconnectWindow : public DisconnectWindow {
@@ -59,20 +47,9 @@ class MockDisconnectWindow : public DisconnectWindow {
   MockDisconnectWindow();
   virtual ~MockDisconnectWindow();
 
-  MOCK_METHOD3(Show, void(remoting::ChromotingHost* host,
-                          const DisconnectCallback& disconnect_callback,
+  MOCK_METHOD2(Show, bool(const base::Closure& disconnect_callback,
                           const std::string& username));
   MOCK_METHOD0(Hide, void());
-};
-
-class MockLocalInputMonitor : public LocalInputMonitor {
- public:
-  MockLocalInputMonitor();
-  virtual ~MockLocalInputMonitor();
-
-  MOCK_METHOD2(Start, void(MouseMoveObserver* mouse_move_observer,
-                           const base::Closure& disconnect_callback));
-  MOCK_METHOD0(Stop, void());
 };
 
 class MockContinueWindow : public ContinueWindow {
@@ -80,27 +57,23 @@ class MockContinueWindow : public ContinueWindow {
   MockContinueWindow();
   virtual ~MockContinueWindow();
 
-  MOCK_METHOD2(Show, void(
-      remoting::ChromotingHost* host,
+  MOCK_METHOD1(Show, void(
       const remoting::ContinueWindow::ContinueSessionCallback& callback));
   MOCK_METHOD0(Hide, void());
 };
 
-class MockChromotingHostContext : public ChromotingHostContext {
+class MockClientSessionControl : public ClientSessionControl {
  public:
-  MockChromotingHostContext();
-  virtual ~MockChromotingHostContext();
+  MockClientSessionControl();
+  virtual ~MockClientSessionControl();
 
-  MOCK_METHOD0(Start, bool());
-  MOCK_METHOD0(Stop, void());
-  MOCK_METHOD0(ui_task_runner, base::SingleThreadTaskRunner*());
-  MOCK_METHOD0(capture_task_runner, base::SingleThreadTaskRunner*());
-  MOCK_METHOD0(encode_task_runner, base::SingleThreadTaskRunner*());
-  MOCK_METHOD0(network_task_runner, base::SingleThreadTaskRunner*());
-  MOCK_METHOD0(io_task_runner, base::SingleThreadTaskRunner*());
+  MOCK_CONST_METHOD0(client_jid, const std::string&());
+  MOCK_METHOD0(DisconnectSession, void());
+  MOCK_METHOD1(OnLocalMouseMoved, void(const SkIPoint&));
+  MOCK_METHOD1(SetDisableInputs, void(bool));
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(MockChromotingHostContext);
+  DISALLOW_COPY_AND_ASSIGN(MockClientSessionControl);
 };
 
 class MockClientSessionEventHandler : public ClientSession::EventHandler {
@@ -118,8 +91,6 @@ class MockClientSessionEventHandler : public ClientSession::EventHandler {
       ClientSession* client,
       const std::string& channel_name,
       const protocol::TransportRoute& route));
-  MOCK_METHOD2(OnClientDimensionsChanged, void(ClientSession* client,
-                                               const SkISize& size));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockClientSessionEventHandler);
@@ -130,18 +101,20 @@ class MockDesktopEnvironmentFactory : public DesktopEnvironmentFactory {
   MockDesktopEnvironmentFactory();
   virtual ~MockDesktopEnvironmentFactory();
 
-  MOCK_METHOD1(CreatePtr, DesktopEnvironment*(ClientSession* client));
+  MOCK_METHOD0(CreatePtr, DesktopEnvironment*());
+  MOCK_CONST_METHOD0(SupportsAudioCapture, bool());
 
-  virtual scoped_ptr<DesktopEnvironment> Create(ClientSession* client) OVERRIDE;
+  virtual scoped_ptr<DesktopEnvironment> Create(
+      base::WeakPtr<ClientSessionControl> client_session_control) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockDesktopEnvironmentFactory);
 };
 
-class MockEventExecutor : public EventExecutor {
+class MockInputInjector : public InputInjector {
  public:
-  MockEventExecutor();
-  virtual ~MockEventExecutor();
+  MockInputInjector();
+  virtual ~MockInputInjector();
 
   MOCK_METHOD1(InjectClipboardEvent,
                void(const protocol::ClipboardEvent& event));
@@ -153,7 +126,7 @@ class MockEventExecutor : public EventExecutor {
   void Start(scoped_ptr<protocol::ClipboardStub> client_clipboard);
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(MockEventExecutor);
+  DISALLOW_COPY_AND_ASSIGN(MockInputInjector);
 };
 
 class MockHostStatusObserver : public HostStatusObserver {
@@ -171,18 +144,6 @@ class MockHostStatusObserver : public HostStatusObserver {
                     const protocol::TransportRoute& route));
   MOCK_METHOD1(OnStart, void(const std::string& xmpp_login));
   MOCK_METHOD0(OnShutdown, void());
-};
-
-class MockUserAuthenticator : public UserAuthenticator {
- public:
-  MockUserAuthenticator();
-  virtual ~MockUserAuthenticator();
-
-  MOCK_METHOD2(Authenticate, bool(const std::string& username,
-                                  const std::string& password));
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockUserAuthenticator);
 };
 
 }  // namespace remoting

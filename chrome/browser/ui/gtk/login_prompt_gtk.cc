@@ -13,6 +13,7 @@
 #include "chrome/browser/ui/gtk/constrained_window_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/login/login_model.h"
+#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -21,6 +22,7 @@
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/scoped_gobject.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
@@ -34,19 +36,19 @@ using content::WebContents;
 // the UI thread) to the net::URLRequest (on the I/O thread).
 // This class uses ref counting to ensure that it lives until all InvokeLaters
 // have been called.
-class LoginHandlerGtk : public LoginHandler,
-                        public ConstrainedWindowGtkDelegate {
+class LoginHandlerGtk : public LoginHandler {
  public:
   LoginHandlerGtk(net::AuthChallengeInfo* auth_info, net::URLRequest* request)
       : LoginHandler(auth_info, request),
         username_entry_(NULL),
         password_entry_(NULL),
-        ok_(NULL) {
+        ok_(NULL),
+        dialog_(NULL) {
   }
 
   // LoginModelObserver implementation.
   virtual void OnAutofillDataAvailable(const string16& username,
-                                       const string16& password) {
+                                       const string16& password) OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
     // NOTE: Would be nice to use gtk_entry_get_text_length, but it is fairly
@@ -61,11 +63,15 @@ class LoginHandlerGtk : public LoginHandler,
   }
 
   // LoginHandler:
-  virtual void BuildViewForPasswordManager(PasswordManager* manager,
-                                           const string16& explanation) {
+  virtual void BuildViewForPasswordManager(
+      PasswordManager* manager,
+      const string16& explanation) OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-    root_.Own(gtk_vbox_new(FALSE, ui::kContentAreaBorder));
+    root_.reset(gtk_vbox_new(FALSE, ui::kContentAreaBorder));
+    g_object_ref_sink(root_.get());
+    g_signal_connect(root_.get(), "destroy", G_CALLBACK(OnDestroyThunk), this);
+
     GtkWidget* label = gtk_label_new(UTF16ToUTF8(explanation).c_str());
     gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
     gtk_box_pack_start(GTK_BOX(root_.get()), label, FALSE, FALSE, 0);
@@ -112,32 +118,23 @@ class LoginHandlerGtk : public LoginHandler,
     WebContents* requesting_contents = GetWebContentsForLogin();
     DCHECK(requesting_contents);
 
-    SetDialog(new ConstrainedWindowGtk(requesting_contents, this));
+    dialog_ = CreateWebContentsModalDialogGtk(root_.get(), username_entry_);
+
+    WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+        WebContentsModalDialogManager::FromWebContents(requesting_contents);
+    web_contents_modal_dialog_manager->ShowDialog(dialog_);
+
     NotifyAuthNeeded();
   }
 
-  // Overridden from ConstrainedWindowGtkDelegate:
-  virtual GtkWidget* GetWidgetRoot() {
-    return root_.get();
-  }
-
-  virtual GtkWidget* GetFocusWidget() {
-    return username_entry_;
-  }
-
-  virtual void DeleteDelegate() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-    // The constrained window is going to delete itself; clear our pointer.
-    SetDialog(NULL);
-    SetModel(NULL);
-
-    ReleaseSoon();
+  virtual void CloseDialog() OVERRIDE {
+    // The hosting dialog may have been freed.
+    if (dialog_)
+      gtk_widget_destroy(dialog_);
   }
 
  protected:
   virtual ~LoginHandlerGtk() {
-    root_.Destroy();
   }
 
  private:
@@ -147,15 +144,18 @@ class LoginHandlerGtk : public LoginHandler,
   CHROMEGTK_CALLBACK_0(LoginHandlerGtk, void, OnCancelClicked);
   CHROMEGTK_CALLBACK_1(LoginHandlerGtk, void, OnPromptHierarchyChanged,
                        GtkWidget*);
+  CHROMEGTK_CALLBACK_0(LoginHandlerGtk, void, OnDestroy);
 
   // The GtkWidgets that form our visual hierarchy:
   // The root container we pass to our parent.
-  ui::OwnedWidgetGtk root_;
+  ui::ScopedGObject<GtkWidget>::Type root_;
 
   // GtkEntry widgets that the user types into.
   GtkWidget* username_entry_;
   GtkWidget* password_entry_;
   GtkWidget* ok_;
+
+  GtkWidget* dialog_;
 
   DISALLOW_COPY_AND_ASSIGN(LoginHandlerGtk);
 };
@@ -187,4 +187,14 @@ void LoginHandlerGtk::OnPromptHierarchyChanged(GtkWidget* sender,
 LoginHandler* LoginHandler::Create(net::AuthChallengeInfo* auth_info,
                                    net::URLRequest* request) {
   return new LoginHandlerGtk(auth_info, request);
+}
+
+void LoginHandlerGtk::OnDestroy(GtkWidget* widget) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // The web contents modal dialog is going to delete itself; clear our pointer.
+  dialog_ = NULL;
+  SetModel(NULL);
+
+  ReleaseSoon();
 }

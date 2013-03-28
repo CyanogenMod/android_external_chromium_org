@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,8 +39,7 @@ namespace syncable {
 static const string::size_type kUpdateStatementBufferSize = 2048;
 
 // Increment this version whenever updating DB tables.
-extern const int32 kCurrentDBVersion;  // Global visibility for our unittest.
-const int32 kCurrentDBVersion = 83;
+const int32 kCurrentDBVersion = 85;
 
 // Iterate over the fields of |entry| and bind each to |statement| for
 // updating.  Returns the number of args bound.
@@ -172,12 +171,24 @@ DirectoryBackingStore::DirectoryBackingStore(const string& dir_name,
 DirectoryBackingStore::~DirectoryBackingStore() {
 }
 
-bool DirectoryBackingStore::DeleteEntries(const MetahandleSet& handles) {
+bool DirectoryBackingStore::DeleteEntries(EntryTable from,
+                                          const MetahandleSet& handles) {
   if (handles.empty())
     return true;
 
-  sql::Statement statement(db_->GetCachedStatement(
+  sql::Statement statement;
+  // Call GetCachedStatement() separately to get different statements for
+  // different tables.
+  switch (from) {
+    case METAS_TABLE:
+      statement.Assign(db_->GetCachedStatement(
           SQL_FROM_HERE, "DELETE FROM metas WHERE metahandle = ?"));
+      break;
+    case DELETE_JOURNAL_TABLE:
+      statement.Assign(db_->GetCachedStatement(
+          SQL_FROM_HERE, "DELETE FROM deleted_metas WHERE metahandle = ?"));
+      break;
+  }
 
   for (MetahandleSet::const_iterator i = handles.begin(); i != handles.end();
        ++i) {
@@ -197,21 +208,36 @@ bool DirectoryBackingStore::SaveChanges(
   // Back out early if there is nothing to write.
   bool save_info =
     (Directory::KERNEL_SHARE_INFO_DIRTY == snapshot.kernel_info_status);
-  if (snapshot.dirty_metas.size() < 1 && !save_info)
+  if (snapshot.dirty_metas.empty() && snapshot.metahandles_to_purge.empty() &&
+      snapshot.delete_journals.empty() &&
+      snapshot.delete_journals_to_purge.empty() && !save_info) {
     return true;
+  }
 
   sql::Transaction transaction(db_.get());
   if (!transaction.Begin())
     return false;
 
+  PrepareSaveEntryStatement(METAS_TABLE, &save_meta_statment_);
   for (EntryKernelSet::const_iterator i = snapshot.dirty_metas.begin();
        i != snapshot.dirty_metas.end(); ++i) {
-    DCHECK(i->is_dirty());
-    if (!SaveEntryToDB(*i))
+    DCHECK((*i)->is_dirty());
+    if (!SaveEntryToDB(&save_meta_statment_, **i))
       return false;
   }
 
-  if (!DeleteEntries(snapshot.metahandles_to_purge))
+  if (!DeleteEntries(METAS_TABLE, snapshot.metahandles_to_purge))
+    return false;
+
+  PrepareSaveEntryStatement(DELETE_JOURNAL_TABLE,
+                            &save_delete_journal_statment_);
+  for (EntryKernelSet::const_iterator i = snapshot.delete_journals.begin();
+       i != snapshot.delete_journals.end(); ++i) {
+    if (!SaveEntryToDB(&save_delete_journal_statment_, **i))
+      return false;
+  }
+
+  if (!DeleteEntries(DELETE_JOURNAL_TABLE, snapshot.delete_journals_to_purge))
     return false;
 
   if (save_info) {
@@ -221,13 +247,10 @@ bool DirectoryBackingStore::SaveChanges(
             "UPDATE share_info "
             "SET store_birthday = ?, "
             "next_id = ?, "
-            "notification_state = ?, "
             "bag_of_chips = ?"));
     s1.BindString(0, info.store_birthday);
     s1.BindInt64(1, info.next_id);
-    s1.BindBlob(2, info.notification_state.data(),
-                   info.notification_state.size());
-    s1.BindBlob(3, info.bag_of_chips.data(), info.bag_of_chips.size());
+    s1.BindBlob(2, info.bag_of_chips.data(), info.bag_of_chips.size());
 
     if (!s1.Run())
       return false;
@@ -236,19 +259,20 @@ bool DirectoryBackingStore::SaveChanges(
     sql::Statement s2(db_->GetCachedStatement(
             SQL_FROM_HERE,
             "INSERT OR REPLACE "
-            "INTO models (model_id, progress_marker, initial_sync_ended, "
-            "             transaction_version) "
-            "VALUES (?, ?, ?, ?)"));
+            "INTO models (model_id, progress_marker, transaction_version) "
+            "VALUES (?, ?, ?)"));
 
-    for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
+    ModelTypeSet protocol_types = ProtocolTypes();
+    for (ModelTypeSet::Iterator iter = protocol_types.First(); iter.Good();
+         iter.Inc()) {
+      ModelType type = iter.Get();
       // We persist not ModelType but rather a protobuf-derived ID.
-      string model_id = ModelTypeEnumToModelId(ModelTypeFromInt(i));
+      string model_id = ModelTypeEnumToModelId(type);
       string progress_marker;
-      info.download_progress[i].SerializeToString(&progress_marker);
+      info.download_progress[type].SerializeToString(&progress_marker);
       s2.BindBlob(0, model_id.data(), model_id.length());
       s2.BindBlob(1, progress_marker.data(), progress_marker.length());
-      s2.BindBool(2, info.initial_sync_ended.Has(ModelTypeFromInt(i)));
-      s2.BindInt64(3, info.transaction_version[i]);
+      s2.BindInt64(2, info.transaction_version[type]);
       if (!s2.Run())
         return false;
       DCHECK_EQ(db_->GetLastChangeCount(), 1);
@@ -364,6 +388,18 @@ bool DirectoryBackingStore::InitializeTables() {
       version_on_disk = 83;
   }
 
+  // Version 84 migration added deleted_metas table.
+  if (version_on_disk == 83) {
+    if (MigrateVersion83To84())
+      version_on_disk = 84;
+  }
+
+  // Version 85 migration removes the initial_sync_ended bits.
+  if (version_on_disk == 84) {
+    if (MigrateVersion84To85())
+      version_on_disk = 85;
+  }
+
   // If one of the migrations requested it, drop columns that aren't current.
   // It's only safe to do this after migrating all the way to the current
   // version.
@@ -373,13 +409,6 @@ bool DirectoryBackingStore::InitializeTables() {
   }
 
   // A final, alternative catch-all migration to simply re-sync everything.
-  //
-  // TODO(rlarocque): It's wrong to recreate the database here unless the higher
-  // layers were expecting us to do so.  See crbug.com/103824.  We must leave
-  // this code as is for now because this is the code that ends up creating the
-  // database in the first time sync case, where the higher layers are expecting
-  // us to create a fresh database.  The solution to this should be to implement
-  // crbug.com/105018.
   if (version_on_disk != kCurrentDBVersion) {
     if (version_on_disk > kCurrentDBVersion)
       return false;
@@ -441,6 +470,7 @@ bool DirectoryBackingStore::RefreshColumns() {
   if (!CreateShareInfoTable(true))
     return false;
 
+  // TODO(rlarocque, 124140): Remove notification_state.
   if (!db_->Execute(
           "INSERT INTO temp_share_info (id, name, store_birthday, "
           "db_create_version, db_create_time, next_id, cache_guid,"
@@ -460,30 +490,19 @@ bool DirectoryBackingStore::RefreshColumns() {
 }
 
 bool DirectoryBackingStore::LoadEntries(MetahandlesIndex* entry_bucket) {
-  string select;
-  select.reserve(kUpdateStatementBufferSize);
-  select.append("SELECT ");
-  AppendColumnList(&select);
-  select.append(" FROM metas ");
+  return LoadEntriesInternal("metas", entry_bucket);
+}
 
-  sql::Statement s(db_->GetUniqueStatement(select.c_str()));
-
-  while (s.Step()) {
-    scoped_ptr<EntryKernel> kernel = UnpackEntry(&s);
-    // A null kernel is evidence of external data corruption.
-    if (!kernel.get())
-      return false;
-    entry_bucket->insert(kernel.release());
-  }
-  return s.Succeeded();
+bool DirectoryBackingStore::LoadDeleteJournals(
+    JournalIndex* delete_journals) {
+  return LoadEntriesInternal("deleted_metas", delete_journals);
 }
 
 bool DirectoryBackingStore::LoadInfo(Directory::KernelLoadInfo* info) {
   {
     sql::Statement s(
         db_->GetUniqueStatement(
-            "SELECT store_birthday, next_id, cache_guid, notification_state, "
-            "bag_of_chips "
+            "SELECT store_birthday, next_id, cache_guid, bag_of_chips "
             "FROM share_info"));
     if (!s.Step())
       return false;
@@ -491,8 +510,7 @@ bool DirectoryBackingStore::LoadInfo(Directory::KernelLoadInfo* info) {
     info->kernel_info.store_birthday = s.ColumnString(0);
     info->kernel_info.next_id = s.ColumnInt64(1);
     info->cache_guid = s.ColumnString(2);
-    s.ColumnBlobAsString(3, &(info->kernel_info.notification_state));
-    s.ColumnBlobAsString(4, &(info->kernel_info.bag_of_chips));
+    s.ColumnBlobAsString(3, &(info->kernel_info.bag_of_chips));
 
     // Verify there was only one row returned.
     DCHECK(!s.Step());
@@ -502,7 +520,7 @@ bool DirectoryBackingStore::LoadInfo(Directory::KernelLoadInfo* info) {
   {
     sql::Statement s(
         db_->GetUniqueStatement(
-            "SELECT model_id, progress_marker, initial_sync_ended, "
+            "SELECT model_id, progress_marker, "
             "transaction_version FROM models"));
 
     while (s.Step()) {
@@ -511,9 +529,7 @@ bool DirectoryBackingStore::LoadInfo(Directory::KernelLoadInfo* info) {
       if (type != UNSPECIFIED && type != TOP_LEVEL_FOLDER) {
         info->kernel_info.download_progress[type].ParseFromArray(
             s.ColumnBlob(1), s.ColumnByteLength(1));
-        if (s.ColumnBool(2))
-          info->kernel_info.initial_sync_ended.Put(type);
-        info->kernel_info.transaction_version[type] = s.ColumnInt64(3);
+        info->kernel_info.transaction_version[type] = s.ColumnInt64(2);
       }
     }
     if (!s.Succeeded())
@@ -535,38 +551,12 @@ bool DirectoryBackingStore::LoadInfo(Directory::KernelLoadInfo* info) {
   return true;
 }
 
-bool DirectoryBackingStore::SaveEntryToDB(const EntryKernel& entry) {
-  // This statement is constructed at runtime, so we can't use
-  // GetCachedStatement() to let the Connection cache it.   We will construct
-  // and cache it ourselves the first time this function is called.
-  if (!save_entry_statement_.is_valid()) {
-    string query;
-    query.reserve(kUpdateStatementBufferSize);
-    query.append("INSERT OR REPLACE INTO metas ");
-    string values;
-    values.reserve(kUpdateStatementBufferSize);
-    values.append("VALUES ");
-    const char* separator = "( ";
-    int i = 0;
-    for (i = BEGIN_FIELDS; i < FIELD_COUNT; ++i) {
-      query.append(separator);
-      values.append(separator);
-      separator = ", ";
-      query.append(ColumnName(i));
-      values.append("?");
-    }
-    query.append(" ) ");
-    values.append(" )");
-    query.append(values);
-
-    save_entry_statement_.Assign(
-        db_->GetUniqueStatement(query.c_str()));
-  } else {
-    save_entry_statement_.Reset(true);
-  }
-
-  BindFields(entry, &save_entry_statement_);
-  return save_entry_statement_.Run();
+/* static */
+bool DirectoryBackingStore::SaveEntryToDB(sql::Statement* save_statement,
+                                          const EntryKernel& entry) {
+  save_statement->Reset(true);
+  BindFields(entry, save_statement);
+  return save_statement->Run();
 }
 
 bool DirectoryBackingStore::DropDeletedEntries() {
@@ -908,7 +898,7 @@ bool DirectoryBackingStore::MigrateVersion74To75() {
   // Move aside the old table and create a new empty one at the current schema.
   if (!db_->Execute("ALTER TABLE models RENAME TO temp_models"))
     return false;
-  if (!CreateModelsTable())
+  if (!CreateV75ModelsTable())
     return false;
 
   sql::Statement query(db_->GetUniqueStatement(
@@ -1059,14 +1049,6 @@ bool DirectoryBackingStore::MigrateVersion80To81() {
 }
 
 bool DirectoryBackingStore::MigrateVersion81To82() {
-  // Version 82 added transaction_version to kernel info. But if user is
-  // migrating from 74 or before, 74->75 migration would recreate models table
-  // that already has transaction_version column.
-  if (db_->DoesColumnExist("models", "transaction_version")) {
-    SetVersion(82);
-    return true;
-  }
-
   if (!db_->Execute(
       "ALTER TABLE models ADD COLUMN transaction_version BIGINT default 0"))
     return false;
@@ -1088,6 +1070,34 @@ bool DirectoryBackingStore::MigrateVersion82To83() {
   if (!update.Run())
     return false;
   SetVersion(83);
+  return true;
+}
+
+bool DirectoryBackingStore::MigrateVersion83To84() {
+  // Version 84 added deleted_metas table to store deleted metas until we know
+  // for sure that the deletions are persisted in native models.
+  string query = "CREATE TABLE deleted_metas ";
+  query.append(ComposeCreateTableColumnSpecs());
+  if (!db_->Execute(query.c_str()))
+    return false;
+  SetVersion(84);
+  return true;
+}
+
+bool DirectoryBackingStore::MigrateVersion84To85() {
+  // Version 84 removes the initial_sync_ended flag.
+  if (!db_->Execute("ALTER TABLE models RENAME TO temp_models"))
+    return false;
+  if (!CreateModelsTable())
+    return false;
+  if (!db_->Execute("INSERT INTO models SELECT "
+                    "model_id, progress_marker, transaction_version "
+                    "FROM temp_models")) {
+    return false;
+  }
+  SafeDropTable("temp_models");
+
+  SetVersion(85);
   return true;
 }
 
@@ -1125,6 +1135,7 @@ bool DirectoryBackingStore::CreateTables() {
             "?, "   // db_create_time
             "-2, "  // next_id
             "?, "   // cache_guid
+            // TODO(rlarocque, 124140): Remove notification_state field.
             "?, "   // notification_state
             "?);"));  // bag_of_chips
     s.BindString(0, dir_name_);                   // id
@@ -1135,6 +1146,7 @@ bool DirectoryBackingStore::CreateTables() {
     s.BindString(3, "Unknown");                   // db_create_version
     s.BindInt(4, static_cast<int32>(time(0)));    // db_create_time
     s.BindString(5, GenerateCacheGUID());         // cache_guid
+    // TODO(rlarocque, 124140): Remove this unused notification-state field.
     s.BindBlob(6, NULL, 0);                       // notification_state
     s.BindBlob(7, NULL, 0);                       // bag_of_chips
     if (!s.Run())
@@ -1169,9 +1181,17 @@ bool DirectoryBackingStore::CreateTables() {
 }
 
 bool DirectoryBackingStore::CreateMetasTable(bool is_temporary) {
-  const char* name = is_temporary ? "temp_metas" : "metas";
   string query = "CREATE TABLE ";
-  query.append(name);
+  query.append(is_temporary ? "temp_metas" : "metas");
+  query.append(ComposeCreateTableColumnSpecs());
+  if (!db_->Execute(query.c_str()))
+    return false;
+
+  // Create a deleted_metas table to save copies of deleted metas until the
+  // deletions are persisted. For simplicity, don't try to migrate existing
+  // data because it's rarely used.
+  SafeDropTable("deleted_metas");
+  query = "CREATE TABLE deleted_metas ";
   query.append(ComposeCreateTableColumnSpecs());
   return db_->Execute(query.c_str());
 }
@@ -1188,10 +1208,8 @@ bool DirectoryBackingStore::CreateV71ModelsTable() {
       "initial_sync_ended BOOLEAN default 0)");
 }
 
-bool DirectoryBackingStore::CreateModelsTable() {
-  // This is the current schema for the Models table, from version 81
-  // onward.  If you change the schema, you'll probably want to double-check
-  // the use of this function in the v74-v75 migration.
+bool DirectoryBackingStore::CreateV75ModelsTable() {
+  // This is an old schema for the Models table, used from versions 75 to 80.
   return db_->Execute(
       "CREATE TABLE models ("
       "model_id BLOB primary key, "
@@ -1199,7 +1217,20 @@ bool DirectoryBackingStore::CreateModelsTable() {
       // Gets set if the syncer ever gets updates from the
       // server and the server returns 0.  Lets us detect the
       // end of the initial sync.
-      "initial_sync_ended BOOLEAN default 0, "
+      "initial_sync_ended BOOLEAN default 0)");
+}
+
+bool DirectoryBackingStore::CreateModelsTable() {
+  // This is the current schema for the Models table, from version 81
+  // onward.  If you change the schema, you'll probably want to double-check
+  // the use of this function in the v84-v85 migration.
+  return db_->Execute(
+      "CREATE TABLE models ("
+      "model_id BLOB primary key, "
+      "progress_marker BLOB, "
+      // Gets set if the syncer ever gets updates from the
+      // server and the server returns 0.  Lets us detect the
+      // end of the initial sync.
       "transaction_version BIGINT default 0)");
 }
 
@@ -1217,6 +1248,7 @@ bool DirectoryBackingStore::CreateShareInfoTable(bool is_temporary) {
       "db_create_time INT, "
       "next_id INT default -2, "
       "cache_guid TEXT, "
+      // TODO(rlarocque, 124140): Remove notification_state field.
       "notification_state BLOB, "
       "bag_of_chips BLOB"
       ")");
@@ -1269,6 +1301,62 @@ bool DirectoryBackingStore::VerifyReferenceIntegrity(
     is_ok = is_ok && prev_exists && parent_exists && next_exists;
   }
   return is_ok;
+}
+
+template<class T>
+bool DirectoryBackingStore::LoadEntriesInternal(const std::string& table,
+                                                T* bucket) {
+  string select;
+  select.reserve(kUpdateStatementBufferSize);
+  select.append("SELECT ");
+  AppendColumnList(&select);
+  select.append(" FROM " + table);
+
+  sql::Statement s(db_->GetUniqueStatement(select.c_str()));
+
+  while (s.Step()) {
+    scoped_ptr<EntryKernel> kernel = UnpackEntry(&s);
+    // A null kernel is evidence of external data corruption.
+    if (!kernel.get())
+      return false;
+    bucket->insert(kernel.release());
+  }
+  return s.Succeeded();
+}
+
+void DirectoryBackingStore::PrepareSaveEntryStatement(
+    EntryTable table, sql::Statement* save_statement) {
+  if (save_statement->is_valid())
+    return;
+
+  string query;
+  query.reserve(kUpdateStatementBufferSize);
+  switch (table) {
+    case METAS_TABLE:
+      query.append("INSERT OR REPLACE INTO metas ");
+      break;
+    case DELETE_JOURNAL_TABLE:
+      query.append("INSERT OR REPLACE INTO deleted_metas ");
+      break;
+  }
+
+  string values;
+  values.reserve(kUpdateStatementBufferSize);
+  values.append(" VALUES ");
+  const char* separator = "( ";
+  int i = 0;
+  for (i = BEGIN_FIELDS; i < FIELD_COUNT; ++i) {
+    query.append(separator);
+    values.append(separator);
+    separator = ", ";
+    query.append(ColumnName(i));
+    values.append("?");
+  }
+  query.append(" ) ");
+  values.append(" )");
+  query.append(values);
+  save_statement->Assign(db_->GetUniqueStatement(
+      base::StringPrintf(query.c_str(), "metas").c_str()));
 }
 
 }  // namespace syncable

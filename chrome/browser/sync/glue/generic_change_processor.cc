@@ -5,7 +5,7 @@
 #include "chrome/browser/sync/glue/generic_change_processor.h"
 
 #include "base/location.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_change.h"
@@ -27,9 +27,11 @@ namespace browser_sync {
 GenericChangeProcessor::GenericChangeProcessor(
     DataTypeErrorHandler* error_handler,
     const base::WeakPtr<syncer::SyncableService>& local_service,
+    const base::WeakPtr<syncer::SyncMergeResult>& merge_result,
     syncer::UserShare* user_share)
     : ChangeProcessor(error_handler),
       local_service_(local_service),
+      merge_result_(merge_result),
       share_handle_(user_share) {
   DCHECK(CalledOnValidThread());
 }
@@ -129,6 +131,17 @@ syncer::SyncError GenericChangeProcessor::GetSyncDataForType(
     sync_child_id = sync_child_node.GetSuccessorId();
   }
   return syncer::SyncError();
+}
+
+int GenericChangeProcessor::GetSyncCountForType(syncer::ModelType type) {
+  syncer::ReadTransaction trans(FROM_HERE, share_handle());
+  syncer::ReadNode root(&trans);
+  if (root.InitByTagLookup(syncer::ModelTypeToRootTag(type)) !=
+      syncer::BaseNode::INIT_OK)
+    return 0;
+
+  // Subtract one to account for type's root node.
+  return root.GetTotalNodeCount() - 1;
 }
 
 namespace {
@@ -235,7 +248,10 @@ syncer::SyncError AttemptDelete(
           type, error_handler);
     }
   }
-  node->Remove();
+  if (IsActOnceDataType(type))
+    node->Drop();
+  else
+    node->Tombstone();
   return syncer::SyncError();
 }
 
@@ -266,6 +282,10 @@ syncer::SyncError GenericChangeProcessor::ProcessSyncChanges(
       if (error.IsSet()) {
         NOTREACHED();
         return error;
+      }
+      if (merge_result_.get()) {
+        merge_result_->set_num_items_deleted(
+            merge_result_->num_items_deleted() + 1);
       }
     } else if (change.change_type() == syncer::SyncChange::ACTION_ADD) {
       // TODO(sync): Handle other types of creation (custom parents, folders,
@@ -337,6 +357,10 @@ syncer::SyncError GenericChangeProcessor::ProcessSyncChanges(
       }
       sync_node.SetTitle(UTF8ToWide(change.sync_data().GetTitle()));
       sync_node.SetEntitySpecifics(change.sync_data().GetSpecifics());
+      if (merge_result_.get()) {
+        merge_result_->set_num_items_added(
+            merge_result_->num_items_added() + 1);
+      }
     } else if (change.change_type() == syncer::SyncChange::ACTION_UPDATE) {
       // TODO(zea): consider having this logic for all possible changes?
       syncer::BaseNode::InitByLookupResult result =
@@ -422,12 +446,16 @@ syncer::SyncError GenericChangeProcessor::ProcessSyncChanges(
             return error;
           }
         }
-      } else {
-        sync_node.SetTitle(UTF8ToWide(change.sync_data().GetTitle()));
-        sync_node.SetEntitySpecifics(change.sync_data().GetSpecifics());
-        // TODO(sync): Support updating other parts of the sync node (title,
-        // successor, parent, etc.).
       }
+
+      sync_node.SetTitle(UTF8ToWide(change.sync_data().GetTitle()));
+      sync_node.SetEntitySpecifics(change.sync_data().GetSpecifics());
+      if (merge_result_.get()) {
+        merge_result_->set_num_items_modified(
+            merge_result_->num_items_modified() + 1);
+      }
+      // TODO(sync): Support updating other parts of the sync node (title,
+      // successor, parent, etc.).
     } else {
       syncer::SyncError error(
           FROM_HERE,

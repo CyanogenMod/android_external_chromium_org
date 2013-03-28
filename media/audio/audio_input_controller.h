@@ -82,7 +82,7 @@ class MEDIA_EXPORT AudioInputController
    public:
     virtual void OnCreated(AudioInputController* controller) = 0;
     virtual void OnRecording(AudioInputController* controller) = 0;
-    virtual void OnError(AudioInputController* controller, int error_code) = 0;
+    virtual void OnError(AudioInputController* controller) = 0;
     virtual void OnData(AudioInputController* controller, const uint8* data,
                         uint32 size) = 0;
 
@@ -146,6 +146,17 @@ class MEDIA_EXPORT AudioInputController
       // External synchronous writer for audio controller.
       SyncWriter* sync_writer);
 
+  // Factory method for creating an AudioInputController for low-latency mode,
+  // taking ownership of |stream|.  The stream will be opened on the audio
+  // thread, and when that is done, the event handler will receive an
+  // OnCreated() call from that same thread.
+  static scoped_refptr<AudioInputController> CreateForStream(
+      AudioManager* audio_manager,
+      EventHandler* event_handler,
+      AudioInputStream* stream,
+      // External synchronous writer for audio controller.
+      SyncWriter* sync_writer);
+
   // Starts recording using the created audio input stream.
   // This method is called on the creator thread.
   virtual void Record();
@@ -173,7 +184,7 @@ class MEDIA_EXPORT AudioInputController
   virtual void OnData(AudioInputStream* stream, const uint8* src, uint32 size,
                       uint32 hardware_delay_bytes, double volume) OVERRIDE;
   virtual void OnClose(AudioInputStream* stream) OVERRIDE;
-  virtual void OnError(AudioInputStream* stream, int code) OVERRIDE;
+  virtual void OnError(AudioInputStream* stream) OVERRIDE;
 
   bool LowLatencyMode() const { return sync_writer_ != NULL; }
 
@@ -195,9 +206,10 @@ class MEDIA_EXPORT AudioInputController
   // Methods called on the audio thread (owned by the AudioManager).
   void DoCreate(AudioManager* audio_manager, const AudioParameters& params,
                 const std::string& device_id);
+  void DoCreateForStream(AudioInputStream* stream_to_control);
   void DoRecord();
   void DoClose();
-  void DoReportError(int code);
+  void DoReportError();
   void DoSetVolume(double volume);
   void DoSetAutomaticGainControl(bool enabled);
 

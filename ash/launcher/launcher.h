@@ -6,12 +6,12 @@
 #define ASH_LAUNCHER_LAUNCHER_H_
 
 #include "ash/ash_export.h"
-#include "ash/launcher/background_animator.h"
 #include "ash/launcher/launcher_types.h"
-#include "ash/wm/shelf_types.h"
+#include "ash/shelf/shelf_types.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gfx/size.h"
+#include "ui/views/widget/widget_observer.h"
 
 namespace aura {
 class Window;
@@ -23,7 +23,6 @@ class Rect;
 
 namespace views {
 class View;
-class Widget;
 }
 
 namespace ash {
@@ -37,11 +36,13 @@ class ShelfLayoutManager;
 class LauncherIconObserver;
 class LauncherDelegate;
 class LauncherModel;
+class ShelfWidget;
 
-class ASH_EXPORT Launcher  {
+class ASH_EXPORT Launcher {
  public:
-  Launcher(aura::Window* window_container,
-           internal::ShelfLayoutManager* shelf_layout_manager);
+  Launcher(LauncherModel* launcher_model,
+           LauncherDelegate* launcher_delegate,
+           ShelfWidget* shelf_widget);
   virtual ~Launcher();
 
   // Return the launcher for the primary display. NULL if no user is
@@ -53,33 +54,16 @@ class ASH_EXPORT Launcher  {
   // is disabled. NULL if no user is logged in yet.
   static Launcher* ForWindow(aura::Window* window);
 
-  // Sets the focus cycler.  Also adds the launcher to the cycle.
-  void SetFocusCycler(internal::FocusCycler* focus_cycler);
-  internal::FocusCycler* GetFocusCycler();
-
   void SetAlignment(ShelfAlignment alignment);
   ShelfAlignment alignment() const { return alignment_; }
-
-  // Sets whether the launcher paints a background. Default is false, but is set
-  // to true if a window overlaps the shelf.
-  void SetPaintsBackground(
-      bool value,
-      internal::BackgroundAnimator::ChangeType change_type);
-  bool paints_background() const {
-    return background_animator_.paints_background();
-  }
-
-  // Causes shelf items to be slightly dimmed.
-  void SetDimsShelf(bool value);
-  bool GetDimsShelf() const;
-
-  // Sets the size of the status area.
-  void SetStatusSize(const gfx::Size& size);
-  const gfx::Size& status_size() const { return status_size_; }
 
   // Returns the screen bounds of the item for the specified window. If there is
   // no item for the specified window an empty rect is returned.
   gfx::Rect GetScreenBoundsOfItemIconForWindow(aura::Window* window);
+
+  // Updates the icon position given the current window bounds. This is used
+  // when dragging panels to reposition them with respect to the other panels.
+  void UpdateIconPositionForWindow(aura::Window* window);
 
   // Activates the the launcher item specified by the index in the list
   // of launcher items.
@@ -100,51 +84,35 @@ class ASH_EXPORT Launcher  {
   bool IsShowingOverflowBubble() const;
 
   void SetVisible(bool visible) const;
+  bool IsVisible() const;
 
   views::View* GetAppListButtonView() const;
 
-  // Sets the bounds of the launcher widget, and the dimmer if visible.
-  void SetWidgetBounds(const gfx::Rect bounds);
+  // Switches to a 0-indexed (in order of creation) window.
+  // A negative index switches to the last window in the list.
+  void SwitchToWindow(int window_index);
 
   // Only to be called for testing. Retrieves the LauncherView.
   // TODO(sky): remove this!
   internal::LauncherView* GetLauncherViewForTest();
 
-  LauncherDelegate* delegate() { return delegate_.get(); }
+  LauncherDelegate* delegate() { return delegate_; }
 
-  LauncherModel* model() { return model_.get(); }
-  views::Widget* widget() { return widget_.get(); }
+  ShelfWidget* shelf_widget() { return shelf_widget_; }
 
-  views::Widget* GetDimmerWidgetForTest() { return dimmer_.get(); }
-
-  aura::Window* window_container() { return window_container_; }
+  // Set the bounds of the launcher view.
+  void SetLauncherViewBounds(gfx::Rect bounds);
+  gfx::Rect GetLauncherViewBounds() const;
 
  private:
-  class DelegateView;
-
-  scoped_ptr<LauncherModel> model_;
-
-  // Widget hosting the view.
-  scoped_ptr<views::Widget> widget_;
-  scoped_ptr<views::Widget> dimmer_;
-
-  aura::Window* window_container_;
-
-  // Contents view of the widget. Houses the LauncherView.
-  DelegateView* delegate_view_;
-
   // LauncherView used to display icons.
   internal::LauncherView* launcher_view_;
 
   ShelfAlignment alignment_;
 
-  scoped_ptr<LauncherDelegate> delegate_;
+  LauncherDelegate* delegate_;
 
-  // Size reserved for the status area.
-  gfx::Size status_size_;
-
-  // Used to animate the background.
-  internal::BackgroundAnimator background_animator_;
+  ShelfWidget* shelf_widget_;
 
   DISALLOW_COPY_AND_ASSIGN(Launcher);
 };

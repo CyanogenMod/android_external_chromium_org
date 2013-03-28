@@ -5,7 +5,7 @@
 #include "chrome/browser/status_icons/desktop_notification_balloon.h"
 
 #include "base/bind.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
@@ -13,7 +13,6 @@
 #include "chrome/browser/notifications/notification_delegate.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/webui/web_ui_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image_skia.h"
 
@@ -83,6 +82,6 @@ void DesktopNotificationBalloon::DisplayBalloon(const gfx::ImageSkia& icon,
     profile = ProfileManager::GetLastUsedProfile();
   }
   notification_id_ = DesktopNotificationService::AddIconNotification(
-      GURL(), title, contents, icon, string16(),
+      GURL(), title, contents, gfx::Image(icon), string16(),
       new DummyNotificationDelegate(base::IntToString(id_count_++)), profile);
 }

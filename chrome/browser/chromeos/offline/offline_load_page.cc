@@ -16,24 +16,30 @@
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/browser_resources.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "grit/google_chrome_strings.h"
+#include "grit/theme_resources.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/webui/jstemplate_builder.h"
+#include "ui/webui/web_ui_util.h"
 
 using content::BrowserThread;
 using content::InterstitialPage;
@@ -78,10 +84,17 @@ std::string OfflineLoadPage::GetHTMLContents() {
   int64 time_to_wait = kMaxBlankPeriod;
   // Set the timeout to show the page.
   strings.SetInteger("time_to_wait", static_cast<int>(time_to_wait));
+
   // Button labels
-  SetString(&strings, "heading", IDS_OFFLINE_LOAD_HEADLINE);
-  SetString(&strings, "try_loading", IDS_OFFLINE_TRY_LOADING);
+  SetString(&strings, "msg", IDS_OFFLINE_LOAD_DESCRIPTION);
   SetString(&strings, "network_settings", IDS_OFFLINE_NETWORK_SETTINGS);
+  SetString(&strings, "product_name", IDS_SHORT_PRODUCT_NAME_LOWER);
+
+  // Get the Chromium/Chrome icon, we can't access the icon via chrome://theme
+  // on the webpage since the interstitial page isn't a webui and doesn't have
+  // access to chrome:// URL's.
+  strings.SetString("icon",
+                    webui::GetBitmapDataUrlFromResource(IDR_PRODUCT_LOGO_32));
 
   // Activation
   strings.SetBoolean("show_activation", ShowActivationMessage());
@@ -99,21 +112,22 @@ std::string OfflineLoadPage::GetHTMLContents() {
       web_contents_->GetBrowserContext());
   DCHECK(profile);
   const extensions::Extension* extension = NULL;
-  ExtensionService* extensions_service = profile->GetExtensionService();
+  ExtensionService* extensions_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
   // Extension service does not exist in test.
   if (extensions_service)
     extension = extensions_service->extensions()->GetHostedAppByURL(
         ExtensionURLInfo(url_));
 
   if (extension)
-    GetAppOfflineStrings(extension, failed_url, &strings);
+    GetAppOfflineStrings(extension, &strings);
   else
-    GetNormalOfflineStrings(failed_url, &strings);
+    GetNormalOfflineStrings(&strings);
 
   base::StringPiece html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           IDR_OFFLINE_LOAD_HTML));
-  return jstemplate_builder::GetI18nTemplateHtml(html, &strings);
+  return webui::GetI18nTemplateHtml(html, &strings);
 }
 
  void OfflineLoadPage::OverrideRendererPrefs(
@@ -121,7 +135,7 @@ std::string OfflineLoadPage::GetHTMLContents() {
   Profile* profile = Profile::FromBrowserContext(
       web_contents_->GetBrowserContext());
   renderer_preferences_util::UpdateFromSystemSettings(prefs, profile);
- }
+}
 
 void OfflineLoadPage::OnProceed() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -139,40 +153,16 @@ void OfflineLoadPage::OnDontProceed() {
 
 void OfflineLoadPage::GetAppOfflineStrings(
     const extensions::Extension* app,
-    const string16& failed_url,
     DictionaryValue* strings) const {
   strings->SetString("title", app->name());
-
-  GURL icon_url = app->GetIconURL(extension_misc::EXTENSION_ICON_LARGE,
-                                  ExtensionIconSet::MATCH_BIGGER);
-  if (icon_url.is_empty()) {
-    strings->SetString("display_icon", "none");
-    strings->SetString("icon", string16());
-  } else {
-    // Default icon is not accessible from interstitial page.
-    // TODO(oshima): Figure out how to use default icon.
-    strings->SetString("display_icon", "block");
-    strings->SetString("icon", icon_url.spec());
-  }
-
   strings->SetString(
-      "msg",
-      l10n_util::GetStringFUTF16(IDS_APP_OFFLINE_LOAD_DESCRIPTION,
-                                 net::EscapeForHTML(failed_url)));
+      "heading", l10n_util::GetStringUTF16(IDS_APP_OFFLINE_LOAD_HEADLINE));
 }
 
-void OfflineLoadPage::GetNormalOfflineStrings(
-    const string16& failed_url, DictionaryValue* strings) const {
+void OfflineLoadPage::GetNormalOfflineStrings(DictionaryValue* strings) const {
   strings->SetString("title", web_contents_->GetTitle());
-
-  // No icon for normal web site.
-  strings->SetString("display_icon", "none");
-  strings->SetString("icon", string16());
-
   strings->SetString(
-      "msg",
-      l10n_util::GetStringFUTF16(IDS_SITE_OFFLINE_LOAD_DESCRIPTION,
-                                 net::EscapeForHTML(failed_url)));
+      "heading", l10n_util::GetStringUTF16(IDS_SITE_OFFLINE_LOAD_HEADLINE));
 }
 
 void OfflineLoadPage::CommandReceived(const std::string& cmd) {
@@ -182,12 +172,8 @@ void OfflineLoadPage::CommandReceived(const std::string& cmd) {
     command = command.substr(1, command.length() - 2);
   }
   // TODO(oshima): record action for metrics.
-  if (command == "proceed") {
-    interstitial_page_->Proceed();
-  } else if (command == "dontproceed") {
-    interstitial_page_->DontProceed();
-  } else if (command == "open_network_settings") {
-    ash::Shell::GetInstance()->tray_delegate()->ShowNetworkSettings();
+  if (command == "open_network_settings") {
+    ash::Shell::GetInstance()->system_tray_delegate()->ShowNetworkSettings();
   } else {
     LOG(WARNING) << "Unknown command:" << cmd;
   }

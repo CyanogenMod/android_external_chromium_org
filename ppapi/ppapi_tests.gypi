@@ -43,7 +43,6 @@
         'action': [
           '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)chrome<(EXECUTABLE_SUFFIX)',
           '--enable-pepper-testing',
-          '--enable-accelerated-plugins',
           '--register-pepper-plugins=$(TargetPath);application/x-ppapi-tests',
           'file://$(ProjectDir)/tests/test_case.html?testcase=',
         ],
@@ -56,6 +55,8 @@
             '_CRT_NONSTDC_NO_DEPRECATE',
             '_SCL_SECURE_NO_DEPRECATE',
           ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         }],
         ['OS=="mac"', {
           'mac_bundle': 1,
@@ -63,6 +64,8 @@
           'product_extension': 'plugin',
         }],
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
 # TODO(dmichael):  Figure out what is wrong with the script on Windows and add
 #                  it as an automated action.
 #      'actions': [
@@ -126,6 +129,7 @@
         'chromium_code': 1,
       },
       'dependencies': [
+        'ppapi_host',
         'ppapi_proxy',
         'ppapi_shared',
         'ppapi_unittest_shared',
@@ -141,6 +145,8 @@
       'sources': [
         'proxy/run_all_unittests.cc',
 
+        'host/resource_message_filter_unittest.cc',
+        'proxy/device_enumeration_resource_helper_unittest.cc',
         'proxy/file_chooser_resource_unittest.cc',
         'proxy/flash_resource_unittest.cc',
         'proxy/mock_resource.cc',
@@ -156,8 +162,11 @@
         'proxy/serialized_var_unittest.cc',
         'proxy/websocket_resource_unittest.cc',
         'shared_impl/resource_tracker_unittest.cc',
+        'shared_impl/thread_aware_callback_unittest.cc',
+        'shared_impl/time_conversion_unittest.cc',
         'shared_impl/tracked_callback_unittest.cc',
         'shared_impl/var_tracker_unittest.cc',
+        'shared_impl/var_value_conversions_unittest.cc',
       ],
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
@@ -170,6 +179,8 @@
           ],
         }],
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],          
     },
     {
       'target_name': 'ppapi_example_skeleton',
@@ -233,6 +244,8 @@
       'sources': [
         'examples/gamepad/gamepad.cc',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
 
     {
@@ -304,6 +317,8 @@
       'sources': [
         'examples/ime/ime.cc',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'ppapi_example_paint_manager',
@@ -366,6 +381,16 @@
       ],
     },
     {
+      'target_name': 'ppapi_example_url_loader_file',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/url_loader/stream_to_file.cc',
+      ],
+    },
+    {
       'target_name': 'ppapi_example_gles2',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -395,6 +420,8 @@
         'examples/video_decode/video_decode.cc',
         'examples/video_decode/testdata.h',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'ppapi_example_vc',
@@ -440,6 +467,8 @@
       'sources': [
         'examples/printing/printing.cc',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
   ],
 }

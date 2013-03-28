@@ -4,20 +4,13 @@
 
 #include "android_webview/common/aw_content_client.h"
 
-#include "android_webview/common/url_constants.h"
 #include "base/basictypes.h"
+#include "ipc/ipc_message.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/user_agent/user_agent_util.h"
 
 namespace android_webview {
-
-void AwContentClient::AddAdditionalSchemes(
-    std::vector<std::string>* standard_schemes,
-    std::vector<std::string>* savable_schemes) {
-  // In the future we may need to expand this list, see BUG=159832.
-  standard_schemes->push_back(kContentScheme);
-}
 
 std::string AwContentClient::GetProduct() const {
   // "Version/4.0" had been hardcoded in the legacy WebView.
@@ -41,6 +34,14 @@ base::StringPiece AwContentClient::GetDataResource(
   // Android WebView.
   return ResourceBundle::GetSharedInstance().GetRawDataResourceForScale(
       resource_id, scale_factor);
+}
+
+bool AwContentClient::CanSendWhileSwappedOut(const IPC::Message* message) {
+  // For legacy API support we perform a few browser -> renderer synchronous IPC
+  // messages that block the browser. However, the synchronous IPC replies might
+  // be dropped by the renderer during a swap out, deadlocking the browser.
+  // Because of this we should never drop any synchronous IPC replies.
+  return message->type() == IPC_REPLY_ID;
 }
 
 }  // namespace android_webview

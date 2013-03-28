@@ -8,11 +8,12 @@
 #include <string>
 
 #include "base/message_loop.h"
-#include "chrome/browser/api/infobars/infobar_delegate.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/google/google_url_tracker_infobar_delegate.h"
+#include "chrome/browser/google/google_url_tracker_navigation_helper.h"
 #include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
@@ -31,19 +32,31 @@ namespace {
 
 class TestInfoBarDelegate : public GoogleURLTrackerInfoBarDelegate {
  public:
+  // Creates a test delegate and returns it.  Unlike the parent class, this does
+  // not create add the infobar to |infobar_service|, since that "pointer" is
+  // really just a magic number.  Thus there is no InfoBarService ownership of
+  // the returned object; and since the caller doesn't own the returned object,
+  // we rely on |test_harness| cleaning this up eventually in
+  // GoogleURLTrackerTest::OnInfoBarClosed() to avoid leaks.
+  static GoogleURLTrackerInfoBarDelegate* Create(
+      GoogleURLTrackerTest* test_harness,
+      InfoBarService* infobar_service,
+      GoogleURLTracker* google_url_tracker,
+      const GURL& search_url);
+
+ private:
   TestInfoBarDelegate(GoogleURLTrackerTest* test_harness,
-                      InfoBarTabHelper* infobar_helper,
+                      InfoBarService* infobar_service,
                       GoogleURLTracker* google_url_tracker,
                       const GURL& search_url);
   virtual ~TestInfoBarDelegate();
 
- private:
   // GoogleURLTrackerInfoBarDelegate:
   virtual void Update(const GURL& search_url) OVERRIDE;
   virtual void Close(bool redo_search) OVERRIDE;
 
   GoogleURLTrackerTest* test_harness_;
-  InfoBarTabHelper* infobar_helper_;
+  InfoBarService* infobar_service_;
 
   DISALLOW_COPY_AND_ASSIGN(TestInfoBarDelegate);
 };
@@ -61,7 +74,7 @@ class TestNotificationObserver : public content::NotificationObserver {
 
   virtual void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details);
+                       const content::NotificationDetails& details) OVERRIDE;
   bool notified() const { return notified_; }
   void clear_notified() { notified_ = false; }
 
@@ -82,6 +95,89 @@ void TestNotificationObserver::Observe(
   notified_ = true;
 }
 
+
+// TestGoogleURLTrackerNavigationHelper -------------------------------------
+
+class TestGoogleURLTrackerNavigationHelper
+    : public GoogleURLTrackerNavigationHelper {
+ public:
+  TestGoogleURLTrackerNavigationHelper();
+  virtual ~TestGoogleURLTrackerNavigationHelper();
+
+  virtual void SetGoogleURLTracker(GoogleURLTracker* tracker) OVERRIDE;
+  virtual void SetListeningForNavigationStart(bool listen) OVERRIDE;
+  virtual bool IsListeningForNavigationStart() OVERRIDE;
+  virtual void SetListeningForNavigationCommit(
+      const content::NavigationController* nav_controller,
+      bool listen) OVERRIDE;
+  virtual bool IsListeningForNavigationCommit(
+      const content::NavigationController* nav_controller) OVERRIDE;
+  virtual void SetListeningForTabDestruction(
+      const content::NavigationController* nav_controller,
+      bool listen) OVERRIDE;
+  virtual bool IsListeningForTabDestruction(
+      const content::NavigationController* nav_controller) OVERRIDE;
+
+ private:
+  GoogleURLTracker* tracker_;
+  bool observe_nav_start_;
+  std::set<const content::NavigationController*>
+      nav_controller_commit_listeners_;
+  std::set<const content::NavigationController*>
+      nav_controller_tab_close_listeners_;
+};
+
+TestGoogleURLTrackerNavigationHelper::TestGoogleURLTrackerNavigationHelper()
+    : tracker_(NULL),
+      observe_nav_start_(false) {
+}
+
+TestGoogleURLTrackerNavigationHelper::
+    ~TestGoogleURLTrackerNavigationHelper() {
+}
+
+void TestGoogleURLTrackerNavigationHelper::SetGoogleURLTracker(
+    GoogleURLTracker* tracker) {
+  tracker_ = tracker;
+}
+
+void TestGoogleURLTrackerNavigationHelper::SetListeningForNavigationStart(
+    bool listen) {
+  observe_nav_start_ = listen;
+}
+
+bool TestGoogleURLTrackerNavigationHelper::IsListeningForNavigationStart() {
+  return observe_nav_start_;
+}
+
+void TestGoogleURLTrackerNavigationHelper::SetListeningForNavigationCommit(
+    const content::NavigationController* nav_controller,
+    bool listen) {
+  if (listen)
+    nav_controller_commit_listeners_.insert(nav_controller);
+  else
+    nav_controller_commit_listeners_.erase(nav_controller);
+}
+
+bool TestGoogleURLTrackerNavigationHelper::IsListeningForNavigationCommit(
+    const content::NavigationController* nav_controller) {
+  return nav_controller_commit_listeners_.count(nav_controller) > 0;
+}
+
+void TestGoogleURLTrackerNavigationHelper::SetListeningForTabDestruction(
+    const content::NavigationController* nav_controller,
+    bool listen) {
+  if (listen)
+    nav_controller_tab_close_listeners_.insert(nav_controller);
+  else
+    nav_controller_tab_close_listeners_.erase(nav_controller);
+}
+
+bool TestGoogleURLTrackerNavigationHelper::IsListeningForTabDestruction(
+    const content::NavigationController* nav_controller) {
+  return nav_controller_tab_close_listeners_.count(nav_controller) > 0;
+}
+
 }  // namespace
 
 
@@ -89,14 +185,13 @@ void TestNotificationObserver::Observe(
 
 // Ths class exercises GoogleURLTracker.  In order to avoid instantiating more
 // of the Chrome infrastructure than necessary, the GoogleURLTracker functions
-// are carefully written so that many of the functions which take WebContents*,
-// NavigationController*, InfoBarTabHelper*, or objects containing such pointers
-// (e.g. NotificationSource) do not actually dereference the objects, merely use
-// them for comparisons and lookups, e.g. in |entry_map_|.  This then allows the
-// test code here to not create any of these objects, and instead supply
-// "pointers" that are actually reinterpret_cast<>()ed magic numbers.  Then we
-// write the necessary stubs/hooks, here and in TestInfoBarDelegate above, to
-// make everything continue to work.
+// are carefully written so that many of the functions which take
+// NavigationController* or InfoBarService* do not actually dereference the
+// objects, merely use them for comparisons and lookups, e.g. in |entry_map_|.
+// This then allows the test code here to not create any of these objects, and
+// instead supply "pointers" that are actually reinterpret_cast<>()ed magic
+// numbers.  Then we write the necessary stubs/hooks, here and in
+// TestInfoBarDelegate above, to make everything continue to work.
 //
 // Technically, the C++98 spec defines the result of casting
 // T* -> intptr_t -> T* to be an identity, but intptr_t -> T* -> intptr_t (what
@@ -106,8 +201,8 @@ void TestNotificationObserver::Observe(
 class GoogleURLTrackerTest : public testing::Test {
  public:
   // Called by TestInfoBarDelegate::Close().
-  void OnInfoBarClosed(GoogleURLTrackerInfoBarDelegate* infobar,
-                       InfoBarTabHelper* infobar_helper);
+  void OnInfoBarClosed(InfoBarDelegate* infobar,
+                       InfoBarService* infobar_service);
 
  protected:
   GoogleURLTrackerTest();
@@ -134,7 +229,6 @@ class GoogleURLTrackerTest : public testing::Test {
   void SetNavigationPending(intptr_t unique_id, bool is_search);
   void CommitNonSearch(intptr_t unique_id);
   void CommitSearch(intptr_t unique_id, const GURL& search_url);
-  void DoInstantNavigation(intptr_t unique_id, const GURL& search_url);
   void CloseTab(intptr_t unique_id);
   GoogleURLTrackerMapEntry* GetMapEntry(intptr_t unique_id);
   GoogleURLTrackerInfoBarDelegate* GetInfoBar(intptr_t unique_id);
@@ -144,12 +238,12 @@ class GoogleURLTrackerTest : public testing::Test {
   void clear_observer_notified() { observer_.clear_notified(); }
 
  private:
-  // Since |infobar_helper| is really a magic number rather than an actual
+  // Since |infobar_service| is really a magic number rather than an actual
   // object, we don't add the created infobar to it.  Instead we will simulate
   // any helper<->infobar interaction necessary.  The returned object will be
   // cleaned up in CloseTab().
   GoogleURLTrackerInfoBarDelegate* CreateTestInfoBar(
-      InfoBarTabHelper* infobar_helper,
+      InfoBarService* infobar_service,
       GoogleURLTracker* google_url_tracker,
       const GURL& search_url);
 
@@ -163,6 +257,7 @@ class GoogleURLTrackerTest : public testing::Test {
   net::TestURLFetcherFactory fetcher_factory_;
   content::NotificationRegistrar registrar_;
   TestNotificationObserver observer_;
+  GoogleURLTrackerNavigationHelper* nav_helper_;
   TestingProfile profile_;
   scoped_ptr<GoogleURLTracker> google_url_tracker_;
   // This tracks the different "tabs" a test has "opened", so we can close them
@@ -170,22 +265,21 @@ class GoogleURLTrackerTest : public testing::Test {
   std::set<int> unique_ids_seen_;
 };
 
-void GoogleURLTrackerTest::OnInfoBarClosed(
-    GoogleURLTrackerInfoBarDelegate* infobar,
-    InfoBarTabHelper* infobar_helper) {
-  // First, simulate the InfoBarTabHelper firing INFOBAR_REMOVED.
+void GoogleURLTrackerTest::OnInfoBarClosed(InfoBarDelegate* infobar,
+                                           InfoBarService* infobar_service) {
+  // First, simulate the InfoBarService firing INFOBAR_REMOVED.
   InfoBarRemovedDetails removed_details(infobar, false);
   GoogleURLTracker::EntryMap::const_iterator i =
-      google_url_tracker_->entry_map_.find(infobar_helper);
+      google_url_tracker_->entry_map_.find(infobar_service);
   ASSERT_FALSE(i == google_url_tracker_->entry_map_.end());
   GoogleURLTrackerMapEntry* map_entry = i->second;
   ASSERT_EQ(infobar, map_entry->infobar());
   map_entry->Observe(chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
-                     content::Source<InfoBarTabHelper>(infobar_helper),
+                     content::Source<InfoBarService>(infobar_service),
                      content::Details<InfoBarRemovedDetails>(&removed_details));
 
   // Second, simulate the infobar container closing the infobar in response.
-  infobar->InfoBarClosed();
+  delete infobar;
 }
 
 GoogleURLTrackerTest::GoogleURLTrackerTest()
@@ -199,8 +293,13 @@ GoogleURLTrackerTest::~GoogleURLTrackerTest() {
 
 void GoogleURLTrackerTest::SetUp() {
   network_change_notifier_.reset(net::NetworkChangeNotifier::CreateMock());
+  // Ownership is passed to google_url_tracker_, but a weak pointer is kept;
+  // this is safe since GoogleURLTracker keeps the observer for its lifetime.
+  nav_helper_ = new TestGoogleURLTrackerNavigationHelper();
+  scoped_ptr<GoogleURLTrackerNavigationHelper> nav_helper(nav_helper_);
   google_url_tracker_.reset(
-      new GoogleURLTracker(&profile_, GoogleURLTracker::UNIT_TEST_MODE));
+      new GoogleURLTracker(&profile_, nav_helper.Pass(),
+                           GoogleURLTracker::UNIT_TEST_MODE));
   google_url_tracker_->infobar_creator_ = base::Bind(
       &GoogleURLTrackerTest::CreateTestInfoBar, base::Unretained(this));
 }
@@ -209,6 +308,7 @@ void GoogleURLTrackerTest::TearDown() {
   while (!unique_ids_seen_.empty())
     CloseTab(*unique_ids_seen_.begin());
 
+  nav_helper_ = NULL;
   google_url_tracker_.reset();
   network_change_notifier_.reset();
 }
@@ -250,7 +350,7 @@ void GoogleURLTrackerTest::NotifyIPAddressChanged() {
   net::NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
   // For thread safety, the NCN queues tasks to do the actual notifications, so
   // we need to spin the message loop so the tracker will actually be notified.
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 }
 
 void GoogleURLTrackerTest::SetLastPromptedGoogleURL(const GURL& url) {
@@ -266,19 +366,13 @@ void GoogleURLTrackerTest::SetNavigationPending(intptr_t unique_id,
   if (is_search) {
     google_url_tracker_->SearchCommitted();
     // Note that the call above might not have actually registered a listener
-    // for NOTIFICATION_NAV_ENTRY_PENDING if the searchdomaincheck response was
-    // bogus.
+    // for navigation starts if the searchdomaincheck response was bogus.
   }
   unique_ids_seen_.insert(unique_id);
-  if (google_url_tracker_->registrar_.IsRegistered(google_url_tracker_.get(),
-      content::NOTIFICATION_NAV_ENTRY_PENDING,
-      content::NotificationService::AllBrowserContextsAndSources())) {
+  if (nav_helper_->IsListeningForNavigationStart()) {
     google_url_tracker_->OnNavigationPending(
-        content::Source<content::NavigationController>(
-            reinterpret_cast<content::NavigationController*>(unique_id)),
-        content::Source<content::WebContents>(
-            reinterpret_cast<content::WebContents*>(unique_id)),
-        reinterpret_cast<InfoBarTabHelper*>(unique_id), unique_id);
+        reinterpret_cast<content::NavigationController*>(unique_id),
+        reinterpret_cast<InfoBarService*>(unique_id), unique_id);
   }
 }
 
@@ -304,45 +398,20 @@ void GoogleURLTrackerTest::CommitNonSearch(intptr_t unique_id) {
 void GoogleURLTrackerTest::CommitSearch(intptr_t unique_id,
                                         const GURL& search_url) {
   DCHECK(search_url.is_valid());
-  if (google_url_tracker_->registrar_.IsRegistered(google_url_tracker_.get(),
-      content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-      content::Source<content::NavigationController>(
-          reinterpret_cast<content::NavigationController*>(unique_id)))) {
+  if (nav_helper_->IsListeningForNavigationCommit(
+      reinterpret_cast<content::NavigationController*>(unique_id))) {
     google_url_tracker_->OnNavigationCommitted(
-        reinterpret_cast<InfoBarTabHelper*>(unique_id),
+        reinterpret_cast<InfoBarService*>(unique_id),
         search_url);
-  }
-}
-
-void GoogleURLTrackerTest::DoInstantNavigation(intptr_t unique_id,
-                                               const GURL& search_url) {
-  if (!search_url.is_empty()) {
-    google_url_tracker_->SearchCommitted();
-    // Note that the call above might not have actually registered a listener
-    // for NOTIFICATION_INSTANT_COMMITTED if the searchdomaincheck response was
-    // bogus.
-  }
-  unique_ids_seen_.insert(unique_id);
-  if (google_url_tracker_->registrar_.IsRegistered(google_url_tracker_.get(),
-      chrome::NOTIFICATION_INSTANT_COMMITTED,
-      content::NotificationService::AllBrowserContextsAndSources())) {
-    google_url_tracker_->OnInstantCommitted(
-        content::Source<content::NavigationController>(
-            reinterpret_cast<content::NavigationController*>(unique_id)),
-        content::Source<content::WebContents>(
-            reinterpret_cast<content::WebContents*>(unique_id)),
-        reinterpret_cast<InfoBarTabHelper*>(unique_id), search_url);
   }
 }
 
 void GoogleURLTrackerTest::CloseTab(intptr_t unique_id) {
   unique_ids_seen_.erase(unique_id);
-  content::Source<content::WebContents> source(
-      reinterpret_cast<content::WebContents*>(unique_id));
-  if (google_url_tracker_->registrar_.IsRegistered(
-      google_url_tracker_.get(), content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-      source)) {
-    google_url_tracker_->OnTabClosed(source);
+  content::NavigationController* nav_controller =
+      reinterpret_cast<content::NavigationController*>(unique_id);
+  if (nav_helper_->IsListeningForTabDestruction(nav_controller)) {
+    google_url_tracker_->OnTabClosed(nav_controller);
   } else {
     // Closing a tab with an infobar showing would close the infobar.
     GoogleURLTrackerInfoBarDelegate* infobar = GetInfoBar(unique_id);
@@ -355,7 +424,7 @@ GoogleURLTrackerMapEntry* GoogleURLTrackerTest::GetMapEntry(
     intptr_t unique_id) {
   GoogleURLTracker::EntryMap::const_iterator i =
       google_url_tracker_->entry_map_.find(
-          reinterpret_cast<InfoBarTabHelper*>(unique_id));
+          reinterpret_cast<InfoBarService*>(unique_id));
   return (i == google_url_tracker_->entry_map_.end()) ? NULL : i->second;
 }
 
@@ -374,20 +443,19 @@ void GoogleURLTrackerTest::ExpectListeningForCommit(intptr_t unique_id,
                                                     bool listening) {
   GoogleURLTrackerMapEntry* map_entry = GetMapEntry(unique_id);
   if (map_entry) {
-    EXPECT_EQ(listening, google_url_tracker_->registrar_.IsRegistered(
-        google_url_tracker_.get(), content::NOTIFICATION_NAV_ENTRY_COMMITTED,
-        map_entry->navigation_controller_source()));
+    EXPECT_EQ(listening, nav_helper_->IsListeningForNavigationCommit(
+        map_entry->navigation_controller()));
   } else {
     EXPECT_FALSE(listening);
   }
 }
 
 GoogleURLTrackerInfoBarDelegate* GoogleURLTrackerTest::CreateTestInfoBar(
-    InfoBarTabHelper* infobar_helper,
+    InfoBarService* infobar_service,
     GoogleURLTracker* google_url_tracker,
     const GURL& search_url) {
-  return new TestInfoBarDelegate(this, infobar_helper, google_url_tracker,
-                                 search_url);
+  return TestInfoBarDelegate::Create(this, infobar_service, google_url_tracker,
+                                     search_url);
 }
 
 
@@ -395,13 +463,23 @@ GoogleURLTrackerInfoBarDelegate* GoogleURLTrackerTest::CreateTestInfoBar(
 
 namespace {
 
+// static
+GoogleURLTrackerInfoBarDelegate* TestInfoBarDelegate::Create(
+    GoogleURLTrackerTest* test_harness,
+    InfoBarService* infobar_service,
+    GoogleURLTracker* google_url_tracker,
+    const GURL& search_url) {
+  return new TestInfoBarDelegate(test_harness, infobar_service,
+                                 google_url_tracker, search_url);
+}
+
 TestInfoBarDelegate::TestInfoBarDelegate(GoogleURLTrackerTest* test_harness,
-                                         InfoBarTabHelper* infobar_helper,
+                                         InfoBarService* infobar_service,
                                          GoogleURLTracker* google_url_tracker,
                                          const GURL& search_url)
   : GoogleURLTrackerInfoBarDelegate(NULL, google_url_tracker, search_url),
     test_harness_(test_harness),
-    infobar_helper_(infobar_helper) {
+    infobar_service_(infobar_service) {
 }
 
 TestInfoBarDelegate::~TestInfoBarDelegate() {
@@ -413,7 +491,7 @@ void TestInfoBarDelegate::Update(const GURL& search_url) {
 }
 
 void TestInfoBarDelegate::Close(bool redo_search) {
-  test_harness_->OnInfoBarClosed(this, infobar_helper_);
+  test_harness_->OnInfoBarClosed(this, infobar_service_);
 }
 
 }  // namespace
@@ -743,16 +821,6 @@ TEST_F(GoogleURLTrackerTest, InfoBarAccepted) {
   EXPECT_TRUE(observer_notified());
 }
 
-TEST_F(GoogleURLTrackerTest, InfoBarForInstant) {
-  SetLastPromptedGoogleURL(GURL("http://www.google.co.uk/"));
-  RequestServerCheck();
-  FinishSleep();
-  MockSearchDomainCheckResponse("http://www.google.co.jp/");
-
-  DoInstantNavigation(1, GURL("http://www.google.co.uk/search?q=test"));
-  EXPECT_FALSE(GetInfoBar(1) == NULL);
-}
-
 TEST_F(GoogleURLTrackerTest, FetchesCanAutomaticallyCloseInfoBars) {
   RequestServerCheck();
   FinishSleep();
@@ -993,26 +1061,6 @@ TEST_F(GoogleURLTrackerTest, MultipleMapEntries) {
   EXPECT_EQ(GURL("http://www.google.co.jp/"), google_url());
   EXPECT_EQ(GURL("http://www.google.co.jp/"), GetLastPromptedGoogleURL());
   EXPECT_TRUE(observer_notified());
-}
-
-TEST_F(GoogleURLTrackerTest, IgnoreIrrelevantInstantNavigation) {
-  SetLastPromptedGoogleURL(GURL("http://www.google.co.uk/"));
-  RequestServerCheck();
-  FinishSleep();
-  MockSearchDomainCheckResponse("http://www.google.co.jp/");
-
-  // Starting a search pending on any tab should cause us to listen for pending
-  // and instant navigations on all tabs, but we should ignore these when they
-  // are for tabs that we don't care about.
-  SetNavigationPending(1, true);
-  EXPECT_FALSE(GetMapEntry(1) == NULL);
-  ASSERT_NO_FATAL_FAILURE(ExpectListeningForCommit(1, true));
-  ASSERT_NO_FATAL_FAILURE(ExpectListeningForCommit(2, false));
-
-  DoInstantNavigation(2, GURL());
-  EXPECT_TRUE(GetMapEntry(2) == NULL);
-  ASSERT_NO_FATAL_FAILURE(ExpectListeningForCommit(1, true));
-  ASSERT_NO_FATAL_FAILURE(ExpectListeningForCommit(2, false));
 }
 
 TEST_F(GoogleURLTrackerTest, IgnoreIrrelevantNavigation) {

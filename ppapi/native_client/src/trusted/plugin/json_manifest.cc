@@ -16,6 +16,7 @@
 #include "native_client/src/include/portability.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/trusted/plugin/plugin_error.h"
+#include "native_client/src/trusted/plugin/pnacl_options.h"
 #include "native_client/src/trusted/plugin/utility.h"
 #include "ppapi/cpp/dev/url_util_dev.h"
 #include "ppapi/cpp/var.h"
@@ -39,8 +40,10 @@ const char* const kPortableKey =    "portable";
 const char* const kPnaclTranslateKey = "pnacl-translate";
 const char* const kUrlKey =            "url";
 
-// Cache support keys
+// Pnacl keys
 const char* const kCacheIdentityKey = "sha256";
+const char* const kOptLevelKey = "-O";
+const char* const kPnaclExperimentalFlags = "experimental_flags";
 
 // Sample manifest file:
 // {
@@ -51,7 +54,8 @@ const char* const kCacheIdentityKey = "sha256";
 //     "portable": {
 //       "pnacl-translate": {
 //         "url": "myprogram.pexe",
-//         "sha256": "..."
+//         "sha256": "...",
+//         "-O": 0
 //       }
 //     }
 //   },
@@ -201,18 +205,19 @@ bool IsValidPnaclTranslateSpec(const Json::Value& pnacl_spec,
 // ISAs are allowed, but ignored and warnings are produced. It is also validated
 // that it must have an entry to match the ISA specified in |sandbox_isa| or
 // have a fallback 'portable' entry if there is no match. Returns true if
-// |dictionary| is an ISA to URL map.  Sets |error_string| to something
+// |dictionary| is an ISA to URL map.  Sets |error_info| to something
 // descriptive if it fails.
 bool IsValidISADictionary(const Json::Value& dictionary,
                           const nacl::string& parent_key,
                           const nacl::string& sandbox_isa,
-                          nacl::string* error_string) {
-  if (error_string == NULL)
-    return false;
+                          ErrorInfo* error_info) {
+  if (error_info == NULL) return false;
 
   // An ISA to URL dictionary has to be an object.
   if (!dictionary.isObject()) {
-    *error_string = parent_key + " property is not an ISA to URL dictionary";
+    error_info->SetReport(ERROR_MANIFEST_SCHEMA_VALIDATE,
+                          nacl::string("manifest: ") + parent_key +
+                          " property is not an ISA to URL dictionary");
     return false;
   }
   // The keys to the dictionary have to be valid ISA names.
@@ -236,10 +241,13 @@ bool IsValidISADictionary(const Json::Value& dictionary,
     // it could be "arch/portable" : { "pnacl-translate": URLSpec }
     // for executables that need to be translated.
     Json::Value property_value = dictionary[property_name];
+    nacl::string error_string;
     if (!IsValidUrlSpec(property_value, property_name, parent_key,
-                        error_string) &&
+                        &error_string) &&
         !IsValidPnaclTranslateSpec(property_value, property_name,
-                                   parent_key, error_string)) {
+                                   parent_key, &error_string)) {
+      error_info->SetReport(ERROR_MANIFEST_SCHEMA_VALIDATE,
+                            nacl::string("manifiest: ") + error_string);
       return false;
     }
   }
@@ -250,20 +258,33 @@ bool IsValidISADictionary(const Json::Value& dictionary,
   bool has_portable = dictionary.isMember(kPortableKey);
 
   if (!has_isa && !has_portable) {
-    *error_string = parent_key +
-        " no version given for current arch and no portable version found.";
+    error_info->SetReport(
+        ERROR_MANIFEST_PROGRAM_MISSING_ARCH,
+        nacl::string("manifest: no version of ") + parent_key +
+        " given for current arch and no portable version found.");
     return false;
   }
 
   return true;
 }
 
-void GrabUrlAndCacheIdentity(const Json::Value& url_spec,
-                             nacl::string* url,
-                             nacl::string* cache_identity) {
+void GrabUrlAndPnaclOptions(const Json::Value& url_spec,
+                            nacl::string* url,
+                            PnaclOptions* pnacl_options) {
   *url = url_spec[kUrlKey].asString();
   if (url_spec.isMember(kCacheIdentityKey)) {
-    *cache_identity = url_spec[kCacheIdentityKey].asString();
+    pnacl_options->set_bitcode_hash(url_spec[kCacheIdentityKey].asString());
+  }
+  if (url_spec.isMember(kOptLevelKey)) {
+    uint32_t opt_raw = url_spec[kOptLevelKey].asUInt();
+    // Clamp the opt value to fit into an int8_t.
+    if (opt_raw > 3)
+      opt_raw = 3;
+    pnacl_options->set_opt_level(static_cast<int8_t>(opt_raw));
+  }
+  if (url_spec.isMember(kPnaclExperimentalFlags)) {
+    pnacl_options->set_experimental_flags(
+        url_spec[kPnaclExperimentalFlags].asString());
   }
 }
 
@@ -272,19 +293,15 @@ bool GetURLFromISADictionary(const Json::Value& dictionary,
                              const nacl::string& sandbox_isa,
                              bool prefer_portable,
                              nacl::string* url,
-                             nacl::string* cache_identity,
-                             nacl::string* error_string,
-                             bool* pnacl_translate) {
-  if (url == NULL || cache_identity == NULL ||
-      error_string == NULL || pnacl_translate == NULL)
+                             PnaclOptions* pnacl_options,
+                             ErrorInfo* error_info) {
+  if (url == NULL || pnacl_options == NULL || error_info == NULL)
     return false;
 
-  if (!IsValidISADictionary(dictionary, parent_key, sandbox_isa, error_string))
+  if (!IsValidISADictionary(dictionary, parent_key, sandbox_isa, error_info))
     return false;
 
   *url = "";
-  *cache_identity = "";
-  *pnacl_translate = false;
 
   // The call to IsValidISADictionary() above guarantees that either
   // sandbox_isa or kPortableKey is present in the dictionary.
@@ -300,11 +317,11 @@ bool GetURLFromISADictionary(const Json::Value& dictionary,
   // Check if this requires a pnacl-translate, otherwise just grab the URL.
   // We may have pnacl-translate for isa-specific bitcode for CPU tuning.
   if (isa_spec.isMember(kPnaclTranslateKey)) {
-    GrabUrlAndCacheIdentity(isa_spec[kPnaclTranslateKey], url, cache_identity);
-    *pnacl_translate = true;
+    GrabUrlAndPnaclOptions(isa_spec[kPnaclTranslateKey], url, pnacl_options);
+    pnacl_options->set_translate(true);
   } else {
-    GrabUrlAndCacheIdentity(isa_spec, url, cache_identity);
-    *pnacl_translate = false;
+    *url = isa_spec[kUrlKey].asString();
+    pnacl_options->set_translate(false);
   }
 
   return true;
@@ -316,9 +333,8 @@ bool GetKeyUrl(const Json::Value& dictionary,
                const Manifest* manifest,
                bool prefer_portable,
                nacl::string* full_url,
-               nacl::string* cache_identity,
-               ErrorInfo* error_info,
-               bool* pnacl_translate) {
+               PnaclOptions* pnacl_options,
+               ErrorInfo* error_info) {
   CHECK(full_url != NULL && error_info != NULL);
   if (!dictionary.isMember(key)) {
     error_info->SetReport(ERROR_MANIFEST_RESOLVE_URL,
@@ -326,14 +342,9 @@ bool GetKeyUrl(const Json::Value& dictionary,
     return false;
   }
   const Json::Value& isa_dict = dictionary[key];
-  nacl::string error_string;
   nacl::string relative_url;
   if (!GetURLFromISADictionary(isa_dict, key, sandbox_isa, prefer_portable,
-                               &relative_url, cache_identity,
-                               &error_string, pnacl_translate)) {
-    error_info->SetReport(ERROR_MANIFEST_RESOLVE_URL,
-                          key + nacl::string(" manifest resolution error: ") +
-                          error_string);
+                               &relative_url, pnacl_options, error_info)) {
     return false;
   }
   return manifest->ResolveURL(relative_url, full_url, error_info);
@@ -384,8 +395,6 @@ bool JsonManifest::MatchesSchema(ErrorInfo* error_info) {
     }
   }
 
-  nacl::string error_string;
-
   // A manifest file must have a program section.
   if (!dictionary_.isMember(kProgramKey)) {
     error_info->SetReport(
@@ -398,10 +407,7 @@ bool JsonManifest::MatchesSchema(ErrorInfo* error_info) {
   if (!IsValidISADictionary(dictionary_[kProgramKey],
                             kProgramKey,
                             sandbox_isa_,
-                            &error_string)) {
-    error_info->SetReport(
-        ERROR_MANIFEST_SCHEMA_VALIDATE,
-        nacl::string("manifest: ") + error_string);
+                            error_info)) {
     return false;
   }
 
@@ -410,10 +416,7 @@ bool JsonManifest::MatchesSchema(ErrorInfo* error_info) {
     if (!IsValidISADictionary(dictionary_[kInterpreterKey],
                               kInterpreterKey,
                               sandbox_isa_,
-                              &error_string)) {
-      error_info->SetReport(
-          ERROR_MANIFEST_SCHEMA_VALIDATE,
-          nacl::string("manifest: ") + error_string);
+                              error_info)) {
       return false;
     }
   }
@@ -432,10 +435,7 @@ bool JsonManifest::MatchesSchema(ErrorInfo* error_info) {
       if (!IsValidISADictionary(files[file_name],
                                 file_name,
                                 sandbox_isa_,
-                                &error_string)) {
-        error_info->SetReport(
-            ERROR_MANIFEST_SCHEMA_VALIDATE,
-            nacl::string("manifest: file ") + error_string);
+                                error_info)) {
         return false;
       }
     }
@@ -465,11 +465,9 @@ bool JsonManifest::ResolveURL(const nacl::string& relative_url,
 }
 
 bool JsonManifest::GetProgramURL(nacl::string* full_url,
-                                 nacl::string* cache_identity,
-                                 ErrorInfo* error_info,
-                                 bool* pnacl_translate) const {
-  if (full_url == NULL || cache_identity == NULL ||
-      error_info == NULL || pnacl_translate == NULL)
+                                 PnaclOptions* pnacl_options,
+                                 ErrorInfo* error_info) const {
+  if (full_url == NULL || pnacl_options == NULL || error_info == NULL)
     return false;
 
   Json::Value program = dictionary_[kProgramKey];
@@ -482,12 +480,8 @@ bool JsonManifest::GetProgramURL(nacl::string* full_url,
                                sandbox_isa_,
                                prefer_portable_,
                                &nexe_url,
-                               cache_identity,
-                               &error_string,
-                               pnacl_translate)) {
-    error_info->SetReport(ERROR_MANIFEST_GET_NEXE_URL,
-                          nacl::string("program:") + sandbox_isa_ +
-                          error_string);
+                               pnacl_options,
+                               error_info)) {
     return false;
   }
 
@@ -510,19 +504,17 @@ bool JsonManifest::GetFileKeys(std::set<nacl::string>* keys) const {
 
 bool JsonManifest::ResolveKey(const nacl::string& key,
                               nacl::string* full_url,
-                              nacl::string* cache_identity,
-                              ErrorInfo* error_info,
-                              bool* pnacl_translate) const {
+                              PnaclOptions* pnacl_options,
+                              ErrorInfo* error_info) const {
   NaClLog(3, "JsonManifest::ResolveKey(%s)\n", key.c_str());
   // key must be one of kProgramKey or kFileKey '/' file-section-key
 
-  if (full_url == NULL || cache_identity == NULL ||
-      error_info == NULL || pnacl_translate == NULL)
+  if (full_url == NULL || pnacl_options == NULL || error_info == NULL)
     return false;
 
   if (key == kProgramKey) {
     return GetKeyUrl(dictionary_, key, sandbox_isa_, this, prefer_portable_,
-                     full_url, cache_identity, error_info, pnacl_translate);
+                     full_url, pnacl_options, error_info);
   }
   nacl::string::const_iterator p = find(key.begin(), key.end(), '/');
   if (p == key.end()) {
@@ -557,7 +549,7 @@ bool JsonManifest::ResolveKey(const nacl::string& key,
     return false;
   }
   return GetKeyUrl(files, rest, sandbox_isa_, this, prefer_portable_,
-                   full_url, cache_identity, error_info, pnacl_translate);
+                   full_url, pnacl_options, error_info);
 }
 
 }  // namespace plugin

@@ -33,7 +33,6 @@ namespace browser_sync {
 class AssociatorInterface;
 class ChangeProcessor;
 
-// TODO(zea): Rename frontend to UI (http://crbug.com/78833).
 // Implementation for datatypes that do not reside on the frontend thread
 // (UI thread). This is the same thread we perform initialization
 // on, so we don't have to worry about thread safety. The main start/stop
@@ -97,21 +96,19 @@ class NonFrontendDataTypeController : public DataTypeController {
   // Note: this is performed on the datatype's thread.
   virtual void CreateSyncComponents() = 0;
 
-  // Start failed, make sure we record it, clean up state, and invoke the
-  // callback on the frontend thread.
-  // Note: this is performed on the datatype's thread.
-  virtual void StartFailed(StartResult result, const syncer::SyncError& error);
-
   // Start up complete, update the state and invoke the callback.
   // Note: this is performed on the datatype's thread.
-  virtual void StartDone(DataTypeController::StartResult result,
-                         DataTypeController::State new_state,
-                         const syncer::SyncError& error);
+  virtual void StartDone(
+      DataTypeController::StartResult start_result,
+      const syncer::SyncMergeResult& local_merge_result,
+      const syncer::SyncMergeResult& syncer_merge_result);
 
   // UI thread implementation of StartDone.
-  virtual void StartDoneImpl(DataTypeController::StartResult result,
-                             DataTypeController::State new_state,
-                             const syncer::SyncError& error);
+  virtual void StartDoneImpl(
+      DataTypeController::StartResult start_result,
+      DataTypeController::State new_state,
+      const syncer::SyncMergeResult& local_merge_result,
+      const syncer::SyncMergeResult& syncer_merge_result);
 
   // Perform any DataType controller specific state cleanup before stopping
   // the datatype controller. The default implementation is a no-op.

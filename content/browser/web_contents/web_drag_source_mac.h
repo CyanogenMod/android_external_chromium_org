@@ -4,7 +4,8 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "googleurl/src/gurl.h"
@@ -40,13 +41,13 @@ class WebContentsImpl;
   NSDragOperation dragOperationMask_;
 
   // The file name to be saved to for a drag-out download.
-  FilePath downloadFileName_;
+  base::FilePath downloadFileName_;
 
   // The URL to download from for a drag-out download.
   GURL downloadURL_;
 
-  // The file extension associated with the file drag, if any.
-  NSString* fileExtension_;
+  // The file UTI associated with the file drag, if any.
+  base::mac::ScopedCFTypeRef<CFStringRef> fileUTI_;
 }
 
 // Initialize a WebDragSource object for a drag (originating on the given

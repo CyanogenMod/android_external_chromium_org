@@ -19,11 +19,11 @@
 #include "chrome/browser/ui/cocoa/download/download_item_controller.h"
 #include "chrome/browser/ui/cocoa/download/download_shelf_mac.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_view.h"
-#import "chrome/browser/ui/cocoa/hover_button.h"
 #import "chrome/browser/ui/cocoa/presentation_mode_controller.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
+#import "ui/base/cocoa/hover_button.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::DownloadItem;
@@ -292,15 +292,15 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
   [self layoutItems:NO];
 }
 
-- (void)addDownloadItem:(BaseDownloadItemModel*)model {
+- (void)addDownloadItem:(DownloadItem*)downloadItem {
   DCHECK([NSThread isMainThread]);
   [self cancelAutoCloseAndRemoveTrackingArea];
 
   // Insert new item at the left.
   scoped_nsobject<DownloadItemController> controller(
-      [[DownloadItemController alloc] initWithModel:model
-                                              shelf:self
-                                          navigator:navigator_]);
+      [[DownloadItemController alloc] initWithDownload:downloadItem
+                                                 shelf:self
+                                             navigator:navigator_]);
 
   // Adding at index 0 in NSMutableArrays is O(1).
   [downloadItemControllers_ insertObject:controller.get() atIndex:0];
@@ -363,8 +363,7 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
     bool isTransferDone = download->IsComplete() ||
                           download->IsCancelled() ||
                           download->IsInterrupted();
-    if (isTransferDone &&
-        download->GetSafetyState() != DownloadItem::DANGEROUS) {
+    if (isTransferDone && !download->IsDangerous()) {
       [self remove:itemController];
     } else {
       // Treat the item as opened when we close. This way if we get shown again

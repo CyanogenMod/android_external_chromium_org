@@ -14,7 +14,8 @@
 #include "base/values.h"
 #include "chrome/browser/ui/webui/net_internals/net_internals_ui.h"
 
-NetLogLogger::NetLogLogger(const FilePath &log_path) {
+NetLogLogger::NetLogLogger(const base::FilePath &log_path)
+    : added_events_(false) {
   if (!log_path.empty()) {
     base::ThreadRestrictions::ScopedAllowIO allow_io;
     FILE* fp = file_util::OpenFile(log_path, "w");
@@ -37,10 +38,16 @@ NetLogLogger::NetLogLogger(const FilePath &log_path) {
 }
 
 NetLogLogger::~NetLogLogger() {
+  if (file_.get())
+    fprintf(file_.get(), "]}");
 }
 
 void NetLogLogger::StartObserving(net::NetLog* net_log) {
   net_log->AddThreadSafeObserver(this, net::NetLog::LOG_ALL_BUT_BYTES);
+}
+
+void NetLogLogger::StopObserving() {
+  net_log()->RemoveThreadSafeObserver(this);
 }
 
 void NetLogLogger::OnAddEntry(const net::NetLog::Entry& entry) {
@@ -54,6 +61,10 @@ void NetLogLogger::OnAddEntry(const net::NetLog::Entry& entry) {
   if (!file_.get()) {
     VLOG(1) << json;
   } else {
-    fprintf(file_.get(), "%s,\n", json.c_str());
+    // Add a comma and newline for every event but the first.
+    fprintf(file_.get(), "%s%s",
+            (added_events_ ? ",\n" : ""),
+            json.c_str());
+    added_events_ = true;
   }
 }

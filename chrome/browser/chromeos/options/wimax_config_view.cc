@@ -9,11 +9,11 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
-#include "chrome/browser/chromeos/cros/onc_constants.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chromeos/network/onc/onc_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -212,7 +212,8 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
   layout->StartRow(0, column_view_set_id);
   views::Label* title = new views::Label(l10n_util::GetStringUTF16(
       IDS_OPTIONS_SETTINGS_JOIN_WIMAX_NETWORKS));
-  title->SetFont(title->font().DeriveFont(1, gfx::Font::BOLD));
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  title->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
   layout->AddView(title, 5, 1);
   layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
 
@@ -267,19 +268,19 @@ void WimaxConfigView::Init(WimaxNetwork* wimax) {
         l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_PASSPHRASE_HIDE));
     passphrase_visible_button_->SetImage(
-        views::ImageButton::BS_NORMAL,
+        views::ImageButton::STATE_NORMAL,
         ResourceBundle::GetSharedInstance().
         GetImageSkiaNamed(IDR_NETWORK_SHOW_PASSWORD));
     passphrase_visible_button_->SetImage(
-        views::ImageButton::BS_HOT,
+        views::ImageButton::STATE_HOVERED,
         ResourceBundle::GetSharedInstance().
         GetImageSkiaNamed(IDR_NETWORK_SHOW_PASSWORD_HOVER));
     passphrase_visible_button_->SetToggledImage(
-        views::ImageButton::BS_NORMAL,
+        views::ImageButton::STATE_NORMAL,
         ResourceBundle::GetSharedInstance().
         GetImageSkiaNamed(IDR_NETWORK_HIDE_PASSWORD));
     passphrase_visible_button_->SetToggledImage(
-        views::ImageButton::BS_HOT,
+        views::ImageButton::STATE_HOVERED,
         ResourceBundle::GetSharedInstance().
         GetImageSkiaNamed(IDR_NETWORK_HIDE_PASSWORD_HOVER));
     passphrase_visible_button_->SetImageAlignment(

@@ -6,10 +6,10 @@
 
 #include "base/command_line.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/api/infobars/simple_alert_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -23,11 +23,11 @@ void ShowBadFlagsPrompt(Browser* browser) {
     // These imply disabling the sandbox.
     switches::kSingleProcess,
     switches::kNoSandbox,
-    switches::kInProcessWebGL,
     switches::kDisableWebSecurity,
     // Browser plugin is dangerous on regular pages because it breaks the Same
     // Origin Policy.
     switches::kEnableBrowserPluginForAllViewTypes,
+    switches::kExtensionsOnChromeURLs,
     NULL
   };
 
@@ -40,18 +40,15 @@ void ShowBadFlagsPrompt(Browser* browser) {
   }
 
   if (bad_flag) {
-    content::WebContents* web_contents = chrome::GetActiveWebContents(browser);
+    content::WebContents* web_contents =
+        browser->tab_strip_model()->GetActiveWebContents();
     if (!web_contents)
       return;
-    InfoBarTabHelper* infobar_tab_helper =
-        InfoBarTabHelper::FromWebContents(web_contents);
-    infobar_tab_helper->AddInfoBar(
-        new SimpleAlertInfoBarDelegate(
-            infobar_tab_helper, NULL,
-            l10n_util::GetStringFUTF16(
-            IDS_BAD_FLAGS_WARNING_MESSAGE,
-            UTF8ToUTF16(std::string("--") + bad_flag)),
-            false));
+    SimpleAlertInfoBarDelegate::Create(
+        InfoBarService::FromWebContents(web_contents), NULL,
+        l10n_util::GetStringFUTF16(IDS_BAD_FLAGS_WARNING_MESSAGE,
+                                    UTF8ToUTF16(std::string("--") + bad_flag)),
+        false);
   }
 }
 

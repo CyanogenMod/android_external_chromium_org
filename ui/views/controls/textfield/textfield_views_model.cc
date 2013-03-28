@@ -12,7 +12,6 @@
 #include "base/utf_string_conversions.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
-#include "ui/base/native_theme/native_theme.h"
 #include "ui/base/range/range.h"
 #include "ui/base/text/utf16_indexing.h"
 #include "ui/gfx/canvas.h"
@@ -284,16 +283,6 @@ TextfieldViewsModel::TextfieldViewsModel(Delegate* delegate)
     : delegate_(delegate),
       render_text_(gfx::RenderText::CreateInstance()),
       current_edit_(edit_history_.end()) {
-  const ui::NativeTheme* theme = ui::NativeTheme::instance();
-  render_text_->set_selection_color(
-      theme->GetSystemColor(
-          ui::NativeTheme::kColorId_TextfieldSelectionColor));
-  render_text_->set_selection_background_focused_color(
-      theme->GetSystemColor(
-          ui::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused));
-  render_text_->set_selection_background_unfocused_color(
-      theme->GetSystemColor(
-          ui::NativeTheme::kColorId_TextfieldSelectionBackgroundUnfocused));
 }
 
 TextfieldViewsModel::~TextfieldViewsModel() {
@@ -427,10 +416,6 @@ void TextfieldViewsModel::SelectRange(const ui::Range& range) {
   if (HasCompositionText())
     ConfirmCompositionText();
   render_text_->SelectRange(range);
-}
-
-void TextfieldViewsModel::GetSelectionModel(gfx::SelectionModel* sel) const {
-  *sel = render_text_->selection_model();
 }
 
 void TextfieldViewsModel::SelectSelectionModel(const gfx::SelectionModel& sel) {
@@ -592,17 +577,7 @@ void TextfieldViewsModel::SetCompositionText(
   render_text_->SetText(new_text.insert(cursor, composition.text));
   ui::Range range(cursor, cursor + composition.text.length());
   render_text_->SetCompositionRange(range);
-  // TODO(msw): Support multiple composition underline ranges.
-
-  if (composition.selection.IsValid()) {
-    size_t start =
-        std::min(range.start() + composition.selection.start(), range.end());
-    size_t end =
-        std::min(range.start() + composition.selection.end(), range.end());
-    render_text_->SelectRange(ui::Range(start, end));
-  } else {
-    render_text_->SetCursorPosition(range.end());
-  }
+  render_text_->SetCursorPosition(cursor + composition.selection.end());
 }
 
 void TextfieldViewsModel::ConfirmCompositionText() {

@@ -11,7 +11,7 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/geolocation/fake_access_token_store.h"
-#include "content/browser/geolocation/location_arbitrator.h"
+#include "content/browser/geolocation/location_arbitrator_impl.h"
 #include "content/browser/geolocation/network_location_provider.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
@@ -37,7 +37,8 @@ class MessageLoopQuitListener
     CHECK(client_message_loop_);
   }
   // ListenerInterface
-  virtual void LocationUpdateAvailable(LocationProviderBase* provider) {
+  virtual void LocationUpdateAvailable(
+      LocationProviderBase* provider) OVERRIDE {
     EXPECT_EQ(client_message_loop_, MessageLoop::current());
     updated_provider_ = provider;
     client_message_loop_->Quit();
@@ -264,7 +265,7 @@ class GeolocationNetworkProviderTest : public testing::Test {
     // Check to see that the api key is being appended for the default
     // network provider url.
     bool is_default_url = UrlWithoutQuery(request_url) ==
-        UrlWithoutQuery(GeolocationArbitrator::DefaultNetworkProviderURL());
+        UrlWithoutQuery(GeolocationArbitratorImpl::DefaultNetworkProviderURL());
     EXPECT_EQ(is_default_url, !request_url.query().empty());
 
     const std::string& upload_data = request.upload_data();
@@ -347,7 +348,7 @@ TEST_F(GeolocationNetworkProviderTest, StartProvider) {
 }
 
 TEST_F(GeolocationNetworkProviderTest, StartProviderDefaultUrl) {
-  test_server_url_ = GeolocationArbitrator::DefaultNetworkProviderURL();
+  test_server_url_ = GeolocationArbitratorImpl::DefaultNetworkProviderURL();
   scoped_ptr<LocationProviderBase> provider(CreateProvider(true));
   EXPECT_TRUE(provider->StartProvider(false));
   net::TestURLFetcher* fetcher = get_url_fetcher_and_advance_id();

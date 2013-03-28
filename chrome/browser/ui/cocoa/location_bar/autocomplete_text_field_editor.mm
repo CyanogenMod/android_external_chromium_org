@@ -45,11 +45,25 @@ BOOL ThePasteboardIsTooDamnBig() {
 
 @implementation AutocompleteTextFieldEditor
 
+- (BOOL)shouldDrawInsertionPoint {
+  return [super shouldDrawInsertionPoint] &&
+         ![[[self delegate] cell] hideFocusState];
+}
+
 - (id)initWithFrame:(NSRect)frameRect {
   if ((self = [super initWithFrame:frameRect])) {
     dropHandler_.reset([[URLDropTargetHandler alloc] initWithView:self]);
 
     forbiddenCharacters_.reset([[NSCharacterSet controlCharacterSet] retain]);
+
+    // These checks seem inappropriate to the omnibox, and also
+    // unlikely to work reliably due to our autocomplete interfering.
+    //
+    // Also see <http://crbug.com/173405>.
+    NSTextCheckingTypes checkingTypes = [self enabledTextCheckingTypes];
+    checkingTypes &= ~NSTextCheckingTypeReplacement;
+    checkingTypes &= ~NSTextCheckingTypeCorrection;
+    [self setEnabledTextCheckingTypes:checkingTypes];
   }
   return self;
 }
@@ -287,6 +301,27 @@ BOOL ThePasteboardIsTooDamnBig() {
   return doResign;
 }
 
+- (void)mouseDown:(NSEvent*)event {
+  AutocompleteTextFieldObserver* observer = [self observer];
+  if (observer)
+    observer->OnMouseDown([event buttonNumber]);
+  [super mouseDown:event];
+}
+
+- (void)rightMouseDown:(NSEvent *)event {
+  AutocompleteTextFieldObserver* observer = [self observer];
+  if (observer)
+    observer->OnMouseDown([event buttonNumber]);
+  [super rightMouseDown:event];
+}
+
+- (void)otherMouseDown:(NSEvent *)event {
+  AutocompleteTextFieldObserver* observer = [self observer];
+  if (observer)
+    observer->OnMouseDown([event buttonNumber]);
+  [super otherMouseDown:event];
+}
+
 // (URLDropTarget protocol)
 - (id<URLDropTargetController>)urlDropController {
   BrowserWindowController* windowController =
@@ -507,6 +542,16 @@ BOOL ThePasteboardIsTooDamnBig() {
     return;
 
   [[FindPasteboard sharedInstance] setFindText:[selection string]];
+}
+
+- (void)drawRect:(NSRect)rect {
+  [super drawRect:rect];
+  autocomplete_text_field::DrawInstantSuggestion(
+      [self textStorage],
+      [[self delegate] suggestText],
+      [[self delegate] suggestColor],
+      self,
+      [self bounds]);
 }
 
 @end

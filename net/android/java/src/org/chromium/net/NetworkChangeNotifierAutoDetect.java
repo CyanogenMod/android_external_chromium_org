@@ -21,22 +21,29 @@ import org.chromium.base.ActivityStatus;
  * ACCESS_NETWORK_STATE permission.
  */
 public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
-        implements ActivityStatus.Listener {
+        implements ActivityStatus.StateListener {
 
     /** Queries the ConnectivityManager for information about the current connection. */
     static class ConnectivityManagerDelegate {
-        private ConnectivityManager mConnectivityManager;
+        private final ConnectivityManager mConnectivityManager;
 
         ConnectivityManagerDelegate(Context context) {
-            if (context != null) {
-                mConnectivityManager = (ConnectivityManager)
-                       context.getSystemService(Context.CONNECTIVITY_SERVICE);
-            }
+            mConnectivityManager =
+                    (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        }
+
+        // For testing.
+        ConnectivityManagerDelegate() {
+            // All the methods below should be overridden.
+            mConnectivityManager = null;
         }
 
         boolean activeNetworkExists() {
-            return mConnectivityManager != null &&
-                    mConnectivityManager.getActiveNetworkInfo() != null;
+            return mConnectivityManager.getActiveNetworkInfo() != null;
+        }
+
+        boolean isConnected() {
+            return mConnectivityManager.getActiveNetworkInfo().isConnected();
         }
 
         int getNetworkType() {
@@ -69,15 +76,10 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
 
     public NetworkChangeNotifierAutoDetect(Observer observer, Context context) {
         mObserver = observer;
-        mContext = context;
+        mContext = context.getApplicationContext();
         mConnectivityManagerDelegate = new ConnectivityManagerDelegate(context);
-        mConnectionType = currentConnectionType(context);
-
-        ActivityStatus status = ActivityStatus.getInstance();
-        if (!status.isPaused()) {
-          registerReceiver();
-        }
-        status.registerListener(this);
+        mConnectionType = getCurrentConnectionType();
+        ActivityStatus.registerStateListener(this);
     }
 
     /**
@@ -111,9 +113,10 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
         }
     }
 
-    private int currentConnectionType(Context context) {
+    public int getCurrentConnectionType() {
         // Track exactly what type of connection we have.
-        if (!mConnectivityManagerDelegate.activeNetworkExists()) {
+        if (!mConnectivityManagerDelegate.activeNetworkExists() ||
+                !mConnectivityManagerDelegate.isConnected()) {
             return NetworkChangeNotifier.CONNECTION_NONE;
         }
 
@@ -156,26 +159,33 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
     // BroadcastReceiver
     @Override
     public void onReceive(Context context, Intent intent) {
-        boolean noConnection =
-                intent.getBooleanExtra(ConnectivityManager.EXTRA_NO_CONNECTIVITY, false);
-        int newConnectionType = noConnection ?
-                NetworkChangeNotifier.CONNECTION_NONE : currentConnectionType(context);
+        connectionTypeChanged();
+    }
 
-        if (newConnectionType != mConnectionType) {
-            mConnectionType = newConnectionType;
-            Log.d(TAG, "Network connectivity changed, type is: " + mConnectionType);
-            mObserver.onConnectionTypeChanged(newConnectionType);
+    // ActivityStatus.StateListener
+    @Override
+    public void onActivityStateChange(int state) {
+        if (state == ActivityStatus.RESUMED) {
+            // Note that this also covers the case where the main activity is created. The CREATED
+            // event is always followed by the RESUMED event. This is a temporary "hack" until
+            // http://crbug.com/176837 is fixed. The CREATED event can't be used reliably for now
+            // since its notification is deferred. This means that it can immediately follow a
+            // DESTROYED/STOPPED/... event which is problematic.
+            // TODO(pliard): fix http://crbug.com/176837.
+            connectionTypeChanged();
+            registerReceiver();
+        } else if (state == ActivityStatus.PAUSED) {
+            unregisterReceiver();
         }
     }
 
-    // AcitivityStatus.Listener
-    @Override
-    public void onActivityStatusChanged(boolean isPaused) {
-        if (isPaused) {
-            unregisterReceiver();
-        } else {
-            registerReceiver();
-        }
+    private void connectionTypeChanged() {
+        int newConnectionType = getCurrentConnectionType();
+        if (newConnectionType == mConnectionType) return;
+
+        mConnectionType = newConnectionType;
+        Log.d(TAG, "Network connectivity changed, type is: " + mConnectionType);
+        mObserver.onConnectionTypeChanged(newConnectionType);
     }
 
     private static class NetworkConnectivityIntentFilter extends IntentFilter {

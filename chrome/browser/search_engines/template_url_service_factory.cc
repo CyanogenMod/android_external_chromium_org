@@ -4,13 +4,14 @@
 
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 
 // static
 TemplateURLService* TemplateURLServiceFactory::GetForProfile(Profile* profile) {
@@ -44,42 +45,47 @@ ProfileKeyedService* TemplateURLServiceFactory::BuildServiceInstanceFor(
   return BuildInstanceFor(profile);
 }
 
-void TemplateURLServiceFactory::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterStringPref(prefs::kSyncedDefaultSearchProviderGUID,
-                            std::string(),
-                            PrefService::SYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kDefaultSearchProviderEnabled,
-                             true,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kDefaultSearchProviderName,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kDefaultSearchProviderID,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kDefaultSearchProviderPrepopulateID,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kDefaultSearchProviderSuggestURL,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kDefaultSearchProviderSearchURL,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kDefaultSearchProviderInstantURL,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kDefaultSearchProviderKeyword,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kDefaultSearchProviderIconURL,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kDefaultSearchProviderEncodings,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kDefaultSearchProviderAlternateURLs,
-                          PrefService::UNSYNCABLE_PREF);
+void TemplateURLServiceFactory::RegisterUserPrefs(
+    PrefRegistrySyncable* registry) {
+  registry->RegisterStringPref(prefs::kSyncedDefaultSearchProviderGUID,
+                               std::string(),
+                               PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kDefaultSearchProviderEnabled,
+                                true,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDefaultSearchProviderName,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDefaultSearchProviderID,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDefaultSearchProviderPrepopulateID,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDefaultSearchProviderSuggestURL,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDefaultSearchProviderSearchURL,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDefaultSearchProviderInstantURL,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDefaultSearchProviderKeyword,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDefaultSearchProviderIconURL,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDefaultSearchProviderEncodings,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kDefaultSearchProviderAlternateURLs,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kDefaultSearchProviderSearchTermsReplacementKey,
+      std::string(),
+      PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 bool TemplateURLServiceFactory::ServiceRedirectedInIncognito() const {

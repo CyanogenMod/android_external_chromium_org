@@ -10,6 +10,7 @@
 #include "chrome/browser/nacl_host/nacl_broker_service_win.h"
 #include "chrome/browser/nacl_host/nacl_process_host.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_process_type.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/nacl_cmd_line.h"
@@ -17,10 +18,28 @@
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/common/child_process_host.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
+
+namespace {
+// NOTE: changes to this class need to be reviewed by the security team.
+class NaClBrokerSandboxedProcessLauncherDelegate
+    : public content::SandboxedProcessLauncherDelegate {
+ public:
+  NaClBrokerSandboxedProcessLauncherDelegate() {}
+  virtual ~NaClBrokerSandboxedProcessLauncherDelegate() {}
+
+  virtual void ShouldSandbox(bool* in_sandbox) OVERRIDE {
+    *in_sandbox = false;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(NaClBrokerSandboxedProcessLauncherDelegate);
+};
+}  // namespace
 
 NaClBrokerHost::NaClBrokerHost() : is_terminating_(false) {
   process_.reset(content::BrowserChildProcessHost::Create(
-      content::PROCESS_TYPE_NACL_BROKER, this));
+      PROCESS_TYPE_NACL_BROKER, this));
 }
 
 NaClBrokerHost::~NaClBrokerHost() {
@@ -33,11 +52,11 @@ bool NaClBrokerHost::Init() {
     return false;
 
   // Create the path to the nacl broker/loader executable.
-  FilePath module_path;
+  base::FilePath module_path;
   if (!PathService::Get(base::FILE_MODULE, &module_path))
     return false;
 
-  FilePath nacl_path = module_path.DirName().Append(chrome::kNaClAppName);
+  base::FilePath nacl_path = module_path.DirName().Append(chrome::kNaClAppName);
   CommandLine* cmd_line = new CommandLine(nacl_path);
   nacl::CopyNaClCommandLineArguments(cmd_line);
 
@@ -47,7 +66,7 @@ bool NaClBrokerHost::Init() {
   if (logging::DialogsAreSuppressed())
     cmd_line->AppendSwitch(switches::kNoErrorDialogs);
 
-  process_->Launch(FilePath(), cmd_line);
+  process_->Launch(new NaClBrokerSandboxedProcessLauncherDelegate, cmd_line);
   return true;
 }
 

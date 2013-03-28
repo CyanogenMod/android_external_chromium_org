@@ -4,12 +4,14 @@
 
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 
+#include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/utf_string_conversions.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/view_messages.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
@@ -19,6 +21,45 @@
 #include "ui/base/test/cocoa_test_event_utils.h"
 #import "ui/base/test/ui_cocoa_test_helper.h"
 #include "webkit/plugins/npapi/webplugin.h"
+
+// Declare things that are part of the 10.7 SDK.
+#if !defined(MAC_OS_X_VERSION_10_7) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
+enum {
+  NSEventPhaseNone        = 0, // event not associated with a phase.
+  NSEventPhaseBegan       = 0x1 << 0,
+  NSEventPhaseStationary  = 0x1 << 1,
+  NSEventPhaseChanged     = 0x1 << 2,
+  NSEventPhaseEnded       = 0x1 << 3,
+  NSEventPhaseCancelled   = 0x1 << 4,
+};
+typedef NSUInteger NSEventPhase;
+
+@interface NSEvent (LionAPI)
+- (NSEventPhase)phase;
+@end
+
+#endif  // 10.7
+
+// Helper class with methods used to mock -[NSEvent phase], used by
+// |MockScrollWheelEventWithPhase()|.
+@interface MockPhaseMethods : NSObject {
+}
+
+- (NSEventPhase)phaseBegan;
+- (NSEventPhase)phaseEnded;
+@end
+
+@implementation MockPhaseMethods
+
+- (NSEventPhase)phaseBegan {
+  return NSEventPhaseBegan;
+}
+- (NSEventPhase)phaseEnded {
+  return NSEventPhaseEnded;
+}
+
+@end
 
 namespace content {
 
@@ -83,6 +124,19 @@ gfx::Rect GetExpectedRect(const gfx::Point& origin,
       size.height());
 }
 
+// Returns NSScrollWheel event that mocks -phase. |mockPhaseSelector| should
+// correspond to a method in |MockPhaseMethods| that returns the desired phase.
+NSEvent* MockScrollWheelEventWithPhase(SEL mockPhaseSelector) {
+  CGEventRef cg_event =
+      CGEventCreateScrollWheelEvent(NULL, kCGScrollEventUnitLine, 1, 0, 0);
+  NSEvent* event = [NSEvent eventWithCGEvent:cg_event];
+  CFRelease(cg_event);
+  method_setImplementation(
+      class_getInstanceMethod([NSEvent class], @selector(phase)),
+      [MockPhaseMethods instanceMethodForSelector:mockPhaseSelector]);
+  return event;
+}
+
 }  // namespace
 
 class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
@@ -115,35 +169,6 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     RenderViewHostImplTestHarness::TearDown();
   }
  protected:
-  // Adds an accelerated plugin view to |rwhv_cocoa_|.  Returns a handle to the
-  // newly-added view.  Callers must ensure that a UI thread is present and
-  // running before calling this function.
-  gfx::PluginWindowHandle AddAcceleratedPluginView(int w, int h) {
-    // Create an accelerated view the size of the rhwvmac.
-    [rwhv_cocoa_.get() setFrame:NSMakeRect(0, 0, w, h)];
-    gfx::PluginWindowHandle accelerated_handle =
-        rwhv_mac_->AllocateFakePluginWindowHandle(/*opaque=*/false,
-                                                  /*root=*/false);
-    rwhv_mac_->AcceleratedSurfaceSetIOSurface(accelerated_handle, w, h, 0);
-
-    // The accelerated view isn't shown until it has a valid rect and has been
-    // painted to.
-    GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
-    params.window = accelerated_handle;
-    rwhv_mac_->AcceleratedSurfaceBuffersSwapped(params, 0);
-    webkit::npapi::WebPluginGeometry geom;
-    gfx::Rect rect(0, 0, w, h);
-    geom.window = accelerated_handle;
-    geom.window_rect = rect;
-    geom.clip_rect = rect;
-    geom.visible = true;
-    geom.rects_valid = true;
-    rwhv_mac_->MovePluginWindows(
-        gfx::Vector2d(),
-        std::vector<webkit::npapi::WebPluginGeometry>(1, geom));
-
-    return accelerated_handle;
-  }
  private:
   // This class isn't derived from PlatformTest.
   base::mac::ScopedNSAutoreleasePool pool_;
@@ -159,46 +184,6 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
 };
 
 TEST_F(RenderWidgetHostViewMacTest, Basic) {
-}
-
-// Regression test for http://crbug.com/60318
-TEST_F(RenderWidgetHostViewMacTest, FocusAcceleratedView) {
-  // The accelerated view methods want to be called on the UI thread.
-  scoped_ptr<BrowserThreadImpl> ui_thread_(
-      new BrowserThreadImpl(BrowserThread::UI,
-                            MessageLoop::current()));
-
-  int w = 400, h = 300;
-  gfx::PluginWindowHandle accelerated_handle = AddAcceleratedPluginView(w, h);
-  EXPECT_FALSE([rwhv_cocoa_.get() isHidden]);
-  NSView* accelerated_view = static_cast<NSView*>(
-      rwhv_mac_->ViewForPluginWindowHandle(accelerated_handle));
-  EXPECT_FALSE([accelerated_view isHidden]);
-
-  // Take away first responder from the rwhvmac, then simulate the effect of a
-  // click on the accelerated view. The rwhvmac should be first responder
-  // again.
-  scoped_nsobject<NSWindow> window([[CocoaTestHelperWindow alloc] init]);
-  scoped_nsobject<NSView> other_view(
-      [[NSTextField alloc] initWithFrame:NSMakeRect(0, h, w, 40)]);
-  [[window contentView] addSubview:rwhv_cocoa_.get()];
-  [[window contentView] addSubview:other_view.get()];
-
-  EXPECT_TRUE([rwhv_cocoa_.get() acceptsFirstResponder]);
-  [window makeFirstResponder:rwhv_cocoa_.get()];
-  EXPECT_EQ(rwhv_cocoa_.get(), [window firstResponder]);
-  EXPECT_FALSE([accelerated_view acceptsFirstResponder]);
-
-  EXPECT_TRUE([other_view acceptsFirstResponder]);
-  [window makeFirstResponder:other_view];
-  EXPECT_NE(rwhv_cocoa_.get(), [window firstResponder]);
-
-  EXPECT_TRUE([accelerated_view acceptsFirstResponder]);
-  [window makeFirstResponder:accelerated_view];
-  EXPECT_EQ(rwhv_cocoa_.get(), [window firstResponder]);
-
-  // Clean up.
-  rwhv_mac_->DestroyFakePluginWindowHandle(accelerated_handle);
 }
 
 TEST_F(RenderWidgetHostViewMacTest, AcceptsFirstResponder) {
@@ -234,46 +219,14 @@ TEST_F(RenderWidgetHostViewMacTest, TakesFocusOnMouseDown) {
   EXPECT_EQ(rwhv_cocoa_.get(), [window firstResponder]);
 }
 
-// Regression test for http://crbug.com/64256
-TEST_F(RenderWidgetHostViewMacTest, TakesFocusOnMouseDownWithAcceleratedView) {
-  // The accelerated view methods want to be called on the UI thread.
-  scoped_ptr<BrowserThreadImpl> ui_thread_(
-      new BrowserThreadImpl(BrowserThread::UI,
-                            MessageLoop::current()));
-
-  int w = 400, h = 300;
-  gfx::PluginWindowHandle accelerated_handle = AddAcceleratedPluginView(w, h);
-  EXPECT_FALSE([rwhv_cocoa_.get() isHidden]);
-  NSView* accelerated_view = static_cast<NSView*>(
-      rwhv_mac_->ViewForPluginWindowHandle(accelerated_handle));
-  EXPECT_FALSE([accelerated_view isHidden]);
-
-  // Add the RWHVCocoa to the window and remove first responder status.
-  scoped_nsobject<CocoaTestHelperWindow>
-      window([[CocoaTestHelperWindow alloc] init]);
-  [[window contentView] addSubview:rwhv_cocoa_.get()];
-  [window setPretendIsKeyWindow:YES];
-  [window makeFirstResponder:nil];
-  EXPECT_NE(rwhv_cocoa_.get(), [window firstResponder]);
-
-  // Tell the RWHVMac to not accept first responder status.  The accelerated
-  // view should also stop accepting first responder.
-  rwhv_mac_->SetTakesFocusOnlyOnMouseDown(true);
-  EXPECT_FALSE([accelerated_view acceptsFirstResponder]);
-
-  // A click on the accelerated view should focus the RWHVCocoa.
-  std::pair<NSEvent*, NSEvent*> clicks =
-      cocoa_test_event_utils::MouseClickInView(accelerated_view, 1);
-  [rwhv_cocoa_.get() mouseDown:clicks.first];
-  EXPECT_EQ(rwhv_cocoa_.get(), [window firstResponder]);
-
-  // Clean up.
-  rwhv_mac_->DestroyFakePluginWindowHandle(accelerated_handle);
-}
-
 TEST_F(RenderWidgetHostViewMacTest, Fullscreen) {
   rwhv_mac_->InitAsFullscreen(NULL);
   EXPECT_TRUE(rwhv_mac_->pepper_fullscreen_window());
+
+  // Break the reference cycle caused by pepper_fullscreen_window() without
+  // an <esc> event. See comment in
+  // release_pepper_fullscreen_window_for_testing().
+  rwhv_mac_->release_pepper_fullscreen_window_for_testing();
 }
 
 // Verify that escape key down in fullscreen mode suppressed the keyup event on
@@ -310,19 +263,49 @@ TEST_F(RenderWidgetHostViewMacTest, FullscreenCloseOnEscape) {
   EXPECT_FALSE([rwhv_mac_->cocoa_view() suppressNextEscapeKeyUp]);
 }
 
+// Test that command accelerators which destroy the fullscreen window
+// don't crash when forwarded via the window's responder machinery.
+TEST_F(RenderWidgetHostViewMacTest, AcceleratorDestroy) {
+  // Use our own RWH since we need to destroy it.
+  MockRenderWidgetHostDelegate delegate;
+  TestBrowserContext browser_context;
+  MockRenderProcessHost* process_host =
+      new MockRenderProcessHost(&browser_context);
+  // Owned by its |cocoa_view()|.
+  RenderWidgetHostImpl* rwh = new RenderWidgetHostImpl(
+      &delegate, process_host, MSG_ROUTING_NONE);
+  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
+      RenderWidgetHostView::CreateViewForWidget(rwh));
+
+  view->InitAsFullscreen(rwhv_mac_);
+
+  WindowedNotificationObserver observer(
+      NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
+      Source<RenderWidgetHost>(rwh));
+
+  // Command-ESC will destroy the view, while the window is still in
+  // |-performKeyEquivalent:|.  There are other cases where this can
+  // happen, Command-ESC is the easiest to trigger.
+  [[view->cocoa_view() window] performKeyEquivalent:
+      cocoa_test_event_utils::KeyEventWithKeyCode(
+          53, 27, NSKeyDown, NSCommandKeyMask)];
+  observer.Wait();
+}
+
 TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharacterRangeCaretCase) {
   const string16 kDummyString = UTF8ToUTF16("hogehoge");
   const size_t kDummyOffset = 0;
 
   gfx::Rect caret_rect(10, 11, 0, 10);
   ui::Range caret_range(0, 0);
+  ViewHostMsg_SelectionBounds_Params params;
 
   NSRect rect;
   NSRange actual_range;
   rwhv_mac_->SelectionChanged(kDummyString, kDummyOffset, caret_range);
-  rwhv_mac_->SelectionBoundsChanged(
-       caret_rect, WebKit::WebTextDirectionLeftToRight,
-       caret_rect, WebKit::WebTextDirectionLeftToRight);
+  params.anchor_rect = params.focus_rect = caret_rect;
+  params.anchor_dir = params.focus_dir = WebKit::WebTextDirectionLeftToRight;
+  rwhv_mac_->SelectionBoundsChanged(params);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
         caret_range.ToNSRange(),
         &rect,
@@ -346,10 +329,9 @@ TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharacterRangeCaretCase) {
   // Caret moved.
   caret_rect = gfx::Rect(20, 11, 0, 10);
   caret_range = ui::Range(1, 1);
+  params.anchor_rect = params.focus_rect = caret_rect;
   rwhv_mac_->SelectionChanged(kDummyString, kDummyOffset, caret_range);
-  rwhv_mac_->SelectionBoundsChanged(
-       caret_rect, WebKit::WebTextDirectionLeftToRight,
-       caret_rect, WebKit::WebTextDirectionLeftToRight);
+  rwhv_mac_->SelectionBoundsChanged(params);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
         caret_range.ToNSRange(),
         &rect,
@@ -373,9 +355,9 @@ TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharacterRangeCaretCase) {
   // No caret.
   caret_range = ui::Range(1, 2);
   rwhv_mac_->SelectionChanged(kDummyString, kDummyOffset, caret_range);
-  rwhv_mac_->SelectionBoundsChanged(
-        caret_rect, WebKit::WebTextDirectionLeftToRight,
-        gfx::Rect(30, 11, 0, 10), WebKit::WebTextDirectionLeftToRight);
+  params.anchor_rect = caret_rect;
+  params.focus_rect = gfx::Rect(30, 11, 0, 10);
+  rwhv_mac_->SelectionBoundsChanged(params);
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
         ui::Range(0, 0).ToNSRange(),
         &rect,
@@ -678,6 +660,45 @@ TEST_F(RenderWidgetHostViewMacTest, BlurAndFocusOnSetActive) {
 
   // Clean up.
   rwh->Shutdown();
+}
+
+TEST_F(RenderWidgetHostViewMacTest, ScrollWheelEndEventDelivery) {
+  // This tests Lion+ functionality, so don't run the test pre-Lion.
+  if (!base::mac::IsOSLionOrLater())
+    return;
+
+  // Initialize the view associated with a MockRenderWidgetHostImpl, rather than
+  // the MockRenderProcessHost that is set up by the test harness which mocks
+  // out |OnMessageReceived()|.
+  TestBrowserContext browser_context;
+  MockRenderProcessHost* process_host =
+      new MockRenderProcessHost(&browser_context);
+  MockRenderWidgetHostDelegate delegate;
+  MockRenderWidgetHostImpl* host = new MockRenderWidgetHostImpl(
+      &delegate, process_host, MSG_ROUTING_NONE);
+  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
+      RenderWidgetHostView::CreateViewForWidget(host));
+
+  // Send an initial wheel event with NSEventPhaseBegan to the view.
+  NSEvent* event1 = MockScrollWheelEventWithPhase(@selector(phaseBegan));
+  [view->cocoa_view() scrollWheel:event1];
+  ASSERT_EQ(1U, process_host->sink().message_count());
+
+  // Send an ACK for the first wheel event, so that the queue will be flushed.
+  scoped_ptr<IPC::Message> response(
+      new ViewHostMsg_HandleInputEvent_ACK(0, WebKit::WebInputEvent::MouseWheel,
+                                           INPUT_EVENT_ACK_STATE_CONSUMED));
+  host->OnMessageReceived(*response);
+
+  // Post the NSEventPhaseEnded wheel event to NSApp and check whether the
+  // render view receives it.
+  NSEvent* event2 = MockScrollWheelEventWithPhase(@selector(phaseEnded));
+  [NSApp postEvent:event2 atStart:NO];
+  MessageLoop::current()->RunUntilIdle();
+  ASSERT_EQ(2U, process_host->sink().message_count());
+
+  // Clean up.
+  host->Shutdown();
 }
 
 }  // namespace content

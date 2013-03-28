@@ -6,11 +6,13 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/json/json_file_value_serializer.h"
+#include "base/message_loop.h"
+#include "chrome/browser/chromeos/drive/change_list_loader.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
-#include "chrome/browser/chromeos/drive/drive_feed_loader.h"
-#include "chrome/browser/chromeos/drive/drive_file_system.h"
+#include "chrome/browser/chromeos/drive/drive_cache.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 
 namespace drive {
@@ -35,83 +37,11 @@ bool CacheStatesEqual(const DriveCacheEntry& a, const DriveCacheEntry& b) {
           a.is_persistent() == b.is_persistent());
 }
 
-void CopyErrorCodeFromFileOperationCallback(DriveFileError* output,
-                                            DriveFileError error) {
-  DCHECK(output);
-  *output = error;
-}
-
-void CopyResultsFromFileMoveCallback(
-    DriveFileError* out_error,
-    FilePath* out_file_path,
-    DriveFileError error,
-    const FilePath& moved_file_path) {
-  DCHECK(out_error);
-  DCHECK(out_file_path);
-
-  *out_error = error;
-  *out_file_path = moved_file_path;
-}
-
-void CopyResultsFromGetEntryInfoCallback(
-    DriveFileError* out_error,
-    scoped_ptr<DriveEntryProto>* out_entry_proto,
-    DriveFileError error,
-    scoped_ptr<DriveEntryProto> entry_proto) {
-  DCHECK(out_error);
-  DCHECK(out_entry_proto);
-
-  *out_error = error;
-  *out_entry_proto = entry_proto.Pass();
-}
-
-void CopyResultsFromReadDirectoryCallback(
-    DriveFileError* out_error,
-    scoped_ptr<DriveEntryProtoVector>* out_entries,
-    DriveFileError error,
-    scoped_ptr<DriveEntryProtoVector> entries) {
-  DCHECK(out_error);
-  DCHECK(out_entries);
-
-  *out_error = error;
-  *out_entries = entries.Pass();
-}
-
-void CopyResultsFromGetEntryInfoWithFilePathCallback(
-    DriveFileError* out_error,
-    FilePath* out_drive_file_path,
-    scoped_ptr<DriveEntryProto>* out_entry_proto,
-    DriveFileError error,
-    const FilePath& drive_file_path,
-    scoped_ptr<DriveEntryProto> entry_proto) {
-  DCHECK(out_error);
-  DCHECK(out_drive_file_path);
-  DCHECK(out_entry_proto);
-
-  *out_error = error;
-  *out_drive_file_path = drive_file_path;
-  *out_entry_proto = entry_proto.Pass();
-}
-
-void CopyResultsFromGetEntryInfoPairCallback(
-    scoped_ptr<EntryInfoPairResult>* out_result,
-    scoped_ptr<EntryInfoPairResult> result) {
-  DCHECK(out_result);
-
-  *out_result = result.Pass();
-}
-
-void CopyResultFromInitializeCacheCallback(bool* out_success,
-                                           bool success) {
-  DCHECK(out_success);
-  *out_success = success;
-}
-
 bool LoadChangeFeed(const std::string& relative_path,
-                    DriveFileSystem* file_system,
-                    int64 start_changestamp,
+                    ChangeListLoader* change_list_loader,
+                    bool is_delta_feed,
+                    const std::string& root_resource_id,
                     int64 root_feed_changestamp) {
-  std::string error;
   scoped_ptr<Value> document =
       google_apis::test_util::LoadJSONFile(relative_path);
   if (!document.get())
@@ -119,21 +49,25 @@ bool LoadChangeFeed(const std::string& relative_path,
   if (document->GetType() != Value::TYPE_DICTIONARY)
     return false;
 
-  scoped_ptr<google_apis::DocumentFeed> document_feed(
-      google_apis::DocumentFeed::ExtractAndParse(*document));
+  scoped_ptr<google_apis::ResourceList> document_feed(
+      google_apis::ResourceList::ExtractAndParse(*document));
   if (!document_feed.get())
     return false;
 
-  ScopedVector<google_apis::DocumentFeed> feed_list;
+  ScopedVector<google_apis::ResourceList> feed_list;
   feed_list.push_back(document_feed.release());
 
-  file_system->feed_loader()->UpdateFromFeed(
+  scoped_ptr<google_apis::AboutResource> about_resource(
+      new google_apis::AboutResource);
+  about_resource->set_largest_change_id(root_feed_changestamp);
+  about_resource->set_root_folder_id(root_resource_id);
+
+  change_list_loader->UpdateFromFeed(
+      about_resource.Pass(),
       feed_list,
-      start_changestamp,
-      root_feed_changestamp,
-      kWAPIRootDirectoryResourceId,
+      is_delta_feed,
       base::Bind(&base::DoNothing));
-  // DriveFeedLoader::UpdateFromFeed is asynchronous, so wait for it to finish.
+  // ChangeListLoader::UpdateFromFeed is asynchronous, so wait for it to finish.
   google_apis::test_util::RunBlockingPoolTask();
 
   return true;

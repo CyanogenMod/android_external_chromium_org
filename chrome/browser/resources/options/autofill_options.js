@@ -126,28 +126,19 @@ cr.define('options', function() {
     },
 
     /**
-     * Removes the Autofill address represented by |guid|.
-     * @param {String} guid The GUID of the address to remove.
+     * Removes the Autofill address or credit card represented by |guid|.
+     * @param {string} guid The GUID of the address to remove.
      * @private
      */
-    removeAddress_: function(guid) {
-      chrome.send('removeAddress', [guid]);
-    },
-
-    /**
-     * Removes the Autofill credit card represented by |guid|.
-     * @param {String} guid The GUID of the credit card to remove.
-     * @private
-     */
-    removeCreditCard_: function(guid) {
-      chrome.send('removeCreditCard', [guid]);
+    removeData_: function(guid) {
+      chrome.send('removeData', [guid]);
     },
 
     /**
      * Requests profile data for the address represented by |guid| from the
      * PersonalDataManager. Once the data is loaded, the AutofillOptionsHandler
      * calls showEditAddressOverlay().
-     * @param {String} guid The GUID of the address to edit.
+     * @param {string} guid The GUID of the address to edit.
      * @private
      */
     loadAddressEditor_: function(guid) {
@@ -158,7 +149,7 @@ cr.define('options', function() {
      * Requests profile data for the credit card represented by |guid| from the
      * PersonalDataManager. Once the data is loaded, the AutofillOptionsHandler
      * calls showEditCreditCardOverlay().
-     * @param {String} guid The GUID of the credit card to edit.
+     * @param {string} guid The GUID of the credit card to edit.
      * @private
      */
     loadCreditCardEditor_: function(guid) {
@@ -200,12 +191,8 @@ cr.define('options', function() {
     AutofillOptions.getInstance().setCreditCardList_(entries);
   };
 
-  AutofillOptions.removeAddress = function(guid) {
-    AutofillOptions.getInstance().removeAddress_(guid);
-  };
-
-  AutofillOptions.removeCreditCard = function(guid) {
-    AutofillOptions.getInstance().removeCreditCard_(guid);
+  AutofillOptions.removeData = function(guid) {
+    AutofillOptions.getInstance().removeData_(guid);
   };
 
   AutofillOptions.loadAddressEditor = function(guid) {

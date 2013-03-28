@@ -64,10 +64,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Gets the next available routing id.
   virtual int GetNextRoutingID() = 0;
 
-  // Called on the UI thread to cancel any outstanding resource requests for
-  // the specified render widget.
-  virtual void CancelResourceRequests(int render_widget_id) = 0;
-
   // Called on the UI thread to simulate a SwapOut_ACK message to the
   // ResourceDispatcherHost.  Necessary for a cross-site request, in the case
   // that the original RenderViewHost is not live and thus cannot run an
@@ -120,7 +116,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // NOTE: this is not necessarily valid immediately after calling Init, as
   // Init starts the process asynchronously.  It's guaranteed to be valid after
   // the first IPC arrives.
-  virtual base::ProcessHandle GetHandle() = 0;
+  virtual base::ProcessHandle GetHandle() const = 0;
 
   // Transport DIB functions ---------------------------------------------------
 

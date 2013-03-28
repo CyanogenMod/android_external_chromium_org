@@ -12,6 +12,7 @@
 #include "base/timer.h"
 #include "ui/aura/window_observer.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/widget/widget_observer.h"
 
 namespace views {
 class NonClientFrameView;
@@ -28,6 +29,7 @@ class MaximizeBubbleController;
 
 // Button used for the maximize control on the frame. Handles snapping logic.
 class ASH_EXPORT FrameMaximizeButton : public views::ImageButton,
+                                       public views::WidgetObserver,
                                        public aura::WindowObserver {
  public:
   FrameMaximizeButton(views::ButtonListener* listener,
@@ -57,6 +59,10 @@ class ASH_EXPORT FrameMaximizeButton : public views::ImageButton,
                                        intptr_t old) OVERRIDE;
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
+  // WidgetObserver overrides:
+  virtual void OnWidgetActivationChanged(views::Widget* widget,
+                                        bool active) OVERRIDE;
+
   // ImageButton overrides:
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
@@ -66,7 +72,7 @@ class ASH_EXPORT FrameMaximizeButton : public views::ImageButton,
   virtual void OnMouseCaptureLost() OVERRIDE;
 
   // ui::EventHandler overrides:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // Unit test overwrite: Change the UI delay used for the bubble show up.
   void set_bubble_appearance_delay_ms(int bubble_appearance_delay_ms) {
@@ -142,8 +148,9 @@ class ASH_EXPORT FrameMaximizeButton : public views::ImageButton,
   // Did the user drag far enough to trigger snapping?
   bool exceeded_drag_threshold_;
 
-  // This is the Window we are contained in.
-  aura::Window* window_;
+  // Remember the widget on which we have put some an observers,
+  // so that we can remove it upon destruction.
+  views::Widget* widget_;
 
   // Location of the press.
   gfx::Point press_location_;

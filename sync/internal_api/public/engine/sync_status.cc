@@ -14,7 +14,6 @@ SyncStatus::SyncStatus()
       server_conflicts(0),
       committed_count(0),
       syncing(false),
-      initial_sync_ended(false),
       updates_available(0),
       updates_received(0),
       reflected_updates_received(0),
@@ -34,7 +33,9 @@ SyncStatus::SyncStatus()
       cryptographer_ready(false),
       crypto_has_pending_keys(false),
       has_keystore_key(false),
-      passphrase_type(IMPLICIT_PASSPHRASE) {
+      passphrase_type(IMPLICIT_PASSPHRASE),
+      num_entries_by_type(MODEL_TYPE_COUNT, 0),
+      num_to_delete_entries_by_type(MODEL_TYPE_COUNT, 0){
 }
 
 SyncStatus::~SyncStatus() {

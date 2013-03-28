@@ -4,12 +4,11 @@
 
 #include "chrome/browser/net/connection_tester.h"
 
-#include "chrome/test/base/testing_pref_service.h"
+#include "base/prefs/testing_pref_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "net/base/mock_cert_verifier.h"
-#include "net/base/mock_host_resolver.h"
-#include "net/base/ssl_config_service_defaults.h"
 #include "net/cookies/cookie_monster.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_network_layer.h"
@@ -17,6 +16,7 @@
 #include "net/http/http_server_properties_impl.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/test_server.h"
 #include "net/url_request/url_request_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -37,22 +37,22 @@ class ConnectionTesterDelegate : public ConnectionTester::Delegate {
        completed_connection_test_suite_count_(0) {
   }
 
-  virtual void OnStartConnectionTestSuite() {
+  virtual void OnStartConnectionTestSuite() OVERRIDE {
     start_connection_test_suite_count_++;
   }
 
   virtual void OnStartConnectionTestExperiment(
-      const ConnectionTester::Experiment& experiment) {
+      const ConnectionTester::Experiment& experiment) OVERRIDE {
     start_connection_test_experiment_count_++;
   }
 
   virtual void OnCompletedConnectionTestExperiment(
       const ConnectionTester::Experiment& experiment,
-      int result) {
+      int result) OVERRIDE {
     completed_connection_test_experiment_count_++;
   }
 
-  virtual void OnCompletedConnectionTestSuite() {
+  virtual void OnCompletedConnectionTestSuite() OVERRIDE {
     completed_connection_test_suite_count_++;
     MessageLoop::current()->Quit();
   }
@@ -91,8 +91,8 @@ class ConnectionTesterTest : public PlatformTest {
         io_thread_(BrowserThread::IO, &message_loop_),
         test_server_(net::TestServer::TYPE_HTTP,
                      net::TestServer::kLocalhost,
-                     FilePath(
-                         FILE_PATH_LITERAL("net/data/url_request_unittest"))),
+                     // Nothing is read in this directory.
+                     base::FilePath(FILE_PATH_LITERAL("chrome"))),
         proxy_script_fetcher_context_(new net::URLRequestContext) {
     InitializeRequestContext();
   }

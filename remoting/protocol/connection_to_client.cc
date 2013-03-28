@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/message_loop_proxy.h"
-#include "google/protobuf/message.h"
 #include "net/base/io_buffer.h"
 #include "remoting/protocol/clipboard_stub.h"
 #include "remoting/protocol/host_control_dispatcher.h"
@@ -45,12 +44,9 @@ void ConnectionToClient::Disconnect() {
 
   CloseChannels();
 
-  DCHECK(session_.get());
-  scoped_ptr<Session> session = session_.Pass();
-
   // This should trigger OnConnectionClosed() event and this object
   // may be destroyed as the result.
-  session->Close();
+  session_->Close();
 }
 
 void ConnectionToClient::UpdateSequenceNumber(int64 sequence_number) {
@@ -112,6 +108,7 @@ void ConnectionToClient::OnSessionStateChange(Session::State state) {
   switch(state) {
     case Session::INITIALIZING:
     case Session::CONNECTING:
+    case Session::ACCEPTING:
     case Session::CONNECTED:
       // Don't care about these events.
       break;

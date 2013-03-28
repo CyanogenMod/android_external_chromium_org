@@ -5,7 +5,7 @@
 #include "chrome/installer/util/chrome_app_host_operations.h"
 
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -18,9 +18,8 @@
 
 namespace installer {
 
-void ChromeAppHostOperations::ReadOptions(
-    const MasterPreferences& prefs,
-    std::set<std::wstring>* options) const {
+void ChromeAppHostOperations::ReadOptions(const MasterPreferences& prefs,
+                                          std::set<string16>* options) const {
   DCHECK(options);
 
   bool pref_value;
@@ -28,35 +27,28 @@ void ChromeAppHostOperations::ReadOptions(
       pref_value) {
     options->insert(kOptionMultiInstall);
   }
-  if (prefs.GetBool(master_preferences::kChromeAppLauncher, &pref_value) &&
-      pref_value) {
-    options->insert(kOptionAppHostIsLauncher);
-  }
 }
 
-void ChromeAppHostOperations::ReadOptions(
-    const CommandLine& uninstall_command,
-    std::set<std::wstring>* options) const {
+void ChromeAppHostOperations::ReadOptions(const CommandLine& uninstall_command,
+                                          std::set<string16>* options) const {
   DCHECK(options);
 
   if (uninstall_command.HasSwitch(switches::kMultiInstall))
     options->insert(kOptionMultiInstall);
-  if (uninstall_command.HasSwitch(switches::kChromeAppLauncher))
-    options->insert(kOptionAppHostIsLauncher);
 }
 
 void ChromeAppHostOperations::AddKeyFiles(
-    const std::set<std::wstring>& options,
-    std::vector<FilePath>* key_files) const {
+    const std::set<string16>& options,
+    std::vector<base::FilePath>* key_files) const {
 }
 
 void ChromeAppHostOperations::AddComDllList(
-    const std::set<std::wstring>& options,
-    std::vector<FilePath>* com_dll_list) const {
+    const std::set<string16>& options,
+    std::vector<base::FilePath>* com_dll_list) const {
 }
 
 void ChromeAppHostOperations::AppendProductFlags(
-    const std::set<std::wstring>& options,
+    const std::set<string16>& options,
     CommandLine* cmd_line) const {
   DCHECK(cmd_line);
   bool is_multi_install = options.find(kOptionMultiInstall) != options.end();
@@ -68,15 +60,12 @@ void ChromeAppHostOperations::AppendProductFlags(
   if (is_multi_install && !cmd_line->HasSwitch(switches::kMultiInstall))
     cmd_line->AppendSwitch(switches::kMultiInstall);
 
-  // Either --app-launcher or --app-host is always needed.
-  if (options.find(kOptionAppHostIsLauncher) != options.end())
-    cmd_line->AppendSwitch(switches::kChromeAppLauncher);
-  else
-    cmd_line->AppendSwitch(switches::kChromeAppHost);
+  // Add --app-launcher.
+  cmd_line->AppendSwitch(switches::kChromeAppLauncher);
 }
 
 void ChromeAppHostOperations::AppendRenameFlags(
-    const std::set<std::wstring>& options,
+    const std::set<string16>& options,
     CommandLine* cmd_line) const {
   DCHECK(cmd_line);
   bool is_multi_install = options.find(kOptionMultiInstall) != options.end();
@@ -89,34 +78,25 @@ void ChromeAppHostOperations::AppendRenameFlags(
     cmd_line->AppendSwitch(switches::kMultiInstall);
 }
 
-bool ChromeAppHostOperations::SetChannelFlags(
-    const std::set<std::wstring>& options,
-    bool set,
-    ChannelInfo* channel_info) const {
+bool ChromeAppHostOperations::SetChannelFlags(const std::set<string16>& options,
+                                              bool set,
+                                              ChannelInfo* channel_info) const {
 #if defined(GOOGLE_CHROME_BUILD)
   DCHECK(channel_info);
-  bool modified_app_host = false;
-  bool modified_app_launcher = false;
-  bool is_app_launcher =
-      (options.find(kOptionAppHostIsLauncher) != options.end());
-  // If set, then App Host and App Launcher are mutually exclusive.
-  // If !set, then remove both.
-  modified_app_host = channel_info->SetAppHost(set && !is_app_launcher);
-  modified_app_launcher = channel_info->SetAppLauncher(set && is_app_launcher);
-  return modified_app_host || modified_app_launcher;
+  return channel_info->SetAppLauncher(set);
 #else
   return false;
 #endif
 }
 
 bool ChromeAppHostOperations::ShouldCreateUninstallEntry(
-    const std::set<std::wstring>& options) const {
-  return (options.find(kOptionAppHostIsLauncher) != options.end());
+    const std::set<string16>& options) const {
+  return true;
 }
 
 void ChromeAppHostOperations::AddDefaultShortcutProperties(
     BrowserDistribution* dist,
-    const FilePath& target_exe,
+    const base::FilePath& target_exe,
     ShellUtil::ShortcutProperties* properties) const {
   if (!properties->has_target())
     properties->set_target(target_exe);
@@ -127,25 +107,24 @@ void ChromeAppHostOperations::AddDefaultShortcutProperties(
     properties->set_arguments(app_host_args.GetCommandLineString());
   }
 
-  if (!properties->has_icon()) {
-    // Currently the App Launcher icon is inside chrome.exe, which we assume
-    // to be located in the same directory as app_host.exe.
-    // TODO(huangs): Cause the icon to also be embedded in app_host.exe,
-    // and then point at this (as chrome.exe is _not_ in the same folder
-    // for system-level chrome installs, or may even be uninstalled).
-    FilePath chrome_exe(target_exe.DirName().Append(kChromeExe));
-    properties->set_icon(chrome_exe, dist->GetIconIndex());
-  }
+  if (!properties->has_icon())
+    properties->set_icon(target_exe, dist->GetIconIndex());
 
   if (!properties->has_app_id()) {
     std::vector<string16> components;
-    string16 suffix;
-    ShellUtil::GetUserSpecificRegistrySuffix(&suffix);
-    string16 base_app_id(dist->GetBaseAppId());
-    base_app_id.append(suffix);
-    components.push_back(base_app_id);
+    components.push_back(dist->GetBaseAppId());
     properties->set_app_id(ShellUtil::BuildAppModelId(components));
   }
+}
+
+void ChromeAppHostOperations::LaunchUserExperiment(
+    const base::FilePath& setup_path,
+    const std::set<string16>& options,
+    InstallStatus status,
+    bool system_level) const {
+  // No experiments yet.  If adding some in the future, need to have
+  // ChromeAppHostDistribution::HasUserExperiments() return true.
+  NOTREACHED();
 }
 
 }  // namespace installer

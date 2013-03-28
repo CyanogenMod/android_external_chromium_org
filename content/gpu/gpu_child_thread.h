@@ -60,15 +60,10 @@ class GpuChildThread : public ChildThread {
   void OnClean();
   void OnCrash();
   void OnHang();
+  void OnDisableWatchdog();
 
 #if defined(USE_TCMALLOC)
   void OnGetGpuTcmalloc();
-#endif
-
-#if defined(OS_WIN)
-  static void CollectDxDiagnostics(GpuChildThread* thread);
-  static void SetDxDiagnostics(GpuChildThread* thread,
-                               const DxDiagNode& node);
 #endif
 
   // Set this flag to true if a fatal error occurred before we receive the
@@ -80,15 +75,15 @@ class GpuChildThread : public ChildThread {
 #if defined(OS_WIN)
   // Windows specific client sandbox interface.
   sandbox::TargetServices* target_services_;
-
-  // Indicates whether DirectX Diagnostics collection is ongoing.
-  bool collecting_dx_diagnostics_;
 #endif
 
   scoped_ptr<GpuChannelManager> gpu_channel_manager_;
 
   // Information about the GPU, such as device and vendor ID.
   GPUInfo gpu_info_;
+
+  // Whether the GPU thread is running in the browser process.
+  bool in_browser_process_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChildThread);
 };

@@ -4,16 +4,20 @@
 
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 
-#include <psapi.h>
 #include <windows.h>
+#include <psapi.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/metrics/histogram.h"
 #include "base/string_util.h"
 
 namespace content {
 
 void BrowserAccessibilityStateImpl::UpdatePlatformSpecificHistograms() {
+  // NOTE: this method is run from the file thread to reduce jank, since
+  // there's no guarantee these system calls will return quickly. Be careful
+  // not to add any code that isn't safe to run from a non-main thread!
+
   AUDIODESCRIPTION audio_description = {0};
   audio_description.cbSize = sizeof(AUDIODESCRIPTION);
   SystemParametersInfo(SPI_GETAUDIODESCRIPTION, 0, &audio_description, 0);
@@ -53,7 +57,7 @@ void BrowserAccessibilityStateImpl::UpdatePlatformSpecificHistograms() {
   for (size_t i = 0; i < module_count; i++) {
     TCHAR filename[MAX_PATH];
     GetModuleFileName(modules[i], filename, sizeof(filename));
-    string16 module_name(FilePath(filename).BaseName().value());
+    string16 module_name(base::FilePath(filename).BaseName().value());
     if (LowerCaseEqualsASCII(module_name, "fsdomsrv.dll"))
       jaws = true;
     if (LowerCaseEqualsASCII(module_name, "vbufbackend_gecko_ia2.dll"))

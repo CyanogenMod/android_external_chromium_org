@@ -97,9 +97,10 @@ void* FdOpenFileFunc(void* opaque, const char* filename, int mode) {
 }
 
 // We don't actually close the file stream since that would close
-// the underlying file descriptor, and we don't own it. We do free
-// |opaque| since we malloc'ed it in FillFdOpenFileFunc.
+// the underlying file descriptor, and we don't own it. However we do need to
+// flush buffers and free |opaque| since we malloc'ed it in FillFdOpenFileFunc.
 int CloseFileFunc(void* opaque, void* stream) {
+  fflush(static_cast<FILE*>(stream));
   free(opaque);
   return 0;
 }
@@ -115,6 +116,22 @@ void FillFdOpenFileFunc(zlib_filefunc_def* pzlib_filefunc_def, int fd) {
   pzlib_filefunc_def->opaque = ptr_fd;
 }
 #endif  // defined(OS_POSIX)
+
+#if defined(OS_WIN)
+// Callback function for zlib that opens a file stream from a Windows handle.
+void* HandleOpenFileFunc(void* opaque, const char* filename, int mode) {
+  WIN32FILE_IOWIN file_ret;
+  file_ret.hf = static_cast<HANDLE>(opaque);
+  file_ret.error = 0;
+  if (file_ret.hf == INVALID_HANDLE_VALUE)
+    return NULL;
+
+  void* ret = malloc(sizeof(WIN32FILE_IOWIN));
+  if (ret != NULL)
+    *(static_cast<WIN32FILE_IOWIN*>(ret)) = file_ret;
+  return ret;
+}
+#endif
 
 // A struct that contains data required for zlib functions to extract files from
 // a zip archive stored in memory directly. The following I/O API functions
@@ -238,6 +255,16 @@ unzFile OpenFdForUnzipping(int zip_fd) {
 }
 #endif
 
+#if defined(OS_WIN)
+unzFile OpenHandleForUnzipping(HANDLE zip_handle) {
+  zlib_filefunc_def zip_funcs;
+  fill_win32_filefunc(&zip_funcs);
+  zip_funcs.zopen_file = HandleOpenFileFunc;
+  zip_funcs.opaque = zip_handle;
+  return unzOpen2("fd", &zip_funcs);
+}
+#endif
+
 // static
 unzFile PreprareMemoryForUnzipping(const std::string& data) {
   if (data.empty())
@@ -275,6 +302,15 @@ zipFile OpenForZipping(const std::string& file_name_utf8, int append_flag) {
                   NULL,  // global comment
                   zip_func_ptrs);
 }
+
+#if defined(OS_POSIX)
+zipFile OpenFdForZipping(int zip_fd, int append_flag) {
+  zlib_filefunc_def zip_funcs;
+  FillFdOpenFileFunc(&zip_funcs, zip_fd);
+  // Passing dummy "fd" filename to zlib.
+  return zipOpen2("fd", append_flag, NULL, &zip_funcs);
+}
+#endif
 
 }  // namespace internal
 }  // namespace zip

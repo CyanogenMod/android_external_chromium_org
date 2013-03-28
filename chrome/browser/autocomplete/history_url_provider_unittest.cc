@@ -16,9 +16,12 @@
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/history_quick_provider.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/search_engines/template_url.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
@@ -145,6 +148,10 @@ class HistoryURLProviderTest : public testing::Test,
   virtual void OnProviderUpdate(bool updated_matches) OVERRIDE;
 
  protected:
+  static ProfileKeyedService* CreateTemplateURLService(Profile* profile) {
+    return new TemplateURLService(profile);
+  }
+
   // testing::Test
   virtual void SetUp() {
     SetUpImpl(false);
@@ -198,7 +205,8 @@ void HistoryURLProviderTest::SetUpImpl(bool no_db) {
                                            Profile::EXPLICIT_ACCESS);
 
   autocomplete_ = new HistoryURLProvider(this, profile_.get(), "en-US,en,ko");
-
+  TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+      profile_.get(), &HistoryURLProviderTest::CreateTemplateURLService);
   FillData();
 }
 
@@ -237,8 +245,9 @@ void HistoryURLProviderTest::RunTest(const string16 text,
                                      bool prevent_inline_autocomplete,
                                      const std::string* expected_urls,
                                      size_t num_results) {
-  AutocompleteInput input(text, desired_tld, prevent_inline_autocomplete,
-                          false, true, AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(text, string16::npos, desired_tld, GURL(),
+                          prevent_inline_autocomplete, false, true,
+                          AutocompleteInput::ALL_MATCHES);
   autocomplete_->Start(input, false);
   if (!autocomplete_->done())
     MessageLoop::current()->Run();
@@ -263,8 +272,8 @@ void HistoryURLProviderTest::RunTest(const string16 text,
 
 void HistoryURLProviderTest::RunAdjustOffsetTest(const string16 text,
                                                  size_t expected_offset) {
-  AutocompleteInput input(text, string16(), false, false, true,
-                          AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(text, string16::npos, string16(), GURL(), false,
+                          false, true, AutocompleteInput::ALL_MATCHES);
   autocomplete_->Start(input, false);
   if (!autocomplete_->done())
     MessageLoop::current()->Run();
@@ -447,35 +456,6 @@ TEST_F(HistoryURLProviderTest, WhatYouTyped) {
   const std::string results_3[] = {"https://wytmatch%20foo%20bar/"};
   RunTest(ASCIIToUTF16("https://wytmatch foo bar"), string16(), false,
           results_3, arraysize(results_3));
-
-  // Test the corner case where a user has fully typed a previously visited
-  // intranet address and is now hitting ctrl-enter, which completes to a
-  // previously unvisted internet domain.
-  const std::string binky_results[] = {"http://binky/"};
-  const std::string binky_com_results[] = {
-    "http://www.binky.com/",
-    "http://binky/",
-  };
-  RunTest(ASCIIToUTF16("binky"), string16(), false, binky_results,
-          arraysize(binky_results));
-  RunTest(ASCIIToUTF16("binky"), ASCIIToUTF16("com"), false, binky_com_results,
-          arraysize(binky_com_results));
-
-  // Test the related case where a user has fully typed a previously visited
-  // intranet address and is now hitting ctrl-enter, which completes to a
-  // previously visted internet domain.
-  const std::string winky_results[] = {
-    "http://winky/",
-    "http://www.winky.com/",
-  };
-  const std::string winky_com_results[] = {
-    "http://www.winky.com/",
-    "http://winky/",
-  };
-  RunTest(ASCIIToUTF16("winky"), string16(), false, winky_results,
-          arraysize(winky_results));
-  RunTest(ASCIIToUTF16("winky"), ASCIIToUTF16("com"), false, winky_com_results,
-          arraysize(winky_com_results));
 }
 
 TEST_F(HistoryURLProviderTest, Fixup) {
@@ -538,8 +518,8 @@ TEST_F(HistoryURLProviderTest, EmptyVisits) {
   // Wait for history to create the in memory DB.
   profile_->BlockUntilHistoryProcessesPendingRequests();
 
-  AutocompleteInput input(ASCIIToUTF16("p"), string16(), false, false, true,
-                          AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(ASCIIToUTF16("p"), string16::npos, string16(), GURL(),
+                          false, false, true, AutocompleteInput::ALL_MATCHES);
   autocomplete_->Start(input, false);
   // HistoryURLProvider shouldn't be done (waiting on async results).
   EXPECT_FALSE(autocomplete_->done());
@@ -574,8 +554,9 @@ TEST_F(HistoryURLProviderTestNoDB, NavigateWithoutDB) {
 }
 
 TEST_F(HistoryURLProviderTest, DontAutocompleteOnTrailingWhitespace) {
-  AutocompleteInput input(ASCIIToUTF16("slash "), string16(), false,
-                          false, true, AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(ASCIIToUTF16("slash "), string16::npos, string16(),
+                          GURL(), false, false, true,
+                          AutocompleteInput::ALL_MATCHES);
   autocomplete_->Start(input, false);
   if (!autocomplete_->done())
     MessageLoop::current()->Run();
@@ -703,10 +684,56 @@ TEST_F(HistoryURLProviderTest, CrashDueToFixup) {
     "\\@st"
   };
   for (size_t i = 0; i < arraysize(test_cases); ++i) {
-    AutocompleteInput input(ASCIIToUTF16(test_cases[i]), string16(), false,
-                            false, true, AutocompleteInput::ALL_MATCHES);
+    AutocompleteInput input(ASCIIToUTF16(test_cases[i]), string16::npos,
+                            string16(), GURL(), false, false, true,
+                            AutocompleteInput::ALL_MATCHES);
     autocomplete_->Start(input, false);
     if (!autocomplete_->done())
       MessageLoop::current()->Run();
   }
+}
+
+TEST_F(HistoryURLProviderTest, CullSearchResults) {
+  // Set up a default search engine.
+  TemplateURLData data;
+  data.SetKeyword(ASCIIToUTF16("TestEngine"));
+  data.SetURL("http://testsearch.com/?q={searchTerms}");
+  TemplateURLService* template_url_service =
+      TemplateURLServiceFactory::GetForProfile(profile_.get());
+  TemplateURL* template_url = new TemplateURL(profile_.get(), data);
+  template_url_service->Add(template_url);
+  template_url_service->SetDefaultSearchProvider(template_url);
+  template_url_service->Load();
+
+  // URLs we will be using, plus the visit counts they will initially get
+  // (the redirect set below will also increment the visit counts). We want
+  // the results to be in A,B,C order. Note also that our visit counts are
+  // all high enough so that domain synthesizing won't get triggered.
+  struct TestCase {
+    const char* url;
+    int count;
+  } test_cases[] = {
+    {"https://testsearch.com/", 30},
+    {"https://testsearch.com/?q=foobar", 20},
+    {"http://foobar.com/", 10}
+  };
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); i++) {
+    history_service_->AddPageWithDetails(GURL(test_cases[i].url),
+        UTF8ToUTF16("Title"), test_cases[i].count, test_cases[i].count,
+        Time::Now(), false, history::SOURCE_BROWSED);
+  }
+
+  // We should not see search URLs when typing a previously used query.
+  const std::string expected_when_searching_query[] = {
+    test_cases[2].url
+  };
+  RunTest(ASCIIToUTF16("foobar"), string16(), true,
+      expected_when_searching_query, arraysize(expected_when_searching_query));
+
+  // We should not see search URLs when typing the search engine name.
+  const std::string expected_when_searching_site[] = {
+    test_cases[0].url
+  };
+  RunTest(ASCIIToUTF16("testsearch"), string16(), true,
+      expected_when_searching_site, arraysize(expected_when_searching_site));
 }

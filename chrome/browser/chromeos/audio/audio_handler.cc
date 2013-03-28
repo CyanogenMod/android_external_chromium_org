@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "chrome/browser/browser_process.h"
@@ -15,10 +17,10 @@
 #else
 #include "chrome/browser/chromeos/audio/audio_mixer_alsa.h"
 #endif
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "content/public/browser/browser_thread.h"
 
 using std::max;
 using std::min;
@@ -78,23 +80,15 @@ AudioHandler* AudioHandler::GetInstance() {
 }
 
 // static
-void AudioHandler::RegisterPrefs(PrefService* local_state) {
-  if (!local_state->FindPreference(prefs::kAudioVolumePercent))
-    local_state->RegisterDoublePref(prefs::kAudioVolumePercent,
-                                    kDefaultVolumePercent,
-                                    PrefService::UNSYNCABLE_PREF);
-  if (!local_state->FindPreference(prefs::kAudioMute))
-    local_state->RegisterIntegerPref(prefs::kAudioMute,
-                                     kPrefMuteOff,
-                                     PrefService::UNSYNCABLE_PREF);
-
+void AudioHandler::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterDoublePref(prefs::kAudioVolumePercent,
+                               kDefaultVolumePercent);
+  registry->RegisterIntegerPref(prefs::kAudioMute, kPrefMuteOff);
   // Register the prefs backing the audio muting policies.
-  local_state->RegisterBooleanPref(prefs::kAudioOutputAllowed,
-                                   true,
-                                   PrefService::UNSYNCABLE_PREF);
-  local_state->RegisterBooleanPref(prefs::kAudioCaptureAllowed,
-                                   true,
-                                   PrefService::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kAudioOutputAllowed, true);
+  // This pref has moved to the media subsystem but we should verify it is there
+  // before we use it.
+  registry->RegisterBooleanPref(prefs::kAudioCaptureAllowed, true);
 }
 
 double AudioHandler::GetVolumePercent() {
@@ -160,13 +154,6 @@ void AudioHandler::RemoveVolumeObserver(VolumeObserver* observer) {
   volume_observers_.RemoveObserver(observer);
 }
 
-void AudioHandler::OnPreferenceChanged(PrefServiceBase* service,
-                                       const std::string& pref_name) {
-  DCHECK(pref_name == prefs::kAudioOutputAllowed ||
-         pref_name == prefs::kAudioCaptureAllowed);
-  ApplyAudioPolicy();
-}
-
 AudioHandler::AudioHandler(AudioMixer* mixer)
     : mixer_(mixer),
       local_state_(g_browser_process->local_state()) {
@@ -183,8 +170,10 @@ AudioHandler::~AudioHandler() {
 
 void AudioHandler::InitializePrefObservers() {
   pref_change_registrar_.Init(local_state_);
-  pref_change_registrar_.Add(prefs::kAudioOutputAllowed, this);
-  pref_change_registrar_.Add(prefs::kAudioCaptureAllowed, this);
+  base::Closure callback = base::Bind(&AudioHandler::ApplyAudioPolicy,
+                                      base::Unretained(this));
+  pref_change_registrar_.Add(prefs::kAudioOutputAllowed, callback);
+  pref_change_registrar_.Add(prefs::kAudioCaptureAllowed, callback);
 }
 
 void AudioHandler::ApplyAudioPolicy() {

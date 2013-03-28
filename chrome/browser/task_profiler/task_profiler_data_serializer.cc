@@ -4,8 +4,8 @@
 
 #include "chrome/browser/task_profiler/task_profiler_data_serializer.h"
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/time.h"
 #include "base/tracked_objects.h"
@@ -94,7 +94,7 @@ namespace task_profiler {
 // static
 void TaskProfilerDataSerializer::ToValue(
     const ProcessDataSnapshot& process_data,
-    content::ProcessType process_type,
+    int process_type,
     base::DictionaryValue* dictionary) {
   scoped_ptr<base::ListValue> tasks_list(new base::ListValue);
   for (std::vector<TaskSnapshot>::const_iterator it =
@@ -123,7 +123,7 @@ void TaskProfilerDataSerializer::ToValue(
 }
 
 
-bool TaskProfilerDataSerializer::WriteToFile(const FilePath& path) {
+bool TaskProfilerDataSerializer::WriteToFile(const base::FilePath& path) {
   std::string output;
   JSONStringValueSerializer serializer(&output);
   serializer.set_pretty_print(true);

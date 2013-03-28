@@ -3,14 +3,9 @@
 # found in the LICENSE file.
 
 {
-  'include_dirs': [
-    '<(DEPTH)/third_party/khronos',
+  'dependencies': [
+    '../third_party/khronos/khronos.gyp:khronos_headers',
   ],
-  'all_dependent_settings': {
-    'include_dirs': [
-      '<(DEPTH)/third_party/khronos',
-    ],
-  },
   'sources': [
     'command_buffer/common/bitfield_helpers.h',
     'command_buffer/common/buffer.h',
@@ -28,6 +23,8 @@
     'command_buffer/common/gles2_cmd_format.h',
     'command_buffer/common/id_allocator.cc',
     'command_buffer/common/id_allocator.h',
+    'command_buffer/common/mailbox.cc',
+    'command_buffer/common/mailbox.h',
     'command_buffer/common/thread_local.h',
     'command_buffer/common/time.h',
     'command_buffer/common/types.h',

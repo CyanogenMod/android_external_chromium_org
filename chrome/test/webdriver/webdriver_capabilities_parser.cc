@@ -38,7 +38,6 @@ Capabilities::Capabilities()
       detach(false),
       load_async(false),
       local_state(new DictionaryValue()),
-      native_events(false),
       no_website_testing_defaults(false),
       prefs(new DictionaryValue()) {
   log_levels[LogType::kDriver] = kAllLogLevel;
@@ -48,7 +47,7 @@ Capabilities::~Capabilities() { }
 
 CapabilitiesParser::CapabilitiesParser(
     const DictionaryValue* capabilities_dict,
-    const FilePath& root_path,
+    const base::FilePath& root_path,
     const Logger& logger,
     Capabilities* capabilities)
     : dict_(capabilities_dict),
@@ -128,21 +127,20 @@ Error* CapabilitiesParser::Parse() {
         &CapabilitiesParser::ParseExcludeSwitches;
   }
 
-  DictionaryValue::key_iterator key_iter = options->begin_keys();
-  for (; key_iter != options->end_keys(); ++key_iter) {
-    if (parser_map.find(*key_iter) == parser_map.end()) {
+  for (DictionaryValue::Iterator iter(*options); !iter.IsAtEnd();
+       iter.Advance()) {
+    if (parser_map.find(iter.key()) == parser_map.end()) {
       if (!legacy_options)
         return new Error(kBadRequest,
-                         "Unrecognized chrome capability: " +  *key_iter);
+                         "Unrecognized chrome capability: " + iter.key());
       continue;
     }
-    const Value* option = NULL;
-    options->GetWithoutPathExpansion(*key_iter, &option);
-    Error* error = (this->*parser_map[*key_iter])(option);
+    const Value* option = &iter.value();
+    Error* error = (this->*parser_map[iter.key()])(option);
     if (error) {
       error->AddDetails(base::StringPrintf(
           "Error occurred while processing capability '%s'",
-          (*key_iter).c_str()));
+          iter.key().c_str()));
       return error;
     }
   }
@@ -173,11 +171,11 @@ Error* CapabilitiesParser::ParseArgs(const Value* option) {
 }
 
 Error* CapabilitiesParser::ParseBinary(const Value* option) {
-  FilePath::StringType path;
+  base::FilePath::StringType path;
   if (!option->GetAsString(&path)) {
     return CreateBadInputError("binary path", Value::TYPE_STRING, option);
   }
-  caps_->command.SetProgram(FilePath(path));
+  caps_->command.SetProgram(base::FilePath(path));
   return NULL;
 }
 
@@ -203,7 +201,7 @@ Error* CapabilitiesParser::ParseExtensions(const Value* option) {
       return new Error(kBadRequest,
                        "Each extension must be a base64 encoded string");
     }
-    FilePath extension = root_.AppendASCII(
+    base::FilePath extension = root_.AppendASCII(
         base::StringPrintf("extension%" PRIuS ".crx", i));
     std::string decoded_extension;
     if (!Base64Decode(extension_base64, &decoded_extension))
@@ -236,20 +234,18 @@ Error* CapabilitiesParser::ParseLoggingPrefs(const base::Value* option) {
   if (!option->GetAsDictionary(&logging_prefs))
     return CreateBadInputError("loggingPrefs", Value::TYPE_DICTIONARY, option);
 
-  DictionaryValue::key_iterator key_iter = logging_prefs->begin_keys();
-  for (; key_iter != logging_prefs->end_keys(); ++key_iter) {
+  for (DictionaryValue::Iterator iter(*logging_prefs); !iter.IsAtEnd();
+       iter.Advance()) {
     LogType log_type;
-    if (!LogType::FromString(*key_iter, &log_type))
+    if (!LogType::FromString(iter.key(), &log_type))
       continue;
 
-    const Value* level_value;
-    logging_prefs->Get(*key_iter, &level_value);
     std::string level_name;
-    if (!level_value->GetAsString(&level_name)) {
+    if (!iter.value().GetAsString(&level_name)) {
       return CreateBadInputError(
-          std::string("loggingPrefs.") + *key_iter,
+          std::string("loggingPrefs.") + iter.key(),
           Value::TYPE_STRING,
-          level_value);
+          &iter.value());
     }
     caps_->log_levels[log_type.type()] = LogLevelFromString(level_name);
   }
@@ -257,8 +253,11 @@ Error* CapabilitiesParser::ParseLoggingPrefs(const base::Value* option) {
 }
 
 Error* CapabilitiesParser::ParseNativeEvents(const Value* option) {
-  if (!option->GetAsBoolean(&caps_->native_events))
+  bool native_events;
+  if (!option->GetAsBoolean(&native_events))
     return CreateBadInputError("nativeEvents", Value::TYPE_BOOLEAN, option);
+  if (native_events)
+    return new Error(kUnknownError, "OS-level events are not supported");
   return NULL;
 }
 
@@ -297,10 +296,11 @@ Error* CapabilitiesParser::ParseProxy(const base::Value* option) {
   proxy_options.insert("sslProxy");
   proxy_options.insert("class");  // Created by BeanToJSONConverter.
 
-  DictionaryValue::key_iterator key_iter = options->begin_keys();
-  for (; key_iter != options->end_keys(); ++key_iter) {
-    if (proxy_options.find(*key_iter) == proxy_options.end()) {
-      logger_.Log(kInfoLogLevel, "Unrecognized proxy capability: " + *key_iter);
+  for (DictionaryValue::Iterator iter(*options); !iter.IsAtEnd();
+       iter.Advance()) {
+    if (proxy_options.find(iter.key()) == proxy_options.end()) {
+      logger_.Log(kInfoLogLevel,
+                  "Unrecognized proxy capability: " + iter.key());
     }
   }
 

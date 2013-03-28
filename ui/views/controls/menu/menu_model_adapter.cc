@@ -50,6 +50,13 @@ MenuItemView* MenuModelAdapter::CreateMenu() {
   return item;
 }
 
+MenuItemView* MenuModelAdapter::AppendMenuItem(MenuItemView* menu,
+                                               ui::MenuModel* model,
+                                               int index) {
+  return menu->AppendMenuItemFromModel(model, index,
+                                       model->GetCommandIdAt(index));
+}
+
 // MenuModelAdapter, MenuDelegate implementation:
 
 void MenuModelAdapter::ExecuteCommand(int id) {
@@ -180,28 +187,27 @@ void MenuModelAdapter::WillHideMenu(MenuItemView* menu) {
 void MenuModelAdapter::BuildMenuImpl(MenuItemView* menu, ui::MenuModel* model) {
   DCHECK(menu);
   DCHECK(model);
+  bool has_icons = model->HasIcons();
   const int item_count = model->GetItemCount();
   for (int i = 0; i < item_count; ++i) {
-    const int index = i + model->GetFirstItemIndex(NULL);
-
-    MenuItemView* item = menu->AppendMenuItemFromModel(
-        model, index, model->GetCommandIdAt(index));
+    MenuItemView* item = AppendMenuItem(menu, model, i);
 
     if (item)
-      item->SetVisible(model->IsVisibleAt(index));
+      item->SetVisible(model->IsVisibleAt(i));
 
-    if (model->GetTypeAt(index) == ui::MenuModel::TYPE_SUBMENU) {
+    if (model->GetTypeAt(i) == ui::MenuModel::TYPE_SUBMENU) {
       DCHECK(item);
       DCHECK_EQ(MenuItemView::SUBMENU, item->GetType());
-      ui::MenuModel* submodel = model->GetSubmenuModelAt(index);
+      ui::MenuModel* submodel = model->GetSubmenuModelAt(i);
       DCHECK(submodel);
       BuildMenuImpl(item, submodel);
+      has_icons = has_icons || item->has_icons();
 
       menu_map_[item] = submodel;
     }
   }
 
-  menu->set_has_icons(model->HasIcons());
+  menu->set_has_icons(has_icons);
 }
 
 }  // namespace views

@@ -15,6 +15,7 @@
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
+#include "net/base/request_priority.h"
 #include "net/http/http_server_properties.h"
 #include "net/socket/ssl_client_socket.h"
 
@@ -171,6 +172,7 @@ class NET_EXPORT HttpStreamFactory {
   // Will callback to the HttpStreamRequestDelegate upon completion.
   virtual HttpStreamRequest* RequestStream(
       const HttpRequestInfo& info,
+      RequestPriority priority,
       const SSLConfig& server_ssl_config,
       const SSLConfig& proxy_ssl_config,
       HttpStreamRequest::Delegate* delegate,
@@ -179,6 +181,7 @@ class NET_EXPORT HttpStreamFactory {
   // Requests that enough connections for |num_streams| be opened.
   virtual void PreconnectStreams(int num_streams,
                                  const HttpRequestInfo& info,
+                                 RequestPriority priority,
                                  const SSLConfig& server_ssl_config,
                                  const SSLConfig& proxy_ssl_config) = 0;
 
@@ -238,6 +241,10 @@ class NET_EXPORT HttpStreamFactory {
 
   // Sets http/1.1, spdy/2, and spdy/3 as the protocols supported via NPN.
   static void EnableNpnSpdy3();
+
+  // Sets http/1.1, spdy/2, spdy/3, and spdy/3.1 as the protocols
+  // supported via NPN.
+  static void EnableNpnSpdy31();
 
   // Sets the protocols supported by NPN (next protocol negotiation) during the
   // SSL handshake as well as by HTTP Alternate-Protocol.

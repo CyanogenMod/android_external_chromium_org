@@ -15,6 +15,7 @@
 class SkCanvas;
 
 namespace gfx {
+class Insets;
 class Point;
 class Rect;
 class Size;
@@ -60,6 +61,11 @@ class AURA_EXPORT RootWindowHost {
   virtual gfx::Rect GetBounds() const = 0;
   virtual void SetBounds(const gfx::Rect& bounds) = 0;
 
+  // Sets/Gets the insets that specifies the effective root window area
+  // in the host window.
+  virtual gfx::Insets GetInsets() const = 0;
+  virtual void SetInsets(const gfx::Insets& insets) = 0;
+
   // Returns the location of the RootWindow on native screen.
   virtual gfx::Point GetLocationOnNativeScreen() const = 0;
 
@@ -75,13 +81,17 @@ class AURA_EXPORT RootWindowHost {
   // Queries the mouse's current position relative to the host window and sets
   // it in |location_return|. Returns true if the cursor is within the host
   // window. The position set to |location_return| is constrained within the
-  // host window.
+  // host window. If the cursor is disabled, returns false and (0, 0) is set to
+  // |location_return|.
   // This method is expensive, instead use gfx::Screen::GetCursorScreenPoint().
   virtual bool QueryMouseLocation(gfx::Point* location_return) = 0;
 
   // Clips the cursor to the bounds of the root window until UnConfineCursor().
   virtual bool ConfineCursorToRootWindow() = 0;
   virtual void UnConfineCursor() = 0;
+
+  // Called when the cursor visibility has changed.
+  virtual void OnCursorVisibilityChanged(bool show) = 0;
 
   // Moves the cursor to the specified location relative to the root window.
   virtual void MoveCursorTo(const gfx::Point& location) = 0;

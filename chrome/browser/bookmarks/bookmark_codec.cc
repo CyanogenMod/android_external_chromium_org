@@ -6,8 +6,8 @@
 
 #include <algorithm>
 
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "googleurl/src/gurl.h"
@@ -70,7 +70,7 @@ Value* BookmarkCodec::Encode(const BookmarkNode* bookmark_bar_node,
   // We are going to store the computed checksum. So set stored checksum to be
   // the same as computed checksum.
   stored_checksum_ = computed_checksum_;
-  main->Set(kChecksumKey, Value::CreateStringValue(computed_checksum_));
+  main->Set(kChecksumKey, new base::StringValue(computed_checksum_));
   main->Set(kRootsKey, roots);
   return main;
 }
@@ -144,9 +144,7 @@ bool BookmarkCodec::DecodeHelper(BookmarkNode* bb_node,
   if (d_value.Get(kChecksumKey, &checksum_value)) {
     if (checksum_value->GetType() != Value::TYPE_STRING)
       return false;
-    const StringValue* checksum_value_str =
-        static_cast<const StringValue*>(checksum_value);
-    if (!checksum_value_str->GetAsString(&stored_checksum_))
+    if (!checksum_value->GetAsString(&stored_checksum_))
       return false;
   }
 

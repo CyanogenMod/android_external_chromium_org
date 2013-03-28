@@ -13,11 +13,11 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/host_resolver_proc.h"
 #include "net/base/network_change_notifier.h"
+#include "net/dns/host_resolver_proc.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
-class PrefService;
+class PrefRegistrySimple;
 
 // This object is responsible for determining whether the user is on a network
 // that redirects requests for intranet hostnames to another site, and if so,
@@ -52,7 +52,7 @@ class IntranetRedirectDetector
   // is in place.
   static GURL RedirectOrigin();
 
-  static void RegisterPrefs(PrefService* prefs);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // The number of characters the fetcher will use for its randomly-generated
   // hostnames.

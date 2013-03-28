@@ -10,7 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/extensions/api/tabs/tabs.h"
+#include "chrome/browser/extensions/api/tabs/tabs_api.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/ui/browser_list_observer.h"
@@ -48,20 +48,22 @@ class BrowserEventRouter : public TabStripModelObserver,
                             int index) OVERRIDE;
   virtual void TabDetachedAt(content::WebContents* contents,
                              int index) OVERRIDE;
-  virtual void ActiveTabChanged(TabContents* old_contents,
-                                TabContents* new_contents,
+  virtual void ActiveTabChanged(content::WebContents* old_contents,
+                                content::WebContents* new_contents,
                                 int index,
                                 bool user_gesture) OVERRIDE;
   virtual void TabSelectionChanged(
       TabStripModel* tab_strip_model,
-      const TabStripSelectionModel& old_model) OVERRIDE;
-  virtual void TabMoved(TabContents* contents, int from_index,
+      const ui::ListSelectionModel& old_model) OVERRIDE;
+  virtual void TabMoved(content::WebContents* contents,
+                        int from_index,
                         int to_index) OVERRIDE;
-  virtual void TabChangedAt(TabContents* contents, int index,
+  virtual void TabChangedAt(content::WebContents* contents,
+                            int index,
                             TabChangeType change_type) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int index) OVERRIDE;
   virtual void TabPinnedStateChanged(content::WebContents* contents,
                                      int index) OVERRIDE;
@@ -83,11 +85,6 @@ class BrowserEventRouter : public TabStripModelObserver,
   void BrowserActionExecuted(const ExtensionAction& browser_action,
                              Browser* browser);
 
-  // A keyboard shortcut resulted in an extension command.
-  void CommandExecuted(Profile* profile,
-                       const std::string& extension_id,
-                       const std::string& command);
-
   // content::NotificationObserver.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -99,6 +96,10 @@ class BrowserEventRouter : public TabStripModelObserver,
   // Internal processing of tab updated events. Is called by both TabChangedAt
   // and Observe/NAV_ENTRY_COMMITTED.
   void TabUpdated(content::WebContents* contents, bool did_navigate);
+
+  // Triggers a tab updated event if the favicon URL changes.
+  void FaviconUrlUpdated(content::WebContents* contents,
+                         const bool* icon_url_changed);
 
   // The DispatchEvent methods forward events to the |profile|'s event router.
   // The BrowserEventRouter listens to events for all profiles,
@@ -127,7 +128,7 @@ class BrowserEventRouter : public TabStripModelObserver,
   // Packages |changed_properties| as a tab updated event for the tab |contents|
   // and dispatches the event to the extension.
   void DispatchTabUpdatedEvent(content::WebContents* contents,
-                               DictionaryValue* changed_properties);
+                               scoped_ptr<DictionaryValue> changed_properties);
 
   // Called to dispatch a deprecated style page action click event that was
   // registered like:

@@ -10,11 +10,10 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/base_bubble_controller.h"
-#import "chrome/browser/ui/cocoa/tracking_area.h"
+#import "ui/base/cocoa/tracking_area.h"
 
 class AvatarMenuModel;
 class Browser;
-@class HoverImageButton;
 
 // This window controller manages the bubble that displays a "menu" of profiles.
 // It is brought open by clicking on the avatar icon in the window frame.
@@ -105,7 +104,7 @@ class Browser;
   __weak AvatarMenuItemController* viewController_;
 
   // Used to highlight the background on hover.
-  ScopedCrTrackingArea trackingArea_;
+  ui::ScopedCrTrackingArea trackingArea_;
 }
 @property(assign, nonatomic) IBOutlet AvatarMenuItemController* viewController;
 @end

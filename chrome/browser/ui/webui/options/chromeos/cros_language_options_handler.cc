@@ -16,6 +16,7 @@
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -75,7 +76,7 @@ void CrosLanguageOptionsHandler::GetLocalizedValues(
           IDS_OPTIONS_SETTINGS_LANGUAGES_INPUT_METHOD_EXTENSION_DESCRIPTION));
 
   input_method::InputMethodManager* manager =
-      input_method::InputMethodManager::GetInstance();
+      input_method::GetInputMethodManager();
   // GetSupportedInputMethods() never return NULL.
   scoped_ptr<input_method::InputMethodDescriptors> descriptors(
       manager->GetSupportedInputMethods());
@@ -104,7 +105,7 @@ void CrosLanguageOptionsHandler::RegisterMessages() {
 ListValue* CrosLanguageOptionsHandler::GetInputMethodList(
     const input_method::InputMethodDescriptors& descriptors) {
   input_method::InputMethodManager* manager =
-      input_method::InputMethodManager::GetInstance();
+      input_method::GetInputMethodManager();
 
   ListValue* input_method_list = new ListValue();
 
@@ -115,7 +116,6 @@ ListValue* CrosLanguageOptionsHandler::GetInputMethodList(
     const std::string display_name =
         manager->GetInputMethodUtil()->GetInputMethodDisplayNameFromId(
             descriptor.id());
-
     DictionaryValue* dictionary = new DictionaryValue();
     dictionary->SetString("id", descriptor.id());
     dictionary->SetString("displayName", display_name);
@@ -124,17 +124,13 @@ ListValue* CrosLanguageOptionsHandler::GetInputMethodList(
     // we use a dictionary here.
     DictionaryValue* language_codes = new DictionaryValue();
     language_codes->SetBoolean(language_code, true);
-    // Check kExtraLanguages to see if there are languages associated with
+    // Check extra languages to see if there are languages associated with
     // this input method. If these are present, add these.
-    for (size_t j = 0; j < input_method::kExtraLanguagesLength; ++j) {
-      const std::string extra_input_method_id =
-          input_method::kExtraLanguages[j].input_method_id;
-      const std::string extra_language_code =
-          input_method::kExtraLanguages[j].language_code;
-      if (extra_input_method_id == descriptor.id()) {
-        language_codes->SetBoolean(extra_language_code, true);
-      }
-    }
+    const std::vector<std::string> extra_language_codes =
+        manager->GetInputMethodUtil()->GetExtraLanguageCodesFromId(
+            descriptor.id());
+    for (size_t j = 0; j < extra_language_codes.size(); ++j)
+      language_codes->SetBoolean(extra_language_codes[j], true);
     dictionary->Set("languageCodeSet", language_codes);
 
     input_method_list->Append(dictionary);
@@ -152,12 +148,12 @@ ListValue* CrosLanguageOptionsHandler::GetLanguageList(
     const std::string language_code = descriptor.language_code();
     language_codes.insert(language_code);
   }
-  // Collect the language codes from kExtraLanguages.
-  for (size_t i = 0; i < input_method::kExtraLanguagesLength; ++i) {
-    const char* language_code =
-        input_method::kExtraLanguages[i].language_code;
-    language_codes.insert(language_code);
-  }
+  // Collect the language codes from extra languages.
+  const std::vector<std::string> extra_language_codes =
+      input_method::GetInputMethodManager()->GetInputMethodUtil()
+          ->GetExtraLanguageCodeList();
+  for (size_t i = 0; i < extra_language_codes.size(); ++i)
+    language_codes.insert(extra_language_codes[i]);
 
   // Map of display name -> {language code, native_display_name}.
   // In theory, we should be able to create a map that is sorted by
@@ -172,8 +168,10 @@ ListValue* CrosLanguageOptionsHandler::GetLanguageList(
   // Build the list of display names, and build the language map.
   for (std::set<std::string>::const_iterator iter = language_codes.begin();
        iter != language_codes.end(); ++iter) {
+    input_method::InputMethodUtil* input_method_util =
+        input_method::GetInputMethodManager()->GetInputMethodUtil();
     const string16 display_name =
-        input_method::InputMethodUtil::GetLanguageDisplayNameFromCode(*iter);
+        input_method_util->GetLanguageDisplayNameFromCode(*iter);
     const string16 native_display_name =
         input_method::InputMethodUtil::GetLanguageNativeDisplayNameFromCode(
             *iter);
@@ -212,7 +210,7 @@ ListValue* CrosLanguageOptionsHandler::GetLanguageList(
 
 base::ListValue* CrosLanguageOptionsHandler::GetExtensionImeList() {
   input_method::InputMethodManager* manager =
-      input_method::InputMethodManager::GetInstance();
+      input_method::GetInputMethodManager();
 
   input_method::InputMethodDescriptors descriptors;
   manager->GetInputMethodExtensions(&descriptors);
@@ -242,7 +240,7 @@ void CrosLanguageOptionsHandler::SetApplicationLocale(
 
 void CrosLanguageOptionsHandler::RestartCallback(const ListValue* args) {
   content::RecordAction(UserMetricsAction("LanguageOptions_SignOut"));
-  browser::AttemptUserExit();
+  chrome::AttemptUserExit();
 }
 
 void CrosLanguageOptionsHandler::InputMethodDisableCallback(

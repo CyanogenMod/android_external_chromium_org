@@ -15,7 +15,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/common/frame_navigate_params.h"
@@ -40,8 +40,8 @@ class MockPasswordManagerDelegate : public PasswordManagerDelegate {
   MOCK_METHOD0(DidLastPageLoadEncounterSSLErrors, bool());
 };
 
-ACTION_P2(InvokeConsumer, handle, forms) {
-  arg0->OnPasswordStoreRequestDone(handle, forms);
+ACTION_P(InvokeConsumer, forms) {
+  arg0->OnGetPasswordStoreResults(forms);
 }
 
 ACTION_P(SaveToScopedPtr, scoped) {
@@ -83,6 +83,8 @@ class PasswordManagerTest : public ChromeRenderViewHostTestHarness {
     form.password_element = ASCIIToUTF16("Passwd");
     form.username_value = ASCIIToUTF16("google");
     form.password_value = ASCIIToUTF16("password");
+    // Default to true so we only need to add tests in autocomplete=off cases.
+    form.password_autocomplete_set = true;
     form.submit_element = ASCIIToUTF16("signIn");
     form.signon_realm = "http://www.google.com";
     return form;
@@ -107,6 +109,8 @@ MATCHER_P(FormMatches, form, "") {
          form.action == arg.action &&
          form.username_element == arg.username_element &&
          form.password_element == arg.password_element &&
+         form.password_autocomplete_set ==
+             arg.password_autocomplete_set &&
          form.submit_element == arg.submit_element;
 }
 
@@ -115,7 +119,7 @@ TEST_F(PasswordManagerTest, FormSubmitEmptyStore) {
   std::vector<PasswordForm*> result;  // Empty password store.
   EXPECT_CALL(delegate_, FillPasswordForm(_)).Times(Exactly(0));
   EXPECT_CALL(*store_, GetLogins(_,_))
-      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(0, result)), Return(0)));
+      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
   std::vector<PasswordForm> observed;
   PasswordForm form(MakeSimpleForm());
   observed.push_back(form);
@@ -147,7 +151,7 @@ TEST_F(PasswordManagerTest, GeneratedPasswordFormSubmitEmptyStore) {
   std::vector<PasswordForm*> result;  // Empty password store.
   EXPECT_CALL(delegate_, FillPasswordForm(_)).Times(Exactly(0));
   EXPECT_CALL(*store_, GetLogins(_,_))
-      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(0, result)), Return(0)));
+      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
   std::vector<PasswordForm> observed;
   PasswordForm form(MakeSimpleForm());
   observed.push_back(form);
@@ -159,7 +163,8 @@ TEST_F(PasswordManagerTest, GeneratedPasswordFormSubmitEmptyStore) {
   manager()->ProvisionallySavePassword(form);
 
   // The user should not be presented with an infobar as they have already given
-  // consent. The form should be saved once navigation occurs.
+  // consent by using the generated password. The form should be saved once
+  // navigation occurs.
   EXPECT_CALL(delegate_,
               AddSavePasswordInfoBarIfPermitted(_)).Times(Exactly(0));
   EXPECT_CALL(*store_, AddLogin(FormMatches(form)));
@@ -180,7 +185,7 @@ TEST_F(PasswordManagerTest, FormSubmitNoGoodMatch) {
   result.push_back(existing_different);
   EXPECT_CALL(delegate_, FillPasswordForm(_));
   EXPECT_CALL(*store_, GetLogins(_,_))
-      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(0, result)), Return(0)));
+      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
 
   std::vector<PasswordForm> observed;
   PasswordForm form(MakeSimpleForm());
@@ -210,7 +215,7 @@ TEST_F(PasswordManagerTest, FormSeenThenLeftPage) {
   std::vector<PasswordForm*> result;  // Empty password store.
   EXPECT_CALL(delegate_, FillPasswordForm(_)).Times(Exactly(0));
   EXPECT_CALL(*store_, GetLogins(_,_))
-    .WillOnce(DoAll(WithArg<1>(InvokeConsumer(0, result)), Return(0)));
+      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
   std::vector<PasswordForm> observed;
   PasswordForm form(MakeSimpleForm());
   observed.push_back(form);
@@ -238,7 +243,7 @@ TEST_F(PasswordManagerTest, FormSubmitAfterNavigateSubframe) {
   std::vector<PasswordForm*> result;  // Empty password store.
   EXPECT_CALL(delegate_, FillPasswordForm(_)).Times(Exactly(0));
   EXPECT_CALL(*store_, GetLogins(_,_))
-      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(0, result)), Return(0)));
+      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
   std::vector<PasswordForm> observed;
   PasswordForm form(MakeSimpleForm());
   observed.push_back(form);
@@ -274,7 +279,7 @@ TEST_F(PasswordManagerTest, FormSubmitFailedLogin) {
   std::vector<PasswordForm*> result;  // Empty password store.
   EXPECT_CALL(delegate_, FillPasswordForm(_)).Times(Exactly(0));
   EXPECT_CALL(*store_, GetLogins(_,_))
-    .WillRepeatedly(DoAll(WithArg<1>(InvokeConsumer(0, result)), Return(0)));
+      .WillRepeatedly(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
   std::vector<PasswordForm> observed;
   PasswordForm form(MakeSimpleForm());
   observed.push_back(form);
@@ -295,7 +300,7 @@ TEST_F(PasswordManagerTest, FormSubmitInvisibleLogin) {
   std::vector<PasswordForm*> result;  // Empty password store.
   EXPECT_CALL(delegate_, FillPasswordForm(_)).Times(Exactly(0));
   EXPECT_CALL(*store_, GetLogins(_,_))
-      .WillRepeatedly(DoAll(WithArg<1>(InvokeConsumer(0, result)), Return(0)));
+      .WillRepeatedly(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
   std::vector<PasswordForm> observed;
   PasswordForm form(MakeSimpleForm());
   observed.push_back(form);
@@ -328,7 +333,7 @@ TEST_F(PasswordManagerTest, InitiallyInvisibleForm) {
   result.push_back(existing);
   EXPECT_CALL(delegate_, FillPasswordForm(_));
   EXPECT_CALL(*store_, GetLogins(_,_))
-      .WillRepeatedly(DoAll(WithArg<1>(InvokeConsumer(0, result)), Return(0)));
+      .WillRepeatedly(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
   std::vector<PasswordForm> observed;
   PasswordForm form(MakeSimpleForm());
   observed.push_back(form);
@@ -343,7 +348,8 @@ TEST_F(PasswordManagerTest, InitiallyInvisibleForm) {
 TEST_F(PasswordManagerTest, SavingDependsOnManagerEnabledPreference) {
   // Test that saving passwords depends on the password manager enabled
   // preference.
-  TestingPrefService* prefService = testing_profile_->GetTestingPrefService();
+  TestingPrefServiceSyncable* prefService =
+      testing_profile_->GetTestingPrefService();
   prefService->SetUserPref(prefs::kPasswordManagerEnabled,
                            Value::CreateBooleanValue(true));
   EXPECT_TRUE(manager()->IsSavingEnabled());
@@ -358,15 +364,74 @@ TEST_F(PasswordManagerTest, FillPasswordsOnDisabledManager) {
   std::vector<PasswordForm*> result;
   PasswordForm* existing = new PasswordForm(MakeSimpleForm());
   result.push_back(existing);
-  TestingPrefService* prefService = testing_profile_->GetTestingPrefService();
+  TestingPrefServiceSyncable* prefService =
+      testing_profile_->GetTestingPrefService();
   prefService->SetUserPref(prefs::kPasswordManagerEnabled,
                            Value::CreateBooleanValue(false));
   EXPECT_CALL(delegate_, FillPasswordForm(_));
   EXPECT_CALL(*store_, GetLogins(_, _))
-    .WillRepeatedly(DoAll(WithArg<1>(InvokeConsumer(0, result)), Return(0)));
+      .WillRepeatedly(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
   std::vector<PasswordForm> observed;
   PasswordForm form(MakeSimpleForm());
   observed.push_back(form);
   manager()->OnPasswordFormsParsed(observed);
 }
 
+TEST_F(PasswordManagerTest, FormNotSavedAutocompleteOff) {
+  // Test password form with non-generated password will not be saved if
+  // autocomplete=off.
+  std::vector<PasswordForm*> result;  // Empty password store.
+  EXPECT_CALL(delegate_, FillPasswordForm(_)).Times(Exactly(0));
+  EXPECT_CALL(*store_, GetLogins(_,_))
+      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
+  std::vector<PasswordForm> observed;
+  PasswordForm form(MakeSimpleForm());
+  form.password_autocomplete_set = false;
+  observed.push_back(form);
+  manager()->OnPasswordFormsParsed(observed);  // The initial load.
+  manager()->OnPasswordFormsRendered(observed);  // The initial layout.
+
+  // And the form submit contract is to call ProvisionallySavePassword.
+  manager()->ProvisionallySavePassword(form);
+
+  // Password form should not be saved.
+  EXPECT_CALL(delegate_,
+              AddSavePasswordInfoBarIfPermitted(_)).Times(Exactly(0));
+  EXPECT_CALL(*store_, AddLogin(FormMatches(form))).Times(Exactly(0));
+
+  // Now the password manager waits for the navigation to complete.
+  observed.clear();
+  manager()->OnPasswordFormsParsed(observed);  // The post-navigation load.
+  manager()->OnPasswordFormsRendered(observed);  // The post-navigation layout.
+}
+
+TEST_F(PasswordManagerTest, GeneratedPasswordFormSavedAutocompleteOff) {
+  // Test password form with generated password will still be saved if
+  // autocomplete=off.
+  std::vector<PasswordForm*> result;  // Empty password store.
+  EXPECT_CALL(delegate_, FillPasswordForm(_)).Times(Exactly(0));
+  EXPECT_CALL(*store_, GetLogins(_,_))
+      .WillOnce(DoAll(WithArg<1>(InvokeConsumer(result)), Return(1)));
+  std::vector<PasswordForm> observed;
+  PasswordForm form(MakeSimpleForm());
+  form.password_autocomplete_set = false;
+  observed.push_back(form);
+  manager()->OnPasswordFormsParsed(observed);  // The initial load.
+  manager()->OnPasswordFormsRendered(observed);  // The initial layout.
+
+  // Simulate the user generating the password and submitting the form.
+  manager()->SetFormHasGeneratedPassword(form);
+  manager()->ProvisionallySavePassword(form);
+
+  // The user should not be presented with an infobar as they have already given
+  // consent by using the generated password. The form should be saved once
+  // navigation occurs.
+  EXPECT_CALL(delegate_,
+              AddSavePasswordInfoBarIfPermitted(_)).Times(Exactly(0));
+  EXPECT_CALL(*store_, AddLogin(FormMatches(form)));
+
+  // Now the password manager waits for the navigation to complete.
+  observed.clear();
+  manager()->OnPasswordFormsParsed(observed);  // The post-navigation load.
+  manager()->OnPasswordFormsRendered(observed);  // The post-navigation layout.
+}

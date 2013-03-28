@@ -49,14 +49,23 @@ BrowserAccessibilityStateImpl::BrowserAccessibilityStateImpl()
     accessibility_mode_ = AccessibilityModeComplete;
   }
 
-  // UpdateHistogram only takes a couple of milliseconds, but run it on
-  // the FILE thread to guarantee there's no jank.
-  // And we need to AddRef() the leaky singleton so that Bind doesn't
+#if defined(OS_WIN)
+  // On Windows, UpdateHistograms calls some system functions with unknown
+  // runtime, so call it on the file thread to ensure there's no jank.
+  // Everything in that method must be safe to call on another thread.
+  BrowserThread::ID update_histogram_thread = BrowserThread::FILE;
+#else
+  // On all other platforms, UpdateHistograms should be called on the main
+  // thread.
+  BrowserThread::ID update_histogram_thread = BrowserThread::UI;
+#endif
+
+  // We need to AddRef() the leaky singleton so that Bind doesn't
   // delete it prematurely.
   AddRef();
   BrowserThread::PostDelayedTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&BrowserAccessibilityStateImpl::UpdateHistogram, this),
+      update_histogram_thread, FROM_HERE,
+      base::Bind(&BrowserAccessibilityStateImpl::UpdateHistograms, this),
       base::TimeDelta::FromSeconds(kAccessibilityHistogramDelaySecs));
 }
 
@@ -80,8 +89,20 @@ bool BrowserAccessibilityStateImpl::IsAccessibleBrowser() {
   return (accessibility_mode_ == AccessibilityModeComplete);
 }
 
-void BrowserAccessibilityStateImpl::UpdateHistogram() {
+void BrowserAccessibilityStateImpl::AddHistogramCallback(
+    base::Closure callback) {
+  histogram_callbacks_.push_back(callback);
+}
+
+void BrowserAccessibilityStateImpl::UpdateHistogramsForTesting() {
+  UpdateHistograms();
+}
+
+void BrowserAccessibilityStateImpl::UpdateHistograms() {
   UpdatePlatformSpecificHistograms();
+
+  for (size_t i = 0; i < histogram_callbacks_.size(); ++i)
+    histogram_callbacks_[i].Run();
 
   UMA_HISTOGRAM_BOOLEAN("Accessibility.State", IsAccessibleBrowser());
   UMA_HISTOGRAM_BOOLEAN("Accessibility.InvertedColors",

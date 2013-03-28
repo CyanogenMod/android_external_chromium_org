@@ -8,9 +8,9 @@
 
 #include "base/environment.h"
 #include "base/file_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/test/test_file_util.h"
 #include "base/test/test_timeouts.h"
 #include "base/utf_string_conversions.h"
@@ -42,11 +42,11 @@ const char kUITestType[] = "ui";
 // We want to have a current history database when we start the browser so
 // things like the NTP will have thumbnails.  This method updates the dates
 // in the history to be more recent.
-void UpdateHistoryDates(const FilePath& user_data_dir) {
+void UpdateHistoryDates(const base::FilePath& user_data_dir) {
   // Migrate the times in the segment_usage table to yesterday so we get
   // actual thumbnails on the NTP.
   sql::Connection db;
-  FilePath history =
+  base::FilePath history =
       user_data_dir.AppendASCII("Default").AppendASCII("History");
   // Not all test profiles have a history file.
   if (!file_util::PathExists(history))
@@ -55,7 +55,7 @@ void UpdateHistoryDates(const FilePath& user_data_dir) {
   ASSERT_TRUE(db.Open(history));
   base::Time yesterday = base::Time::Now() - base::TimeDelta::FromDays(1);
   std::string yesterday_str = base::Int64ToString(yesterday.ToInternalValue());
-  std::string query = StringPrintf(
+  std::string query = base::StringPrintf(
       "UPDATE segment_usage "
       "SET time_slot = %s "
       "WHERE id IN (SELECT id FROM segment_usage WHERE time_slot > 0);",
@@ -155,8 +155,9 @@ void ProxyLauncher::CloseBrowserAndServer() {
   // the UI tests in single-process mode.
   // TODO(jhughes): figure out why this is necessary at all, and fix it
   AssertAppNotRunning(
-      StringPrintf("Unable to quit all browser processes. Original PID %d",
-                   process_id_));
+      base::StringPrintf(
+          "Unable to quit all browser processes. Original PID %d",
+          process_id_));
 
   DisconnectFromRunningBrowser();
 }
@@ -315,7 +316,7 @@ void ProxyLauncher::AssertAppNotRunning(const std::string& error_message) {
     final_error_message += " Leftover PIDs: [";
     for (ChromeProcessList::const_iterator it = processes.begin();
          it != processes.end(); ++it) {
-      final_error_message += StringPrintf(" %d", *it);
+      final_error_message += base::StringPrintf(" %d", *it);
     }
     final_error_message += " ]";
   }
@@ -478,7 +479,7 @@ AutomationProxy* ProxyLauncher::automation() const {
   return automation_proxy_.get();
 }
 
-FilePath ProxyLauncher::user_data_dir() const {
+base::FilePath ProxyLauncher::user_data_dir() const {
   EXPECT_TRUE(temp_profile_dir_.IsValid());
   return temp_profile_dir_.path();
 }
@@ -523,7 +524,7 @@ bool NamedProxyLauncher::InitializeConnection(const LaunchState& state,
 #if defined(OS_POSIX)
     // Because we are waiting on the existence of the testing file below,
     // make sure there isn't one already there before browser launch.
-    if (!file_util::Delete(FilePath(channel_id_), false)) {
+    if (!file_util::Delete(base::FilePath(channel_id_), false)) {
       LOG(ERROR) << "Failed to delete " << channel_id_;
       return false;
     }

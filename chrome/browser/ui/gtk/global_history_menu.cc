@@ -10,7 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/memory/weak_ptr.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
@@ -386,7 +386,8 @@ void GlobalHistoryMenu::OnRecentlyClosedItemActivated(GtkWidget* sender) {
       TabRestoreServiceFactory::GetForProfile(browser_->profile());
   if (item->session_id && service) {
     service->RestoreEntryById(browser_->tab_restore_service_delegate(),
-                              item->session_id, UNKNOWN);
+                              item->session_id, browser_->host_desktop_type(),
+                              UNKNOWN);
   } else {
     DCHECK(item->url.is_valid());
     browser_->OpenURL(OpenURLParams(item->url, content::Referrer(), disposition,

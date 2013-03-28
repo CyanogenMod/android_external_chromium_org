@@ -15,16 +15,11 @@ using content::BrowserThread;
 namespace extensions {
 
 const char kConnectionIdKey[] = "connectionId";
-const char kPortsKey[] = "ports";
 const char kDataKey[] = "data";
 const char kBytesReadKey[] = "bytesRead";
-const char kBytesToReadKey[] = "bytesToRead";
 const char kBytesWrittenKey[] = "bytesWritten";
 const char kBitrateKey[] = "bitrate";
-const char kOptionsKey[] = "options";
 const char kSuccessKey[] = "success";
-const char kDtrKey[] = "dtr";
-const char kRtsKey[] = "rts";
 const char kDcdKey[] = "dcd";
 const char kCtsKey[] = "cts";
 
@@ -315,8 +310,7 @@ SerialGetControlSignalsFunction::~SerialGetControlSignalsFunction() {
 bool SerialGetControlSignalsFunction::Prepare() {
   set_work_thread_id(BrowserThread::FILE);
 
-  params_ = api::serial::GetControlSignals::Params::Create(
-      *args_);
+  params_ = api::serial::GetControlSignals::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_.get());
 
   return true;
@@ -356,8 +350,7 @@ SerialSetControlSignalsFunction::~SerialSetControlSignalsFunction() {
 bool SerialSetControlSignalsFunction::Prepare() {
   set_work_thread_id(BrowserThread::FILE);
 
-  params_ = api::serial::SetControlSignals::Params::Create(
-      *args_);
+  params_ = api::serial::SetControlSignals::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_.get());
 
   return true;

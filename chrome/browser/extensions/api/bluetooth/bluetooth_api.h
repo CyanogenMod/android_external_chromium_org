@@ -8,75 +8,77 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/api/api_function.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/api/bluetooth/bluetooth_extension_function.h"
+#include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "device/bluetooth/bluetooth_device.h"
 
 namespace device {
 
+class BluetoothAdapter;
+class BluetoothDevice;
 class BluetoothSocket;
 struct BluetoothOutOfBandPairingData;
 
 }  // namespace device
 
 namespace extensions {
+
+class ExtensionBluetoothEventRouter;
+
+// The profile-keyed service that manages the bluetooth extension API.
+class BluetoothAPI : public ProfileKeyedService,
+                     public EventRouter::Observer {
+ public:
+  // Convenience method to get the BluetoothAPI for a profile.
+  static BluetoothAPI* Get(Profile* profile);
+
+  explicit BluetoothAPI(Profile* profile);
+  virtual ~BluetoothAPI();
+
+  ExtensionBluetoothEventRouter* bluetooth_event_router();
+
+  // ProfileKeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
+
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
+  virtual void OnListenerRemoved(const EventListenerInfo& details) OVERRIDE;
+
+ private:
+  Profile* profile_;
+
+  // Created lazily on first access.
+  scoped_ptr<ExtensionBluetoothEventRouter> bluetooth_event_router_;
+};
+
 namespace api {
 
-class BluetoothIsAvailableFunction : public SyncExtensionFunction {
+class BluetoothGetAdapterStateFunction : public BluetoothExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.isAvailable")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.getAdapterState",
+                             BLUETOOTH_GETADAPTERSTATE)
 
  protected:
-  virtual ~BluetoothIsAvailableFunction() {}
+  virtual ~BluetoothGetAdapterStateFunction() {}
 
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  // BluetoothExtensionFunction:
+  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
 };
 
-class BluetoothIsPoweredFunction : public SyncExtensionFunction {
+class BluetoothGetDevicesFunction : public BluetoothExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.isPowered")
-
- protected:
-  virtual ~BluetoothIsPoweredFunction() {}
-
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
-};
-
-class BluetoothGetAddressFunction : public SyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.getAddress")
-
- protected:
-  virtual ~BluetoothGetAddressFunction() {}
-
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
-};
-
-class BluetoothGetNameFunction : public SyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.getName")
-
- protected:
-  virtual ~BluetoothGetNameFunction() {}
-
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
-};
-
-class BluetoothGetDevicesFunction : public AsyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.getDevices")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.getDevices", BLUETOOTH_GETDEVICES)
 
   BluetoothGetDevicesFunction();
 
  protected:
   virtual ~BluetoothGetDevicesFunction() {}
 
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  // BluetoothExtensionFunction:
+  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
 
  private:
   void DispatchDeviceSearchResult(const device::BluetoothDevice& device);
@@ -88,15 +90,15 @@ class BluetoothGetDevicesFunction : public AsyncExtensionFunction {
   int device_events_sent_;
 };
 
-class BluetoothGetServicesFunction : public AsyncExtensionFunction {
+class BluetoothGetServicesFunction : public BluetoothExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.getServices")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.getServices", BLUETOOTH_GETSERVICES)
 
  protected:
   virtual ~BluetoothGetServicesFunction() {}
 
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  // BluetoothExtensionFunction:
+  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
 
  private:
   void GetServiceRecordsCallback(
@@ -105,14 +107,15 @@ class BluetoothGetServicesFunction : public AsyncExtensionFunction {
   void OnErrorCallback();
 };
 
-class BluetoothConnectFunction : public AsyncExtensionFunction {
+class BluetoothConnectFunction : public BluetoothExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.connect")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.connect", BLUETOOTH_CONNECT)
 
  protected:
   virtual ~BluetoothConnectFunction() {}
 
-  virtual bool RunImpl() OVERRIDE;
+  // BluetoothExtensionFunction:
+  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
 
  private:
   void ConnectToServiceCallback(
@@ -123,7 +126,7 @@ class BluetoothConnectFunction : public AsyncExtensionFunction {
 
 class BluetoothDisconnectFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.disconnect")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.disconnect", BLUETOOTH_DISCONNECT)
 
  protected:
   virtual ~BluetoothDisconnectFunction() {}
@@ -134,7 +137,7 @@ class BluetoothDisconnectFunction : public SyncExtensionFunction {
 
 class BluetoothReadFunction : public AsyncApiFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.read")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.read", BLUETOOTH_READ)
   BluetoothReadFunction();
 
  protected:
@@ -152,7 +155,7 @@ class BluetoothReadFunction : public AsyncApiFunction {
 
 class BluetoothWriteFunction : public AsyncApiFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.write")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.write", BLUETOOTH_WRITE)
   BluetoothWriteFunction();
 
  protected:
@@ -170,9 +173,10 @@ class BluetoothWriteFunction : public AsyncApiFunction {
 };
 
 class BluetoothSetOutOfBandPairingDataFunction
-    : public AsyncExtensionFunction {
+    : public BluetoothExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.setOutOfBandPairingData")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.setOutOfBandPairingData",
+                             BLUETOOTH_SETOUTOFBANDPAIRINGDATA)
 
  protected:
   virtual ~BluetoothSetOutOfBandPairingDataFunction() {}
@@ -180,14 +184,15 @@ class BluetoothSetOutOfBandPairingDataFunction
   void OnSuccessCallback();
   void OnErrorCallback();
 
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  // BluetoothExtensionFunction:
+  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
 };
 
 class BluetoothGetLocalOutOfBandPairingDataFunction
-    : public AsyncExtensionFunction {
+    : public BluetoothExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.getLocalOutOfBandPairingData")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.getLocalOutOfBandPairingData",
+                             BLUETOOTH_GETLOCALOUTOFBANDPAIRINGDATA)
 
  protected:
   virtual ~BluetoothGetLocalOutOfBandPairingDataFunction() {}
@@ -196,34 +201,35 @@ class BluetoothGetLocalOutOfBandPairingDataFunction
       const device::BluetoothOutOfBandPairingData& data);
   void ErrorCallback();
 
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  // BluetoothExtensionFunction:
+  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
 };
 
-class BluetoothStartDiscoveryFunction : public AsyncExtensionFunction {
+class BluetoothStartDiscoveryFunction : public BluetoothExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.startDiscovery")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.startDiscovery",
+                             BLUETOOTH_STARTDISCOVERY)
 
  protected:
   virtual ~BluetoothStartDiscoveryFunction() {}
 
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  // BluetoothExtensionFunction:
+  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
 
  private:
   void OnSuccessCallback();
   void OnErrorCallback();
 };
 
-class BluetoothStopDiscoveryFunction : public AsyncExtensionFunction {
+class BluetoothStopDiscoveryFunction : public BluetoothExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("bluetooth.stopDiscovery")
+  DECLARE_EXTENSION_FUNCTION("bluetooth.stopDiscovery", BLUETOOTH_STOPDISCOVERY)
 
  protected:
   virtual ~BluetoothStopDiscoveryFunction() {}
 
-  // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  // BluetoothExtensionFunction:
+  virtual bool DoWork(scoped_refptr<device::BluetoothAdapter> adapter) OVERRIDE;
 
  private:
   void OnSuccessCallback();

@@ -13,17 +13,20 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "base/stl_util.h"
+#include "base/string_number_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
-#include "chrome/browser/media_gallery/media_file_system_registry.h"
-#include "chrome/browser/media_gallery/media_galleries_dialog_controller.h"
+#include "chrome/browser/media_galleries/media_file_system_registry.h"
+#include "chrome/browser/media_galleries/media_galleries_dialog_controller.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
-#include "chrome/browser/ui/constrained_window_tab_helper.h"
 #include "chrome/browser/ui/extensions/shell_window.h"
+#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/api/experimental_media_galleries.h"
 #include "chrome/common/extensions/api/media_galleries.h"
 #include "chrome/common/extensions/permissions/api_permission.h"
+#include "chrome/common/extensions/permissions/media_galleries_permission.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
@@ -36,6 +39,7 @@
 
 using chrome::MediaFileSystemInfo;
 using chrome::MediaFileSystemRegistry;
+using chrome::MediaFileSystemsCallback;
 using content::ChildProcessSecurityPolicy;
 using content::WebContents;
 
@@ -49,6 +53,9 @@ namespace {
 const char kDisallowedByPolicy[] =
     "Media Galleries API is disallowed by policy: ";
 const char kInvalidInteractive[] = "Unknown value for interactive.";
+
+const char kIsRemovableKey[] = "isRemovable";
+const char kIsMediaDeviceKey[] = "isMediaDevice";
 
 // Checks whether the MediaGalleries API is currently accessible (it may be
 // disallowed even if an extension has the requisite permission).
@@ -75,35 +82,42 @@ bool MediaGalleriesGetMediaFileSystemsFunction::RunImpl() {
       GetMediaFileSystems::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   MediaGalleries::GetMediaFileSystemsInteractivity interactive =
-      MediaGalleries::MEDIA_GALLERIES_GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_NO;
+      MediaGalleries::GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_NO;
   if (params->details.get() && params->details->interactive != MediaGalleries::
-         MEDIA_GALLERIES_GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_NONE) {
+         GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_NONE) {
     interactive = params->details->interactive;
   }
 
   switch (interactive) {
-    case MediaGalleries::
-        MEDIA_GALLERIES_GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_YES:
-      ShowDialog();
+    case MediaGalleries::GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_YES: {
+      // The MediaFileSystemRegistry only updates preferences for extensions
+      // that it knows are in use. Since this may be the first call to
+      // chrome.getMediaFileSystems for this extension, call
+      // GetMediaFileSystemsForExtension() here solely so that
+      // MediaFileSystemRegistry will send preference changes.
+      GetMediaFileSystemsForExtension(base::Bind(
+          &MediaGalleriesGetMediaFileSystemsFunction::AlwaysShowDialog, this));
       return true;
-    case MediaGalleries::
-        MEDIA_GALLERIES_GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_IF_NEEDED:
-      MediaFileSystemRegistry::GetInstance()->GetMediaFileSystemsForExtension(
-          render_view_host(), GetExtension(), base::Bind(
-              &MediaGalleriesGetMediaFileSystemsFunction::
-                  ShowDialogIfNoGalleries,
-              this));
+    }
+    case MediaGalleries::GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_IF_NEEDED: {
+      GetMediaFileSystemsForExtension(base::Bind(
+          &MediaGalleriesGetMediaFileSystemsFunction::ShowDialogIfNoGalleries,
+          this));
       return true;
-    case MediaGalleries::
-        MEDIA_GALLERIES_GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_NO:
+    }
+    case MediaGalleries::GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_NO:
       GetAndReturnGalleries();
       return true;
-    case MediaGalleries::
-        MEDIA_GALLERIES_GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_NONE:
+    case MediaGalleries::GET_MEDIA_FILE_SYSTEMS_INTERACTIVITY_NONE:
       NOTREACHED();
   }
   error_ = kInvalidInteractive;
   return false;
+}
+
+void MediaGalleriesGetMediaFileSystemsFunction::AlwaysShowDialog(
+    const std::vector<MediaFileSystemInfo>& /*filesystems*/) {
+  ShowDialog();
 }
 
 void MediaGalleriesGetMediaFileSystemsFunction::ShowDialogIfNoGalleries(
@@ -115,9 +129,8 @@ void MediaGalleriesGetMediaFileSystemsFunction::ShowDialogIfNoGalleries(
 }
 
 void MediaGalleriesGetMediaFileSystemsFunction::GetAndReturnGalleries() {
-  MediaFileSystemRegistry::GetInstance()->GetMediaFileSystemsForExtension(
-      render_view_host(), GetExtension(), base::Bind(
-          &MediaGalleriesGetMediaFileSystemsFunction::ReturnGalleries, this));
+  GetMediaFileSystemsForExtension(base::Bind(
+      &MediaGalleriesGetMediaFileSystemsFunction::ReturnGalleries, this));
 }
 
 void MediaGalleriesGetMediaFileSystemsFunction::ReturnGalleries(
@@ -127,6 +140,11 @@ void MediaGalleriesGetMediaFileSystemsFunction::ReturnGalleries(
     SendResponse(false);
     return;
   }
+  MediaGalleriesPermission::CheckParam read_param(
+      MediaGalleriesPermission::kReadPermission);
+  bool has_read_permission = GetExtension()->CheckAPIPermissionWithParam(
+      APIPermission::kMediaGalleries, &read_param);
+
   const int child_id = rvh->GetProcess()->GetID();
   std::set<std::string> file_system_names;
   base::ListValue* list = new base::ListValue();
@@ -136,8 +154,8 @@ void MediaGalleriesGetMediaFileSystemsFunction::ReturnGalleries(
 
     // Send the file system id so the renderer can create a valid FileSystem
     // object.
-    file_system_dict_value->SetWithoutPathExpansion(
-        "fsid", Value::CreateStringValue(filesystems[i].fsid));
+    file_system_dict_value->SetStringWithoutPathExpansion(
+        "fsid", filesystems[i].fsid);
 
     // The name must be unique according to the HTML5 File System API spec.
     if (ContainsKey(file_system_names, filesystems[i].name)) {
@@ -145,20 +163,33 @@ void MediaGalleriesGetMediaFileSystemsFunction::ReturnGalleries(
       continue;
     }
     file_system_names.insert(filesystems[i].name);
-    file_system_dict_value->SetWithoutPathExpansion(
-        "name", Value::CreateStringValue(filesystems[i].name));
+    file_system_dict_value->SetStringWithoutPathExpansion(
+        MediaFileSystemRegistry::kNameKey, filesystems[i].name);
+    file_system_dict_value->SetStringWithoutPathExpansion(
+        MediaFileSystemRegistry::kGalleryIdKey,
+        base::Uint64ToString(filesystems[i].pref_id));
+    if (!filesystems[i].transient_device_id.empty()) {
+      file_system_dict_value->SetStringWithoutPathExpansion(
+          MediaFileSystemRegistry::kDeviceIdKey,
+          filesystems[i].transient_device_id);
+    }
+    file_system_dict_value->SetBooleanWithoutPathExpansion(
+        kIsRemovableKey, filesystems[i].removable);
+    file_system_dict_value->SetBooleanWithoutPathExpansion(
+        kIsMediaDeviceKey, filesystems[i].media_device);
 
     list->Append(file_system_dict_value.release());
 
-    if (!filesystems[i].path.empty() &&
-        GetExtension()->HasAPIPermission(APIPermission::kMediaGalleriesRead)) {
+    if (filesystems[i].path.empty())
+      continue;
+
+    if (has_read_permission) {
       content::ChildProcessSecurityPolicy* policy =
           ChildProcessSecurityPolicy::GetInstance();
       if (!policy->CanReadFile(child_id, filesystems[i].path))
         policy->GrantReadFile(child_id, filesystems[i].path);
       policy->GrantReadFileSystem(child_id, filesystems[i].fsid);
     }
-    // TODO(vandebo) Handle write permission.
   }
 
   SetResult(list);
@@ -167,12 +198,12 @@ void MediaGalleriesGetMediaFileSystemsFunction::ReturnGalleries(
 
 void MediaGalleriesGetMediaFileSystemsFunction::ShowDialog() {
   WebContents* contents = WebContents::FromRenderViewHost(render_view_host());
-  ConstrainedWindowTabHelper* constrained_window_tab_helper =
-      ConstrainedWindowTabHelper::FromWebContents(contents);
-  if (!constrained_window_tab_helper) {
-    // If there is no ConstrainedWindowTabHelper, then this contents is probably
-    // the background page for an app. Try to find a shell window to host the
-    // dialog.
+  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+      WebContentsModalDialogManager::FromWebContents(contents);
+  if (!web_contents_modal_dialog_manager) {
+    // If there is no WebContentsModalDialogManager, then this contents is
+    // probably the background page for an app. Try to find a shell window to
+    // host the dialog.
     ShellWindow* window = ShellWindowRegistry::Get(profile())->
         GetCurrentShellWindowForApp(GetExtension()->id());
     if (window) {
@@ -190,6 +221,19 @@ void MediaGalleriesGetMediaFileSystemsFunction::ShowDialog() {
   new chrome::MediaGalleriesDialogController(contents, *GetExtension(), cb);
 }
 
+void MediaGalleriesGetMediaFileSystemsFunction::GetMediaFileSystemsForExtension(
+    const chrome::MediaFileSystemsCallback& cb) {
+  if (!render_view_host()) {
+    cb.Run(std::vector<MediaFileSystemInfo>());
+    return;
+  }
+
+  MediaFileSystemRegistry* registry =
+      g_browser_process->media_file_system_registry();
+  registry->GetMediaFileSystemsForExtension(
+      render_view_host(), GetExtension(), cb);
+}
+
 // MediaGalleriesAssembleMediaFileFunction -------------------------------------
 
 MediaGalleriesAssembleMediaFileFunction::
@@ -200,7 +244,7 @@ bool MediaGalleriesAssembleMediaFileFunction::RunImpl() {
     return false;
 
   // TODO(vandebo) Update the metadata and return the new file.
-  SetResult(Value::CreateNullValue());
+  SetResult(base::Value::CreateNullValue());
   return true;
 }
 

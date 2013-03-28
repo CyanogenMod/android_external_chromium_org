@@ -4,22 +4,28 @@
 
 #include <vector>
 
-#include "base/file_path.h"
+#include "ash/ash_switches.h"
+#include "base/command_line.h"
+#include "base/files/file_path.h"
+#include "base/stringprintf.h"
 #include "base/time.h"
 #include "chrome/browser/ui/ash/launcher/browser_launcher_item_controller.h"
+#include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/launcher_favicon_loader.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/common/favicon_url.h"
-#include "chrome/common/icon_messages.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/common/favicon_url.h"
 #include "net/test/test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+// TODO(skuhne): Remove this module together with launcher_favicon_loader.*
+// when the old launcher goes away.
 
 namespace {
 
@@ -39,22 +45,13 @@ class ContentsObserver : public content::WebContentsObserver {
   }
 
   // content::WebContentsObserver overrides.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
-    bool message_handled = false;   // Allow other handlers to receive these.
-    IPC_BEGIN_MESSAGE_MAP(ContentsObserver, message)
-      IPC_MESSAGE_HANDLER(IconHostMsg_UpdateFaviconURL, OnUpdateFaviconURL)
-      IPC_MESSAGE_UNHANDLED(message_handled = false)
-    IPC_END_MESSAGE_MAP()
-    return message_handled;
-  }
-
- private:
-  void OnUpdateFaviconURL(int32 page_id,
-                          const std::vector<FaviconURL>& candidates) {
+  virtual void DidUpdateFaviconURL(int32 page_id,
+      const std::vector<content::FaviconURL>& candidates) OVERRIDE {
     if (!candidates.empty())
       got_favicons_ = true;
   }
 
+ private:
   bool got_favicons_;
 };
 
@@ -71,6 +68,11 @@ class LauncherFaviconLoaderBrowsertest : public InProcessBrowserTest {
   virtual ~LauncherFaviconLoaderBrowsertest() {
   }
 
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    InProcessBrowserTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(ash::switches::kAshDisablePerAppLauncher);
+  }
+
  protected:
   void NavigateTo(const char* url) {
     Browser* browser = GetPanelBrowser();
@@ -82,13 +84,14 @@ class LauncherFaviconLoaderBrowsertest : public InProcessBrowserTest {
     if (!panel_browser_) {
       panel_browser_ = new Browser(Browser::CreateParams::CreateForApp(
           Browser::TYPE_PANEL, "Test Panel", gfx::Rect(),
-          browser()->profile()));
+          browser()->profile(), browser()->host_desktop_type()));
       EXPECT_TRUE(panel_browser_->is_type_panel());
-      // Load initial tab contents before setting the observer.
+      // Load initial web contents before setting the observer.
       ui_test_utils::NavigateToURL(panel_browser_, GURL());
       EXPECT_FALSE(contents_observer_.get());
       contents_observer_.reset(
-          new ContentsObserver(chrome::GetWebContentsAt(panel_browser_, 0)));
+          new ContentsObserver(
+              panel_browser_->tab_strip_model()->GetWebContentsAt(0)));
     }
     return panel_browser_;
   }

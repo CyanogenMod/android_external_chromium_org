@@ -5,17 +5,18 @@
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_cocoa_controller.h"
 
 #include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_BOOKMARK_MENU
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #include "chrome/browser/ui/cocoa/event_utils.h"
+#include "chrome/browser/ui/cocoa/menu_controller.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "content/public/browser/user_metrics.h"
-#include "ui/base/text/text_elider.h"
 
 using content::OpenURLParams;
 using content::Referrer;
@@ -32,13 +33,8 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
 @implementation BookmarkMenuCocoaController
 
 + (NSString*)menuTitleForNode:(const BookmarkNode*)node {
-  NSFont* nsfont = [NSFont menuBarFontOfSize:0];  // 0 means "default"
-  gfx::Font font(base::SysNSStringToUTF8([nsfont fontName]),
-                 static_cast<int>([nsfont pointSize]));
-  string16 title = ui::ElideText(node->GetTitle(),
-                                 font,
-                                 kMaximumMenuPixelsWide,
-                                 ui::ELIDE_AT_END);
+  string16 title = [MenuController elideMenuTitle:node->GetTitle()
+                                          toWidth:kMaximumMenuPixelsWide];
   return base::SysUTF16ToNSString(title);
 }
 
@@ -54,7 +50,7 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
     return [NSString stringWithFormat:@"%@\n%@", title, url];
 }
 
-- (id)initWithBridge:(BookmarkMenuBridge *)bridge
+- (id)initWithBridge:(BookmarkMenuBridge*)bridge
              andMenu:(NSMenu*)menu {
   if ((self = [super init])) {
     bridge_ = bridge;
@@ -77,7 +73,7 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
 
 - (BOOL)validateMenuItem:(NSMenuItem*)menuItem {
   AppController* controller = [NSApp delegate];
-  return [controller keyWindowIsNotModal];
+  return ![controller keyWindowIsModal];
 }
 
 // NSMenu delegate method: called just before menu is displayed.
@@ -94,11 +90,13 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
 // Open the URL of the given BookmarkNode in the current tab.
 - (void)openURLForNode:(const BookmarkNode*)node {
   Browser* browser =
-      browser::FindTabbedBrowser(bridge_->GetProfile(),
-                                 true,
-                                 chrome::HOST_DESKTOP_TYPE_NATIVE);
-  if (!browser)
-    browser = new Browser(Browser::CreateParams(bridge_->GetProfile()));
+      chrome::FindTabbedBrowser(bridge_->GetProfile(),
+                                true,
+                                chrome::HOST_DESKTOP_TYPE_NATIVE);
+  if (!browser) {
+    browser = new Browser(Browser::CreateParams(
+        bridge_->GetProfile(), chrome::HOST_DESKTOP_TYPE_NATIVE));
+  }
   WindowOpenDisposition disposition =
       event_utils::WindowOpenDispositionFromNSEvent([NSApp currentEvent]);
   OpenURLParams params(
@@ -116,17 +114,19 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
   DCHECK(node);
 
   Browser* browser =
-      browser::FindTabbedBrowser(bridge_->GetProfile(),
-                                 true,
-                                 chrome::HOST_DESKTOP_TYPE_NATIVE);
-  if (!browser)
-    browser = new Browser(Browser::CreateParams(bridge_->GetProfile()));
+      chrome::FindTabbedBrowser(bridge_->GetProfile(),
+                                true,
+                                chrome::HOST_DESKTOP_TYPE_NATIVE);
+  if (!browser) {
+    browser = new Browser(Browser::CreateParams(
+        bridge_->GetProfile(), chrome::HOST_DESKTOP_TYPE_NATIVE));
+  }
   DCHECK(browser);
 
   if (!node || !browser)
     return; // shouldn't be reached
 
-  chrome::OpenAll(NULL, browser, node, disposition);
+  chrome::OpenAll(NULL, browser, node, disposition, browser->profile());
 
   if (disposition == NEW_FOREGROUND_TAB) {
     content::RecordAction(UserMetricsAction("OpenAllBookmarks"));

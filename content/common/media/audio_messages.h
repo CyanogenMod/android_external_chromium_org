@@ -5,13 +5,11 @@
 // IPC messages for the audio.
 // Multiply-included message file, hence no include guard.
 
-#include <string>
-
 #include "base/basictypes.h"
 #include "base/shared_memory.h"
 #include "base/sync_socket.h"
 #include "content/common/content_export.h"
-#include "content/common/media/audio_param_traits.h"
+#include "content/common/media/media_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "media/audio/audio_buffers_state.h"
 #include "media/audio/audio_input_ipc.h"
@@ -48,20 +46,29 @@ IPC_MESSAGE_CONTROL4(AudioMsg_NotifyStreamCreated,
 
 // Tell the renderer process that an audio input stream has been created.
 // The renderer process would be given a SyncSocket that it should read
-// from from then on.
+// from from then on. It is also given number of segments in shared memory.
 #if defined(OS_WIN)
-IPC_MESSAGE_CONTROL4(AudioInputMsg_NotifyStreamCreated,
+IPC_MESSAGE_CONTROL5(AudioInputMsg_NotifyStreamCreated,
                      int /* stream id */,
                      base::SharedMemoryHandle /* handle */,
                      base::SyncSocket::Handle /* socket handle */,
-                     uint32 /* length */)
+                     uint32 /* length */,
+                     uint32 /* segment count */)
 #else
-IPC_MESSAGE_CONTROL4(AudioInputMsg_NotifyStreamCreated,
+IPC_MESSAGE_CONTROL5(AudioInputMsg_NotifyStreamCreated,
                      int /* stream id */,
                      base::SharedMemoryHandle /* handle */,
                      base::FileDescriptor /* socket handle */,
-                     uint32 /* length */)
+                     uint32 /* length */,
+                     uint32 /* segment count */)
 #endif
+
+// Notification message sent from AudioRendererHost to renderer after an output
+// device change has occurred.
+IPC_MESSAGE_CONTROL3(AudioMsg_NotifyDeviceChanged,
+                     int /* stream_id */,
+                     int /* new_buffer_size */,
+                     int /* new_sample_rate */)
 
 // Notification message sent from AudioRendererHost to renderer for state
 // update after the renderer has requested a Create/Start/Close.
@@ -78,24 +85,30 @@ IPC_MESSAGE_CONTROL2(AudioInputMsg_NotifyStreamVolume,
                      int /* stream id */,
                      double /* volume */)
 
-IPC_MESSAGE_CONTROL2(AudioInputMsg_NotifyDeviceStarted,
-                     int /* stream id */,
-                     std::string /* device_id */)
-
 // Messages sent from the renderer to the browser.
 
 // Request that got sent to browser for creating an audio output stream
-IPC_MESSAGE_CONTROL3(AudioHostMsg_CreateStream,
+IPC_MESSAGE_CONTROL2(AudioHostMsg_CreateStream,
                      int /* stream_id */,
-                     media::AudioParameters, /* params */
-                     int /* input_channels */)
+                     media::AudioParameters /* params */)
 
 // Request that got sent to browser for creating an audio input stream
-IPC_MESSAGE_CONTROL4(AudioInputHostMsg_CreateStream,
+IPC_MESSAGE_CONTROL5(AudioInputHostMsg_CreateStream,
                      int /* stream_id */,
+                     int /* session_id */,
                      media::AudioParameters /* params */,
-                     std::string /* device_id */,
-                     bool /* automatic_gain_control */)
+                     bool /* automatic_gain_control */,
+                     uint32 /* shared memory count */)
+
+// Indicate that audio for a stream is produced by the specified render view.
+IPC_MESSAGE_CONTROL2(AudioHostMsg_AssociateStreamWithProducer,
+                     int /* stream_id */,
+                     int /* render_view_id */)
+
+// Indicate that audio for a stream is consumed by the specified render view.
+IPC_MESSAGE_CONTROL2(AudioInputHostMsg_AssociateStreamWithConsumer,
+                     int /* stream_id */,
+                     int /* render_view_id */)
 
 // Start buffering and play the audio stream specified by stream_id.
 IPC_MESSAGE_CONTROL1(AudioHostMsg_PlayStream,
@@ -131,9 +144,3 @@ IPC_MESSAGE_CONTROL2(AudioHostMsg_SetVolume,
 IPC_MESSAGE_CONTROL2(AudioInputHostMsg_SetVolume,
                      int /* stream_id */,
                      double /* volume */)
-
-// Start the device referenced by the session_id for the input stream specified
-// by stream_id.
-IPC_MESSAGE_CONTROL2(AudioInputHostMsg_StartDevice,
-                     int /* stream_id */,
-                     int /* session_id */)

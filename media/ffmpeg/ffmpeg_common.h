@@ -24,6 +24,7 @@ MSVC_PUSH_DISABLE_WARNING(4244);
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
+#include <libavutil/audioconvert.h>
 #include <libavutil/avutil.h>
 #include <libavutil/mathematics.h>
 #include <libavutil/log.h>
@@ -71,8 +72,8 @@ MEDIA_EXPORT base::TimeDelta ConvertFromTimeBase(const AVRational& time_base,
 MEDIA_EXPORT int64 ConvertToTimeBase(const AVRational& time_base,
                                      const base::TimeDelta& timestamp);
 
-void AVCodecContextToAudioDecoderConfig(
-    const AVCodecContext* codec_context,
+void AVStreamToAudioDecoderConfig(
+    const AVStream* stream,
     AudioDecoderConfig* config);
 void AudioDecoderConfigToAVCodecContext(
     const AudioDecoderConfig& config,

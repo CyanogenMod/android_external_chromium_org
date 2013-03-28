@@ -5,7 +5,7 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "chrome/browser/extensions/component_loader.h"
@@ -45,8 +45,7 @@ class ScriptBubbleControllerTest : public ChromeRenderViewHostTestHarness {
         Profile::FromBrowserContext(web_contents()->GetBrowserContext());
     extension_service_ = static_cast<TestExtensionSystem*>(
         ExtensionSystem::Get(profile))->CreateExtensionService(
-            &command_line, FilePath(), false);
-    extension_service_->component_loader()->AddScriptBubble();
+            &command_line, base::FilePath(), false);
     extension_service_->Init();
 
     TabHelper::CreateForWebContents(web_contents());
@@ -71,9 +70,9 @@ class ScriptBubbleControllerTest : public ChromeRenderViewHostTestHarness {
 
 TEST_F(ScriptBubbleControllerTest, Basics) {
 #if defined(OS_WIN)
-  FilePath root(FILE_PATH_LITERAL("c:\\"));
+  base::FilePath root(FILE_PATH_LITERAL("c:\\"));
 #else
-  FilePath root(FILE_PATH_LITERAL("/root"));
+  base::FilePath root(FILE_PATH_LITERAL("/root"));
 #endif
   scoped_refptr<const Extension> extension1 =
       ExtensionBuilder()
@@ -81,7 +80,9 @@ TEST_F(ScriptBubbleControllerTest, Basics) {
       .SetManifest(DictionaryBuilder()
                    .Set("name", "ex1")
                    .Set("version", "1")
-                   .Set("manifest_version", 2))
+                   .Set("manifest_version", 2)
+                   .Set("permissions", ListBuilder()
+                        .Append("activeTab")))
       .Build();
 
   scoped_refptr<const Extension> extension2 =
@@ -90,7 +91,9 @@ TEST_F(ScriptBubbleControllerTest, Basics) {
       .SetManifest(DictionaryBuilder()
                    .Set("name", "ex2")
                    .Set("version", "1")
-                   .Set("manifest_version", 2))
+                   .Set("manifest_version", 2)
+                   .Set("permissions", ListBuilder()
+                        .Append("activeTab")))
       .Build();
 
   scoped_refptr<const Extension> extension3 =
@@ -99,24 +102,18 @@ TEST_F(ScriptBubbleControllerTest, Basics) {
       .SetManifest(DictionaryBuilder()
                    .Set("name", "ex3")
                    .Set("version", "1")
-                   .Set("manifest_version", 2))
+                   .Set("manifest_version", 2)
+                   .Set("permissions", ListBuilder()
+                        .Append("activeTab")))
       .Build();
 
   extension_service_->AddExtension(extension1);
   extension_service_->AddExtension(extension2);
   extension_service_->AddExtension(extension3);
 
-  const Extension* script_bubble =
-      extension_service_->component_loader()->GetScriptBubble();
-  ExtensionAction* script_bubble_action =
-      ExtensionActionManager::Get(profile())->GetPageAction(*script_bubble);
-  ASSERT_TRUE(script_bubble_action);
+  EXPECT_EQ(0u, script_bubble_controller_->extensions_running_scripts().size());
 
-  // By default, the bubble should be invisible.
   NavigateAndCommit(GURL("http://www.google.com"));
-  EXPECT_FALSE(script_bubble_action->GetIsVisible(tab_id()));
-  EXPECT_EQ("", script_bubble_action->GetBadgeText(tab_id()));
-  EXPECT_EQ(GURL(), script_bubble_action->GetPopupUrl(tab_id()));
 
   // Running a script on the tab causes the bubble to be visible.
   TabHelper::ScriptExecutionObserver::ExecutingScriptsMap executing_scripts;
@@ -126,12 +123,12 @@ TEST_F(ScriptBubbleControllerTest, Basics) {
       executing_scripts,
       web_contents()->GetController().GetActiveEntry()->GetPageID(),
       web_contents()->GetController().GetActiveEntry()->GetURL());
-  EXPECT_TRUE(script_bubble_action->GetIsVisible(tab_id()));
-  EXPECT_EQ("1", script_bubble_action->GetBadgeText(tab_id()));
+  EXPECT_EQ(1u, script_bubble_controller_->extensions_running_scripts().size());
   std::set<std::string> extension_ids;
   extension_ids.insert(extension1->id());
-  EXPECT_EQ(ScriptBubbleController::GetPopupUrl(script_bubble, extension_ids),
-            script_bubble_action->GetPopupUrl(tab_id()));
+  EXPECT_EQ(1u, script_bubble_controller_->extensions_running_scripts().size());
+  EXPECT_TRUE(extension_ids ==
+             script_bubble_controller_->extensions_running_scripts());
 
   // Running a script from another extension increments the count.
   executing_scripts.clear();
@@ -141,11 +138,10 @@ TEST_F(ScriptBubbleControllerTest, Basics) {
       executing_scripts,
       web_contents()->GetController().GetActiveEntry()->GetPageID(),
       web_contents()->GetController().GetActiveEntry()->GetURL());
-  EXPECT_TRUE(script_bubble_action->GetIsVisible(tab_id()));
-  EXPECT_EQ("2", script_bubble_action->GetBadgeText(tab_id()));
+  EXPECT_EQ(2u, script_bubble_controller_->extensions_running_scripts().size());
   extension_ids.insert(extension2->id());
-  EXPECT_EQ(ScriptBubbleController::GetPopupUrl(script_bubble, extension_ids),
-            script_bubble_action->GetPopupUrl(tab_id()));
+  EXPECT_TRUE(extension_ids ==
+             script_bubble_controller_->extensions_running_scripts());
 
   // Running another script from an already-seen extension does not affect
   // count.
@@ -156,10 +152,7 @@ TEST_F(ScriptBubbleControllerTest, Basics) {
       executing_scripts,
       web_contents()->GetController().GetActiveEntry()->GetPageID(),
       web_contents()->GetController().GetActiveEntry()->GetURL());
-  EXPECT_TRUE(script_bubble_action->GetIsVisible(tab_id()));
-  EXPECT_EQ("2", script_bubble_action->GetBadgeText(tab_id()));
-  EXPECT_EQ(ScriptBubbleController::GetPopupUrl(script_bubble, extension_ids),
-            script_bubble_action->GetPopupUrl(tab_id()));
+  EXPECT_EQ(2u, script_bubble_controller_->extensions_running_scripts().size());
 
   // Running tabs.executeScript from an already-seen extension does not affect
   // count.
@@ -167,27 +160,18 @@ TEST_F(ScriptBubbleControllerTest, Basics) {
   executing_scripts[extension1->id()] = std::set<std::string>();
   script_bubble_controller_->OnScriptsExecuted(
       web_contents(), executing_scripts, 0, GURL());
-  EXPECT_TRUE(script_bubble_action->GetIsVisible(tab_id()));
-  EXPECT_EQ("2", script_bubble_action->GetBadgeText(tab_id()));
-  EXPECT_EQ(ScriptBubbleController::GetPopupUrl(script_bubble, extension_ids),
-            script_bubble_action->GetPopupUrl(tab_id()));
+  EXPECT_EQ(2u, script_bubble_controller_->extensions_running_scripts().size());
 
   // Running tabs.executeScript from a new extension increments the count.
   executing_scripts.clear();
   executing_scripts[extension3->id()] = std::set<std::string>();
   script_bubble_controller_->OnScriptsExecuted(
       web_contents(), executing_scripts, 0, GURL());
-  EXPECT_TRUE(script_bubble_action->GetIsVisible(tab_id()));
-  extension_ids.insert(extension3->id());
-  EXPECT_EQ("3", script_bubble_action->GetBadgeText(tab_id()));
-  EXPECT_EQ(ScriptBubbleController::GetPopupUrl(script_bubble, extension_ids),
-            script_bubble_action->GetPopupUrl(tab_id()));
+  EXPECT_EQ(3u, script_bubble_controller_->extensions_running_scripts().size());
 
   // Navigating away resets the badge.
   NavigateAndCommit(GURL("http://www.google.com"));
-  EXPECT_FALSE(script_bubble_action->GetIsVisible(tab_id()));
-  EXPECT_EQ("", script_bubble_action->GetBadgeText(tab_id()));
-  EXPECT_EQ(GURL(), script_bubble_action->GetPopupUrl(tab_id()));
+  EXPECT_EQ(0u, script_bubble_controller_->extensions_running_scripts().size());
 };
 
 }  // namespace

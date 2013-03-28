@@ -7,42 +7,36 @@
 #include <vector>
 
 #include "ash/ash_constants.h"
+#include "ash/root_window_controller.h"
 #include "ash/shell.h"
+#include "ash/shell_window_ids.h"
 #include "ash/wm/activation_controller.h"
 #include "ash/wm/window_properties.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_delegate.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
+#include "ui/views/corewm/window_util.h"
 
 namespace ash {
 namespace wm {
 
+// TODO(beng): replace many of these functions with the corewm versions.
 void ActivateWindow(aura::Window* window) {
-  DCHECK(window);
-  DCHECK(window->GetRootWindow());
-  aura::client::GetActivationClient(window->GetRootWindow())->ActivateWindow(
-      window);
+  views::corewm::ActivateWindow(window);
 }
 
 void DeactivateWindow(aura::Window* window) {
-  DCHECK(window);
-  DCHECK(window->GetRootWindow());
-  aura::client::GetActivationClient(window->GetRootWindow())->DeactivateWindow(
-      window);
+  views::corewm::DeactivateWindow(window);
 }
 
 bool IsActiveWindow(aura::Window* window) {
-  DCHECK(window);
-  if (!window->GetRootWindow())
-    return false;
-  aura::client::ActivationClient* client =
-      aura::client::GetActivationClient(window->GetRootWindow());
-  return client && client->GetActiveWindow() == window;
+  return views::corewm::IsActiveWindow(window);
 }
 
 aura::Window* GetActiveWindow() {
@@ -51,7 +45,7 @@ aura::Window* GetActiveWindow() {
 }
 
 aura::Window* GetActivatableWindow(aura::Window* window) {
-  return internal::ActivationController::GetActivatableWindow(window, NULL);
+  return views::corewm::GetActivatableWindow(window);
 }
 
 bool IsActiveWindowFullscreen() {
@@ -67,16 +61,36 @@ bool IsActiveWindowFullscreen() {
 }
 
 bool CanActivateWindow(aura::Window* window) {
-  DCHECK(window);
-  if (!window->GetRootWindow())
-    return false;
-  aura::client::ActivationClient* client =
-      aura::client::GetActivationClient(window->GetRootWindow());
-  return client && client->CanActivateWindow(window);
+  return views::corewm::CanActivateWindow(window);
 }
 
 bool CanMaximizeWindow(const aura::Window* window) {
   return window->GetProperty(aura::client::kCanMaximizeKey);
+}
+
+bool CanMinimizeWindow(const aura::Window* window) {
+  internal::RootWindowController* controller =
+      internal::RootWindowController::ForWindow(window);
+  if (!controller)
+    return false;
+  aura::Window* lockscreen = controller->GetContainer(
+      internal::kShellWindowId_LockScreenContainersContainer);
+  if (lockscreen->Contains(window))
+    return false;
+
+  return true;
+}
+
+bool CanResizeWindow(const aura::Window* window) {
+  return window->GetProperty(aura::client::kCanResizeKey);
+}
+
+bool CanSnapWindow(aura::Window* window) {
+  if (!CanResizeWindow(window))
+    return false;
+  // If a window has a maximum size defined, snapping may make it too big.
+  return window->delegate() ? window->delegate()->GetMaximumSize().IsEmpty() :
+                              true;
 }
 
 bool IsWindowNormal(const aura::Window* window) {
@@ -129,32 +143,6 @@ void CenterWindow(aura::Window* window) {
   window->SetBounds(center);
 }
 
-ui::Layer* RecreateWindowLayers(aura::Window* window, bool set_bounds) {
-  const gfx::Rect bounds = window->bounds();
-  ui::Layer* old_layer = window->RecreateLayer();
-  DCHECK(old_layer);
-  for (aura::Window::Windows::const_iterator it = window->children().begin();
-       it != window->children().end();
-       ++it) {
-    // Maintain the hierarchy of the detached layers.
-    old_layer->Add(RecreateWindowLayers(*it, set_bounds));
-  }
-  if (set_bounds)
-    window->SetBounds(bounds);
-  return old_layer;
-}
-
-void DeepDeleteLayers(ui::Layer* layer) {
-  std::vector<ui::Layer*> children = layer->children();
-  for (std::vector<ui::Layer*>::const_iterator it = children.begin();
-       it != children.end();
-       ++it) {
-    ui::Layer* child = *it;
-    DeepDeleteLayers(child);
-  }
-  delete layer;
-}
-
 bool IsWindowPositionManaged(const aura::Window* window) {
   return window->GetProperty(ash::internal::kWindowPositionManagedKey);
 }
@@ -183,23 +171,31 @@ void SetPreAutoManageWindowBounds(aura::Window* window,
                       new gfx::Rect(bounds));
 }
 
-void AdjustBoundsToEnsureWindowVisibility(gfx::Rect* bounds,
-                                          const gfx::Rect& work_area) {
+void AdjustBoundsToEnsureMinimumWindowVisibility(const gfx::Rect& work_area,
+                                                 gfx::Rect* bounds) {
+  AdjustBoundsToEnsureWindowVisibility(
+      work_area, kMinimumOnScreenArea, kMinimumOnScreenArea, bounds);
+}
+
+void AdjustBoundsToEnsureWindowVisibility(const gfx::Rect& work_area,
+                                          int min_width,
+                                          int min_height,
+                                          gfx::Rect* bounds) {
   bounds->set_width(std::min(bounds->width(), work_area.width()));
   bounds->set_height(std::min(bounds->height(), work_area.height()));
   if (!work_area.Intersects(*bounds)) {
     int y_offset = 0;
     if (work_area.bottom() < bounds->y()) {
-      y_offset = work_area.bottom() - bounds->y() - kMinimumOnScreenArea;
+      y_offset = work_area.bottom() - bounds->y() - min_height;
     } else if (bounds->bottom() < work_area.y()) {
-      y_offset = work_area.y() - bounds->bottom() + kMinimumOnScreenArea;
+      y_offset = work_area.y() - bounds->bottom() + min_height;
     }
 
     int x_offset = 0;
     if (work_area.right() < bounds->x()) {
-      x_offset = work_area.right() - bounds->x() - kMinimumOnScreenArea;
+      x_offset = work_area.right() - bounds->x() - min_width;
     } else if (bounds->right() < work_area.x()) {
-      x_offset = work_area.x() - bounds->right() + kMinimumOnScreenArea;
+      x_offset = work_area.x() - bounds->right() + min_width;
     }
     bounds->Offset(x_offset, y_offset);
   }

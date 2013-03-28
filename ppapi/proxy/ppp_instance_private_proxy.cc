@@ -21,6 +21,9 @@ namespace {
 
 PP_Var GetInstanceObject(PP_Instance instance) {
   Dispatcher* dispatcher = HostDispatcher::GetForInstance(instance);
+  if (!dispatcher->permissions().HasPermission(PERMISSION_PRIVATE))
+    return PP_MakeUndefined();
+
   ReceiveSerializedVarReturnValue result;
   dispatcher->Send(new PpapiMsg_PPPInstancePrivate_GetInstanceObject(
       API_ID_PPP_INSTANCE_PRIVATE, instance, &result));
@@ -62,6 +65,9 @@ const InterfaceProxy::Info* PPP_Instance_Private_Proxy::GetInfo() {
 }
 
 bool PPP_Instance_Private_Proxy::OnMessageReceived(const IPC::Message& msg) {
+  if (!dispatcher()->IsPlugin())
+    return false;
+
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PPP_Instance_Private_Proxy, msg)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPPInstancePrivate_GetInstanceObject,

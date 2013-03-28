@@ -6,12 +6,9 @@
   'targets': [
     {
       'target_name': 'hyphen',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '.',
-      ],
-      'defines': [
-        'HYPHEN_CHROME_CLIENT',
       ],
       'sources': [
         'hnjalloc.c',
@@ -20,13 +17,15 @@
         'hyphen.c',
       ],
       'direct_dependent_settings': {
-        'defines': [
-          'HYPHEN_CHROME_CLIENT',
-        ],
         'include_dirs': [
           '.',
         ],
       },
+      # TODO(jschuh): http://crbug.com/167187
+      'msvs_disabled_warnings': [
+        4018,
+        4267,
+      ],
     },
   ],
 }

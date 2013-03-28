@@ -6,10 +6,12 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/webdata/web_data_service_factory.h"
+#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -25,16 +27,22 @@
 #endif
 
 using content::BrowserThread;
+using namespace signin_internals_util;
 
 namespace {
 
 // List of services that are capable of ClientLogin-based authentication.
 const char* kServices[] = {
-  GaiaConstants::kGaiaService,
   GaiaConstants::kSyncService,
-  GaiaConstants::kDeviceManagementService,
   GaiaConstants::kLSOService
 };
+
+#define FOR_DIAGNOSTICS_OBSERVERS(func)                               \
+  do {                                                                \
+    FOR_EACH_OBSERVER(SigninDiagnosticsObserver,                      \
+                      signin_diagnostics_observers_,                  \
+                      func);                                          \
+  } while (0)                                                         \
 
 }  // namespace
 
@@ -69,8 +77,7 @@ void TokenService::Initialize(const char* const source,
   getter_ = profile->GetRequestContext();
   // Since the user can create a bookmark in incognito, sync may be running.
   // Thus we have to go for explicit access.
-  web_data_service_ = WebDataServiceFactory::GetForProfile(
-      profile, Profile::EXPLICIT_ACCESS);
+  web_data_service_ = WebDataService::FromBrowserContext(profile);
   source_ = std::string(source);
 
   CommandLine* cmd_line = CommandLine::ForCurrentProcess();
@@ -92,10 +99,6 @@ void TokenService::Initialize(const char* const source,
   }
 }
 
-// TODO(petewil) We should refactor the token_service so it does not both
-// store tokens and fetch them.  Move the key-value storage out of
-// token_service, and leave the token fetching in token_service.
-
 void TokenService::AddAuthTokenManually(const std::string& service,
                                         const std::string& auth_token) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -103,6 +106,11 @@ void TokenService::AddAuthTokenManually(const std::string& service,
   token_map_[service] = auth_token;
   FireTokenAvailableNotification(service, auth_token);
   SaveAuthTokenToDB(service, auth_token);
+
+// We don't ever want to fetch OAuth2 tokens from LSO service token in case
+// when ChromeOS is in forced OAuth2 use mode. OAuth2 token should only
+// arrive into token service exclusively through UpdateCredentialsWithOAuth2.
+#if !defined(OS_CHROMEOS)
   // If we got ClientLogin token for "lso" service, and we don't already have
   // OAuth2 tokens, start fetching OAuth2 login scoped token pair.
   if (service == GaiaConstants::kLSOService && !HasOAuthLoginToken()) {
@@ -110,6 +118,7 @@ void TokenService::AddAuthTokenManually(const std::string& service,
     CHECK_GE(index, 0);
     fetchers_[index]->StartLsoForOAuthLoginTokenExchange(auth_token);
   }
+#endif
 }
 
 
@@ -145,15 +154,15 @@ void TokenService::UpdateCredentials(
     fetchers_[i].reset();
   }
 
-  // Notify the CredentialCacheService that a new lsid and sid are available.
-  FireCredentialsUpdatedNotification(credentials.lsid, credentials.sid);
+  // Notify AboutSigninInternals that a new lsid and sid are available.
+  FOR_DIAGNOSTICS_OBSERVERS(NotifySigninValueChanged(
+      signin_internals_util::SID, credentials.sid));
+  FOR_DIAGNOSTICS_OBSERVERS(NotifySigninValueChanged(LSID, credentials.lsid));
 }
 
 void TokenService::UpdateCredentialsWithOAuth2(
-    const GaiaAuthConsumer::ClientOAuthResult& credentials) {
-  // Will be implemented once the ClientOAuth signin is complete.  Not called
-  // yet by any code.
-  NOTREACHED();
+    const GaiaAuthConsumer::ClientOAuthResult& oauth2_tokens) {
+  SaveOAuth2Credentials(oauth2_tokens);
 }
 
 void TokenService::LoadTokensFromDB() {
@@ -185,6 +194,15 @@ void TokenService::EraseTokensFromDB() {
       chrome::NOTIFICATION_TOKENS_CLEARED,
       content::Source<TokenService>(this),
       content::NotificationService::NoDetails());
+
+  // Clear in-memory token values stored by AboutSigninInternals
+  // Note that although this is clearing in-memory values, it belongs here and
+  // not in ResetCredentialsInMemory() (which is invoked both on sign out and
+  // shutdown).
+  for (size_t i = 0; i < kNumTokenPrefs; ++i) {
+    FOR_DIAGNOSTICS_OBSERVERS(NotifyClearStoredToken(kTokenPrefsArray[i]));
+  }
+
 }
 
 bool TokenService::TokensLoadedFromDB() const {
@@ -239,24 +257,10 @@ const std::string& TokenService::GetOAuth2LoginRefreshToken() const {
   return GetTokenForService(GaiaConstants::kGaiaOAuth2LoginRefreshToken);
 }
 
-const std::string& TokenService::GetOAuth2LoginAccessToken() const {
-  return GetTokenForService(GaiaConstants::kGaiaOAuth2LoginAccessToken);
-}
-
 // static
 void TokenService::GetServiceNamesForTesting(std::vector<std::string>* names) {
   names->resize(arraysize(kServices));
   std::copy(kServices, kServices + arraysize(kServices), names->begin());
-}
-
-void TokenService::FireCredentialsUpdatedNotification(
-    const std::string& lsid,
-    const std::string& sid) {
-  CredentialsUpdatedDetails details(lsid, sid);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_TOKEN_SERVICE_CREDENTIALS_UPDATED,
-      content::Source<TokenService>(this),
-      content::Details<const CredentialsUpdatedDetails>(&details));
 }
 
 // Note that this can fire twice or more for any given service.
@@ -286,15 +290,18 @@ void TokenService::FireTokenRequestFailedNotification(
   // the metric name can be "TokenService.TokenRequestFailed." + one of four
   // different values, we need to create the histogram ourselves and add the
   // sample.
-  base::Histogram* histogram =
+  base::HistogramBase* histogram =
       base::LinearHistogram::FactoryGet(
           metric,
           1,
           GoogleServiceAuthError::NUM_STATES,
           GoogleServiceAuthError::NUM_STATES + 1,
-          base::Histogram::kUmaTargetedHistogramFlag);
+          base::HistogramBase::kUmaTargetedHistogramFlag);
   histogram->Add(error.state());
 #endif
+
+  FOR_DIAGNOSTICS_OBSERVERS(
+      NotifyTokenReceivedFailure(service, error.ToString()));
 
   TokenRequestFailedDetails details(service, error);
   content::NotificationService::current()->Notify(
@@ -311,6 +318,8 @@ void TokenService::IssueAuthTokenForTest(const std::string& service,
 
 void TokenService::OnIssueAuthTokenSuccess(const std::string& service,
                                            const std::string& auth_token) {
+  FOR_DIAGNOSTICS_OBSERVERS(
+      NotifyTokenReceivedSuccess(service, auth_token, true));
   AddAuthTokenManually(service, auth_token);
 }
 
@@ -319,20 +328,27 @@ void TokenService::OnIssueAuthTokenFailure(const std::string& service,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   LOG(WARNING) << "Auth token issuing failed for service:" << service
                << ", error: " << error.ToString();
+  FOR_DIAGNOSTICS_OBSERVERS(
+      NotifyTokenReceivedFailure(service, error.ToString()));
   FireTokenRequestFailedNotification(service, error);
 }
 
 void TokenService::OnClientOAuthSuccess(const ClientOAuthResult& result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   VLOG(1) << "Got OAuth2 login token pair";
+  SaveOAuth2Credentials(result);
+}
+
+void TokenService::SaveOAuth2Credentials(const ClientOAuthResult& result) {
   token_map_[GaiaConstants::kGaiaOAuth2LoginRefreshToken] =
       result.refresh_token;
-  token_map_[GaiaConstants::kGaiaOAuth2LoginAccessToken] = result.access_token;
   SaveAuthTokenToDB(GaiaConstants::kGaiaOAuth2LoginRefreshToken,
       result.refresh_token);
-  SaveAuthTokenToDB(GaiaConstants::kGaiaOAuth2LoginAccessToken,
-      result.access_token);
   // We don't save expiration information for now.
+
+  FOR_DIAGNOSTICS_OBSERVERS(
+      NotifyTokenReceivedSuccess(GaiaConstants::kGaiaOAuth2LoginRefreshToken,
+                                 result.refresh_token, true));
 
   FireTokenAvailableNotification(GaiaConstants::kGaiaOAuth2LoginRefreshToken,
       result.refresh_token);
@@ -384,12 +400,6 @@ void TokenService::LoadTokensIntoMemory(
   }
   LoadSingleTokenIntoMemory(db_tokens, in_memory_tokens,
       GaiaConstants::kGaiaOAuth2LoginRefreshToken);
-  LoadSingleTokenIntoMemory(db_tokens, in_memory_tokens,
-      GaiaConstants::kGaiaOAuth2LoginAccessToken);
-  // TODO(petewil): Remove next line when we refactor key-value
-  // storage out of token_service.
-  LoadSingleTokenIntoMemory(db_tokens, in_memory_tokens,
-      GaiaConstants::kObfuscatedGaiaId);
 
   if (credentials_.lsid.empty() && credentials_.sid.empty()) {
     // Look for GAIA SID and LSID tokens.  If we have both, and the current
@@ -404,6 +414,10 @@ void TokenService::LoadTokensIntoMemory(
       sid = db_tokens.find(GaiaConstants::kGaiaSid)->second;
 
     if (!lsid.empty() && !sid.empty()) {
+      FOR_DIAGNOSTICS_OBSERVERS(NotifySigninValueChanged(
+          signin_internals_util::SID, sid));
+      FOR_DIAGNOSTICS_OBSERVERS(NotifySigninValueChanged(LSID, lsid));
+
       credentials_ = GaiaAuthConsumer::ClientLoginResult(sid,
                                                          lsid,
                                                          std::string(),
@@ -431,6 +445,21 @@ void TokenService::LoadSingleTokenIntoMemory(
       (*in_memory_tokens)[service] = db_token;
       FireTokenAvailableNotification(service, db_token);
       // Failures are only for network errors.
+
+      // Update the token info for about:sigin-internals, but don't update the
+      // time-stamps since we only care about the time it was downloaded.
+      FOR_DIAGNOSTICS_OBSERVERS(
+          NotifyTokenReceivedSuccess(service, db_token, false));
     }
   }
+}
+
+void TokenService::AddSigninDiagnosticsObserver(
+    SigninDiagnosticsObserver* observer) {
+  signin_diagnostics_observers_.AddObserver(observer);
+}
+
+void TokenService::RemoveSigninDiagnosticsObserver(
+    SigninDiagnosticsObserver* observer) {
+  signin_diagnostics_observers_.RemoveObserver(observer);
 }

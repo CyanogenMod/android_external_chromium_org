@@ -23,7 +23,7 @@ class ScrollViewExample::ScrollableView : public View {
     AddChildView(new RadioButton(ASCIIToUTF16("Radio Button"), 0));
   }
 
-  virtual gfx::Size GetPreferredSize() {
+  virtual gfx::Size GetPreferredSize() OVERRIDE {
     return gfx::Size(width(), height());
   }
 
@@ -37,7 +37,7 @@ class ScrollViewExample::ScrollableView : public View {
     view->SetBounds(0, y, size.width(), size.height());
   }
 
-  virtual void Layout() {
+  virtual void Layout() OVERRIDE {
     PlaceChildY(0, 0);
     PlaceChildY(1, height() / 2);
     SizeToPreferredSize();
@@ -103,7 +103,7 @@ void ScrollViewExample::ButtonPressed(Button* sender, const ui::Event& event) {
     scrollable_->SetBounds(0, 0, 100, 100);
     scrollable_->SetColor(SK_ColorYELLOW, SK_ColorGREEN);
   } else if (sender == scroll_to_) {
-    scroll_view_->ScrollContentsRegionToBeVisible(
+    scroll_view_->contents()->ScrollRectToVisible(
         gfx::Rect(20, 500, 1000, 500));
   }
   scroll_view_->Layout();

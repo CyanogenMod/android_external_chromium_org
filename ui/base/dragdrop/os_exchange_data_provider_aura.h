@@ -7,7 +7,7 @@
 
 #include <map>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/pickle.h"
 #include "googleurl/src/gurl.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
@@ -27,14 +27,14 @@ class UI_EXPORT OSExchangeDataProviderAura : public OSExchangeData::Provider {
   // Overridden from OSExchangeData::Provider:
   virtual void SetString(const string16& data) OVERRIDE;
   virtual void SetURL(const GURL& url, const string16& title) OVERRIDE;
-  virtual void SetFilename(const FilePath& path) OVERRIDE;
+  virtual void SetFilename(const base::FilePath& path) OVERRIDE;
   virtual void SetFilenames(
       const std::vector<OSExchangeData::FileInfo>& filenames) OVERRIDE;
   virtual void SetPickledData(OSExchangeData::CustomFormat format,
                               const Pickle& data) OVERRIDE;
   virtual bool GetString(string16* data) const OVERRIDE;
   virtual bool GetURLAndTitle(GURL* url, string16* title) const OVERRIDE;
-  virtual bool GetFilename(FilePath* path) const OVERRIDE;
+  virtual bool GetFilename(base::FilePath* path) const OVERRIDE;
   virtual bool GetFilenames(
       std::vector<OSExchangeData::FileInfo>* filenames) const OVERRIDE;
   virtual bool GetPickledData(OSExchangeData::CustomFormat format,
@@ -45,9 +45,9 @@ class UI_EXPORT OSExchangeDataProviderAura : public OSExchangeData::Provider {
   virtual bool HasCustomFormat(
       OSExchangeData::CustomFormat format) const OVERRIDE;
 #if defined(OS_WIN)
-  virtual void SetFileContents(const FilePath& filename,
+  virtual void SetFileContents(const base::FilePath& filename,
                                const std::string& file_contents) OVERRIDE;
-  virtual bool GetFileContents(FilePath* filename,
+  virtual bool GetFileContents(base::FilePath* filename,
                                std::string* file_contents) const OVERRIDE;
   virtual bool HasFileContents() const OVERRIDE;
   virtual void SetDownloadFileInfo(
@@ -57,16 +57,10 @@ class UI_EXPORT OSExchangeDataProviderAura : public OSExchangeData::Provider {
   virtual void SetHtml(const string16& html, const GURL& base_url) OVERRIDE;
   virtual bool GetHtml(string16* html, GURL* base_url) const OVERRIDE;
   virtual bool HasHtml() const OVERRIDE;
-
-  void set_drag_image(const gfx::ImageSkia& drag_image) {
-      drag_image_ = drag_image;
-  }
-
-  const gfx::ImageSkia& drag_image() const { return drag_image_; }
-  void set_drag_image_offset(const gfx::Vector2d& drag_image_offset) {
-    drag_image_offset_ = drag_image_offset;
-  }
-  const gfx::Vector2d& drag_image_offset() const { return drag_image_offset_; }
+  virtual void SetDragImage(const gfx::ImageSkia& image,
+                            const gfx::Vector2d& cursor_offset) OVERRIDE;
+  virtual const gfx::ImageSkia& GetDragImage() const OVERRIDE;
+  virtual const gfx::Vector2d& GetDragImageOffset() const OVERRIDE;
 
  private:
   typedef std::map<OSExchangeData::CustomFormat, Pickle>  PickleData;

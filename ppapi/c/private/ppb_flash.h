@@ -3,12 +3,11 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_flash.idl modified Mon Oct  8 13:03:27 2012. */
+/* From private/ppb_flash.idl modified Thu Jan 31 16:23:42 2013. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_FLASH_H_
 #define PPAPI_C_PRIVATE_PPB_FLASH_H_
 
-#include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/c/pp_array_output.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_instance.h"
@@ -21,15 +20,13 @@
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/pp_time.h"
 #include "ppapi/c/pp_var.h"
+#include "ppapi/c/trusted/ppb_browser_font_trusted.h"
 
-#define PPB_FLASH_INTERFACE_12_0 "PPB_Flash;12.0"
-#define PPB_FLASH_INTERFACE_12_1 "PPB_Flash;12.1"
-#define PPB_FLASH_INTERFACE_12_2 "PPB_Flash;12.2"
-#define PPB_FLASH_INTERFACE_12_3 "PPB_Flash;12.3"
 #define PPB_FLASH_INTERFACE_12_4 "PPB_Flash;12.4"
 #define PPB_FLASH_INTERFACE_12_5 "PPB_Flash;12.5"
 #define PPB_FLASH_INTERFACE_12_6 "PPB_Flash;12.6"
-#define PPB_FLASH_INTERFACE PPB_FLASH_INTERFACE_12_6
+#define PPB_FLASH_INTERFACE_13_0 "PPB_Flash;13.0"
+#define PPB_FLASH_INTERFACE PPB_FLASH_INTERFACE_13_0
 
 /**
  * @file
@@ -103,7 +100,14 @@ typedef enum {
    * Specifies restrictions on how flash should handle LSOs. The result is an
    * int from <code>PP_FlashLSORestrictions</code>.
    */
-  PP_FLASHSETTING_LSORESTRICTIONS = 6
+  PP_FLASHSETTING_LSORESTRICTIONS = 6,
+  /**
+   * Specifies if the driver is reliable enough to use Shader Model 3 commands
+   * with it.
+   *
+   * This should only be enabled if PP_FLASHSETTING_STAGE3DENABLED is true.
+   */
+  PP_FLASHSETTING_STAGE3DBASELINEENABLED = 7
 } PP_FlashSetting;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_FlashSetting, 4);
 
@@ -129,7 +133,7 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_FlashCrashKey, 4);
  * The <code>PPB_Flash</code> interface contains pointers to various functions
  * that are only needed to support Pepper Flash.
  */
-struct PPB_Flash_12_6 {
+struct PPB_Flash_13_0 {
   /**
    * Sets or clears the rendering hint that the given plugin instance is always
    * on top of page content. Somewhat more optimized painting can be used in
@@ -144,17 +148,18 @@ struct PPB_Flash_12_6 {
    * system settings. For this to work properly, the graphics layer that the
    * text is being drawn into must be opaque.
    */
-  PP_Bool (*DrawGlyphs)(PP_Instance instance,
-                        PP_Resource pp_image_data,
-                        const struct PP_FontDescription_Dev* font_desc,
-                        uint32_t color,
-                        const struct PP_Point* position,
-                        const struct PP_Rect* clip,
-                        const float transformation[3][3],
-                        PP_Bool allow_subpixel_aa,
-                        uint32_t glyph_count,
-                        const uint16_t glyph_indices[],
-                        const struct PP_Point glyph_advances[]);
+  PP_Bool (*DrawGlyphs)(
+      PP_Instance instance,
+      PP_Resource pp_image_data,
+      const struct PP_BrowserFont_Trusted_Description* font_desc,
+      uint32_t color,
+      const struct PP_Point* position,
+      const struct PP_Rect* clip,
+      const float transformation[3][3],
+      PP_Bool allow_subpixel_aa,
+      uint32_t glyph_count,
+      const uint16_t glyph_indices[],
+      const struct PP_Point glyph_advances[]);
   /**
    * Retrieves the proxy that will be used for the given URL. The result will
    * be a string in PAC format, or an undefined var on error.
@@ -167,18 +172,6 @@ struct PPB_Flash_12_6 {
   int32_t (*Navigate)(PP_Resource request_info,
                       const char* target,
                       PP_Bool from_user_action);
-  /**
-   * Runs a nested message loop. The plugin will be reentered from this call.
-   * This function is used in places where Flash would normally enter a nested
-   * message loop (e.g., when displaying context menus), but Pepper provides
-   * only an asynchronous call. After performing that asynchronous call, call
-   * |RunMessageLoop()|. In the callback, call |QuitMessageLoop()|.
-   */
-  void (*RunMessageLoop)(PP_Instance instance);
-  /* Posts a quit message for the outermost nested message loop. Use this to
-   * exit and return back to the caller after you call RunMessageLoop.
-   */
-  void (*QuitMessageLoop)(PP_Instance instance);
   /**
    * Retrieves the local time zone offset from GM time for the given UTC time.
    */
@@ -204,23 +197,10 @@ struct PPB_Flash_12_6 {
    */
   PP_Bool (*IsRectTopmost)(PP_Instance instance, const struct PP_Rect* rect);
   /**
-   * Does nothing, deprecated. See PPB_Flash_Print.
-   */
-  int32_t (*InvokePrinting)(PP_Instance instance);
-  /**
    * Indicates that there's activity and, e.g., the screensaver shouldn't kick
    * in.
    */
   void (*UpdateActivity)(PP_Instance instance);
-  /**
-   * Returns the device ID as a string. Returns a PP_VARTYPE_UNDEFINED on error.
-   * Deprecated, use GetDeviceIDAsync.
-   */
-  struct PP_Var (*GetDeviceID)(PP_Instance instance);
-  /**
-   * Deprecated. See GetSetting().
-   */
-  int32_t (*GetSettingInt)(PP_Instance instance, PP_FlashSetting setting);
   /**
    * Returns the value associated with the given setting. Invalid enums will
    * result in an undefined PP_Var return value.
@@ -251,129 +231,22 @@ struct PPB_Flash_12_6 {
                                           struct PP_ArrayOutput devices);
 };
 
-typedef struct PPB_Flash_12_6 PPB_Flash;
-
-struct PPB_Flash_12_0 {
-  void (*SetInstanceAlwaysOnTop)(PP_Instance instance, PP_Bool on_top);
-  PP_Bool (*DrawGlyphs)(PP_Instance instance,
-                        PP_Resource pp_image_data,
-                        const struct PP_FontDescription_Dev* font_desc,
-                        uint32_t color,
-                        const struct PP_Point* position,
-                        const struct PP_Rect* clip,
-                        const float transformation[3][3],
-                        PP_Bool allow_subpixel_aa,
-                        uint32_t glyph_count,
-                        const uint16_t glyph_indices[],
-                        const struct PP_Point glyph_advances[]);
-  struct PP_Var (*GetProxyForURL)(PP_Instance instance, const char* url);
-  int32_t (*Navigate)(PP_Resource request_info,
-                      const char* target,
-                      PP_Bool from_user_action);
-  void (*RunMessageLoop)(PP_Instance instance);
-  void (*QuitMessageLoop)(PP_Instance instance);
-  double (*GetLocalTimeZoneOffset)(PP_Instance instance, PP_Time t);
-  struct PP_Var (*GetCommandLineArgs)(PP_Module module);
-  void (*PreloadFontWin)(const void* logfontw);
-};
-
-struct PPB_Flash_12_1 {
-  void (*SetInstanceAlwaysOnTop)(PP_Instance instance, PP_Bool on_top);
-  PP_Bool (*DrawGlyphs)(PP_Instance instance,
-                        PP_Resource pp_image_data,
-                        const struct PP_FontDescription_Dev* font_desc,
-                        uint32_t color,
-                        const struct PP_Point* position,
-                        const struct PP_Rect* clip,
-                        const float transformation[3][3],
-                        PP_Bool allow_subpixel_aa,
-                        uint32_t glyph_count,
-                        const uint16_t glyph_indices[],
-                        const struct PP_Point glyph_advances[]);
-  struct PP_Var (*GetProxyForURL)(PP_Instance instance, const char* url);
-  int32_t (*Navigate)(PP_Resource request_info,
-                      const char* target,
-                      PP_Bool from_user_action);
-  void (*RunMessageLoop)(PP_Instance instance);
-  void (*QuitMessageLoop)(PP_Instance instance);
-  double (*GetLocalTimeZoneOffset)(PP_Instance instance, PP_Time t);
-  struct PP_Var (*GetCommandLineArgs)(PP_Module module);
-  void (*PreloadFontWin)(const void* logfontw);
-  PP_Bool (*IsRectTopmost)(PP_Instance instance, const struct PP_Rect* rect);
-  int32_t (*InvokePrinting)(PP_Instance instance);
-  void (*UpdateActivity)(PP_Instance instance);
-};
-
-struct PPB_Flash_12_2 {
-  void (*SetInstanceAlwaysOnTop)(PP_Instance instance, PP_Bool on_top);
-  PP_Bool (*DrawGlyphs)(PP_Instance instance,
-                        PP_Resource pp_image_data,
-                        const struct PP_FontDescription_Dev* font_desc,
-                        uint32_t color,
-                        const struct PP_Point* position,
-                        const struct PP_Rect* clip,
-                        const float transformation[3][3],
-                        PP_Bool allow_subpixel_aa,
-                        uint32_t glyph_count,
-                        const uint16_t glyph_indices[],
-                        const struct PP_Point glyph_advances[]);
-  struct PP_Var (*GetProxyForURL)(PP_Instance instance, const char* url);
-  int32_t (*Navigate)(PP_Resource request_info,
-                      const char* target,
-                      PP_Bool from_user_action);
-  void (*RunMessageLoop)(PP_Instance instance);
-  void (*QuitMessageLoop)(PP_Instance instance);
-  double (*GetLocalTimeZoneOffset)(PP_Instance instance, PP_Time t);
-  struct PP_Var (*GetCommandLineArgs)(PP_Module module);
-  void (*PreloadFontWin)(const void* logfontw);
-  PP_Bool (*IsRectTopmost)(PP_Instance instance, const struct PP_Rect* rect);
-  int32_t (*InvokePrinting)(PP_Instance instance);
-  void (*UpdateActivity)(PP_Instance instance);
-  struct PP_Var (*GetDeviceID)(PP_Instance instance);
-};
-
-struct PPB_Flash_12_3 {
-  void (*SetInstanceAlwaysOnTop)(PP_Instance instance, PP_Bool on_top);
-  PP_Bool (*DrawGlyphs)(PP_Instance instance,
-                        PP_Resource pp_image_data,
-                        const struct PP_FontDescription_Dev* font_desc,
-                        uint32_t color,
-                        const struct PP_Point* position,
-                        const struct PP_Rect* clip,
-                        const float transformation[3][3],
-                        PP_Bool allow_subpixel_aa,
-                        uint32_t glyph_count,
-                        const uint16_t glyph_indices[],
-                        const struct PP_Point glyph_advances[]);
-  struct PP_Var (*GetProxyForURL)(PP_Instance instance, const char* url);
-  int32_t (*Navigate)(PP_Resource request_info,
-                      const char* target,
-                      PP_Bool from_user_action);
-  void (*RunMessageLoop)(PP_Instance instance);
-  void (*QuitMessageLoop)(PP_Instance instance);
-  double (*GetLocalTimeZoneOffset)(PP_Instance instance, PP_Time t);
-  struct PP_Var (*GetCommandLineArgs)(PP_Module module);
-  void (*PreloadFontWin)(const void* logfontw);
-  PP_Bool (*IsRectTopmost)(PP_Instance instance, const struct PP_Rect* rect);
-  int32_t (*InvokePrinting)(PP_Instance instance);
-  void (*UpdateActivity)(PP_Instance instance);
-  struct PP_Var (*GetDeviceID)(PP_Instance instance);
-  int32_t (*GetSettingInt)(PP_Instance instance, PP_FlashSetting setting);
-};
+typedef struct PPB_Flash_13_0 PPB_Flash;
 
 struct PPB_Flash_12_4 {
   void (*SetInstanceAlwaysOnTop)(PP_Instance instance, PP_Bool on_top);
-  PP_Bool (*DrawGlyphs)(PP_Instance instance,
-                        PP_Resource pp_image_data,
-                        const struct PP_FontDescription_Dev* font_desc,
-                        uint32_t color,
-                        const struct PP_Point* position,
-                        const struct PP_Rect* clip,
-                        const float transformation[3][3],
-                        PP_Bool allow_subpixel_aa,
-                        uint32_t glyph_count,
-                        const uint16_t glyph_indices[],
-                        const struct PP_Point glyph_advances[]);
+  PP_Bool (*DrawGlyphs)(
+      PP_Instance instance,
+      PP_Resource pp_image_data,
+      const struct PP_BrowserFont_Trusted_Description* font_desc,
+      uint32_t color,
+      const struct PP_Point* position,
+      const struct PP_Rect* clip,
+      const float transformation[3][3],
+      PP_Bool allow_subpixel_aa,
+      uint32_t glyph_count,
+      const uint16_t glyph_indices[],
+      const struct PP_Point glyph_advances[]);
   struct PP_Var (*GetProxyForURL)(PP_Instance instance, const char* url);
   int32_t (*Navigate)(PP_Resource request_info,
                       const char* target,
@@ -393,17 +266,18 @@ struct PPB_Flash_12_4 {
 
 struct PPB_Flash_12_5 {
   void (*SetInstanceAlwaysOnTop)(PP_Instance instance, PP_Bool on_top);
-  PP_Bool (*DrawGlyphs)(PP_Instance instance,
-                        PP_Resource pp_image_data,
-                        const struct PP_FontDescription_Dev* font_desc,
-                        uint32_t color,
-                        const struct PP_Point* position,
-                        const struct PP_Rect* clip,
-                        const float transformation[3][3],
-                        PP_Bool allow_subpixel_aa,
-                        uint32_t glyph_count,
-                        const uint16_t glyph_indices[],
-                        const struct PP_Point glyph_advances[]);
+  PP_Bool (*DrawGlyphs)(
+      PP_Instance instance,
+      PP_Resource pp_image_data,
+      const struct PP_BrowserFont_Trusted_Description* font_desc,
+      uint32_t color,
+      const struct PP_Point* position,
+      const struct PP_Rect* clip,
+      const float transformation[3][3],
+      PP_Bool allow_subpixel_aa,
+      uint32_t glyph_count,
+      const uint16_t glyph_indices[],
+      const struct PP_Point glyph_advances[]);
   struct PP_Var (*GetProxyForURL)(PP_Instance instance, const char* url);
   int32_t (*Navigate)(PP_Resource request_info,
                       const char* target,
@@ -422,6 +296,43 @@ struct PPB_Flash_12_5 {
   PP_Bool (*SetCrashData)(PP_Instance instance,
                           PP_FlashCrashKey key,
                           struct PP_Var value);
+};
+
+struct PPB_Flash_12_6 {
+  void (*SetInstanceAlwaysOnTop)(PP_Instance instance, PP_Bool on_top);
+  PP_Bool (*DrawGlyphs)(
+      PP_Instance instance,
+      PP_Resource pp_image_data,
+      const struct PP_BrowserFont_Trusted_Description* font_desc,
+      uint32_t color,
+      const struct PP_Point* position,
+      const struct PP_Rect* clip,
+      const float transformation[3][3],
+      PP_Bool allow_subpixel_aa,
+      uint32_t glyph_count,
+      const uint16_t glyph_indices[],
+      const struct PP_Point glyph_advances[]);
+  struct PP_Var (*GetProxyForURL)(PP_Instance instance, const char* url);
+  int32_t (*Navigate)(PP_Resource request_info,
+                      const char* target,
+                      PP_Bool from_user_action);
+  void (*RunMessageLoop)(PP_Instance instance);
+  void (*QuitMessageLoop)(PP_Instance instance);
+  double (*GetLocalTimeZoneOffset)(PP_Instance instance, PP_Time t);
+  struct PP_Var (*GetCommandLineArgs)(PP_Module module);
+  void (*PreloadFontWin)(const void* logfontw);
+  PP_Bool (*IsRectTopmost)(PP_Instance instance, const struct PP_Rect* rect);
+  int32_t (*InvokePrinting)(PP_Instance instance);
+  void (*UpdateActivity)(PP_Instance instance);
+  struct PP_Var (*GetDeviceID)(PP_Instance instance);
+  int32_t (*GetSettingInt)(PP_Instance instance, PP_FlashSetting setting);
+  struct PP_Var (*GetSetting)(PP_Instance instance, PP_FlashSetting setting);
+  PP_Bool (*SetCrashData)(PP_Instance instance,
+                          PP_FlashCrashKey key,
+                          struct PP_Var value);
+  int32_t (*EnumerateVideoCaptureDevices)(PP_Instance instance,
+                                          PP_Resource video_capture,
+                                          struct PP_ArrayOutput devices);
 };
 /**
  * @}

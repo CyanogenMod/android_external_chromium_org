@@ -6,11 +6,11 @@
 
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/sys_info.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
-#include "content/public/common/serialized_script_value.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "webkit/base/file_path_string_conversions.h"
 
 namespace content {
@@ -52,7 +52,8 @@ unsigned long long BrowserWebKitPlatformSupportImpl::visitedLinkHash(
   return 0;
 }
 
-bool BrowserWebKitPlatformSupportImpl::isLinkVisited(unsigned long long link_hash) {
+bool BrowserWebKitPlatformSupportImpl::isLinkVisited(
+    unsigned long long link_hash) {
   NOTREACHED();
   return false;
 }
@@ -114,21 +115,16 @@ WebKit::WebData BrowserWebKitPlatformSupportImpl::loadResource(
   return WebKit::WebData();
 }
 
-WebKit::WebSharedWorkerRepository*
-BrowserWebKitPlatformSupportImpl::sharedWorkerRepository() {
-    NOTREACHED();
-    return NULL;
-}
-
 int BrowserWebKitPlatformSupportImpl::databaseDeleteFile(
     const WebKit::WebString& vfs_file_name, bool sync_dir) {
-  const FilePath path = webkit_base::WebStringToFilePath(vfs_file_name);
+  const base::FilePath path = webkit_base::WebStringToFilePath(vfs_file_name);
   return file_util::Delete(path, false) ? 0 : 1;
 }
 
-GpuChannelHostFactory*
-BrowserWebKitPlatformSupportImpl::GetGpuChannelHostFactory() {
-  return BrowserGpuChannelHostFactory::instance();
+long long BrowserWebKitPlatformSupportImpl::availableDiskSpaceInBytes(
+    const WebKit::WebString& fileName) {
+  return base::SysInfo::AmountOfFreeDiskSpace(
+      webkit_base::WebStringToFilePath(fileName));
 }
 
 }  // namespace content

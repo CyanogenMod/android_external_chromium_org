@@ -16,6 +16,7 @@
 #include <sys/time.h>
 #endif
 #include <time.h>
+#include <ctype.h>	// For isdigit, isalpha.
 
 // C++
 #include <vector>
@@ -45,7 +46,8 @@ using std::sort;
 using std::swap;
 using std::make_pair;
 
-#if defined(__GNUC__) && !defined(USE_CXX0X) && !defined(OS_ANDROID)
+#if defined(__GNUC__) && !defined(USE_CXX0X) && !defined(OS_ANDROID) && \
+    !defined(_LIBCPP_ABI_VERSION)
 
 #include <tr1/unordered_set>
 using std::tr1::unordered_set;
@@ -88,6 +90,19 @@ template<bool> struct CompileAssert {};
   void operator=(const TypeName&)
 
 #define arraysize(array) (sizeof(array)/sizeof((array)[0]))
+
+// Fake lock annotations.  For real ones, see
+// http://code.google.com/p/data-race-test/
+#ifndef ANNOTATE_PUBLISH_MEMORY_RANGE
+#define ANNOTATE_PUBLISH_MEMORY_RANGE(a, b)
+#define ANNOTATE_IGNORE_WRITES_BEGIN()
+#define ANNOTATE_IGNORE_WRITES_END()
+#define ANNOTATE_BENIGN_RACE(a, b)
+#define NO_THREAD_SAFETY_ANALYSIS
+#define ANNOTATE_HAPPENS_BEFORE(x)
+#define ANNOTATE_HAPPENS_AFTER(x)
+#define ANNOTATE_UNPROTECTED_READ(x) (x)
+#endif
 
 class StringPiece;
 

@@ -20,12 +20,13 @@ class SessionManagerClientImpl : public SessionManagerClient {
  public:
   explicit SessionManagerClientImpl(dbus::Bus* bus)
       : session_manager_proxy_(NULL),
-        screen_locked_(false),
         weak_ptr_factory_(this) {
     session_manager_proxy_ = bus->GetObjectProxy(
         login_manager::kSessionManagerServiceName,
         dbus::ObjectPath(login_manager::kSessionManagerServicePath));
 
+    // Signals emitted on Chromium's interface.  Many of these ought to be
+    // method calls instead.
     session_manager_proxy_->ConnectToSignal(
         chromium::kChromiumInterface,
         chromium::kOwnerKeySetSignal,
@@ -33,7 +34,6 @@ class SessionManagerClientImpl : public SessionManagerClient {
                    weak_ptr_factory_.GetWeakPtr()),
         base::Bind(&SessionManagerClientImpl::SignalConnected,
                    weak_ptr_factory_.GetWeakPtr()));
-
     session_manager_proxy_->ConnectToSignal(
         chromium::kChromiumInterface,
         chromium::kPropertyChangeCompleteSignal,
@@ -41,7 +41,6 @@ class SessionManagerClientImpl : public SessionManagerClient {
                    weak_ptr_factory_.GetWeakPtr()),
         base::Bind(&SessionManagerClientImpl::SignalConnected,
                    weak_ptr_factory_.GetWeakPtr()));
-
     session_manager_proxy_->ConnectToSignal(
         chromium::kChromiumInterface,
         chromium::kLockScreenSignal,
@@ -49,11 +48,33 @@ class SessionManagerClientImpl : public SessionManagerClient {
                    weak_ptr_factory_.GetWeakPtr()),
         base::Bind(&SessionManagerClientImpl::SignalConnected,
                    weak_ptr_factory_.GetWeakPtr()));
-
     session_manager_proxy_->ConnectToSignal(
         chromium::kChromiumInterface,
         chromium::kUnlockScreenSignal,
         base::Bind(&SessionManagerClientImpl::ScreenUnlockReceived,
+                   weak_ptr_factory_.GetWeakPtr()),
+        base::Bind(&SessionManagerClientImpl::SignalConnected,
+                   weak_ptr_factory_.GetWeakPtr()));
+    session_manager_proxy_->ConnectToSignal(
+        chromium::kChromiumInterface,
+        chromium::kLivenessRequestedSignal,
+        base::Bind(&SessionManagerClientImpl::LivenessRequestedReceived,
+                   weak_ptr_factory_.GetWeakPtr()),
+        base::Bind(&SessionManagerClientImpl::SignalConnected,
+                   weak_ptr_factory_.GetWeakPtr()));
+
+    // Signals emitted on the session manager's interface.
+    session_manager_proxy_->ConnectToSignal(
+        login_manager::kSessionManagerInterface,
+        login_manager::kScreenIsLockedSignal,
+        base::Bind(&SessionManagerClientImpl::ScreenIsLockedReceived,
+                   weak_ptr_factory_.GetWeakPtr()),
+        base::Bind(&SessionManagerClientImpl::SignalConnected,
+                   weak_ptr_factory_.GetWeakPtr()));
+    session_manager_proxy_->ConnectToSignal(
+        login_manager::kSessionManagerInterface,
+        login_manager::kScreenIsUnlockedSignal,
+        base::Bind(&SessionManagerClientImpl::ScreenIsUnlockedReceived,
                    weak_ptr_factory_.GetWeakPtr()),
         base::Bind(&SessionManagerClientImpl::SignalConnected,
                    weak_ptr_factory_.GetWeakPtr()));
@@ -156,10 +177,6 @@ class SessionManagerClientImpl : public SessionManagerClient {
         login_manager::kSessionManagerHandleLockScreenDismissed);
   }
 
-  virtual bool GetIsScreenLocked() OVERRIDE {
-    return screen_locked_;
-  }
-
   virtual void RetrieveDevicePolicy(
       const RetrievePolicyCallback& callback) OVERRIDE {
     CallRetrievePolicy(login_manager::kSessionManagerRetrievePolicy,
@@ -172,6 +189,24 @@ class SessionManagerClientImpl : public SessionManagerClient {
                        callback);
   }
 
+  virtual void RetrieveDeviceLocalAccountPolicy(
+      const std::string& account_name,
+      const RetrievePolicyCallback& callback) OVERRIDE {
+    dbus::MethodCall method_call(
+        login_manager::kSessionManagerInterface,
+        login_manager::kSessionManagerRetrieveDeviceLocalAccountPolicy);
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendString(account_name);
+    session_manager_proxy_->CallMethod(
+        &method_call,
+        dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+        base::Bind(
+            &SessionManagerClientImpl::OnRetrievePolicy,
+            weak_ptr_factory_.GetWeakPtr(),
+            login_manager::kSessionManagerRetrieveDeviceLocalAccountPolicy,
+            callback));
+  }
+
   virtual void StoreDevicePolicy(const std::string& policy_blob,
                                  const StorePolicyCallback& callback) OVERRIDE {
     CallStorePolicy(login_manager::kSessionManagerStorePolicy,
@@ -182,6 +217,28 @@ class SessionManagerClientImpl : public SessionManagerClient {
                                const StorePolicyCallback& callback) OVERRIDE {
     CallStorePolicy(login_manager::kSessionManagerStoreUserPolicy,
                     policy_blob, callback);
+  }
+
+  virtual void StoreDeviceLocalAccountPolicy(
+      const std::string& account_name,
+      const std::string& policy_blob,
+      const StorePolicyCallback& callback) OVERRIDE {
+    dbus::MethodCall method_call(
+        login_manager::kSessionManagerInterface,
+        login_manager::kSessionManagerStoreDeviceLocalAccountPolicy);
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendString(account_name);
+    // static_cast does not work due to signedness.
+    writer.AppendArrayOfBytes(
+        reinterpret_cast<const uint8*>(policy_blob.data()), policy_blob.size());
+    session_manager_proxy_->CallMethod(
+        &method_call,
+        dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+        base::Bind(
+            &SessionManagerClientImpl::OnStorePolicy,
+            weak_ptr_factory_.GetWeakPtr(),
+            login_manager::kSessionManagerStoreDeviceLocalAccountPolicy,
+            callback));
   }
 
  private:
@@ -321,13 +378,24 @@ class SessionManagerClientImpl : public SessionManagerClient {
   }
 
   void ScreenLockReceived(dbus::Signal* signal) {
-    screen_locked_ = true;
     FOR_EACH_OBSERVER(Observer, observers_, LockScreen());
   }
 
   void ScreenUnlockReceived(dbus::Signal* signal) {
-    screen_locked_ = false;
     FOR_EACH_OBSERVER(Observer, observers_, UnlockScreen());
+  }
+
+  void LivenessRequestedReceived(dbus::Signal* signal) {
+    SimpleMethodCallToSessionManager(
+        login_manager::kSessionManagerHandleLivenessConfirmed);
+  }
+
+  void ScreenIsLockedReceived(dbus::Signal* signal) {
+    FOR_EACH_OBSERVER(Observer, observers_, ScreenIsLocked());
+  }
+
+  void ScreenIsUnlockedReceived(dbus::Signal* signal) {
+    FOR_EACH_OBSERVER(Observer, observers_, ScreenIsUnlocked());
   }
 
   // Called when the object is connected to the signal.
@@ -339,7 +407,6 @@ class SessionManagerClientImpl : public SessionManagerClient {
 
   dbus::ObjectProxy* session_manager_proxy_;
   ObserverList<Observer> observers_;
-  bool screen_locked_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
@@ -352,7 +419,7 @@ class SessionManagerClientImpl : public SessionManagerClient {
 // which does nothing.
 class SessionManagerClientStubImpl : public SessionManagerClient {
  public:
-  SessionManagerClientStubImpl() : screen_locked_(false) {}
+  SessionManagerClientStubImpl() {}
   virtual ~SessionManagerClientStubImpl() {}
 
   // SessionManagerClient overrides.
@@ -373,36 +440,51 @@ class SessionManagerClientStubImpl : public SessionManagerClient {
   virtual void StopSession() OVERRIDE {}
   virtual void StartDeviceWipe() OVERRIDE {}
   virtual void RequestLockScreen() OVERRIDE {
-    screen_locked_ = true;
     FOR_EACH_OBSERVER(Observer, observers_, LockScreen());
   }
-  virtual void NotifyLockScreenShown() OVERRIDE {}
+  virtual void NotifyLockScreenShown() OVERRIDE {
+    FOR_EACH_OBSERVER(Observer, observers_, ScreenIsLocked());
+  }
   virtual void RequestUnlockScreen() OVERRIDE {
-    screen_locked_ = false;
     FOR_EACH_OBSERVER(Observer, observers_, UnlockScreen());
   }
-  virtual void NotifyLockScreenDismissed() OVERRIDE {}
-  virtual bool GetIsScreenLocked() OVERRIDE { return screen_locked_; }
+  virtual void NotifyLockScreenDismissed() OVERRIDE {
+    FOR_EACH_OBSERVER(Observer, observers_, ScreenIsUnlocked());
+  }
   virtual void RetrieveDevicePolicy(
       const RetrievePolicyCallback& callback) OVERRIDE {
-    callback.Run("");
+    callback.Run(device_policy_);
   }
   virtual void RetrieveUserPolicy(
+      const RetrievePolicyCallback& callback) OVERRIDE {
+    callback.Run(user_policy_);
+  }
+  virtual void RetrieveDeviceLocalAccountPolicy(
+      const std::string& account_name,
       const RetrievePolicyCallback& callback) OVERRIDE {
     callback.Run("");
   }
   virtual void StoreDevicePolicy(const std::string& policy_blob,
                                  const StorePolicyCallback& callback) OVERRIDE {
+    device_policy_ = policy_blob;
     callback.Run(true);
   }
   virtual void StoreUserPolicy(const std::string& policy_blob,
                                const StorePolicyCallback& callback) OVERRIDE {
+    user_policy_ = policy_blob;
+    callback.Run(true);
+  }
+  virtual void StoreDeviceLocalAccountPolicy(
+      const std::string& account_name,
+      const std::string& policy_blob,
+      const StorePolicyCallback& callback) OVERRIDE {
     callback.Run(true);
   }
 
  private:
   ObserverList<Observer> observers_;
-  bool screen_locked_;
+  std::string device_policy_;
+  std::string user_policy_;
 
   DISALLOW_COPY_AND_ASSIGN(SessionManagerClientStubImpl);
 };

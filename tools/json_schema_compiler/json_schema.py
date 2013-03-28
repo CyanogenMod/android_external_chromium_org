@@ -3,38 +3,37 @@
 # found in the LICENSE file.
 
 import copy
-import json
-import os.path
+import os
 import sys
 
-_script_path = os.path.realpath(__file__)
-sys.path.insert(0, os.path.normpath(_script_path + "/../../"))
-import json_comment_eater
+import json_parse
 import schema_util
 
-def DeleteNocompileNodes(item):
-  def HasNocompile(thing):
-    return type(thing) == dict and thing.get('nocompile', False)
+def DeleteNodes(item, delete_key):
+  """Deletes the given nodes in item, recursively, that have |delete_key| as
+  an attribute.
+  """
+  def HasKey(thing):
+    return json_parse.IsDict(thing) and thing.get(delete_key, False)
 
-  if type(item) == dict:
+  if json_parse.IsDict(item):
     toDelete = []
     for key, value in item.items():
-      if HasNocompile(value):
+      if HasKey(value):
         toDelete.append(key)
       else:
-        DeleteNocompileNodes(value)
+        DeleteNodes(value, delete_key)
     for key in toDelete:
       del item[key]
   elif type(item) == list:
-    item[:] = [DeleteNocompileNodes(thing)
-        for thing in item if not HasNocompile(thing)]
+    item[:] = [DeleteNodes(thing, delete_key)
+        for thing in item if not HasKey(thing)]
 
   return item
 
 def Load(filename):
   with open(filename, 'r') as handle:
-    schemas = json.loads(json_comment_eater.Nom(handle.read()))
-  schema_util.PrefixSchemasWithNamespace(schemas)
+    schemas = json_parse.Parse(handle.read())
   return schemas
 
 # A dictionary mapping |filename| to the object resulting from loading the JSON
@@ -48,3 +47,4 @@ def CachedLoad(filename):
   # Return a copy of the object so that any changes a caller makes won't affect
   # the next caller.
   return copy.deepcopy(_cache[filename])
+

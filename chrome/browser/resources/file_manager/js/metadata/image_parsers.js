@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /* Base class for image metadata parsers that only need to look at a short
   fragment at the start of the file */
 function SimpleImageParser(parent, type, urlFilter, headerSize) {
@@ -11,15 +13,21 @@ function SimpleImageParser(parent, type, urlFilter, headerSize) {
 
 SimpleImageParser.prototype = {__proto__: ImageParser.prototype};
 
+/**
+ * @param {File} file  // TODO(JSDOC).
+ * @param {Object} metadata  // TODO(JSDOC).
+ * @param {function(Object)} callback  // TODO(JSDOC).
+ * @param {function(string)} errorCallback  // TODO(JSDOC).
+ */
 SimpleImageParser.prototype.parse = function(
     file, metadata, callback, errorCallback) {
   var self = this;
   util.readFileBytes(file, 0, this.headerSize,
-    function (file, br) {
+    function(file, br) {
       try {
         self.parseHeader(metadata, br);
         callback(metadata);
-      } catch(e) {
+      } catch (e) {
         errorCallback(e.toString());
       }
     },
@@ -33,6 +41,10 @@ function PngParser(parent) {
 
 PngParser.prototype = {__proto__: SimpleImageParser.prototype};
 
+/**
+ * @param {Object} metadata  // TODO(JSDOC).
+ * @param {ByteReader} br  // TODO(JSDOC).
+ */
 PngParser.prototype.parseHeader = function(metadata, br) {
   br.setByteOrder(ByteReader.BIG_ENDIAN);
 
@@ -58,6 +70,10 @@ function BmpParser(parent) {
 
 BmpParser.prototype = {__proto__: SimpleImageParser.prototype};
 
+/**
+ * @param {Object} metadata  // TODO(JSDOC).
+ * @param {ByteReader} br  // TODO(JSDOC).
+ */
 BmpParser.prototype.parseHeader = function(metadata, br) {
   br.setByteOrder(ByteReader.LITTLE_ENDIAN);
 
@@ -79,6 +95,10 @@ function GifParser(parent) {
 
 GifParser.prototype = {__proto__: SimpleImageParser.prototype};
 
+/**
+ * @param {Object} metadata  // TODO(JSDOC).
+ * @param {ByteReader} br  // TODO(JSDOC).
+ */
 GifParser.prototype.parseHeader = function(metadata, br) {
   br.setByteOrder(ByteReader.LITTLE_ENDIAN);
 

@@ -10,11 +10,10 @@ import android.content.DialogInterface;
 import android.content.DialogInterface.OnClickListener;
 import android.os.Build;
 import android.os.Bundle;
-import android.view.LayoutInflater;
 import android.view.View;
 
-import org.chromium.content.app.AppResource;
 import org.chromium.content.browser.MonthPicker.OnMonthChangedListener;
+import org.chromium.content.R;
 
 public class MonthPickerDialog extends AlertDialog implements OnClickListener,
         OnMonthChangedListener {
@@ -68,23 +67,15 @@ public class MonthPickerDialog extends AlertDialog implements OnClickListener,
 
         mCallBack = callBack;
 
-        assert AppResource.STRING_DATE_PICKER_DIALOG_SET != 0;
-        assert AppResource.STRING_MONTH_PICKER_DIALOG_TITLE != 0;
-        assert AppResource.LAYOUT_MONTH_PICKER_DIALOG != 0;
-        assert AppResource.ID_DATE_PICKER != 0;
-
         setButton(BUTTON_POSITIVE, context.getText(
-                AppResource.STRING_DATE_PICKER_DIALOG_SET), this);
+                R.string.date_picker_dialog_set), this);
         setButton(BUTTON_NEGATIVE, context.getText(android.R.string.cancel),
                 (OnClickListener) null);
         setIcon(0);
-        setTitle(AppResource.STRING_MONTH_PICKER_DIALOG_TITLE);
+        setTitle(R.string.month_picker_dialog_title);
 
-        LayoutInflater inflater =
-                (LayoutInflater) context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-        View view = inflater.inflate(AppResource.LAYOUT_MONTH_PICKER_DIALOG, null);
-        setView(view);
-        mMonthPicker = (MonthPicker) view.findViewById(AppResource.ID_DATE_PICKER);
+        mMonthPicker = new MonthPicker(context);
+        setView(mMonthPicker);
         mMonthPicker.init(year, monthOfYear, this);
     }
 
@@ -104,6 +95,10 @@ public class MonthPickerDialog extends AlertDialog implements OnClickListener,
     @Override
     protected void onStop() {
         if (Build.VERSION.SDK_INT >= 16) {
+            // The default behavior of dialogs changed in JellyBean and onwards.
+            // Dismissing a dialog (by pressing back for example)
+            // applies the chosen date. This code is added here so that the custom
+            // pickers behave the same as the internal DatePickerDialog.
             tryNotifyMonthSet();
         }
         super.onStop();

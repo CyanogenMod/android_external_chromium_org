@@ -55,10 +55,13 @@ class Var {
   ///
   /// You will not normally need to use this constructor because
   /// the reference count will not normally be incremented for you.
-  Var(PassRef, PP_Var var) {
+  Var(PassRef, const PP_Var& var) {
     var_ = var;
     is_managed_ = true;
   }
+
+  /// A constructor that increments the reference count.
+  explicit Var(const PP_Var& var);
 
   struct DontManage {};
 
@@ -70,7 +73,7 @@ class Var {
   /// increased or decreased by this class instance.
   ///
   /// @param[in] var A <code>Var</code>.
-  Var(DontManage, PP_Var var) {
+  Var(DontManage, const PP_Var& var) {
     var_ = var;
     is_managed_ = false;
   }
@@ -119,8 +122,18 @@ class Var {
 
   /// This function determines if this <code>Var</code> is an object.
   ///
-  /// @return true if this  <code>Var</code> is an object, otherwise false.
+  /// @return true if this <code>Var</code> is an object, otherwise false.
   bool is_object() const { return var_.type == PP_VARTYPE_OBJECT; }
+
+  /// This function determines if this <code>Var</code> is an array.
+  ///
+  /// @return true if this <code>Var</code> is an array, otherwise false.
+  bool is_array() const { return var_.type == PP_VARTYPE_ARRAY; }
+
+  /// This function determines if this <code>Var</code> is a dictionary.
+  ///
+  /// @return true if this <code>Var</code> is a dictinoary, otherwise false.
+  bool is_dictionary() const { return var_.type == PP_VARTYPE_DICTIONARY; }
 
   /// This function determines if this <code>Var</code> is an integer value.
   /// The <code>is_int</code> function returns the internal representation.

@@ -53,6 +53,7 @@
         "filesystem:*.3gp",
         "filesystem:*.avi",
         "filesystem:*.m4v",
+        "filesystem:*.mkv",
         "filesystem:*.mov",
         "filesystem:*.mp4",
         "filesystem:*.mpeg",
@@ -86,6 +87,14 @@
       "default_icon": "images/filetype_pdf.png",
       "file_filters": [
         "filesystem:*.pdf"
+      ]
+    },
+    {
+      "id": "view-swf",
+      "default_title": "__MSG_OPEN_ACTION__",
+      "default_icon": "images/filetype_generic.png",
+      "file_filters": [
+        "filesystem:*.swf"
       ]
     },
     {
@@ -124,6 +133,7 @@
         "filesystem:*.3gp",
         "filesystem:*.avi",
         "filesystem:*.m4v",
+        "filesystem:*.mkv",
         "filesystem:*.mov",
         "filesystem:*.mp4",
         "filesystem:*.mpeg",

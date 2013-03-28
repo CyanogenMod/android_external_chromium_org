@@ -7,12 +7,18 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/win/resource_util.h"
+#include "base/win/scoped_gdi_object.h"
 #include "base/win/scoped_handle.h"
+#include "base/win/scoped_hdc.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/gdi_util.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/size.h"
 
 namespace {
+
 struct ScopedICONINFO : ICONINFO {
   ScopedICONINFO() {
     hbmColor = NULL;
@@ -26,7 +32,8 @@ struct ScopedICONINFO : ICONINFO {
       ::DeleteObject(hbmMask);
   }
 };
-}
+
+}  // namespace
 
 // Defining the dimensions for the icon images. We store only one value because
 // we always resize to a square image; that is, the value 48 means that we are
@@ -87,7 +94,7 @@ HICON IconUtil::CreateHICONFromSkBitmap(const SkBitmap& bitmap) {
       static_cast<const uint32*>(bitmap.getPixels()),
       bitmap.width() * bitmap.height());
 
-  scoped_array<uint8> mask_bits;
+  scoped_ptr<uint8[]> mask_bits;
   if (!bitmap_has_alpha_channel) {
     // Bytes per line with paddings to make it word alignment.
     size_t bytes_per_line = (bitmap.width() + 0xF) / 16 * 2;
@@ -128,6 +135,63 @@ SkBitmap* IconUtil::CreateSkBitmapFromHICON(HICON icon, const gfx::Size& s) {
   return new SkBitmap(CreateSkBitmapFromHICONHelper(icon, s));
 }
 
+scoped_ptr<SkBitmap> IconUtil::CreateSkBitmapFromIconResource(HMODULE module,
+                                                              int resource_id,
+                                                              int size) {
+  DCHECK_LE(size, kLargeIconSize);
+
+  // For everything except the Vista+ 256x256 icons, use |LoadImage()|.
+  if (size != kLargeIconSize) {
+    HICON icon_handle =
+        static_cast<HICON>(LoadImage(module, MAKEINTRESOURCE(resource_id),
+                                     IMAGE_ICON, size, size,
+                                     LR_DEFAULTCOLOR | LR_DEFAULTSIZE));
+    scoped_ptr<SkBitmap> bitmap(IconUtil::CreateSkBitmapFromHICON(icon_handle));
+    DestroyIcon(icon_handle);
+    return bitmap.Pass();
+  }
+
+  // For Vista+ 256x256 PNG icons, read the resource directly and find
+  // the corresponding icon entry to get its PNG bytes.
+  void* icon_dir_data = NULL;
+  size_t icon_dir_size = 0;
+  if (!base::win::GetResourceFromModule(module, resource_id, RT_GROUP_ICON,
+                                        &icon_dir_data, &icon_dir_size)) {
+    return scoped_ptr<SkBitmap>();
+  }
+  DCHECK(icon_dir_data);
+  DCHECK_GE(icon_dir_size, sizeof(GRPICONDIR));
+
+  const GRPICONDIR* icon_dir =
+      reinterpret_cast<const GRPICONDIR*>(icon_dir_data);
+  const GRPICONDIRENTRY* large_icon_entry = NULL;
+  for (size_t i = 0; i < icon_dir->idCount; ++i) {
+    const GRPICONDIRENTRY* entry = &icon_dir->idEntries[i];
+    // 256x256 icons are stored with width and height set to 0.
+    // See: http://en.wikipedia.org/wiki/ICO_(file_format)
+    if (entry->bWidth == 0 && entry->bHeight == 0) {
+      large_icon_entry = entry;
+      break;
+    }
+  }
+  if (!large_icon_entry)
+    return scoped_ptr<SkBitmap>();
+
+  void* png_data = NULL;
+  size_t png_size = 0;
+  if (!base::win::GetResourceFromModule(module, large_icon_entry->nID, RT_ICON,
+                                        &png_data, &png_size)) {
+    return scoped_ptr<SkBitmap>();
+  }
+  DCHECK(png_data);
+  DCHECK_EQ(png_size, large_icon_entry->dwBytesInRes);
+
+  const unsigned char* png_bytes =
+      reinterpret_cast<const unsigned char*>(png_data);
+  gfx::Image image = gfx::Image::CreateFrom1xPNGBytes(png_bytes, png_size);
+  return scoped_ptr<SkBitmap>(new SkBitmap(image.AsBitmap()));
+}
+
 SkBitmap* IconUtil::CreateSkBitmapFromHICON(HICON icon) {
   // We start with validating parameters.
   if (!icon)
@@ -144,6 +208,56 @@ SkBitmap* IconUtil::CreateSkBitmapFromHICON(HICON icon) {
 
   gfx::Size icon_size(bitmap_info.bmWidth, bitmap_info.bmHeight);
   return new SkBitmap(CreateSkBitmapFromHICONHelper(icon, icon_size));
+}
+
+HICON IconUtil::CreateCursorFromDIB(const gfx::Size& icon_size,
+                                    const gfx::Point& hotspot,
+                                    const void* dib_bits,
+                                    size_t dib_size) {
+  BITMAPINFO icon_bitmap_info = {0};
+  gfx::CreateBitmapHeader(
+      icon_size.width(),
+      icon_size.height(),
+      reinterpret_cast<BITMAPINFOHEADER*>(&icon_bitmap_info));
+
+  base::win::ScopedGetDC dc(NULL);
+  base::win::ScopedCreateDC working_dc(CreateCompatibleDC(dc));
+  base::win::ScopedGDIObject<HBITMAP> bitmap_handle(
+      CreateDIBSection(dc,
+                       &icon_bitmap_info,
+                       DIB_RGB_COLORS,
+                       0,
+                       0,
+                       0));
+  if (dib_size > 0) {
+    SetDIBits(0,
+              bitmap_handle,
+              0,
+              icon_size.height(),
+              dib_bits,
+              &icon_bitmap_info,
+              DIB_RGB_COLORS);
+  }
+
+  HBITMAP old_bitmap = reinterpret_cast<HBITMAP>(
+      SelectObject(working_dc, bitmap_handle));
+  SetBkMode(working_dc, TRANSPARENT);
+  SelectObject(working_dc, old_bitmap);
+
+  base::win::ScopedGDIObject<HBITMAP> mask(
+      CreateBitmap(icon_size.width(),
+                   icon_size.height(),
+                   1,
+                   1,
+                   NULL));
+  ICONINFO ii = {0};
+  ii.fIcon = FALSE;
+  ii.xHotspot = hotspot.x();
+  ii.yHotspot = hotspot.y();
+  ii.hbmMask = mask;
+  ii.hbmColor = bitmap_handle;
+
+  return CreateIconIndirect(&ii);
 }
 
 SkBitmap IconUtil::CreateSkBitmapFromHICONHelper(HICON icon,
@@ -195,7 +309,7 @@ SkBitmap IconUtil::CreateSkBitmapFromHICONHelper(HICON icon,
 
   // Capture boolean opacity. We may not use it if we find out the bitmap has
   // an alpha channel.
-  scoped_array<bool> opaque(new bool[num_pixels]);
+  scoped_ptr<bool[]> opaque(new bool[num_pixels]);
   for (size_t i = 0; i < num_pixels; ++i)
     opaque[i] = !bits[i];
 
@@ -229,14 +343,24 @@ SkBitmap IconUtil::CreateSkBitmapFromHICONHelper(HICON icon,
 }
 
 bool IconUtil::CreateIconFileFromSkBitmap(const SkBitmap& bitmap,
-                                          const FilePath& icon_path) {
+                                          const SkBitmap& large_bitmap,
+                                          const base::FilePath& icon_path) {
   // Only 32 bit ARGB bitmaps are supported. We also make sure the bitmap has
   // been properly initialized.
   SkAutoLockPixels bitmap_lock(bitmap);
   if ((bitmap.config() != SkBitmap::kARGB_8888_Config) ||
       (bitmap.height() <= 0) || (bitmap.width() <= 0) ||
-      (bitmap.getPixels() == NULL))
+      (bitmap.getPixels() == NULL)) {
     return false;
+  }
+
+  // If |large_bitmap| was specified, validate its dimension and convert to PNG.
+  scoped_refptr<base::RefCountedMemory> png_bytes;
+  if (!large_bitmap.empty()) {
+    CHECK_EQ(kLargeIconSize, large_bitmap.width());
+    CHECK_EQ(kLargeIconSize, large_bitmap.height());
+    png_bytes = gfx::Image::CreateFrom1xBitmap(large_bitmap).As1xPNGBytes();
+  }
 
   // We start by creating the file.
   base::win::ScopedHandle icon_file(::CreateFile(icon_path.value().c_str(),
@@ -256,21 +380,29 @@ bool IconUtil::CreateIconFileFromSkBitmap(const SkBitmap& bitmap,
   // Computing the total size of the buffer we need in order to store the
   // images in the desired icon format.
   size_t buffer_size = ComputeIconFileBufferSize(bitmaps);
-  unsigned char* buffer = new unsigned char[buffer_size];
-  DCHECK(buffer != NULL);
-  memset(buffer, 0, buffer_size);
+  // Account for the bytes needed for the PNG entry.
+  if (png_bytes.get())
+    buffer_size += sizeof(ICONDIRENTRY) + png_bytes->size();
 
   // Setting the information in the structures residing within the buffer.
   // First, we set the information which doesn't require iterating through the
   // bitmap set and then we set the bitmap specific structures. In the latter
   // step we also copy the actual bits.
-  ICONDIR* icon_dir = reinterpret_cast<ICONDIR*>(buffer);
+  std::vector<uint8> buffer(buffer_size);
+  ICONDIR* icon_dir = reinterpret_cast<ICONDIR*>(&buffer[0]);
   icon_dir->idType = kResourceTypeIcon;
-  icon_dir->idCount = bitmap_count;
+  icon_dir->idCount = static_cast<WORD>(bitmap_count);
   size_t icon_dir_count = bitmap_count - 1;  // Note DCHECK(!bitmaps.empty())!
+
+  // Increment counts if a PNG entry will be added.
+  if (png_bytes.get()) {
+    icon_dir->idCount++;
+    icon_dir_count++;
+  }
+
   size_t offset = sizeof(ICONDIR) + (sizeof(ICONDIRENTRY) * icon_dir_count);
   for (size_t i = 0; i < bitmap_count; i++) {
-    ICONIMAGE* image = reinterpret_cast<ICONIMAGE*>(buffer + offset);
+    ICONIMAGE* image = reinterpret_cast<ICONIMAGE*>(&buffer[offset]);
     DCHECK_LT(offset, buffer_size);
     size_t icon_image_size = 0;
     SetSingleIconImageInformation(bitmaps[i], i, icon_dir, image, offset,
@@ -278,17 +410,32 @@ bool IconUtil::CreateIconFileFromSkBitmap(const SkBitmap& bitmap,
     DCHECK_GT(icon_image_size, 0U);
     offset += icon_image_size;
   }
+
+  // Add the PNG entry, if necessary.
+  if (png_bytes.get()) {
+    ICONDIRENTRY* entry = &icon_dir->idEntries[bitmap_count];
+    entry->bWidth = 0;
+    entry->bHeight = 0;
+    entry->wPlanes = 1;
+    entry->wBitCount = 32;
+    entry->dwBytesInRes = static_cast<DWORD>(png_bytes->size());
+    entry->dwImageOffset = static_cast<DWORD>(offset);
+    memcpy(&buffer[offset], png_bytes->front(), png_bytes->size());
+    offset += png_bytes->size();
+  }
+
   DCHECK_EQ(offset, buffer_size);
 
-  // Finally, writing the data info the file.
+  // Finally, write the data to the file.
   DWORD bytes_written;
   bool delete_file = false;
-  if (!WriteFile(icon_file.Get(), buffer, buffer_size, &bytes_written, NULL) ||
-      bytes_written != buffer_size)
+  if (!WriteFile(icon_file.Get(), &buffer[0], buffer_size, &bytes_written,
+                 NULL) ||
+      bytes_written != buffer_size) {
     delete_file = true;
+  }
 
   ::CloseHandle(icon_file.Take());
-  delete [] buffer;
   if (delete_file) {
     bool success = file_util::Delete(icon_path, false);
     DCHECK(success);

@@ -5,11 +5,11 @@
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "media/base/media_log.h"
-#include "media/base/mock_callback.h"
 #include "media/base/mock_data_source_host.h"
 #include "media/base/mock_filters.h"
+#include "media/base/test_helpers.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "webkit/media/buffered_data_source.h"
 #include "webkit/mocks/mock_webframeclient.h"
 #include "webkit/mocks/mock_weburlloader.h"
@@ -18,6 +18,7 @@
 using ::testing::_;
 using ::testing::Assign;
 using ::testing::Invoke;
+using ::testing::InSequence;
 using ::testing::NiceMock;
 using ::testing::StrictMock;
 
@@ -36,7 +37,9 @@ namespace webkit_media {
 // Also keeps track of whether said MockWebURLLoader is actively loading.
 class MockBufferedDataSource : public BufferedDataSource {
  public:
-  MockBufferedDataSource(MessageLoop* message_loop, WebFrame* frame)
+  MockBufferedDataSource(
+      const scoped_refptr<base::MessageLoopProxy>& message_loop,
+      WebFrame* frame)
       : BufferedDataSource(message_loop, frame, new media::MediaLog(),
                            base::Bind(&MockBufferedDataSource::set_downloading,
                                       base::Unretained(this))),
@@ -95,8 +98,8 @@ class BufferedDataSourceTest : public testing::Test {
       : view_(WebView::create(NULL)) {
     view_->initializeMainFrame(&client_);
 
-    data_source_ = new MockBufferedDataSource(&message_loop_,
-                                              view_->mainFrame());
+    data_source_ = new MockBufferedDataSource(
+        message_loop_.message_loop_proxy(), view_->mainFrame());
     data_source_->set_host(&host_);
   }
 
@@ -115,7 +118,7 @@ class BufferedDataSourceTest : public testing::Test {
     data_source_->Initialize(
         gurl, BufferedResourceLoader::kUnspecified, base::Bind(
             &BufferedDataSourceTest::OnInitialize, base::Unretained(this)));
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
 
     bool is_http = gurl.SchemeIs(kHttpScheme) || gurl.SchemeIs(kHttpsScheme);
     EXPECT_EQ(data_source_->downloading(), is_http);
@@ -145,23 +148,23 @@ class BufferedDataSourceTest : public testing::Test {
   void Stop() {
     if (data_source_->loading()) {
       loader()->didFail(url_loader(), response_generator_->GenerateError());
-      message_loop_.RunAllPending();
+      message_loop_.RunUntilIdle();
     }
 
     data_source_->Stop(media::NewExpectedClosure());
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   void ExpectCreateResourceLoader() {
     EXPECT_CALL(*data_source_, CreateResourceLoader(_, _))
         .WillOnce(Invoke(data_source_.get(),
                          &MockBufferedDataSource::CreateMockResourceLoader));
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   void Respond(const WebURLResponse& response) {
     loader()->didReceiveResponse(url_loader(), response);
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   void ReceiveData(int size) {
@@ -169,13 +172,13 @@ class BufferedDataSourceTest : public testing::Test {
     memset(data.get(), 0xA5, size);  // Arbitrary non-zero value.
 
     loader()->didReceiveData(url_loader(), data.get(), size, size);
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   void FinishLoading() {
     data_source_->set_loading(false);
     loader()->didFinishLoading(url_loader(), 0);
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   MOCK_METHOD1(ReadCallback, void(int size));
@@ -184,7 +187,7 @@ class BufferedDataSourceTest : public testing::Test {
     data_source_->Read(position, kDataSize, buffer_,
                        base::Bind(&BufferedDataSourceTest::ReadCallback,
                                   base::Unretained(this)));
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   // Accessors for private variables on |data_source_|.
@@ -333,7 +336,7 @@ TEST_F(BufferedDataSourceTest, Http_AbortWhileReading) {
   // Abort!!!
   EXPECT_CALL(*this, ReadCallback(media::DataSource::kReadError));
   data_source_->Abort();
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
 
   EXPECT_FALSE(data_source_->loading());
   Stop();
@@ -348,7 +351,7 @@ TEST_F(BufferedDataSourceTest, File_AbortWhileReading) {
   // Abort!!!
   EXPECT_CALL(*this, ReadCallback(media::DataSource::kReadError));
   data_source_->Abort();
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
 
   EXPECT_FALSE(data_source_->loading());
   Stop();
@@ -494,7 +497,23 @@ TEST_F(BufferedDataSourceTest, StopDoesNotUseMessageLoopForCallback) {
 
   // Verify that the callback was called inside the Stop() call.
   EXPECT_TRUE(stop_done_called);
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
+}
+
+TEST_F(BufferedDataSourceTest, StopDuringRead) {
+  InitializeWith206Response();
+
+  uint8 buffer[256];
+  data_source_->Read(0, arraysize(buffer), buffer, base::Bind(
+      &BufferedDataSourceTest::ReadCallback, base::Unretained(this)));
+
+  // The outstanding read should fail before the stop callback runs.
+  {
+    InSequence s;
+    EXPECT_CALL(*this, ReadCallback(media::DataSource::kReadError));
+    data_source_->Stop(media::NewExpectedClosure());
+  }
+  message_loop_.RunUntilIdle();
 }
 
 TEST_F(BufferedDataSourceTest, DefaultValues) {
@@ -517,7 +536,7 @@ TEST_F(BufferedDataSourceTest, SetBitrate) {
   InitializeWith206Response();
 
   data_source_->SetBitrate(1234);
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
   EXPECT_EQ(1234, data_source_bitrate());
   EXPECT_EQ(1234, loader_bitrate());
 
@@ -540,7 +559,7 @@ TEST_F(BufferedDataSourceTest, SetPlaybackRate) {
   InitializeWith206Response();
 
   data_source_->SetPlaybackRate(2.0f);
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
   EXPECT_EQ(2.0f, data_source_playback_rate());
   EXPECT_EQ(2.0f, loader_playback_rate());
 
@@ -571,6 +590,31 @@ TEST_F(BufferedDataSourceTest, Http_Read) {
   EXPECT_CALL(*this, ReadCallback(kDataSize));
   EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize - 1));
   ReceiveData(kDataSize / 2);
+
+  EXPECT_TRUE(data_source_->downloading());
+  Stop();
+}
+
+TEST_F(BufferedDataSourceTest, Http_Read_Seek) {
+  InitializeWith206Response();
+
+  // Read a bit from the beginning.
+  ReadAt(0);
+  EXPECT_CALL(*this, ReadCallback(kDataSize));
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize - 1));
+  ReceiveData(kDataSize);
+
+  // Simulate a seek by reading a bit beyond kDataSize.
+  ReadAt(kDataSize * 2);
+
+  // We receive data leading up to but not including our read.
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize * 2 - 1));
+  ReceiveData(kDataSize);
+
+  // We now receive the rest of the data for our read.
+  EXPECT_CALL(*this, ReadCallback(kDataSize));
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize * 3 - 1));
+  ReceiveData(kDataSize);
 
   EXPECT_TRUE(data_source_->downloading());
   Stop();

@@ -22,9 +22,10 @@ class NET_EXPORT_PRIVATE ReceiveAlgorithmInterface {
 
   virtual ~ReceiveAlgorithmInterface() {}
 
-  // Returns false if no CongestionInfo block is needed otherwise fills in
-  // congestion_info and return true.
-  virtual bool GenerateCongestionInfo(CongestionInfo* congestion_info) = 0;
+  // Returns false if no QuicCongestionFeedbackFrame block is needed.
+  // Otherwise fills in feedback and return true.
+  virtual bool GenerateCongestionFeedback(
+      QuicCongestionFeedbackFrame* feedback) = 0;
 
   // Should be called for each incoming packet.
   // bytes: is the packet size in bytes including IP headers.
@@ -32,7 +33,7 @@ class NET_EXPORT_PRIVATE ReceiveAlgorithmInterface {
   // timestamp: is the sent timestamp from the QUIC packet header.
   // revived: is set if the packet is lost and then recovered with help of FEC
   // (Forward Error Correction) packet(s).
-  virtual void RecordIncomingPacket(size_t bytes,
+  virtual void RecordIncomingPacket(QuicByteCount bytes,
                                     QuicPacketSequenceNumber sequence_number,
                                     QuicTime timestamp,
                                     bool revived) = 0;

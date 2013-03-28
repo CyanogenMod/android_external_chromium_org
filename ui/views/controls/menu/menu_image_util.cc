@@ -16,6 +16,7 @@
 #include "ui/gfx/image/image_skia_source.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
+#include "ui/native_theme/common_theme.h"
 
 namespace {
 
@@ -51,14 +52,14 @@ class RadioButtonImageSource : public gfx::CanvasImageSource {
                             static_cast<int>(kIndicatorSize * kGradientStop));
     gradient_points[2].iset(0, kIndicatorSize);
     SkColor gradient_colors[3] = { kGradient0, kGradient1, kGradient2 };
-    SkShader* shader = SkGradientShader::CreateLinear(
-        gradient_points, gradient_colors, NULL, arraysize(gradient_points),
-        SkShader::kClamp_TileMode, NULL);
+    skia::RefPtr<SkShader> shader = skia::AdoptRef(
+        SkGradientShader::CreateLinear(
+            gradient_points, gradient_colors, NULL, arraysize(gradient_points),
+            SkShader::kClamp_TileMode, NULL));
     SkPaint paint;
     paint.setStyle(SkPaint::kFill_Style);
     paint.setAntiAlias(true);
-    paint.setShader(shader);
-    shader->unref();
+    paint.setShader(shader.get());
     int radius = kIndicatorSize / 2;
     canvas->sk_canvas()->drawCircle(radius, radius, radius, paint);
     paint.setStrokeWidth(SkIntToScalar(0));
@@ -73,11 +74,12 @@ class RadioButtonImageSource : public gfx::CanvasImageSource {
       selected_gradient_points[1].iset(0, kSelectedIndicatorSize);
       SkColor selected_gradient_colors[2] = { kRadioButtonIndicatorGradient0,
                                               kRadioButtonIndicatorGradient1 };
-      shader = SkGradientShader::CreateLinear(
-          selected_gradient_points, selected_gradient_colors, NULL,
-          arraysize(selected_gradient_points), SkShader::kClamp_TileMode, NULL);
-      paint.setShader(shader);
-      shader->unref();
+      shader = skia::AdoptRef(
+          SkGradientShader::CreateLinear(
+              selected_gradient_points, selected_gradient_colors, NULL,
+              arraysize(selected_gradient_points),
+              SkShader::kClamp_TileMode, NULL));
+      paint.setShader(shader.get());
       paint.setStyle(SkPaint::kFill_Style);
       canvas->sk_canvas()->drawCircle(radius, radius,
                                       kSelectedIndicatorSize / 2, paint);
@@ -111,7 +113,8 @@ class SubmenuArrowImageSource : public gfx::CanvasImageSource {
 
   virtual void Draw(gfx::Canvas* canvas) OVERRIDE {
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-    const gfx::ImageSkia* r = rb.GetImageNamed(IDR_MENU_ARROW).ToImageSkia();
+    const gfx::ImageSkia* r =
+        rb.GetImageNamed(IDR_MENU_HIERARCHY_ARROW).ToImageSkia();
     canvas->Scale(-1, 1);
     canvas->DrawImageInt(*r, - r->width(), 0);
   }
@@ -119,7 +122,7 @@ class SubmenuArrowImageSource : public gfx::CanvasImageSource {
  private:
   static gfx::Size GetSubmenuArrowSize() {
     return ui::ResourceBundle::GetSharedInstance()
-        .GetImageNamed(IDR_MENU_ARROW).ToImageSkia()->size();
+        .GetImageNamed(IDR_MENU_HIERARCHY_ARROW).ToImageSkia()->size();
   }
 
   DISALLOW_COPY_AND_ASSIGN(SubmenuArrowImageSource);
@@ -138,7 +141,23 @@ gfx::ImageSkia* GetRtlSubmenuArrowImage() {
 
 namespace views {
 
+const gfx::ImageSkia* GetMenuCheckImage() {
+  if (ui::NativeTheme::IsNewMenuStyleEnabled()) {
+    return ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+        IDR_MENU_CHECK_CHECKED).ToImageSkia();
+  }
+
+  return ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+      IDR_MENU_CHECK).ToImageSkia();
+}
+
 const gfx::ImageSkia* GetRadioButtonImage(bool selected) {
+  if (ui::NativeTheme::IsNewMenuStyleEnabled()) {
+    int image_id = selected ? IDR_MENU_RADIO_SELECTED : IDR_MENU_RADIO_EMPTY;
+    return ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+        image_id).ToImageSkia();
+  }
+
   static const gfx::ImageSkia* kRadioOn = CreateRadioButtonImage(true);
   static const gfx::ImageSkia* kRadioOff = CreateRadioButtonImage(false);
 
@@ -147,8 +166,9 @@ const gfx::ImageSkia* GetRadioButtonImage(bool selected) {
 
 const gfx::ImageSkia* GetSubmenuArrowImage() {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  return base::i18n::IsRTL() ? GetRtlSubmenuArrowImage()
-                             : rb.GetImageNamed(IDR_MENU_ARROW).ToImageSkia();
+  return base::i18n::IsRTL()
+      ? GetRtlSubmenuArrowImage()
+      : rb.GetImageNamed(IDR_MENU_HIERARCHY_ARROW).ToImageSkia();
 }
 
 }  // namespace views

@@ -60,7 +60,7 @@ class ServiceIOThread : public base::Thread {
   virtual ~ServiceIOThread();
 
  protected:
-  virtual void CleanUp();
+  virtual void CleanUp() OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ServiceIOThread);
@@ -157,9 +157,10 @@ bool ServiceProcess::Initialize(MessageLoopForUI* message_loop,
 
   request_context_getter_ = new ServiceURLRequestContextGetter();
 
-  FilePath user_data_dir;
+  base::FilePath user_data_dir;
   PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
-  FilePath pref_path = user_data_dir.Append(chrome::kServiceStateFileName);
+  base::FilePath pref_path =
+      user_data_dir.Append(chrome::kServiceStateFileName);
   service_prefs_.reset(
       new ServiceProcessPrefs(
           pref_path,
@@ -224,7 +225,12 @@ bool ServiceProcess::Teardown() {
   file_thread_.reset();
 
   if (blocking_pool_.get()) {
-    blocking_pool_->Shutdown();
+    // The goal is to make it impossible for chrome to 'infinite loop' during
+    // shutdown, but to reasonably expect that all BLOCKING_SHUTDOWN tasks
+    // queued during shutdown get run. There's nothing particularly scientific
+    // about the number chosen.
+    const int kMaxNewShutdownBlockingTasks = 1000;
+    blocking_pool_->Shutdown(kMaxNewShutdownBlockingTasks);
     blocking_pool_ = NULL;
   }
 
@@ -270,9 +276,9 @@ bool ServiceProcess::HandleClientDisconnect() {
   return true;
 }
 
-CloudPrintProxy* ServiceProcess::GetCloudPrintProxy() {
+cloud_print::CloudPrintProxy* ServiceProcess::GetCloudPrintProxy() {
   if (!cloud_print_proxy_.get()) {
-    cloud_print_proxy_.reset(new CloudPrintProxy());
+    cloud_print_proxy_.reset(new cloud_print::CloudPrintProxy());
     cloud_print_proxy_->Initialize(service_prefs_.get(), this);
   }
   return cloud_print_proxy_.get();

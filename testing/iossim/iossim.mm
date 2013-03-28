@@ -86,6 +86,14 @@ NSString* const kSimulatorAppQuitErrorKey = @"The simulated application quit.";
 
 const char* gToolName = "iossim";
 
+// Exit status codes.
+const int kExitSuccess = EXIT_SUCCESS;
+const int kExitFailure = EXIT_FAILURE;
+const int kExitInvalidArguments = 2;
+const int kExitInitializationFailure = 3;
+const int kExitAppFailedToStart = 4;
+const int kExitAppCrashed = 5;
+
 void LogError(NSString* format, ...) {
   va_list list;
   va_start(list, format);
@@ -223,13 +231,13 @@ void LogWarning(NSString* format, ...) {
 
       // session:didEndWithError should not return (because it exits) so
       // the execution path should never get here.
-      exit(EXIT_FAILURE);
+      exit(kExitFailure);
     }
 
     LogError(@"Simulator failed to start: \"%@\" (%@:%ld)",
              [error localizedDescription],
              [error domain], static_cast<long int>([error code]));
-    exit(EXIT_FAILURE);
+    exit(kExitAppFailedToStart);
   }
 
   // Start a thread to write contents of outputPath to stdout.
@@ -268,7 +276,7 @@ void LogWarning(NSString* format, ...) {
       LogError(@"Simulator ended with error: \"%@\" (%@:%ld)",
                localizedDescription, [error domain],
                static_cast<long int>([error code]));
-      exit(EXIT_FAILURE);
+      exit(kExitFailure);
     }
   }
 
@@ -283,23 +291,27 @@ void LogWarning(NSString* format, ...) {
                 ASL_QUERY_OP_EQUAL);
   asl_set_query(query, ASL_KEY_TIME, "-1m", ASL_QUERY_OP_GREATER_EQUAL);
 
-  // Log any messages found.
+  // Log any messages found, and take note of any messages that may indicate the
+  // app crashed or did not exit cleanly.
   aslresponse response = asl_search(NULL, query);
-  BOOL entryFound = NO;
+  BOOL badEntryFound = NO;
   aslmsg entry;
   while ((entry = aslresponse_next(response)) != NULL) {
-    entryFound = YES;
-    LogWarning(@"Console message: %s", asl_get(entry, ASL_KEY_MSG));
+    const char* message = asl_get(entry, ASL_KEY_MSG);
+    LogWarning(@"Console message: %s", message);
+    // Some messages are harmless, so don't trigger a failure for them.
+    if (strstr(message, "The following job tried to hijack the service"))
+      continue;
+    badEntryFound = YES;
   }
 
-  // launchd only sends messages if the process crashed or exits with a
-  // non-zero status, so if the query returned any results iossim should exit
-  // with non-zero status.
-  if (entryFound) {
+  // If the query returned any nasty-looking results, iossim should exit with
+  // non-zero status.
+  if (badEntryFound) {
     LogError(@"Simulated app crashed or exited with non-zero status");
-    exit(EXIT_FAILURE);
+    exit(kExitAppCrashed);
   }
-  exit(EXIT_SUCCESS);
+  exit(kExitSuccess);
 }
 @end
 
@@ -360,7 +372,7 @@ Class FindClassByName(NSString* nameOfClass) {
   Class theClass = NSClassFromString(nameOfClass);
   if (!theClass) {
     LogError(@"Failed to find class %@ at runtime.", nameOfClass);
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
   return theClass;
 }
@@ -506,7 +518,7 @@ BOOL CaseInsensitivePrefixSearch(NSString* stringToSearch,
   NSStringCompareOptions options = (NSAnchoredSearch | NSCaseInsensitiveSearch);
   NSRange range = [stringToSearch rangeOfString:prefixToFind
                                         options:options];
-  return range.location != 0;
+  return range.location != NSNotFound;
 }
 
 // Prints the usage information to stderr.
@@ -576,7 +588,7 @@ int main(int argc, char* const argv[]) {
         if (range.location == NSNotFound) {
           LogError(@"Invalid key=value argument for -e.");
           PrintUsage();
-          exit(EXIT_FAILURE);
+          exit(kExitInvalidArguments);
         }
         NSString* key = [envLine substringToIndex:range.location];
         NSString* value = [envLine substringFromIndex:(range.location + 1)];
@@ -590,16 +602,16 @@ int main(int argc, char* const argv[]) {
         } else {
           LogError(@"Invalid startup timeout (%s).", optarg);
           PrintUsage();
-          exit(EXIT_FAILURE);
+          exit(kExitInvalidArguments);
         }
       }
         break;
       case 'h':
         PrintUsage();
-        exit(EXIT_SUCCESS);
+        exit(kExitSuccess);
       default:
         PrintUsage();
-        exit(EXIT_FAILURE);
+        exit(kExitInvalidArguments);
     }
   }
 
@@ -616,33 +628,33 @@ int main(int argc, char* const argv[]) {
   } else {
     LogError(@"Unable to parse command line arguments.");
     PrintUsage();
-    exit(EXIT_FAILURE);
+    exit(kExitInvalidArguments);
   }
 
   NSString* developerDir = FindDeveloperDir();
   if (!developerDir) {
     LogError(@"Unable to find developer directory.");
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
 
   NSBundle* simulatorFramework = LoadSimulatorFramework(developerDir);
   if (!simulatorFramework) {
     LogError(@"Failed to load the Simulator Framework.");
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
 
   // Make sure the app path provided is legit.
   DTiPhoneSimulatorApplicationSpecifier* appSpec = BuildAppSpec(appPath);
   if (!appSpec) {
     LogError(@"Invalid app path: %@", appPath);
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
 
   // Make sure the SDK path provided is legit (or nil).
   DTiPhoneSimulatorSystemRoot* systemRoot = BuildSystemRoot(sdkVersion);
   if (!systemRoot) {
     LogError(@"Invalid SDK version: %@", sdkVersion);
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
 
   // Get the paths for stdout and stderr so the simulated app's output will show
@@ -659,7 +671,7 @@ int main(int argc, char* const argv[]) {
   } else {
     LogError(@"Invalid device name: %@. Must begin with 'iPhone' or 'iPad'",
              deviceName);
-    exit(EXIT_FAILURE);
+    exit(kExitInvalidArguments);
   }
 
   // Set up the user home directory for the simulator
@@ -670,13 +682,13 @@ int main(int argc, char* const argv[]) {
     if (!simHomePath) {
       LogError(@"Unable to create unique directory for template %@",
                dirNameTemplate);
-      exit(EXIT_FAILURE);
+      exit(kExitInitializationFailure);
     }
   }
   if (!InitializeSimulatorUserHome(simHomePath, deviceName)) {
     LogError(@"Unable to initialize home directory for simulator: %@",
              simHomePath);
-    exit(EXIT_FAILURE);
+    exit(kExitInitializationFailure);
   }
 
   // Create the config and simulator session.
@@ -712,5 +724,5 @@ int main(int argc, char* const argv[]) {
   // because once the main run loop is started, only the delegate calling
   // exit() will end the program.
   [pool drain];
-  return EXIT_FAILURE;
+  return kExitFailure;
 }

@@ -10,18 +10,17 @@
 #include "base/metrics/histogram.h"
 #include "base/time.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/url_pattern.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
-#include "chrome/renderer/prerender/prerender_helper.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
+#include "extensions/common/url_pattern.h"
 #include "googleurl/src/gurl.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPerformance.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 using WebKit::WebDataSource;
@@ -245,14 +244,19 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     PLT_HISTOGRAM("PLT.RequestToFinish", finish_all_loads - request);
   }
   PLT_HISTOGRAM("PLT.CommitToFinish", finish_all_loads - commit);
+
+  scoped_ptr<TimeDelta> begin_to_first_paint;
+  scoped_ptr<TimeDelta> commit_to_first_paint;
   if (!first_paint.is_null()) {
     // 'first_paint' can be before 'begin' for an unknown reason.
     // See bug http://crbug.com/125273 for details.
     if (begin <= first_paint) {
-      PLT_HISTOGRAM("PLT.BeginToFirstPaint", first_paint - begin);
+      begin_to_first_paint.reset(new TimeDelta(first_paint - begin));
+      PLT_HISTOGRAM("PLT.BeginToFirstPaint", *begin_to_first_paint);
     }
     DCHECK(commit <= first_paint);
-    PLT_HISTOGRAM("PLT.CommitToFirstPaint", first_paint - commit);
+    commit_to_first_paint.reset(new TimeDelta(first_paint - commit));
+    PLT_HISTOGRAM("PLT.CommitToFirstPaint", *commit_to_first_paint);
   }
   if (!first_paint_after_load.is_null()) {
     // 'first_paint_after_load' can be before 'begin' for an unknown reason.
@@ -317,9 +321,16 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
       break;
   }
 
+  bool spdy_proxy_auth_origin_is_set = false;
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  spdy_proxy_auth_origin_is_set = true;
+#else
+  spdy_proxy_auth_origin_is_set = CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kSpdyProxyAuthOrigin);
+#endif
+
   if (document_state->was_fetched_via_proxy() &&
-      document_state->was_fetched_via_spdy() &&
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kSpdyProxyOrigin)) {
+      document_state->was_fetched_via_spdy() && spdy_proxy_auth_origin_is_set) {
     UMA_HISTOGRAM_ENUMERATION(
         "PLT.Abandoned_SpdyProxy", abandoned_page ? 1 : 0, 2);
     PLT_HISTOGRAM("PLT.BeginToFinishDoc_SpdyProxy", begin_to_finish_doc);
@@ -800,11 +811,6 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   // Log the PLT to the info log.
   LogPageLoadTime(document_state, frame->dataSource());
 
-  // Record prerendering histograms.
-  prerender::PrerenderHelper::RecordHistograms(render_view(),
-                                               finish_all_loads,
-                                               begin_to_finish_all_loads);
-
   // Record histograms for cache sensitivity analysis.
   static const bool cache_sensitivity_histogram =
       base::FieldTrialList::TrialExists("CacheSensitivityAnalysis");
@@ -815,6 +821,16 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     PLT_HISTOGRAM(base::FieldTrial::MakeName(
         "PLT.BeginToFinish_CacheSensitivity", "CacheSensitivityAnalysis"),
                   begin_to_finish_all_loads);
+    if (begin_to_first_paint.get()) {
+    PLT_HISTOGRAM(base::FieldTrial::MakeName(
+        "PLT.BeginToFirstPaint_CacheSensitivity", "CacheSensitivityAnalysis"),
+                  *begin_to_first_paint);
+    }
+    if (commit_to_first_paint.get()) {
+      PLT_HISTOGRAM(base::FieldTrial::MakeName(
+        "PLT.CommitToFirstPaint_CacheSensitivity", "CacheSensitivityAnalysis"),
+                    *commit_to_first_paint);
+    }
   }
 
   // Since there are currently no guarantees that renderer histograms will be

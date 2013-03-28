@@ -7,95 +7,105 @@
 #include "base/android/jni_android.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/logging.h"
-
-using base::android::AttachCurrentThread;
-using base::android::CheckException;
-using base::android::GetApplicationContext;
-using base::android::GetClass;
-using base::android::MethodID;
-using base::android::ScopedJavaLocalRef;
+#include "jni/OverScroller_jni.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFloatSize.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGestureCurveTarget.h"
+#include "ui/gfx/screen.h"
+#include "ui/gfx/vector2d.h"
 
 namespace webkit_glue {
 
 FlingAnimatorImpl::FlingAnimatorImpl()
     : is_active_(false) {
   // hold the global reference of the Java objects.
-  JNIEnv* env = AttachCurrentThread();
-  DCHECK(env);
-  ScopedJavaLocalRef<jclass> cls(GetClass(env, "android/widget/OverScroller"));
-  jmethodID constructor = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, cls.obj(), "<init>", "(Landroid/content/Context;)V");
-  ScopedJavaLocalRef<jobject> tmp(env, env->NewObject(cls.obj(), constructor,
-                                                      GetApplicationContext()));
-  DCHECK(tmp.obj());
-  java_scroller_.Reset(tmp);
-
-  fling_method_id_ = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, cls.obj(), "fling", "(IIIIIIII)V");
-  abort_method_id_ = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, cls.obj(), "abortAnimation", "()V");
-  compute_method_id_ = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, cls.obj(), "computeScrollOffset", "()Z");
-  getX_method_id_ = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, cls.obj(), "getCurrX", "()I");
-  getY_method_id_ = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, cls.obj(), "getCurrY", "()I");
+  JNIEnv* env = base::android::AttachCurrentThread();
+  java_scroller_.Reset(JNI_OverScroller::Java_OverScroller_ConstructorAWOS_ACC(
+      env,
+      base::android::GetApplicationContext()));
 }
 
 FlingAnimatorImpl::~FlingAnimatorImpl()
 {
 }
 
-void FlingAnimatorImpl::startFling(const WebKit::WebFloatPoint& velocity,
-                                   const WebKit::WebRect& /* range */)
+//static
+bool FlingAnimatorImpl::RegisterJni(JNIEnv* env) {
+  return JNI_OverScroller::RegisterNativesImpl(env);
+}
+
+void FlingAnimatorImpl::StartFling(const gfx::PointF& velocity)
 {
-  // Ignore "range" as it's always empty -- see http://webkit.org/b/96403
+  // No bounds on the fling. See http://webkit.org/b/96403
   // Instead, use the largest possible bounds for minX/maxX/minY/maxY. The
   // compositor will ignore any attempt to scroll beyond the end of the page.
 
-  DCHECK(velocity.x || velocity.y);
+  DCHECK(velocity.x() || velocity.y());
   if (is_active_)
-    cancelFling();
+    CancelFling();
 
   is_active_ = true;
 
-  JNIEnv* env = AttachCurrentThread();
+  JNIEnv* env = base::android::AttachCurrentThread();
 
-  env->CallVoidMethod(java_scroller_.obj(), fling_method_id_, 0, 0,
-                      static_cast<int>(velocity.x),
-                      static_cast<int>(velocity.y),
-                      INT_MIN, INT_MAX, INT_MIN, INT_MAX);
-  CheckException(env);
+  JNI_OverScroller::Java_OverScroller_flingV_I_I_I_I_I_I_I_I(
+      env, java_scroller_.obj(), 0, 0,
+      static_cast<int>(velocity.x()),
+      static_cast<int>(velocity.y()),
+      INT_MIN, INT_MAX, INT_MIN, INT_MAX);
 }
 
-void FlingAnimatorImpl::cancelFling()
+void FlingAnimatorImpl::CancelFling()
 {
   if (!is_active_)
     return;
 
   is_active_ = false;
-  JNIEnv* env = AttachCurrentThread();
-  env->CallVoidMethod(java_scroller_.obj(), abort_method_id_);
-  CheckException(env);
+  JNIEnv* env = base::android::AttachCurrentThread();
+  JNI_OverScroller::Java_OverScroller_abortAnimation(env, java_scroller_.obj());
 }
 
-bool FlingAnimatorImpl::updatePosition()
+bool FlingAnimatorImpl::UpdatePosition()
 {
-  JNIEnv* env = AttachCurrentThread();
-  bool result = env->CallBooleanMethod(java_scroller_.obj(),
-                                       compute_method_id_);
-  CheckException(env);
+  JNIEnv* env = base::android::AttachCurrentThread();
+  bool result = JNI_OverScroller::Java_OverScroller_computeScrollOffset(
+      env,
+      java_scroller_.obj());
   return is_active_ = result;
 }
 
-WebKit::WebPoint FlingAnimatorImpl::getCurrentPosition()
+gfx::Point FlingAnimatorImpl::GetCurrentPosition()
 {
-  JNIEnv* env = AttachCurrentThread();
-  WebKit::WebPoint position(
-      env->CallIntMethod(java_scroller_.obj(), getX_method_id_),
-      env->CallIntMethod(java_scroller_.obj(), getY_method_id_));
-  CheckException(env);
+  JNIEnv* env = base::android::AttachCurrentThread();
+  gfx::Point position(
+      JNI_OverScroller::Java_OverScroller_getCurrX(env, java_scroller_.obj()),
+      JNI_OverScroller::Java_OverScroller_getCurrY(env, java_scroller_.obj()));
   return position;
+}
+
+bool FlingAnimatorImpl::apply(double time,
+                              WebKit::WebGestureCurveTarget* target) {
+  if (!UpdatePosition())
+    return false;
+
+  gfx::Point current_position = GetCurrentPosition();
+  gfx::Vector2d diff(current_position - last_position_);
+  last_position_ = current_position;
+  float dpi_scale = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay()
+      .device_scale_factor();
+  WebKit::WebFloatSize scroll_amount(diff.x() / dpi_scale,
+                                     diff.y() / dpi_scale);
+  // scrollBy() could delete this curve if the animation is over, so don't touch
+  // any member variables after making that call.
+  target->scrollBy(scroll_amount);
+  return true;
+}
+
+FlingAnimatorImpl* FlingAnimatorImpl::CreateAndroidGestureCurve(
+    const WebKit::WebFloatPoint& velocity,
+    const WebKit::WebSize&) {
+  FlingAnimatorImpl* gesture_curve = new FlingAnimatorImpl();
+  gesture_curve->StartFling(velocity);
+  return gesture_curve;
 }
 
 } // namespace webkit_glue

@@ -8,13 +8,14 @@
 #include <vector>
 
 #include "base/json/json_reader.h"
+#include "base/prefs/pref_service.h"
 #include "base/values.h"
 #include "chrome/browser/content_settings/content_settings_rule.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -32,14 +33,18 @@ const char* kPrefToManageType[] = {
   prefs::kManagedDefaultPopupsSetting,
   prefs::kManagedDefaultGeolocationSetting,
   prefs::kManagedDefaultNotificationsSetting,
-  NULL,  // No policy for default value of content type intents
   NULL,  // No policy for default value of content type auto-select-certificate
   NULL,  // No policy for default value of fullscreen requests
   NULL,  // No policy for default value of mouse lock requests
   NULL,  // No policy for default value of mixed script blocking
   prefs::kManagedDefaultMediaStreamSetting,
+  NULL,  // No policy for default value of media stream mic
+  NULL,  // No policy for default value of media stream camera
   NULL,  // No policy for default value of protocol handlers
   NULL,  // No policy for default value of PPAPI broker
+#if defined(OS_WIN)
+  NULL,  // No policy for default value of "switch to desktop"
+#endif
 };
 COMPILE_ASSERT(arraysize(kPrefToManageType) == CONTENT_SETTINGS_NUM_TYPES,
                managed_content_settings_pref_names_array_size_incorrect);
@@ -112,61 +117,61 @@ const PrefsForManagedContentSettingsMapEntry
 namespace content_settings {
 
 // static
-void PolicyProvider::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterListPref(prefs::kManagedAutoSelectCertificateForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedCookiesAllowedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedCookiesBlockedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedCookiesSessionOnlyForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedImagesAllowedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedImagesBlockedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedJavaScriptAllowedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedJavaScriptBlockedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedPluginsAllowedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedPluginsBlockedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedPopupsAllowedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedPopupsBlockedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedNotificationsAllowedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kManagedNotificationsBlockedForUrls,
-                          PrefService::UNSYNCABLE_PREF);
+void PolicyProvider::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterListPref(prefs::kManagedAutoSelectCertificateForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedCookiesAllowedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedCookiesBlockedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedCookiesSessionOnlyForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedImagesAllowedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedImagesBlockedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedJavaScriptAllowedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedJavaScriptBlockedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedPluginsAllowedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedPluginsBlockedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedPopupsAllowedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedPopupsBlockedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedNotificationsAllowedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedNotificationsBlockedForUrls,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
   // Preferences for default content setting policies. If a policy is not set of
   // the corresponding preferences below is set to CONTENT_SETTING_DEFAULT.
-  prefs->RegisterIntegerPref(prefs::kManagedDefaultCookiesSetting,
-                             CONTENT_SETTING_DEFAULT,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterIntegerPref(prefs::kManagedDefaultImagesSetting,
-                             CONTENT_SETTING_DEFAULT,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterIntegerPref(prefs::kManagedDefaultJavaScriptSetting,
-                             CONTENT_SETTING_DEFAULT,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterIntegerPref(prefs::kManagedDefaultPluginsSetting,
-                             CONTENT_SETTING_DEFAULT,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterIntegerPref(prefs::kManagedDefaultPopupsSetting,
-                             CONTENT_SETTING_DEFAULT,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterIntegerPref(prefs::kManagedDefaultGeolocationSetting,
-                             CONTENT_SETTING_DEFAULT,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterIntegerPref(prefs::kManagedDefaultNotificationsSetting,
-                             CONTENT_SETTING_DEFAULT,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterIntegerPref(prefs::kManagedDefaultMediaStreamSetting,
-                             CONTENT_SETTING_DEFAULT,
-                             PrefService::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kManagedDefaultCookiesSetting,
+                                CONTENT_SETTING_DEFAULT,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kManagedDefaultImagesSetting,
+                                CONTENT_SETTING_DEFAULT,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kManagedDefaultJavaScriptSetting,
+                                CONTENT_SETTING_DEFAULT,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kManagedDefaultPluginsSetting,
+                                CONTENT_SETTING_DEFAULT,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kManagedDefaultPopupsSetting,
+                                CONTENT_SETTING_DEFAULT,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kManagedDefaultGeolocationSetting,
+                                CONTENT_SETTING_DEFAULT,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kManagedDefaultNotificationsSetting,
+                                CONTENT_SETTING_DEFAULT,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kManagedDefaultMediaStreamSetting,
+                                CONTENT_SETTING_DEFAULT,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 PolicyProvider::PolicyProvider(PrefService* prefs) : prefs_(prefs) {
@@ -174,20 +179,26 @@ PolicyProvider::PolicyProvider(PrefService* prefs) : prefs_(prefs) {
   ReadManagedContentSettings(false);
 
   pref_change_registrar_.Init(prefs_);
-  pref_change_registrar_.Add(prefs::kManagedAutoSelectCertificateForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedCookiesBlockedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedCookiesAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedCookiesSessionOnlyForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedImagesBlockedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedImagesAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedJavaScriptBlockedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedJavaScriptAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedPluginsBlockedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedPluginsAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedPopupsBlockedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedPopupsAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedNotificationsAllowedForUrls, this);
-  pref_change_registrar_.Add(prefs::kManagedNotificationsBlockedForUrls, this);
+  PrefChangeRegistrar::NamedChangeCallback callback =
+      base::Bind(&PolicyProvider::OnPreferenceChanged, base::Unretained(this));
+  pref_change_registrar_.Add(
+      prefs::kManagedAutoSelectCertificateForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedCookiesBlockedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedCookiesAllowedForUrls, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedCookiesSessionOnlyForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedImagesBlockedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedImagesAllowedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedJavaScriptBlockedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedJavaScriptAllowedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedPluginsBlockedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedPluginsAllowedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedPopupsBlockedForUrls, callback);
+  pref_change_registrar_.Add(prefs::kManagedPopupsAllowedForUrls, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedNotificationsAllowedForUrls, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedNotificationsBlockedForUrls, callback);
   // The following preferences are only used to indicate if a
   // default content setting is managed and to hold the managed default setting
   // value. If the value for any of the following perferences is set then the
@@ -195,14 +206,17 @@ PolicyProvider::PolicyProvider(PrefService* prefs) : prefs_(prefs) {
   // in parallel to the preference default content settings.  If a
   // default content settings type is managed any user defined excpetions
   // (patterns) for this type are ignored.
-  pref_change_registrar_.Add(prefs::kManagedDefaultCookiesSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultImagesSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultJavaScriptSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultPluginsSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultPopupsSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultGeolocationSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultNotificationsSetting, this);
-  pref_change_registrar_.Add(prefs::kManagedDefaultMediaStreamSetting, this);
+  pref_change_registrar_.Add(prefs::kManagedDefaultCookiesSetting, callback);
+  pref_change_registrar_.Add(prefs::kManagedDefaultImagesSetting, callback);
+  pref_change_registrar_.Add(prefs::kManagedDefaultJavaScriptSetting, callback);
+  pref_change_registrar_.Add(prefs::kManagedDefaultPluginsSetting, callback);
+  pref_change_registrar_.Add(prefs::kManagedDefaultPopupsSetting, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedDefaultGeolocationSetting, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedDefaultNotificationsSetting, callback);
+  pref_change_registrar_.Add(
+      prefs::kManagedDefaultMediaStreamSetting, callback);
 }
 
 PolicyProvider::~PolicyProvider() {
@@ -422,10 +436,8 @@ void PolicyProvider::ShutdownOnUIThread() {
   prefs_ = NULL;
 }
 
-void PolicyProvider::OnPreferenceChanged(PrefServiceBase* service,
-                                         const std::string& name) {
+void PolicyProvider::OnPreferenceChanged(const std::string& name) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(prefs_, service);
 
   if (name == prefs::kManagedDefaultCookiesSetting) {
     UpdateManagedDefaultSetting(CONTENT_SETTINGS_TYPE_COOKIES);

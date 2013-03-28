@@ -6,10 +6,10 @@
 
 #include "base/logging.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/win/WebInputEventFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/win/WebScreenInfoFactory.h"
 #include "ui/base/win/hwnd_util.h"
@@ -186,8 +186,7 @@ void WebWidgetHost::ScheduleComposite() {
 }
 
 void WebWidgetHost::SetCursor(HCURSOR cursor) {
-  SetClassLong(view_, GCL_HCURSOR,
-      static_cast<LONG>(reinterpret_cast<LONG_PTR>(cursor)));
+  SetClassLongPtr(view_, GCLP_HCURSOR, reinterpret_cast<LONG_PTR>(cursor));
   ::SetCursor(cursor);
 }
 
@@ -239,7 +238,7 @@ void WebWidgetHost::Paint() {
   if (!canvas_.get()) {
     ResetScrollRect();
     paint_rect_ = client_rect;
-    canvas_.reset(new skia::PlatformCanvas(
+    canvas_.reset(skia::CreatePlatformCanvas(
         paint_rect_.width(), paint_rect_.height(), true));
   }
 

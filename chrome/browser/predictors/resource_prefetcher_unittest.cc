@@ -26,8 +26,10 @@ class TestResourcePrefetcher : public ResourcePrefetcher {
   TestResourcePrefetcher(ResourcePrefetcher::Delegate* delegate,
                          const ResourcePrefetchPredictorConfig& config,
                          const NavigationID& navigation_id,
+                         PrefetchKeyType key_type,
                          scoped_ptr<RequestVector> requests)
-      : ResourcePrefetcher(delegate, config, navigation_id, requests.Pass()) { }
+      : ResourcePrefetcher(delegate, config, navigation_id,
+                           key_type, requests.Pass()) { }
 
   virtual ~TestResourcePrefetcher() { }
 
@@ -46,7 +48,7 @@ class TestResourcePrefetcher : public ResourcePrefetcher {
 class TestResourcePrefetcherDelegate : public ResourcePrefetcher::Delegate {
  public:
   explicit TestResourcePrefetcherDelegate(MessageLoop* loop)
-      : request_context_getter_(new TestURLRequestContextGetter(
+      : request_context_getter_(new net::TestURLRequestContextGetter(
           loop->message_loop_proxy())) { }
   ~TestResourcePrefetcherDelegate() { }
 
@@ -59,7 +61,7 @@ class TestResourcePrefetcherDelegate : public ResourcePrefetcher::Delegate {
                     ResourcePrefetcher::RequestVector* requests));
 
  private:
-  scoped_refptr<TestURLRequestContextGetter> request_context_getter_;
+  scoped_refptr<net::TestURLRequestContextGetter> request_context_getter_;
 
   DISALLOW_COPY_AND_ASSIGN(TestResourcePrefetcherDelegate);
 };
@@ -72,7 +74,7 @@ class TestResourcePrefetcherDelegate : public ResourcePrefetcher::Delegate {
 class ResourcePrefetcherTest : public testing::Test {
  public:
   ResourcePrefetcherTest();
-  ~ResourcePrefetcherTest();
+  virtual ~ResourcePrefetcherTest();
 
  protected:
   typedef ResourcePrefetcher::Request Request;
@@ -185,6 +187,7 @@ TEST_F(ResourcePrefetcherTest, TestPrefetcherFinishes) {
   prefetcher_.reset(new TestResourcePrefetcher(&prefetcher_delegate_,
                                                config_,
                                                navigation_id,
+                                               PREFETCH_KEY_TYPE_URL,
                                                requests.Pass()));
 
   // Starting the prefetcher maxes out the number of possible requests.
@@ -301,6 +304,7 @@ TEST_F(ResourcePrefetcherTest, TestPrefetcherStopped) {
   prefetcher_.reset(new TestResourcePrefetcher(&prefetcher_delegate_,
                                                config_,
                                                navigation_id,
+                                               PREFETCH_KEY_TYPE_HOST,
                                                requests.Pass()));
 
   // Starting the prefetcher maxes out the number of possible requests.

@@ -35,8 +35,11 @@ class MockPluginDelegate : public PluginDelegate {
   virtual scoped_ptr< ::ppapi::thunk::ResourceCreationAPI>
       CreateResourceCreationAPI(PluginInstance* instance);
   virtual SkBitmap* GetSadPluginBitmap();
-  virtual WebKit::WebPlugin* CreatePluginReplacement(const FilePath& file_path);
+  virtual WebKit::WebPlugin* CreatePluginReplacement(
+      const base::FilePath& file_path);
   virtual PlatformImage2D* CreateImage2D(int width, int height);
+  virtual PlatformGraphics2D* GetGraphics2D(PluginInstance* instance,
+                                            PP_Resource graphics_2d);
   virtual PlatformContext3D* CreateContext3D();
   virtual void ReparentContext(PlatformContext3D*);
   virtual PlatformVideoDecoder* CreateVideoDecoder(
@@ -61,7 +64,7 @@ class MockPluginDelegate : public PluginDelegate {
                                           int total,
                                           bool final_result);
   virtual void SelectedFindResultChanged(int identifier, int index);
-  virtual bool AsyncOpenFile(const FilePath& path,
+  virtual bool AsyncOpenFile(const base::FilePath& path,
                              int flags,
                              const AsyncOpenFileCallback& callback);
   virtual bool AsyncOpenFileSystemURL(
@@ -99,28 +102,8 @@ class MockPluginDelegate : public PluginDelegate {
                                    const AvailableSpaceCallback& callback);
   virtual void WillUpdateFile(const GURL& file_path);
   virtual void DidUpdateFile(const GURL& file_path, int64_t delta);
-  virtual base::PlatformFileError OpenFile(
-      const ::ppapi::PepperFilePath& path,
-      int flags,
-      base::PlatformFile* file);
-  virtual base::PlatformFileError RenameFile(
-      const ::ppapi::PepperFilePath& from_path,
-      const ::ppapi::PepperFilePath& to_path);
-  virtual base::PlatformFileError DeleteFileOrDir(
-      const ::ppapi::PepperFilePath& path,
-      bool recursive);
-  virtual base::PlatformFileError CreateDir(
-      const ::ppapi::PepperFilePath& path);
-  virtual base::PlatformFileError QueryFile(
-      const ::ppapi::PepperFilePath& path,
-      base::PlatformFileInfo* info);
-  virtual base::PlatformFileError GetDirContents(
-      const ::ppapi::PepperFilePath& path,
-      ::ppapi::DirContents* contents);
-  virtual base::PlatformFileError CreateTemporaryFile(
-      base::PlatformFile* file);
   virtual void SyncGetFileSystemPlatformPath(const GURL& url,
-                                             FilePath* platform_path);
+                                             base::FilePath* platform_path);
   virtual scoped_refptr<base::MessageLoopProxy>
       GetFileThreadMessageLoopProxy();
   virtual uint32 TCPSocketCreate();
@@ -141,35 +124,17 @@ class MockPluginDelegate : public PluginDelegate {
   virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read);
   virtual void TCPSocketWrite(uint32 socket_id, const std::string& buffer);
   virtual void TCPSocketDisconnect(uint32 socket_id);
+  virtual void TCPSocketSetBoolOption(uint32 socket_id,
+                                      PP_TCPSocketOption_Private name,
+                                      bool value);
   virtual void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket,
                                  uint32 socket_id);
-  virtual uint32 UDPSocketCreate();
-  virtual void UDPSocketSetBoolSocketFeature(PPB_UDPSocket_Private_Impl* socket,
-                                             uint32 socket_id,
-                                             int32_t name,
-                                             bool value);
-  virtual void UDPSocketBind(PPB_UDPSocket_Private_Impl* socket,
-                             uint32 socket_id,
-                             const PP_NetAddress_Private& addr);
-  virtual void UDPSocketRecvFrom(uint32 socket_id, int32_t num_bytes);
-  virtual void UDPSocketSendTo(uint32 socket_id,
-                               const std::string& buffer,
-                               const PP_NetAddress_Private& addr);
-  virtual void UDPSocketClose(uint32 socket_id);
   virtual void TCPServerSocketListen(PP_Resource socket_resource,
                                      const PP_NetAddress_Private& addr,
                                      int32_t backlog);
   virtual void TCPServerSocketAccept(uint32 server_socket_id);
   virtual void TCPServerSocketStopListening(PP_Resource socket_resource,
                                             uint32 socket_id);
-  virtual void RegisterHostResolver(
-      ::ppapi::PPB_HostResolver_Shared* host_resolver,
-      uint32 host_resolver_id);
-  virtual void HostResolverResolve(
-      uint32 host_resolver_id,
-      const ::ppapi::HostPortPair& host_port,
-      const PP_HostResolver_Private_Hint* hint);
-  virtual void UnregisterHostResolver(uint32 host_resolver_id);
   // Add/remove a network list observer.
   virtual bool AddNetworkListObserver(
       webkit_glue::NetworkListObserver* observer) OVERRIDE;
@@ -178,24 +143,17 @@ class MockPluginDelegate : public PluginDelegate {
   virtual bool X509CertificateParseDER(
       const std::vector<char>& der,
       ::ppapi::PPB_X509Certificate_Fields* fields);
-
-  virtual int32_t ShowContextMenu(
-      PluginInstance* instance,
-      webkit::ppapi::PPB_Flash_Menu_Impl* menu,
-      const gfx::Point& position);
   virtual FullscreenContainer* CreateFullscreenContainer(
       PluginInstance* instance);
   virtual gfx::Size GetScreenSize();
   virtual std::string GetDefaultEncoding();
   virtual void ZoomLimitsChanged(double minimum_factor,
                                  double maximum_factor);
-  virtual std::string ResolveProxy(const GURL& url);
   virtual void DidStartLoading();
   virtual void DidStopLoading();
   virtual void SetContentRestriction(int restrictions);
   virtual void SaveURLAs(const GURL& url);
-  virtual double GetLocalTimeZoneOffset(base::Time t);
-  virtual base::SharedMemory* CreateAnonymousSharedMemory(uint32_t size);
+  virtual base::SharedMemory* CreateAnonymousSharedMemory(size_t size);
   virtual ::ppapi::Preferences GetPreferences();
   virtual bool LockMouse(PluginInstance* instance);
   virtual void UnlockMouse(PluginInstance* instance);
@@ -209,10 +167,10 @@ class MockPluginDelegate : public PluginDelegate {
   virtual int EnumerateDevices(PP_DeviceType_Dev type,
                                const EnumerateDevicesCallback& callback);
   virtual void StopEnumerateDevices(int request_id);
-  virtual std::string GetDeviceID();
-  virtual PP_FlashLSORestrictions GetLocalDataRestrictions(
-      const GURL& document_url,
-      const GURL& plugin_url);
+  virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
+      base::PlatformFile handle,
+      base::ProcessId target_process_id,
+      bool should_close_source) const;
 };
 
 }  // namespace ppapi

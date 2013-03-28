@@ -2,135 +2,92 @@
   "functions": [
     {
       "name": "get",
-      "parent_name": null,
-      "callback": {
-        "simple_type": {
-          "simple_type": "function"
-        },
-        "last": true,
-        "name": "callback",
-        "parameters": [
-          {
-            "functions": [],
-            "parameters": [],
-            "returns": null,
-            "last": true,
-            "name": "results",
-            "parent_name": "callback",
-            "id": "property-callback-results",
-            "array": {
-              "functions": [],
-              "parameters": [],
-              "returns": null,
-              "name": "resultsElement",
-              "parent_name": "results",
-              "id": "property-results-resultsElement",
-              "link": {
-                "text": "TypeA",
-                "href": "#type-TypeA"
-              },
-              "optional": false,
-              "properties": [],
-              "description": null
-            },
-            "optional": false,
-            "properties": [],
-            "description": null
-          }
-        ],
-        "optional": false,
-        "description": null
-      },
-      "returns": null,
       "parameters": [
         {
-          "functions": [],
-          "parameters": [],
-          "returns": null,
-          "name": "a",
           "parent_name": "get",
-          "id": "property-get-a",
+          "functions": [],
           "choices": [
             {
-              "functions": [],
-              "parameters": [],
-              "returns": null,
-              "simple_type": "string",
-              "name": "a",
-              "parent_name": "a",
-              "id": "property-a-a",
-              "optional": true,
               "properties": [],
+              "name": "string",
+              "simple_type": "string",
+              "functions": [],
+              "events": [],
+              "id": "type-a-string",
               "description": null
             },
             {
-              "functions": [],
-              "parameters": [],
-              "returns": null,
+              "properties": [],
               "last": true,
-              "name": "a",
-              "parent_name": "a",
-              "id": "property-a-a",
+              "name": "array",
+              "functions": [],
+              "events": [],
               "array": {
-                "functions": [],
-                "parameters": [],
-                "returns": null,
-                "simple_type": "string",
-                "name": "aElement",
-                "parent_name": "a",
-                "id": "property-a-aElement",
-                "optional": false,
                 "properties": [],
+                "name": "arrayType",
+                "simple_type": "string",
+                "functions": [],
+                "events": [],
+                "id": "type-array-arrayType",
                 "description": null
               },
-              "optional": true,
-              "properties": [],
+              "id": "type-a-array",
               "description": null
             }
           ],
-          "optional": false,
+          "name": "a",
+          "parameters": [],
+          "id": "property-get-a",
+          "returns": null,
+          "optional": null,
           "properties": [],
           "description": "a param"
         },
         {
-          "simple_type": {
-            "simple_type": "function"
-          },
+          "parent_name": "get",
           "last": true,
           "name": "callback",
-          "parameters": [
-            {
-              "functions": [],
-              "parameters": [],
-              "returns": null,
-              "last": true,
-              "name": "results",
-              "parent_name": "callback",
-              "id": "property-callback-results",
-              "array": {
-                "functions": [],
-                "parameters": [],
-                "returns": null,
-                "name": "resultsElement",
-                "parent_name": "results",
-                "id": "property-results-resultsElement",
-                "link": {
-                  "text": "TypeA",
-                  "href": "#type-TypeA"
-                },
-                "optional": false,
-                "properties": [],
-                "description": null
-              },
-              "optional": false,
-              "properties": [],
-              "description": null
-            }
-          ],
+          "simple_type": "function",
           "optional": false,
+          "id": "property-get-callback",
           "description": null
         }
       ],
+      "callback": {
+        "parameters": [
+          {
+            "description": null,
+            "array": {
+              "properties": [],
+              "name": "resultsType",
+              "functions": [],
+              "events": [],
+              "link": {
+                "text": "TypeA",
+                "href": "tester.html#type-TypeA",
+                "name": "TypeA"
+              },
+              "id": "type-results-resultsType",
+              "description": null
+            },
+            "optional": null,
+            "id": "property-callback-results",
+            "parent_name": "callback",
+            "functions": [],
+            "last": true,
+            "name": "results",
+            "parameters": [],
+            "properties": [],
+            "returns": null
+          }
+        ],
+        "optional": false,
+        "name": "callback",
+        "simple_type": {
+          "simple_type": "function"
+        }
+      },
+      "returns": null,
       "id": "method-get",
       "description": "Gets stuff."
     }
@@ -141,27 +98,25 @@
     {
       "properties": [
         {
-          "functions": [],
-          "parameters": [],
-          "returns": null,
-          "name": "b",
           "parent_name": "TypeA",
+          "functions": [],
+          "name": "b",
+          "parameters": [],
           "id": "property-TypeA-b",
           "array": {
+            "properties": [],
+            "name": "bType",
             "functions": [],
-            "parameters": [],
-            "returns": null,
-            "name": "bElement",
-            "parent_name": "b",
-            "id": "property-b-bElement",
+            "events": [],
             "link": {
               "text": "TypeA",
-              "href": "#type-TypeA"
+              "href": "tester.html#type-TypeA",
+              "name": "TypeA"
             },
-            "optional": false,
-            "properties": [],
+            "id": "type-b-bType",
             "description": null
           },
+          "returns": null,
           "optional": true,
           "properties": [],
           "description": "List of TypeA."
@@ -177,37 +132,37 @@
   ],
   "events": [
     {
-      "parent_name": null,
       "callback": null,
       "name": "EventA",
       "parameters": [
         {
+          "parent_name": "EventA",
           "functions": [],
-          "parameters": [],
-          "returns": null,
           "simple_type": "string",
           "name": "id",
-          "parent_name": "EventA",
+          "parameters": [],
           "id": "property-EventA-id",
-          "optional": false,
+          "returns": null,
+          "optional": null,
           "properties": [],
           "description": null
         },
         {
-          "functions": [],
-          "parameters": [],
-          "returns": null,
-          "last": true,
-          "name": "bookmark",
-          "parent_name": "EventA",
-          "id": "property-EventA-bookmark",
+          "description": null,
           "link": {
             "text": "TypeA",
-            "href": "#type-TypeA"
+            "href": "tester.html#type-TypeA",
+            "name": "TypeA"
           },
-          "optional": false,
+          "optional": null,
+          "id": "property-EventA-bookmark",
+          "parent_name": "EventA",
+          "functions": [],
+          "last": true,
+          "name": "bookmark",
+          "parameters": [],
           "properties": [],
-          "description": null
+          "returns": null
         }
       ],
       "supportsRules": false,

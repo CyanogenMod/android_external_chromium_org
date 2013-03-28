@@ -9,17 +9,18 @@
 #include "base/at_exit.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/null_audio_sink.h"
+#include "media/base/decryptor.h"
 #include "media/base/filter_collection.h"
 #include "media/base/media.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
-#include "media/base/message_loop_factory.h"
 #include "media/base/pipeline.h"
 #include "media/base/video_frame.h"
 #include "media/filters/audio_renderer_impl.h"
@@ -44,13 +45,11 @@ static bool g_running = false;
 
 media::AudioManager* g_audio_manager = NULL;
 
-media::VideoRendererBase* g_video_renderer = NULL;
-
 scoped_refptr<media::FileDataSource> CreateFileDataSource(
-    const std::string& file) {
+    const std::string& file_path) {
   scoped_refptr<media::FileDataSource> file_data_source(
       new media::FileDataSource());
-  CHECK(file_data_source->Initialize(file));
+  CHECK(file_data_source->Initialize(base::FilePath(file_path)));
   return file_data_source;
 }
 
@@ -83,21 +82,23 @@ void SetOpaque(bool /*opaque*/) {
 }
 
 typedef base::Callback<void(media::VideoFrame*)> PaintCB;
-void Paint(MessageLoop* message_loop, const PaintCB& paint_cb) {
+void Paint(MessageLoop* message_loop, const PaintCB& paint_cb,
+           const scoped_refptr<media::VideoFrame>& video_frame) {
   if (message_loop != MessageLoop::current()) {
     message_loop->PostTask(FROM_HERE, base::Bind(
-        &Paint, message_loop, paint_cb));
+        &Paint, message_loop, paint_cb, video_frame));
     return;
   }
 
-  scoped_refptr<media::VideoFrame> video_frame;
-  g_video_renderer->GetCurrentFrame(&video_frame);
-  if (video_frame)
-    paint_cb.Run(video_frame);
-  g_video_renderer->PutCurrentFrame(video_frame);
+  paint_cb.Run(video_frame);
 }
 
 static void OnBufferingState(media::Pipeline::BufferingState buffering_state) {}
+
+static void NeedKey(const std::string& type, scoped_array<uint8> init_data,
+             int init_data_size) {
+  std::cout << "File is encrypted." << std::endl;
+}
 
 // TODO(vrk): Re-enabled audio. (crbug.com/112159)
 bool InitPipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
@@ -105,44 +106,40 @@ bool InitPipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
                   const PaintCB& paint_cb,
                   bool /* enable_audio */,
                   scoped_refptr<media::Pipeline>* pipeline,
-                  MessageLoop* paint_message_loop,
-                  media::MessageLoopFactory* message_loop_factory) {
-  // Load media libraries.
-  if (!media::InitializeMediaLibrary(FilePath())) {
-    std::cout << "Unable to initialize the media library." << std::endl;
-    return false;
-  }
-
+                  MessageLoop* paint_message_loop) {
   // Create our filter factories.
   scoped_ptr<media::FilterCollection> collection(
       new media::FilterCollection());
-  collection->SetDemuxer(new media::FFmpegDemuxer(message_loop, data_source));
-  collection->GetAudioDecoders()->push_back(new media::FFmpegAudioDecoder(
-      base::Bind(&media::MessageLoopFactory::GetMessageLoop,
-                 base::Unretained(message_loop_factory),
-                 media::MessageLoopFactory::kDecoder)));
+  media::FFmpegNeedKeyCB need_key_cb = base::Bind(&NeedKey);
+  collection->SetDemuxer(new media::FFmpegDemuxer(message_loop, data_source,
+                                                  need_key_cb));
   collection->GetVideoDecoders()->push_back(new media::FFmpegVideoDecoder(
-      base::Bind(&media::MessageLoopFactory::GetMessageLoop,
-                 base::Unretained(message_loop_factory),
-                 media::MessageLoopFactory::kDecoder),
-      NULL));
+      message_loop));
 
   // Create our video renderer and save a reference to it for painting.
-  g_video_renderer = new media::VideoRendererBase(
+  scoped_ptr<media::VideoRenderer> video_renderer(new media::VideoRendererBase(
+      message_loop,
+      media::SetDecryptorReadyCB(),
       base::Bind(&Paint, paint_message_loop, paint_cb),
       base::Bind(&SetOpaque),
-      true);
-  collection->AddVideoRenderer(g_video_renderer);
+      true));
+  collection->SetVideoRenderer(video_renderer.Pass());
 
-  collection->AddAudioRenderer(
-      new media::AudioRendererImpl(new media::NullAudioSink()));
+  ScopedVector<media::AudioDecoder> audio_decoders;
+  audio_decoders.push_back(new media::FFmpegAudioDecoder(message_loop));
+  scoped_ptr<media::AudioRenderer> audio_renderer(new media::AudioRendererImpl(
+      message_loop,
+      new media::NullAudioSink(message_loop),
+      audio_decoders.Pass(),
+      media::SetDecryptorReadyCB()));
+  collection->SetAudioRenderer(audio_renderer.Pass());
 
   // Create the pipeline and start it.
   *pipeline = new media::Pipeline(message_loop, new media::MediaLog());
   media::PipelineStatusNotification note;
   (*pipeline)->Start(
-      collection.Pass(), media::PipelineStatusCB(), media::PipelineStatusCB(),
-      note.Callback(), base::Bind(&OnBufferingState));
+      collection.Pass(), base::Closure(), media::PipelineStatusCB(),
+      note.Callback(), base::Bind(&OnBufferingState), base::Closure());
 
   // Wait until the pipeline is fully initialized.
   note.Wait();
@@ -227,6 +224,8 @@ void PeriodicalUpdate(
 
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
+  media::InitializeMediaLibraryForTesting();
+
   CommandLine::Init(argc, argv);
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   std::string filename = command_line->GetSwitchValueASCII("file");
@@ -264,13 +263,10 @@ int main(int argc, char** argv) {
     return 1;
 
   // Initialize the pipeline thread and the pipeline.
-  scoped_ptr<media::MessageLoopFactory> message_loop_factory(
-      new media::MessageLoopFactory());
-  scoped_ptr<base::Thread> thread;
-  scoped_refptr<media::Pipeline> pipeline;
   MessageLoop message_loop;
-  thread.reset(new base::Thread("PipelineThread"));
-  thread->Start();
+  base::Thread media_thread("MediaThread");
+  media_thread.Start();
+  scoped_refptr<media::Pipeline> pipeline;
 
   PaintCB paint_cb;
   if (command_line->HasSwitch("use-gl")) {
@@ -285,9 +281,9 @@ int main(int argc, char** argv) {
       new DataSourceLogger(CreateFileDataSource(filename),
                            command_line->HasSwitch("streaming")));
 
-  if (InitPipeline(thread->message_loop_proxy(), data_source,
+  if (InitPipeline(media_thread.message_loop_proxy(), data_source,
                    paint_cb, command_line->HasSwitch("audio"),
-                   &pipeline, &message_loop, message_loop_factory.get())) {
+                   &pipeline, &message_loop)) {
     // Main loop of the application.
     g_running = true;
 
@@ -299,9 +295,7 @@ int main(int argc, char** argv) {
   }
 
   // Cleanup tasks.
-  message_loop_factory.reset();
-
-  thread->Stop();
+  media_thread.Stop();
 
   // Release callback which releases video renderer. Do this before cleaning up
   // X below since the video renderer has some X cleanup duties as well.

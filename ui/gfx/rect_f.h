@@ -20,13 +20,27 @@ class InsetsF;
 class UI_EXPORT RectF
     : public RectBase<RectF, PointF, SizeF, InsetsF, Vector2dF, float> {
  public:
-  RectF();
-  RectF(float width, float height);
-  RectF(float x, float y, float width, float height);
-  explicit RectF(const gfx::SizeF& size);
-  RectF(const gfx::PointF& origin, const gfx::SizeF& size);
+  RectF()
+      : RectBase<RectF, PointF, SizeF, InsetsF, Vector2dF, float>
+            (SizeF()) {}
 
-  ~RectF();
+  RectF(float width, float height)
+      : RectBase<RectF, PointF, SizeF, InsetsF, Vector2dF, float>
+            (SizeF(width, height)) {}
+
+  RectF(float x, float y, float width, float height)
+      : RectBase<RectF, PointF, SizeF, InsetsF, Vector2dF, float>
+            (PointF(x, y), SizeF(width, height)) {}
+
+  explicit RectF(const SizeF& size)
+      : RectBase<RectF, PointF, SizeF, InsetsF, Vector2dF, float>
+            (size) {}
+
+  RectF(const PointF& origin, const SizeF& size)
+      : RectBase<RectF, PointF, SizeF, InsetsF, Vector2dF, float>
+            (origin, size) {}
+
+  ~RectF() {}
 
   // Scales the rectangle by |scale|.
   void Scale(float scale) {
@@ -35,10 +49,7 @@ class UI_EXPORT RectF
 
   void Scale(float x_scale, float y_scale) {
     set_origin(ScalePoint(origin(), x_scale, y_scale));
-
-    SizeF new_size = gfx::ScaleSize(size(), x_scale, y_scale);
-    new_size.ClampToNonNegative();
-    set_size(new_size);
+    set_size(ScaleSize(size(), x_scale, y_scale));
   }
 
   // This method reports if the RectF can be safely converted to an integer
@@ -58,8 +69,15 @@ inline bool operator!=(const RectF& lhs, const RectF& rhs) {
   return !(lhs == rhs);
 }
 
-UI_EXPORT RectF operator+(const RectF& lhs, const Vector2dF& rhs);
-UI_EXPORT RectF operator-(const RectF& lhs, const Vector2dF& rhs);
+inline RectF operator+(const RectF& lhs, const Vector2dF& rhs) {
+  return RectF(lhs.x() + rhs.x(), lhs.y() + rhs.y(),
+      lhs.width(), lhs.height());
+}
+
+inline RectF operator-(const RectF& lhs, const Vector2dF& rhs) {
+  return RectF(lhs.x() - rhs.x(), lhs.y() - rhs.y(),
+      lhs.width(), lhs.height());
+}
 
 inline RectF operator+(const Vector2dF& lhs, const RectF& rhs) {
   return rhs + lhs;
@@ -68,7 +86,11 @@ inline RectF operator+(const Vector2dF& lhs, const RectF& rhs) {
 UI_EXPORT RectF IntersectRects(const RectF& a, const RectF& b);
 UI_EXPORT RectF UnionRects(const RectF& a, const RectF& b);
 UI_EXPORT RectF SubtractRects(const RectF& a, const RectF& b);
-UI_EXPORT RectF ScaleRect(const RectF& r, float x_scale, float y_scale);
+
+inline RectF ScaleRect(const RectF& r, float x_scale, float y_scale) {
+  return RectF(r.x() * x_scale, r.y() * y_scale,
+       r.width() * x_scale, r.height() * y_scale);
+}
 
 inline RectF ScaleRect(const RectF& r, float scale) {
   return ScaleRect(r, scale, scale);

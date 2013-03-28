@@ -19,6 +19,10 @@
 #include "chrome/browser/chromeos/version_loader.h"
 #endif  // defined(OS_CHROMEOS)
 
+namespace content {
+class WebUIDataSource;
+}
+
 // WebUI message handler for the help page.
 class HelpHandler : public content::WebUIMessageHandler,
                     public content::NotificationObserver {
@@ -29,8 +33,8 @@ class HelpHandler : public content::WebUIMessageHandler,
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
 
-  // Fills |localized_strings| with string values for the UI.
-  void GetLocalizedValues(base::DictionaryValue* localized_strings);
+  // Fills |source| with string values for the UI.
+  void GetLocalizedValues(content::WebUIDataSource* source);
 
   // NotificationObserver implementation.
   virtual void Observe(int type, const content::NotificationSource& source,
@@ -70,10 +74,8 @@ class HelpHandler : public content::WebUIMessageHandler,
 
 #if defined(OS_CHROMEOS)
   // Callbacks from VersionLoader.
-  void OnOSVersion(chromeos::VersionLoader::Handle handle,
-                   const std::string& version);
-  void OnOSFirmware(chromeos::VersionLoader::Handle handle,
-                    const std::string& firmware);
+  void OnOSVersion(const std::string& version);
+  void OnOSFirmware(const std::string& firmware);
   void OnReleaseChannel(const std::string& channel);
 
   void ProcessLsbFileInfo(
@@ -94,7 +96,7 @@ class HelpHandler : public content::WebUIMessageHandler,
   chromeos::VersionLoader loader_;
 
   // Used to request the version.
-  CancelableRequestConsumer consumer_;
+  CancelableTaskTracker tracker_;
 #endif  // defined(OS_CHROMEOS)
 
   DISALLOW_COPY_AND_ASSIGN(HelpHandler);

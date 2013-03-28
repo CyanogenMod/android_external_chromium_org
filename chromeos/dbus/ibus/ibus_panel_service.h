@@ -19,21 +19,20 @@ class ObjectPath;
 }  // namespace dbus
 
 namespace chromeos {
+class IBusInputContextClient;
 
-// TODO(nona): Remove ibus namespace after complete libibus removal.
-namespace ibus {
 class IBusLookupTable;
 class IBusProperty;
 class IBusText;
 typedef ScopedVector<IBusProperty> IBusPropertyList;
 
-// A interface to handle the panel client method call.
-class CHROMEOS_EXPORT IBusPanelHandlerInterface {
+// A interface to handle the candidate window related method call.
+class CHROMEOS_EXPORT IBusPanelCandidateWindowHandlerInterface {
  public:
-  virtual ~IBusPanelHandlerInterface() {}
+  virtual ~IBusPanelCandidateWindowHandlerInterface() {}
 
   // Called when the IME updates the lookup table.
-  virtual void UpdateLookupTable(const ibus::IBusLookupTable& table,
+  virtual void UpdateLookupTable(const IBusLookupTable& table,
                                  bool visible) = 0;
 
   // Called when the IME hides the lookup table.
@@ -54,8 +53,27 @@ class CHROMEOS_EXPORT IBusPanelHandlerInterface {
   // Called when the IME hides the preedit text.
   virtual void HidePreeditText() = 0;
 
+  // Called when the application changes its caret location.
+  virtual void SetCursorLocation(const ibus::Rect& cursor_location,
+                                 const ibus::Rect& composition_head) = 0;
+
  protected:
-  IBusPanelHandlerInterface() {}
+  IBusPanelCandidateWindowHandlerInterface() {}
+};
+
+// A interface to handle the property related method call.
+class CHROMEOS_EXPORT IBusPanelPropertyHandlerInterface {
+ public:
+  virtual ~IBusPanelPropertyHandlerInterface() {}
+
+  // Called when a new property is registered.
+  virtual void RegisterProperties(const IBusPropertyList& properties) = 0;
+
+  // Called when current property is updated.
+  virtual void UpdateProperty(const IBusProperty& property) = 0;
+
+ protected:
+  IBusPanelPropertyHandlerInterface() {}
 };
 
 // A class to make the actual DBus method call handling for IBusPanel service.
@@ -66,8 +84,17 @@ class CHROMEOS_EXPORT IBusPanelService {
  public:
   virtual ~IBusPanelService();
 
-  // Initializes Panel service with |handler|, which must not be NULL.
-  virtual void Initialize(IBusPanelHandlerInterface* handler) = 0;
+  // Sets up candidate window panel service with |handler|. This function can be
+  // called multiple times and also can be passed |handler| as NULL. Caller must
+  // release |handler|.
+  virtual void SetUpCandidateWindowHandler(
+      IBusPanelCandidateWindowHandlerInterface* handler) = 0;
+
+  // Sets up property panel service with |handler|. This function can be called
+  // multiple times and also can be passed |handler| as NULL. Caller must
+  // release |handler|.
+  virtual void SetUpPropertyHandler(
+      IBusPanelPropertyHandlerInterface* handler) = 0;
 
   // Emits CandidateClicked signal.
   virtual void CandidateClicked(uint32 index,
@@ -88,9 +115,12 @@ class CHROMEOS_EXPORT IBusPanelService {
 
   // Factory function, creates a new instance and returns ownership.
   // For normal usage, access the singleton via DBusThreadManager::Get().
+  // IBusPanelService does not take an ownership of |input_context|, so caller
+  // should release it.
   static CHROMEOS_EXPORT IBusPanelService* Create(
       DBusClientImplementationType type,
-      dbus::Bus* bus);
+      dbus::Bus* bus,
+      IBusInputContextClient* input_context);
 
  protected:
   // Create() should be used instead.
@@ -100,7 +130,6 @@ class CHROMEOS_EXPORT IBusPanelService {
   DISALLOW_COPY_AND_ASSIGN(IBusPanelService);
 };
 
-}  // namespace ibus
 }  // namespace chromeos
 
 #endif  // CHROMEOS_DBUS_IBUS_IBUS_PANEL_SERVICE_H_

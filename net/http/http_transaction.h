@@ -8,6 +8,7 @@
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
+#include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
 
 namespace net {
@@ -17,6 +18,7 @@ class BoundNetLog;
 struct HttpRequestInfo;
 class HttpResponseInfo;
 class IOBuffer;
+struct LoadTimingInfo;
 class X509Certificate;
 
 // Represents a single HTTP transaction (i.e., a single request/response pair).
@@ -110,6 +112,14 @@ class NET_EXPORT_PRIVATE HttpTransaction {
   // Returns the upload progress in bytes.  If there is no upload data,
   // zero will be returned.  This does not include the request headers.
   virtual UploadProgress GetUploadProgress() const = 0;
+
+  // Populates all of load timing, except for request start times.
+  // |load_timing_info| must have all null times when called.  Returns false and
+  // does not modify |load_timing_info| if not currently connected.
+  virtual bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const = 0;
+
+  // Called when the priority of the parent job changes.
+  virtual void SetPriority(RequestPriority priority) = 0;
 };
 
 }  // namespace net

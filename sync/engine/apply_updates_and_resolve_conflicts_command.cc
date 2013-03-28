@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,8 @@
 #include "sync/engine/update_applicator.h"
 #include "sync/sessions/sync_session.h"
 #include "sync/syncable/directory.h"
-#include "sync/syncable/read_transaction.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_read_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 
 namespace syncer {
 
@@ -37,7 +37,7 @@ ApplyUpdatesAndResolveConflictsCommand::GetGroupsToChange(
   for (FullModelTypeSet::Iterator it =
            server_types_with_unapplied_updates.First(); it.Good(); it.Inc()) {
     groups_with_unapplied_updates.insert(
-        GetGroupForModelType(it.Get(), session.routing_info()));
+        GetGroupForModelType(it.Get(), session.context()->routing_info()));
   }
 
   return groups_with_unapplied_updates;
@@ -56,7 +56,7 @@ SyncerError ApplyUpdatesAndResolveConflictsCommand::ModelChangingExecuteImpl(
   FullModelTypeSet server_type_restriction;
   for (FullModelTypeSet::Iterator it =
            server_types_with_unapplied_updates.First(); it.Good(); it.Inc()) {
-    if (GetGroupForModelType(it.Get(), session->routing_info()) ==
+    if (GetGroupForModelType(it.Get(), session->context()->routing_info()) ==
         status->group_restriction()) {
       server_type_restriction.Put(it.Get());
     }
@@ -73,7 +73,7 @@ SyncerError ApplyUpdatesAndResolveConflictsCommand::ModelChangingExecuteImpl(
   // First set of update application passes.
   UpdateApplicator applicator(
       dir->GetCryptographer(&trans),
-      session->routing_info(),
+      session->context()->routing_info(),
       status->group_restriction());
   applicator.AttemptApplications(&trans, handles);
   status->increment_num_updates_applied_by(applicator.updates_applied());
@@ -97,7 +97,7 @@ SyncerError ApplyUpdatesAndResolveConflictsCommand::ModelChangingExecuteImpl(
 
     UpdateApplicator conflict_applicator(
         dir->GetCryptographer(&trans),
-        session->routing_info(),
+        session->context()->routing_info(),
         status->group_restriction());
     conflict_applicator.AttemptApplications(&trans, handles);
 
@@ -126,20 +126,6 @@ SyncerError ApplyUpdatesAndResolveConflictsCommand::ModelChangingExecuteImpl(
     // and, by the two previous assertions, that no conflicts have been
     // downgraded from encryption or hierarchy down to simple.
     DCHECK(conflict_applicator.simple_conflict_ids().empty());
-  }
-
-  // This might be the first time we've fully completed a sync cycle, for
-  // some subset of the currently synced datatypes.
-  if (status->ServerSaysNothingMoreToDownload()) {
-    for (ModelTypeSet::Iterator it =
-             status->updates_request_types().First(); it.Good(); it.Inc()) {
-      // Don't set the flag for control types.  We didn't process them here.
-      if (IsControlType(it.Get()))
-        continue;
-
-      // This gets persisted to the directory's backing store.
-      dir->set_initial_sync_ended_for_type(it.Get(), true);
-    }
   }
 
   return SYNCER_OK;

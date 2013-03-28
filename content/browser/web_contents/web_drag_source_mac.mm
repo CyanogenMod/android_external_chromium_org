@@ -7,7 +7,8 @@
 #include <sys/param.h>
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/mac/mac_util.h"
 #include "base/pickle.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
@@ -25,11 +26,11 @@
 #include "grit/ui_resources.h"
 #include "net/base/escape.h"
 #include "net/base/file_stream.h"
+#include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/dragdrop/cocoa_dnd_util.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/mac/nsimage_cache.h"
 #include "webkit/glue/webdropdata.h"
 
 using base::SysNSStringToUTF8;
@@ -50,19 +51,20 @@ NSString* const kNSURLTitlePboardType = @"public.url-name";
 // Converts a string16 into a FilePath. Use this method instead of
 // -[NSString fileSystemRepresentation] to prevent exceptions from being thrown.
 // See http://crbug.com/78782 for more info.
-FilePath FilePathFromFilename(const string16& filename) {
+base::FilePath FilePathFromFilename(const string16& filename) {
   NSString* str = SysUTF16ToNSString(filename);
   char buf[MAXPATHLEN];
   if (![str getFileSystemRepresentation:buf maxLength:sizeof(buf)])
-    return FilePath();
-  return FilePath(buf);
+    return base::FilePath();
+  return base::FilePath(buf);
 }
 
 // Returns a filename appropriate for the drop data
 // TODO(viettrungluu): Refactor to make it common across platforms,
 // and move it somewhere sensible.
-FilePath GetFileNameFromDragData(const WebDropData& drop_data) {
-  FilePath file_name(FilePathFromFilename(drop_data.file_description_filename));
+base::FilePath GetFileNameFromDragData(const WebDropData& drop_data) {
+  base::FilePath file_name(
+      FilePathFromFilename(drop_data.file_description_filename));
 
   // Images without ALT text will only have a file extension so we need to
   // synthesize one from the provided extension and URL.
@@ -126,8 +128,6 @@ void PromiseWriterHelper(const WebDropData& drop_data,
 
     dragOperationMask_ = dragOperationMask;
 
-    fileExtension_ = nil;
-
     [self fillPasteboard];
   }
 
@@ -186,29 +186,10 @@ void PromiseWriterHelper(const WebDropData& drop_data,
               forType:kNSURLTitlePboardType];
 
   // File contents.
-  } else if ([type isEqualToString:NSFileContentsPboardType] ||
-      (fileExtension_ &&
-       [type isEqualToString:NSCreateFileContentsPboardType(fileExtension_)])) {
-    // TODO(viettrungluu: find something which is known to accept
-    // NSFileContentsPboardType to check that this actually works!
-    scoped_nsobject<NSFileWrapper> file_wrapper(
-        [[NSFileWrapper alloc] initRegularFileWithContents:[NSData
-                dataWithBytes:dropData_->file_contents.data()
-                       length:dropData_->file_contents.length()]]);
-    [file_wrapper setPreferredFilename:SysUTF8ToNSString(
-            GetFileNameFromDragData(*dropData_).value())];
-    [pboard writeFileWrapper:file_wrapper];
-
-  // TIFF.
-  } else if ([type isEqualToString:NSTIFFPboardType]) {
-    // TODO(viettrungluu): This is a bit odd since we rely on Cocoa to render
-    // our image into a TIFF. This is also suboptimal since this is all done
-    // synchronously. I'm not sure there's much we can easily do about it.
-    scoped_nsobject<NSImage> image(
-        [[NSImage alloc] initWithData:[NSData
-                dataWithBytes:dropData_->file_contents.data()
-                       length:dropData_->file_contents.length()]]);
-    [pboard setData:[image TIFFRepresentation] forType:NSTIFFPboardType];
+  } else if ([type isEqualToString:base::mac::CFToNSCast(fileUTI_.get())]) {
+    [pboard setData:[NSData dataWithBytes:dropData_->file_contents.data()
+                                   length:dropData_->file_contents.length()]
+            forType:base::mac::CFToNSCast(fileUTI_.get())];
 
   // Plain text.
   } else if ([type isEqualToString:NSStringPboardType]) {
@@ -222,6 +203,12 @@ void PromiseWriterHelper(const WebDropData& drop_data,
     ui::WriteCustomDataToPickle(dropData_->custom_data, &pickle);
     [pboard setData:[NSData dataWithBytes:pickle.data() length:pickle.size()]
             forType:ui::kWebCustomDataPboardType];
+
+  // Dummy type.
+  } else if ([type isEqualToString:ui::kChromeDragDummyPboardType]) {
+    // The dummy type _was_ promised and someone decided to call the bluff.
+    [pboard setData:[NSData data]
+            forType:ui::kChromeDragDummyPboardType];
 
   // Oops!
   } else {
@@ -332,9 +319,9 @@ void PromiseWriterHelper(const WebDropData& drop_data,
     return nil;
   }
 
-  FilePath fileName = downloadFileName_.empty() ?
+  base::FilePath fileName = downloadFileName_.empty() ?
       GetFileNameFromDragData(*dropData_) : downloadFileName_;
-  FilePath filePath(SysNSStringToUTF8(path));
+  base::FilePath filePath(SysNSStringToUTF8(path));
   filePath = filePath.Append(fileName);
 
   // CreateFileStreamForDrop() will call file_util::PathExists(),
@@ -363,7 +350,7 @@ void PromiseWriterHelper(const WebDropData& drop_data,
                             FROM_HERE,
                             base::Bind(&PromiseWriterHelper,
                                        *dropData_,
-                                       base::Passed(fileStream.Pass())));
+                                       base::Passed(&fileStream)));
   }
 
   // Once we've created the file, we should return the file name.
@@ -382,17 +369,16 @@ void PromiseWriterHelper(const WebDropData& drop_data,
       declareTypes:[NSArray arrayWithObject:ui::kChromeDragDummyPboardType]
              owner:contentsView_];
 
-  // HTML.
-  if (!dropData_->html.string().empty())
-    [pasteboard_ addTypes:[NSArray arrayWithObject:NSHTMLPboardType]
-                    owner:contentsView_];
-
   // URL (and title).
   if (dropData_->url.is_valid())
     [pasteboard_ addTypes:[NSArray arrayWithObjects:NSURLPboardType,
                                                     kNSURLTitlePboardType, nil]
                     owner:contentsView_];
 
+  // MIME type.
+  std::string mimeType;
+
+  // File extension.
   std::string fileExtension;
 
   // File.
@@ -400,12 +386,13 @@ void PromiseWriterHelper(const WebDropData& drop_data,
       !dropData_->download_metadata.empty()) {
     if (dropData_->download_metadata.empty()) {
       fileExtension = GetFileNameFromDragData(*dropData_).Extension();
+      net::GetMimeTypeFromExtension(fileExtension, &mimeType);
     } else {
-      string16 mimeType;
-      FilePath fileName;
+      string16 mimeType16;
+      base::FilePath fileName;
       if (content::ParseDownloadMetadata(
               dropData_->download_metadata,
-              &mimeType,
+              &mimeType16,
               &fileName,
               &downloadURL_)) {
         // Generate the file name based on both mime type and proposed file
@@ -417,34 +404,48 @@ void PromiseWriterHelper(const WebDropData& drop_data,
                                   std::string(),
                                   std::string(),
                                   fileName.value(),
-                                  UTF16ToUTF8(mimeType),
+                                  UTF16ToUTF8(mimeType16),
                                   defaultName);
+        mimeType = UTF16ToUTF8(mimeType16);
         fileExtension = downloadFileName_.Extension();
       }
     }
 
-    if (!fileExtension.empty()) {
-      // Strip the leading dot.
-      fileExtension_ = SysUTF8ToNSString(fileExtension.substr(1));
-      // File contents (with and without specific type), and file (HFS) promise.
-      // TODO(viettrungluu): others?
-      NSArray* types = [NSArray arrayWithObjects:
-          NSFileContentsPboardType,
-          NSCreateFileContentsPboardType(fileExtension_),
-          NSFilesPromisePboardType,
-          nil];
+    if (!mimeType.empty()) {
+      base::mac::ScopedCFTypeRef<CFStringRef> mimeTypeCF(
+          base::SysUTF8ToCFStringRef(mimeType));
+      fileUTI_.reset(UTTypeCreatePreferredIdentifierForTag(
+          kUTTagClassMIMEType, mimeTypeCF.get(), NULL));
+
+      // File (HFS) promise.
+      // TODO(avi): Can we switch to kPasteboardTypeFilePromiseContent?
+      NSArray* types = @[NSFilesPromisePboardType];
       [pasteboard_ addTypes:types owner:contentsView_];
 
-      if (!dropData_->file_contents.empty()) {
-        [pasteboard_ addTypes:[NSArray arrayWithObject:NSTIFFPboardType]
-                        owner:contentsView_];
-      }
-
       // For the file promise, we need to specify the extension.
-      [pasteboard_ setPropertyList:[NSArray arrayWithObject:fileExtension_]
+      [pasteboard_ setPropertyList:@[SysUTF8ToNSString(fileExtension.substr(1))]
                            forType:NSFilesPromisePboardType];
+
+      if (!dropData_->file_contents.empty()) {
+        NSArray* types = @[base::mac::CFToNSCast(fileUTI_.get())];
+        [pasteboard_ addTypes:types owner:contentsView_];
+      }
     }
   }
+
+  // HTML.
+  bool hasHTMLData = !dropData_->html.string().empty();
+  // Mail.app and TextEdit accept drags that have both HTML and image flavors on
+  // them, but don't process them correctly <http://crbug.com/55879>. Therefore,
+  // omit the HTML flavor if there is an image flavor. (The only time that
+  // WebKit fills in the WebDropData::file_contents is with an image drop, but
+  // the MIME time is tested anyway for paranoia's sake.)
+  bool hasImageData = !dropData_->file_contents.empty() &&
+                      fileUTI_ &&
+                      UTTypeConformsTo(fileUTI_.get(), kUTTypeImage);
+  if (hasHTMLData && !hasImageData)
+    [pasteboard_ addTypes:[NSArray arrayWithObject:NSHTMLPboardType]
+                    owner:contentsView_];
 
   // Plain text.
   if (!dropData_->text.string().empty())

@@ -6,19 +6,23 @@
 #define CHROME_BROWSER_CHROMEOS_DRIVE_DRIVE_FILE_SYSTEM_UTIL_H_
 
 #include <string>
-#include <utility>
-#include <vector>
 
 #include "base/callback_forward.h"
-#include "base/memory/scoped_ptr.h"
-#include "chrome/browser/chromeos/drive/drive_resource_metadata.h"
+#include "base/platform_file.h"
+#include "chrome/browser/chromeos/drive/drive_file_error.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 #include "googleurl/src/gurl.h"
 
-class FilePath;
 class Profile;
 
+namespace base {
+class FilePath;
+}
+
 namespace drive {
+
+class PlatformFileInfoProto;
+
 namespace util {
 
 // Path constants.
@@ -34,14 +38,52 @@ const char kWildCard[] = "*";
 // which is not yet fetched.
 const char kSymLinkToDevNull[] = "/dev/null";
 
+// Special resource IDs introduced to manage pseudo directory tree locally.
+// These strings are supposed to be different from any resource ID used on the
+// server, and are never sent to the server. Practical resource IDs used so far
+// have only alphabets/numbers ([a-zA-Z0-9]) and ':'.
+// Hence '<' and '>' around the directory name have been added to make them
+// different from normal server-side IDs.
+const char kDriveGrandRootSpecialResourceId[] = "<drive>";
+
+const char kDriveOtherDirSpecialResourceId[] = "<other>";
+
+// The directory names used for the Google Drive file system tree. These names
+// are used in URLs for the file manager, hence user-visible.
+const base::FilePath::CharType kDriveGrandRootDirName[] =
+    FILE_PATH_LITERAL("drive");
+
+const base::FilePath::CharType kDriveMyDriveRootDirName[] =
+    FILE_PATH_LITERAL("root");
+
+const base::FilePath::CharType kDriveOtherDirName[] =
+    FILE_PATH_LITERAL("other");
+
+// TODO(haruki): Change this to "drive/root" in order to use separate namespace.
+// http://crbug.com/174233
+const base::FilePath::CharType kDriveMyDriveRootPath[] =
+    FILE_PATH_LITERAL("drive");
+
+const base::FilePath::CharType kDriveOtherDirPath[] =
+    FILE_PATH_LITERAL("drive/other");
+
+// Returns the path of the top root of the pseudo tree.
+const base::FilePath& GetDriveGrandRootPath();
+
+// Returns the path of the directory representing "My Drive".
+const base::FilePath& GetDriveMyDriveRootPath();
+
+// Returns the path of the directory representing entries other than "My Drive".
+const base::FilePath& GetDriveOtherDirPath();
+
 // Returns the Drive mount point path, which looks like "/special/drive".
-const FilePath& GetDriveMountPointPath();
+const base::FilePath& GetDriveMountPointPath();
 
 // Returns the Drive mount path as string.
 const std::string& GetDriveMountPointPathAsString();
 
 // Returns the 'local' root of remote file system as "/special".
-const FilePath& GetSpecialRemoteRootPath();
+const base::FilePath& GetSpecialRemoteRootPath();
 
 // Returns the gdata file resource url formatted as
 // chrome://drive/<resource_id>/<file_name>.
@@ -50,25 +92,25 @@ GURL GetFileResourceUrl(const std::string& resource_id,
 
 // Given a profile and a drive_cache_path, return the file resource url.
 void ModifyDriveFileResourceUrl(Profile* profile,
-                                const FilePath& drive_cache_path,
+                                const base::FilePath& drive_cache_path,
                                 GURL* url);
 
 // Returns true if the given path is under the Drive mount point.
-bool IsUnderDriveMountPoint(const FilePath& path);
+bool IsUnderDriveMountPoint(const base::FilePath& path);
+
+// Returns true if the given path is under the Drive mount point and needs to be
+// migrated to the new namespace. http://crbug.com/174233.
+bool NeedsNamespaceMigration(const base::FilePath& path);
+
+// Returns new FilePath with a namespace "root" inserted at the 3rd component.
+// e.g. "/special/drive/root/dir" for "/special/drive/dir".
+// NeedsNamespaceMigration(path) should be true (after the TODOs are resolved).
+base::FilePath ConvertToMyDriveNamespace(const base::FilePath& path);
 
 // Extracts the Drive path from the given path located under the Drive mount
 // point. Returns an empty path if |path| is not under the Drive mount point.
 // Examples: ExtractGDatPath("/special/drive/foo.txt") => "drive/foo.txt"
-FilePath ExtractDrivePath(const FilePath& path);
-
-// Inserts all possible cache paths for a given vector of paths on drive mount
-// point into the output vector |cache_paths|, and then invokes callback.
-// Caller must ensure that |cache_paths| lives until the callback is invoked.
-void InsertDriveCachePathsPermissions(
-    Profile* profile_,
-    scoped_ptr<std::vector<FilePath> > drive_paths,
-    std::vector<std::pair<FilePath, int> >* cache_paths,
-    const base::Closure& callback);
+base::FilePath ExtractDrivePath(const base::FilePath& path);
 
 // Escapes a file name in Drive cache.
 // Replaces percent ('%'), period ('.') and slash ('/') with %XX (hex)
@@ -95,13 +137,13 @@ std::string ExtractResourceIdFromUrl(const GURL& url);
 // Case 3: Mounted files have all three parts.
 // Example: path="/user/GCache/v1/persistent/pdf:a1b2.01234567.mounted" =>
 //          resource_id="pdf:a1b2", md5="01234567", extra_extension="mounted".
-void ParseCacheFilePath(const FilePath& path,
+void ParseCacheFilePath(const base::FilePath& path,
                         std::string* resource_id,
                         std::string* md5,
                         std::string* extra_extension);
 
-// Callback type for PrepareWritableFilePathAndRun.
-typedef base::Callback<void (DriveFileError, const FilePath& path)>
+// Callback type for PrepareWritablebase::FilePathAndRun.
+typedef base::Callback<void (DriveFileError, const base::FilePath& path)>
     OpenFileCallback;
 
 // Invokes |callback| on blocking thread pool, after converting virtual |path|
@@ -113,7 +155,7 @@ typedef base::Callback<void (DriveFileError, const FilePath& path)>
 //
 // Must be called from UI thread.
 void PrepareWritableFileAndRun(Profile* profile,
-                               const FilePath& path,
+                               const base::FilePath& path,
                                const OpenFileCallback& callback);
 
 // Ensures the existence of |directory| of '/special/drive/foo'.  This will
@@ -127,11 +169,31 @@ void PrepareWritableFileAndRun(Profile* profile,
 //
 // Must be called from UI/IO thread.
 void EnsureDirectoryExists(Profile* profile,
-                           const FilePath& directory,
+                           const base::FilePath& directory,
                            const FileOperationCallback& callback);
 
 // Converts GData error code into file platform error code.
 DriveFileError GDataToDriveFileError(google_apis::GDataErrorCode status);
+
+// Converts the proto representation to the platform file.
+void ConvertProtoToPlatformFileInfo(const PlatformFileInfoProto& proto,
+                                    base::PlatformFileInfo* file_info);
+
+// Converts the platform file info to the proto representation.
+void ConvertPlatformFileInfoToProto(const base::PlatformFileInfo& file_info,
+                                    PlatformFileInfoProto* proto);
+
+// Does nothing with |error|. Used with functions taking FileOperationCallback.
+void EmptyFileOperationCallback(DriveFileError error);
+
+// Helper to destroy objects which needs Destroy() to be called on destruction.
+struct DestroyHelper {
+  template<typename T>
+  void operator()(T* object) const {
+    if (object)
+      object->Destroy();
+  }
+};
 
 }  // namespace util
 }  // namespace drive

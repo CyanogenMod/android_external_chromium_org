@@ -4,15 +4,20 @@
 
 package org.chromium.content.browser.accessibility;
 
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Context;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Vibrator;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
+import android.util.Log;
 import android.view.View;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeInfo;
+
+import com.googlecode.eyesfree.braille.selfbraille.SelfBrailleClient;
+import com.googlecode.eyesfree.braille.selfbraille.WriteData;
 
 import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
@@ -33,6 +38,8 @@ import java.util.List;
  * Responsible for accessibility injection and management of a {@link ContentViewCore}.
  */
 public class AccessibilityInjector extends WebContentsObserverAndroid {
+    private static final String TAG = AccessibilityInjector.class.getSimpleName();
+
     // The ContentView this injector is responsible for managing.
     protected ContentViewCore mContentViewCore;
 
@@ -48,6 +55,10 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
     protected boolean mScriptInjected;
 
     private final String mAccessibilityScreenReaderUrl;
+
+    // To support building against the JELLY_BEAN and not JELLY_BEAN_MR1 SDK we need to add this
+    // constant here.
+    private static final int FEEDBACK_BRAILLE = 0x00000020;
 
     // constants for determining script injection strategy
     private static final int ACCESSIBILITY_SCRIPT_INJECTION_UNDEFINED = -1;
@@ -126,7 +137,7 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
 
                 if (onDeviceScriptInjectionEnabled && js != null && mContentViewCore.isAlive()) {
                     addOrRemoveAccessibilityApisIfNecessary();
-                    mContentViewCore.evaluateJavaScript(js);
+                    mContentViewCore.evaluateJavaScript(js, null);
                     mInjectedScriptEnabled = true;
                     mScriptInjected = true;
                 }
@@ -160,9 +171,16 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
      * Checks whether or not touch to explore is enabled on the system.
      */
     public boolean accessibilityIsAvailable() {
+        // Need to make sure we actually have a service running that requires injecting
+        // this script.
+        List<AccessibilityServiceInfo> services =
+                getAccessibilityManager().getEnabledAccessibilityServiceList(
+                        FEEDBACK_BRAILLE | AccessibilityServiceInfo.FEEDBACK_SPOKEN);
+
         return getAccessibilityManager().isEnabled() &&
                 mContentViewCore.getContentSettings() != null &&
-                mContentViewCore.getContentSettings().getJavaScriptEnabled();
+                mContentViewCore.getContentSettings().getJavaScriptEnabled() &&
+                services.size() > 0;
     }
 
     /**
@@ -177,7 +195,7 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
         if (mContentViewCore.isAlive()) {
             String js = String.format(TOGGLE_CHROME_VOX_JAVASCRIPT, Boolean.toString(
                     mInjectedScriptEnabled));
-            mContentViewCore.evaluateJavaScript(js);
+            mContentViewCore.evaluateJavaScript(js, null);
 
             if (!mInjectedScriptEnabled) {
                 // Stop any TTS/Vibration right now.
@@ -253,15 +271,16 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
         if (context != null) {
             // Enabled, we should try to add if we have to.
             if (mTextToSpeech == null) {
-                mTextToSpeech = new TextToSpeechWrapper(context);
+                mTextToSpeech = new TextToSpeechWrapper(mContentViewCore.getContainerView(),
+                        context);
                 mContentViewCore.addJavascriptInterface(mTextToSpeech,
-                        ALIAS_ACCESSIBILITY_JS_INTERFACE, true);
+                        ALIAS_ACCESSIBILITY_JS_INTERFACE);
             }
 
             if (mVibrator == null) {
                 mVibrator = new VibratorWrapper(context);
                 mContentViewCore.addJavascriptInterface(mVibrator,
-                        ALIAS_ACCESSIBILITY_JS_INTERFACE_2, true);
+                        ALIAS_ACCESSIBILITY_JS_INTERFACE_2);
             }
         }
     }
@@ -367,9 +386,14 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
      */
     private static class TextToSpeechWrapper {
         private TextToSpeech mTextToSpeech;
+        private SelfBrailleClient mSelfBrailleClient;
+        private View mView;
 
-        public TextToSpeechWrapper(Context context) {
+        public TextToSpeechWrapper(View view, Context context) {
+            mView = view;
             mTextToSpeech = new TextToSpeech(context, null, null);
+            mSelfBrailleClient = new SelfBrailleClient(context, CommandLine.getInstance().hasSwitch(
+                    CommandLine.ACCESSIBILITY_DEBUG_BRAILLE_SERVICE));
         }
 
         @JavascriptInterface
@@ -390,9 +414,26 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
             return mTextToSpeech.stop();
         }
 
+        @JavascriptInterface
+        @SuppressWarnings("unused")
+        public void braille(String jsonString) {
+            try {
+                JSONObject jsonObj = new JSONObject(jsonString);
+
+                WriteData data = WriteData.forView(mView);
+                data.setText(jsonObj.getString("text"));
+                data.setSelectionStart(jsonObj.getInt("startIndex"));
+                data.setSelectionEnd(jsonObj.getInt("endIndex"));
+                mSelfBrailleClient.write(data);
+            } catch (JSONException ex) {
+                Log.w(TAG, "Error parsing JS JSON object", ex);
+            }
+        }
+
         @SuppressWarnings("unused")
         protected void shutdownInternal() {
             mTextToSpeech.shutdown();
+            mSelfBrailleClient.shutdown();
         }
     }
 }

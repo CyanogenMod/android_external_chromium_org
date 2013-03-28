@@ -27,9 +27,10 @@ class DatabaseTest : public ContentBrowserTest {
                                const std::string& script,
                                const std::string& result) {
     std::string data;
-    ASSERT_TRUE(ExecuteJavaScriptAndExtractString(
-        shell->web_contents()->GetRenderViewHost(), L"",
-        ASCIIToWide(script), &data));
+    ASSERT_TRUE(ExecuteScriptAndExtractString(
+        shell->web_contents(),
+        script,
+        &data));
     ASSERT_EQ(data, result);
   }
 
@@ -47,13 +48,14 @@ class DatabaseTest : public ContentBrowserTest {
 
   void UpdateRecord(Shell* shell, int index, const std::string& data) {
     RunScriptAndCheckResult(
-      shell, "updateRecord(" + base::IntToString(index) + ", '" + data + "')",
-      "done");
+        shell,
+        "updateRecord(" + base::IntToString(index) + ", '" + data + "')",
+        "done");
   }
 
   void DeleteRecord(Shell* shell, int index) {
     RunScriptAndCheckResult(
-      shell, "deleteRecord(" + base::IntToString(index) + ")", "done");
+        shell, "deleteRecord(" + base::IntToString(index) + ")", "done");
   }
 
   void CompareRecords(Shell* shell, const std::string& expected) {
@@ -62,9 +64,10 @@ class DatabaseTest : public ContentBrowserTest {
 
   bool HasTable(Shell* shell) {
     std::string data;
-    CHECK(ExecuteJavaScriptAndExtractString(
-        shell->web_contents()->GetRenderViewHost(), L"",
-        ASCIIToWide("getRecords()"), &data));
+    CHECK(ExecuteScriptAndExtractString(
+        shell->web_contents(),
+        "getRecords()",
+        &data));
     return data != "getRecords error: [object SQLError]";
   }
 };

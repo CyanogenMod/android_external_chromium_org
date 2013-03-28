@@ -13,12 +13,7 @@
 #include "base/values.h"
 #include "crypto/sha2.h"
 #include "net/base/crl_set.h"
-
-#if defined(USE_SYSTEM_ZLIB)
-#include <zlib.h>
-#else
 #include "third_party/zlib/zlib.h"
-#endif
 
 namespace net {
 
@@ -464,7 +459,7 @@ bool CRLSet::GetIsDeltaUpdate(const base::StringPiece& in_data,
 }
 
 std::string CRLSet::Serialize() const {
-  std::string header = StringPrintf(
+  std::string header = base::StringPrintf(
       "{"
       "\"Version\":0,"
       "\"ContentType\":\"CRLSet\","
@@ -486,7 +481,7 @@ std::string CRLSet::Serialize() const {
   }
   header += "]";
   if (not_after_ != 0)
-    header += StringPrintf(",\"NotAfter\":%" PRIu64, not_after_);
+    header += base::StringPrintf(",\"NotAfter\":%" PRIu64, not_after_);
   header += "}";
 
   size_t len = 2 /* header len */ + header.size();

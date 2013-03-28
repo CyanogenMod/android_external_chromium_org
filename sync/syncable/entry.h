@@ -1,13 +1,15 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SYNC_SYNCABLE_ENTRY_H_
 #define SYNC_SYNCABLE_ENTRY_H_
 
+#include "sync/base/sync_export.h"
 #include "sync/syncable/entry_kernel.h"
 
 namespace syncer {
+class Cryptographer;
 class ReadNode;
 
 namespace syncable {
@@ -40,7 +42,7 @@ enum GetByHandle {
   GET_BY_HANDLE
 };
 
-class Entry {
+class SYNC_EXPORT Entry {
  public:
   // After constructing, you must check good() to test whether the Get
   // succeeded.
@@ -103,6 +105,9 @@ class Entry {
   ModelType GetServerModelType() const;
   ModelType GetModelType() const;
 
+  Id GetPredecessorId() const;
+  Id GetSuccessorId() const;
+
   inline bool ExistsOnClientBecauseNameIsNonEmpty() const {
     DCHECK(kernel_);
     return !kernel_->ref(NON_UNIQUE_NAME).empty();
@@ -127,7 +132,7 @@ class Entry {
 
   // Dumps all entry info into a DictionaryValue and returns it.
   // Transfers ownership of the DictionaryValue to the caller.
-  base::DictionaryValue* ToValue() const;
+  base::DictionaryValue* ToValue(Cryptographer* cryptographer) const;
 
  protected:  // Don't allow creation on heap, except by sync API wrappers.
   void* operator new(size_t size) { return (::operator new)(size); }

@@ -4,11 +4,13 @@
 
 #include "chrome/browser/ui/webui/options/content_settings_handler.h"
 
+#include <map>
 #include <vector>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -18,18 +20,16 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/intents/web_intents_util.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_pattern.h"
-#include "chrome/common/extensions/permissions/api_permission.h"
 #include "chrome/common/extensions/extension_set.h"
+#include "chrome/common/extensions/permissions/api_permission.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_service.h"
@@ -40,7 +40,6 @@
 #include "content/public/common/content_switches.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
-#include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
@@ -52,10 +51,9 @@ using extensions::APIPermission;
 
 namespace {
 
-enum ExContentSettingsTypeEnum {
-  EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC =
-      CONTENT_SETTINGS_NUM_TYPES,
-  EX_CONTENT_SETTINGS_NUM_TYPES
+struct ContentSettingsTypeNameEntry {
+  ContentSettingsType type;
+  const char* name;
 };
 
 // Maps from a secondary pattern to a setting.
@@ -77,8 +75,36 @@ const char* kSource = "source";
 const char* kAppName = "appName";
 const char* kAppId = "appId";
 const char* kEmbeddingOrigin = "embeddingOrigin";
-const char* kDefaultProviderID = "default";
 const char* kPreferencesSource = "preference";
+const char* kVideoSetting = "video";
+
+const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
+  {CONTENT_SETTINGS_TYPE_COOKIES, "cookies"},
+  {CONTENT_SETTINGS_TYPE_IMAGES, "images"},
+  {CONTENT_SETTINGS_TYPE_JAVASCRIPT, "javascript"},
+  {CONTENT_SETTINGS_TYPE_PLUGINS, "plugins"},
+  {CONTENT_SETTINGS_TYPE_POPUPS, "popups"},
+  {CONTENT_SETTINGS_TYPE_GEOLOCATION, "location"},
+  {CONTENT_SETTINGS_TYPE_NOTIFICATIONS, "notifications"},
+  {CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE, "auto-select-certificate"},
+  {CONTENT_SETTINGS_TYPE_FULLSCREEN, "fullscreen"},
+  {CONTENT_SETTINGS_TYPE_MOUSELOCK, "mouselock"},
+  {CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS, "register-protocol-handler"},
+  {CONTENT_SETTINGS_TYPE_MEDIASTREAM, "media-stream"},
+  {CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, "media-stream-mic"},
+  {CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, "media-stream-camera"},
+  {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, "ppapi-broker"},
+};
+
+ContentSettingsType ContentSettingsTypeFromGroupName(const std::string& name) {
+  for (size_t i = 0; i < arraysize(kContentSettingsTypeGroupNames); ++i) {
+    if (name == kContentSettingsTypeGroupNames[i].name)
+      return kContentSettingsTypeGroupNames[i].type;
+  }
+
+  NOTREACHED() << name << " is not a recognized content settings type.";
+  return CONTENT_SETTINGS_TYPE_DEFAULT;
+}
 
 std::string ContentSettingToString(ContentSetting setting) {
   switch (setting) {
@@ -194,9 +220,9 @@ void AddExceptionsGrantedByHostedApps(
        extension != extensions->end(); ++extension) {
     if (!app_filter(**extension, profile)) continue;
 
-    URLPatternSet web_extent = (*extension)->web_extent();
+    extensions::URLPatternSet web_extent = (*extension)->web_extent();
     // Add patterns from web extent.
-    for (URLPatternSet::const_iterator pattern = web_extent.begin();
+    for (extensions::URLPatternSet::const_iterator pattern = web_extent.begin();
          pattern != web_extent.end(); ++pattern) {
       std::string url_pattern = pattern->GetAsString();
       AddExceptionForHostedApp(url_pattern, **extension, exceptions);
@@ -210,112 +236,25 @@ void AddExceptionsGrantedByHostedApps(
   }
 }
 
-ContentSetting FlashPermissionToContentSetting(
-    PP_Flash_BrowserOperations_Permission permission) {
-  switch (permission) {
-    case PP_FLASH_BROWSEROPERATIONS_PERMISSION_DEFAULT:
-      return CONTENT_SETTING_DEFAULT;
-    case PP_FLASH_BROWSEROPERATIONS_PERMISSION_ALLOW:
-      return CONTENT_SETTING_ALLOW;
-    case PP_FLASH_BROWSEROPERATIONS_PERMISSION_BLOCK:
-      return CONTENT_SETTING_BLOCK;
-    case PP_FLASH_BROWSEROPERATIONS_PERMISSION_ASK:
-      return CONTENT_SETTING_ASK;
-    default:
-      NOTREACHED();
-      return CONTENT_SETTING_DEFAULT;
-  }
-}
-
-PP_Flash_BrowserOperations_Permission FlashPermissionFromContentSetting(
-    ContentSetting setting) {
-  switch (setting) {
-    case CONTENT_SETTING_DEFAULT:
-      return PP_FLASH_BROWSEROPERATIONS_PERMISSION_DEFAULT;
-    case CONTENT_SETTING_ALLOW:
-      return PP_FLASH_BROWSEROPERATIONS_PERMISSION_ALLOW;
-    case CONTENT_SETTING_BLOCK:
-      return PP_FLASH_BROWSEROPERATIONS_PERMISSION_BLOCK;
-    case CONTENT_SETTING_ASK:
-      return PP_FLASH_BROWSEROPERATIONS_PERMISSION_ASK;
-    default:
-      NOTREACHED();
-      return PP_FLASH_BROWSEROPERATIONS_PERMISSION_DEFAULT;
-  }
-}
-
-std::string CanonicalizeHost(const std::string& host) {
-  url_canon::CanonHostInfo info;
-  return net::CanonicalizeHost(host, &info);
-}
-
-bool IsValidHost(const std::string& host) {
-  std::string canonicalized_host = CanonicalizeHost(host);
-  return !canonicalized_host.empty();
-}
-
 }  // namespace
 
 namespace options {
 
-class ContentSettingsHandler::ExContentSettingsType {
- public:
-  explicit ExContentSettingsType(int value) : value_(value) {
-    DCHECK(value_ < EX_CONTENT_SETTINGS_NUM_TYPES);
-  }
-  explicit ExContentSettingsType(ContentSettingsType type) : value_(type) {}
-  explicit ExContentSettingsType(ExContentSettingsTypeEnum type)
-      : value_(type) {}
-
-  bool IsExtraContentSettingsType() const {
-    return value_ >= CONTENT_SETTINGS_NUM_TYPES;
-  }
-
-  operator int() const { return value_; }
-
-  ContentSettingsType ToContentSettingsType() const {
-    DCHECK(value_ < CONTENT_SETTINGS_NUM_TYPES);
-    return static_cast<ContentSettingsType>(value_);
-  }
-
- private:
-  int value_;
-};
-
-ContentSettingsHandler::CachedPepperFlashSettings::CachedPepperFlashSettings()
-    : default_permission(PP_FLASH_BROWSEROPERATIONS_PERMISSION_BLOCK),
-      initialized(false),
-      last_refresh_request_id(0) {
+ContentSettingsHandler::MediaSettingsInfo::MediaSettingsInfo()
+    : flash_default_setting(CONTENT_SETTING_DEFAULT),
+      flash_settings_initialized(false),
+      last_flash_refresh_request_id(0),
+      show_flash_default_link(false),
+      show_flash_exceptions_link(false),
+      default_setting(CONTENT_SETTING_DEFAULT),
+      policy_disable_audio(false),
+      policy_disable_video(false),
+      default_setting_initialized(false),
+      exceptions_initialized(false) {
 }
 
-ContentSettingsHandler::CachedPepperFlashSettings::~CachedPepperFlashSettings()
-    {
+ContentSettingsHandler::MediaSettingsInfo::~MediaSettingsInfo() {
 }
-
-struct ContentSettingsHandler::ExContentSettingsTypeNameEntry {
-  int type;
-  const char* name;
-};
-
-const ContentSettingsHandler::ExContentSettingsTypeNameEntry
-    ContentSettingsHandler::kExContentSettingsTypeGroupNames[] = {
-  {CONTENT_SETTINGS_TYPE_COOKIES, "cookies"},
-  {CONTENT_SETTINGS_TYPE_IMAGES, "images"},
-  {CONTENT_SETTINGS_TYPE_JAVASCRIPT, "javascript"},
-  {CONTENT_SETTINGS_TYPE_PLUGINS, "plugins"},
-  {CONTENT_SETTINGS_TYPE_POPUPS, "popups"},
-  {CONTENT_SETTINGS_TYPE_GEOLOCATION, "location"},
-  {CONTENT_SETTINGS_TYPE_NOTIFICATIONS, "notifications"},
-  {CONTENT_SETTINGS_TYPE_INTENTS, "intents"},
-  {CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE, "auto-select-certificate"},
-  {CONTENT_SETTINGS_TYPE_FULLSCREEN, "fullscreen"},
-  {CONTENT_SETTINGS_TYPE_MOUSELOCK, "mouselock"},
-  {CONTENT_SETTINGS_TYPE_MIXEDSCRIPT, "mixed-script"},
-  {CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS, "register-protocol-handler"},
-  {EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC, "pepper-flash-cameramic"},
-  {CONTENT_SETTINGS_TYPE_MEDIASTREAM, "media-stream"},
-  {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, "ppapi-broker"},
-};
 
 ContentSettingsHandler::ContentSettingsHandler() {
 }
@@ -349,7 +288,6 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "cookies_clear_when_close", IDS_COOKIES_CLEAR_WHEN_CLOSE_CHKBOX },
     { "cookies_lso_clear_when_close", IDS_COOKIES_LSO_CLEAR_WHEN_CLOSE_CHKBOX },
     { "cookies_show_cookies", IDS_COOKIES_SHOW_COOKIES_BUTTON },
-    { "cookies_show_app_cookies", IDS_COOKIES_SHOW_APP_COOKIES_BUTTON },
     { "flash_storage_settings", IDS_FLASH_STORAGE_SETTINGS },
     { "flash_storage_url", IDS_FLASH_STORAGE_URL },
     // Image filter.
@@ -387,9 +325,6 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "notifications_allow", IDS_NOTIFICATIONS_ALLOW_RADIO },
     { "notifications_ask", IDS_NOTIFICATIONS_ASK_RADIO },
     { "notifications_block", IDS_NOTIFICATIONS_BLOCK_RADIO },
-    // Intents filter.
-    { "webIntentsTabLabel", IDS_WEB_INTENTS_TAB_LABEL },
-    { "allowWebIntents", IDS_ALLOW_WEB_INTENTS },
     // Fullscreen filter.
     { "fullscreen_tab_label", IDS_FULLSCREEN_TAB_LABEL },
     { "fullscreen_header", IDS_FULLSCREEN_HEADER },
@@ -399,12 +334,6 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "mouselock_allow", IDS_MOUSE_LOCK_ALLOW_RADIO },
     { "mouselock_ask", IDS_MOUSE_LOCK_ASK_RADIO },
     { "mouselock_block", IDS_MOUSE_LOCK_BLOCK_RADIO },
-    // Pepper Flash camera and microphone filter.
-    { "pepperFlashCameramicTabLabel", IDS_PEPPER_FLASH_CAMERAMIC_TAB_LABEL },
-    // The header has to be named as <content_type_name>_header.
-    { "pepper-flash-cameramic_header", IDS_PEPPER_FLASH_CAMERAMIC_HEADER },
-    { "pepperFlashCameramicAsk", IDS_PEPPER_FLASH_CAMERAMIC_ASK_RADIO },
-    { "pepperFlashCameramicBlock", IDS_PEPPER_FLASH_CAMERAMIC_BLOCK_RADIO },
 #if defined(OS_CHROMEOS)
     // Protected Content filter
     { "protectedContentTabLabel", IDS_PROTECTED_CONTENT_TAB_LABEL },
@@ -416,6 +345,21 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "media-stream_header", IDS_MEDIA_STREAM_HEADER },
     { "mediaStreamAsk", IDS_MEDIA_STREAM_ASK_RADIO },
     { "mediaStreamBlock", IDS_MEDIA_STREAM_BLOCK_RADIO },
+    { "mediaStreamAudioAsk", IDS_MEDIA_STREAM_ASK_AUDIO_ONLY_RADIO },
+    { "mediaStreamAudioBlock", IDS_MEDIA_STREAM_BLOCK_AUDIO_ONLY_RADIO },
+    { "mediaStreamVideoAsk", IDS_MEDIA_STREAM_ASK_VIDEO_ONLY_RADIO },
+    { "mediaStreamVideoBlock", IDS_MEDIA_STREAM_BLOCK_VIDEO_ONLY_RADIO },
+    { "mediaStreamBubbleAudio", IDS_MEDIA_STREAM_AUDIO_MANAGED },
+    { "mediaStreamBubbleVideo", IDS_MEDIA_STREAM_VIDEO_MANAGED },
+    { "mediaAudioExceptionHeader", IDS_MEDIA_AUDIO_EXCEPTION_HEADER },
+    { "mediaVideoExceptionHeader", IDS_MEDIA_VIDEO_EXCEPTION_HEADER },
+    { "mediaPepperFlashDefaultDivergedLabel",
+      IDS_MEDIA_PEPPER_FLASH_DEFAULT_DIVERGED_LABEL },
+    { "mediaPepperFlashExceptionsDivergedLabel",
+      IDS_MEDIA_PEPPER_FLASH_EXCEPTIONS_DIVERGED_LABEL },
+    { "mediaPepperFlashChangeLink", IDS_MEDIA_PEPPER_FLASH_CHANGE_LINK },
+    { "mediaPepperFlashGlobalPrivacyURL", IDS_FLASH_GLOBAL_PRIVACY_URL },
+    { "mediaPepperFlashWebsitePrivacyURL", IDS_FLASH_WEBSITE_PRIVACY_URL },
     // PPAPI broker filter.
     // TODO(bauerb): Use IDS_PPAPI_BROKER_HEADER.
     { "ppapi-broker_header", IDS_PPAPI_BROKER_TAB_LABEL },
@@ -424,6 +368,17 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "ppapi_broker_ask", IDS_PPAPI_BROKER_ASK_RADIO },
     { "ppapi_broker_block", IDS_PPAPI_BROKER_BLOCK_RADIO },
   };
+
+#if defined(ENABLE_SETTINGS_APP)
+  static OptionsStringResource app_resources[] = {
+    { "notifications_allow", IDS_SETTINGS_APP_NOTIFICATIONS_ALLOW_RADIO },
+    { "notifications_ask", IDS_SETTINGS_APP_NOTIFICATIONS_ASK_RADIO },
+    { "notifications_block", IDS_SETTINGS_APP_NOTIFICATIONS_BLOCK_RADIO },
+  };
+  DictionaryValue* app_values = NULL;
+  CHECK(localized_strings->GetDictionary(kSettingsAppKey, &app_values));
+  RegisterStrings(app_values, app_resources, arraysize(app_resources));
+#endif
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
   RegisterTitle(localized_strings, "contentSettingsPage",
@@ -449,17 +404,10 @@ void ContentSettingsHandler::GetLocalizedValues(
                 IDS_FULLSCREEN_TAB_LABEL);
   RegisterTitle(localized_strings, "mouselock",
                 IDS_MOUSE_LOCK_TAB_LABEL);
-  RegisterTitle(localized_strings, "pepper-flash-cameramic",
-                IDS_PEPPER_FLASH_CAMERAMIC_TAB_LABEL);
   RegisterTitle(localized_strings, "media-stream",
                 IDS_MEDIA_STREAM_TAB_LABEL);
   RegisterTitle(localized_strings, "ppapi-broker",
                 IDS_PPAPI_BROKER_TAB_LABEL);
-
-  Profile* profile = Profile::FromWebUI(web_ui());
-  localized_strings->SetBoolean(
-      "enable_web_intents",
-      web_intents::IsWebIntentsEnabledForProfile(profile));
 
   localized_strings->SetBoolean("newContentSettings",
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kContentSettings2));
@@ -486,18 +434,28 @@ void ContentSettingsHandler::InitializeHandler() {
 
   PrefService* prefs = profile->GetPrefs();
   pref_change_registrar_.Init(prefs);
-  pref_change_registrar_.Add(prefs::kGeolocationContentSettings, this);
-  pref_change_registrar_.Add(prefs::kPepperFlashSettingsEnabled, this);
+  pref_change_registrar_.Add(
+      prefs::kPepperFlashSettingsEnabled,
+      base::Bind(&ContentSettingsHandler::OnPepperFlashPrefChanged,
+                 base::Unretained(this)));
+  pref_change_registrar_.Add(
+      prefs::kAudioCaptureAllowed,
+      base::Bind(&ContentSettingsHandler::UpdateMediaSettingsView,
+                 base::Unretained(this)));
+  pref_change_registrar_.Add(
+      prefs::kVideoCaptureAllowed,
+      base::Bind(&ContentSettingsHandler::UpdateMediaSettingsView,
+                 base::Unretained(this)));
 
   flash_settings_manager_.reset(new PepperFlashSettingsManager(this, profile));
 }
 
 void ContentSettingsHandler::InitializePage() {
+  media_settings_ = MediaSettingsInfo();
+  RefreshFlashMediaSettings();
+
   UpdateHandlersEnabledRadios();
   UpdateAllExceptionsViewsFromModel();
-
-  flash_cameramic_settings_ = CachedPepperFlashSettings();
-  RefreshFlashSettingsCache(true);
 }
 
 void ContentSettingsHandler::Observe(
@@ -531,12 +489,10 @@ void ContentSettingsHandler::Observe(
           content::Details<const ContentSettingsDetails>(details).ptr();
 
       // TODO(estade): we pretend update_all() is always true.
-      if (settings_details->update_all_types()) {
+      if (settings_details->update_all_types())
         UpdateAllExceptionsViewsFromModel();
-      } else {
-        UpdateExceptionsViewFromModel(
-            ExContentSettingsType(settings_details->type()));
-      }
+      else
+        UpdateExceptionsViewFromModel(settings_details->type());
       break;
     }
 
@@ -555,69 +511,116 @@ void ContentSettingsHandler::Observe(
   }
 }
 
-void ContentSettingsHandler::OnPreferenceChanged(PrefServiceBase* service,
-                                                 const std::string& pref_name) {
-  if (pref_name == prefs::kGeolocationContentSettings)
-    UpdateGeolocationExceptionsView();
-  else if (pref_name == prefs::kPepperFlashSettingsEnabled)
-    RefreshFlashSettingsCache(false);
-}
-
 void ContentSettingsHandler::OnGetPermissionSettingsCompleted(
     uint32 request_id,
     bool success,
     PP_Flash_BrowserOperations_Permission default_permission,
     const ppapi::FlashSiteSettings& sites) {
-  if (success &&
-      request_id == flash_cameramic_settings_.last_refresh_request_id) {
-    flash_cameramic_settings_.default_permission = default_permission;
-    flash_cameramic_settings_.sites.clear();
-    for (ppapi::FlashSiteSettings::const_iterator iter = sites.begin();
-         iter != sites.end(); ++iter) {
-      if (IsValidHost(iter->site))
-        flash_cameramic_settings_.sites[iter->site] = iter->permission;
-    }
-    UpdateExceptionsViewFromModel(
-        ExContentSettingsType(EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC));
+  if (success && request_id == media_settings_.last_flash_refresh_request_id) {
+    media_settings_.flash_settings_initialized = true;
+    media_settings_.flash_default_setting =
+        PepperFlashContentSettingsUtils::FlashPermissionToContentSetting(
+            default_permission);
+    PepperFlashContentSettingsUtils::FlashSiteSettingsToMediaExceptions(
+        sites, &media_settings_.flash_exceptions);
+    PepperFlashContentSettingsUtils::SortMediaExceptions(
+        &media_settings_.flash_exceptions);
 
-    if (!flash_cameramic_settings_.initialized) {
-      web_ui()->CallJavascriptFunction(
-          "ContentSettings.enablePepperFlashCameraMicSettings");
-      flash_cameramic_settings_.initialized = true;
-    }
+    UpdateFlashMediaLinksVisibility();
   }
 }
 
 void ContentSettingsHandler::UpdateSettingDefaultFromModel(
-    const ExContentSettingsType& type) {
+    ContentSettingsType type) {
   DictionaryValue filter_settings;
   std::string provider_id;
+  filter_settings.SetString(ContentSettingsTypeToGroupName(type) + ".value",
+                            GetSettingDefaultFromModel(type, &provider_id));
   filter_settings.SetString(
-      ExContentSettingsTypeToGroupName(type) + ".value",
-      GetSettingDefaultFromModel(type, &provider_id));
-  filter_settings.SetString(
-      ExContentSettingsTypeToGroupName(type) + ".managedBy", provider_id);
+      ContentSettingsTypeToGroupName(type) + ".managedBy", provider_id);
 
   web_ui()->CallJavascriptFunction(
       "ContentSettings.setContentFilterSettingsValue", filter_settings);
 }
 
+void ContentSettingsHandler::UpdateMediaSettingsView() {
+  PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+  bool audio_disabled = !prefs->GetBoolean(prefs::kAudioCaptureAllowed) &&
+      prefs->IsManagedPreference(prefs::kAudioCaptureAllowed);
+  bool video_disabled = !prefs->GetBoolean(prefs::kVideoCaptureAllowed) &&
+      prefs->IsManagedPreference(prefs::kVideoCaptureAllowed);
+
+  media_settings_.policy_disable_audio = audio_disabled;
+  media_settings_.policy_disable_video = video_disabled;
+  media_settings_.default_setting =
+      GetContentSettingsMap()->GetDefaultContentSetting(
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM, NULL);
+  media_settings_.default_setting_initialized = true;
+  UpdateFlashMediaLinksVisibility();
+
+  DictionaryValue media_ui_settings;
+  media_ui_settings.SetBoolean("cameraDisabled", video_disabled);
+  media_ui_settings.SetBoolean("micDisabled", audio_disabled);
+
+  // In case only video is enabled change the text appropriately.
+  if (audio_disabled && !video_disabled) {
+    media_ui_settings.SetString("askText", "mediaStreamVideoAsk");
+    media_ui_settings.SetString("blockText", "mediaStreamVideoBlock");
+    media_ui_settings.SetBoolean("showBubble", true);
+    media_ui_settings.SetString("bubbleText", "mediaStreamBubbleAudio");
+
+    web_ui()->CallJavascriptFunction("ContentSettings.updateMediaUI",
+                                     media_ui_settings);
+    return;
+  }
+
+  // In case only audio is enabled change the text appropriately.
+  if (video_disabled && !audio_disabled) {
+    DictionaryValue media_ui_settings;
+    media_ui_settings.SetString("askText", "mediaStreamAudioAsk");
+    media_ui_settings.SetString("blockText", "mediaStreamAudioBlock");
+    media_ui_settings.SetBoolean("showBubble", true);
+    media_ui_settings.SetString("bubbleText", "mediaStreamBubbleVideo");
+
+    web_ui()->CallJavascriptFunction("ContentSettings.updateMediaUI",
+                                     media_ui_settings);
+    return;
+  }
+
+  if (audio_disabled && video_disabled) {
+    // Fake policy controlled default because the user can not change anything
+    // until both audio and video are blocked.
+    DictionaryValue filter_settings;
+    std::string group_name =
+        ContentSettingsTypeToGroupName(CONTENT_SETTINGS_TYPE_MEDIASTREAM);
+    filter_settings.SetString(group_name + ".value",
+                              ContentSettingToString(CONTENT_SETTING_BLOCK));
+    filter_settings.SetString(group_name + ".managedBy", "policy");
+    web_ui()->CallJavascriptFunction(
+        "ContentSettings.setContentFilterSettingsValue", filter_settings);
+  }
+
+  media_ui_settings.SetString("askText", "mediaStreamAsk");
+  media_ui_settings.SetString("blockText", "mediaStreamBlock");
+  media_ui_settings.SetBoolean("showBubble", false);
+  media_ui_settings.SetString("bubbleText", "");
+
+  web_ui()->CallJavascriptFunction("ContentSettings.updateMediaUI",
+                                   media_ui_settings);
+}
+
 std::string ContentSettingsHandler::GetSettingDefaultFromModel(
-    const ExContentSettingsType& type, std::string* provider_id) {
+    ContentSettingsType type, std::string* provider_id) {
   Profile* profile = Profile::FromWebUI(web_ui());
   ContentSetting default_setting;
   if (type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
     default_setting =
         DesktopNotificationServiceFactory::GetForProfile(profile)->
             GetDefaultContentSetting(provider_id);
-  } else if (type == EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC) {
-    default_setting = FlashPermissionToContentSetting(
-        flash_cameramic_settings_.default_permission);
-    *provider_id = kDefaultProviderID;
   } else {
     default_setting =
         profile->GetHostContentSettingsMap()->
-            GetDefaultContentSetting(type.ToContentSettingsType(), provider_id);
+            GetDefaultContentSetting(type, provider_id);
   }
 
   return ContentSettingToString(default_setting);
@@ -634,28 +637,20 @@ void ContentSettingsHandler::UpdateHandlersEnabledRadios() {
 
 void ContentSettingsHandler::UpdateAllExceptionsViewsFromModel() {
   for (int type = CONTENT_SETTINGS_TYPE_DEFAULT + 1;
-       type < EX_CONTENT_SETTINGS_NUM_TYPES; ++type) {
-    // The content settings type CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE
-    // is supposed to be set by policy only. Hence there is no user facing UI
-    // for this content type and we skip it here.
-    if (type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE)
-      continue;
-    // The RPH settings are retrieved separately.
-    if (type == CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS)
-      continue;
-    UpdateExceptionsViewFromModel(ExContentSettingsType(type));
+       type < CONTENT_SETTINGS_NUM_TYPES; ++type) {
+    UpdateExceptionsViewFromModel(static_cast<ContentSettingsType>(type));
   }
 }
 
 void ContentSettingsHandler::UpdateAllOTRExceptionsViewsFromModel() {
   for (int type = CONTENT_SETTINGS_TYPE_DEFAULT + 1;
-       type < EX_CONTENT_SETTINGS_NUM_TYPES; ++type) {
-    UpdateOTRExceptionsViewFromModel(ExContentSettingsType(type));
+       type < CONTENT_SETTINGS_NUM_TYPES; ++type) {
+    UpdateOTRExceptionsViewFromModel(static_cast<ContentSettingsType>(type));
   }
 }
 
 void ContentSettingsHandler::UpdateExceptionsViewFromModel(
-    const ExContentSettingsType& type) {
+    ContentSettingsType type) {
   switch (type) {
     case CONTENT_SETTINGS_TYPE_GEOLOCATION:
       UpdateGeolocationExceptionsView();
@@ -663,40 +658,50 @@ void ContentSettingsHandler::UpdateExceptionsViewFromModel(
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
       UpdateNotificationExceptionsView();
       break;
-    case EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC:
-      UpdateFlashCameraMicExceptionsView();
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
+      UpdateMediaSettingsView();
       break;
-    case CONTENT_SETTINGS_TYPE_INTENTS:
-      // Don't update intents settings at this point.
-      // Turn on when enable_web_intents_tag is enabled.
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
+      UpdateMediaExceptionsView();
       break;
     case CONTENT_SETTINGS_TYPE_MIXEDSCRIPT:
       // We don't yet support exceptions for mixed scripting.
       break;
     case CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE:
+      // The content settings type CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE
+      // is supposed to be set by policy only. Hence there is no user facing UI
+      // for this content type and we skip it here.
       break;
     case CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS:
+      // The RPH settings are retrieved separately.
       break;
+#if defined(OS_WIN)
+    case CONTENT_SETTINGS_TYPE_METRO_SWITCH_TO_DESKTOP:
+      break;
+#endif
     default:
-      UpdateExceptionsViewFromHostContentSettingsMap(
-          type.ToContentSettingsType());
+      UpdateExceptionsViewFromHostContentSettingsMap(type);
       break;
   }
 }
 
 void ContentSettingsHandler::UpdateOTRExceptionsViewFromModel(
-    const ExContentSettingsType& type) {
+    ContentSettingsType type) {
   switch (type) {
     case CONTENT_SETTINGS_TYPE_GEOLOCATION:
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
-    case CONTENT_SETTINGS_TYPE_INTENTS:
     case CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE:
     case CONTENT_SETTINGS_TYPE_MIXEDSCRIPT:
-    case EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC:
+#if defined(OS_WIN)
+    case CONTENT_SETTINGS_TYPE_METRO_SWITCH_TO_DESKTOP:
+#endif
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
       break;
     default:
-      UpdateExceptionsViewFromOTRHostContentSettingsMap(
-          type.ToContentSettingsType());
+      UpdateExceptionsViewFromOTRHostContentSettingsMap(type);
       break;
   }
 }
@@ -767,8 +772,7 @@ void ContentSettingsHandler::UpdateGeolocationExceptionsView() {
 
   // This is mainly here to keep this function ideologically parallel to
   // UpdateExceptionsViewFromHostContentSettingsMap().
-  UpdateSettingDefaultFromModel(
-      ExContentSettingsType(CONTENT_SETTINGS_TYPE_GEOLOCATION));
+  UpdateSettingDefaultFromModel(CONTENT_SETTINGS_TYPE_GEOLOCATION);
 }
 
 void ContentSettingsHandler::UpdateNotificationExceptionsView() {
@@ -807,31 +811,97 @@ void ContentSettingsHandler::UpdateNotificationExceptionsView() {
 
   // This is mainly here to keep this function ideologically parallel to
   // UpdateExceptionsViewFromHostContentSettingsMap().
-  UpdateSettingDefaultFromModel(
-      ExContentSettingsType(CONTENT_SETTINGS_TYPE_NOTIFICATIONS));
+  UpdateSettingDefaultFromModel(CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
 }
 
-void ContentSettingsHandler::UpdateFlashCameraMicExceptionsView() {
-  ListValue exceptions;
-  for (CachedPepperFlashSettings::SiteMap::iterator iter =
-           flash_cameramic_settings_.sites.begin();
-       iter != flash_cameramic_settings_.sites.end(); ++iter) {
-    DictionaryValue* exception = new DictionaryValue();
-    exception->SetString(kOrigin, iter->first);
-    exception->SetString(
-        kSetting,
-        ContentSettingToString(FlashPermissionToContentSetting(iter->second)));
-    exception->SetString(kSource, kPreferencesSource);
-    exceptions.Append(exception);
+void ContentSettingsHandler::UpdateMediaExceptionsView() {
+  ListValue media_exceptions;
+  GetExceptionsFromHostContentSettingsMap(
+      GetContentSettingsMap(),
+      CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
+      &media_exceptions);
+
+  ListValue video_exceptions;
+  GetExceptionsFromHostContentSettingsMap(
+      GetContentSettingsMap(),
+      CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
+      &video_exceptions);
+
+  // Merge the |video_exceptions| list to |media_exceptions| list.
+  std::map<std::string, base::DictionaryValue*> entries_map;
+  for (ListValue::const_iterator media_entry(media_exceptions.begin());
+       media_entry != media_exceptions.end(); ++media_entry) {
+    DictionaryValue* media_dict = NULL;
+    if (!(*media_entry)->GetAsDictionary(&media_dict))
+      NOTREACHED();
+
+    media_dict->SetString(kVideoSetting,
+                          ContentSettingToString(CONTENT_SETTING_ASK));
+
+    std::string media_origin;
+    media_dict->GetString(kOrigin, &media_origin);
+    entries_map[media_origin] = media_dict;
   }
 
-  StringValue type_string(ExContentSettingsTypeToGroupName(
-      ExContentSettingsType(EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC)));
-  web_ui()->CallJavascriptFunction("ContentSettings.setExceptions",
-                                   type_string, exceptions);
+  for (ListValue::iterator video_entry = video_exceptions.begin();
+       video_entry != video_exceptions.end(); ++video_entry) {
+    DictionaryValue* video_dict = NULL;
+    if (!(*video_entry)->GetAsDictionary(&video_dict))
+      NOTREACHED();
 
-  UpdateSettingDefaultFromModel(
-      ExContentSettingsType(EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC));
+    std::string video_origin;
+    std::string video_setting;
+    video_dict->GetString(kOrigin, &video_origin);
+    video_dict->GetString(kSetting, &video_setting);
+
+    std::map<std::string, base::DictionaryValue*>::iterator iter =
+        entries_map.find(video_origin);
+    if (iter == entries_map.end()) {
+      DictionaryValue* exception = new DictionaryValue();
+      exception->SetString(kOrigin, video_origin);
+      exception->SetString(kSetting,
+                           ContentSettingToString(CONTENT_SETTING_ASK));
+      exception->SetString(kVideoSetting, video_setting);
+      exception->SetString(kSource, kPreferencesSource);
+
+      // Append the new entry to the list and map.
+      media_exceptions.Append(exception);
+      entries_map[video_origin] = exception;
+    } else {
+      // Modify the existing entry.
+      iter->second->SetString(kVideoSetting, video_setting);
+    }
+  }
+
+  media_settings_.exceptions.clear();
+  for (ListValue::const_iterator media_entry = media_exceptions.begin();
+       media_entry != media_exceptions.end(); ++media_entry) {
+    DictionaryValue* media_dict = NULL;
+    bool result = (*media_entry)->GetAsDictionary(&media_dict);
+    DCHECK(result);
+
+    std::string origin;
+    std::string audio_setting;
+    std::string video_setting;
+    media_dict->GetString(kOrigin, &origin);
+    media_dict->GetString(kSetting, &audio_setting);
+    media_dict->GetString(kVideoSetting, &video_setting);
+    media_settings_.exceptions.push_back(MediaException(
+        ContentSettingsPattern::FromString(origin),
+        ContentSettingFromString(audio_setting),
+        ContentSettingFromString(video_setting)));
+  }
+  PepperFlashContentSettingsUtils::SortMediaExceptions(
+      &media_settings_.exceptions);
+  media_settings_.exceptions_initialized = true;
+  UpdateFlashMediaLinksVisibility();
+
+  StringValue type_string(
+       ContentSettingsTypeToGroupName(CONTENT_SETTINGS_TYPE_MEDIASTREAM));
+  web_ui()->CallJavascriptFunction("ContentSettings.setExceptions",
+                                   type_string, media_exceptions);
+
+  UpdateSettingDefaultFromModel(CONTENT_SETTINGS_TYPE_MEDIASTREAM);
 }
 
 void ContentSettingsHandler::UpdateExceptionsViewFromHostContentSettingsMap(
@@ -852,7 +922,7 @@ void ContentSettingsHandler::UpdateExceptionsViewFromHostContentSettingsMap(
 
   // The default may also have changed (we won't get a separate notification).
   // If it hasn't changed, this call will be harmless.
-  UpdateSettingDefaultFromModel(ExContentSettingsType(type));
+  UpdateSettingDefaultFromModel(type);
 }
 
 void ContentSettingsHandler::UpdateExceptionsViewFromOTRHostContentSettingsMap(
@@ -935,11 +1005,6 @@ void ContentSettingsHandler::GetExceptionsFromHostContentSettingsMap(
         continue;
 
       ContentSetting content_setting = j->second;
-      // Media Stream is using compound values for exceptions, which are
-      // granted as |CONTENT_SETTING_ALLOW|.
-      if (type == CONTENT_SETTINGS_TYPE_MEDIASTREAM)
-        content_setting = CONTENT_SETTING_ALLOW;
-
       this_provider_exceptions->push_back(GetExceptionForPage(
           primary_pattern,
           j->first,
@@ -972,38 +1037,38 @@ void ContentSettingsHandler::RemoveNotificationException(
       ClearSetting(ContentSettingsPattern::FromString(origin));
 }
 
-void ContentSettingsHandler::RemoveFlashCameraMicException(
+void ContentSettingsHandler::RemoveMediaException(
     const ListValue* args, size_t arg_index) {
   std::string mode;
   bool rv = args->GetString(arg_index++, &mode);
   DCHECK(rv);
-  DCHECK_EQ(mode, "normal");
 
   std::string pattern;
   rv = args->GetString(arg_index++, &pattern);
   DCHECK(rv);
 
-  CachedPepperFlashSettings::SiteMap::iterator iter =
-      flash_cameramic_settings_.sites.find(pattern);
-  if (iter != flash_cameramic_settings_.sites.end()) {
-    flash_cameramic_settings_.sites.erase(iter);
-    ppapi::FlashSiteSettings site_settings(
-        1,
-        ppapi::FlashSiteSetting(pattern,
-                                PP_FLASH_BROWSEROPERATIONS_PERMISSION_DEFAULT));
-    flash_settings_manager_->SetSitePermission(
-        PP_FLASH_BROWSEROPERATIONS_SETTINGTYPE_CAMERAMIC,
-        site_settings);
-  } else {
-    NOTREACHED();
+  HostContentSettingsMap* settings_map =
+      mode == "normal" ? GetContentSettingsMap() :
+                         GetOTRContentSettingsMap();
+  if (settings_map) {
+    settings_map->SetWebsiteSetting(
+        ContentSettingsPattern::FromString(pattern),
+        ContentSettingsPattern::Wildcard(),
+        CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
+        "",
+        NULL);
+    settings_map->SetWebsiteSetting(
+        ContentSettingsPattern::FromString(pattern),
+        ContentSettingsPattern::Wildcard(),
+        CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
+        "",
+        NULL);
   }
-
-  UpdateFlashCameraMicExceptionsView();
 }
 
 void ContentSettingsHandler::RemoveExceptionFromHostContentSettingsMap(
     const ListValue* args, size_t arg_index,
-    const ExContentSettingsType& type) {
+    ContentSettingsType type) {
   std::string mode;
   bool rv = args->GetString(arg_index++, &mode);
   DCHECK(rv);
@@ -1024,7 +1089,7 @@ void ContentSettingsHandler::RemoveExceptionFromHostContentSettingsMap(
         ContentSettingsPattern::FromString(pattern),
         secondary_pattern.empty() ? ContentSettingsPattern::Wildcard() :
             ContentSettingsPattern::FromString(secondary_pattern),
-        type.ToContentSettingsType(),
+        type,
         "",
         NULL);
   }
@@ -1068,7 +1133,7 @@ void ContentSettingsHandler::ApplyWhitelist(ContentSettingsType content_type,
         ContentSettingsPattern::Wildcard(),
         CONTENT_SETTINGS_TYPE_PLUGINS,
         "google-talk",
-        Value::CreateIntegerValue(CONTENT_SETTING_ALLOW));
+        new base::FundamentalValue(CONTENT_SETTING_ALLOW));
   }
   prefs->SetInteger(prefs::kContentSettingsDefaultWhitelistVersion,
                     kDefaultWhitelistVersion);
@@ -1084,8 +1149,7 @@ void ContentSettingsHandler::SetContentFilter(const ListValue* args) {
   }
 
   ContentSetting default_setting = ContentSettingFromString(setting);
-  ExContentSettingsType content_type =
-      ExContentSettingsTypeFromGroupName(group);
+  ContentSettingsType content_type = ContentSettingsTypeFromGroupName(group);
   Profile* profile = Profile::FromWebUI(web_ui());
 
 #if defined(OS_CHROMEOS)
@@ -1098,18 +1162,10 @@ void ContentSettingsHandler::SetContentFilter(const ListValue* args) {
   if (content_type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
     DesktopNotificationServiceFactory::GetForProfile(profile)->
         SetDefaultContentSetting(default_setting);
-  } else if (content_type == EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC) {
-    flash_cameramic_settings_.default_permission =
-        FlashPermissionFromContentSetting(default_setting);
-    flash_settings_manager_->SetDefaultPermission(
-        PP_FLASH_BROWSEROPERATIONS_SETTINGTYPE_CAMERAMIC,
-        flash_cameramic_settings_.default_permission, false);
-    RefreshFlashSettingsCache(true);
   } else {
     HostContentSettingsMap* map = profile->GetHostContentSettingsMap();
-    ContentSettingsType converted_type = content_type.ToContentSettingsType();
-    ApplyWhitelist(converted_type, default_setting);
-    map->SetDefaultContentSetting(converted_type, default_setting);
+    ApplyWhitelist(content_type, default_setting);
+    map->SetDefaultContentSetting(content_type, default_setting);
   }
   switch (content_type) {
     case CONTENT_SETTINGS_TYPE_COOKIES:
@@ -1140,21 +1196,13 @@ void ContentSettingsHandler::SetContentFilter(const ListValue* args) {
       content::RecordAction(
           UserMetricsAction("Options_DefaultGeolocationSettingChanged"));
       break;
-    case CONTENT_SETTINGS_TYPE_INTENTS:
-      content::RecordAction(
-          UserMetricsAction("Options_DefaultHandlersSettingChanged"));
-      break;
     case CONTENT_SETTINGS_TYPE_MOUSELOCK:
       content::RecordAction(
           UserMetricsAction("Options_DefaultMouseLockSettingChanged"));
       break;
-    case EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC:
-      content::RecordAction(
-          UserMetricsAction("Options_DefaultFlashCameraMicSettingChanged"));
-      break;
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
       content::RecordAction(
-          UserMetricsAction("Options_DefaultMediaStreamSettingChanged"));
+          UserMetricsAction("Options_DefaultMediaStreamMicSettingChanged"));
       break;
     default:
       break;
@@ -1166,13 +1214,13 @@ void ContentSettingsHandler::RemoveException(const ListValue* args) {
   std::string type_string;
   CHECK(args->GetString(arg_i++, &type_string));
 
-  ExContentSettingsType type = ExContentSettingsTypeFromGroupName(type_string);
+  ContentSettingsType type = ContentSettingsTypeFromGroupName(type_string);
   switch (type) {
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
       RemoveNotificationException(args, arg_i);
       break;
-    case EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC:
-      RemoveFlashCameraMicException(args, arg_i);
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
+      RemoveMediaException(args, arg_i);
       break;
     default:
       RemoveExceptionFromHostContentSettingsMap(args, arg_i, type);
@@ -1191,27 +1239,13 @@ void ContentSettingsHandler::SetException(const ListValue* args) {
   std::string setting;
   CHECK(args->GetString(arg_i++, &setting));
 
-  ExContentSettingsType type = ExContentSettingsTypeFromGroupName(type_string);
+  ContentSettingsType type = ContentSettingsTypeFromGroupName(type_string);
   if (type == CONTENT_SETTINGS_TYPE_GEOLOCATION ||
       type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS ||
-      type == CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
+      type == CONTENT_SETTINGS_TYPE_MEDIASTREAM ||
+      type == CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC ||
+      type == CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA) {
     NOTREACHED();
-  } else if (type == EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC) {
-    DCHECK(IsValidHost(pattern));
-
-    if (flash_cameramic_settings_.sites.find(pattern) ==
-        flash_cameramic_settings_.sites.end()) {
-      pattern = CanonicalizeHost(pattern);
-    }
-    PP_Flash_BrowserOperations_Permission permission =
-        FlashPermissionFromContentSetting(ContentSettingFromString(setting));
-    flash_cameramic_settings_.sites[pattern] = permission;
-    ppapi::FlashSiteSettings
-        site_settings(1, ppapi::FlashSiteSetting(pattern, permission));
-    flash_settings_manager_->SetSitePermission(
-        PP_FLASH_BROWSEROPERATIONS_SETTINGTYPE_CAMERAMIC,
-        site_settings);
-    UpdateFlashCameraMicExceptionsView();
   } else {
     HostContentSettingsMap* settings_map =
         mode == "normal" ? GetContentSettingsMap() :
@@ -1223,7 +1257,7 @@ void ContentSettingsHandler::SetException(const ListValue* args) {
       return;
     settings_map->SetContentSetting(ContentSettingsPattern::FromString(pattern),
                                     ContentSettingsPattern::Wildcard(),
-                                    type.ToContentSettingsType(),
+                                    type,
                                     "",
                                     ContentSettingFromString(setting));
   }
@@ -1239,33 +1273,27 @@ void ContentSettingsHandler::CheckExceptionPatternValidity(
   std::string pattern_string;
   CHECK(args->GetString(arg_i++, &pattern_string));
 
-  ExContentSettingsType type = ExContentSettingsTypeFromGroupName(type_string);
-  bool is_valid = false;
-  if (type == EX_CONTENT_SETTINGS_TYPE_PEPPER_FLASH_CAMERAMIC) {
-    is_valid = IsValidHost(pattern_string);
-  } else {
-    ContentSettingsPattern pattern =
-        ContentSettingsPattern::FromString(pattern_string);
-    is_valid = pattern.IsValid();
-  }
-
-  scoped_ptr<Value> type_value(Value::CreateStringValue(type_string));
-  scoped_ptr<Value> mode_value(Value::CreateStringValue(mode_string));
-  scoped_ptr<Value> pattern_value(Value::CreateStringValue(pattern_string));
-  scoped_ptr<Value> valid_value(Value::CreateBooleanValue(is_valid));
+  ContentSettingsPattern pattern =
+      ContentSettingsPattern::FromString(pattern_string);
 
   web_ui()->CallJavascriptFunction(
       "ContentSettings.patternValidityCheckComplete",
-      *type_value.get(),
-      *mode_value.get(),
-      *pattern_value.get(),
-      *valid_value.get());
+      base::StringValue(type_string),
+      base::StringValue(mode_string),
+      base::StringValue(pattern_string),
+      base::FundamentalValue(pattern.IsValid()));
 }
 
 // static
 std::string ContentSettingsHandler::ContentSettingsTypeToGroupName(
     ContentSettingsType type) {
-  return ExContentSettingsTypeToGroupName(ExContentSettingsType(type));
+  for (size_t i = 0; i < arraysize(kContentSettingsTypeGroupNames); ++i) {
+    if (type == kContentSettingsTypeGroupNames[i].type)
+      return kContentSettingsTypeGroupNames[i].name;
+  }
+
+  NOTREACHED();
+  return std::string();
 }
 
 HostContentSettingsMap* ContentSettingsHandler::GetContentSettingsMap() {
@@ -1284,41 +1312,82 @@ HostContentSettingsMap*
   return NULL;
 }
 
-void ContentSettingsHandler::RefreshFlashSettingsCache(bool force) {
-  if (force || !flash_cameramic_settings_.initialized) {
-    flash_cameramic_settings_.last_refresh_request_id =
-        flash_settings_manager_->GetPermissionSettings(
-            PP_FLASH_BROWSEROPERATIONS_SETTINGTYPE_CAMERAMIC);
+void ContentSettingsHandler::RefreshFlashMediaSettings() {
+  media_settings_.flash_settings_initialized = false;
+
+  media_settings_.last_flash_refresh_request_id =
+      flash_settings_manager_->GetPermissionSettings(
+          PP_FLASH_BROWSEROPERATIONS_SETTINGTYPE_CAMERAMIC);
+}
+
+void ContentSettingsHandler::OnPepperFlashPrefChanged() {
+  ShowFlashMediaLink(DEFAULT_SETTING, false);
+  ShowFlashMediaLink(EXCEPTIONS, false);
+
+  PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+  if (prefs->GetBoolean(prefs::kPepperFlashSettingsEnabled))
+    RefreshFlashMediaSettings();
+  else
+    media_settings_.flash_settings_initialized = false;
+}
+
+void ContentSettingsHandler::ShowFlashMediaLink(LinkType link_type, bool show) {
+  bool& show_link = link_type == DEFAULT_SETTING ?
+      media_settings_.show_flash_default_link :
+      media_settings_.show_flash_exceptions_link;
+  if (show_link != show) {
+    web_ui()->CallJavascriptFunction(
+        link_type == DEFAULT_SETTING ?
+            "ContentSettings.showMediaPepperFlashDefaultLink" :
+            "ContentSettings.showMediaPepperFlashExceptionsLink",
+        base::FundamentalValue(show));
+    show_link = show;
   }
 }
 
-// static
-ContentSettingsHandler::ExContentSettingsType
-    ContentSettingsHandler::ExContentSettingsTypeFromGroupName(
-        const std::string& name) {
-  COMPILE_ASSERT(arraysize(kExContentSettingsTypeGroupNames) ==
-                     EX_CONTENT_SETTINGS_NUM_TYPES,
-                 MISSING_CONTENT_SETTINGS_TYPE);
-
-  for (size_t i = 0; i < arraysize(kExContentSettingsTypeGroupNames); ++i) {
-    if (name == kExContentSettingsTypeGroupNames[i].name)
-      return ExContentSettingsType(kExContentSettingsTypeGroupNames[i].type);
+void ContentSettingsHandler::UpdateFlashMediaLinksVisibility() {
+  if (!media_settings_.flash_settings_initialized ||
+      !media_settings_.default_setting_initialized ||
+      !media_settings_.exceptions_initialized) {
+    return;
   }
 
-  NOTREACHED() << name << " is not a recognized content settings type.";
-  return ExContentSettingsType(CONTENT_SETTINGS_TYPE_DEFAULT);
-}
-
-// static
-std::string ContentSettingsHandler::ExContentSettingsTypeToGroupName(
-    const ExContentSettingsType& type) {
-  for (size_t i = 0; i < arraysize(kExContentSettingsTypeGroupNames); ++i) {
-    if (type == kExContentSettingsTypeGroupNames[i].type)
-      return kExContentSettingsTypeGroupNames[i].name;
+  // Flash won't send us notifications when its settings get changed, which
+  // means the Flash settings in |media_settings_| may be out-dated, especially
+  // after we show links to change Flash settings.
+  // In order to avoid confusion, we won't hide the links once they are showed.
+  // One exception is that we will hide them when Pepper Flash is disabled
+  // (handled in OnPepperFlashPrefChanged()).
+  if (media_settings_.show_flash_default_link &&
+      media_settings_.show_flash_exceptions_link) {
+    return;
   }
 
-  NOTREACHED();
-  return std::string();
+  if (!media_settings_.show_flash_default_link) {
+    // If both audio and video capture are disabled by policy, the link
+    // shouldn't be showed. Flash conforms to the policy in this case because
+    // it cannot open those devices. We don't have to look at the Flash
+    // settings.
+    if (!(media_settings_.policy_disable_audio &&
+          media_settings_.policy_disable_video) &&
+        media_settings_.flash_default_setting !=
+            media_settings_.default_setting) {
+      ShowFlashMediaLink(DEFAULT_SETTING, true);
+    }
+  }
+  if (!media_settings_.show_flash_exceptions_link) {
+    // If audio or video capture is disabled by policy, we skip comparison of
+    // exceptions for audio or video capture, respectively.
+    if (!PepperFlashContentSettingsUtils::AreMediaExceptionsEqual(
+            media_settings_.default_setting,
+            media_settings_.exceptions,
+            media_settings_.flash_default_setting,
+            media_settings_.flash_exceptions,
+            media_settings_.policy_disable_audio,
+            media_settings_.policy_disable_video)) {
+      ShowFlashMediaLink(EXCEPTIONS, true);
+    }
+  }
 }
 
 }  // namespace options

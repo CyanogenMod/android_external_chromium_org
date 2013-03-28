@@ -8,6 +8,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/memory/scoped_nsobject.h"
+#include "base/string16.h"
 
 namespace ui {
 class MenuModel;
@@ -32,6 +33,9 @@ class MenuModel;
 // |-initWithModel:useWithPopUpButtonCell:| or after the first call to |-menu|.
 @property(nonatomic) BOOL useWithPopUpButtonCell;
 
++ (string16)elideMenuTitle:(const string16&)title
+                   toWidth:(int)width;
+
 // NIB-based initializer. This does not create a menu. Clients can set the
 // properties of the object and the menu will be created upon the first call to
 // |-menu|. Note that the menu will be immutable after creation.
@@ -52,6 +56,9 @@ class MenuModel;
 // default initializer was used, then this will create the menu on first call.
 - (NSMenu*)menu;
 
+// Whether the menu is currently open.
+- (BOOL)isMenuOpen;
+
 // NSMenuDelegate methods this class implements. Subclasses should call super
 // if extending the behavior.
 - (void)menuWillOpen:(NSMenu*)menu;
@@ -68,9 +75,12 @@ class MenuModel;
 @interface MenuController (Protected)
 - (void)addItemToMenu:(NSMenu*)menu
               atIndex:(NSInteger)index
-            fromModel:(ui::MenuModel*)model
-           modelIndex:(int)modelIndex;
+            fromModel:(ui::MenuModel*)model;
 - (NSMenu*)menuFromModel:(ui::MenuModel*)model;
+// Returns the maximum width for the menu item. Returns -1 to indicate
+// that there's no maximum width.
+- (int)maxWidthForMenuModel:(ui::MenuModel*)model
+                 modelIndex:(int)modelIndex;
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_MENU_CONTROLLER_H_

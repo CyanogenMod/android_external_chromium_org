@@ -18,11 +18,10 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/url_constants.h"
+#include "jni/AwCookieManager_jni.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_options.h"
-#include "net/cookies/cookie_store.h"
 #include "net/url_request/url_request_context.h"
-#include "jni/CookieManager_jni.h"
 
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertJavaStringToUTF16;
@@ -48,7 +47,7 @@ class CookieManager {
  public:
   static CookieManager* GetInstance();
 
-  void SetCookieMonster(net::URLRequestContext* request_context);
+  void SetCookieMonster(net::CookieMonster* cookie_monster);
 
   void SetAcceptCookie(bool accept);
   bool AcceptCookie();
@@ -57,6 +56,7 @@ class CookieManager {
   void RemoveSessionCookie();
   void RemoveAllCookie();
   void RemoveExpiredCookie();
+  void FlushCookieStore();
   bool HasCookies();
   bool AllowFileSchemeCookies();
   void SetAcceptFileSchemeCookies(bool accept);
@@ -88,6 +88,8 @@ class CookieManager {
   void RemoveSessionCookieAsyncHelper(base::WaitableEvent* completion);
   void RemoveAllCookieAsyncHelper(base::WaitableEvent* completion);
   void RemoveCookiesCompleted(int num_deleted);
+
+  void FlushCookieStoreAsyncHelper(base::WaitableEvent* completion);
 
   void HasCookiesAsyncHelper(bool* result,
                              base::WaitableEvent* completion);
@@ -131,9 +133,9 @@ void CookieManager::ExecCookieTask(const CookieTask& task,
   }
 }
 
-void CookieManager::SetCookieMonster(net::URLRequestContext* request_context) {
+void CookieManager::SetCookieMonster(net::CookieMonster* cookie_monster) {
   DCHECK(!cookie_monster_);
-  cookie_monster_ = request_context->cookie_store()->GetCookieMonster();
+  cookie_monster_ = cookie_monster;
 }
 
 void CookieManager::SetAcceptCookie(bool accept) {
@@ -228,6 +230,8 @@ void CookieManager::RemoveAllCookie() {
                             base::Unretained(this)), false);
 }
 
+// TODO(kristianm): Pass a null callback so it will not be invoked
+// across threads.
 void CookieManager::RemoveAllCookieAsyncHelper(
     base::WaitableEvent* completion) {
   DCHECK(!completion);
@@ -241,6 +245,17 @@ void CookieManager::RemoveExpiredCookie() {
   HasCookies();
 }
 
+void CookieManager::FlushCookieStoreAsyncHelper(
+    base::WaitableEvent* completion) {
+  DCHECK(!completion);
+  cookie_monster_->FlushStore(base::Bind(&base::DoNothing));
+}
+
+void CookieManager::FlushCookieStore() {
+  ExecCookieTask(base::Bind(&CookieManager::FlushCookieStoreAsyncHelper,
+                            base::Unretained(this)), false);
+}
+
 bool CookieManager::HasCookies() {
   bool has_cookies;
   ExecCookieTask(base::Bind(&CookieManager::HasCookiesAsyncHelper,
@@ -249,6 +264,8 @@ bool CookieManager::HasCookies() {
   return has_cookies;
 }
 
+// TODO(kristianm): Simplify this, copying the entire list around
+// should not be needed.
 void CookieManager::HasCookiesAsyncHelper(bool* result,
                                   base::WaitableEvent* completion) {
   cookie_monster_->GetAllCookiesAsync(
@@ -271,6 +288,12 @@ bool CookieManager::AllowFileSchemeCookies() {
 }
 
 void CookieManager::SetAcceptFileSchemeCookies(bool accept) {
+  // The docs on CookieManager base class state the API must not be called after
+  // creating a CookieManager instance (which contradicts its own internal
+  // implementation) but this code does rely on the essence of that comment, as
+  // the monster will DCHECK here if it has already been lazy initialized (i.e.
+  // if cookies have been read or written from the store). If that turns out to
+  // be a problemin future, it looks like it maybe possible to relax the DCHECK.
   cookie_monster_->SetEnableFileScheme(accept);
 }
 
@@ -311,23 +334,25 @@ static void RemoveExpiredCookie(JNIEnv* env, jobject obj) {
   CookieManager::GetInstance()->RemoveExpiredCookie();
 }
 
+static void FlushCookieStore(JNIEnv* env, jobject obj) {
+  CookieManager::GetInstance()->FlushCookieStore();
+}
+
 static jboolean HasCookies(JNIEnv* env, jobject obj) {
   return CookieManager::GetInstance()->HasCookies();
 }
 
-static jboolean AllowFileSchemeCookies(JNIEnv* env, jclass obj) {
+static jboolean AllowFileSchemeCookies(JNIEnv* env, jobject obj) {
   return CookieManager::GetInstance()->AllowFileSchemeCookies();
 }
 
-static void SetAcceptFileSchemeCookies(JNIEnv* env, jclass obj,
+static void SetAcceptFileSchemeCookies(JNIEnv* env, jobject obj,
                                        jboolean accept) {
   return CookieManager::GetInstance()->SetAcceptFileSchemeCookies(accept);
 }
 
-void SetCookieMonsterOnNetworkStackInit(
-    net::URLRequestContext* context,
-    net::URLRequestJobFactory* job_factory) {
-  CookieManager::GetInstance()->SetCookieMonster(context);
+void SetCookieMonsterOnNetworkStackInit(net::CookieMonster* cookie_monster) {
+  CookieManager::GetInstance()->SetCookieMonster(cookie_monster);
 }
 
 bool RegisterCookieManager(JNIEnv* env) {

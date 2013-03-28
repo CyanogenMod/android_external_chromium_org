@@ -7,14 +7,15 @@
 #include <limits>
 #include <string>
 
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/platform_file.h"
-#include "base/scoped_temp_dir.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_file_util.h"
 #include "webkit/fileapi/file_system_operation_context.h"
@@ -72,6 +73,7 @@ class FileSystemFileStreamReaderTest : public testing::Test {
     file_system_context_ =
         new FileSystemContext(
             FileSystemTaskRunners::CreateMockTaskRunners(),
+            ExternalMountPoints::CreateRefCounted().get(),
             special_storage_policy_,
             NULL,
             temp_dir_.path(),
@@ -80,14 +82,14 @@ class FileSystemFileStreamReaderTest : public testing::Test {
     file_system_context_->sandbox_provider()->ValidateFileSystemRoot(
         GURL(kURLOrigin), kFileSystemTypeTemporary, true,  // create
         base::Bind(&OnValidateFileSystem));
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
 
     WriteFile(kTestFileName, kTestData, kTestDataSize,
               &test_file_modification_time_);
   }
 
   virtual void TearDown() OVERRIDE {
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
   }
 
  protected:
@@ -131,7 +133,7 @@ class FileSystemFileStreamReaderTest : public testing::Test {
     base::ClosePlatformFile(handle);
 
     base::PlatformFileInfo file_info;
-    FilePath platform_path;
+    base::FilePath platform_path;
     ASSERT_EQ(base::PLATFORM_FILE_OK,
               file_util->GetFileInfo(&context, url, &file_info,
                                      &platform_path));
@@ -145,13 +147,14 @@ class FileSystemFileStreamReaderTest : public testing::Test {
   }
 
   FileSystemURL GetFileSystemURL(const std::string& file_name) {
-    return FileSystemURL(GURL(kURLOrigin),
-                         kFileSystemTypeTemporary,
-                         FilePath().AppendASCII(file_name));
+    return file_system_context_->CreateCrackedFileSystemURL(
+        GURL(kURLOrigin),
+        kFileSystemTypeTemporary,
+        base::FilePath().AppendASCII(file_name));
   }
 
   MessageLoop message_loop_;
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   scoped_refptr<quota::MockSpecialStoragePolicy> special_storage_policy_;
   scoped_refptr<FileSystemContext> file_system_context_;
   base::Time test_file_modification_time_;

@@ -23,10 +23,7 @@ class WebContentsImpl;
 // to be used in tests.
 class TestBrowserPluginGuest : public BrowserPluginGuest {
  public:
-  TestBrowserPluginGuest(int instance_id,
-                         WebContentsImpl* web_contents,
-                         RenderViewHost* render_view_host,
-                         const BrowserPluginHostMsg_CreateGuest_Params& params);
+  TestBrowserPluginGuest(int instance_id, WebContentsImpl* web_contents);
   virtual ~TestBrowserPluginGuest();
 
   WebContentsImpl* web_contents() const;
@@ -38,20 +35,15 @@ class TestBrowserPluginGuest : public BrowserPluginGuest {
 
   // Overridden methods from BrowserPluginGuest to intercept in test objects.
   virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
-  virtual void HandleInputEvent(RenderViewHost* render_view_host,
-                                const gfx::Rect& guest_rect,
-                                const WebKit::WebInputEvent& event,
-                                IPC::Message* reply_message) OVERRIDE;
-  virtual void SetFocus(bool focused) OVERRIDE;
-  virtual bool ViewTakeFocus(bool reverse) OVERRIDE;
-  virtual void Reload() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void SetDamageBuffer(TransportDIB* damage_buffer,
-#if defined(OS_WIN)
-                               int damage_buffer_size,
-#endif
-                               const gfx::Size& damage_view_size,
-                               float scale_factor) OVERRIDE;
+  virtual void OnHandleInputEvent(int instance_id,
+                                  const gfx::Rect& guest_window_rect,
+                                  const WebKit::WebInputEvent* event) OVERRIDE;
+  virtual void OnSetFocus(int instance_id, bool focused) OVERRIDE;
+  virtual void OnTakeFocus(bool reverse) OVERRIDE;
+  virtual void OnReload(int instance_id) OVERRIDE;
+  virtual void OnStop(int instance_id) OVERRIDE;
+  virtual void SetDamageBuffer(
+      const BrowserPluginHostMsg_ResizeGuest_Params& params) OVERRIDE;
   virtual void DidStopLoading(RenderViewHost* render_view_host) OVERRIDE;
 
   // Test utilities to wait for a event we are interested in.

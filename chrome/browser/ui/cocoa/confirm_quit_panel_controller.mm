@@ -10,14 +10,15 @@
 #include "base/logging.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_registry_simple.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/cocoa/confirm_quit.h"
 #include "chrome/common/pref_names.h"
 #include "grit/generated_resources.h"
+#import "ui/base/accelerators/platform_accelerator_cocoa.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
 // Constants ///////////////////////////////////////////////////////////////////
@@ -44,8 +45,8 @@ void RecordHistogram(ConfirmQuitMetric sample) {
   UMA_HISTOGRAM_ENUMERATION("OSX.ConfirmToQuit", sample, kSampleCount);
 }
 
-void RegisterLocalState(PrefService* local_state) {
-  local_state->RegisterBooleanPref(prefs::kConfirmToQuitEnabled, false);
+void RegisterLocalState(PrefRegistrySimple* registry) {
+  registry->RegisterBooleanPref(prefs::kConfirmToQuitEnabled, false);
 }
 
 }  // namespace confirm_quit
@@ -171,6 +172,8 @@ void RegisterLocalState(PrefService* local_state) {
 - (NSEvent*)pumpEventQueueForKeyUp:(NSApplication*)app untilDate:(NSDate*)date;
 - (void)hideAllWindowsForApplication:(NSApplication*)app
                         withDuration:(NSTimeInterval)duration;
+// Returns the Accelerator for the Quit menu item.
++ (scoped_ptr<ui::PlatformAcceleratorCocoa>)quitAccelerator;
 @end
 
 ConfirmQuitPanelController* g_confirmQuitPanelController = nil;
@@ -218,9 +221,12 @@ ConfirmQuitPanelController* g_confirmQuitPanelController = nil;
 + (BOOL)eventTriggersFeature:(NSEvent*)event {
   if ([event type] != NSKeyDown)
     return NO;
-  ui::AcceleratorCocoa eventAccelerator([event charactersIgnoringModifiers],
+  ui::PlatformAcceleratorCocoa eventAccelerator(
+      [event charactersIgnoringModifiers],
       [event modifierFlags] & NSDeviceIndependentModifierFlagsMask);
-  return [self quitAccelerator] == eventAccelerator;
+  scoped_ptr<ui::PlatformAcceleratorCocoa> quitAccelerator(
+      [self quitAccelerator]);
+  return quitAccelerator->Equals(eventAccelerator);
 }
 
 - (NSApplicationTerminateReply)runModalLoopForApplication:(NSApplication*)app {
@@ -352,29 +358,11 @@ ConfirmQuitPanelController* g_confirmQuitPanelController = nil;
 }
 
 // This looks at the Main Menu and determines what the user has set as the
-// key combination for quit. It then gets the modifiers and builds an object
-// to hold the data.
-+ (ui::AcceleratorCocoa)quitAccelerator {
-  NSMenu* mainMenu = [NSApp mainMenu];
-  // Get the application menu (i.e. Chromium).
-  NSMenu* appMenu = [[mainMenu itemAtIndex:0] submenu];
-  for (NSMenuItem* item in [appMenu itemArray]) {
-    // Find the Quit item.
-    if ([item action] == @selector(terminate:)) {
-      return ui::AcceleratorCocoa([item keyEquivalent],
-                                  [item keyEquivalentModifierMask]);
-    }
-  }
-  // Default to Cmd+Q.
-  return ui::AcceleratorCocoa(@"q", NSCommandKeyMask);
-}
-
-// This looks at the Main Menu and determines what the user has set as the
 // key combination for quit. It then gets the modifiers and builds a string
 // to display them.
 + (NSString*)keyCommandString {
-  ui::AcceleratorCocoa accelerator = [[self class] quitAccelerator];
-  return [[self class] keyCombinationForAccelerator:accelerator];
+  scoped_ptr<ui::PlatformAcceleratorCocoa> accelerator([self quitAccelerator]);
+  return [[self class] keyCombinationForAccelerator:*accelerator];
 }
 
 // Runs a nested loop that pumps the event queue until the next KeyUp event.
@@ -395,9 +383,30 @@ ConfirmQuitPanelController* g_confirmQuitPanelController = nil;
   [animation startAnimation];
 }
 
-+ (NSString*)keyCombinationForAccelerator:(const ui::AcceleratorCocoa&)item {
+// This looks at the Main Menu and determines what the user has set as the
+// key combination for quit. It then gets the modifiers and builds an object
+// to hold the data.
++ (scoped_ptr<ui::PlatformAcceleratorCocoa>)quitAccelerator {
+  NSMenu* mainMenu = [NSApp mainMenu];
+  // Get the application menu (i.e. Chromium).
+  NSMenu* appMenu = [[mainMenu itemAtIndex:0] submenu];
+  for (NSMenuItem* item in [appMenu itemArray]) {
+    // Find the Quit item.
+    if ([item action] == @selector(terminate:)) {
+      return scoped_ptr<ui::PlatformAcceleratorCocoa>(
+          new ui::PlatformAcceleratorCocoa([item keyEquivalent],
+                                           [item keyEquivalentModifierMask]));
+    }
+  }
+  // Default to Cmd+Q.
+  return scoped_ptr<ui::PlatformAcceleratorCocoa>(
+      new ui::PlatformAcceleratorCocoa(@"q", NSCommandKeyMask));
+}
+
++ (NSString*)keyCombinationForAccelerator:
+    (const ui::PlatformAcceleratorCocoa&)item {
   NSMutableString* string = [NSMutableString string];
-  NSUInteger modifiers = item.modifiers();
+  NSUInteger modifiers = item.modifier_mask();
 
   if (modifiers & NSCommandKeyMask)
     [string appendString:@"\u2318"];

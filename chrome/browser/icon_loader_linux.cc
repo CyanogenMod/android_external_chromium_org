@@ -33,7 +33,7 @@ void IconLoader::ReadIcon() {
       NOTREACHED();
   }
 
-  FilePath filename = base::nix::GetMimeIcon(group_, size_pixels);
+  base::FilePath filename = base::nix::GetMimeIcon(group_, size_pixels);
   // We don't support SVG icons; this just spams the terminal so fail quickly
   // and don't try to read the file from disk first.
   if (filename.Extension() != ".svg") {
@@ -48,7 +48,7 @@ void IconLoader::ReadIcon() {
     if (!bitmap.empty()) {
       DCHECK_EQ(size_pixels, bitmap.width());
       DCHECK_EQ(size_pixels, bitmap.height());
-      gfx::ImageSkia image_skia(bitmap);
+      gfx::ImageSkia image_skia = gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
       image_skia.MakeThreadSafe();
       image_.reset(new gfx::Image(image_skia));
     } else {

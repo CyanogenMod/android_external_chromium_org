@@ -6,11 +6,15 @@
 
 #include <vector>
 
+#include "ash/ash_constants.h"
 #include "ash/ash_switches.h"
 #include "ash/desktop_background/desktop_background_widget_controller.h"
 #include "ash/display/display_controller.h"
-#include "ash/display/multi_display_manager.h"
+#include "ash/display/display_manager.h"
 #include "ash/focus_cycler.h"
+#include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_types.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_factory.h"
@@ -19,18 +23,15 @@
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/wm/base_layout_manager.h"
 #include "ash/wm/boot_splash_screen.h"
-#include "ash/wm/panel_layout_manager.h"
-#include "ash/wm/panel_window_event_filter.h"
+#include "ash/wm/panels/panel_layout_manager.h"
 #include "ash/wm/property_util.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "ash/wm/screen_dimmer.h"
-#include "ash/wm/shelf_layout_manager.h"
-#include "ash/wm/shelf_types.h"
+#include "ash/wm/stacking_controller.h"
 #include "ash/wm/status_area_layout_manager.h"
 #include "ash/wm/system_background_controller.h"
 #include "ash/wm/system_modal_container_layout_manager.h"
 #include "ash/wm/toplevel_window_event_handler.h"
-#include "ash/wm/visibility_controller.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/workspace_controller.h"
 #include "base/command_line.h"
@@ -38,8 +39,8 @@
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/capture_client.h"
+#include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/tooltip_client.h"
-#include "ui/aura/focus_manager.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
@@ -49,16 +50,12 @@
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
+#include "ui/views/corewm/visibility_controller.h"
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
 
 namespace ash {
 namespace {
-
-#if defined(OS_CHROMEOS)
-// Background color used for the Chrome OS boot splash screen.
-const SkColor kChromeOsBootColor = SkColorSetARGB(0xff, 0xfe, 0xfe, 0xfe);
-#endif
 
 // Duration for the animation that hides the boot splash screen, in
 // milliseconds.  This should be short enough in relation to
@@ -114,10 +111,12 @@ void ReparentAllWindows(aura::RootWindow* src, aura::RootWindow* dst) {
   // Set of windows to move.
   const int kContainerIdsToMove[] = {
     internal::kShellWindowId_DefaultContainer,
+    internal::kShellWindowId_PanelContainer,
     internal::kShellWindowId_AlwaysOnTopContainer,
     internal::kShellWindowId_SystemModalContainer,
     internal::kShellWindowId_LockSystemModalContainer,
     internal::kShellWindowId_InputMethodContainer,
+    internal::kShellWindowId_UnparentedControlContainer,
   };
   // For workspace windows we need to manually reparent the windows. This way
   // workspace can move the windows to the appropriate workspace.
@@ -136,16 +135,20 @@ void ReparentAllWindows(aura::RootWindow* src, aura::RootWindow* dst) {
 
     aura::Window* src_container = Shell::GetContainer(src, id);
     aura::Window* dst_container = Shell::GetContainer(dst, id);
-    aura::Window::Windows children = src_container->children();
-    for (aura::Window::Windows::iterator iter = children.begin();
-         iter != children.end(); ++iter) {
-      aura::Window* window = *iter;
-      // Don't move modal screen.
-      if (internal::SystemModalContainerLayoutManager::IsModalBackground(
-              window))
-        continue;
-
-      ReparentWindow(window, dst_container);
+    while (!src_container->children().empty()) {
+      // Restart iteration from the source container windows each time as they
+      // may change as a result of moving other windows.
+      aura::Window::Windows::const_iterator iter =
+          src_container->children().begin();
+      while (iter != src_container->children().end() &&
+             internal::SystemModalContainerLayoutManager::IsModalBackground(
+                *iter)) {
+        ++iter;
+      }
+      // If the entire window list is modal background windows then stop.
+      if (iter == src_container->children().end())
+        break;
+      ReparentWindow(*iter, dst_container);
     }
   }
 }
@@ -163,11 +166,13 @@ namespace internal {
 RootWindowController::RootWindowController(aura::RootWindow* root_window)
     : root_window_(root_window),
       root_window_layout_(NULL),
-      status_area_widget_(NULL),
       shelf_(NULL),
       panel_layout_manager_(NULL) {
   SetRootWindowController(root_window, this);
   screen_dimmer_.reset(new ScreenDimmer(root_window));
+
+  stacking_controller_.reset(new ash::StackingController);
+  aura::client::SetStackingClient(root_window, stacking_controller_.get());
 }
 
 RootWindowController::~RootWindowController() {
@@ -176,12 +181,22 @@ RootWindowController::~RootWindowController() {
 }
 
 // static
-internal::RootWindowController*
-RootWindowController::ForLauncher(aura::Window* window) {
+RootWindowController* RootWindowController::ForLauncher(aura::Window* window) {
   if (Shell::IsLauncherPerDisplayEnabled())
     return GetRootWindowController(window->GetRootWindow());
   else
     return Shell::GetPrimaryRootWindowController();
+}
+
+// static
+RootWindowController* RootWindowController::ForWindow(
+    const aura::Window* window) {
+  return GetRootWindowController(window->GetRootWindow());
+}
+
+// static
+RootWindowController* RootWindowController::ForActiveRootWindow() {
+  return GetRootWindowController(Shell::GetActiveRootWindow());
 }
 
 void RootWindowController::Shutdown() {
@@ -201,13 +216,6 @@ void RootWindowController::Shutdown() {
   root_window_->PrepareForShutdown();
 
   system_background_.reset();
-
-  // Launcher widget has an InputMethodBridge that references to
-  // |input_method_filter_|'s |input_method_|. So explicitly release
-  // |launcher_| before |input_method_filter_|. And this needs to be
-  // after we delete all containers in case there are still live
-  // browser windows which access LauncherModel during close.
-  launcher_.reset();
 }
 
 SystemModalContainerLayoutManager*
@@ -221,8 +229,8 @@ RootWindowController::GetSystemModalLayoutManager(aura::Window* window) {
       container = GetContainer(kShellWindowId_SystemModalContainer);
     }
   } else {
-    user::LoginStatus login = Shell::GetInstance()->status_area_widget() ?
-        Shell::GetInstance()->tray_delegate()->GetUserLoginStatus() :
+    user::LoginStatus login = Shell::GetInstance()->system_tray_delegate() ?
+        Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus() :
         user::LOGGED_IN_NONE;
     int modal_window_id = (login == user::LOGGED_IN_LOCKED ||
                            login == user::LOGGED_IN_NONE) ?
@@ -257,47 +265,28 @@ void RootWindowController::InitLayoutManagers() {
 }
 
 void RootWindowController::InitForPrimaryDisplay() {
-  DCHECK(!status_area_widget_);
+  DCHECK(!shelf_.get());
+  aura::Window* shelf_container =
+      GetContainer(ash::internal::kShellWindowId_ShelfContainer);
+  // TODO(harrym): Remove when status area is view.
   aura::Window* status_container =
       GetContainer(ash::internal::kShellWindowId_StatusContainer);
-  // Initialize Primary RootWindow specific items.
-  status_area_widget_ = new internal::StatusAreaWidget(status_container);
-  status_area_widget_->CreateTrayViews();
-  // Login screen manages status area visibility by itself.
-  ShellDelegate* shell_delegate = Shell::GetInstance()->delegate();
-  if (shell_delegate->IsSessionStarted())
-    status_area_widget_->Show();
+  shelf_.reset(new ash::ShelfWidget(
+      shelf_container, status_container, workspace_controller()));
 
-  Shell::GetInstance()->focus_cycler()->AddWidget(status_area_widget_);
-
-  internal::ShelfLayoutManager* shelf_layout_manager =
-      new internal::ShelfLayoutManager(status_area_widget_);
-  GetContainer(internal::kShellWindowId_LauncherContainer)->
-      SetLayoutManager(shelf_layout_manager);
-  shelf_ = shelf_layout_manager;
-
-  internal::StatusAreaLayoutManager* status_area_layout_manager =
-      new internal::StatusAreaLayoutManager(shelf_layout_manager);
-  GetContainer(internal::kShellWindowId_StatusContainer)->
-      SetLayoutManager(status_area_layout_manager);
-
-  shelf_layout_manager->set_workspace_controller(
-      workspace_controller());
-
-  workspace_controller()->SetShelf(shelf_);
-
-  // Create Panel layout manager
-  aura::Window* panel_container = GetContainer(
-      internal::kShellWindowId_PanelContainer);
-  panel_layout_manager_ =
-      new internal::PanelLayoutManager(panel_container);
-  panel_container->SetEventFilter(
-      new internal::PanelWindowEventFilter(
-          panel_container, panel_layout_manager_));
-  panel_container->SetLayoutManager(panel_layout_manager_);
-
-  if (shell_delegate->IsUserLoggedIn())
-    CreateLauncher();
+  if (Shell::IsLauncherPerDisplayEnabled() ||
+      root_window_ == Shell::GetPrimaryRootWindow()) {
+    // Create Panel layout manager
+    aura::Window* panel_container = GetContainer(
+        internal::kShellWindowId_PanelContainer);
+    panel_layout_manager_ =
+        new internal::PanelLayoutManager(panel_container);
+    panel_container_handler_.reset(
+        new ToplevelWindowEventHandler(panel_container));
+    panel_container->SetLayoutManager(panel_layout_manager_);
+  }
+  if (Shell::GetInstance()->delegate()->IsUserLoggedIn())
+    shelf_->CreateLauncher();
 }
 
 void RootWindowController::CreateContainers() {
@@ -326,44 +315,29 @@ void RootWindowController::CreateSystemBackground(
 #endif
 }
 
-void RootWindowController::CreateLauncher() {
-  if (launcher_.get())
-    return;
-
-  aura::Window* default_container =
-      GetContainer(internal::kShellWindowId_DefaultContainer);
-  launcher_.reset(new Launcher(default_container, shelf_));
-
-  launcher_->SetFocusCycler(Shell::GetInstance()->focus_cycler());
-  shelf_->SetLauncher(launcher_.get());
-
+void RootWindowController::OnLauncherCreated() {
   if (panel_layout_manager_)
-    panel_layout_manager_->SetLauncher(launcher_.get());
-
-  ShellDelegate* delegate = Shell::GetInstance()->delegate();
-  if (delegate)
-    launcher_->SetVisible(delegate->IsSessionStarted());
-  launcher_->widget()->Show();
+    panel_layout_manager_->SetLauncher(shelf_->launcher());
 }
 
 void RootWindowController::ShowLauncher() {
-  if (!launcher_.get())
+  if (!shelf_.get() || !shelf_->launcher())
     return;
-  launcher_->SetVisible(true);
-  status_area_widget_->Show();
+  shelf_->launcher()->SetVisible(true);
+  shelf_->status_area_widget()->Show();
 }
 
 void RootWindowController::OnLoginStateChanged(user::LoginStatus status) {
   // TODO(oshima): remove if when launcher per display is enabled by
   // default.
-  if (shelf_)
-    shelf_->UpdateVisibilityState();
+  if (shelf_.get())
+    shelf_->shelf_layout_manager()->UpdateVisibilityState();
 }
 
 void RootWindowController::UpdateAfterLoginStatusChange(
     user::LoginStatus status) {
-  if (status_area_widget_)
-    status_area_widget_->UpdateAfterLoginStatusChange(status);
+  if (shelf_.get() && shelf_->status_area_widget())
+    shelf_->status_area_widget()->UpdateAfterLoginStatusChange(status);
 }
 
 void RootWindowController::HandleInitialDesktopBackgroundAnimationStarted() {
@@ -383,15 +357,18 @@ void RootWindowController::HandleDesktopBackgroundVisible() {
 }
 
 void RootWindowController::CloseChildWindows() {
-  // The status area needs to be shut down before the windows are destroyed.
-  if (status_area_widget_) {
-    status_area_widget_->Shutdown();
-    status_area_widget_ = NULL;
+  // panel_layout_manager_ needs to be shut down before windows are destroyed.
+  if (panel_layout_manager_) {
+    panel_layout_manager_->Shutdown();
+    panel_layout_manager_ = NULL;
   }
 
-  // Closing the windows frees the workspace controller.
-  if (shelf_)
-    shelf_->set_workspace_controller(NULL);
+  // TODO(harrym): Remove when Status Area Widget is a child view.
+  if (shelf_.get())
+    shelf_->ShutdownStatusAreaWidget();
+
+  if (shelf_.get() && shelf_->shelf_layout_manager())
+    shelf_->shelf_layout_manager()->set_workspace_controller(NULL);
 
   // Close background widget first as it depends on tooltip.
   root_window_->SetProperty(kDesktopController,
@@ -407,12 +384,11 @@ void RootWindowController::CloseChildWindows() {
     delete child;
   }
 
-  // All containers are deleted, so reset shelf_.
-  shelf_ = NULL;
+  shelf_.reset(NULL);
 }
 
 void RootWindowController::MoveWindowsTo(aura::RootWindow* dst) {
-  aura::Window* focused = dst->GetFocusManager()->GetFocusedWindow();
+  aura::Window* focused = aura::client::GetFocusClient(dst)->GetFocusedWindow();
   aura::WindowTracker tracker;
   if (focused)
     tracker.Add(focused);
@@ -430,16 +406,31 @@ void RootWindowController::MoveWindowsTo(aura::RootWindow* dst) {
   // window may be deleted when losing focus (fullscreen flash for
   // example).  If the focused window is still alive after move, it'll
   // be re-focused below.
-  dst->GetFocusManager()->SetFocusedWindow(NULL, NULL);
+  aura::client::GetFocusClient(dst)->FocusWindow(NULL);
+
+  // Forget the shelf early so that shelf don't update itself using wrong
+  // display info.
+  workspace_controller_->SetShelf(NULL);
 
   ReparentAllWindows(root_window_.get(), dst);
 
   // Restore focused or active window if it's still alive.
   if (focused && tracker.Contains(focused) && dst->Contains(focused)) {
-    dst->GetFocusManager()->SetFocusedWindow(focused, NULL);
+    aura::client::GetFocusClient(dst)->FocusWindow(focused);
   } else if (active && tracker.Contains(active) && dst->Contains(active)) {
     activation_client->ActivateWindow(active);
   }
+}
+
+ShelfLayoutManager* RootWindowController::GetShelfLayoutManager() {
+  return shelf_.get() ? shelf_->shelf_layout_manager() : NULL;
+}
+
+SystemTray* RootWindowController::GetSystemTray() {
+  // We assume in throughout the code that this will not return NULL. If code
+  // triggers this for valid reasons, it should test status_area_widget first.
+  CHECK(shelf_.get() && shelf_->status_area_widget());
+  return shelf_->status_area_widget()->system_tray();
 }
 
 void RootWindowController::ShowContextMenu(
@@ -449,6 +440,8 @@ void RootWindowController::ShowContextMenu(
   DCHECK(Shell::GetInstance()->delegate());
   scoped_ptr<ui::MenuModel> menu_model(
       Shell::GetInstance()->delegate()->CreateContextMenu(target));
+  if (!menu_model.get())
+    return;
 
   views::MenuModelAdapter menu_model_adapter(menu_model.get());
   views::MenuRunner menu_runner(menu_model_adapter.CreateMenu());
@@ -465,35 +458,17 @@ void RootWindowController::ShowContextMenu(
 }
 
 void RootWindowController::UpdateShelfVisibility() {
-  shelf_->UpdateVisibilityState();
+  shelf_->shelf_layout_manager()->UpdateVisibilityState();
 }
 
-void RootWindowController::SetShelfAutoHideBehavior(
-    ShelfAutoHideBehavior behavior) {
-  shelf_->SetAutoHideBehavior(behavior);
-}
-
-ShelfAutoHideBehavior RootWindowController::GetShelfAutoHideBehavior() const {
-  return shelf_->auto_hide_behavior();
-}
-
-bool RootWindowController::SetShelfAlignment(ShelfAlignment alignment) {
-  return shelf_->SetAlignment(alignment);
-}
-
-ShelfAlignment RootWindowController::GetShelfAlignment() {
-  return shelf_->alignment();
-}
-
-bool RootWindowController::IsShelfAutoHideMenuHideChecked() {
-  return GetShelfAutoHideBehavior() == ash::SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS;
-}
-
-ShelfAutoHideBehavior
-RootWindowController::GetToggledShelfAutoHideBehavior() {
-  return IsShelfAutoHideMenuHideChecked() ?
-      ash::SHELF_AUTO_HIDE_BEHAVIOR_NEVER :
-      ash::SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS;
+bool RootWindowController::IsImmersiveMode() const {
+  aura::Window* container = workspace_controller_->GetActiveWorkspaceWindow();
+  for (size_t i = 0; i < container->children().size(); ++i) {
+    aura::Window* child = container->children()[i];
+    if (child->IsVisible() && child->GetProperty(kImmersiveModeKey))
+      return true;
+  }
+  return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -515,7 +490,8 @@ void RootWindowController::CreateContainersInRootWindow(
       kShellWindowId_DesktopBackgroundContainer,
       "DesktopBackgroundContainer",
       root_window);
-  SetChildWindowVisibilityChangesAnimated(desktop_background_container);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(
+      desktop_background_container);
 
   aura::Window* non_lock_screen_containers = CreateContainer(
       kShellWindowId_NonLockScreenContainersContainer,
@@ -526,7 +502,8 @@ void RootWindowController::CreateContainersInRootWindow(
       kShellWindowId_LockScreenBackgroundContainer,
       "LockScreenBackgroundContainer",
       root_window);
-  SetChildWindowVisibilityChangesAnimated(lock_background_containers);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(
+      lock_background_containers);
 
   aura::Window* lock_screen_containers = CreateContainer(
       kShellWindowId_LockScreenContainersContainer,
@@ -545,7 +522,7 @@ void RootWindowController::CreateContainersInRootWindow(
       kShellWindowId_DefaultContainer,
       "DefaultContainer",
       non_lock_screen_containers);
-  SetChildWindowVisibilityChangesAnimated(default_container);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(default_container);
   SetUsesScreenCoordinates(default_container);
 
   aura::Window* always_on_top_container = CreateContainer(
@@ -554,7 +531,8 @@ void RootWindowController::CreateContainersInRootWindow(
       non_lock_screen_containers);
   always_on_top_container_handler_.reset(
       new ToplevelWindowEventHandler(always_on_top_container));
-  SetChildWindowVisibilityChangesAnimated(always_on_top_container);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(
+      always_on_top_container);
   SetUsesScreenCoordinates(always_on_top_container);
 
   aura::Window* panel_container = CreateContainer(
@@ -564,7 +542,7 @@ void RootWindowController::CreateContainersInRootWindow(
   SetUsesScreenCoordinates(panel_container);
 
   aura::Window* launcher_container =
-      CreateContainer(kShellWindowId_LauncherContainer,
+      CreateContainer(kShellWindowId_ShelfContainer,
                       "LauncherContainer",
                       non_lock_screen_containers);
   SetUsesScreenCoordinates(launcher_container);
@@ -583,7 +561,7 @@ void RootWindowController::CreateContainersInRootWindow(
       new ToplevelWindowEventHandler(modal_container));
   modal_container->SetLayoutManager(
       new SystemModalContainerLayoutManager(modal_container));
-  SetChildWindowVisibilityChangesAnimated(modal_container);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(modal_container);
   SetUsesScreenCoordinates(modal_container);
 
   aura::Window* input_method_container = CreateContainer(
@@ -611,7 +589,7 @@ void RootWindowController::CreateContainersInRootWindow(
       new ToplevelWindowEventHandler(lock_modal_container));
   lock_modal_container->SetLayoutManager(
       new SystemModalContainerLayoutManager(lock_modal_container));
-  SetChildWindowVisibilityChangesAnimated(lock_modal_container);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(lock_modal_container);
   SetUsesScreenCoordinates(lock_modal_container);
 
   aura::Window* status_container =
@@ -624,21 +602,22 @@ void RootWindowController::CreateContainersInRootWindow(
       kShellWindowId_SettingBubbleContainer,
       "SettingBubbleContainer",
       lock_screen_related_containers);
-  SetChildWindowVisibilityChangesAnimated(settings_bubble_container);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(
+      settings_bubble_container);
   SetUsesScreenCoordinates(settings_bubble_container);
 
   aura::Window* menu_container = CreateContainer(
       kShellWindowId_MenuContainer,
       "MenuContainer",
       lock_screen_related_containers);
-  SetChildWindowVisibilityChangesAnimated(menu_container);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(menu_container);
   SetUsesScreenCoordinates(menu_container);
 
   aura::Window* drag_drop_container = CreateContainer(
       kShellWindowId_DragImageAndTooltipContainer,
       "DragImageAndTooltipContainer",
       lock_screen_related_containers);
-  SetChildWindowVisibilityChangesAnimated(drag_drop_container);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(drag_drop_container);
   SetUsesScreenCoordinates(drag_drop_container);
 
   aura::Window* overlay_container = CreateContainer(

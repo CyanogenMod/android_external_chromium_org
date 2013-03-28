@@ -24,7 +24,12 @@ class TestEntryFactory {
   ~TestEntryFactory();
 
   // Create a new unapplied folder node with a parent.
-  void CreateUnappliedNewItemWithParent(
+  int64 CreateUnappliedNewItemWithParent(
+      const std::string& item_id,
+      const sync_pb::EntitySpecifics& specifics,
+      const std::string& parent_id);
+
+  int64 CreateUnappliedNewBookmarkItemWithParent(
       const std::string& item_id,
       const sync_pb::EntitySpecifics& specifics,
       const std::string& parent_id);
@@ -34,10 +39,11 @@ class TestEntryFactory {
                                const sync_pb::EntitySpecifics& specifics,
                                bool is_unique);
 
-  // Create an unsynced item in the database.  If item_id is a local ID, it will
-  // be treated as a create-new.  Otherwise, if it's a server ID, we'll fake the
-  // server data so that it looks like it exists on the server.  Returns the
-  // methandle of the created item in |metahandle_out| if not NULL.
+  // Create an unsynced unique_client_tag item in the database.  If item_id is a
+  // local ID, it will be treated as a create-new.  Otherwise, if it's a server
+  // ID, we'll fake the server data so that it looks like it exists on the
+  // server.  Returns the methandle of the created item in |metahandle_out| if
+  // not NULL.
   void CreateUnsyncedItem(const syncable::Id& item_id,
                           const syncable::Id& parent_id,
                           const std::string& name,
@@ -45,16 +51,20 @@ class TestEntryFactory {
                           ModelType model_type,
                           int64* metahandle_out);
 
-  // Creates an item that is both unsynced an an unapplied update.  Returns the
-  // metahandle of the created item.
-  int64 CreateUnappliedAndUnsyncedItem(const std::string& name,
-                                       ModelType model_type);
+  // Creates a bookmark that is both unsynced an an unapplied update.  Returns
+  // the metahandle of the created item.
+  int64 CreateUnappliedAndUnsyncedBookmarkItem(const std::string& name);
 
-  // Creates an item that has neither IS_UNSYNED or IS_UNAPPLIED_UPDATE.  The
-  // item is known to both the server and client.  Returns the metahandle of
-  // the created item.
+  // Creates a unique_client_tag item that has neither IS_UNSYNED or
+  // IS_UNAPPLIED_UPDATE.  The item is known to both the server and client.
+  // Returns the metahandle of the created item.
   int64 CreateSyncedItem(const std::string& name,
                          ModelType model_type, bool is_folder);
+
+  // Creates a root node that IS_UNAPPLIED. Smiilar to what one would find in
+  // the database between the ProcessUpdates of an initial datatype configure
+  // cycle and the ApplyUpdates step of the same sync cycle.
+  int64 CreateUnappliedRootNode(ModelType model_type);
 
   // Looks up the item referenced by |meta_handle|. If successful, overwrites
   // the server specifics with |specifics|, sets

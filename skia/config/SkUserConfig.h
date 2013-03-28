@@ -110,11 +110,7 @@
     include path.
  */
 //#define SK_ZLIB_INCLUDE <zlib.h>
-#if defined(USE_SYSTEM_ZLIB)
-#define SK_ZLIB_INCLUDE <zlib.h>
-#else
 #define SK_ZLIB_INCLUDE "third_party/zlib/zlib.h"
-#endif
 
 /*  Define this to allow PDF scalars above 32k.  The PDF/A spec doesn't allow
     them, but modern PDF interpreters should handle them just fine.
@@ -160,17 +156,13 @@
 */
 #undef SK_USER_TRACE_INCLUDE_FILE
 
-/* If this is not defined, skia dithers gradients. Turning this on will make
-   gradients look better, but might have a performance impact. When it's turned
-   on, several webkit pixel tests will need to be rebaselined, too.
-   http://crbug.com/41756
- */
-#define SK_DISABLE_DITHER_32BIT_GRADIENT
-
 // ===== Begin Chrome-specific definitions =====
 
 #define SK_SCALAR_IS_FLOAT
 #undef SK_SCALAR_IS_FIXED
+
+#define SK_MSCALAR_IS_DOUBLE
+#undef SK_MSCALAR_IS_FLOAT
 
 #define GR_MAX_OFFSCREEN_AA_DIM     512
 

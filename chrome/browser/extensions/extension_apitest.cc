@@ -6,8 +6,9 @@
 
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/api/test/test_api.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -191,7 +192,7 @@ bool ExtensionApiTest::RunExtensionTestImpl(const char* extension_name,
 
   const extensions::Extension* extension = NULL;
   if (!std::string(extension_name).empty()) {
-    FilePath extension_path = test_data_dir_.AppendASCII(extension_name);
+    base::FilePath extension_path = test_data_dir_.AppendASCII(extension_name);
     if (load_as_component) {
       extension = LoadExtensionAsComponent(extension_path);
     } else {
@@ -234,11 +235,11 @@ bool ExtensionApiTest::RunExtensionTestImpl(const char* extension_name,
       ui_test_utils::NavigateToURL(browser(), url);
 
   } else if (launch_platform_app) {
-    application_launch::LaunchParams params(browser()->profile(), extension,
-                                            extension_misc::LAUNCH_NONE,
-                                            NEW_WINDOW);
+    chrome::AppLaunchParams params(browser()->profile(), extension,
+                                   extension_misc::LAUNCH_NONE,
+                                   NEW_WINDOW);
     params.command_line = CommandLine::ForCurrentProcess();
-    application_launch::OpenApplication(params);
+    chrome::OpenApplication(params);
   }
 
   if (!catcher.GetNextResult()) {
@@ -251,14 +252,15 @@ bool ExtensionApiTest::RunExtensionTestImpl(const char* extension_name,
 
 // Test that exactly one extension is loaded, and return it.
 const extensions::Extension* ExtensionApiTest::GetSingleLoadedExtension() {
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
 
   const extensions::Extension* extension = NULL;
   for (ExtensionSet::const_iterator it = service->extensions()->begin();
        it != service->extensions()->end(); ++it) {
     // Ignore any component extensions. They are automatically loaded into all
     // profiles and aren't the extension we're looking for here.
-    if ((*it)->location() == extensions::Extension::COMPONENT)
+    if ((*it)->location() == extensions::Manifest::COMPONENT)
       continue;
 
     if (extension != NULL) {
@@ -292,7 +294,8 @@ bool ExtensionApiTest::StartTestServer() {
   return true;
 }
 
-bool ExtensionApiTest::StartWebSocketServer(const FilePath& root_directory) {
+bool ExtensionApiTest::StartWebSocketServer(
+    const base::FilePath& root_directory) {
   websocket_server_.reset(new net::TestServer(
       net::TestServer::TYPE_WS,
       net::TestServer::kLocalhost,

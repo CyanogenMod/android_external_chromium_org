@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
+#include "sandbox/linux/seccomp-bpf/linux_seccomp.h"
+#include "sandbox/linux/seccomp-bpf/port.h"
 #include "sandbox/linux/seccomp-bpf/syscall_iterator.h"
 
 namespace playground2 {
@@ -16,7 +17,8 @@ uint32_t SyscallIterator::Next() {
   do {
     // |num_| has been initialized to 0, which we assume is also MIN_SYSCALL.
     // This true for supported architectures (Intel and ARM EABI).
-    CHECK_EQ(MIN_SYSCALL, 0u);
+    COMPILE_ASSERT(MIN_SYSCALL == 0u,
+                   min_syscall_should_always_be_zero);
     val = num_;
 
     // First we iterate up to MAX_PUBLIC_SYSCALL, which is equal to MAX_SYSCALL
@@ -78,14 +80,16 @@ bool SyscallIterator::IsValid(uint32_t num) {
   return false;
 }
 
-bool SyscallIterator::IsArmPrivate(uint32_t num) {
 #if defined(__arm__) && (defined(__thumb__) || defined(__ARM_EABI__))
+bool SyscallIterator::IsArmPrivate(uint32_t num) {
   return (num >= MIN_PRIVATE_SYSCALL && num <= MAX_PRIVATE_SYSCALL) ||
          (num >= MIN_GHOST_SYSCALL && num <= MAX_SYSCALL);
-#else
-  return false;
-#endif
 }
+#else
+bool SyscallIterator::IsArmPrivate(uint32_t) {
+  return false;
+}
+#endif
 
 }  // namespace
 

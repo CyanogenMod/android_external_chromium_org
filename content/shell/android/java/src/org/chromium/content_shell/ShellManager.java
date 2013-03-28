@@ -11,6 +11,7 @@ import android.widget.FrameLayout;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewRenderView;
 import org.chromium.ui.gfx.NativeWindow;
 
@@ -20,10 +21,12 @@ import org.chromium.ui.gfx.NativeWindow;
 @JNINamespace("content")
 public class ShellManager extends FrameLayout {
 
+    public static final String DEFAULT_SHELL_URL = "http://www.google.com";
+    private static boolean sStartup = true;
     private NativeWindow mWindow;
     private Shell mActiveShell;
 
-    private String mStartupUrl = ContentShellActivity.DEFAULT_SHELL_URL;
+    private String mStartupUrl = DEFAULT_SHELL_URL;
 
     // The target for all content rendering.
     private ContentViewRenderView mContentViewRenderView;
@@ -37,7 +40,10 @@ public class ShellManager extends FrameLayout {
         mContentViewRenderView = new ContentViewRenderView(context) {
             @Override
             protected void onReadyToRender() {
-                mActiveShell.loadUrl(mStartupUrl);
+                if (sStartup) {
+                    mActiveShell.loadUrl(mStartupUrl);
+                    sStartup = false;
+                }
             }
         };
     }
@@ -66,7 +72,7 @@ public class ShellManager extends FrameLayout {
     /**
      * @return The currently visible shell view or null if one is not showing.
      */
-    protected Shell getActiveShell() {
+    public Shell getActiveShell() {
         return mActiveShell;
     }
 
@@ -80,12 +86,6 @@ public class ShellManager extends FrameLayout {
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private int getContentViewLayerRenderer() {
-        return mContentViewRenderView.getNativeContentViewLayerRenderer();
-    }
-
-    @SuppressWarnings("unused")
-    @CalledByNative
     private Object createShell() {
         LayoutInflater inflater =
                 (LayoutInflater) getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
@@ -94,9 +94,8 @@ public class ShellManager extends FrameLayout {
 
         removeAllViews();
         if (mActiveShell != null) {
-            if (mActiveShell.getContentView() != null) {
-                mActiveShell.getContentView().onHide();
-            }
+            ContentView contentView = mActiveShell.getContentView();
+            if (contentView != null) contentView.onHide();
             mActiveShell.setContentViewRenderView(null);
         }
 
@@ -104,7 +103,11 @@ public class ShellManager extends FrameLayout {
         addView(shellView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         mActiveShell = shellView;
-        if (mActiveShell.getContentView() != null) mActiveShell.getContentView().onShow();
+        ContentView contentView = mActiveShell.getContentView();
+        if (contentView != null) {
+            mContentViewRenderView.setCurrentContentView(contentView);
+            contentView.onShow();
+        }
 
         return shellView;
     }

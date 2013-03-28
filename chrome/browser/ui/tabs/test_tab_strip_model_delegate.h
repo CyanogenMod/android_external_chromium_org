@@ -22,6 +22,7 @@ class TestTabStripModelDelegate : public TabStripModelDelegate {
       const gfx::Rect& window_bounds,
       const DockInfo& dock_info,
       bool maximize) OVERRIDE;
+  virtual void WillAddWebContents(content::WebContents* contents) OVERRIDE;
   virtual int GetDragActions() const OVERRIDE;
   virtual bool CanDuplicateContentsAt(int index) OVERRIDE;
   virtual void DuplicateContentsAt(int index) OVERRIDE;
@@ -29,7 +30,7 @@ class TestTabStripModelDelegate : public TabStripModelDelegate {
   virtual void CreateHistoricalTab(content::WebContents* contents) OVERRIDE;
   virtual bool RunUnloadListenerBeforeClosing(
       content::WebContents* contents) OVERRIDE;
-  virtual bool CanRestoreTab() OVERRIDE;
+  virtual RestoreTabType GetRestoreTabType() OVERRIDE;
   virtual void RestoreTab() OVERRIDE;
   virtual bool CanBookmarkAllTabs() const OVERRIDE;
   virtual void BookmarkAllTabs() OVERRIDE;

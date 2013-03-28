@@ -7,8 +7,13 @@
 #include "base/callback.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
+#include "chrome/browser/download/download_history.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/download/download_status_updater.h"
+#include "chrome/browser/download/download_ui_controller.h"
+#include "chrome/browser/extensions/api/downloads/downloads_api.h"
+#include "chrome/browser/history/history_service.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -24,16 +29,6 @@ DownloadService::DownloadService(Profile* profile)
 }
 
 DownloadService::~DownloadService() {}
-
-void DownloadService::OnManagerCreated(
-    const DownloadService::OnManagerCreatedCallback& cb) {
-  if (download_manager_created_) {
-    DownloadManager* dm = BrowserContext::GetDownloadManager(profile_);
-    cb.Run(dm);
-  } else {
-    on_manager_created_callbacks_.push_back(cb);
-  }
-}
 
 ChromeDownloadManagerDelegate* DownloadService::GetDownloadManagerDelegate() {
   DownloadManager* manager = BrowserContext::GetDownloadManager(profile_);
@@ -52,19 +47,40 @@ ChromeDownloadManagerDelegate* DownloadService::GetDownloadManagerDelegate() {
 
   manager_delegate_->SetDownloadManager(manager);
 
+#if !defined(OS_ANDROID)
+  extension_event_router_.reset(new ExtensionDownloadsEventRouter(
+      profile_, manager));
+#endif
+
+  if (!profile_->IsOffTheRecord()) {
+    HistoryService* hs = HistoryServiceFactory::GetForProfile(
+        profile_, Profile::EXPLICIT_ACCESS);
+    if (hs)
+      download_history_.reset(new DownloadHistory(
+          manager,
+          scoped_ptr<DownloadHistory::HistoryAdapter>(
+            new DownloadHistory::HistoryAdapter(hs))));
+  }
+
+  // Pass an empty delegate when constructing the DownloadUIController. The
+  // default delegate does all the notifications we need.
+  scoped_ptr<DownloadUIController::Delegate> empty_ui_delegate;
+  download_ui_.reset(new DownloadUIController(manager,
+                                              empty_ui_delegate.Pass()));
+
   // Include this download manager in the set monitored by the
   // global status updater.
   g_browser_process->download_status_updater()->AddManager(manager);
 
-  download_manager_created_ = true;
-  for (std::vector<OnManagerCreatedCallback>::iterator cb =
-           on_manager_created_callbacks_.begin();
-       cb != on_manager_created_callbacks_.end(); ++cb) {
-    cb->Run(manager);
-  }
-  on_manager_created_callbacks_.clear();
-
   return manager_delegate_.get();
+}
+
+DownloadHistory* DownloadService::GetDownloadHistory() {
+  if (!download_manager_created_) {
+    GetDownloadManagerDelegate();
+  }
+  DCHECK(download_manager_created_);
+  return download_history_.get();
 }
 
 bool DownloadService::HasCreatedDownloadManager() {
@@ -117,5 +133,9 @@ void DownloadService::Shutdown() {
     // manually earlier. See http://crbug.com/131692
     BrowserContext::GetDownloadManager(profile_)->Shutdown();
   }
+#if !defined(OS_ANDROID)
+  extension_event_router_.reset();
+#endif
   manager_delegate_ = NULL;
+  download_history_.reset();
 }

@@ -16,12 +16,12 @@
 #include "ui/views/controls/link_listener.h"
 #include "ui/views/mouse_watcher.h"
 
-class BaseDownloadItemModel;
 class Browser;
 class BrowserView;
 class DownloadItemView;
 
 namespace content {
+class DownloadItem;
 class PageNavigator;
 }
 
@@ -98,7 +98,7 @@ class DownloadShelfView : public views::AccessiblePaneView,
 
  protected:
   // Implementation of DownloadShelf.
-  virtual void DoAddDownload(BaseDownloadItemModel* download_model) OVERRIDE;
+  virtual void DoAddDownload(content::DownloadItem* download) OVERRIDE;
   virtual void DoShow() OVERRIDE;
   virtual void DoClose() OVERRIDE;
 

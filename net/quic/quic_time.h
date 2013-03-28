@@ -3,7 +3,10 @@
 // found in the LICENSE file.
 //
 // QuicTime represents one point in time, stored in microsecond resolution.
-// This class wrapps the classes DateTimeO and DateTimeOffset.
+// QuicTime is monotonically increasing, even across system clock adjustments.
+// The epoch (time 0) of QuicTime is unspecified.
+//
+// This implementation wraps the classes base::TimeTicks and base::TimeDelta.
 
 #ifndef NET_QUIC_QUIC_TIME_H_
 #define NET_QUIC_QUIC_TIME_H_
@@ -20,19 +23,25 @@ class NET_EXPORT_PRIVATE QuicTime {
   // time, stored in microsecond resolution.
   class NET_EXPORT_PRIVATE Delta {
    public:
-    // Default constructor initiates to 0.
-    Delta();
-
     explicit Delta(base::TimeDelta delta);
+
+    // Create a object with an offset of 0.
+    static Delta Zero();
 
     // Create a object with infinite offset time.
     static Delta Infinite();
+
+    // Converts a number of seconds to a time offset.
+    static Delta FromSeconds(int64 secs);
 
     // Converts a number of milliseconds to a time offset.
     static Delta FromMilliseconds(int64 ms);
 
     // Converts a number of microseconds to a time offset.
     static Delta FromMicroseconds(int64 us);
+
+    // Converts the time offset to a rounded number of seconds.
+    int64 ToSeconds() const;
 
     // Converts the time offset to a rounded number of milliseconds.
     int64 ToMilliseconds() const;
@@ -52,22 +61,24 @@ class NET_EXPORT_PRIVATE QuicTime {
     base::TimeDelta delta_;
 
     friend class QuicTime;
+    friend class QuicClock;
   };
-
-  // Default constructor initiates to 0.
-  QuicTime();
 
   explicit QuicTime(base::TimeTicks ticks);
 
+  // Creates a new QuicTime with an internal value of 0.  IsInitialized()
+  // will return false for these times.
+  static QuicTime Zero();
+
   // Create a new QuicTime holding the time_ms.
-  static QuicTime FromMilliseconds(uint64 time_ms);
+  static QuicTime FromMilliseconds(int64 time_ms);
 
   // Create a new QuicTime holding the time_us.
-  static QuicTime FromMicroseconds(uint64 time_us);
+  static QuicTime FromMicroseconds(int64 time_us);
 
-  uint64 ToMilliseconds() const;
+  int64 ToMilliseconds() const;
 
-  uint64 ToMicroseconds() const;
+  int64 ToMicroseconds() const;
 
   bool IsInitialized() const;
 

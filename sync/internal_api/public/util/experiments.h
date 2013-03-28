@@ -9,17 +9,39 @@
 
 namespace syncer {
 
+const char kKeystoreEncryptionTag[] = "keystore_encryption";
+const char kKeystoreEncryptionFlag[] = "sync-keystore-encryption";
+const char kAutofillCullingTag[] = "autofill_culling";
+const char kFullHistorySyncTag[] = "history_delete_directives";
+const char kFullHistorySyncFlag[] = "full-history-sync";
+const char kFaviconSyncTag[] = "favicon_sync";
+const char kFaviconSyncFlag[] = "enable-sync-favicons";
+
 // A structure to hold the enable status of experimental sync features.
 struct Experiments {
-  Experiments() : sync_tab_favicons(false) {}
+  Experiments() : keystore_encryption(false),
+                  autofill_culling(false),
+                  full_history_sync(false),
+                  favicon_sync(false) {}
 
   bool Matches(const Experiments& rhs) {
-    return (sync_tab_favicons == rhs.sync_tab_favicons);
+    return (keystore_encryption == rhs.keystore_encryption &&
+            autofill_culling == rhs.autofill_culling &&
+            full_history_sync == rhs.full_history_sync &&
+            favicon_sync == rhs.favicon_sync);
   }
 
-  // Enable syncing of favicons within tab sync (only has an effect if tab sync
-  // is already enabled). This takes effect on the next restart.
-  bool sync_tab_favicons;
+  // Enable keystore encryption logic and the new encryption UI.
+  bool keystore_encryption;
+
+  // Enable deletion of expired autofill entries (if autofill sync is enabled).
+  bool autofill_culling;
+
+  // Enable full history sync (and history delete directives) for this client.
+  bool full_history_sync;
+
+  // Enable the favicons sync datatypes (favicon images and favicon tracking).
+  bool favicon_sync;
 };
 
 }  // namespace syncer

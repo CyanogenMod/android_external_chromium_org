@@ -43,7 +43,7 @@ FileStream::~FileStream() {
   bound_net_log_.EndEvent(NetLog::TYPE_FILE_STREAM_ALIVE);
 }
 
-int FileStream::Open(const FilePath& path, int open_flags,
+int FileStream::Open(const base::FilePath& path, int open_flags,
                      const CompletionCallback& callback) {
   if (IsOpen()) {
     DLOG(FATAL) << "File is already open!";
@@ -56,7 +56,7 @@ int FileStream::Open(const FilePath& path, int open_flags,
   return ERR_IO_PENDING;
 }
 
-int FileStream::OpenSync(const FilePath& path, int open_flags) {
+int FileStream::OpenSync(const base::FilePath& path, int open_flags) {
   base::ThreadRestrictions::AssertIOAllowed();
 
   if (IsOpen()) {
@@ -65,10 +65,7 @@ int FileStream::OpenSync(const FilePath& path, int open_flags) {
   }
 
   open_flags_ = open_flags;
-  // TODO(satorux): Put a DCHECK once all async clients are migrated
-  // to use Open(). crbug.com/114783
-  //
-  // DCHECK(!is_async());
+  DCHECK(!is_async());
   return context_->OpenSync(path, open_flags_);
 }
 
@@ -113,7 +110,7 @@ int64 FileStream::Available() {
   if (size < 0)
     return size;
 
-  DCHECK_GT(size, cur_pos);
+  DCHECK_GE(size, cur_pos);
   return size - cur_pos;
 }
 

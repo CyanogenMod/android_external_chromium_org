@@ -6,9 +6,11 @@
 
 #include <X11/extensions/Xfixes.h>
 
+#include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/logging.h"
 #include "remoting/base/constants.h"
+#include "remoting/base/util.h"
 
 namespace remoting {
 
@@ -16,7 +18,6 @@ XServerClipboard::XServerClipboard()
     : display_(NULL),
       clipboard_window_(BadValue),
       xfixes_event_base_(-1),
-      xfixes_error_base_(-1),
       clipboard_atom_(None),
       large_selection_atom_(None),
       selection_string_atom_(None),
@@ -42,8 +43,9 @@ void XServerClipboard::Init(Display* display,
   // TODO(lambroslambrou): Consider using ScopedXErrorHandler here, or consider
   // placing responsibility for handling X Errors outside this class, since
   // X Error handlers are global to all X connections.
+  int xfixes_error_base;
   if (!XFixesQueryExtension(display_, &xfixes_event_base_,
-                            &xfixes_error_base_)) {
+                            &xfixes_error_base)) {
     LOG(INFO) << "X server does not support XFixes.";
     return;
   }
@@ -53,45 +55,50 @@ void XServerClipboard::Init(Display* display,
                                           0, 0, 1, 1,  // x, y, width, height
                                           0, 0, 0);
 
-  XFixesSelectSelectionInput(display_, clipboard_window_, XA_PRIMARY,
-                             XFixesSetSelectionOwnerNotifyMask);
-  XFixesSelectSelectionInput(display_, clipboard_window_, clipboard_atom_,
-                             XFixesSetSelectionOwnerNotifyMask);
-
   // TODO(lambroslambrou): Use ui::X11AtomCache for this, either by adding a
   // dependency on ui/ or by moving X11AtomCache to base/.
-  const int kNumAtoms = 6;
-  const char* names[kNumAtoms] = {
+  static const char* const kAtomNames[] = {
     "CLIPBOARD",
     "INCR",
     "SELECTION_STRING",
     "TARGETS",
     "TIMESTAMP",
-    "UTF8_STRING" };
-  Atom atoms[kNumAtoms];
-  if (XInternAtoms(display_, const_cast<char**>(names), kNumAtoms, False,
-                   atoms)) {
+    "UTF8_STRING"
+  };
+  static const int kNumAtomNames = arraysize(kAtomNames);
+
+  Atom atoms[kNumAtomNames];
+  if (XInternAtoms(display_, const_cast<char**>(kAtomNames), kNumAtomNames,
+                   False, atoms)) {
     clipboard_atom_ = atoms[0];
     large_selection_atom_ = atoms[1];
     selection_string_atom_ = atoms[2];
     targets_atom_ = atoms[3];
     timestamp_atom_ = atoms[4];
     utf8_string_atom_ = atoms[5];
+    COMPILE_ASSERT(kNumAtomNames >= 6, kAtomNames_too_small);
   } else {
     LOG(ERROR) << "XInternAtoms failed";
   }
+
+  XFixesSelectSelectionInput(display_, clipboard_window_, XA_PRIMARY,
+                             XFixesSetSelectionOwnerNotifyMask);
+  XFixesSelectSelectionInput(display_, clipboard_window_, clipboard_atom_,
+                             XFixesSetSelectionOwnerNotifyMask);
 }
 
 void XServerClipboard::SetClipboard(const std::string& mime_type,
                                     const std::string& data) {
   DCHECK(display_);
 
-  if (clipboard_window_ == BadValue) {
+  if (clipboard_window_ == BadValue)
     return;
-  }
 
   // Currently only UTF-8 is supported.
-  if (mime_type != kMimeTypeTextUtf8) {
+  if (mime_type != kMimeTypeTextUtf8)
+    return;
+  if (!StringIsUtf8(data.c_str(), data.length())) {
+    LOG(ERROR) << "ClipboardEvent: data is not UTF-8 encoded.";
     return;
   }
 
@@ -126,7 +133,7 @@ void XServerClipboard::ProcessXEvent(XEvent* event) {
 
   if (event->type == xfixes_event_base_ + XFixesSetSelectionOwnerNotify) {
     XFixesSelectionNotifyEvent* notify_event =
-      reinterpret_cast<XFixesSelectionNotifyEvent*>(event);
+        reinterpret_cast<XFixesSelectionNotifyEvent*>(event);
     OnSetSelectionOwnerNotify(notify_event->selection,
                               notify_event->selection_timestamp);
   }
@@ -140,22 +147,20 @@ void XServerClipboard::OnSetSelectionOwnerNotify(Atom selection,
   // quickly to our requests.
   if (!get_selections_time_.is_null() &&
       (base::TimeTicks::Now() - get_selections_time_) <
-      base::TimeDelta::FromSeconds(5)) {
+          base::TimeDelta::FromSeconds(5)) {
     // TODO(lambroslambrou): Instead of ignoring this notification, cancel any
     // pending request operations and ignore the resulting events, before
     // dispatching new requests here.
     return;
   }
 
-  if (selection != clipboard_atom_ && selection != XA_PRIMARY) {
-    // Only process PRIMARY and CLIPBOARD selections.
+  // Only process PRIMARY and CLIPBOARD selections.
+  if (selection != clipboard_atom_ && selection != XA_PRIMARY)
     return;
-  }
 
   // If we own the selection, don't request details for it.
-  if (IsSelectionOwner(selection)) {
+  if (IsSelectionOwner(selection))
     return;
-  }
 
   get_selections_time_ = base::TimeTicks::Now();
 
@@ -181,9 +186,8 @@ void XServerClipboard::OnPropertyNotify(XEvent* event) {
       XFree(data);
 
       // If the property is zero-length then the large transfer is complete.
-      if (item_count == 0) {
+      if (item_count == 0)
         large_selection_property_ = None;
-      }
     }
   }
 }
@@ -223,48 +227,21 @@ void XServerClipboard::OnSelectionRequest(XEvent* event) {
   selection_event.selection = event->xselectionrequest.selection;
   selection_event.time = event->xselectionrequest.time;
   selection_event.target = event->xselectionrequest.target;
-  if (event->xselectionrequest.property == None) {
+  if (event->xselectionrequest.property == None)
     event->xselectionrequest.property = event->xselectionrequest.target;
-  }
   if (!IsSelectionOwner(selection_event.selection)) {
     selection_event.property = None;
   } else {
     selection_event.property = event->xselectionrequest.property;
     if (selection_event.target == targets_atom_) {
-      // Respond advertising XA_STRING, UTF8_STRING and TIMESTAMP data for the
-      // selection.
-      Atom targets[3];
-      targets[0] = timestamp_atom_;
-      targets[1] = utf8_string_atom_;
-      targets[2] = XA_STRING;
-      XChangeProperty(display_, selection_event.requestor,
-                      selection_event.property, XA_ATOM, 32, PropModeReplace,
-                      reinterpret_cast<unsigned char*>(targets), 3);
+      SendTargetsResponse(selection_event.requestor, selection_event.property);
     } else if (selection_event.target == timestamp_atom_) {
-      // Respond with the timestamp of our selection; we always return
-      // CurrentTime since our selections are set by remote clients, so there
-      // is no associated local X event.
-
-      // TODO(lambroslambrou): Should use a proper timestamp here instead of
-      // CurrentTime.  ICCCM recommends doing a zero-length property append,
-      // and getting a timestamp from the subsequent PropertyNotify event.
-      Time time = CurrentTime;
-      XChangeProperty(display_, selection_event.requestor,
-                      selection_event.property, XA_INTEGER, 32,
-                      PropModeReplace, reinterpret_cast<unsigned char*>(&time),
-                      1);
+      SendTimestampResponse(selection_event.requestor,
+                            selection_event.property);
     } else if (selection_event.target == utf8_string_atom_ ||
                selection_event.target == XA_STRING) {
-      if (!data_.empty()) {
-        // Return the actual string data; we always return UTF8, regardless of
-        // the configured locale.
-        XChangeProperty(display_, selection_event.requestor,
-                        selection_event.property, selection_event.target, 8,
-                        PropModeReplace,
-                        reinterpret_cast<unsigned char*>(
-                            const_cast<char*>(data_.data())),
-                        data_.size());
-      }
+      SendStringResponse(selection_event.requestor, selection_event.property,
+                         selection_event.target);
     }
   }
   XSendEvent(display_, selection_event.requestor, False, 0,
@@ -273,6 +250,42 @@ void XServerClipboard::OnSelectionRequest(XEvent* event) {
 
 void XServerClipboard::OnSelectionClear(XEvent* event) {
   selections_owned_.erase(event->xselectionclear.selection);
+}
+
+void XServerClipboard::SendTargetsResponse(Window requestor, Atom property) {
+  // Respond advertising XA_STRING, UTF8_STRING and TIMESTAMP data for the
+  // selection.
+  Atom targets[3];
+  targets[0] = timestamp_atom_;
+  targets[1] = utf8_string_atom_;
+  targets[2] = XA_STRING;
+  XChangeProperty(display_, requestor, property, XA_ATOM, 32, PropModeReplace,
+                  reinterpret_cast<unsigned char*>(targets), 3);
+}
+
+void XServerClipboard::SendTimestampResponse(Window requestor, Atom property) {
+  // Respond with the timestamp of our selection; we always return
+  // CurrentTime since our selections are set by remote clients, so there
+  // is no associated local X event.
+
+  // TODO(lambroslambrou): Should use a proper timestamp here instead of
+  // CurrentTime.  ICCCM recommends doing a zero-length property append,
+  // and getting a timestamp from the subsequent PropertyNotify event.
+  Time time = CurrentTime;
+  XChangeProperty(display_, requestor, property, XA_INTEGER, 32,
+                  PropModeReplace, reinterpret_cast<unsigned char*>(&time), 1);
+}
+
+void XServerClipboard::SendStringResponse(Window requestor, Atom property,
+                                          Atom target) {
+  if (!data_.empty()) {
+    // Return the actual string data; we always return UTF8, regardless of
+    // the configured locale.
+    XChangeProperty(display_, requestor, property, target, 8, PropModeReplace,
+                    reinterpret_cast<unsigned char*>(
+                        const_cast<char*>(data_.data())),
+                    data_.size());
+  }
 }
 
 void XServerClipboard::HandleSelectionNotify(XSelectionEvent* event,
@@ -289,9 +302,8 @@ void XServerClipboard::HandleSelectionNotify(XSelectionEvent* event,
     finished = HandleSelectionStringEvent(event, format, item_count, data);
   }
 
-  if (finished) {
+  if (finished)
     get_selections_time_ = base::TimeTicks();
-  }
 }
 
 bool XServerClipboard::HandleSelectionTargetsEvent(XSelectionEvent* event,
@@ -323,15 +335,14 @@ bool XServerClipboard::HandleSelectionStringEvent(XSelectionEvent* event,
                                                   int format,
                                                   int item_count,
                                                   void* data) {
-  if (event->property != selection_string_atom_ || !data || format != 8) {
+  if (event->property != selection_string_atom_ || !data || format != 8)
     return true;
-  }
 
   std::string text(static_cast<char*>(data), item_count);
 
-  if (event->target == XA_STRING || event->target == utf8_string_atom_) {
+  if (event->target == XA_STRING || event->target == utf8_string_atom_)
     NotifyClipboardText(text);
-  }
+
   return true;
 }
 

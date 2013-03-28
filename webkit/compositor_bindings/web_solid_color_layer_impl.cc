@@ -2,38 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "web_solid_color_layer_impl.h"
+#include "webkit/compositor_bindings/web_solid_color_layer_impl.h"
 
-#include "cc/solid_color_layer.h"
-#include "web_layer_impl.h"
+#include "cc/layers/solid_color_layer.h"
+#include "webkit/compositor_bindings/web_layer_impl.h"
 
 using cc::SolidColorLayer;
 
-namespace WebKit {
-
-WebSolidColorLayer* WebSolidColorLayer::create()
-{
-    return new WebSolidColorLayerImpl();
-}
+namespace webkit {
 
 WebSolidColorLayerImpl::WebSolidColorLayerImpl()
-    : m_layer(new WebLayerImpl(SolidColorLayer::create()))
-{
-    m_layer->layer()->setIsDrawable(true);
+    : layer_(new WebLayerImpl(SolidColorLayer::Create())) {
+  layer_->layer()->SetIsDrawable(true);
 }
 
-WebSolidColorLayerImpl::~WebSolidColorLayerImpl()
-{
+WebSolidColorLayerImpl::~WebSolidColorLayerImpl() {}
+
+WebKit::WebLayer* WebSolidColorLayerImpl::layer() { return layer_.get(); }
+
+void WebSolidColorLayerImpl::setBackgroundColor(WebKit::WebColor color) {
+  layer_->setBackgroundColor(color);
 }
 
-WebLayer* WebSolidColorLayerImpl::layer()
-{
-    return m_layer.get();
-}
-
-void WebSolidColorLayerImpl::setBackgroundColor(WebColor color)
-{
-    m_layer->setBackgroundColor(color);
-}
-
-} // namespace WebKit
+}  // namespace webkit

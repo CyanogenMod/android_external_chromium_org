@@ -12,12 +12,12 @@
 #include "base/message_loop.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/ssl_config_service_defaults.h"
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/http_stream.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -77,12 +77,12 @@ class MockHttpStream : public HttpStream {
 
   // HttpStream implementation.
   virtual int InitializeStream(const HttpRequestInfo* request_info,
+                               RequestPriority priority,
                                const BoundNetLog& net_log,
                                const CompletionCallback& callback) OVERRIDE {
     return ERR_UNEXPECTED;
   }
   virtual int SendRequest(const HttpRequestHeaders& request_headers,
-                          UploadDataStream* request_body,
                           HttpResponseInfo* response,
                           const CompletionCallback& callback) OVERRIDE {
     return ERR_UNEXPECTED;
@@ -98,7 +98,6 @@ class MockHttpStream : public HttpStream {
   }
 
   virtual bool CanFindEndOfResponse() const OVERRIDE { return true; }
-  virtual bool IsMoreDataBuffered() const OVERRIDE { return false; }
   virtual bool IsConnectionReused() const OVERRIDE { return false; }
   virtual void SetConnectionReused() OVERRIDE {}
   virtual bool IsConnectionReusable() const OVERRIDE { return false; }
@@ -124,6 +123,9 @@ class MockHttpStream : public HttpStream {
   virtual bool IsSpdyHttpStream() const OVERRIDE { return false; }
 
   virtual void LogNumRttVsBytesMetrics() const OVERRIDE {}
+
+  virtual bool GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE { return false; }
 
   virtual void Drain(HttpNetworkSession*) OVERRIDE {}
 
@@ -214,7 +216,7 @@ class HttpResponseBodyDrainerTest : public testing::Test {
         mock_stream_(new MockHttpStream(&result_waiter_)),
         drainer_(new HttpResponseBodyDrainer(mock_stream_)) {}
 
-  ~HttpResponseBodyDrainerTest() {}
+  virtual ~HttpResponseBodyDrainerTest() {}
 
   HttpNetworkSession* CreateNetworkSession() const {
     HttpNetworkSession::Params params;

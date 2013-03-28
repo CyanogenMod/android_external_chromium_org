@@ -6,11 +6,12 @@
 
 #include "ash/wm/frame_painter.h"
 #include "ash/wm/workspace/frame_maximize_button.h"
-#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/avatar_menu_button.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/tab_icon_view.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "content/public/browser/web_contents.h"
@@ -26,6 +27,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/controls/button/image_button.h"
@@ -166,7 +168,8 @@ int BrowserNonClientFrameViewAsh::NonClientHitTest(const gfx::Point& point) {
   int hit_test = frame_painter_->NonClientHitTest(this, point);
   // When the window is restored we want a large click target above the tabs
   // to drag the window, so redirect clicks in the tab's shadow to caption.
-  if (hit_test == HTCLIENT && !frame()->IsMaximized()) {
+  if (hit_test == HTCLIENT &&
+      !(frame()->IsMaximized() || frame()->IsFullscreen())) {
     // Convert point to client coordinates.
     gfx::Point client_point(point);
     View::ConvertPointToTarget(this, frame()->client_view(), &client_point);
@@ -184,7 +187,23 @@ void BrowserNonClientFrameViewAsh::GetWindowMask(const gfx::Size& size,
 }
 
 void BrowserNonClientFrameViewAsh::ResetWindowControls() {
-  size_button_->SetState(views::CustomButton::BS_NORMAL);
+  if (ImmersiveModeController::UseImmersiveFullscreen()) {
+    // Hide the caption buttons in immersive mode because it's confusing when
+    // the user hovers or clicks in the top-right of the screen and hits one.
+    // Only show them during a reveal.
+    ImmersiveModeController* controller =
+        browser_view()->immersive_mode_controller();
+    if (controller->enabled()) {
+      bool revealed = controller->IsRevealed();
+      size_button_->SetVisible(revealed);
+      close_button_->SetVisible(revealed);
+    } else {
+      size_button_->SetVisible(true);
+      close_button_->SetVisible(true);
+    }
+  }
+
+  size_button_->SetState(views::CustomButton::STATE_NORMAL);
   // The close button isn't affected by this constraint.
 }
 
@@ -202,8 +221,8 @@ void BrowserNonClientFrameViewAsh::UpdateWindowTitle() {
 // views::View overrides:
 
 void BrowserNonClientFrameViewAsh::OnPaint(gfx::Canvas* canvas) {
-  if (frame()->IsFullscreen())
-    return;  // Nothing visible, don't paint.
+  if (!ShouldPaint())
+    return;
   // The primary header image changes based on window activation state and
   // theme, so we look it up for each paint.
   frame_painter_->PaintHeader(
@@ -270,18 +289,23 @@ gfx::Size BrowserNonClientFrameViewAsh::GetMinimumSize() {
 // views::ButtonListener overrides:
 
 void BrowserNonClientFrameViewAsh::ButtonPressed(views::Button* sender,
-                                                  const ui::Event& event) {
+                                                 const ui::Event& event) {
   // When shift-clicking slow down animations for visual debugging.
   // We used to do this via an event filter that looked for the shift key being
   // pressed but this interfered with several normal keyboard shortcuts.
-  if (event.IsShiftDown())
-    ui::LayerAnimator::set_slow_animation_mode(true);
+  scoped_ptr<ui::ScopedAnimationDurationScaleMode> slow_duration_mode;
+  if (event.IsShiftDown()) {
+    slow_duration_mode.reset(new ui::ScopedAnimationDurationScaleMode(
+        ui::ScopedAnimationDurationScaleMode::SLOW_DURATION));
+  }
 
   if (sender == size_button_) {
     // The maximize button may move out from under the cursor.
     ResetWindowControls();
     if (size_button_minimizes_)
       frame()->Minimize();
+    else if (frame()->IsFullscreen())  // Can be clicked in immersive mode.
+      frame()->SetFullscreen(false);
     else if (frame()->IsMaximized())
       frame()->Restore();
     else
@@ -290,9 +314,6 @@ void BrowserNonClientFrameViewAsh::ButtonPressed(views::Button* sender,
   } else if (sender == close_button_) {
     frame()->Close();
   }
-
-  if (event.IsShiftDown())
-    ui::LayerAnimator::set_slow_animation_mode(false);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -337,13 +358,14 @@ int BrowserNonClientFrameViewAsh::NonClientTopBorderHeight(
 bool BrowserNonClientFrameViewAsh::UseShortHeader() const {
   // Restored browser -> tall header
   // Maximized browser -> short header
+  // Fullscreen browser (header shows with immersive reveal) -> short header
   // Popup&App window -> tall header
   // Panel -> short header
   // Dialogs use short header and are handled via CustomFrameViewAsh.
   Browser* browser = browser_view()->browser();
   switch (browser->type()) {
     case Browser::TYPE_TABBED:
-      return frame()->IsMaximized();
+      return frame()->IsMaximized() || frame()->IsFullscreen();
     case Browser::TYPE_POPUP:
       return false;
     case Browser::TYPE_PANEL:
@@ -371,6 +393,12 @@ void BrowserNonClientFrameViewAsh::LayoutAvatar() {
   avatar_button()->SetBoundsRect(avatar_bounds);
 }
 
+bool BrowserNonClientFrameViewAsh::ShouldPaint() const {
+  // Immersive mode windows are fullscreen, but need to paint during a reveal.
+  return !frame()->IsFullscreen() ||
+      browser_view()->immersive_mode_controller()->IsRevealed();
+}
+
 void BrowserNonClientFrameViewAsh::PaintToolbarBackground(gfx::Canvas* canvas) {
   gfx::Rect toolbar_bounds(browser_view()->GetToolbarBounds());
   if (toolbar_bounds.IsEmpty())
@@ -394,7 +422,7 @@ void BrowserNonClientFrameViewAsh::PaintToolbarBackground(gfx::Canvas* canvas) {
   int bottom_edge_height = h - split_point;
 
   canvas->FillRect(gfx::Rect(x, bottom_y, w, bottom_edge_height),
-                   tp->GetColor(ThemeService::COLOR_TOOLBAR));
+                   tp->GetColor(ThemeProperties::COLOR_TOOLBAR));
 
   // Paint the main toolbar image.  Since this image is also used to draw the
   // tab background, we must use the tab strip offset to compute the image
@@ -439,13 +467,15 @@ void BrowserNonClientFrameViewAsh::PaintToolbarBackground(gfx::Canvas* canvas) {
                 toolbar_bounds.bottom() - kClientEdgeThickness,
                 w - (2 * kClientEdgeThickness),
                 kClientEdgeThickness),
-      ThemeService::GetDefaultColor(ThemeService::COLOR_TOOLBAR_SEPARATOR));
+      ThemeProperties::GetDefaultColor(
+          ThemeProperties::COLOR_TOOLBAR_SEPARATOR));
 }
 
 void BrowserNonClientFrameViewAsh::PaintContentEdge(gfx::Canvas* canvas) {
   canvas->FillRect(gfx::Rect(0, close_button_->bounds().bottom(),
                              width(), kClientEdgeThickness),
-      ThemeService::GetDefaultColor(ThemeService::COLOR_TOOLBAR_SEPARATOR));
+      ThemeProperties::GetDefaultColor(
+          ThemeProperties::COLOR_TOOLBAR_SEPARATOR));
 }
 
 int BrowserNonClientFrameViewAsh::GetThemeFrameImageId() const {

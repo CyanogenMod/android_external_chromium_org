@@ -8,15 +8,26 @@
 // included file but that's all right since any javascript file should start
 // with a copyright comment anyway.
 
-//<include src="../../shared/js/load_time_data.js"/>
-//<include src="../../shared/js/util.js"/>
-//<include src="../../shared/js/i18n_template_no_process.js"/>
+//<include src="../../image_loader/client.js"/>
 
-//<include src="../../shared/js/cr.js"/>
-//<include src="../../shared/js/event_tracker.js"/>
-//<include src="../../shared/js/cr/ui.js"/>
-//<include src="../../shared/js/cr/event_target.js"/>
-//<include src="../../shared/js/cr/ui/touch_handler.js"/>
+//<include src="../../../../../ui/webui/resources/js/load_time_data.js"/>
+//<include src="../../../../../ui/webui/resources/js/util.js"/>
+//<include src="../../../../../ui/webui/resources/js/i18n_template_no_process.js"/>
+
+//<include src="../../../../../ui/webui/resources/js/cr.js"/>
+//<include src="../../../../../ui/webui/resources/js/event_tracker.js"/>
+//<include src="../../../../../ui/webui/resources/js/cr/ui.js"/>
+//<include src="../../../../../ui/webui/resources/js/cr/event_target.js"/>
+//<include src="../../../../../ui/webui/resources/js/cr/ui/array_data_model.js"/>
+//<include src="../../../../../ui/webui/resources/js/cr/ui/touch_handler.js"/>
+//<include src="../../../../../ui/webui/resources/js/cr/ui/list_item.js"/>
+//<include src="../../../../../ui/webui/resources/js/cr/ui/list_selection_model.js"/>
+//<include src="../../../../../ui/webui/resources/js/cr/ui/list_single_selection_model.js"/>
+//<include src="../../../../../ui/webui/resources/js/cr/ui/list_selection_controller.js"/>
+//<include src="../../../../../ui/webui/resources/js/cr/ui/list.js"/>
+
+(function() {
+// 'strict mode' is invoked for this scope.
 
 //<include src="util.js"/>
 //<include src="file_type.js"/>
@@ -28,3 +39,8 @@
 //<include src="media/media_util.js"/>
 
 //<include src="action_choice.js"/>
+
+// Exports
+window.ImageUtil = ImageUtil;
+
+})();

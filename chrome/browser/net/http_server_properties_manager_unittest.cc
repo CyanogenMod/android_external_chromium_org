@@ -6,9 +6,10 @@
 
 #include "base/basictypes.h"
 #include "base/message_loop.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/testing_pref_service.h"
 #include "base/values.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -84,17 +85,18 @@ class HttpServerPropertiesManagerTest : public testing::Test {
   }
 
   virtual void SetUp() OVERRIDE {
-    pref_service_.RegisterDictionaryPref(prefs::kHttpServerProperties);
+    pref_service_.registry()->RegisterDictionaryPref(
+        prefs::kHttpServerProperties);
     http_server_props_manager_.reset(
         new StrictMock<TestingHttpServerPropertiesManager>(&pref_service_));
     ExpectCacheUpdate();
-    loop_.RunAllPending();
+    loop_.RunUntilIdle();
   }
 
   virtual void TearDown() OVERRIDE {
     if (http_server_props_manager_.get())
       http_server_props_manager_->ShutdownOnUIThread();
-    loop_.RunAllPending();
+    loop_.RunUntilIdle();
     // Delete |http_server_props_manager_| while |io_thread_| is mapping IO to
     // |loop_|.
     http_server_props_manager_.reset();
@@ -117,7 +119,7 @@ class HttpServerPropertiesManagerTest : public testing::Test {
   }
 
   MessageLoop loop_;
-  TestingPrefService pref_service_;
+  TestingPrefServiceSimple pref_service_;
   scoped_ptr<TestingHttpServerPropertiesManager> http_server_props_manager_;
 
  private:
@@ -184,7 +186,7 @@ TEST_F(HttpServerPropertiesManagerTest,
   pref_service_.SetManagedPref(prefs::kHttpServerProperties,
                                http_server_properties_dict2);
 
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(http_server_props_manager_.get());
 
   // Verify SupportsSpdy.
@@ -232,7 +234,7 @@ TEST_F(HttpServerPropertiesManagerTest, SupportsSpdy) {
   http_server_props_manager_->SetSupportsSpdy(spdy_server_mail, true);
 
   // Run the task.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 
   EXPECT_TRUE(http_server_props_manager_->SupportsSpdy(spdy_server_mail));
   Mock::VerifyAndClearExpectations(http_server_props_manager_.get());
@@ -250,7 +252,7 @@ TEST_F(HttpServerPropertiesManagerTest, SetSpdySetting) {
       spdy_server_mail, id1, flags1, value1);
 
   // Run the task.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 
   const net::SettingsMap& settings_map1_ret =
       http_server_props_manager_->GetSpdySettings(spdy_server_mail);
@@ -274,7 +276,7 @@ TEST_F(HttpServerPropertiesManagerTest, HasAlternateProtocol) {
       spdy_server_mail, 443, net::NPN_SPDY_2);
 
   // Run the task.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(http_server_props_manager_.get());
 
   ASSERT_TRUE(
@@ -303,7 +305,7 @@ TEST_F(HttpServerPropertiesManagerTest, PipelineCapability) {
                                                     net::PIPELINE_INCAPABLE);
 
   // Run the task.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 
   EXPECT_EQ(net::PIPELINE_CAPABLE,
             http_server_props_manager_->GetPipelineCapability(known_pipeliner));
@@ -331,7 +333,7 @@ TEST_F(HttpServerPropertiesManagerTest, Clear) {
                                                     net::PIPELINE_CAPABLE);
 
   // Run the task.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 
   EXPECT_TRUE(http_server_props_manager_->SupportsSpdy(spdy_server_mail));
   EXPECT_TRUE(
@@ -379,7 +381,7 @@ TEST_F(HttpServerPropertiesManagerTest, ShutdownWithPendingUpdateCache0) {
   http_server_props_manager_->ShutdownOnUIThread();
   http_server_props_manager_.reset();
   // Run the task after shutdown and deletion.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 TEST_F(HttpServerPropertiesManagerTest, ShutdownWithPendingUpdateCache1) {
@@ -388,10 +390,10 @@ TEST_F(HttpServerPropertiesManagerTest, ShutdownWithPendingUpdateCache1) {
   // Shutdown comes before the task is executed.
   http_server_props_manager_->ShutdownOnUIThread();
   // Run the task after shutdown, but before deletion.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(http_server_props_manager_.get());
   http_server_props_manager_.reset();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 TEST_F(HttpServerPropertiesManagerTest, ShutdownWithPendingUpdateCache2) {
@@ -399,10 +401,10 @@ TEST_F(HttpServerPropertiesManagerTest, ShutdownWithPendingUpdateCache2) {
   // Shutdown comes before the task is executed.
   http_server_props_manager_->ShutdownOnUIThread();
   // Run the task after shutdown, but before deletion.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(http_server_props_manager_.get());
   http_server_props_manager_.reset();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 //
@@ -415,7 +417,7 @@ TEST_F(HttpServerPropertiesManagerTest, ShutdownWithPendingUpdatePrefs0) {
   http_server_props_manager_->ShutdownOnUIThread();
   http_server_props_manager_.reset();
   // Run the task after shutdown and deletion.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 TEST_F(HttpServerPropertiesManagerTest, ShutdownWithPendingUpdatePrefs1) {
@@ -425,10 +427,10 @@ TEST_F(HttpServerPropertiesManagerTest, ShutdownWithPendingUpdatePrefs1) {
   // Shutdown comes before the task is executed.
   http_server_props_manager_->ShutdownOnUIThread();
   // Run the task after shutdown, but before deletion.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(http_server_props_manager_.get());
   http_server_props_manager_.reset();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 TEST_F(HttpServerPropertiesManagerTest, ShutdownWithPendingUpdatePrefs2) {
@@ -437,10 +439,10 @@ TEST_F(HttpServerPropertiesManagerTest, ShutdownWithPendingUpdatePrefs2) {
   // Shutdown comes before the task is executed.
   http_server_props_manager_->ShutdownOnUIThread();
   // Run the task after shutdown, but before deletion.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(http_server_props_manager_.get());
   http_server_props_manager_.reset();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 }  // namespace

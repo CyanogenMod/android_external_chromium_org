@@ -8,17 +8,16 @@
 #include <jni.h>
 
 namespace net {
-class URLRequestContext;
-class URLRequestJobFactory;
+class CookieMonster;
 }  // namespace net
 
 namespace android_webview {
+class AwURLRequestJobFactory;
 
-void SetCookieMonsterOnNetworkStackInit(net::URLRequestContext* context,
-                                        net::URLRequestJobFactory* job_factory);
+void SetCookieMonsterOnNetworkStackInit(net::CookieMonster* cookie_monster);
 
 bool RegisterCookieManager(JNIEnv* env);
 
-}  // namespace android_webview;
+}  // namespace android_webview
 
 #endif  // ANDROID_WEBVIEW_NATIVE_COOKIE_MANAGER_H_

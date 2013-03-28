@@ -158,31 +158,6 @@ void QueryResults::AppendURLBySwapping(URLResult* result) {
   AddURLUsageAtIndex(new_result->url(), results_.size() - 1);
 }
 
-void QueryResults::AppendResultsBySwapping(QueryResults* other,
-                                           bool remove_dupes) {
-  if (remove_dupes) {
-    // Delete all entries in the other array that are already in this one.
-    for (size_t i = 0; i < results_.size(); i++)
-      other->DeleteURL(results_[i]->url());
-  }
-
-  if (first_time_searched_ > other->first_time_searched_)
-    std::swap(first_time_searched_, other->first_time_searched_);
-
-  if (reached_beginning_ != other->reached_beginning_)
-    std::swap(reached_beginning_, other->reached_beginning_);
-
-  for (size_t i = 0; i < other->results_.size(); i++) {
-    // Just transfer pointer ownership.
-    results_.push_back(other->results_[i]);
-    AddURLUsageAtIndex(results_.back()->url(), results_.size() - 1);
-  }
-
-  // We just took ownership of all the results in the input vector.
-  other->results_.clear();
-  other->url_to_results_.clear();
-}
-
 void QueryResults::DeleteURL(const GURL& url) {
   // Delete all instances of this URL. We re-query each time since each
   // mutation will cause the indices to change.
@@ -262,11 +237,28 @@ void QueryResults::AdjustResultMap(size_t begin, size_t end, ptrdiff_t delta) {
 
 // QueryOptions ----------------------------------------------------------------
 
-QueryOptions::QueryOptions() : max_count(0), body_only(false) {}
+QueryOptions::QueryOptions()
+    : max_count(0),
+      body_only(false),
+      duplicate_policy(QueryOptions::REMOVE_ALL_DUPLICATES) {
+}
 
 void QueryOptions::SetRecentDayRange(int days_ago) {
   end_time = base::Time::Now();
   begin_time = end_time - base::TimeDelta::FromDays(days_ago);
+}
+
+int64 QueryOptions::EffectiveBeginTime() const {
+  return begin_time.ToInternalValue();
+}
+
+int64 QueryOptions::EffectiveEndTime() const {
+  return end_time.is_null() ?
+      std::numeric_limits<int64>::max() : end_time.ToInternalValue();
+}
+
+int QueryOptions::EffectiveMaxCount() const {
+  return max_count ? max_count : std::numeric_limits<int>::max();
 }
 
 // KeywordSearchTermVisit -----------------------------------------------------
@@ -450,5 +442,19 @@ ImportedFaviconUsage::~ImportedFaviconUsage() {
 // VisitDatabaseObserver -------------------------------------------------------
 
 VisitDatabaseObserver::~VisitDatabaseObserver() {}
+
+ExpireHistoryArgs::ExpireHistoryArgs() {
+}
+
+ExpireHistoryArgs::~ExpireHistoryArgs() {
+}
+
+void ExpireHistoryArgs::SetTimeRangeForOneDay(base::Time time) {
+  begin_time = time.LocalMidnight();
+
+  // Due to DST, leap seconds, etc., the next day at midnight may be more than
+  // 24 hours away, so add 36 hours and round back down to midnight.
+  end_time = (begin_time + base::TimeDelta::FromHours(36)).LocalMidnight();
+}
 
 }  // namespace history

@@ -5,8 +5,8 @@
 #include "chrome/browser/tab_contents/spellchecker_submenu_observer.h"
 
 #include "base/logging.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/spellchecker/spellcheck_platform_mac.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/browser/tab_contents/spelling_bubble_model.h"
@@ -82,7 +82,7 @@ bool SpellCheckerSubMenuObserver::IsCommandIdChecked(int command_id) {
   if (command_id == IDC_CHECK_SPELLING_WHILE_TYPING) {
     Profile* profile = proxy_->GetProfile();
     DCHECK(profile);
-    return profile->GetPrefs()->GetBoolean(prefs::kEnableSpellCheck);
+    return profile->GetPrefs()->GetBoolean(prefs::kEnableContinuousSpellcheck);
   }
 
   return false;
@@ -111,10 +111,8 @@ void SpellCheckerSubMenuObserver::ExecuteCommand(int command_id) {
   switch (command_id) {
     case IDC_CHECK_SPELLING_WHILE_TYPING:
       profile->GetPrefs()->SetBoolean(
-          prefs::kEnableSpellCheck,
-          !profile->GetPrefs()->GetBoolean(prefs::kEnableSpellCheck));
-      if (rvh)
-        rvh->Send(new SpellCheckMsg_ToggleSpellCheck(rvh->GetRoutingID()));
+          prefs::kEnableContinuousSpellcheck,
+          !profile->GetPrefs()->GetBoolean(prefs::kEnableContinuousSpellcheck));
       break;
 
     case IDC_SPELLPANEL_TOGGLE:

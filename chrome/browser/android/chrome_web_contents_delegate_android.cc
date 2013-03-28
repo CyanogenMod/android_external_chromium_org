@@ -5,52 +5,79 @@
 #include "chrome/browser/android/chrome_web_contents_delegate_android.h"
 
 #include "base/android/jni_android.h"
+#include "base/metrics/histogram.h"
+#include "base/string_util.h"
 #include "chrome/browser/file_select_helper.h"
-#include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_creator.h"
+#include "chrome/browser/google/google_url_tracker.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
 #include "chrome/browser/ui/find_bar/find_match_rects_details.h"
 #include "chrome/browser/ui/find_bar/find_notification_details.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
+#include "chrome/browser/ui/media_stream_infobar_delegate.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/android/download_controller_android.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/file_chooser_params.h"
+#include "content/public/common/page_transition_types.h"
 #include "jni/ChromeWebContentsDelegateAndroid_jni.h"
 #include "net/http/http_request_headers.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 
-using base::android::AttachCurrentThread;
-using base::android::GetClass;
-using base::android::MethodID;
+#if defined(ENABLE_PLUGINS)
+#include "chrome/browser/pepper_broker_infobar_delegate.h"
+#endif
+
 using base::android::ScopedJavaLocalRef;
 using content::FileChooserParams;
+using content::NavigationController;
+using content::NavigationEntry;
 using content::WebContents;
 
 namespace {
 
-// Convenience method to create Android rects.
-// RectType should be either gfx::Rect or gfx::RectF.
-template <typename RectType>
-ScopedJavaLocalRef<jobject> CreateAndroidRect(
+NavigationEntry* GetActiveEntry(WebContents* web_contents) {
+  return web_contents->GetController().GetActiveEntry();
+}
+
+bool IsActiveNavigationGoogleSearch(WebContents* web_contents) {
+  NavigationEntry* entry = GetActiveEntry(web_contents);
+  content::PageTransition transition = entry->GetTransitionType();
+  if (!(transition & content::PAGE_TRANSITION_GENERATED) ||
+      !(transition & content::PAGE_TRANSITION_FROM_ADDRESS_BAR)) {
+    return false;
+  }
+  GURL search_url = GoogleURLTracker::GoogleURL(
+      Profile::FromBrowserContext(web_contents->GetBrowserContext()));
+  return StartsWithASCII(entry->GetURL().spec(), search_url.spec(), false);
+}
+
+ScopedJavaLocalRef<jobject> CreateJavaRectF(
     JNIEnv* env,
-    const ScopedJavaLocalRef<jclass>& clazz,
-    const jmethodID& constructor,
-    const RectType& rect) {
+    const gfx::RectF& rect) {
+  return ScopedJavaLocalRef<jobject>(
+      Java_ChromeWebContentsDelegateAndroid_createRectF(env,
+                                                        rect.x(),
+                                                        rect.y(),
+                                                        rect.right(),
+                                                        rect.bottom()));
+}
 
-  ScopedJavaLocalRef<jobject> rect_object(
-      env,
-      env->NewObject(clazz.obj(),
-                     constructor,
-                     rect.x(),
-                     rect.y(),
-                     rect.right(),
-                     rect.bottom()));
-
-  DCHECK(!rect_object.is_null());
-  return rect_object;
+ScopedJavaLocalRef<jobject> CreateJavaRect(
+    JNIEnv* env,
+    const gfx::Rect& rect) {
+  return ScopedJavaLocalRef<jobject>(
+      Java_ChromeWebContentsDelegateAndroid_createRect(
+          env,
+          static_cast<int>(rect.x()),
+          static_cast<int>(rect.y()),
+          static_cast<int>(rect.right()),
+          static_cast<int>(rect.bottom())));
 }
 
 }  // anonymous namespace
@@ -134,37 +161,22 @@ void ChromeWebContentsDelegateAndroid::FindReply(
 void ChromeWebContentsDelegateAndroid::OnFindResultAvailable(
     WebContents* web_contents,
     const FindNotificationDetails* find_result) {
-  JNIEnv* env = AttachCurrentThread();
+  JNIEnv* env = base::android::AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
   if (obj.is_null())
     return;
 
-  // Create the selection rect.
-  ScopedJavaLocalRef<jclass> rect_clazz =
-      GetClass(env, "android/graphics/Rect");
-
-  jmethodID rect_constructor = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, rect_clazz.obj(), "<init>", "(IIII)V");
-
-  ScopedJavaLocalRef<jobject> selection_rect = CreateAndroidRect(
-      env, rect_clazz, rect_constructor, find_result->selection_rect());
+  ScopedJavaLocalRef<jobject> selection_rect = CreateJavaRect(
+      env, find_result->selection_rect());
 
   // Create the details object.
-  ScopedJavaLocalRef<jclass> details_clazz =
-      GetClass(env, "org/chromium/chrome/browser/FindNotificationDetails");
-
-  jmethodID details_constructor = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, details_clazz.obj(), "<init>", "(ILandroid/graphics/Rect;IZ)V");
-
-  ScopedJavaLocalRef<jobject> details_object(
-      env,
-      env->NewObject(details_clazz.obj(),
-                     details_constructor,
-                     find_result->number_of_matches(),
-                     selection_rect.obj(),
-                     find_result->active_match_ordinal(),
-                     find_result->final_update()));
-  DCHECK(!details_object.is_null());
+  ScopedJavaLocalRef<jobject> details_object =
+      Java_ChromeWebContentsDelegateAndroid_createFindNotificationDetails(
+          env,
+          find_result->number_of_matches(),
+          selection_rect.obj(),
+          find_result->active_match_ordinal(),
+          find_result->final_update());
 
   Java_ChromeWebContentsDelegateAndroid_onFindResultAvailable(
       env,
@@ -183,49 +195,27 @@ void ChromeWebContentsDelegateAndroid::FindMatchRectsReply(
       content::Source<WebContents>(web_contents),
       content::Details<FindMatchRectsDetails>(&match_rects));
 
-  JNIEnv* env = AttachCurrentThread();
+  JNIEnv* env = base::android::AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = GetJavaDelegate(env);
   if (obj.is_null())
     return;
 
-  // Create the rects.
-  ScopedJavaLocalRef<jclass> rect_clazz =
-      GetClass(env, "android/graphics/RectF");
-
-  jmethodID rect_constructor = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, rect_clazz.obj(), "<init>", "(FFFF)V");
-
-  ScopedJavaLocalRef<jobjectArray> jrects(env, env->NewObjectArray(
-      match_rects.rects().size(), rect_clazz.obj(), NULL));
-
-  for (size_t i = 0; i < match_rects.rects().size(); ++i) {
-    env->SetObjectArrayElement(
-        jrects.obj(), i,
-        CreateAndroidRect(env,
-                          rect_clazz,
-                          rect_constructor,
-                          match_rects.rects()[i]).obj());
-  }
-
-  ScopedJavaLocalRef<jobject> jactive_rect = CreateAndroidRect(
-      env, rect_clazz, rect_constructor, match_rects.active_rect());
-
   // Create the details object.
-  ScopedJavaLocalRef<jclass> details_clazz =
-      GetClass(env, "org/chromium/chrome/browser/FindMatchRectsDetails");
+  ScopedJavaLocalRef<jobject> details_object =
+      Java_ChromeWebContentsDelegateAndroid_createFindMatchRectsDetails(
+          env,
+          match_rects.version(),
+          match_rects.rects().size(),
+          CreateJavaRectF(env, match_rects.active_rect()).obj());
 
-  jmethodID details_constructor = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, details_clazz.obj(), "<init>",
-      "(I[Landroid/graphics/RectF;Landroid/graphics/RectF;)V");
-
-  ScopedJavaLocalRef<jobject> details_object(
-      env,
-      env->NewObject(details_clazz.obj(),
-                     details_constructor,
-                     match_rects.version(),
-                     jrects.obj(),
-                     jactive_rect.obj()));
-  DCHECK(!details_object.is_null());
+  // Add the rects
+  for (size_t i = 0; i < match_rects.rects().size(); ++i) {
+      Java_ChromeWebContentsDelegateAndroid_setMatchRectByIndex(
+          env,
+          details_object.obj(),
+          i,
+          CreateJavaRectF(env, match_rects.rects()[i]).obj());
+  }
 
   Java_ChromeWebContentsDelegateAndroid_onFindMatchRectsAvailable(
       env,
@@ -233,9 +223,9 @@ void ChromeWebContentsDelegateAndroid::FindMatchRectsReply(
       details_object.obj());
 }
 
-content::JavaScriptDialogCreator*
-ChromeWebContentsDelegateAndroid::GetJavaScriptDialogCreator() {
-  return GetJavaScriptDialogCreatorInstance();
+content::JavaScriptDialogManager*
+ChromeWebContentsDelegateAndroid::GetJavaScriptDialogManager() {
+  return GetJavaScriptDialogManagerInstance();
 }
 
 bool ChromeWebContentsDelegateAndroid::CanDownload(
@@ -247,15 +237,51 @@ bool ChromeWebContentsDelegateAndroid::CanDownload(
         source, request_id);
     return false;
   }
+  // DownloadControllerAndroid::OnPostDownloadStarted() is called for the
+  // started download by the default DownloadUIController::Delegate
+  // implementation.
   return true;
 }
 
-void ChromeWebContentsDelegateAndroid::OnStartDownload(
-    WebContents* source,
-    content::DownloadItem* download) {
-  content::DownloadControllerAndroid::Get()->OnPostDownloadStarted(
-      source, download);
+void ChromeWebContentsDelegateAndroid::DidNavigateToPendingEntry(
+    content::WebContents* source) {
+  navigation_start_time_ = base::TimeTicks::Now();
 }
+
+void ChromeWebContentsDelegateAndroid::DidNavigateMainFramePostCommit(
+    content::WebContents* source) {
+  if (!IsActiveNavigationGoogleSearch(source))
+    return;
+
+  base::TimeDelta time_delta = base::TimeTicks::Now() - navigation_start_time_;
+  if (GetActiveEntry(source)->GetURL().SchemeIsSecure()) {
+    UMA_HISTOGRAM_TIMES("Omnibox.GoogleSearch.SecureSearchTime", time_delta);
+  } else {
+    UMA_HISTOGRAM_TIMES("Omnibox.GoogleSearch.SearchTime", time_delta);
+  }
+}
+
+void ChromeWebContentsDelegateAndroid::RequestMediaAccessPermission(
+    content::WebContents* web_contents,
+    const content::MediaStreamRequest& request,
+    const content::MediaResponseCallback& callback) {
+  MediaStreamInfoBarDelegate::Create(web_contents, request, callback);
+}
+
+bool ChromeWebContentsDelegateAndroid::RequestPpapiBrokerPermission(
+    WebContents* web_contents,
+    const GURL& url,
+    const base::FilePath& plugin_path,
+    const base::Callback<void(bool)>& callback) {
+#if defined(ENABLE_PLUGINS)
+    PepperBrokerInfoBarDelegate::Create(
+        web_contents, url, plugin_path, callback);
+    return true;
+#else
+    return false;
+#endif
+}
+
 
 }  // namespace android
 }  // namespace chrome

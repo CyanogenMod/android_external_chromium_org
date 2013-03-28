@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/basictypes.h"
 #include "build/build_config.h"
 
 #if defined(OS_POSIX)
@@ -56,6 +57,23 @@ struct NaClStartParams {
   bool enable_exception_handling;
   bool enable_debug_stub;
   bool enable_ipc_proxy;
+  bool uses_irt;
+};
+
+// Parameters sent to the browser process to have it launch a NaCl process.
+//
+// If you change this, you will also need to update the IPC serialization in
+// renderer_messages.h.
+struct NaClLaunchParams {
+  NaClLaunchParams();
+  NaClLaunchParams(const std::string& u, int r, uint32 p, bool uses_irt);
+  NaClLaunchParams(const NaClLaunchParams& l);
+  ~NaClLaunchParams();
+
+  std::string manifest_url;
+  int render_view_id;
+  uint32 permission_bits;
+  bool uses_irt;
 };
 
 }  // namespace nacl

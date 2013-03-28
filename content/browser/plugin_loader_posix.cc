@@ -102,8 +102,9 @@ void PluginLoaderPosix::LoadPluginsInternal() {
   if (load_start_time_.is_null())
     load_start_time_ = base::TimeTicks::Now();
 
-  UtilityProcessHostImpl* host =
-      new UtilityProcessHostImpl(this, BrowserThread::IO);
+  UtilityProcessHostImpl* host = new UtilityProcessHostImpl(
+      this,
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
   process_host_ = host->AsWeakPtr();
   process_host_->DisableSandbox();
 #if defined(OS_MACOSX)
@@ -130,7 +131,7 @@ void PluginLoaderPosix::OnPluginLoaded(uint32 index,
 }
 
 void PluginLoaderPosix::OnPluginLoadFailed(uint32 index,
-                                           const FilePath& plugin_path) {
+                                           const base::FilePath& plugin_path) {
   if (index != next_load_index_) {
     LOG(ERROR) << "Received unexpected plugin load failure message for "
                << plugin_path.value() << "; index=" << index;
@@ -143,7 +144,8 @@ void PluginLoaderPosix::OnPluginLoadFailed(uint32 index,
   MaybeRunPendingCallbacks();
 }
 
-bool PluginLoaderPosix::MaybeAddInternalPlugin(const FilePath& plugin_path) {
+bool PluginLoaderPosix::MaybeAddInternalPlugin(
+    const base::FilePath& plugin_path) {
   for (std::vector<webkit::WebPluginInfo>::iterator it =
            internal_plugins_.begin();
        it != internal_plugins_.end();

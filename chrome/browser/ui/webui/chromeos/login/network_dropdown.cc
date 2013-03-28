@@ -8,15 +8,15 @@
 
 #include "base/time.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/login/base_login_display_host.h"
 #include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/ui/webui/web_ui_util.h"
+#include "chrome/browser/chromeos/net/connectivity_state_helper.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/webui/web_ui_util.h"
 
 namespace {
 
@@ -89,7 +89,7 @@ base::ListValue* NetworkMenuWebUI::ConvertMenuModel(ui::MenuModel* model) {
     if (model->GetIconAt(i, &icon)) {
       SkBitmap icon_bitmap = icon.ToImageSkia()->GetRepresentation(
           web_ui_->GetDeviceScaleFactor()).sk_bitmap();
-      item->SetString("icon", web_ui_util::GetBitmapDataUrl(icon_bitmap));
+      item->SetString("icon", webui::GetBitmapDataUrl(icon_bitmap));
     }
     if (id >= 0) {
       item->SetBoolean("enabled", model->IsEnabledAt(i));
@@ -114,8 +114,8 @@ NetworkDropdown::NetworkDropdown(content::WebUI* web_ui,
   network_menu_.reset(new NetworkMenuWebUI(this, web_ui));
   network_icon_.reset(
       new NetworkMenuIcon(this, NetworkMenuIcon::DROPDOWN_MODE));
-  CrosLibrary::Get()->GetNetworkLibrary()->AddNetworkManagerObserver(this);
-  CrosLibrary::Get()->GetNetworkLibrary()->RequestNetworkScan();
+  ConnectivityStateHelper::Get()->AddNetworkManagerObserver(this);
+  ConnectivityStateHelper::Get()->RequestScan();
   Refresh();
   network_scan_timer_.Start(FROM_HERE,
       base::TimeDelta::FromSeconds(kNetworkScanIntervalSecs),
@@ -123,7 +123,7 @@ NetworkDropdown::NetworkDropdown(content::WebUI* web_ui,
 }
 
 NetworkDropdown::~NetworkDropdown() {
-  CrosLibrary::Get()->GetNetworkLibrary()->RemoveNetworkManagerObserver(this);
+  ConnectivityStateHelper::Get()->RemoveNetworkManagerObserver(this);
 }
 
 void NetworkDropdown::SetLastNetworkType(ConnectionType last_network_type) {
@@ -146,7 +146,7 @@ bool NetworkDropdown::ShouldOpenButtonOptions() const {
   return !oobe_;
 }
 
-void NetworkDropdown::OnNetworkManagerChanged(NetworkLibrary* cros) {
+void NetworkDropdown::NetworkManagerChanged() {
   Refresh();
 }
 
@@ -166,7 +166,7 @@ void NetworkDropdown::SetNetworkIconAndText() {
       web_ui_->GetDeviceScaleFactor()).sk_bitmap();
   std::string icon_str =
       icon_image.isNull() ?
-          std::string() : web_ui_util::GetBitmapDataUrl(icon_bitmap);
+          std::string() : webui::GetBitmapDataUrl(icon_bitmap);
   base::StringValue title(text);
   base::StringValue icon(icon_str);
   web_ui_->CallJavascriptFunction("cr.ui.DropDown.updateNetworkTitle",
@@ -174,7 +174,7 @@ void NetworkDropdown::SetNetworkIconAndText() {
 }
 
 void NetworkDropdown::ForceNetworkScan() {
-  CrosLibrary::Get()->GetNetworkLibrary()->RequestNetworkScan();
+  ConnectivityStateHelper::Get()->RequestScan();
   Refresh();
 }
 

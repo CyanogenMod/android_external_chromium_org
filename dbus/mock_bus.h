@@ -16,7 +16,7 @@ namespace dbus {
 // D-Bus calls.
 class MockBus : public Bus {
  public:
-  MockBus(Bus::Options& options);
+  MockBus(const Bus::Options& options);
 
   MOCK_METHOD2(GetObjectProxy, ObjectProxy*(const std::string& service_name,
                                             const ObjectPath& object_path));
@@ -26,6 +26,8 @@ class MockBus : public Bus {
                             int options));
   MOCK_METHOD1(GetExportedObject, ExportedObject*(
       const ObjectPath& object_path));
+  MOCK_METHOD2(GetObjectManager, ObjectManager*(const std::string&,
+                                                const ObjectPath&));
   MOCK_METHOD0(ShutdownAndBlock, void());
   MOCK_METHOD0(ShutdownOnDBusThreadAndBlock, void());
   MOCK_METHOD0(Connect, bool());
@@ -49,7 +51,7 @@ class MockBus : public Bus {
                                   void* user_data));
   MOCK_METHOD2(AddMatch, void(const std::string& match_rule,
                               DBusError* error));
-  MOCK_METHOD2(RemoveMatch, void(const std::string& match_rule,
+  MOCK_METHOD2(RemoveMatch, bool(const std::string& match_rule,
                                  DBusError* error));
   MOCK_METHOD4(TryRegisterObjectPath, bool(const ObjectPath& object_path,
                                            const DBusObjectPathVTable* vtable,

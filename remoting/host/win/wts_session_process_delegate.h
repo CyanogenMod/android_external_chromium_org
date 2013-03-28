@@ -8,11 +8,13 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "remoting/host/win/worker_process_launcher.h"
 
-class FilePath;
+class CommandLine;
 
 namespace base {
+class FilePath;
 class SingleThreadTaskRunner;
 } // namespace base
 
@@ -31,7 +33,7 @@ class WtsSessionProcessDelegate
   WtsSessionProcessDelegate(
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-      const FilePath& binary_path,
+      scoped_ptr<CommandLine> target,
       uint32 session_id,
       bool launch_elevated,
       const std::string& channel_security);
@@ -41,6 +43,7 @@ class WtsSessionProcessDelegate
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
   // WorkerProcessLauncher::Delegate implementation.
+  virtual void CloseChannel() OVERRIDE;
   virtual DWORD GetProcessId() const OVERRIDE;
   virtual bool IsPermanentError(int failure_count) const OVERRIDE;
   virtual void KillProcess(DWORD exit_code) OVERRIDE;

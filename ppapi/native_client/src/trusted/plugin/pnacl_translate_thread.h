@@ -28,8 +28,17 @@ namespace plugin {
 class Manifest;
 class NaClSubprocess;
 class Plugin;
+class PnaclCoordinator;
+class PnaclOptions;
 class PnaclResources;
 class TempFile;
+
+struct PnaclTimeStats {
+  int64_t pnacl_llc_load_time;
+  int64_t pnacl_compile_time;
+  int64_t pnacl_ld_load_time;
+  int64_t pnacl_link_time;
+};
 
 class PnaclTranslateThread {
  public:
@@ -45,6 +54,8 @@ class PnaclTranslateThread {
                     TempFile* nexe_file,
                     ErrorInfo* error_info,
                     PnaclResources* resources,
+                    PnaclOptions* pnacl_options,
+                    PnaclCoordinator* coordinator,
                     Plugin* plugin);
 
   // Kill the llc and/or ld subprocesses. This happens by closing the command
@@ -58,6 +69,8 @@ class PnaclTranslateThread {
   // Send bitcode bytes to the translator. Called from the main thread.
   void PutBytes(std::vector<char>* data, int count);
 
+  const PnaclTimeStats& GetTimeStats() const { return time_stats_; }
+
  private:
   // Starts an individual llc or ld subprocess used for translation.
   NaClSubprocess* StartSubprocess(const nacl::string& url,
@@ -69,7 +82,8 @@ class PnaclTranslateThread {
   // Runs the streaming translation. Called from the helper thread.
   void DoTranslate() ;
   // Signal that Pnacl translation failed, from the translation thread only.
-  void TranslateFailed(const nacl::string& error_string);
+  void TranslateFailed(enum PluginErrorCode err_code,
+                       const nacl::string& error_string);
   // Run the LD subprocess, returning true on success
   bool RunLdSubprocess(int is_shared_library,
                        const nacl::string& soname,
@@ -103,6 +117,8 @@ class PnaclTranslateThread {
   // Associated with buffer_cond_
   bool done_;
 
+  PnaclTimeStats time_stats_;
+
   // Data about the translation files, owned by the coordinator
   const Manifest* manifest_;
   const Manifest* ld_manifest_;
@@ -110,6 +126,8 @@ class PnaclTranslateThread {
   TempFile* nexe_file_;
   ErrorInfo* coordinator_error_info_;
   PnaclResources* resources_;
+  PnaclOptions* pnacl_options_;
+  PnaclCoordinator* coordinator_;
   Plugin* plugin_;
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(PnaclTranslateThread);

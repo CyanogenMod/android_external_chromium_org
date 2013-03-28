@@ -20,7 +20,6 @@
 #include "media/base/audio_renderer.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decryptor.h"
-#include "media/base/decryptor_client.h"
 #include "media/base/demuxer.h"
 #include "media/base/filter_collection.h"
 #include "media/base/pipeline_status.h"
@@ -135,6 +134,7 @@ class MockAudioDecoder : public AudioDecoder {
 class MockVideoRenderer : public VideoRenderer {
  public:
   MockVideoRenderer();
+  virtual ~MockVideoRenderer();
 
   // VideoRenderer implementation.
   MOCK_METHOD10(Initialize, void(const scoped_refptr<DemuxerStream>& stream,
@@ -154,9 +154,6 @@ class MockVideoRenderer : public VideoRenderer {
   MOCK_METHOD1(Stop, void(const base::Closure& callback));
   MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
 
- protected:
-  virtual ~MockVideoRenderer();
-
  private:
   DISALLOW_COPY_AND_ASSIGN(MockVideoRenderer);
 };
@@ -164,10 +161,10 @@ class MockVideoRenderer : public VideoRenderer {
 class MockAudioRenderer : public AudioRenderer {
  public:
   MockAudioRenderer();
+  virtual ~MockAudioRenderer();
 
   // AudioRenderer implementation.
-  MOCK_METHOD9(Initialize, void(const scoped_refptr<DemuxerStream>& stream,
-                                const AudioDecoderList& decoders,
+  MOCK_METHOD8(Initialize, void(const scoped_refptr<DemuxerStream>& stream,
                                 const PipelineStatusCB& init_cb,
                                 const StatisticsCB& statistics_cb,
                                 const base::Closure& underflow_cb,
@@ -183,9 +180,6 @@ class MockAudioRenderer : public AudioRenderer {
   MOCK_METHOD2(Preroll, void(base::TimeDelta time, const PipelineStatusCB& cb));
   MOCK_METHOD1(SetVolume, void(float volume));
   MOCK_METHOD1(ResumeAfterUnderflow, void(bool buffer_more_audio));
-
- protected:
-  virtual ~MockAudioRenderer();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAudioRenderer);
@@ -208,19 +202,16 @@ class MockDecryptor : public Decryptor {
                             const std::string& session_id));
   MOCK_METHOD2(CancelKeyRequest, void(const std::string& key_system,
                                       const std::string& session_id));
-  MOCK_METHOD2(RegisterKeyAddedCB, void(StreamType stream_type,
-                                        const KeyAddedCB& key_added_cb));
+  MOCK_METHOD2(RegisterNewKeyCB, void(StreamType stream_type,
+                                      const NewKeyCB& new_key_cb));
   MOCK_METHOD3(Decrypt, void(StreamType stream_type,
                              const scoped_refptr<DecoderBuffer>& encrypted,
                              const DecryptCB& decrypt_cb));
   MOCK_METHOD1(CancelDecrypt, void(StreamType stream_type));
-  // TODO(xhwang): The following two methods are workarounds of the issue that
-  // move-only parameters are not supported in mocked methods. Remove when the
-  // issue is fixed: http://code.google.com/p/googletest/issues/detail?id=395
-  MOCK_METHOD2(InitializeAudioDecoderMock,
+  MOCK_METHOD2(InitializeAudioDecoder,
                void(const AudioDecoderConfig& config,
                     const DecoderInitCB& init_cb));
-  MOCK_METHOD2(InitializeVideoDecoderMock,
+  MOCK_METHOD2(InitializeVideoDecoder,
                void(const VideoDecoderConfig& config,
                     const DecoderInitCB& init_cb));
   MOCK_METHOD2(DecryptAndDecodeAudio,
@@ -232,82 +223,9 @@ class MockDecryptor : public Decryptor {
   MOCK_METHOD1(ResetDecoder, void(StreamType stream_type));
   MOCK_METHOD1(DeinitializeDecoder, void(StreamType stream_type));
 
-  virtual void InitializeAudioDecoder(scoped_ptr<AudioDecoderConfig> config,
-                                      const DecoderInitCB& init_cb) OVERRIDE;
-  virtual void InitializeVideoDecoder(scoped_ptr<VideoDecoderConfig> config,
-                                      const DecoderInitCB& init_cb) OVERRIDE;
-
  private:
   DISALLOW_COPY_AND_ASSIGN(MockDecryptor);
 };
-
-class MockDecryptorClient : public DecryptorClient {
- public:
-  MockDecryptorClient();
-  virtual ~MockDecryptorClient();
-
-  MOCK_METHOD2(KeyAdded, void(const std::string&, const std::string&));
-  MOCK_METHOD4(KeyError, void(const std::string&, const std::string&,
-                              Decryptor::KeyError, int));
-  // TODO(xhwang): This is a workaround of the issue that move-only parameters
-  // are not supported in mocked methods. Remove this when the issue is fixed
-  // (http://code.google.com/p/googletest/issues/detail?id=395) or when we use
-  // std::string instead of scoped_array<uint8> (http://crbug.com/130689).
-  MOCK_METHOD5(KeyMessageMock, void(const std::string& key_system,
-                                    const std::string& session_id,
-                                    const uint8* message,
-                                    int message_length,
-                                    const std::string& default_url));
-  MOCK_METHOD5(NeedKeyMock, void(const std::string& key_system,
-                                 const std::string& session_id,
-                                 const std::string& type,
-                                 const uint8* init_data,
-                                 int init_data_length));
-  virtual void KeyMessage(const std::string& key_system,
-                          const std::string& session_id,
-                          scoped_array<uint8> message,
-                          int message_length,
-                          const std::string& default_url) OVERRIDE;
-  virtual void NeedKey(const std::string& key_system,
-                       const std::string& session_id,
-                       const std::string& type,
-                       scoped_array<uint8> init_data,
-                       int init_data_length) OVERRIDE;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockDecryptorClient);
-};
-
-// FilterFactory that returns canned instances of mock filters.  You can set
-// expectations on the filters and then pass the collection into a pipeline.
-class MockFilterCollection {
- public:
-  MockFilterCollection();
-  virtual ~MockFilterCollection();
-
-  // Mock accessors.
-  MockDemuxer* demuxer() const { return demuxer_; }
-  MockVideoDecoder* video_decoder() const { return video_decoder_; }
-  MockAudioDecoder* audio_decoder() const { return audio_decoder_; }
-  MockVideoRenderer* video_renderer() const { return video_renderer_; }
-  MockAudioRenderer* audio_renderer() const { return audio_renderer_; }
-
-  // Creates the FilterCollection containing the mocks.
-  scoped_ptr<FilterCollection> Create();
-
- private:
-  scoped_refptr<MockDemuxer> demuxer_;
-  scoped_refptr<MockVideoDecoder> video_decoder_;
-  scoped_refptr<MockAudioDecoder> audio_decoder_;
-  scoped_refptr<MockVideoRenderer> video_renderer_;
-  scoped_refptr<MockAudioRenderer> audio_renderer_;
-
-  DISALLOW_COPY_AND_ASSIGN(MockFilterCollection);
-};
-
-ACTION(RunClosure) {
-  arg0.Run();
-}
 
 // Helper mock statistics callback.
 class MockStatisticsCB {

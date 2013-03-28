@@ -20,6 +20,14 @@
 #include "dbus/object_proxy.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
+namespace {
+
+// The |CreatePairedDevice| DBus call needs a longer timeout than the default
+// in order to allow BlueZ to timeout this call first. See crosbug.com/37387.
+const int kCreatePairedDeviceTimeoutMs = 120 * 1000;
+
+} // namespace
+
 namespace chromeos {
 
 const char BluetoothAdapterClient::kNoResponseError[] =
@@ -60,8 +68,6 @@ class BluetoothAdapterClientImpl: public BluetoothAdapterClient,
                                       BluetoothManagerClient* manager_client)
       : bus_(bus),
         weak_ptr_factory_(this) {
-    DVLOG(1) << "Creating BluetoothAdapterClientImpl";
-
     DCHECK(manager_client);
     manager_client->AddObserver(this);
   }
@@ -225,7 +231,7 @@ class BluetoothAdapterClientImpl: public BluetoothAdapterClient,
 
     object_proxy->CallMethodWithErrorCallback(
         &method_call,
-        dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+        kCreatePairedDeviceTimeoutMs,
         base::Bind(&BluetoothAdapterClientImpl::OnCreatePairedDevice,
                    weak_ptr_factory_.GetWeakPtr(), object_path,
                    callback, error_callback),
@@ -433,8 +439,8 @@ class BluetoothAdapterClientImpl: public BluetoothAdapterClient,
       return;
     }
 
-    DVLOG(1) << object_path.value() << ": Device created: "
-             << device_path.value();
+    VLOG(1) << object_path.value() << ": Device created: "
+            << device_path.value();
     FOR_EACH_OBSERVER(BluetoothAdapterClient::Observer, observers_,
                       DeviceCreated(object_path, device_path));
   }
@@ -461,8 +467,8 @@ class BluetoothAdapterClientImpl: public BluetoothAdapterClient,
       return;
     }
 
-    DVLOG(1) << object_path.value() << ": Device removed: "
-             << device_path.value();
+    VLOG(1) << object_path.value() << ": Device removed: "
+            << device_path.value();
     FOR_EACH_OBSERVER(BluetoothAdapterClient::Observer, observers_,
                       DeviceRemoved(object_path, device_path));
   }
@@ -501,7 +507,7 @@ class BluetoothAdapterClientImpl: public BluetoothAdapterClient,
       return;
     }
 
-    DVLOG(1) << object_path.value() << ": Device found: " << address;
+    VLOG(1) << object_path.value() << ": Device found: " << address;
     FOR_EACH_OBSERVER(BluetoothAdapterClient::Observer, observers_,
                       DeviceFound(object_path, address, device_properties));
   }
@@ -528,7 +534,7 @@ class BluetoothAdapterClientImpl: public BluetoothAdapterClient,
       return;
     }
 
-    DVLOG(1) << object_path.value() << ": Device disappeared: " << address;
+    VLOG(1) << object_path.value() << ": Device disappeared: " << address;
     FOR_EACH_OBSERVER(BluetoothAdapterClient::Observer, observers_,
                       DeviceDisappeared(object_path, address));
   }
@@ -632,7 +638,7 @@ class BluetoothAdapterClientImpl: public BluetoothAdapterClient,
     if (response) {
       dbus::MessageReader reader(response);
       error_name = response->GetErrorName();
-      error_message = reader.PopString(&error_message);
+      reader.PopString(&error_message);
     } else {
       error_name = kNoResponseError;
       error_message = "";
@@ -671,7 +677,7 @@ class BluetoothAdapterClientImpl: public BluetoothAdapterClient,
     if (response) {
       dbus::MessageReader reader(response);
       error_name = response->GetErrorName();
-      error_message = reader.PopString(&error_message);
+      reader.PopString(&error_message);
     } else {
       error_name = kNoResponseError;
       error_message = "";

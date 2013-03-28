@@ -9,8 +9,8 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
-#include "base/scoped_temp_dir.h"
 #include "googleurl/src/gurl.h"
 #include "sql/connection.h"
 #include "sql/meta_table.h"
@@ -46,7 +46,7 @@ class QuotaDatabaseTest : public testing::Test {
   typedef QuotaDatabase::OriginInfoTableCallback
       OriginInfoTableCallback;
 
-  void LazyOpen(const FilePath& kDbFile) {
+  void LazyOpen(const base::FilePath& kDbFile) {
     QuotaDatabase db(kDbFile);
     EXPECT_FALSE(db.LazyOpen(false));
     ASSERT_TRUE(db.LazyOpen(true));
@@ -54,7 +54,7 @@ class QuotaDatabaseTest : public testing::Test {
     EXPECT_TRUE(kDbFile.empty() || file_util::PathExists(kDbFile));
   }
 
-  void UpgradeSchemaV2toV3(const FilePath& kDbFile) {
+  void UpgradeSchemaV2toV3(const base::FilePath& kDbFile) {
     const QuotaTableEntry entries[] = {
       QuotaTableEntry("a", kStorageTypeTemporary,  1),
       QuotaTableEntry("b", kStorageTypeTemporary,  2),
@@ -76,7 +76,7 @@ class QuotaDatabaseTest : public testing::Test {
     EXPECT_TRUE(verifier.table.empty());
   }
 
-  void HostQuota(const FilePath& kDbFile) {
+  void HostQuota(const base::FilePath& kDbFile) {
     QuotaDatabase db(kDbFile);
     ASSERT_TRUE(db.LazyOpen(true));
 
@@ -106,7 +106,7 @@ class QuotaDatabaseTest : public testing::Test {
     EXPECT_FALSE(db.GetHostQuota(kHost, kStorageTypeTemporary, &quota));
   }
 
-  void GlobalQuota(const FilePath& kDbFile) {
+  void GlobalQuota(const base::FilePath& kDbFile) {
     QuotaDatabase db(kDbFile);
     ASSERT_TRUE(db.LazyOpen(true));
 
@@ -136,7 +136,7 @@ class QuotaDatabaseTest : public testing::Test {
     EXPECT_EQ(kValue2, value);
   }
 
-  void OriginLastAccessTimeLRU(const FilePath& kDbFile) {
+  void OriginLastAccessTimeLRU(const base::FilePath& kDbFile) {
     QuotaDatabase db(kDbFile);
     ASSERT_TRUE(db.LazyOpen(true));
 
@@ -211,7 +211,7 @@ class QuotaDatabaseTest : public testing::Test {
     EXPECT_TRUE(origin.is_empty());
   }
 
-  void OriginLastModifiedSince(const FilePath& kDbFile) {
+  void OriginLastModifiedSince(const base::FilePath& kDbFile) {
     QuotaDatabase db(kDbFile);
     ASSERT_TRUE(db.LazyOpen(true));
 
@@ -288,7 +288,7 @@ class QuotaDatabaseTest : public testing::Test {
     EXPECT_EQ(0U, origins.count(kOrigin3));
   }
 
-  void RegisterInitialOriginInfo(const FilePath& kDbFile) {
+  void RegisterInitialOriginInfo(const base::FilePath& kDbFile) {
     QuotaDatabase db(kDbFile);
 
     const GURL kOrigins[] = {
@@ -337,7 +337,7 @@ class QuotaDatabaseTest : public testing::Test {
     }
   };
 
-  void DumpQuotaTable(const FilePath& kDbFile) {
+  void DumpQuotaTable(const base::FilePath& kDbFile) {
     QuotaTableEntry kTableEntries[] = {
       QuotaTableEntry("http://go/", kStorageTypeTemporary, 1),
       QuotaTableEntry("http://oo/", kStorageTypeTemporary, 2),
@@ -360,7 +360,7 @@ class QuotaDatabaseTest : public testing::Test {
     EXPECT_TRUE(verifier.table.empty());
   }
 
-  void DumpOriginInfoTable(const FilePath& kDbFile) {
+  void DumpOriginInfoTable(const base::FilePath& kDbFile) {
     base::Time now(base::Time::Now());
     typedef QuotaDatabase::OriginInfoTableEntry Entry;
     Entry kTableEntries[] = {
@@ -426,7 +426,7 @@ class QuotaDatabaseTest : public testing::Test {
     }
   }
 
-  bool OpenDatabase(sql::Connection* db, const FilePath& kDbFile) {
+  bool OpenDatabase(sql::Connection* db, const base::FilePath& kDbFile) {
     if (kDbFile.empty()) {
       return db->OpenInMemory();
     }
@@ -440,7 +440,7 @@ class QuotaDatabaseTest : public testing::Test {
 
   // Create V2 database and populate some data.
   void CreateV2Database(
-      const FilePath& kDbFile,
+      const base::FilePath& kDbFile,
       const QuotaTableEntry* entries,
       size_t entries_size) {
     scoped_ptr<sql::Connection> db(new sql::Connection);
@@ -493,57 +493,57 @@ class QuotaDatabaseTest : public testing::Test {
 };
 
 TEST_F(QuotaDatabaseTest, LazyOpen) {
-  ScopedTempDir data_dir;
+  base::ScopedTempDir data_dir;
   ASSERT_TRUE(data_dir.CreateUniqueTempDir());
-  const FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
+  const base::FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
   LazyOpen(kDbFile);
-  LazyOpen(FilePath());
+  LazyOpen(base::FilePath());
 }
 
 TEST_F(QuotaDatabaseTest, UpgradeSchema) {
-  ScopedTempDir data_dir;
+  base::ScopedTempDir data_dir;
   ASSERT_TRUE(data_dir.CreateUniqueTempDir());
-  const FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
+  const base::FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
   UpgradeSchemaV2toV3(kDbFile);
 }
 
 TEST_F(QuotaDatabaseTest, HostQuota) {
-  ScopedTempDir data_dir;
+  base::ScopedTempDir data_dir;
   ASSERT_TRUE(data_dir.CreateUniqueTempDir());
-  const FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
+  const base::FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
   HostQuota(kDbFile);
-  HostQuota(FilePath());
+  HostQuota(base::FilePath());
 }
 
 TEST_F(QuotaDatabaseTest, GlobalQuota) {
-  ScopedTempDir data_dir;
+  base::ScopedTempDir data_dir;
   ASSERT_TRUE(data_dir.CreateUniqueTempDir());
-  const FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
+  const base::FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
   GlobalQuota(kDbFile);
-  GlobalQuota(FilePath());
+  GlobalQuota(base::FilePath());
 }
 
 TEST_F(QuotaDatabaseTest, OriginLastAccessTimeLRU) {
-  ScopedTempDir data_dir;
+  base::ScopedTempDir data_dir;
   ASSERT_TRUE(data_dir.CreateUniqueTempDir());
-  const FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
+  const base::FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
   OriginLastAccessTimeLRU(kDbFile);
-  OriginLastAccessTimeLRU(FilePath());
+  OriginLastAccessTimeLRU(base::FilePath());
 }
 
 TEST_F(QuotaDatabaseTest, OriginLastModifiedSince) {
-  ScopedTempDir data_dir;
+  base::ScopedTempDir data_dir;
   ASSERT_TRUE(data_dir.CreateUniqueTempDir());
-  const FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
+  const base::FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
   OriginLastModifiedSince(kDbFile);
-  OriginLastModifiedSince(FilePath());
+  OriginLastModifiedSince(base::FilePath());
 }
 
 TEST_F(QuotaDatabaseTest, BootstrapFlag) {
-  ScopedTempDir data_dir;
+  base::ScopedTempDir data_dir;
   ASSERT_TRUE(data_dir.CreateUniqueTempDir());
 
-  const FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
+  const base::FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
   QuotaDatabase db(kDbFile);
 
   EXPECT_FALSE(db.IsOriginDatabaseBootstrapped());
@@ -554,26 +554,26 @@ TEST_F(QuotaDatabaseTest, BootstrapFlag) {
 }
 
 TEST_F(QuotaDatabaseTest, RegisterInitialOriginInfo) {
-  ScopedTempDir data_dir;
+  base::ScopedTempDir data_dir;
   ASSERT_TRUE(data_dir.CreateUniqueTempDir());
-  const FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
+  const base::FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
   RegisterInitialOriginInfo(kDbFile);
-  RegisterInitialOriginInfo(FilePath());
+  RegisterInitialOriginInfo(base::FilePath());
 }
 
 TEST_F(QuotaDatabaseTest, DumpQuotaTable) {
-  ScopedTempDir data_dir;
+  base::ScopedTempDir data_dir;
   ASSERT_TRUE(data_dir.CreateUniqueTempDir());
-  const FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
+  const base::FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
   DumpQuotaTable(kDbFile);
-  DumpQuotaTable(FilePath());
+  DumpQuotaTable(base::FilePath());
 }
 
 TEST_F(QuotaDatabaseTest, DumpOriginInfoTable) {
-  ScopedTempDir data_dir;
+  base::ScopedTempDir data_dir;
   ASSERT_TRUE(data_dir.CreateUniqueTempDir());
-  const FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
+  const base::FilePath kDbFile = data_dir.path().AppendASCII("quota_manager.db");
   DumpOriginInfoTable(kDbFile);
-  DumpOriginInfoTable(FilePath());
+  DumpOriginInfoTable(base::FilePath());
 }
 }  // namespace quota

@@ -19,10 +19,9 @@
 class BackgroundModeManagerTest : public testing::Test {
  public:
   BackgroundModeManagerTest()
-      : profile_manager_(
-            static_cast<TestingBrowserProcess*>(g_browser_process)) {}
-  ~BackgroundModeManagerTest() {}
-  void SetUp() {
+      : profile_manager_(TestingBrowserProcess::GetGlobal()) {}
+  virtual ~BackgroundModeManagerTest() {}
+  virtual void SetUp() {
     command_line_.reset(new CommandLine(CommandLine::NO_PROGRAM));
     ASSERT_TRUE(profile_manager_.SetUp());
   }
@@ -73,14 +72,14 @@ class TestBackgroundModeManager : public BackgroundModeManager {
 
 static void AssertBackgroundModeActive(
     const TestBackgroundModeManager& manager) {
-  EXPECT_TRUE(browser::WillKeepAlive());
+  EXPECT_TRUE(chrome::WillKeepAlive());
   EXPECT_TRUE(manager.HaveStatusTray());
   EXPECT_TRUE(manager.IsLaunchOnStartup());
 }
 
 static void AssertBackgroundModeInactive(
     const TestBackgroundModeManager& manager) {
-  EXPECT_FALSE(browser::WillKeepAlive());
+  EXPECT_FALSE(chrome::WillKeepAlive());
   EXPECT_FALSE(manager.HaveStatusTray());
   EXPECT_FALSE(manager.IsLaunchOnStartup());
 }
@@ -90,7 +89,7 @@ TEST_F(BackgroundModeManagerTest, BackgroundAppLoadUnload) {
   TestBackgroundModeManager manager(
       command_line_.get(), profile_manager_.profile_info_cache(), true);
   manager.RegisterProfile(profile);
-  EXPECT_FALSE(browser::WillKeepAlive());
+  EXPECT_FALSE(chrome::WillKeepAlive());
 
   // Mimic app load.
   manager.OnBackgroundAppInstalled(NULL);
@@ -174,7 +173,7 @@ TEST_F(BackgroundModeManagerTest, MultiProfile) {
       command_line_.get(), profile_manager_.profile_info_cache(), true);
   manager.RegisterProfile(profile1);
   manager.RegisterProfile(profile2);
-  EXPECT_FALSE(browser::WillKeepAlive());
+  EXPECT_FALSE(chrome::WillKeepAlive());
 
   // Install app, should show status tray icon.
   manager.OnBackgroundAppInstalled(NULL);
@@ -215,7 +214,7 @@ TEST_F(BackgroundModeManagerTest, ProfileInfoCacheStorage) {
       command_line_.get(), profile_manager_.profile_info_cache(), true);
   manager.RegisterProfile(profile1);
   manager.RegisterProfile(profile2);
-  EXPECT_FALSE(browser::WillKeepAlive());
+  EXPECT_FALSE(chrome::WillKeepAlive());
 
   ProfileInfoCache* cache = profile_manager_.profile_info_cache();
   EXPECT_EQ(2u, cache->GetNumberOfProfiles());
@@ -260,7 +259,7 @@ TEST_F(BackgroundModeManagerTest, ProfileInfoCacheObserver) {
   TestBackgroundModeManager manager(
       command_line_.get(), profile_manager_.profile_info_cache(), true);
   manager.RegisterProfile(profile1);
-  EXPECT_FALSE(browser::WillKeepAlive());
+  EXPECT_FALSE(chrome::WillKeepAlive());
 
   // Install app, should show status tray icon.
   manager.OnBackgroundAppInstalled(NULL);

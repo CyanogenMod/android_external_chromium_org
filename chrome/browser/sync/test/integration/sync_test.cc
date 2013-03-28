@@ -22,7 +22,6 @@
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/password_manager/encryptor.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -31,12 +30,14 @@
 #include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/webdata/encryptor/encryptor.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_thread.h"
 #include "google_apis/gaia/gaia_urls.h"
@@ -72,7 +73,7 @@ class SyncServerStatusChecker : public net::URLFetcherDelegate {
  public:
   SyncServerStatusChecker() : running_(false) {}
 
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) {
+  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE {
     std::string data;
     source->GetResponseAsString(&data);
     running_ =
@@ -215,8 +216,8 @@ void SyncTest::AddTestSwitches(CommandLine* cl) {
 void SyncTest::AddOptionalTypesToCommandLine(CommandLine* cl) {}
 
 // static
-Profile* SyncTest::MakeProfile(const FilePath::StringType name) {
-  FilePath path;
+Profile* SyncTest::MakeProfile(const base::FilePath::StringType name) {
+  base::FilePath path;
   PathService::Get(chrome::DIR_USER_DATA, &path);
   path = path.Append(name);
 
@@ -297,9 +298,15 @@ void SyncTest::InitializeInstance(int index) {
   EXPECT_FALSE(GetProfile(index) == NULL) << "Could not create Profile "
                                           << index << ".";
 
-  browsers_[index] = new Browser(Browser::CreateParams(GetProfile(index)));
+  browsers_[index] = new Browser(Browser::CreateParams(
+      GetProfile(index), chrome::HOST_DESKTOP_TYPE_NATIVE));
   EXPECT_FALSE(GetBrowser(index) == NULL) << "Could not create Browser "
                                           << index << ".";
+
+  // Make sure the ProfileSyncService has been created before creating the
+  // ProfileSyncServiceHarness - some tests expect the ProfileSyncService to
+  // already exist.
+  ProfileSyncServiceFactory::GetForProfile(GetProfile(index));
 
   clients_[index] = new ProfileSyncServiceHarness(GetProfile(index),
                                                   username_,
@@ -360,13 +367,16 @@ bool SyncTest::SetupSync() {
 }
 
 void SyncTest::CleanUpOnMainThread() {
+  // Some of the pending messages might rely on browser windows still being
+  // around, so run messages both before and after closing all browsers.
+  content::RunAllPendingInMessageLoop();
   // Close all browser windows.
-  browser::CloseAllBrowsers();
+  chrome::CloseAllBrowsers();
   content::RunAllPendingInMessageLoop();
 
   // All browsers should be closed at this point, or else we could see memory
   // corruption in QuitBrowser().
-  CHECK_EQ(0U, BrowserList::size());
+  CHECK_EQ(0U, chrome::GetTotalBrowserCount());
   clients_.clear();
 }
 
@@ -421,7 +431,7 @@ void SyncTest::SetupMockGaiaResponses() {
       true);
   fake_factory_->SetFakeResponse(
       GaiaUrls::GetInstance()->get_user_info_url(),
-      "email=user@gmail.com",
+      "email=user@gmail.com\ndisplayEmail=user@gmail.com",
       true);
   fake_factory_->SetFakeResponse(
       GaiaUrls::GetInstance()->issue_auth_token_url(),
@@ -647,7 +657,8 @@ void SyncTest::DisableNotificationsImpl() {
   std::string path = "chromiumsync/disablenotifications";
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
   ASSERT_EQ("Notifications disabled",
-            UTF16ToASCII(chrome::GetActiveWebContents(browser())->GetTitle()));
+            UTF16ToASCII(browser()->tab_strip_model()->GetActiveWebContents()->
+                GetTitle()));
 }
 
 void SyncTest::DisableNotifications() {
@@ -660,7 +671,8 @@ void SyncTest::EnableNotificationsImpl() {
   std::string path = "chromiumsync/enablenotifications";
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
   ASSERT_EQ("Notifications enabled",
-            UTF16ToASCII(chrome::GetActiveWebContents(browser())->GetTitle()));
+            UTF16ToASCII(browser()->tab_strip_model()->GetActiveWebContents()->
+                GetTitle()));
 }
 
 void SyncTest::EnableNotifications() {
@@ -675,14 +687,15 @@ void SyncTest::TriggerNotification(syncer::ModelTypeSet changed_types) {
           "from_server",
           syncer::NOTIFY_ALL,
           syncer::ObjectIdSetToInvalidationMap(
-              syncer::ModelTypeSetToObjectIdSet(changed_types), std::string()),
-          syncer::REMOTE_INVALIDATION).ToString();
+              syncer::ModelTypeSetToObjectIdSet(changed_types), std::string())
+          ).ToString();
   const std::string& path =
       std::string("chromiumsync/sendnotification?channel=") +
       syncer::kSyncP2PNotificationChannel + "&data=" + data;
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
   ASSERT_EQ("Notification sent",
-            UTF16ToASCII(chrome::GetActiveWebContents(browser())->GetTitle()));
+            UTF16ToASCII(browser()->tab_strip_model()->GetActiveWebContents()->
+                GetTitle()));
 }
 
 bool SyncTest::ServerSupportsErrorTriggering() const {
@@ -706,7 +719,8 @@ void SyncTest::TriggerMigrationDoneError(syncer::ModelTypeSet model_types) {
   }
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
   ASSERT_EQ("Migration: 200",
-            UTF16ToASCII(chrome::GetActiveWebContents(browser())->GetTitle()));
+            UTF16ToASCII(browser()->tab_strip_model()->GetActiveWebContents()->
+                GetTitle()));
 }
 
 void SyncTest::TriggerBirthdayError() {
@@ -714,7 +728,8 @@ void SyncTest::TriggerBirthdayError() {
   std::string path = "chromiumsync/birthdayerror";
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
   ASSERT_EQ("Birthday error",
-            UTF16ToASCII(chrome::GetActiveWebContents(browser())->GetTitle()));
+            UTF16ToASCII(browser()->tab_strip_model()->GetActiveWebContents()->
+                GetTitle()));
 }
 
 void SyncTest::TriggerTransientError() {
@@ -722,12 +737,19 @@ void SyncTest::TriggerTransientError() {
   std::string path = "chromiumsync/transienterror";
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
   ASSERT_EQ("Transient error",
-            UTF16ToASCII(chrome::GetActiveWebContents(browser())->GetTitle()));
+            UTF16ToASCII(browser()->tab_strip_model()->GetActiveWebContents()->
+                GetTitle()));
 }
 
 void SyncTest::TriggerAuthError() {
   ASSERT_TRUE(ServerSupportsErrorTriggering());
   std::string path = "chromiumsync/cred";
+  ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
+}
+
+void SyncTest::TriggerXmppAuthError() {
+  ASSERT_TRUE(ServerSupportsErrorTriggering());
+  std::string path = "chromiumsync/xmppcred";
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
 }
 
@@ -800,7 +822,7 @@ void SyncTest::TriggerSyncError(const syncer::SyncProtocolError& error,
 
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
   std::string output = UTF16ToASCII(
-      chrome::GetActiveWebContents(browser())->GetTitle());
+      browser()->tab_strip_model()->GetActiveWebContents()->GetTitle());
   ASSERT_TRUE(output.find("SetError: 200") != string16::npos);
 }
 
@@ -809,7 +831,8 @@ void SyncTest::TriggerCreateSyncedBookmarks() {
   std::string path = "chromiumsync/createsyncedbookmarks";
   ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
   ASSERT_EQ("Synced Bookmarks",
-            UTF16ToASCII(chrome::GetActiveWebContents(browser())->GetTitle()));
+            UTF16ToASCII(browser()->tab_strip_model()->GetActiveWebContents()->
+                GetTitle()));
 }
 
 int SyncTest::NumberOfDefaultSyncItems() const {

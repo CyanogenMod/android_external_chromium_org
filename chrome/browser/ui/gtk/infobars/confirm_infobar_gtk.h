@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_GTK_INFOBARS_CONFIRM_INFOBAR_GTK_H_
 
 #include "base/basictypes.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/ui/gtk/infobars/infobar_gtk.h"
 #include "ui/base/gtk/gtk_signal.h"
 
@@ -18,7 +18,7 @@ typedef struct _GtkWidget GtkWidget;
 // "Would you like to do X? [Yes] [No]                         _Learn More_ [x]"
 class ConfirmInfoBarGtk : public InfoBarGtk {
  public:
-  ConfirmInfoBarGtk(InfoBarTabHelper* owner,
+  ConfirmInfoBarGtk(InfoBarService* owner,
                     ConfirmInfoBarDelegate* delegate);
 
  private:

@@ -8,10 +8,10 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/onc_constants.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/net/x509_certificate_model.h"
+#include "chromeos/network/onc/onc_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -520,7 +520,8 @@ void VPNConfigView::Init(VirtualNetwork* vpn) {
   layout->StartRow(0, column_view_set_id);
   views::Label* title = new views::Label(l10n_util::GetStringUTF16(
       vpn ? IDS_OPTIONS_SETTINGS_JOIN_VPN : IDS_OPTIONS_SETTINGS_ADD_VPN));
-  title->SetFont(title->font().DeriveFont(1, gfx::Font::BOLD));
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  title->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
   layout->AddView(title, 5, 1);
   layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
 
@@ -913,7 +914,10 @@ void VPNConfigView::ParseVPNUIProperty(NetworkPropertyUIData* property_ui_data,
 
   property_ui_data->ParseOncProperty(
       network->ui_data(), onc,
-      base::StringPrintf("%s.%s.%s", onc::kVPN, dict_key.c_str(), key.c_str()));
+      base::StringPrintf("%s.%s.%s",
+                         onc::network_config::kVPN,
+                         dict_key.c_str(),
+                         key.c_str()));
 }
 
 }  // namespace chromeos

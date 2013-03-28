@@ -4,9 +4,10 @@
 
 #include "chrome/browser/ui/ash/app_sync_ui_state.h"
 
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -122,8 +123,9 @@ void AppSyncUIState::CheckAppSync() {
     return;
 
   const bool synced = sync_service_->ShouldPushChanges();
-  const bool has_pending_extension = profile_->GetExtensionService()->
-      pending_extension_manager()->HasPendingExtensionFromSync();
+  const bool has_pending_extension =
+      extensions::ExtensionSystem::Get(profile_)->extension_service()->
+          pending_extension_manager()->HasPendingExtensionFromSync();
 
   if (synced && !has_pending_extension)
     SetStatus(STATUS_NORMAL);

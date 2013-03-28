@@ -6,6 +6,16 @@
 
 #include "third_party/skia/include/core/SkColor.h"
 
+namespace {
+// The touchpad / touchscreen fling profiles are a matched set
+// determined via UX experimentation. Do not modify without
+// first discussing with rjkroege@chromium.org or
+// wjmaclean@chromium.org.
+const float kDefaultAlpha = -5.70762e+03f;
+const float kDefaultBeta = 1.72e+02f;
+const float kDefaultGamma = 3.7e+00f;
+}
+
 namespace content {
 
 RendererPreferences::RendererPreferences()
@@ -28,10 +38,20 @@ RendererPreferences::RendererPreferences()
       browser_handles_non_local_top_level_requests(false),
       browser_handles_all_top_level_requests(false),
       caret_blink_interval(0),
+      use_custom_colors(true),
       enable_referrers(true),
       enable_do_not_track(false),
       default_zoom_level(0),
-      throttle_input_events(true) {
+      throttle_input_events(true),
+      report_frame_name_changes(false),
+      touchpad_fling_profile(3),
+      touchscreen_fling_profile(3) {
+  touchpad_fling_profile[0] = kDefaultAlpha;
+  touchpad_fling_profile[1] = kDefaultBeta;
+  touchpad_fling_profile[2] = kDefaultGamma;
+  touchscreen_fling_profile = touchpad_fling_profile;
 }
+
+RendererPreferences::~RendererPreferences() { }
 
 }  // namespace content

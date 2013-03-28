@@ -9,8 +9,8 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/api/infobars/infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
+#include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -29,7 +29,7 @@ class MenuModel;
 class InfoBarGtk : public InfoBar,
                    public content::NotificationObserver {
  public:
-  InfoBarGtk(InfoBarTabHelper* owner, InfoBarDelegate* delegate);
+  InfoBarGtk(InfoBarService* owner, InfoBarDelegate* delegate);
   virtual ~InfoBarGtk();
 
   // Get the top level native GTK widget for this infobar.
@@ -83,8 +83,7 @@ class InfoBarGtk : public InfoBar,
                               size_t link_offset,
                               GCallback callback);
 
-  // Shows the menu with |model| with the context of |sender|. InfobarGtk takes
-  // ownership of the model.
+  // Shows the menu with |model| with the context of |sender|.
   void ShowMenuWithModel(GtkWidget* sender,
                          MenuGtk::Delegate* delegate,
                          ui::MenuModel* model);
@@ -132,7 +131,6 @@ class InfoBarGtk : public InfoBar,
 
   // The current menu displayed. Can be null. We own this on the base class so
   // we can cancel the menu while we're closing.
-  scoped_ptr<ui::MenuModel> menu_model_;
   scoped_ptr<MenuGtk> menu_;
 
   DISALLOW_COPY_AND_ASSIGN(InfoBarGtk);

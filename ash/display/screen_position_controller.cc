@@ -14,8 +14,8 @@
 #include "ash/wm/workspace_controller.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/capture_client.h"
+#include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/stacking_client.h"
-#include "ui/aura/focus_manager.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/compositor/dip_util.h"
@@ -129,13 +129,12 @@ void ScreenPositionController::ConvertPointFromScreen(
   aura::Window::ConvertPointToTarget(root, window, point);
 }
 
-void ScreenPositionController::ConvertNativePointToScreen(
-    aura::Window* window,
+void ScreenPositionController::ConvertHostPointToScreen(
+    aura::RootWindow* root_window,
     gfx::Point* point) {
+  root_window->ConvertPointFromHost(point);
   std::pair<aura::RootWindow*, gfx::Point> pair =
-      GetRootWindowRelativeToWindow(
-          window,
-          ui::ConvertPointToDIP(window->GetRootWindow()->layer(), *point));
+      GetRootWindowRelativeToWindow(root_window, *point);
   *point = pair.second;
   ConvertPointToScreen(pair.first, point);
 }
@@ -171,7 +170,8 @@ void ScreenPositionController::SetBounds(aura::Window* window,
     }
 
     if (dst_container && window->parent() != dst_container) {
-      aura::Window* focused = window->GetFocusManager()->GetFocusedWindow();
+      aura::Window* focused = aura::client::GetFocusClient(window)->
+          GetFocusedWindow();
       aura::client::ActivationClient* activation_client =
           aura::client::GetActivationClient(window->GetRootWindow());
       aura::Window* active = activation_client->GetActiveWindow();
@@ -193,10 +193,11 @@ void ScreenPositionController::SetBounds(aura::Window* window,
       MoveAllTransientChildrenToNewRoot(display, window);
 
       // Restore focused/active window.
-      if (tracker.Contains(focused))
-        window->GetFocusManager()->SetFocusedWindow(focused, NULL);
-      else if (tracker.Contains(active))
+      if (tracker.Contains(focused)) {
+        aura::client::GetFocusClient(window)->FocusWindow(focused);
+      } else if (tracker.Contains(active)) {
         activation_client->ActivateWindow(active);
+      }
     }
   }
 

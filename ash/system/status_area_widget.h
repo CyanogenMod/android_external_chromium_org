@@ -6,9 +6,8 @@
 #define ASH_SYSTEM_STATUS_AREA_WIDGET_H_
 
 #include "ash/ash_export.h"
-#include "ash/launcher/background_animator.h"
+#include "ash/shelf/shelf_types.h"
 #include "ash/system/user/login_status.h"
-#include "ash/wm/shelf_types.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
@@ -35,11 +34,6 @@ class ASH_EXPORT StatusAreaWidget : public views::Widget {
 
   // Update the alignment of the widget and tray views.
   void SetShelfAlignment(ShelfAlignment alignment);
-
-  // Update whether to paint a background for each tray view.
-  void SetPaintsBackground(
-      bool value,
-      internal::BackgroundAnimator::ChangeType change_type);
 
   // Set the visibility state of web notifications.
   void SetHideWebNotifications(bool hide);

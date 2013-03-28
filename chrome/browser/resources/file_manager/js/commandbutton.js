@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @fileoverview This implements a common button control, bound to command.
  */
@@ -14,7 +16,7 @@
  */
  var CommandButton = cr.ui.define('button');
 
-/** @inheritDoc */
+/** @override */
 CommandButton.prototype.__proto__ = HTMLButtonElement.prototype;
 
 /**
@@ -46,7 +48,7 @@ CommandButton.prototype.getCommand = function() {
 
 /**
  * Associates command with this button.
- * @param {String|cr.ui.Command} command Command id, or command object to
+ * @param {string|cr.ui.Command} command Command id, or command object to
  * associate with this button.
  */
 CommandButton.prototype.setCommand = function(command) {
@@ -78,7 +80,7 @@ CommandButton.prototype.setCommand = function(command) {
 
 /**
  * Returns button label
- * @return {String} Button label.
+ * @return {string} Button label.
  */
 CommandButton.prototype.getLabel = function() {
   return this.textContent;

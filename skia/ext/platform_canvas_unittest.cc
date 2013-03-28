@@ -14,11 +14,13 @@
 #include <unistd.h>
 #endif
 
+#include "base/memory/scoped_ptr.h"
 #include "skia/ext/platform_canvas.h"
 #include "skia/ext/platform_device.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-#include "SkColor.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkPixelRef.h"
 
 namespace skia {
 
@@ -194,16 +196,16 @@ const SkScalar kRadius = 2.0;
 // regular skia primitives.
 TEST(PlatformCanvas, SkLayer) {
   // Create the canvas initialized to opaque white.
-  PlatformCanvas canvas(16, 16, true);
-  canvas.drawColor(SK_ColorWHITE);
+  RefPtr<SkCanvas> canvas = AdoptRef(CreatePlatformCanvas(16, 16, true));
+  canvas->drawColor(SK_ColorWHITE);
 
   // Make a layer and fill it completely to make sure that the bounds are
   // correct.
   {
-    LayerSaver layer(canvas, kLayerX, kLayerY, kLayerW, kLayerH);
-    canvas.drawColor(SK_ColorBLACK);
+    LayerSaver layer(*canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    canvas->drawColor(SK_ColorBLACK);
   }
-  EXPECT_TRUE(VerifyBlackRect(canvas, kLayerX, kLayerY, kLayerW, kLayerH));
+  EXPECT_TRUE(VerifyBlackRect(*canvas, kLayerX, kLayerY, kLayerW, kLayerH));
 }
 
 #if !defined(USE_AURA)  // http://crbug.com/154358
@@ -211,26 +213,26 @@ TEST(PlatformCanvas, SkLayer) {
 // Test native clipping.
 TEST(PlatformCanvas, ClipRegion) {
   // Initialize a white canvas
-  PlatformCanvas canvas(16, 16, true);
-  canvas.drawColor(SK_ColorWHITE);
-  EXPECT_TRUE(VerifyCanvasColor(canvas, SK_ColorWHITE));
+  RefPtr<SkCanvas> canvas = AdoptRef(CreatePlatformCanvas(16, 16, true));
+  canvas->drawColor(SK_ColorWHITE);
+  EXPECT_TRUE(VerifyCanvasColor(*canvas, SK_ColorWHITE));
 
   // Test that initially the canvas has no clip region, by filling it
   // with a black rectangle.
   // Note: Don't use LayerSaver, since internally it sets a clip region.
-  DrawNativeRect(canvas, 0, 0, 16, 16);
-  EXPECT_TRUE(VerifyCanvasColor(canvas, SK_ColorBLACK));
+  DrawNativeRect(*canvas, 0, 0, 16, 16);
+  EXPECT_TRUE(VerifyCanvasColor(*canvas, SK_ColorBLACK));
 
   // Test that intersecting disjoint clip rectangles sets an empty clip region
-  canvas.drawColor(SK_ColorWHITE);
-  EXPECT_TRUE(VerifyCanvasColor(canvas, SK_ColorWHITE));
+  canvas->drawColor(SK_ColorWHITE);
+  EXPECT_TRUE(VerifyCanvasColor(*canvas, SK_ColorWHITE));
   {
-    LayerSaver layer(canvas, 0, 0, 16, 16);
-    AddClip(canvas, 2, 3, 4, 5);
-    AddClip(canvas, 4, 9, 10, 10);
-    DrawNativeRect(canvas, 0, 0, 16, 16);
+    LayerSaver layer(*canvas, 0, 0, 16, 16);
+    AddClip(*canvas, 2, 3, 4, 5);
+    AddClip(*canvas, 4, 9, 10, 10);
+    DrawNativeRect(*canvas, 0, 0, 16, 16);
   }
-  EXPECT_TRUE(VerifyCanvasColor(canvas, SK_ColorWHITE));
+  EXPECT_TRUE(VerifyCanvasColor(*canvas, SK_ColorWHITE));
 }
 
 #endif  // !defined(USE_AURA)
@@ -238,58 +240,58 @@ TEST(PlatformCanvas, ClipRegion) {
 // Test the layers get filled properly by native rendering.
 TEST(PlatformCanvas, FillLayer) {
   // Create the canvas initialized to opaque white.
-  PlatformCanvas canvas(16, 16, true);
+  RefPtr<SkCanvas> canvas = AdoptRef(CreatePlatformCanvas(16, 16, true));
 
   // Make a layer and fill it completely to make sure that the bounds are
   // correct.
-  canvas.drawColor(SK_ColorWHITE);
+  canvas->drawColor(SK_ColorWHITE);
   {
-    LayerSaver layer(canvas, kLayerX, kLayerY, kLayerW, kLayerH);
-    DrawNativeRect(canvas, 0, 0, 100, 100);
+    LayerSaver layer(*canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    DrawNativeRect(*canvas, 0, 0, 100, 100);
 #if defined(OS_WIN)
-    MakeOpaque(&canvas, 0, 0, 100, 100);
+    MakeOpaque(canvas.get(), 0, 0, 100, 100);
 #endif
   }
-  EXPECT_TRUE(VerifyBlackRect(canvas, kLayerX, kLayerY, kLayerW, kLayerH));
+  EXPECT_TRUE(VerifyBlackRect(*canvas, kLayerX, kLayerY, kLayerW, kLayerH));
 
   // Make a layer and fill it partially to make sure the translation is correct.
-  canvas.drawColor(SK_ColorWHITE);
+  canvas->drawColor(SK_ColorWHITE);
   {
-    LayerSaver layer(canvas, kLayerX, kLayerY, kLayerW, kLayerH);
-    DrawNativeRect(canvas, kInnerX, kInnerY, kInnerW, kInnerH);
+    LayerSaver layer(*canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    DrawNativeRect(*canvas, kInnerX, kInnerY, kInnerW, kInnerH);
 #if defined(OS_WIN)
-    MakeOpaque(&canvas, kInnerX, kInnerY, kInnerW, kInnerH);
+    MakeOpaque(canvas.get(), kInnerX, kInnerY, kInnerW, kInnerH);
 #endif
   }
-  EXPECT_TRUE(VerifyBlackRect(canvas, kInnerX, kInnerY, kInnerW, kInnerH));
+  EXPECT_TRUE(VerifyBlackRect(*canvas, kInnerX, kInnerY, kInnerW, kInnerH));
 
   // Add a clip on the layer and fill to make sure clip is correct.
-  canvas.drawColor(SK_ColorWHITE);
+  canvas->drawColor(SK_ColorWHITE);
   {
-    LayerSaver layer(canvas, kLayerX, kLayerY, kLayerW, kLayerH);
-    canvas.save();
-    AddClip(canvas, kInnerX, kInnerY, kInnerW, kInnerH);
-    DrawNativeRect(canvas, 0, 0, 100, 100);
+    LayerSaver layer(*canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    canvas->save();
+    AddClip(*canvas, kInnerX, kInnerY, kInnerW, kInnerH);
+    DrawNativeRect(*canvas, 0, 0, 100, 100);
 #if defined(OS_WIN)
-    MakeOpaque(&canvas, kInnerX, kInnerY, kInnerW, kInnerH);
+    MakeOpaque(canvas.get(), kInnerX, kInnerY, kInnerW, kInnerH);
 #endif
-    canvas.restore();
+    canvas->restore();
   }
-  EXPECT_TRUE(VerifyBlackRect(canvas, kInnerX, kInnerY, kInnerW, kInnerH));
+  EXPECT_TRUE(VerifyBlackRect(*canvas, kInnerX, kInnerY, kInnerW, kInnerH));
 
   // Add a clip and then make the layer to make sure the clip is correct.
-  canvas.drawColor(SK_ColorWHITE);
-  canvas.save();
-  AddClip(canvas, kInnerX, kInnerY, kInnerW, kInnerH);
+  canvas->drawColor(SK_ColorWHITE);
+  canvas->save();
+  AddClip(*canvas, kInnerX, kInnerY, kInnerW, kInnerH);
   {
-    LayerSaver layer(canvas, kLayerX, kLayerY, kLayerW, kLayerH);
-    DrawNativeRect(canvas, 0, 0, 100, 100);
+    LayerSaver layer(*canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    DrawNativeRect(*canvas, 0, 0, 100, 100);
 #if defined(OS_WIN)
-    MakeOpaque(&canvas, 0, 0, 100, 100);
+    MakeOpaque(canvas.get(), 0, 0, 100, 100);
 #endif
   }
-  canvas.restore();
-  EXPECT_TRUE(VerifyBlackRect(canvas, kInnerX, kInnerY, kInnerW, kInnerH));
+  canvas->restore();
+  EXPECT_TRUE(VerifyBlackRect(*canvas, kInnerX, kInnerY, kInnerW, kInnerH));
 }
 
 #if !defined(USE_AURA)  // http://crbug.com/154358
@@ -297,102 +299,161 @@ TEST(PlatformCanvas, FillLayer) {
 // Test that translation + make layer works properly.
 TEST(PlatformCanvas, TranslateLayer) {
   // Create the canvas initialized to opaque white.
-  PlatformCanvas canvas(16, 16, true);
+  RefPtr<SkCanvas> canvas = AdoptRef(CreatePlatformCanvas(16, 16, true));
 
   // Make a layer and fill it completely to make sure that the bounds are
   // correct.
-  canvas.drawColor(SK_ColorWHITE);
-  canvas.save();
-  canvas.translate(1, 1);
+  canvas->drawColor(SK_ColorWHITE);
+  canvas->save();
+  canvas->translate(1, 1);
   {
-    LayerSaver layer(canvas, kLayerX, kLayerY, kLayerW, kLayerH);
-    DrawNativeRect(canvas, 0, 0, 100, 100);
+    LayerSaver layer(*canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    DrawNativeRect(*canvas, 0, 0, 100, 100);
 #if defined(OS_WIN)
-    MakeOpaque(&canvas, 0, 0, 100, 100);
+    MakeOpaque(canvas.get(), 0, 0, 100, 100);
 #endif
   }
-  canvas.restore();
-  EXPECT_TRUE(VerifyBlackRect(canvas, kLayerX + 1, kLayerY + 1,
+  canvas->restore();
+  EXPECT_TRUE(VerifyBlackRect(*canvas, kLayerX + 1, kLayerY + 1,
                               kLayerW, kLayerH));
 
   // Translate then make the layer.
-  canvas.drawColor(SK_ColorWHITE);
-  canvas.save();
-  canvas.translate(1, 1);
+  canvas->drawColor(SK_ColorWHITE);
+  canvas->save();
+  canvas->translate(1, 1);
   {
-    LayerSaver layer(canvas, kLayerX, kLayerY, kLayerW, kLayerH);
-    DrawNativeRect(canvas, kInnerX, kInnerY, kInnerW, kInnerH);
+    LayerSaver layer(*canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    DrawNativeRect(*canvas, kInnerX, kInnerY, kInnerW, kInnerH);
 #if defined(OS_WIN)
-    MakeOpaque(&canvas, kInnerX, kInnerY, kInnerW, kInnerH);
+    MakeOpaque(canvas.get(), kInnerX, kInnerY, kInnerW, kInnerH);
 #endif
   }
-  canvas.restore();
-  EXPECT_TRUE(VerifyBlackRect(canvas, kInnerX + 1, kInnerY + 1,
+  canvas->restore();
+  EXPECT_TRUE(VerifyBlackRect(*canvas, kInnerX + 1, kInnerY + 1,
                               kInnerW, kInnerH));
 
   // Make the layer then translate.
-  canvas.drawColor(SK_ColorWHITE);
-  canvas.save();
+  canvas->drawColor(SK_ColorWHITE);
+  canvas->save();
   {
-    LayerSaver layer(canvas, kLayerX, kLayerY, kLayerW, kLayerH);
-    canvas.translate(1, 1);
-    DrawNativeRect(canvas, kInnerX, kInnerY, kInnerW, kInnerH);
+    LayerSaver layer(*canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    canvas->translate(1, 1);
+    DrawNativeRect(*canvas, kInnerX, kInnerY, kInnerW, kInnerH);
 #if defined(OS_WIN)
-    MakeOpaque(&canvas, kInnerX, kInnerY, kInnerW, kInnerH);
+    MakeOpaque(canvas.get(), kInnerX, kInnerY, kInnerW, kInnerH);
 #endif
   }
-  canvas.restore();
-  EXPECT_TRUE(VerifyBlackRect(canvas, kInnerX + 1, kInnerY + 1,
+  canvas->restore();
+  EXPECT_TRUE(VerifyBlackRect(*canvas, kInnerX + 1, kInnerY + 1,
                               kInnerW, kInnerH));
 
   // Translate both before and after, and have a clip.
-  canvas.drawColor(SK_ColorWHITE);
-  canvas.save();
-  canvas.translate(1, 1);
+  canvas->drawColor(SK_ColorWHITE);
+  canvas->save();
+  canvas->translate(1, 1);
   {
-    LayerSaver layer(canvas, kLayerX, kLayerY, kLayerW, kLayerH);
-    canvas.drawColor(SK_ColorWHITE);
-    canvas.translate(1, 1);
-    AddClip(canvas, kInnerX + 1, kInnerY + 1, kInnerW - 1, kInnerH - 1);
-    DrawNativeRect(canvas, 0, 0, 100, 100);
+    LayerSaver layer(*canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    canvas->drawColor(SK_ColorWHITE);
+    canvas->translate(1, 1);
+    AddClip(*canvas, kInnerX + 1, kInnerY + 1, kInnerW - 1, kInnerH - 1);
+    DrawNativeRect(*canvas, 0, 0, 100, 100);
 #if defined(OS_WIN)
-    MakeOpaque(&canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    MakeOpaque(canvas.get(), kLayerX, kLayerY, kLayerW, kLayerH);
 #endif
   }
-  canvas.restore();
-  EXPECT_TRUE(VerifyBlackRect(canvas, kInnerX + 3, kInnerY + 3,
+  canvas->restore();
+  EXPECT_TRUE(VerifyBlackRect(*canvas, kInnerX + 3, kInnerY + 3,
                               kInnerW - 1, kInnerH - 1));
 
 // TODO(dglazkov): Figure out why this fails on Mac (antialiased clipping?),
 // modify test and remove this guard.
 #if !defined(OS_MACOSX)
   // Translate both before and after, and have a path clip.
-  canvas.drawColor(SK_ColorWHITE);
-  canvas.save();
-  canvas.translate(1, 1);
+  canvas->drawColor(SK_ColorWHITE);
+  canvas->save();
+  canvas->translate(1, 1);
   {
-    LayerSaver layer(canvas, kLayerX, kLayerY, kLayerW, kLayerH);
-    canvas.drawColor(SK_ColorWHITE);
-    canvas.translate(1, 1);
+    LayerSaver layer(*canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    canvas->drawColor(SK_ColorWHITE);
+    canvas->translate(1, 1);
 
     SkPath path;
     SkRect rect;
     rect.iset(kInnerX - 1, kInnerY - 1,
               kInnerX + kInnerW, kInnerY + kInnerH);
     path.addRoundRect(rect, kRadius, kRadius);
-    canvas.clipPath(path);
+    canvas->clipPath(path);
 
-    DrawNativeRect(canvas, 0, 0, 100, 100);
+    DrawNativeRect(*canvas, 0, 0, 100, 100);
 #if defined(OS_WIN)
-    MakeOpaque(&canvas, kLayerX, kLayerY, kLayerW, kLayerH);
+    MakeOpaque(canvas.get(), kLayerX, kLayerY, kLayerW, kLayerH);
 #endif
   }
-  canvas.restore();
-  EXPECT_TRUE(VerifyRoundedRect(canvas, SK_ColorWHITE, SK_ColorBLACK,
+  canvas->restore();
+  EXPECT_TRUE(VerifyRoundedRect(*canvas, SK_ColorWHITE, SK_ColorBLACK,
                                 kInnerX + 1, kInnerY + 1, kInnerW, kInnerH));
 #endif
 }
 
 #endif  // #if !defined(USE_AURA)
+
+TEST(PlatformBitmapTest, PlatformBitmap) {
+  const int kWidth = 400;
+  const int kHeight = 300;
+  scoped_ptr<PlatformBitmap> platform_bitmap(new PlatformBitmap);
+
+  EXPECT_TRUE(0 == platform_bitmap->GetSurface());
+  EXPECT_TRUE(platform_bitmap->GetBitmap().empty());
+  EXPECT_TRUE(platform_bitmap->GetBitmap().isNull());
+
+  EXPECT_TRUE(platform_bitmap->Allocate(kWidth, kHeight, /*is_opaque=*/false));
+
+  EXPECT_TRUE(0 != platform_bitmap->GetSurface());
+  EXPECT_FALSE(platform_bitmap->GetBitmap().empty());
+  EXPECT_FALSE(platform_bitmap->GetBitmap().isNull());
+  EXPECT_EQ(kWidth, platform_bitmap->GetBitmap().width());
+  EXPECT_EQ(kHeight, platform_bitmap->GetBitmap().height());
+  EXPECT_LE(static_cast<size_t>(platform_bitmap->GetBitmap().width()*4),
+            platform_bitmap->GetBitmap().rowBytes());
+  EXPECT_EQ(SkBitmap::kARGB_8888_Config,  // Same for all platforms.
+            platform_bitmap->GetBitmap().config());
+  EXPECT_TRUE(platform_bitmap->GetBitmap().lockPixelsAreWritable());
+  EXPECT_TRUE(platform_bitmap->GetBitmap().pixelRef()->isLocked());
+  EXPECT_EQ(1, platform_bitmap->GetBitmap().pixelRef()->getRefCnt());
+
+  *(platform_bitmap->GetBitmap().getAddr32(10, 20)) = 0xDEED1020;
+  *(platform_bitmap->GetBitmap().getAddr32(20, 30)) = 0xDEED2030;
+
+  SkBitmap sk_bitmap = platform_bitmap->GetBitmap();
+  sk_bitmap.lockPixels();
+
+  EXPECT_EQ(2, platform_bitmap->GetBitmap().pixelRef()->getRefCnt());
+  EXPECT_EQ(2, sk_bitmap.pixelRef()->getRefCnt());
+
+  EXPECT_EQ(0xDEED1020, *sk_bitmap.getAddr32(10, 20));
+  EXPECT_EQ(0xDEED2030, *sk_bitmap.getAddr32(20, 30));
+
+  *(platform_bitmap->GetBitmap().getAddr32(30, 40)) = 0xDEED3040;
+
+  // The SkBitmaps derived from a PlatformBitmap must be capable of outliving
+  // the PlatformBitmap.
+  platform_bitmap.reset();
+
+  EXPECT_EQ(1, sk_bitmap.pixelRef()->getRefCnt());
+
+  EXPECT_EQ(0xDEED1020, *sk_bitmap.getAddr32(10, 20));
+  EXPECT_EQ(0xDEED2030, *sk_bitmap.getAddr32(20, 30));
+  EXPECT_EQ(0xDEED3040, *sk_bitmap.getAddr32(30, 40));
+  sk_bitmap.unlockPixels();
+
+  EXPECT_EQ(NULL, sk_bitmap.getPixels());
+
+  sk_bitmap.lockPixels();
+  EXPECT_EQ(0xDEED1020, *sk_bitmap.getAddr32(10, 20));
+  EXPECT_EQ(0xDEED2030, *sk_bitmap.getAddr32(20, 30));
+  EXPECT_EQ(0xDEED3040, *sk_bitmap.getAddr32(30, 40));
+  sk_bitmap.unlockPixels();
+}
+
 
 }  // namespace skia

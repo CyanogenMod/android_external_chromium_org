@@ -16,17 +16,16 @@ class MessageReader;
 }  // namespace dbus
 
 namespace chromeos {
-namespace ibus {
 
 class IBusProperty;
 typedef ScopedVector<IBusProperty> IBusPropertyList;
 
 // Pops a IBusProperty from |reader|.
-// Returns false if an error occures.
+// Returns false if an error occurs.
 bool CHROMEOS_EXPORT PopIBusProperty(dbus::MessageReader* reader,
                                      IBusProperty* property);
 // Pops a IBusPropertyList from |reader|.
-// Returns false if an error occures.
+// Returns false if an error occurs.
 bool CHROMEOS_EXPORT PopIBusPropertyList(dbus::MessageReader* reader,
                                          IBusPropertyList* property_list);
 
@@ -131,7 +130,6 @@ class CHROMEOS_EXPORT IBusProperty {
   DISALLOW_COPY_AND_ASSIGN(IBusProperty);
 };
 
-}  // namespace ibus
 }  // namespace chromeos
 
 #endif  // CHROMEOS_DBUS_IBUS_IBUS_PROPERTY_H_

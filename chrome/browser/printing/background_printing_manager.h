@@ -13,8 +13,6 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
-class TabContents;
-
 namespace content {
 class RenderProcessHost;
 class WebContents;
@@ -22,54 +20,56 @@ class WebContents;
 
 namespace printing {
 
-// Manages hidden tabs that prints documents in the background.
-// The hidden tabs are no longer part of any Browser / TabStripModel.
-// They get deleted when the tab finishes printing.
+// Manages hidden WebContents that prints documents in the background.
+// The hidden WebContents are no longer part of any Browser / TabStripModel.
+// The WebContents started life as a ConstrainedPrintPreview dialog.
+// They get deleted when the printing finishes.
 class BackgroundPrintingManager : public base::NonThreadSafe,
                                   public content::NotificationObserver {
  public:
-  typedef std::set<TabContents*> TabContentsSet;
+  typedef std::set<content::WebContents*> WebContentsSet;
 
   BackgroundPrintingManager();
   virtual ~BackgroundPrintingManager();
 
-  // Takes ownership of |preview_tab| and deletes it when |preview_tab| finishes
-  // printing. This removes the TabContents from its TabStrip and hides it from
-  // the user.
-  void OwnPrintPreviewTab(TabContents* preview_tab);
+  // Takes ownership of |preview_dialog| and deletes it when |preview_dialog|
+  // finishes printing. This removes |preview_dialog| from its ConstrainedDialog
+  // and hides it from the user.
+  void OwnPrintPreviewDialog(content::WebContents* preview_dialog);
 
-  // Let others iterate over the list of background printing tabs.
-  TabContentsSet::const_iterator begin();
-  TabContentsSet::const_iterator end();
+  // Returns true if |printing_contents_set_| contains |preview_dialog|.
+  bool HasPrintPreviewDialog(content::WebContents* preview_dialog);
 
-  // Returns true if |printing_tabs_| contains |preview_tab|.
-  bool HasPrintPreviewTab(TabContents* preview_tab);
+  // Let others iterate over the list of background printing contents.
+  WebContentsSet::const_iterator begin();
+  WebContentsSet::const_iterator end();
 
+ private:
   // content::NotificationObserver overrides:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
- private:
   // Notifications handlers.
   void OnRendererProcessClosed(content::RenderProcessHost* rph);
-  void OnPrintJobReleased(content::WebContents* preview_tab);
-  void OnWebContentsDestroyed(content::WebContents* preview_tab);
+  void OnPrintJobReleased(content::WebContents* preview_contents);
+  void OnWebContentsDestroyed(content::WebContents* preview_contents);
 
-  // Add |tab| to the pending deletion set and schedule deletion.
-  void DeletePreviewTab(TabContents* tab);
+  // Add |preview_contents| to the pending deletion set and schedule deletion.
+  void DeletePreviewContents(content::WebContents* preview_contents);
 
-  // Check if any of the TabContents in |set| share a RenderProcessHost
+  // Check if any of the WebContentses in |set| share a RenderProcessHost
   // with |tab|, excluding |tab|.
-  bool HasSharedRenderProcessHost(const TabContentsSet& set,
-                                  TabContents* tab);
+  bool HasSharedRenderProcessHost(const WebContentsSet& set,
+                                  content::WebContents* preview_contents);
 
-  // The set of print preview tabs managed by BackgroundPrintingManager.
-  TabContentsSet printing_tabs_;
+  // The set of print preview WebContentses managed by
+  // BackgroundPrintingManager.
+  WebContentsSet printing_contents_set_;
 
-  // The set of print preview tabs managed by BackgroundPrintingManager that
-  // are pending deletion.
-  TabContentsSet printing_tabs_pending_deletion_;
+  // The set of print preview Webcontents managed by BackgroundPrintingManager
+  // that are pending deletion.
+  WebContentsSet printing_contents_pending_deletion_set_;
 
   content::NotificationRegistrar registrar_;
 

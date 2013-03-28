@@ -12,13 +12,18 @@
 #include "net/base/cert_verify_result.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
-#include "net/base/ssl_config_service.h"
-#include "net/socket/ssl_client_socket.h"
 #include "net/socket/client_socket_handle.h"
+#include "net/socket/ssl_client_socket.h"
+#include "net/ssl/ssl_config_service.h"
 
+// Avoid including misc OpenSSL headers, i.e.:
+// <openssl/bio.h>
 typedef struct bio_st BIO;
+// <openssl/evp.h>
 typedef struct evp_pkey_st EVP_PKEY;
+// <openssl/ssl.h>
 typedef struct ssl_st SSL;
+// <openssl/x509.h>
 typedef struct x509_st X509;
 
 namespace net {
@@ -123,9 +128,10 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   void TransportReadComplete(int result);
 
   bool transport_send_busy_;
-  scoped_refptr<DrainableIOBuffer> send_buffer_;
   bool transport_recv_busy_;
   bool transport_recv_eof_;
+
+  scoped_refptr<DrainableIOBuffer> send_buffer_;
   scoped_refptr<IOBuffer> recv_buffer_;
 
   CompletionCallback user_connect_callback_;
@@ -140,6 +146,14 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   scoped_refptr<IOBuffer> user_write_buf_;
   int user_write_buf_len_;
 
+  // Used by DoPayloadRead() when attempting to fill the caller's buffer with
+  // as much data as possible without blocking.
+  // If DoPayloadRead() encounters an error after having read some data, stores
+  // the result to return on the *next* call to DoPayloadRead().  A value > 0
+  // indicates there is no pending result, otherwise 0 indicates EOF and < 0
+  // indicates an error.
+  int pending_read_error_;
+
   // Set when handshake finishes.
   scoped_refptr<X509Certificate> server_cert_;
   CertVerifyResult server_cert_verify_result_;
@@ -147,8 +161,10 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
 
   // Stores client authentication information between ClientAuthHandler and
   // GetSSLCertRequestInfo calls.
-  std::vector<scoped_refptr<X509Certificate> > client_certs_;
   bool client_auth_cert_needed_;
+  // List of DER-encoded X.509 DistinguishedName of certificate authorities
+  // allowed by the server.
+  std::vector<std::string> cert_authorities_;
 
   CertVerifier* const cert_verifier_;
   scoped_ptr<SingleRequestCertVerifier> verifier_;

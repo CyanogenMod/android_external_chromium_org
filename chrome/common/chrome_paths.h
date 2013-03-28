@@ -18,10 +18,6 @@ enum {
   DIR_APP = PATH_START,         // Directory where dlls and data reside.
   DIR_LOGS,                     // Directory where logs should be written.
   DIR_USER_DATA,                // Directory where user data can be written.
-#if defined(OS_WIN)
-  DIR_ALT_USER_DATA,            // Directory of the desktop or metro user data
-                                // (the one that isn't in use).
-#endif
   DIR_CRASH_DUMPS,              // Directory where crash dumps are written.
   DIR_RESOURCES,                // Directory containing separate file resources
                                 // used by Chrome at runtime.
@@ -42,11 +38,11 @@ enum {
                                 // to set policies for chrome. This directory
                                 // contains subdirectories.
 #endif
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
   DIR_MANAGED_PREFS,            // Directory that stores the managed prefs plist
                                 // files for the current user.
 #endif
-#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
+#if defined(OS_CHROMEOS) || (defined(OS_MACOSX) && !defined(OS_IOS))
   DIR_USER_EXTERNAL_EXTENSIONS,  // Directory for per-user external extensions
                                  // on Chrome Mac.  On Chrome OS, this path is
                                  // used for OEM customization.
@@ -76,12 +72,9 @@ enum {
   FILE_RECORDED_SCRIPT,         // Full path to the script.log file that
                                 // contains recorded browser events for
                                 // playback.
-  FILE_FLASH_PLUGIN,            // Full path to the internal Flash plugin file.
-                                // Querying this path will succeed no matter the
-                                // file exists or not.
-  FILE_FLASH_PLUGIN_EXISTING,   // Full path to the internal Flash plugin file.
-                                // Querying this path will fail if the file
-                                // doesn't exist.
+  FILE_FLASH_PLUGIN,            // Full path to the internal NPAPI Flash plugin
+                                // file. Querying this path will succeed no
+                                // matter the file exists or not.
   FILE_PEPPER_FLASH_PLUGIN,     // Full path to the bundled Pepper Flash plugin
                                 // file.
   FILE_PDF_PLUGIN,              // Full path to the internal PDF plugin file.
@@ -105,8 +98,27 @@ enum {
 #if defined(OS_CHROMEOS)
   DIR_CHROMEOS_WALLPAPERS,      // Directory where downloaded chromeos
                                 // wallpapers reside.
+  DIR_CHROMEOS_WALLPAPER_THUMBNAILS,  // Directory where downloaded chromeos
+                                      // wallpaper thumbnails reside.
+  DIR_CHROMEOS_CUSTOM_WALLPAPERS,     // Directory where custom wallpapers
+                                      // reside.
   FILE_DEFAULT_APP_ORDER,       // Full path to the json file that defines the
                                 // default app order.
+  DIR_USER_POLICY_KEYS,         // Directory where the session_manager stores
+                                // the user policy keys.
+  FILE_OWNER_KEY,               // Full path to the owner key file.
+  FILE_INSTALL_ATTRIBUTES,      // Full path to the install attributes file.
+  FILE_UPTIME,                  // Full path to the file via which the kernel
+                                // exposes the current device uptime.
+  FILE_UPDATE_REBOOT_NEEDED_UPTIME,  // Full path to a file in which Chrome can
+                                     // store the uptime at which an update
+                                     // became necessary. The file should be
+                                     // cleared on boot.
+#endif
+#if defined(ENABLE_MANAGED_USERS)
+  DIR_MANAGED_USERS_DEFAULT_APPS,  // Directory where installer places .crx
+                                   // files to be installed when managed user
+                                   // session starts.
 #endif
 
   // Valid only in development environment; TODO(darin): move these

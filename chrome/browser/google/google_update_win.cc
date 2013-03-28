@@ -8,7 +8,7 @@
 #include <atlcom.h>
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
@@ -24,6 +24,7 @@
 #include "google_update/google_update_idl.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/win/atl_module.h"
 #include "ui/views/widget/widget.h"
 
 using content::BrowserThread;
@@ -34,18 +35,18 @@ namespace {
 // Returns GOOGLE_UPDATE_NO_ERROR only if the instance running is a Google
 // Chrome distribution installed in a standard location.
 GoogleUpdateErrorCode CanUpdateCurrentChrome(
-    const FilePath& chrome_exe_path) {
+    const base::FilePath& chrome_exe_path) {
 #if !defined(GOOGLE_CHROME_BUILD)
   return CANNOT_UPGRADE_CHROME_IN_THIS_DIRECTORY;
 #else
   // TODO(tommi): Check if using the default distribution is always the right
   // thing to do.
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  FilePath user_exe_path = installer::GetChromeInstallPath(false, dist);
-  FilePath machine_exe_path = installer::GetChromeInstallPath(true, dist);
-  if (!FilePath::CompareEqualIgnoreCase(chrome_exe_path.value(),
+  base::FilePath user_exe_path = installer::GetChromeInstallPath(false, dist);
+  base::FilePath machine_exe_path = installer::GetChromeInstallPath(true, dist);
+  if (!base::FilePath::CompareEqualIgnoreCase(chrome_exe_path.value(),
                                         user_exe_path.value()) &&
-      !FilePath::CompareEqualIgnoreCase(chrome_exe_path.value(),
+      !base::FilePath::CompareEqualIgnoreCase(chrome_exe_path.value(),
                                         machine_exe_path.value())) {
     LOG(ERROR) << L"Google Update cannot update Chrome installed in a "
                << L"non-standard location: " << chrome_exe_path.value().c_str()
@@ -246,7 +247,7 @@ void GoogleUpdate::CheckForUpdate(bool install_if_newer, HWND window) {
 void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
                                              HWND window,
                                              MessageLoop* main_loop) {
-  FilePath chrome_exe;
+  base::FilePath chrome_exe;
   if (!PathService::Get(base::DIR_EXE, &chrome_exe))
     NOTREACHED();
 
@@ -258,6 +259,9 @@ void GoogleUpdate::InitiateGoogleUpdateCheck(bool install_if_newer,
                    UPGRADE_ERROR, error_code, string16()));
     return;
   }
+
+  // Make sure ATL is initialized in this module.
+  ui::win::CreateATLModuleIfNeeded();
 
   CComObject<GoogleUpdateJobObserver>* job_observer;
   HRESULT hr =

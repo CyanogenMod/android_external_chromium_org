@@ -4,39 +4,46 @@
 
 #include "content/gpu/gpu_info_collector.h"
 
+// This has to be included before windows.h.
+#include "third_party/re2/re2/re2.h"
+
 #include <windows.h>
 #include <d3d9.h>
+#include <d3d11.h>
+#include <dxgi.h>
 #include <setupapi.h>
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/scoped_native_library.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/string16.h"
+#include "base/stringprintf.h"
+#include "base/threading/thread.h"
+#include "base/threading/worker_pool.h"
+#include "base/win/registry.h"
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
+#include "base/win/windows_version.h"
 #include "third_party/libxml/chromium/libxml_utils.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_egl.h"
 
-// ANGLE seems to require that main.h be included before any other ANGLE header.
-#include "libEGL/Display.h"
-#include "libEGL/main.h"
-
 namespace {
 
-// The version number stores the major and minor version in the least 16 bits;
-// for example, 2.5 is 0x00000205.
-// Returned string is in the format of "major.minor".
-std::string VersionNumberToString(uint32 version_number) {
-  int hi = (version_number >> 8) & 0xff;
-  int low = version_number & 0xff;
-  return base::IntToString(hi) + "." + base::IntToString(low);
-}
+// This must be kept in sync with histograms.xml.
+enum DisplayLinkInstallationStatus {
+  DISPLAY_LINK_NOT_INSTALLED,
+  DISPLAY_LINK_7_1_OR_EARLIER,
+  DISPLAY_LINK_7_2_OR_LATER,
+  DISPLAY_LINK_INSTALLATION_STATUS_MAX
+};
 
 float ReadXMLFloatValue(XmlReader* reader) {
   std::string score_string;
@@ -71,18 +78,18 @@ content::GpuPerformanceStats RetrieveGpuPerformanceStats() {
 
   // Find most recent formal assessment results.
   file_util::FileEnumerator file_enumerator(
-      FilePath(winsat_results_path),
+      base::FilePath(winsat_results_path),
       false,  // not recursive
       file_util::FileEnumerator::FILES,
       FILE_PATH_LITERAL("* * Formal.Assessment (*).WinSAT.xml"));
 
-  FilePath current_results;
-  for (FilePath results = file_enumerator.Next(); !results.empty();
+  base::FilePath current_results;
+  for (base::FilePath results = file_enumerator.Next(); !results.empty();
        results = file_enumerator.Next()) {
     // The filenames start with the date and time as yyyy-mm-dd hh.mm.ss.xxx,
     // so the greatest file lexicographically is also the most recent file.
-    if (FilePath::CompareLessIgnoreCase(current_results.value(),
-                                        results.value()))
+    if (base::FilePath::CompareLessIgnoreCase(current_results.value(),
+                                              results.value()))
       current_results = results;
   }
 
@@ -157,6 +164,211 @@ content::GpuPerformanceStats RetrieveGpuPerformanceStatsWithHistograms() {
   return stats;
 }
 
+// Returns the display link driver version or an invalid version if it is
+// not installed.
+Version DisplayLinkVersion() {
+  base::win::RegKey key;
+
+  if (key.Open(HKEY_LOCAL_MACHINE, L"SOFTWARE", KEY_READ | KEY_WOW64_64KEY))
+    return Version();
+
+  if (key.OpenKey(L"DisplayLink", KEY_READ | KEY_WOW64_64KEY))
+    return Version();
+
+  if (key.OpenKey(L"Core", KEY_READ | KEY_WOW64_64KEY))
+    return Version();
+
+  string16 version;
+  if (key.ReadValue(L"Version", &version))
+    return Version();
+
+  return Version(WideToASCII(version));
+}
+
+// Returns whether Lenovo dCute is installed.
+bool IsLenovoDCuteInstalled() {
+  base::win::RegKey key;
+
+  if (FAILED(key.Open(
+      HKEY_LOCAL_MACHINE, L"SOFTWARE", KEY_READ | KEY_WOW64_64KEY))) {
+    return false;
+  }
+
+  if (FAILED(key.OpenKey(L"Lenovo", KEY_READ | KEY_WOW64_64KEY)))
+    return false;
+
+  if (FAILED(key.OpenKey(L"Lenovo dCute", KEY_READ | KEY_WOW64_64KEY)))
+    return false;
+
+  return true;
+}
+
+// Determines whether D3D11 won't work, either because it is not supported on
+// the machine or because it is known it is likely to crash.
+bool D3D11ShouldWork(const content::GPUInfo& gpu_info) {
+  // Windows XP never supports D3D11.
+  if (base::win::GetVersion() <= base::win::VERSION_XP)
+    return false;
+
+  // Intel?
+  if (gpu_info.gpu.vendor_id == 0x8086) {
+    // 2nd Generation Core Processor Family Integrated Graphics Controller
+    // or Intel Ivy Bridge?
+    if (gpu_info.gpu.device_id == 0x0102 ||
+        gpu_info.gpu.device_id == 0x0106 ||
+        gpu_info.gpu.device_id == 0x0116 ||
+        gpu_info.gpu.device_id == 0x0126 ||
+        gpu_info.gpu.device_id == 0x0152 ||
+        gpu_info.gpu.device_id == 0x0156 ||
+        gpu_info.gpu.device_id == 0x015a ||
+        gpu_info.gpu.device_id == 0x0162 ||
+        gpu_info.gpu.device_id == 0x0166) {
+      // http://crbug.com/196373.
+      if (base::win::GetVersion() == base::win::VERSION_VISTA)
+        return false;
+
+      // http://crbug.com/175525.
+      if (gpu_info.display_link_version.IsValid())
+        return false;
+    }
+  }
+
+  return true;
+}
+
+// Collects information about the level of D3D11 support and records it in
+// the UMA stats. Records no stats when D3D11 in not supported at all.
+void CollectD3D11SupportOnWorkerThread() {
+  TRACE_EVENT0("gpu", "CollectD3D11Support");
+
+  typedef HRESULT (WINAPI *D3D11CreateDeviceFunc)(
+      IDXGIAdapter* adapter,
+      D3D_DRIVER_TYPE driver_type,
+      HMODULE software,
+      UINT flags,
+      const D3D_FEATURE_LEVEL* feature_levels,
+      UINT num_feature_levels,
+      UINT sdk_version,
+      ID3D11Device** device,
+      D3D_FEATURE_LEVEL* feature_level,
+      ID3D11DeviceContext** immediate_context);
+
+  // This enumeration must be kept in sync with histograms.xml. Do not reorder
+  // the members; always add to the end.
+  enum FeatureLevel {
+    FEATURE_LEVEL_UNKNOWN,
+    FEATURE_LEVEL_NO_D3D11_DLL,
+    FEATURE_LEVEL_NO_CREATE_DEVICE_ENTRY_POINT,
+    FEATURE_LEVEL_DEVICE_CREATION_FAILED,
+    FEATURE_LEVEL_9_1,
+    FEATURE_LEVEL_9_2,
+    FEATURE_LEVEL_9_3,
+    FEATURE_LEVEL_10_0,
+    FEATURE_LEVEL_10_1,
+    FEATURE_LEVEL_11_0,
+    NUM_FEATURE_LEVELS
+  };
+
+  FeatureLevel feature_level = FEATURE_LEVEL_UNKNOWN;
+  UINT bgra_support = 0;
+
+  // This module is leaked in case it is hooked by third party software.
+  base::NativeLibrary d3d11_module = base::LoadNativeLibrary(
+      base::FilePath(L"d3d11.dll"),
+      NULL);
+
+  if (!d3d11_module) {
+    feature_level = FEATURE_LEVEL_NO_D3D11_DLL;
+  } else {
+    D3D11CreateDeviceFunc create_func =
+        reinterpret_cast<D3D11CreateDeviceFunc>(
+            base::GetFunctionPointerFromNativeLibrary(d3d11_module,
+                                                      "D3D11CreateDevice"));
+    if (!create_func) {
+      feature_level = FEATURE_LEVEL_NO_CREATE_DEVICE_ENTRY_POINT;
+    } else {
+      static const D3D_FEATURE_LEVEL d3d_feature_levels[] = {
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0,
+        D3D_FEATURE_LEVEL_9_3,
+        D3D_FEATURE_LEVEL_9_2,
+        D3D_FEATURE_LEVEL_9_1
+      };
+
+      base::win::ScopedComPtr<ID3D11Device> device;
+      D3D_FEATURE_LEVEL d3d_feature_level;
+      base::win::ScopedComPtr<ID3D11DeviceContext> device_context;
+      HRESULT hr = create_func(NULL,
+                               D3D_DRIVER_TYPE_HARDWARE,
+                               NULL,
+                               0,
+                               d3d_feature_levels,
+                               arraysize(d3d_feature_levels),
+                               D3D11_SDK_VERSION,
+                               device.Receive(),
+                               &d3d_feature_level,
+                               device_context.Receive());
+      if (FAILED(hr)) {
+        feature_level = FEATURE_LEVEL_DEVICE_CREATION_FAILED;
+      } else {
+        switch (d3d_feature_level) {
+          case D3D_FEATURE_LEVEL_11_0:
+            feature_level = FEATURE_LEVEL_11_0;
+            break;
+          case D3D_FEATURE_LEVEL_10_1:
+            feature_level = FEATURE_LEVEL_10_1;
+            break;
+          case D3D_FEATURE_LEVEL_10_0:
+            feature_level = FEATURE_LEVEL_10_0;
+            break;
+          case D3D_FEATURE_LEVEL_9_3:
+            feature_level = FEATURE_LEVEL_9_3;
+            break;
+          case D3D_FEATURE_LEVEL_9_2:
+            feature_level = FEATURE_LEVEL_9_2;
+            break;
+          case D3D_FEATURE_LEVEL_9_1:
+            feature_level = FEATURE_LEVEL_9_1;
+            break;
+          default:
+            NOTREACHED();
+            break;
+        }
+
+        hr = device->CheckFormatSupport(DXGI_FORMAT_B8G8R8A8_UNORM,
+                                        &bgra_support);
+        DCHECK(SUCCEEDED(hr));
+      }
+    }
+  }
+
+  UMA_HISTOGRAM_ENUMERATION("GPU.D3D11_FeatureLevel",
+                            feature_level,
+                            NUM_FEATURE_LEVELS);
+
+  // ANGLE requires at least feature level 10.0. Do not record any further
+  // stats if ANGLE would not work anyway.
+  if (feature_level < FEATURE_LEVEL_10_0)
+    return;
+
+  UMA_HISTOGRAM_BOOLEAN(
+      "GPU.D3D11_B8G8R8A8_Texture2DSupport",
+      (bgra_support & D3D11_FORMAT_SUPPORT_TEXTURE2D) != 0);
+  UMA_HISTOGRAM_BOOLEAN(
+      "GPU.D3D11_B8G8R8A8_RenderTargetSupport",
+      (bgra_support & D3D11_FORMAT_SUPPORT_RENDER_TARGET) != 0);
+}
+
+// Collects information about the level of D3D11 support and records it in
+// the UMA stats. Records no stats when D3D11 in not supported at all.
+void CollectD3D11Support() {
+  // D3D11 takes about 50ms to initialize so do this on a worker thread.
+  base::WorkerPool::PostTask(
+      FROM_HERE,
+      base::Bind(CollectD3D11SupportOnWorkerThread),
+      false);
+}
 }  // namespace anonymous
 
 namespace gpu_info_collector {
@@ -170,138 +382,6 @@ AMDVideoCardType GetAMDVideocardType() {
 // be found in src/third_party/amd.
 AMDVideoCardType GetAMDVideocardType();
 #endif
-
-bool CollectGraphicsInfo(content::GPUInfo* gpu_info) {
-  TRACE_EVENT0("gpu", "CollectGraphicsInfo");
-
-  DCHECK(gpu_info);
-
-  gpu_info->performance_stats = RetrieveGpuPerformanceStats();
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseGL)) {
-    std::string requested_implementation_name =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switches::kUseGL);
-    if (requested_implementation_name == "swiftshader") {
-      gpu_info->software_rendering = true;
-      return false;
-    }
-  }
-
-  if (gfx::GetGLImplementation() != gfx::kGLImplementationEGLGLES2) {
-    gpu_info->finalized = true;
-    return CollectGraphicsInfoGL(gpu_info);
-  }
-
-  // TODO(zmo): the following code only works if running on top of ANGLE.
-  // Need to handle the case when running on top of real EGL/GLES2 drivers.
-
-  egl::Display* display = static_cast<egl::Display*>(
-      gfx::GLSurfaceEGL::GetHardwareDisplay());
-  if (!display) {
-    LOG(ERROR) << "gfx::BaseEGLContext::GetDisplay() failed";
-    return false;
-  }
-
-  IDirect3DDevice9* device = display->getDevice();
-  if (!device) {
-    LOG(ERROR) << "display->getDevice() failed";
-    return false;
-  }
-
-  base::win::ScopedComPtr<IDirect3D9> d3d;
-  if (FAILED(device->GetDirect3D(d3d.Receive()))) {
-    LOG(ERROR) << "device->GetDirect3D(&d3d) failed";
-    return false;
-  }
-
-  if (!CollectGraphicsInfoD3D(d3d, gpu_info))
-    return false;
-
-  // DirectX diagnostics are collected asynchronously because it takes a
-  // couple of seconds. Do not mark gpu_info as complete until that is done.
-  return true;
-}
-
-bool CollectPreliminaryGraphicsInfo(content::GPUInfo* gpu_info) {
-  TRACE_EVENT0("gpu", "CollectPreliminaryGraphicsInfo");
-
-  DCHECK(gpu_info);
-
-  bool rt = true;
-  if (!CollectVideoCardInfo(gpu_info))
-    rt = false;
-
-  gpu_info->performance_stats = RetrieveGpuPerformanceStatsWithHistograms();
-
-  return rt;
-}
-
-bool CollectGraphicsInfoD3D(IDirect3D9* d3d, content::GPUInfo* gpu_info) {
-  TRACE_EVENT0("gpu", "CollectGraphicsInfoD3D");
-
-  DCHECK(d3d);
-  DCHECK(gpu_info);
-
-  bool succeed = CollectVideoCardInfo(gpu_info);
-
-  // Get version information
-  D3DCAPS9 d3d_caps;
-  if (d3d->GetDeviceCaps(D3DADAPTER_DEFAULT,
-                         D3DDEVTYPE_HAL,
-                         &d3d_caps) == D3D_OK) {
-    gpu_info->pixel_shader_version =
-        VersionNumberToString(d3d_caps.PixelShaderVersion);
-    gpu_info->vertex_shader_version =
-        VersionNumberToString(d3d_caps.VertexShaderVersion);
-  } else {
-    LOG(ERROR) << "d3d->GetDeviceCaps() failed";
-    succeed = false;
-  }
-
-  // Get can_lose_context
-  base::win::ScopedComPtr<IDirect3D9Ex> d3dex;
-  if (SUCCEEDED(d3dex.QueryFrom(d3d)))
-    gpu_info->can_lose_context = false;
-  else
-    gpu_info->can_lose_context = true;
-
-  return true;
-}
-
-bool CollectVideoCardInfo(content::GPUInfo* gpu_info) {
-  TRACE_EVENT0("gpu", "CollectVideoCardInfo");
-
-  DCHECK(gpu_info);
-
-  // nvd3d9wrap.dll is loaded into all processes when Optimus is enabled.
-  HMODULE nvd3d9wrap = GetModuleHandleW(L"nvd3d9wrap.dll");
-  gpu_info->optimus = nvd3d9wrap != NULL;
-
-  // Taken from http://developer.nvidia.com/object/device_ids.html
-  DISPLAY_DEVICE dd;
-  dd.cb = sizeof(DISPLAY_DEVICE);
-  int i = 0;
-  std::wstring id;
-  for (int i = 0; EnumDisplayDevices(NULL, i, &dd, 0); ++i) {
-    if (dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) {
-      id = dd.DeviceID;
-      break;
-    }
-  }
-
-  if (id.length() > 20) {
-    int vendor_id = 0, device_id = 0;
-    std::wstring vendor_id_string = id.substr(8, 4);
-    std::wstring device_id_string = id.substr(17, 4);
-    base::HexStringToInt(WideToASCII(vendor_id_string), &vendor_id);
-    base::HexStringToInt(WideToASCII(device_id_string), &device_id);
-    gpu_info->gpu.vendor_id = vendor_id;
-    gpu_info->gpu.device_id = device_id;
-    // TODO(zmo): we only need to call CollectDriverInfoD3D() if we use ANGLE.
-    return CollectDriverInfoD3D(id, gpu_info);
-  }
-  return false;
-}
 
 bool CollectDriverInfoD3D(const std::wstring& device_id,
                           content::GPUInfo* gpu_info) {
@@ -383,22 +463,183 @@ bool CollectDriverInfoD3D(const std::wstring& device_id,
   return found;
 }
 
-bool CollectDriverInfoGL(content::GPUInfo* gpu_info) {
-  TRACE_EVENT0("gpu", "CollectDriverInfoGL");
+bool CollectContextGraphicsInfo(content::GPUInfo* gpu_info) {
+  TRACE_EVENT0("gpu", "CollectGraphicsInfo");
 
   DCHECK(gpu_info);
 
-  std::string gl_version_string = gpu_info->gl_version_string;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseGL)) {
+    std::string requested_implementation_name =
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switches::kUseGL);
+    if (requested_implementation_name == "swiftshader") {
+      gpu_info->software_rendering = true;
+      return false;
+    }
+  }
 
-  // TODO(zmo): We assume the driver version is in the end of GL_VERSION
-  // string.  Need to verify if it is true for majority drivers.
+  if (!CollectGraphicsInfoGL(gpu_info))
+    return false;
 
-  size_t pos = gl_version_string.find_last_not_of("0123456789.");
-  if (pos != std::string::npos && pos < gl_version_string.length() - 1) {
-    gpu_info->driver_version = gl_version_string.substr(pos + 1);
+  // ANGLE's renderer strings are of the form:
+  // ANGLE (<adapter_identifier> Direct3D<version> vs_x_x ps_x_x)
+  std::string direct3d_version;
+  int vertex_shader_major_version = 0;
+  int vertex_shader_minor_version = 0;
+  int pixel_shader_major_version = 0;
+  int pixel_shader_minor_version = 0;
+  if (RE2::FullMatch(gpu_info->gl_renderer,
+                     "ANGLE \\(.*\\)") &&
+      RE2::PartialMatch(gpu_info->gl_renderer,
+                        " Direct3D(\\w+)",
+                        &direct3d_version) &&
+      RE2::PartialMatch(gpu_info->gl_renderer,
+                        " vs_(\\d+)_(\\d+)",
+                        &vertex_shader_major_version,
+                        &vertex_shader_minor_version) &&
+      RE2::PartialMatch(gpu_info->gl_renderer,
+                        " ps_(\\d+)_(\\d+)",
+                        &pixel_shader_major_version,
+                        &pixel_shader_minor_version)) {
+    gpu_info->can_lose_context = direct3d_version == "9";
+    gpu_info->vertex_shader_version =
+        base::StringPrintf("%d.%d",
+                           vertex_shader_major_version,
+                           vertex_shader_minor_version);
+    gpu_info->pixel_shader_version =
+        base::StringPrintf("%d.%d",
+                           pixel_shader_major_version,
+                           pixel_shader_minor_version);
+
+    // DirectX diagnostics are collected asynchronously because it takes a
+    // couple of seconds. Do not mark gpu_info as complete until that is done.
+    gpu_info->finalized = false;
+  } else {
+    gpu_info->finalized = true;
+  }
+
+  return true;
+}
+
+bool CollectGpuID(uint32* vendor_id, uint32* device_id) {
+  DCHECK(vendor_id && device_id);
+  *vendor_id = 0;
+  *device_id = 0;
+
+  // Taken from http://developer.nvidia.com/object/device_ids.html
+  DISPLAY_DEVICE dd;
+  dd.cb = sizeof(DISPLAY_DEVICE);
+  std::wstring id;
+  for (int i = 0; EnumDisplayDevices(NULL, i, &dd, 0); ++i) {
+    if (dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) {
+      id = dd.DeviceID;
+      break;
+    }
+  }
+
+  if (id.length() > 20) {
+    int vendor = 0, device = 0;
+    std::wstring vendor_string = id.substr(8, 4);
+    std::wstring device_string = id.substr(17, 4);
+    base::HexStringToInt(WideToASCII(vendor_string), &vendor);
+    base::HexStringToInt(WideToASCII(device_string), &device);
+    *vendor_id = vendor;
+    *device_id = device;
     return true;
   }
   return false;
+}
+
+bool CollectBasicGraphicsInfo(content::GPUInfo* gpu_info) {
+  TRACE_EVENT0("gpu", "CollectPreliminaryGraphicsInfo");
+
+  DCHECK(gpu_info);
+
+  gpu_info->performance_stats = RetrieveGpuPerformanceStatsWithHistograms();
+
+  // nvd3d9wrap.dll is loaded into all processes when Optimus is enabled.
+  HMODULE nvd3d9wrap = GetModuleHandleW(L"nvd3d9wrap.dll");
+  gpu_info->optimus = nvd3d9wrap != NULL;
+
+  gpu_info->lenovo_dcute = IsLenovoDCuteInstalled();
+
+  gpu_info->display_link_version = DisplayLinkVersion();
+
+  if (!gpu_info->display_link_version .IsValid()) {
+    UMA_HISTOGRAM_ENUMERATION("GPU.DisplayLinkInstallationStatus",
+                              DISPLAY_LINK_NOT_INSTALLED,
+                              DISPLAY_LINK_INSTALLATION_STATUS_MAX);
+  } else if (gpu_info->display_link_version.IsOlderThan("7.2")) {
+    UMA_HISTOGRAM_ENUMERATION("GPU.DisplayLinkInstallationStatus",
+                              DISPLAY_LINK_7_1_OR_EARLIER,
+                              DISPLAY_LINK_INSTALLATION_STATUS_MAX);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION("GPU.DisplayLinkInstallationStatus",
+                              DISPLAY_LINK_7_2_OR_LATER,
+                              DISPLAY_LINK_INSTALLATION_STATUS_MAX);
+  }
+
+  // Taken from http://developer.nvidia.com/object/device_ids.html
+  DISPLAY_DEVICE dd;
+  dd.cb = sizeof(DISPLAY_DEVICE);
+  std::wstring id;
+  for (int i = 0; EnumDisplayDevices(NULL, i, &dd, 0); ++i) {
+    if (dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) {
+      id = dd.DeviceID;
+      break;
+    }
+  }
+
+  if (id.length() <= 20)
+    return false;
+
+  int vendor_id = 0, device_id = 0;
+  string16 vendor_id_string = id.substr(8, 4);
+  string16 device_id_string = id.substr(17, 4);
+  base::HexStringToInt(WideToASCII(vendor_id_string), &vendor_id);
+  base::HexStringToInt(WideToASCII(device_id_string), &device_id);
+  gpu_info->gpu.vendor_id = vendor_id;
+  gpu_info->gpu.device_id = device_id;
+  // TODO(zmo): we only need to call CollectDriverInfoD3D() if we use ANGLE.
+  if (!CollectDriverInfoD3D(id, gpu_info))
+    return false;
+
+  // Collect basic information about supported D3D11 features. Delay for 45
+  // seconds so as not to regress performance tests.
+  if (D3D11ShouldWork(*gpu_info)) {
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&CollectD3D11Support),
+        base::TimeDelta::FromSeconds(45));
+  }
+
+  return true;
+}
+
+bool CollectDriverInfoGL(content::GPUInfo* gpu_info) {
+  TRACE_EVENT0("gpu", "CollectDriverInfoGL");
+
+  if (!gpu_info->driver_version.empty())
+    return true;
+
+  std::string gl_version_string = gpu_info->gl_version_string;
+
+  return RE2::PartialMatch(gl_version_string,
+                           "([\\d\\.]+)$",
+                           &gpu_info->driver_version);
+}
+
+void MergeGPUInfo(content::GPUInfo* basic_gpu_info,
+                  const content::GPUInfo& context_gpu_info) {
+  DCHECK(basic_gpu_info);
+
+  if (context_gpu_info.software_rendering) {
+    basic_gpu_info->software_rendering = true;
+    return;
+  }
+
+  MergeGPUInfoGL(basic_gpu_info, context_gpu_info);
+
+  basic_gpu_info->dx_diagnostics = context_gpu_info.dx_diagnostics;
 }
 
 }  // namespace gpu_info_collector

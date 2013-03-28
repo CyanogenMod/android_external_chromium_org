@@ -21,7 +21,8 @@ class LogoutButton;
 // kShowLogoutButtonInTray pref.
 class TrayLogoutButton : public SystemTrayItem, public LogoutButtonObserver {
  public:
-  TrayLogoutButton();
+  explicit TrayLogoutButton(SystemTray* system_tray);
+  virtual ~TrayLogoutButton();
 
   // Overridden from SystemTrayItem.
   virtual views::View* CreateTrayView(user::LoginStatus status) OVERRIDE;

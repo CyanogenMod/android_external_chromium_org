@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/mac/mac_util.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_observer.h"
 #include "base/string_util.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
@@ -15,28 +15,7 @@
 #include "content/public/browser/notification_details.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "third_party/ocmock/gtest_support.h"
-#import "third_party/ocmock/ocmock/OCMock.h"
-
-// A BrowserWindowCocoa that goes PONG when
-// BOOKMARK_BAR_VISIBILITY_PREF_CHANGED is sent.  This is so we can be
-// sure we are observing it.
-class BrowserWindowCocoaPong : public BrowserWindowCocoa, public PrefObserver {
- public:
-  BrowserWindowCocoaPong(Browser* browser,
-                         BrowserWindowController* controller)
-      : BrowserWindowCocoa(browser, controller) {
-    pong_ = false;
-  }
-  virtual ~BrowserWindowCocoaPong() { }
-
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE {
-    if (pref_name == prefs::kShowBookmarkBar)
-      pong_ = true;
-  }
-
-  bool pong_;
-};
+#import "third_party/ocmock/OCMock/OCMock.h"
 
 // Main test class.
 class BrowserWindowCocoaTest : public CocoaProfileTest {
@@ -57,50 +36,42 @@ class BrowserWindowCocoaTest : public CocoaProfileTest {
   BrowserWindowController* controller_;
 };
 
-
-TEST_F(BrowserWindowCocoaTest, TestNotification) {
-  BrowserWindowCocoaPong *bwc =
-      new BrowserWindowCocoaPong(browser(), controller_);
-
-  EXPECT_FALSE(bwc->pong_);
-  bookmark_utils::ToggleWhenVisible(profile());
-  // Confirm we are listening
-  EXPECT_TRUE(bwc->pong_);
-  delete bwc;
-  // If this does NOT crash it confirms we stopped listening in the destructor.
-  bookmark_utils::ToggleWhenVisible(profile());
-}
-
-
 TEST_F(BrowserWindowCocoaTest, TestBookmarkBarVisible) {
-  BrowserWindowCocoaPong *bwc = new BrowserWindowCocoaPong(
-    browser(),
-    controller_);
-  scoped_ptr<BrowserWindowCocoaPong> scoped_bwc(bwc);
+  scoped_ptr<BrowserWindowCocoa> bwc(
+      new BrowserWindowCocoa(browser(), controller_));
 
   bool before = bwc->IsBookmarkBarVisible();
-  bookmark_utils::ToggleWhenVisible(profile());
+  chrome::ToggleBookmarkBarWhenVisible(profile());
   EXPECT_NE(before, bwc->IsBookmarkBarVisible());
 
-  bookmark_utils::ToggleWhenVisible(profile());
+  chrome::ToggleBookmarkBarWhenVisible(profile());
   EXPECT_EQ(before, bwc->IsBookmarkBarVisible());
 }
 
 @interface FakeController : NSWindowController {
-  BOOL fullscreen_;
+  enum { kNormal, kFullscreen, kPresentation } windowState_;
 }
 @end
 
 @implementation FakeController
-- (void)enterFullscreenForURL:(const GURL&)url
-                   bubbleType:(FullscreenExitBubbleType)bubbleType {
-  fullscreen_ = YES;
+- (void)enterFullscreen {
+  windowState_ = kFullscreen;
 }
 - (void)exitFullscreen {
-  fullscreen_ = NO;
+  windowState_ = kNormal;
 }
 - (BOOL)isFullscreen {
-  return fullscreen_;
+  return windowState_ != kNormal;
+}
+- (void)enterPresentationModeForURL:(const GURL&)url
+                         bubbleType:(FullscreenExitBubbleType)bubbleType {
+  windowState_ = kPresentation;
+}
+- (void)exitPresentationMode {
+  windowState_ = kNormal;
+}
+- (BOOL)inPresentationMode {
+  return windowState_ == kPresentation;
 }
 @end
 
@@ -110,14 +81,33 @@ TEST_F(BrowserWindowCocoaTest, TestFullscreen) {
   // windowWillClose: never gets called).
   scoped_nsobject<FakeController> fake_controller(
       [[FakeController alloc] init]);
-  BrowserWindowCocoaPong* bwc = new BrowserWindowCocoaPong(
-    browser(),
-    (BrowserWindowController*)fake_controller.get());
-  scoped_ptr<BrowserWindowCocoaPong> scoped_bwc(bwc);
+  scoped_ptr<BrowserWindowCocoa> bwc(new BrowserWindowCocoa(
+      browser(), static_cast<BrowserWindowController*>(fake_controller.get())));
 
   EXPECT_FALSE(bwc->IsFullscreen());
   bwc->EnterFullscreen(GURL(), FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION);
-  EXPECT_TRUE(bwc->IsFullscreen());
+  EXPECT_FALSE(bwc->IsFullscreenWithChrome());
+  EXPECT_TRUE(bwc->IsFullscreenWithoutChrome());
+  bwc->ExitFullscreen();
+  EXPECT_FALSE(bwc->IsFullscreen());
+  [fake_controller close];
+}
+
+TEST_F(BrowserWindowCocoaTest, TestFullscreenWithChrome) {
+  if (!base::mac::IsOSLionOrLater())
+    return;
+  // Wrap the FakeController in a scoped_nsobject instead of autoreleasing in
+  // windowWillClose: because we never actually open a window in this test (so
+  // windowWillClose: never gets called).
+  scoped_nsobject<FakeController> fake_controller(
+      [[FakeController alloc] init]);
+  scoped_ptr<BrowserWindowCocoa> bwc(new BrowserWindowCocoa(
+      browser(), static_cast<BrowserWindowController*>(fake_controller.get())));
+
+  EXPECT_FALSE(bwc->IsFullscreen());
+  bwc->EnterFullscreenWithChrome();
+  EXPECT_TRUE(bwc->IsFullscreenWithChrome());
+  EXPECT_FALSE(bwc->IsFullscreenWithoutChrome());
   bwc->ExitFullscreen();
   EXPECT_FALSE(bwc->IsFullscreen());
   [fake_controller close];

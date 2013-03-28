@@ -7,15 +7,16 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "webkit/glue/webpreferences.h"
 
@@ -120,17 +121,17 @@ bool WebViewPlugin::getFormValue(WebString& value) {
 }
 
 void WebViewPlugin::paint(WebCanvas* canvas, const WebRect& rect) {
-  gfx::Rect paintRect = gfx::IntersectRects(rect_, rect);
-  if (paintRect.IsEmpty())
+  gfx::Rect paint_rect = gfx::IntersectRects(rect_, rect);
+  if (paint_rect.IsEmpty())
     return;
 
-  paintRect.Offset(-rect_.x(), -rect_.y());
+  paint_rect.Offset(-rect_.x(), -rect_.y());
 
   canvas->translate(SkIntToScalar(rect_.x()), SkIntToScalar(rect_.y()));
   canvas->save();
 
   web_view_->layout();
-  web_view_->paint(canvas, paintRect);
+  web_view_->paint(canvas, paint_rect);
 
   canvas->restore();
 }
@@ -151,6 +152,11 @@ bool WebViewPlugin::acceptsInputEvents() {
 
 bool WebViewPlugin::handleInputEvent(const WebInputEvent& event,
                                      WebCursorInfo& cursor) {
+  // For tap events, don't handle them. They will be converted to
+  // mouse events later and passed to here.
+  if (event.type == WebInputEvent::GestureTap)
+    return false;
+
   if (event.type == WebInputEvent::ContextMenu) {
     if (delegate_) {
       const WebMouseEvent& mouse_event =
@@ -162,6 +168,7 @@ bool WebViewPlugin::handleInputEvent(const WebInputEvent& event,
   current_cursor_ = cursor;
   bool handled = web_view_->handleInputEvent(event);
   cursor = current_cursor_;
+
   return handled;
 }
 

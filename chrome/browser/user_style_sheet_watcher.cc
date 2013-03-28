@@ -13,7 +13,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 
-using ::base::files::FilePathWatcher;
+using ::base::FilePathWatcher;
 using content::BrowserThread;
 using content::WebContents;
 
@@ -44,7 +44,8 @@ const char kUserStyleSheetFile[] = "Custom.css";
 // UserStyleSheetWatcher and its FilePathWatcher may be destroyed while a
 // callback to UserStyleSheetLoader is in progress, in which case the
 // UserStyleSheetLoader object outlives the watchers.
-class UserStyleSheetLoader : public FilePathWatcher::Delegate {
+class UserStyleSheetLoader
+    : public base::RefCountedThreadSafe<UserStyleSheetLoader> {
  public:
   UserStyleSheetLoader();
 
@@ -54,16 +55,17 @@ class UserStyleSheetLoader : public FilePathWatcher::Delegate {
 
   // Load the user style sheet on the file thread and convert it to a
   // base64 URL.  Posts the base64 URL back to the UI thread.
-  void LoadStyleSheet(const FilePath& style_sheet_file);
+  void LoadStyleSheet(const base::FilePath& style_sheet_file);
 
   // Send out a notification if the stylesheet has already been loaded.
   void NotifyLoaded();
 
-  // FilePathWatcher::Delegate interface
-  virtual void OnFilePathChanged(const FilePath& path);
+  // FilePathWatcher::Callback method:
+  void NotifyPathChanged(const base::FilePath& path, bool error);
 
  private:
-  virtual ~UserStyleSheetLoader() {}
+  friend class base::RefCountedThreadSafe<UserStyleSheetLoader>;
+  ~UserStyleSheetLoader() {}
 
   // Called on the UI thread after the stylesheet has loaded.
   void SetStyleSheet(const GURL& url);
@@ -90,15 +92,18 @@ void UserStyleSheetLoader::NotifyLoaded() {
   }
 }
 
-void UserStyleSheetLoader::OnFilePathChanged(const FilePath& path) {
-  LoadStyleSheet(path);
+void UserStyleSheetLoader::NotifyPathChanged(const base::FilePath& path,
+                                             bool error) {
+  if (!error)
+    LoadStyleSheet(path);
 }
 
-void UserStyleSheetLoader::LoadStyleSheet(const FilePath& style_sheet_file) {
+void UserStyleSheetLoader::LoadStyleSheet(
+    const base::FilePath& style_sheet_file) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   // We keep the user style sheet in a subdir so we can watch for changes
   // to the file.
-  FilePath style_sheet_dir = style_sheet_file.DirName();
+  base::FilePath style_sheet_dir = style_sheet_file.DirName();
   if (!file_util::DirectoryExists(style_sheet_dir)) {
     if (!file_util::CreateDirectory(style_sheet_dir))
       return;
@@ -133,7 +138,7 @@ void UserStyleSheetLoader::SetStyleSheet(const GURL& url) {
 }
 
 UserStyleSheetWatcher::UserStyleSheetWatcher(Profile* profile,
-                                             const FilePath& profile_path)
+                                             const base::FilePath& profile_path)
     : RefcountedProfileKeyedService(content::BrowserThread::UI),
       profile_(profile),
       profile_path_(profile_path),
@@ -159,11 +164,13 @@ void UserStyleSheetWatcher::Init() {
 
   if (!file_watcher_.get()) {
     file_watcher_.reset(new FilePathWatcher);
-    FilePath style_sheet_file = profile_path_.AppendASCII(kStyleSheetDir)
+    base::FilePath style_sheet_file = profile_path_.AppendASCII(kStyleSheetDir)
                                              .AppendASCII(kUserStyleSheetFile);
     if (!file_watcher_->Watch(
-        style_sheet_file,
-        loader_.get())) {
+            style_sheet_file,
+            false,
+            base::Bind(&UserStyleSheetLoader::NotifyPathChanged,
+                       loader_.get()))) {
       LOG(ERROR) << "Failed to setup watch for " << style_sheet_file.value();
     }
     loader_->LoadStyleSheet(style_sheet_file);

@@ -5,8 +5,6 @@
 #ifndef ASH_WM_FRAME_PAINTER_H_
 #define ASH_WM_FRAME_PAINTER_H_
 
-#include <set>
-
 #include "ash/ash_export.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"  // OVERRIDE
@@ -33,6 +31,7 @@ class SlideAnimation;
 namespace views {
 class ImageButton;
 class NonClientFrameView;
+class ToggleImageButton;
 class View;
 class Widget;
 }
@@ -72,7 +71,7 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
             SizeButtonBehavior behavior);
 
   // Updates the solo-window transparent header appearance for all windows
-  // using frame painters across all root windows.
+  // using frame painters in |root_window|.
   static void UpdateSoloWindowHeader(aura::RootWindow* root_window);
 
   // Helpers for views::NonClientFrameView implementations.
@@ -84,6 +83,7 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   int NonClientHitTest(views::NonClientFrameView* view,
                        const gfx::Point& point);
   gfx::Size GetMinimumSize(views::NonClientFrameView* view);
+  gfx::Size GetMaximumSize(views::NonClientFrameView* view);
 
   // Returns the inset from the right edge.
   int GetRightInset() const;
@@ -138,17 +138,24 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(FramePainterTest, Basics);
   FRIEND_TEST_ALL_PREFIXES(FramePainterTest, CreateAndDeleteSingleWindow);
   FRIEND_TEST_ALL_PREFIXES(FramePainterTest, UseSoloWindowHeader);
+  FRIEND_TEST_ALL_PREFIXES(FramePainterTest, UseSoloWindowHeaderWithApp);
   FRIEND_TEST_ALL_PREFIXES(FramePainterTest, UseSoloWindowHeaderMultiDisplay);
   FRIEND_TEST_ALL_PREFIXES(FramePainterTest, GetHeaderOpacity);
 
-  // Sets the images for a button base on IDs from the |frame_| theme provider.
+  // Sets the images for a button based on IDs from the |frame_| theme provider.
   void SetButtonImages(views::ImageButton* button,
                        int normal_image_id,
                        int hot_image_id,
                        int pushed_image_id);
+
+  // Sets the toggled-state button images for a button based on IDs from the
+  // |frame_| theme provider.
+  void SetToggledButtonImages(views::ToggleImageButton* button,
+                              int normal_image_id,
+                              int hot_image_id,
+                              int pushed_image_id);
 
   // Returns the offset between window left edge and title string.
   int GetTitleOffsetX() const;
@@ -161,28 +168,26 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   // Adjust frame operations for left / right maximized modes.
   int AdjustFrameHitCodeForMaximizedModes(int hit_code);
 
-  // Returns true if |window_| is exactly one visible, normal-type window in
-  // |window_->GetRootWindow()|, in which case we should paint a transparent
-  // window header.
+  // Returns true if the user is cycling through workspaces.
+  bool IsCyclingThroughWorkspaces() const;
+
+  // Returns true if |window_->GetRootWindow()| should be drawing transparent
+  // window headers.
   bool UseSoloWindowHeader();
 
-  // Returns the frame painter for the solo window in |root_window|. Returns
-  // NULL in case there is no such window, for example more than two windows or
-  // there's a fullscreen window.  It ignores |ignorable_window| to check the
-  // solo-ness of the window.  Pass NULL for |ignorable_window| to consider
-  // all windows.
-  static FramePainter* GetSoloPainterInRoot(aura::RootWindow* root_window,
-                                            aura::Window* ignorable_window);
+  // Returns true if |root_window| has exactly one visible, normal-type window.
+  // It ignores |ignore_window| while calculating the number of windows.
+  // Pass NULL for |ignore_window| to consider all windows.
+  static bool UseSoloWindowHeaderInRoot(aura::RootWindow* root_window,
+                                        aura::Window* ignore_window);
 
-  // Updates the current solo window frame painter for |root_window| while
-  // ignoring |ignorable_window|. If the solo window frame painter changed it
-  // schedules paints as necessary.
+  // Updates the solo-window transparent header appearance for all windows in
+  // |root_window|. If |ignore_window| is not NULL it is ignored for when
+  // counting visible windows. This is useful for updates when a window is about
+  // to be closed or is moving to another root. If the solo window status
+  // changes it schedules paints as necessary.
   static void UpdateSoloWindowInRoot(aura::RootWindow* root_window,
-                                     aura::Window* ignorable_window);
-
-  // Convenience method to call UpdateSoloWindowInRoot() with the current
-  // window's root window.
-  void UpdateSoloWindowFramePainter(aura::Window* ignorable_window);
+                                     aura::Window* ignore_window);
 
   // Schedules a paint for the header. Used when transitioning from no header to
   // a header (or other way around).
@@ -192,8 +197,6 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   // used to determine the correct dimensions.
   gfx::Rect GetTitleBounds(views::NonClientFrameView* view,
                            const gfx::Font& title_font);
-
-  static std::set<FramePainter*>* instances_;
 
   // Not owned
   views::Widget* frame_;

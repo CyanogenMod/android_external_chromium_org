@@ -16,8 +16,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "base/sequenced_task_runner.h"
-#include "base/string_tokenizer.h"
 #include "base/string_util.h"
+#include "base/strings/string_tokenizer.h"
 #include "googleurl/src/url_parse.h"
 #include "jni/ProxyChangeListener_jni.h"
 #include "net/base/host_port_pair.h"
@@ -101,7 +101,7 @@ void AddBypassRules(const std::string& scheme,
       get_property.Run(scheme + ".nonProxyHosts");
   if (non_proxy_hosts.empty())
     return;
-  StringTokenizer tokenizer(non_proxy_hosts, "|");
+  base::StringTokenizer tokenizer(non_proxy_hosts, "|");
   while (tokenizer.GetNext()) {
     std::string token = tokenizer.token();
     std::string pattern;
@@ -118,23 +118,28 @@ void AddBypassRules(const std::string& scheme,
 bool GetProxyRules(const GetPropertyCallback& get_property,
                    ProxyConfig::ProxyRules* rules) {
   // See libcore/luni/src/main/java/java/net/ProxySelectorImpl.java for the
-  // equivalent Android implementation.
+  // mostly equivalent Android implementation.  There is one intentional
+  // difference: by default Chromium uses the HTTP port (80) for HTTPS
+  // connections via proxy.  This default is identical on other platforms.
+  // On the opposite, Java spec suggests to use HTTPS port (443) by default (the
+  // default value of https.proxyPort).
   rules->type = ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME;
-  rules->proxy_for_http = LookupProxy("http", get_property,
-                                      ProxyServer::SCHEME_HTTP);
-  rules->proxy_for_https = LookupProxy("https", get_property,
-                                       ProxyServer::SCHEME_HTTPS);
-  rules->proxy_for_ftp = LookupProxy("ftp", get_property,
-                                     ProxyServer::SCHEME_HTTP);
-  rules->fallback_proxy = LookupSocksProxy(get_property);
+  rules->proxies_for_http.SetSingleProxyServer(
+      LookupProxy("http", get_property, ProxyServer::SCHEME_HTTP));
+  rules->proxies_for_https.SetSingleProxyServer(
+      LookupProxy("https", get_property, ProxyServer::SCHEME_HTTP));
+  rules->proxies_for_ftp.SetSingleProxyServer(
+      LookupProxy("ftp", get_property, ProxyServer::SCHEME_HTTP));
+  rules->fallback_proxies.SetSingleProxyServer(LookupSocksProxy(get_property));
   rules->bypass_rules.Clear();
   AddBypassRules("ftp", get_property, &rules->bypass_rules);
   AddBypassRules("http", get_property, &rules->bypass_rules);
   AddBypassRules("https", get_property, &rules->bypass_rules);
-  return rules->proxy_for_http.is_valid() ||
-      rules->proxy_for_https.is_valid() ||
-      rules->proxy_for_ftp.is_valid() ||
-      rules->fallback_proxy.is_valid();
+  // We know a proxy was found if not all of the proxy lists are empty.
+  return !(rules->proxies_for_http.IsEmpty() &&
+      rules->proxies_for_https.IsEmpty() &&
+      rules->proxies_for_ftp.IsEmpty() &&
+      rules->fallback_proxies.IsEmpty());
 };
 
 void GetLatestProxyConfigInternal(const GetPropertyCallback& get_property,

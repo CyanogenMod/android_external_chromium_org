@@ -13,6 +13,8 @@
 #include "net/base/escape.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
+#include "net/base/upload_bytes_element_reader.h"
+#include "net/base/upload_data_stream.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_builder.h"
@@ -36,7 +38,7 @@ const int64 kRequestTimeoutMs = 10 * 1000;
 
 class ServiceStateURLRequestDelegate : public net::URLRequest::Delegate {
  public:
-  virtual void OnResponseStarted(net::URLRequest* request) {
+  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE {
     if (request->GetResponseCode() == 200) {
       Read(request);
       if (request->status().is_io_pending())
@@ -45,7 +47,8 @@ class ServiceStateURLRequestDelegate : public net::URLRequest::Delegate {
     request->Cancel();
   };
 
-  virtual void OnReadCompleted(net::URLRequest* request, int bytes_read) {
+  virtual void OnReadCompleted(net::URLRequest* request,
+                               int bytes_read) OVERRIDE {
     Read(request);
     if (!request->status().is_io_pending())
       MessageLoop::current()->Quit();
@@ -178,7 +181,10 @@ std::string ServiceState::LoginToGoogle(const std::string& service,
   load_flags = load_flags | net::LOAD_DO_NOT_SAVE_COOKIES;
   request.set_load_flags(load_flags);
 
-  request.AppendBytesToUpload(post_body.c_str(), post_body.size());
+  scoped_ptr<net::UploadElementReader> reader(
+      net::UploadOwnedBytesElementReader::CreateWithString(post_body));
+  request.set_upload(make_scoped_ptr(
+      net::UploadDataStream::CreateWithReader(reader.Pass(), 0)));
   request.SetExtraRequestHeaderByName(
       "Content-Type", "application/x-www-form-urlencoded", true);
   request.set_method("POST");

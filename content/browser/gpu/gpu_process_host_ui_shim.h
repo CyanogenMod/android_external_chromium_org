@@ -26,7 +26,6 @@
 
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
 struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
-struct GpuHostMsg_AcceleratedSurfaceNew_Params;
 struct GpuHostMsg_AcceleratedSurfaceRelease_Params;
 
 namespace gfx {
@@ -51,7 +50,7 @@ class GpuProcessHostUIShim : public IPC::Listener,
   // Destroy the GpuProcessHostUIShim with the given host ID. This can only
   // be called on the UI thread. Only the GpuProcessHost should destroy the
   // UI shim.
-  static void Destroy(int host_id);
+  static void Destroy(int host_id, const std::string& message);
 
   // Destroy all remaining GpuProcessHostUIShims.
   CONTENT_EXPORT static void DestroyAll();
@@ -97,8 +96,6 @@ class GpuProcessHostUIShim : public IPC::Listener,
   void OnAcceleratedSurfacePostSubBuffer(
       const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params);
   void OnAcceleratedSurfaceSuspend(int32 surface_id);
-  void OnAcceleratedSurfaceNew(
-      const GpuHostMsg_AcceleratedSurfaceNew_Params& params);
   void OnAcceleratedSurfaceRelease(
       const GpuHostMsg_AcceleratedSurfaceRelease_Params& params);
   void OnVideoMemoryUsageStatsReceived(

@@ -23,7 +23,6 @@ struct PP_DirContents_Dev {
 };
 
 // PPB_Flash_File_ModuleLocal --------------------------------------------------
-#define PPB_FLASH_FILE_MODULELOCAL_INTERFACE_2_0 "PPB_Flash_File_ModuleLocal;2"
 #define PPB_FLASH_FILE_MODULELOCAL_INTERFACE_3_0 "PPB_Flash_File_ModuleLocal;3"
 #define PPB_FLASH_FILE_MODULELOCAL_INTERFACE \
     PPB_FLASH_FILE_MODULELOCAL_INTERFACE_3_0
@@ -32,18 +31,9 @@ struct PP_DirContents_Dev {
 // Module-local file paths are '/'-separated UTF-8 strings, relative to a
 // module-specific root.
 struct PPB_Flash_File_ModuleLocal_3_0 {
-  // Does initialization necessary for proxying this interface on background
-  // threads. You must always call this function before using any other
-  // function in this interface for a given instance ID.
-  //
-  // Returns true if multithreaded access is supported. In this case you can
-  // use the rest of the functions from background threads. You may not call
-  // GetInterface or do any other PPAPI operations on background threads at
-  // this time.
+  // Deprecated. Returns true.
   bool (*CreateThreadAdapterForInstance)(PP_Instance instance);
-
-  // Call when an instance is destroyed when you've previously called
-  // CreateThreadAdapterForInstance.
+  // Deprecated. Does nothing.
   void (*ClearThreadAdapterForInstance)(PP_Instance instance);
 
   // Opens a file, returning a file descriptor (posix) or a HANDLE (win32) into
@@ -97,30 +87,6 @@ struct PPB_Flash_File_ModuleLocal_3_0 {
   // If successful, |file| is set to a file descriptor (posix) or a HANDLE
   // (win32) to the file. If failed, |file| is not touched.
   int32_t (*CreateTemporaryFile)(PP_Instance instance, PP_FileHandle* file);
-};
-
-struct PPB_Flash_File_ModuleLocal_2_0 {
-  bool (*CreateThreadAdapterForInstance)(PP_Instance instance);
-  void (*ClearThreadAdapterForInstance)(PP_Instance instance);
-  int32_t (*OpenFile)(PP_Instance instance,
-                      const char* path,
-                      int32_t mode,
-                      PP_FileHandle* file);
-  int32_t (*RenameFile)(PP_Instance instance,
-                        const char* path_from,
-                        const char* path_to);
-  int32_t (*DeleteFileOrDir)(PP_Instance instance,
-                             const char* path,
-                             PP_Bool recursive);
-  int32_t (*CreateDir)(PP_Instance instance, const char* path);
-  int32_t (*QueryFile)(PP_Instance instance,
-                       const char* path,
-                       struct PP_FileInfo* info);
-  int32_t (*GetDirContents)(PP_Instance instance,
-                            const char* path,
-                            struct PP_DirContents_Dev** contents);
-  void (*FreeDirContents)(PP_Instance instance,
-                          struct PP_DirContents_Dev* contents);
 };
 
 typedef struct PPB_Flash_File_ModuleLocal_3_0 PPB_Flash_File_ModuleLocal;

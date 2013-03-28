@@ -8,8 +8,8 @@
 
 #include "base/bind.h"
 #include "base/chromeos/chromeos_version.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
@@ -21,7 +21,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
-#include "unicode/timezone.h"
+#include "third_party/icu/public/i18n/unicode/timezone.h"
 
 using content::BrowserThread;
 
@@ -162,9 +162,9 @@ void SetTimezoneIDFromString(const std::string& id) {
   // We want to do this in an atomic way. So we are going to create the symlink
   // at kTimezoneSymlink2 and then move it to kTimezoneSymlink
 
-  FilePath timezone_symlink(kTimezoneSymlink);
-  FilePath timezone_symlink2(kTimezoneSymlink2);
-  FilePath timezone_file(kTimezoneFilesDir + id);
+  base::FilePath timezone_symlink(kTimezoneSymlink);
+  base::FilePath timezone_symlink2(kTimezoneSymlink2);
+  base::FilePath timezone_file(kTimezoneFilesDir + id);
 
   // Make sure timezone_file exists.
   if (!file_util::PathExists(timezone_file)) {

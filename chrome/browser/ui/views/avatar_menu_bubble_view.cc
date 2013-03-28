@@ -7,18 +7,19 @@
 #include <algorithm>
 
 #include "base/utf_string_conversions.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/avatar_menu_model.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/button/custom_button.h"
@@ -27,6 +28,7 @@
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/controls/separator.h"
+#include "ui/views/widget/widget.h"
 
 namespace {
 
@@ -35,6 +37,7 @@ const int kItemMarginY = 4;
 const int kIconMarginX = 6;
 const int kSeparatorPaddingY = 5;
 const int kMaxItemTextWidth = 200;
+const SkColor kHighlightColor = 0xFFE3EDF6;
 
 inline int Round(double x) {
   return static_cast<int>(x + 0.5);
@@ -68,10 +71,10 @@ class BadgeImageSource: public gfx::CanvasImageSource {
                    const gfx::Size& icon_size,
                    const gfx::ImageSkia& badge);
 
-  ~BadgeImageSource();
+  virtual ~BadgeImageSource();
 
   // Overridden from CanvasImageSource:
-  void Draw(gfx::Canvas* canvas) OVERRIDE;
+  virtual void Draw(gfx::Canvas* canvas) OVERRIDE;
 
  private:
   gfx::Size ComputeSize(const gfx::ImageSkia& icon,
@@ -151,18 +154,18 @@ EditProfileLink::EditProfileLink(const string16& title,
                                  HighlightDelegate* delegate)
     : views::Link(title),
       delegate_(delegate),
-      state_(views::CustomButton::BS_NORMAL) {
+      state_(views::CustomButton::STATE_NORMAL) {
 }
 
 void EditProfileLink::OnMouseEntered(const ui::MouseEvent& event) {
   views::Link::OnMouseEntered(event);
-  state_ = views::CustomButton::BS_HOT;
+  state_ = views::CustomButton::STATE_HOVERED;
   delegate_->OnHighlightStateChanged();
 }
 
 void EditProfileLink::OnMouseExited(const ui::MouseEvent& event) {
   views::Link::OnMouseExited(event);
-  state_ = views::CustomButton::BS_NORMAL;
+  state_ = views::CustomButton::STATE_NORMAL;
   delegate_->OnHighlightStateChanged();
 }
 
@@ -173,7 +176,7 @@ void EditProfileLink::OnFocus() {
 
 void EditProfileLink::OnBlur() {
   views::Link::OnBlur();
-  state_ = views::CustomButton::BS_NORMAL;
+  state_ = views::CustomButton::STATE_NORMAL;
   delegate_->OnFocusStateChanged(false);
 }
 
@@ -191,6 +194,7 @@ bool ProfileImageView::HitTestRect(const gfx::Rect& rect) const {
   return false;
 }
 
+}  // namespace
 
 // ProfileItemView ------------------------------------------------------------
 
@@ -199,8 +203,7 @@ class ProfileItemView : public views::CustomButton,
                         public HighlightDelegate {
  public:
   ProfileItemView(const AvatarMenuModel::Item& item,
-                  views::ButtonListener* switch_profile_listener,
-                  views::LinkListener* edit_profile_listener);
+                  AvatarMenuBubbleView* parent);
 
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
@@ -212,52 +215,53 @@ class ProfileItemView : public views::CustomButton,
   virtual void OnHighlightStateChanged() OVERRIDE;
   virtual void OnFocusStateChanged(bool has_focus) OVERRIDE;
 
+  const AvatarMenuModel::Item& item() const { return item_; }
   EditProfileLink* edit_link() { return edit_link_; }
-  const AvatarMenuModel::Item& item() { return item_; }
 
  private:
   static gfx::ImageSkia GetBadgedIcon(const gfx::ImageSkia& icon);
 
   bool IsHighlighted();
 
-  EditProfileLink* edit_link_;
-  views::ImageView* image_view_;
   AvatarMenuModel::Item item_;
+  AvatarMenuBubbleView* parent_;
+  views::ImageView* image_view_;
   views::Label* name_label_;
   views::Label* sync_state_label_;
+  EditProfileLink* edit_link_;
+
+  DISALLOW_COPY_AND_ASSIGN(ProfileItemView);
 };
 
 ProfileItemView::ProfileItemView(const AvatarMenuModel::Item& item,
-                                 views::ButtonListener* switch_profile_listener,
-                                 views::LinkListener* edit_profile_listener)
-    : views::CustomButton(switch_profile_listener),
-      item_(item) {
+                                 AvatarMenuBubbleView* parent)
+    : views::CustomButton(parent),
+      item_(item),
+      parent_(parent) {
+  set_notify_enter_exit_on_child(true);
+
   image_view_ = new ProfileImageView();
   gfx::ImageSkia profile_icon = *item_.icon.ToImageSkia();
-  if (item_.active) {
-    gfx::ImageSkia badged_icon(GetBadgedIcon(profile_icon));
-    image_view_->SetImage(badged_icon);
-  } else {
+  if (item_.active)
+    image_view_->SetImage(GetBadgedIcon(profile_icon));
+  else
     image_view_->SetImage(profile_icon);
-  }
   AddChildView(image_view_);
 
   // Add a label to show the profile name.
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  const gfx::Font base_font = rb.GetFont(ui::ResourceBundle::BaseFont);
-  const int style = item_.active ? gfx::Font::BOLD : 0;
-  const int kNameFontDelta = 1;
   name_label_ = new views::Label(item_.name,
-                                 base_font.DeriveFont(kNameFontDelta, style));
+                                 rb.GetFont(item_.active ?
+                                            ui::ResourceBundle::BoldFont :
+                                            ui::ResourceBundle::BaseFont));
   name_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   AddChildView(name_label_);
 
   // Add a label to show the sync state.
-  const int kStateFontDelta = -1;
   sync_state_label_ = new views::Label(item_.sync_state);
   if (item_.signed_in)
     sync_state_label_->SetElideBehavior(views::Label::ELIDE_AS_EMAIL);
-  sync_state_label_->SetFont(base_font.DeriveFont(kStateFontDelta));
+  sync_state_label_->SetFont(rb.GetFont(ui::ResourceBundle::SmallFont));
   sync_state_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   sync_state_label_->SetEnabled(false);
   AddChildView(sync_state_label_);
@@ -265,9 +269,8 @@ ProfileItemView::ProfileItemView(const AvatarMenuModel::Item& item,
   // Add an edit profile link.
   edit_link_ = new EditProfileLink(
       l10n_util::GetStringUTF16(IDS_PROFILES_EDIT_PROFILE_LINK), this);
-  edit_link_->set_listener(edit_profile_listener);
+  edit_link_->set_listener(parent);
   edit_link_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  edit_link_->SetEnabledColor(SkColorSetRGB(0xe3, 0xed, 0xf6));
   edit_link_->SetHasFocusBorder(true);
   AddChildView(edit_link_);
 
@@ -342,13 +345,11 @@ void ProfileItemView::OnBlur() {
 }
 
 void ProfileItemView::OnHighlightStateChanged() {
-  set_background(IsHighlighted() ? views::Background::CreateSolidBackground(
-      SkColorSetRGB(0xe3, 0xed, 0xf6)) : NULL);
-  SkColor background_color = background() ?
-      background()->get_color() : views::BubbleDelegateView::kBackgroundColor;
-  name_label_->SetBackgroundColor(background_color);
-  sync_state_label_->SetBackgroundColor(background_color);
-  edit_link_->SetBackgroundColor(background_color);
+  const SkColor color = IsHighlighted() ? kHighlightColor : parent_->color();
+  set_background(views::Background::CreateSolidBackground(color));
+  name_label_->SetBackgroundColor(color);
+  sync_state_label_->SetBackgroundColor(color);
+  edit_link_->SetBackgroundColor(color);
 
   bool show_edit = IsHighlighted() && item_.active;
   sync_state_label_->SetVisible(!show_edit);
@@ -357,8 +358,8 @@ void ProfileItemView::OnHighlightStateChanged() {
 }
 
 void ProfileItemView::OnFocusStateChanged(bool has_focus) {
-  if (!has_focus && state() != views::CustomButton::BS_DISABLED)
-    SetState(views::CustomButton::BS_NORMAL);
+  if (!has_focus && state() != views::CustomButton::STATE_DISABLED)
+    SetState(views::CustomButton::STATE_NORMAL);
   OnHighlightStateChanged();
 }
 
@@ -376,18 +377,49 @@ gfx::ImageSkia ProfileItemView::GetBadgedIcon(const gfx::ImageSkia& icon) {
 }
 
 bool ProfileItemView::IsHighlighted() {
-  return state() == views::CustomButton::BS_PUSHED ||
-         state() == views::CustomButton::BS_HOT ||
-         edit_link_->state() == views::CustomButton::BS_PUSHED ||
-         edit_link_->state() == views::CustomButton::BS_HOT ||
+  return state() == views::CustomButton::STATE_PRESSED ||
+         state() == views::CustomButton::STATE_HOVERED ||
+         edit_link_->state() == views::CustomButton::STATE_PRESSED ||
+         edit_link_->state() == views::CustomButton::STATE_HOVERED ||
          HasFocus() ||
          edit_link_->HasFocus();
 }
 
-}  // namespace
-
 
 // AvatarMenuBubbleView -------------------------------------------------------
+
+// static
+AvatarMenuBubbleView* AvatarMenuBubbleView::avatar_bubble_ = NULL;
+
+// static
+void AvatarMenuBubbleView::ShowBubble(
+    views::View* anchor_view,
+    views::BubbleBorder::ArrowLocation arrow_location,
+    views::BubbleBorder::BubbleAlignment border_alignment,
+    const gfx::Rect& anchor_rect,
+    Browser* browser) {
+  if (IsShowing())
+    return;
+
+  DCHECK(chrome::IsCommandEnabled(browser, IDC_SHOW_AVATAR_MENU));
+  avatar_bubble_ = new AvatarMenuBubbleView(
+      anchor_view, arrow_location, anchor_rect, browser);
+  views::BubbleDelegateView::CreateBubble(avatar_bubble_);
+  avatar_bubble_->SetBackgroundColors();
+  avatar_bubble_->SetAlignment(border_alignment);
+  avatar_bubble_->GetWidget()->Show();
+}
+
+// static
+bool AvatarMenuBubbleView::IsShowing() {
+  return avatar_bubble_ != NULL;
+}
+
+// static
+void AvatarMenuBubbleView::Hide() {
+  if (IsShowing())
+    avatar_bubble_->GetWidget()->Close();
+}
 
 AvatarMenuBubbleView::AvatarMenuBubbleView(
     views::View* anchor_view,
@@ -395,9 +427,10 @@ AvatarMenuBubbleView::AvatarMenuBubbleView(
     const gfx::Rect& anchor_rect,
     Browser* browser)
     : BubbleDelegateView(anchor_view, arrow_location),
-      add_profile_link_(NULL),
       anchor_rect_(anchor_rect),
-      browser_(browser) {
+      browser_(browser),
+      separator_(NULL),
+      add_profile_link_(NULL) {
   avatar_menu_model_.reset(new AvatarMenuModel(
       &g_browser_process->profile_manager()->GetProfileInfoCache(),
       this, browser_));
@@ -407,9 +440,6 @@ AvatarMenuBubbleView::~AvatarMenuBubbleView() {
 }
 
 gfx::Size AvatarMenuBubbleView::GetPreferredSize() {
-  if (!add_profile_link_)
-    return gfx::Size();
-
   int max_width = 0;
   int total_height = 0;
   for (size_t i = 0; i < item_views_.size(); ++i) {
@@ -418,13 +448,15 @@ gfx::Size AvatarMenuBubbleView::GetPreferredSize() {
     total_height += size.height() + kItemMarginY;
   }
 
-  total_height += kSeparatorPaddingY * 2 +
-                  separator_->GetPreferredSize().height();
+  if (add_profile_link_) {
+    total_height += kSeparatorPaddingY * 2 +
+                    separator_->GetPreferredSize().height();
 
-  gfx::Size add_profile_size = add_profile_link_->GetPreferredSize();
-  max_width = std::max(max_width,
-      add_profile_size.width() + profiles::kAvatarIconWidth + kIconMarginX);
-  total_height += add_profile_link_->GetPreferredSize().height();
+    gfx::Size add_profile_size = add_profile_link_->GetPreferredSize();
+    max_width = std::max(max_width,
+        add_profile_size.width() + profiles::kAvatarIconWidth + kIconMarginX);
+    total_height += add_profile_link_->GetPreferredSize().height();
+  }
 
   const int kBubbleViewMaxWidth = 800;
   const int kBubbleViewMinWidth = 175;
@@ -443,13 +475,15 @@ void AvatarMenuBubbleView::Layout() {
     y += item_height + kItemMarginY;
   }
 
-  y += kSeparatorPaddingY;
-  int separator_height = separator_->GetPreferredSize().height();
-  separator_->SetBounds(0, y, width(), separator_height);
-  y += kSeparatorPaddingY + separator_height;
+  if (add_profile_link_) {
+    y += kSeparatorPaddingY;
+    int separator_height = separator_->GetPreferredSize().height();
+    separator_->SetBounds(0, y, width(), separator_height);
+    y += kSeparatorPaddingY + separator_height;
 
-  add_profile_link_->SetBounds(profiles::kAvatarIconWidth + kIconMarginX, y,
-      width(), add_profile_link_->GetPreferredSize().height());
+    add_profile_link_->SetBounds(profiles::kAvatarIconWidth + kIconMarginX, y,
+        width(), add_profile_link_->GetPreferredSize().height());
+  }
 }
 
 bool AvatarMenuBubbleView::AcceleratorPressed(
@@ -484,12 +518,12 @@ bool AvatarMenuBubbleView::AcceleratorPressed(
 void AvatarMenuBubbleView::ButtonPressed(views::Button* sender,
                                          const ui::Event& event) {
   for (size_t i = 0; i < item_views_.size(); ++i) {
-    ProfileItemView* item_view = static_cast<ProfileItemView*>(item_views_[i]);
+    ProfileItemView* item_view = item_views_[i];
     if (sender == item_view) {
       // Clicking on the active profile shouldn't do anything.
       if (!item_view->item().active) {
         avatar_menu_model_->SwitchToProfile(
-            i, chrome::DispositionFromEventFlags(event.flags()) == NEW_WINDOW);
+            i, ui::DispositionFromEventFlags(event.flags()) == NEW_WINDOW);
       }
       break;
     }
@@ -498,12 +532,12 @@ void AvatarMenuBubbleView::ButtonPressed(views::Button* sender,
 
 void AvatarMenuBubbleView::LinkClicked(views::Link* source, int event_flags) {
   if (source == add_profile_link_) {
-    avatar_menu_model_->AddNewProfile();
+    avatar_menu_model_->AddNewProfile(ProfileMetrics::ADD_NEW_USER_ICON);
     return;
   }
 
   for (size_t i = 0; i < item_views_.size(); ++i) {
-    ProfileItemView* item_view = static_cast<ProfileItemView*>(item_views_[i]);
+    ProfileItemView* item_view = item_views_[i];
     if (source == item_view->edit_link()) {
       avatar_menu_model_->EditProfile(i);
       return;
@@ -522,6 +556,11 @@ void AvatarMenuBubbleView::Init() {
   AddAccelerator(ui::Accelerator(ui::VKEY_UP, ui::EF_NONE));
 }
 
+void AvatarMenuBubbleView::WindowClosing() {
+  DCHECK_EQ(avatar_bubble_, this);
+  avatar_bubble_ = NULL;
+}
+
 void AvatarMenuBubbleView::OnAvatarMenuModelChanged(
     AvatarMenuModel* avatar_menu_model) {
   // Unset all our child view references and call RemoveAllChildViews() which
@@ -532,7 +571,7 @@ void AvatarMenuBubbleView::OnAvatarMenuModelChanged(
 
   for (size_t i = 0; i < avatar_menu_model->GetNumberOfItems(); ++i) {
     const AvatarMenuModel::Item& item = avatar_menu_model->GetItemAt(i);
-    ProfileItemView* item_view = new ProfileItemView(item, this, this);
+    ProfileItemView* item_view = new ProfileItemView(item, this);
     item_view->SetAccessibleName(l10n_util::GetStringFUTF16(
         IDS_PROFILES_SWITCH_TO_PROFILE_ACCESSIBLE_NAME, item.name));
     item_view->set_focusable(true);
@@ -540,19 +579,26 @@ void AvatarMenuBubbleView::OnAvatarMenuModelChanged(
     item_views_.push_back(item_view);
   }
 
-  separator_ = new views::Separator();
-  AddChildView(separator_);
+  if (avatar_menu_model_->ShouldShowAddNewProfileLink()) {
+    separator_ = new views::Separator();
+    AddChildView(separator_);
 
-  add_profile_link_ = new views::Link(
-      l10n_util::GetStringUTF16(IDS_PROFILES_CREATE_NEW_PROFILE_LINK));
-  add_profile_link_->set_listener(this);
-  add_profile_link_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  add_profile_link_->SetBackgroundColor(color());
-  add_profile_link_->SetEnabledColor(SkColorSetRGB(0xe3, 0xed, 0xf6));
-  AddChildView(add_profile_link_);
+    add_profile_link_ = new views::Link(
+        l10n_util::GetStringUTF16(IDS_PROFILES_CREATE_NEW_PROFILE_LINK));
+    add_profile_link_->set_listener(this);
+    add_profile_link_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+    add_profile_link_->SetBackgroundColor(color());
+    AddChildView(add_profile_link_);
+  }
 
   // If the bubble has already been shown then resize and reposition the bubble.
   Layout();
   if (GetBubbleFrameView())
     SizeToContents();
+}
+
+void AvatarMenuBubbleView::SetBackgroundColors() {
+  for (size_t i = 0; i < item_views_.size(); ++i) {
+    item_views_[i]->OnHighlightStateChanged();
+  }
 }

@@ -20,6 +20,7 @@ class ProxyConfigServiceImpl;
 
 namespace net {
 class NetLog;
+class NetworkDelegate;
 class ProxyConfigService;
 class ProxyService;
 class URLRequestContext;
@@ -29,11 +30,9 @@ class ProxyServiceFactory {
  public:
   // Creates a ProxyConfigService that delivers the system preferences
   // (or the respective ChromeOS equivalent).
-  // If |wait_for_first_update| is true, the ChromeProxyConfigService
-  // returns "pending" until it has been informed about the proxy configuration
-  // by calling its UpdateProxyConfig method.
-  static ChromeProxyConfigService* CreateProxyConfigService(
-      bool wait_for_first_update);
+  // The ChromeProxyConfigService returns "pending" until it has been informed
+  // about the proxy configuration by calling its UpdateProxyConfig method.
+  static ChromeProxyConfigService* CreateProxyConfigService();
 
 #if defined(OS_CHROMEOS)
   static chromeos::ProxyConfigServiceImpl* CreatePrefProxyConfigTracker(
@@ -47,6 +46,7 @@ class ProxyServiceFactory {
   static net::ProxyService* CreateProxyService(
       net::NetLog* net_log,
       net::URLRequestContext* context,
+      net::NetworkDelegate* network_delegate,
       net::ProxyConfigService* proxy_config_service,
       const CommandLine& command_line);
 

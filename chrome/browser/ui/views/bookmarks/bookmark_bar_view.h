@@ -12,30 +12,24 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
+#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_instructions_delegate.h"
+#include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view_observer.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_views.h"
 #include "chrome/browser/ui/views/detachable_toolbar_view.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/drag_controller.h"
 
-class BookmarkBarInstructionsView;
 class BookmarkContextMenu;
 class Browser;
 class BrowserView;
-
-namespace chrome {
-namespace search {
-struct Mode;
-}
-}
 
 namespace content {
 class PageNavigator;
@@ -63,12 +57,12 @@ class BookmarkBarView : public DetachableToolbarView,
                         public BookmarkModelObserver,
                         public views::MenuButtonListener,
                         public views::ButtonListener,
-                        public content::NotificationObserver,
                         public views::ContextMenuController,
                         public views::DragController,
                         public ui::AnimationDelegate,
                         public BookmarkMenuController::Observer,
-                        public chrome::BookmarkBarInstructionsDelegate {
+                        public chrome::BookmarkBarInstructionsDelegate,
+                        public BookmarkBubbleViewObserver {
  public:
   // The internal view class name.
   static const char kViewClassName[];
@@ -85,6 +79,8 @@ class BookmarkBarView : public DetachableToolbarView,
   BookmarkBarView(Browser* browser, BrowserView* browser_view);
   virtual ~BookmarkBarView();
 
+  static void DisableAnimationsForTesting(bool disabled);
+
   // Returns the current browser.
   Browser* browser() const { return browser_; }
 
@@ -100,8 +96,7 @@ class BookmarkBarView : public DetachableToolbarView,
 
   // Changes the state of the bookmark bar.
   void SetBookmarkBarState(BookmarkBar::State state,
-                           BookmarkBar::AnimateChangeType animate_type,
-                           const chrome::search::Mode& search_mode);
+                           BookmarkBar::AnimateChangeType animate_type);
 
   // How much we want the bookmark bar to overlap the toolbar.  If |return_max|
   // is true, we return the maximum overlap rather than the current overlap.
@@ -161,11 +156,6 @@ class BookmarkBarView : public DetachableToolbarView,
                                               Profile* profile,
                                               gfx::NativeView context);
 
-  // For instant extended API, if search mode is |MODE_NTP|, stack bookmark bar
-  // on top, so that it floats on top of the content view (in z-order) and below
-  // the "Most Visited" thumbnails (in the y-direction).
-  void MaybeStackAtTop();
-
   // DetachableToolbarView methods:
   virtual bool IsDetached() const OVERRIDE;
   virtual double GetAnimationValue() const OVERRIDE;
@@ -207,6 +197,10 @@ class BookmarkBarView : public DetachableToolbarView,
 
   // chrome::BookmarkBarInstructionsDelegate:
   virtual void ShowImportDialog() OVERRIDE;
+
+  // BookmarkBubbleViewObserver:
+  virtual void OnBookmarkBubbleShown(const GURL& url) OVERRIDE;
+  virtual void OnBookmarkBubbleHidden() OVERRIDE;
 
   // BookmarkModelObserver:
   virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE;
@@ -252,11 +246,6 @@ class BookmarkBarView : public DetachableToolbarView,
   virtual void ShowContextMenuForView(views::View* source,
                                       const gfx::Point& point) OVERRIDE;
 
-  // content::NotificationObserver::
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
  private:
   class ButtonSeparatorView;
   struct DropInfo;
@@ -264,6 +253,10 @@ class BookmarkBarView : public DetachableToolbarView,
 
   friend class BookmarkBarViewEventTestBase;
   FRIEND_TEST_ALL_PREFIXES(BookmarkBarViewTest, SwitchProfile);
+  FRIEND_TEST_ALL_PREFIXES(BookmarkBarViewTest,
+                           NoAppsShortcutWithoutInstantExtended);
+  FRIEND_TEST_ALL_PREFIXES(BookmarkBarViewInstantExtendedTest,
+                           AppsShortcutVisibility);
 
   // Used to identify what the user is dropping onto.
   enum DropButtonType {
@@ -291,6 +284,9 @@ class BookmarkBarView : public DetachableToolbarView,
   // Returns the button at the specified index.
   views::TextButton* GetBookmarkButton(int index);
 
+  // Returns LAUNCH_DETACHED_BAR or LAUNCH_ATTACHED_BAR based on detached state.
+  bookmark_utils::BookmarkLaunchLocation GetBookmarkLaunchLocation() const;
+
   // Returns the index of the first hidden bookmark button. If all buttons are
   // visible, this returns GetBookmarkButtonCount().
   int GetFirstHiddenNodeIndex();
@@ -303,6 +299,9 @@ class BookmarkBarView : public DetachableToolbarView,
 
   // Creates the button for rendering the specified bookmark node.
   views::View* CreateBookmarkButton(const BookmarkNode* node);
+
+  // Creates the button for rendering the apps page shortcut.
+  views::TextButton* CreateAppsPageShortcutButton();
 
   // Configures the button from the specified node. This sets the text,
   // and icon.
@@ -356,9 +355,12 @@ class BookmarkBarView : public DetachableToolbarView,
   // Updates the colors for all the child objects in the bookmarks bar.
   void UpdateColors();
 
-  // Updates the visibility of |other_bookmarked_button_| and
-  // |bookmarks_separator_view_|.
+  // Updates the visibility of |other_bookmarked_button_|. Also shows or hide
+  // the separator if required.
   void UpdateOtherBookmarksVisibility();
+
+  // Updates the visibility of |bookmarks_separator_view_|.
+  void UpdateBookmarksSeparatorVisibility();
 
   // This method computes the bounds for the bookmark bar items. If
   // |compute_bounds_only| = TRUE, the bounds for the items are just computed,
@@ -366,7 +368,14 @@ class BookmarkBarView : public DetachableToolbarView,
   // desired bounds. If |compute_bounds_only| = FALSE, the bounds are set.
   gfx::Size LayoutItems(bool compute_bounds_only);
 
-  content::NotificationRegistrar registrar_;
+  // Returns true if we should show the apps shortcut.
+  bool ShouldShowAppsShortcut() const;
+
+  // Updates the visibility of the apps shortcut based on the pref value.
+  void OnAppsPageShortcutVisibilityChanged();
+
+  // Needed to react to kShowAppsShortcutInBookmarkBar changes.
+  PrefChangeRegistrar profile_pref_registrar_;
 
   // Used for opening urls.
   content::PageNavigator* page_navigator_;
@@ -391,6 +400,9 @@ class BookmarkBarView : public DetachableToolbarView,
   // Shows the other bookmark entries.
   views::MenuButton* other_bookmarked_button_;
 
+  // Shows the Apps page shortcut.
+  views::TextButton* apps_page_shortcut_;
+
   // Task used to delay showing of the drop menu.
   base::WeakPtrFactory<BookmarkBarView> show_folder_method_factory_;
 
@@ -400,9 +412,9 @@ class BookmarkBarView : public DetachableToolbarView,
   // Visible if not all the bookmark buttons fit.
   views::MenuButton* overflow_button_;
 
-  // BookmarkBarInstructionsView that is visible if there are no bookmarks on
-  // the bookmark bar.
-  BookmarkBarInstructionsView* instructions_;
+  // Shows a text and a link to import bookmarks if there are no bookmarks in
+  // the Bookmarks Bar.
+  views::View* instructions_;
 
   ButtonSeparatorView* bookmarks_separator_view_;
 

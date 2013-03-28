@@ -9,13 +9,19 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/memory/singleton.h"
 #include "base/message_loop.h"
+#include "base/string_util.h"
+#include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "cc/base/switches.h"
+#include "cc/base/thread_impl.h"
+#include "cc/input/input_handler.h"
+#include "cc/layers/layer.h"
+#include "cc/output/context_provider.h"
+#include "cc/output/output_surface.h"
+#include "cc/trees/layer_tree_host.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCompositorSupport.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebFloatPoint.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCompositorOutputSurface.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/compositor/dip_util.h"
@@ -25,7 +31,7 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_switches.h"
-#include "webkit/glue/webthread_impl.h"
+#include "webkit/gpu/grcontext_for_webgraphicscontext3d.h"
 #include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
 
 #if defined(OS_CHROMEOS)
@@ -42,50 +48,14 @@ enum SwapType {
   READPIXELS_SWAP,
 };
 
-webkit_glue::WebThreadImpl* g_compositor_thread = NULL;
+base::Thread* g_compositor_thread = NULL;
 
-bool test_compositor_enabled = false;
+bool g_test_compositor_enabled = false;
 
+ui::ContextFactory* g_implicit_factory = NULL;
 ui::ContextFactory* g_context_factory = NULL;
 
 const int kCompositorLockTimeoutMs = 67;
-
-// Adapts a pure WebGraphicsContext3D into a WebCompositorOutputSurface.
-class WebGraphicsContextToOutputSurfaceAdapter
-    : public WebKit::WebCompositorOutputSurface {
- public:
-  explicit WebGraphicsContextToOutputSurfaceAdapter(
-      WebKit::WebGraphicsContext3D* context)
-      : context3D_(context),
-        client_(NULL) {
-  }
-
-  virtual bool bindToClient(
-      WebKit::WebCompositorOutputSurfaceClient* client) OVERRIDE {
-    DCHECK(client);
-    if (!context3D_->makeContextCurrent())
-      return false;
-    client_ = client;
-    return true;
-  }
-
-  virtual const Capabilities& capabilities() const OVERRIDE {
-    return capabilities_;
-  }
-
-  virtual WebKit::WebGraphicsContext3D* context3D() const OVERRIDE {
-    return context3D_.get();
-  }
-
-  virtual void sendFrameToParentCompositor(
-      const WebKit::WebCompositorFrame&) OVERRIDE {
-  }
-
- private:
-  scoped_ptr<WebKit::WebGraphicsContext3D> context3D_;
-  Capabilities capabilities_;
-  WebKit::WebCompositorOutputSurfaceClient* client_;
-};
 
 class PendingSwap {
  public:
@@ -105,21 +75,39 @@ class PendingSwap {
   DISALLOW_COPY_AND_ASSIGN(PendingSwap);
 };
 
+void SetupImplicitFactory() {
+  // We leak the implicit factory so that we don't race with the tear down of
+  // the gl_bindings.
+  DCHECK(!g_context_factory);
+  DCHECK(!g_implicit_factory);
+  if (g_test_compositor_enabled) {
+    g_implicit_factory = new ui::TestContextFactory;
+  } else {
+    DVLOG(1) << "Using DefaultContextFactory";
+    scoped_ptr<ui::DefaultContextFactory> instance(
+        new ui::DefaultContextFactory());
+    if (instance->Initialize())
+      g_implicit_factory = instance.release();
+  }
+  g_context_factory = g_implicit_factory;
+}
+
+void ResetImplicitFactory() {
+  if (!g_implicit_factory || g_context_factory != g_implicit_factory)
+    return;
+  delete g_implicit_factory;
+  g_implicit_factory = NULL;
+  g_context_factory = NULL;
+}
+
 }  // namespace
 
 namespace ui {
 
 // static
 ContextFactory* ContextFactory::GetInstance() {
-  // We leak the shared resources so that we don't race with
-  // the tear down of the gl_bindings.
-  if (!g_context_factory) {
-    DVLOG(1) << "Using DefaultSharedResource";
-    scoped_ptr<DefaultContextFactory> instance(
-        new DefaultContextFactory());
-    if (instance->Initialize())
-      g_context_factory = instance.release();
-  }
+  if (!g_context_factory)
+    SetupImplicitFactory();
   return g_context_factory;
 }
 
@@ -128,6 +116,74 @@ void ContextFactory::SetInstance(ContextFactory* instance) {
   g_context_factory = instance;
 }
 
+class ContextProviderFromContextFactory : public cc::ContextProvider {
+ public:
+  static scoped_refptr<ContextProviderFromContextFactory> Create(
+      ContextFactory* factory) {
+    scoped_refptr<ContextProviderFromContextFactory> provider =
+        new ContextProviderFromContextFactory(factory);
+    if (!provider->InitializeOnMainThread())
+      return NULL;
+    return provider;
+  }
+
+  virtual bool BindToCurrentThread() OVERRIDE {
+    DCHECK(context3d_);
+
+    return context3d_->makeContextCurrent();
+  }
+
+  virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE {
+    DCHECK(context3d_);
+
+    return context3d_.get();
+  }
+
+  virtual class GrContext* GrContext() OVERRIDE {
+    DCHECK(context3d_);
+
+    if (!gr_context_) {
+      gr_context_.reset(
+          new webkit::gpu::GrContextForWebGraphicsContext3D(context3d_.get()));
+    }
+    return gr_context_->get();
+  }
+
+  virtual void VerifyContexts() OVERRIDE {
+    DCHECK(context3d_);
+
+    if (context3d_->isContextLost()) {
+      base::AutoLock lock(destroyed_lock_);
+      destroyed_ = true;
+    }
+  }
+
+  virtual bool DestroyedOnMainThread() OVERRIDE {
+    base::AutoLock lock(destroyed_lock_);
+    return destroyed_;
+  }
+
+ protected:
+  explicit ContextProviderFromContextFactory(ContextFactory* factory)
+      : factory_(factory),
+        destroyed_(false) {}
+  virtual ~ContextProviderFromContextFactory() {}
+
+  bool InitializeOnMainThread() {
+    if (context3d_)
+      return true;
+    context3d_.reset(factory_->CreateOffscreenContext());
+    return !!context3d_;
+  }
+
+ private:
+  ContextFactory* factory_;
+  base::Lock destroyed_lock_;
+  bool destroyed_;
+  scoped_ptr<WebKit::WebGraphicsContext3D> context3d_;
+  scoped_ptr<webkit::gpu::GrContextForWebGraphicsContext3D> gr_context_;
+};
+
 DefaultContextFactory::DefaultContextFactory() {
 }
 
@@ -135,10 +191,6 @@ DefaultContextFactory::~DefaultContextFactory() {
 }
 
 bool DefaultContextFactory::Initialize() {
-  // The following line of code exists soley to disable IO restrictions
-  // on this thread long enough to perform the GL bindings.
-  // TODO(wjmaclean) Remove this when GL initialisation cleaned up.
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
   if (!gfx::GLSurface::InitializeOneOff() ||
       gfx::GetGLImplementation() == gfx::kGLImplementationNone) {
     LOG(ERROR) << "Could not load the GL bindings";
@@ -147,14 +199,37 @@ bool DefaultContextFactory::Initialize() {
   return true;
 }
 
-WebKit::WebCompositorOutputSurface* DefaultContextFactory::CreateOutputSurface(
+cc::OutputSurface* DefaultContextFactory::CreateOutputSurface(
     Compositor* compositor) {
-  return new WebGraphicsContextToOutputSurfaceAdapter(
-      CreateContextCommon(compositor, false));
+  return new cc::OutputSurface(
+      make_scoped_ptr(CreateContextCommon(compositor, false)));
 }
 
 WebKit::WebGraphicsContext3D* DefaultContextFactory::CreateOffscreenContext() {
   return CreateContextCommon(NULL, true);
+}
+
+scoped_refptr<cc::ContextProvider>
+DefaultContextFactory::OffscreenContextProviderForMainThread() {
+  if (!offscreen_contexts_main_thread_ ||
+      !offscreen_contexts_main_thread_->DestroyedOnMainThread()) {
+    offscreen_contexts_main_thread_ =
+        ContextProviderFromContextFactory::Create(this);
+    if (offscreen_contexts_main_thread_ &&
+        !offscreen_contexts_main_thread_->BindToCurrentThread())
+      offscreen_contexts_main_thread_ = NULL;
+  }
+  return offscreen_contexts_main_thread_;
+}
+
+scoped_refptr<cc::ContextProvider>
+DefaultContextFactory::OffscreenContextProviderForCompositorThread() {
+  if (!offscreen_contexts_compositor_thread_ ||
+      !offscreen_contexts_compositor_thread_->DestroyedOnMainThread()) {
+    offscreen_contexts_compositor_thread_ =
+        ContextProviderFromContextFactory::Create(this);
+  }
+  return offscreen_contexts_compositor_thread_;
 }
 
 void DefaultContextFactory::RemoveCompositor(Compositor* compositor) {
@@ -174,7 +249,7 @@ WebKit::WebGraphicsContext3D* DefaultContextFactory::CreateContextCommon(
       webkit::gpu::WebGraphicsContext3DInProcessImpl::CreateForWebView(
           attrs, false) :
       webkit::gpu::WebGraphicsContext3DInProcessImpl::CreateForWindow(
-          attrs, compositor->widget(), share_group_.get());
+          attrs, compositor->widget(), NULL);
   if (!context)
     return NULL;
 
@@ -189,13 +264,56 @@ WebKit::WebGraphicsContext3D* DefaultContextFactory::CreateContextCommon(
   return context;
 }
 
+TestContextFactory::TestContextFactory() {}
+
+TestContextFactory::~TestContextFactory() {}
+
+cc::OutputSurface* TestContextFactory::CreateOutputSurface(
+    Compositor* compositor) {
+  return new cc::OutputSurface(make_scoped_ptr(CreateOffscreenContext()));
+}
+
+WebKit::WebGraphicsContext3D* TestContextFactory::CreateOffscreenContext() {
+  ui::TestWebGraphicsContext3D* context = new ui::TestWebGraphicsContext3D;
+  context->Initialize();
+  return context;
+}
+
+scoped_refptr<cc::ContextProvider>
+TestContextFactory::OffscreenContextProviderForMainThread() {
+  if (!offscreen_contexts_main_thread_ ||
+      offscreen_contexts_main_thread_->DestroyedOnMainThread()) {
+    offscreen_contexts_main_thread_ =
+        ContextProviderFromContextFactory::Create(this);
+    CHECK(offscreen_contexts_main_thread_->BindToCurrentThread());
+  }
+  return offscreen_contexts_main_thread_;
+}
+
+scoped_refptr<cc::ContextProvider>
+TestContextFactory::OffscreenContextProviderForCompositorThread() {
+  if (!offscreen_contexts_compositor_thread_ ||
+      offscreen_contexts_compositor_thread_->DestroyedOnMainThread()) {
+    offscreen_contexts_compositor_thread_ =
+        ContextProviderFromContextFactory::Create(this);
+  }
+  return offscreen_contexts_compositor_thread_;
+}
+
+void TestContextFactory::RemoveCompositor(Compositor* compositor) {
+}
+
 Texture::Texture(bool flipped, const gfx::Size& size, float device_scale_factor)
-    : flipped_(flipped),
-      size_(size),
+    : size_(size),
+      flipped_(flipped),
       device_scale_factor_(device_scale_factor) {
 }
 
 Texture::~Texture() {
+}
+
+std::string Texture::Produce() {
+  return EmptyString();
 }
 
 CompositorLock::CompositorLock(Compositor* compositor)
@@ -294,22 +412,50 @@ Compositor::Compositor(CompositorDelegate* delegate,
       last_ended_frame_(0),
       disable_schedule_composite_(false),
       compositor_lock_(NULL) {
-  WebKit::WebCompositorSupport* compositor_support =
-      WebKit::Platform::current()->compositorSupport();
-  root_web_layer_.reset(compositor_support->createLayer());
-  WebKit::WebLayerTreeView::Settings settings;
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  settings.showFPSCounter =
-      command_line->HasSwitch(switches::kUIShowFPSCounter);
-  settings.showPlatformLayerTree =
-      command_line->HasSwitch(switches::kUIShowLayerTree);
-  settings.refreshRate =
-      test_compositor_enabled ? kTestRefreshRate : kDefaultRefreshRate;
+  root_web_layer_ = cc::Layer::Create();
+  root_web_layer_->SetAnchorPoint(gfx::PointF(0.f, 0.f));
 
-  root_web_layer_->setAnchorPoint(WebKit::WebFloatPoint(0.f, 0.f));
-  host_.reset(compositor_support->createLayerTreeView(this, *root_web_layer_,
-                                                      settings));
-  host_->setSurfaceReady();
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+
+  cc::LayerTreeSettings settings;
+  settings.refresh_rate =
+      g_test_compositor_enabled ? kTestRefreshRate : kDefaultRefreshRate;
+  settings.partial_swap_enabled =
+      command_line->HasSwitch(cc::switches::kUIEnablePartialSwap);
+  settings.per_tile_painting_enabled =
+      command_line->HasSwitch(cc::switches::kUIEnablePerTilePainting);
+
+  // These flags should be mirrored by renderer versions in content/renderer/.
+  settings.initial_debug_state.show_debug_borders =
+      command_line->HasSwitch(cc::switches::kUIShowCompositedLayerBorders);
+  settings.initial_debug_state.show_fps_counter =
+      command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
+  settings.initial_debug_state.show_paint_rects =
+      command_line->HasSwitch(switches::kUIShowPaintRects);
+  settings.initial_debug_state.show_platform_layer_tree =
+      command_line->HasSwitch(cc::switches::kUIShowCompositedLayerTree);
+  settings.initial_debug_state.show_property_changed_rects =
+      command_line->HasSwitch(cc::switches::kUIShowPropertyChangedRects);
+  settings.initial_debug_state.show_surface_damage_rects =
+      command_line->HasSwitch(cc::switches::kUIShowSurfaceDamageRects);
+  settings.initial_debug_state.show_screen_space_rects =
+      command_line->HasSwitch(cc::switches::kUIShowScreenSpaceRects);
+  settings.initial_debug_state.show_replica_screen_space_rects =
+      command_line->HasSwitch(cc::switches::kUIShowReplicaScreenSpaceRects);
+  settings.initial_debug_state.show_occluding_rects =
+      command_line->HasSwitch(cc::switches::kUIShowOccludingRects);
+  settings.initial_debug_state.show_non_occluding_rects =
+      command_line->HasSwitch(cc::switches::kUIShowNonOccludingRects);
+
+  scoped_ptr<cc::Thread> thread;
+  if (g_compositor_thread) {
+    thread = cc::ThreadImpl::CreateForDifferentThread(
+        g_compositor_thread->message_loop_proxy());
+  }
+
+  host_ = cc::LayerTreeHost::Create(this, settings, thread.Pass());
+  host_->SetRootLayer(root_web_layer_);
+  host_->SetSurfaceReady();
 }
 
 Compositor::~Compositor() {
@@ -325,41 +471,29 @@ Compositor::~Compositor() {
   // down any contexts that the |host_| may rely upon.
   host_.reset();
 
-  if (!test_compositor_enabled)
-    ContextFactory::GetInstance()->RemoveCompositor(this);
+  ContextFactory::GetInstance()->RemoveCompositor(this);
 }
 
 void Compositor::Initialize(bool use_thread) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  WebKit::WebCompositorSupport* compositor_support =
-      WebKit::Platform::current()->compositorSupport();
-  // These settings must be applied before we initialize the compositor.
-  compositor_support->setPartialSwapEnabled(
-      command_line->HasSwitch(switches::kUIEnablePartialSwap));
-  compositor_support->setPerTilePaintingEnabled(
-      command_line->HasSwitch(switches::kUIEnablePerTilePainting));
-  if (use_thread)
-    g_compositor_thread = new webkit_glue::WebThreadImpl("Browser Compositor");
-  compositor_support->initialize(g_compositor_thread);
+  if (use_thread) {
+    g_compositor_thread = new base::Thread("Browser Compositor");
+    g_compositor_thread->Start();
+  }
 }
 
 void Compositor::Terminate() {
-  WebKit::Platform::current()->compositorSupport()->shutdown();
   if (g_compositor_thread) {
+    g_compositor_thread->Stop();
     delete g_compositor_thread;
     g_compositor_thread = NULL;
   }
 }
 
 void Compositor::ScheduleDraw() {
-  if (g_compositor_thread) {
-    // TODO(nduca): Temporary while compositor calls
-    // compositeImmediately() directly.
-    layout();
-    host_->composite();
-  } else if (delegate_) {
+  if (g_compositor_thread)
+    host_->Composite(base::TimeTicks::Now());
+  else if (delegate_)
     delegate_->ScheduleDraw();
-  }
 }
 
 void Compositor::SetRootLayer(Layer* root_layer) {
@@ -370,14 +504,14 @@ void Compositor::SetRootLayer(Layer* root_layer) {
   root_layer_ = root_layer;
   if (root_layer_ && !root_layer_->GetCompositor())
     root_layer_->SetCompositor(this);
-  root_web_layer_->removeAllChildren();
+  root_web_layer_->RemoveAllChildren();
   if (root_layer_)
-    root_web_layer_->addChild(root_layer_->web_layer());
+    root_web_layer_->AddChild(root_layer_->cc_layer());
 }
 
 void Compositor::SetHostHasTransparentBackground(
     bool host_has_transparent_background) {
-  host_->setHasTransparentBackground(host_has_transparent_background);
+  host_->set_has_transparent_background(host_has_transparent_background);
 }
 
 void Compositor::Draw(bool force_clear) {
@@ -391,15 +525,15 @@ void Compositor::Draw(bool force_clear) {
   if (!IsLocked()) {
     // TODO(nduca): Temporary while compositor calls
     // compositeImmediately() directly.
-    layout();
-    host_->composite();
+    Layout();
+    host_->Composite(base::TimeTicks::Now());
   }
   if (!pending_swap.posted())
     NotifyEnd();
 }
 
 void Compositor::ScheduleFullDraw() {
-  host_->setNeedsRedraw();
+  host_->SetNeedsRedraw();
 }
 
 bool Compositor::ReadPixels(SkBitmap* bitmap,
@@ -414,17 +548,16 @@ bool Compositor::ReadPixels(SkBitmap* bitmap,
   unsigned char* pixels = static_cast<unsigned char*>(bitmap->getPixels());
   CancelCompositorLock();
   PendingSwap pending_swap(READPIXELS_SWAP, posted_swaps_.get());
-  return host_->compositeAndReadback(pixels, bounds_in_pixel);
+  return host_->CompositeAndReadback(pixels, bounds_in_pixel);
 }
 
 void Compositor::SetScaleAndSize(float scale, const gfx::Size& size_in_pixel) {
   DCHECK_GT(scale, 0);
-  if (size_in_pixel.IsEmpty() || scale <= 0)
-    return;
-  size_ = size_in_pixel;
-  host_->setViewportSize(size_in_pixel);
-  root_web_layer_->setBounds(size_in_pixel);
-
+  if (!size_in_pixel.IsEmpty()) {
+    size_ = size_in_pixel;
+    host_->SetViewportSize(size_in_pixel, size_in_pixel);
+    root_web_layer_->SetBounds(size_in_pixel);
+  }
   if (device_scale_factor_ != scale) {
     device_scale_factor_ = scale;
     if (root_layer_)
@@ -474,10 +607,14 @@ void Compositor::OnSwapBuffersAborted() {
                     OnCompositingAborted(this));
 }
 
-void Compositor::updateAnimations(double frameBeginTime) {
+void Compositor::OnUpdateVSyncParameters(base::TimeTicks timebase,
+                                         base::TimeDelta interval) {
+  FOR_EACH_OBSERVER(CompositorObserver,
+                    observer_list_,
+                    OnUpdateVSyncParameters(this, timebase, interval));
 }
 
-void Compositor::layout() {
+void Compositor::Layout() {
   // We're sending damage that will be addressed during this composite
   // cycle, so we don't need to schedule another composite to address it.
   disable_schedule_composite_ = true;
@@ -486,52 +623,55 @@ void Compositor::layout() {
   disable_schedule_composite_ = false;
 }
 
-void Compositor::applyScrollAndScale(const WebKit::WebSize& scrollDelta,
-                                     float scaleFactor) {
+scoped_ptr<cc::OutputSurface> Compositor::CreateOutputSurface() {
+  return make_scoped_ptr(
+      ContextFactory::GetInstance()->CreateOutputSurface(this));
 }
 
-WebKit::WebCompositorOutputSurface* Compositor::createOutputSurface() {
-  if (test_compositor_enabled) {
-    ui::TestWebGraphicsContext3D* test_context =
-      new ui::TestWebGraphicsContext3D();
-    test_context->Initialize();
-    return new WebGraphicsContextToOutputSurfaceAdapter(test_context);
-  } else {
-    return ContextFactory::GetInstance()->CreateOutputSurface(this);
-  }
+scoped_ptr<cc::InputHandler> Compositor::CreateInputHandler() {
+  return scoped_ptr<cc::InputHandler>();
 }
 
-void Compositor::didRecreateOutputSurface(bool success) {
-}
-
-void Compositor::didCommit() {
+void Compositor::DidCommit() {
   DCHECK(!IsLocked());
   FOR_EACH_OBSERVER(CompositorObserver,
                     observer_list_,
                     OnCompositingDidCommit(this));
 }
 
-void Compositor::didCommitAndDrawFrame() {
+void Compositor::DidCommitAndDrawFrame() {
+  base::TimeTicks start_time = base::TimeTicks::Now();
   FOR_EACH_OBSERVER(CompositorObserver,
                     observer_list_,
-                    OnCompositingStarted(this));
+                    OnCompositingStarted(this, start_time));
 }
 
-void Compositor::didCompleteSwapBuffers() {
+void Compositor::DidCompleteSwapBuffers() {
   DCHECK(g_compositor_thread);
   NotifyEnd();
 }
 
-void Compositor::scheduleComposite() {
+void Compositor::ScheduleComposite() {
   if (!disable_schedule_composite_)
     ScheduleDraw();
+}
+
+scoped_refptr<cc::ContextProvider>
+Compositor::OffscreenContextProviderForMainThread() {
+  return ContextFactory::GetInstance()->OffscreenContextProviderForMainThread();
+}
+
+scoped_refptr<cc::ContextProvider>
+Compositor::OffscreenContextProviderForCompositorThread() {
+  return ContextFactory::GetInstance()->
+      OffscreenContextProviderForCompositorThread();
 }
 
 scoped_refptr<CompositorLock> Compositor::GetCompositorLock() {
   if (!compositor_lock_) {
     compositor_lock_ = new CompositorLock(this);
     if (g_compositor_thread)
-      host_->setDeferCommits(true);
+      host_->SetDeferCommits(true);
     FOR_EACH_OBSERVER(CompositorObserver,
                       observer_list_,
                       OnCompositingLockStateChanged(this));
@@ -543,7 +683,7 @@ void Compositor::UnlockCompositor() {
   DCHECK(compositor_lock_);
   compositor_lock_ = NULL;
   if (g_compositor_thread)
-    host_->setDeferCommits(false);
+    host_->SetDeferCommits(false);
   FOR_EACH_OBSERVER(CompositorObserver,
                     observer_list_,
                     OnCompositingLockStateChanged(this));
@@ -564,22 +704,24 @@ void Compositor::NotifyEnd() {
 COMPOSITOR_EXPORT void SetupTestCompositor() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableTestCompositor)) {
-    test_compositor_enabled = true;
+    g_test_compositor_enabled = true;
   }
 #if defined(OS_CHROMEOS)
   // If the test is running on the chromeos envrionment (such as
   // device or vm bots), use the real compositor.
   if (base::chromeos::IsRunningOnChromeOS())
-    test_compositor_enabled = false;
+    g_test_compositor_enabled = false;
 #endif
+  ResetImplicitFactory();
 }
 
 COMPOSITOR_EXPORT void DisableTestCompositor() {
-  test_compositor_enabled = false;
+  ResetImplicitFactory();
+  g_test_compositor_enabled = false;
 }
 
 COMPOSITOR_EXPORT bool IsTestCompositorEnabled() {
-  return test_compositor_enabled;
+  return g_test_compositor_enabled;
 }
 
 }  // namespace ui

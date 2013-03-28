@@ -7,18 +7,20 @@
 
 #include <string>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
-#include "base/scoped_temp_dir.h"
-#include "chrome/common/extensions/extension.h"
-#include "content/public/browser/browser_thread.h"
+#include "base/time.h"
+#include "chrome/common/extensions/manifest.h"
 #include "content/public/browser/utility_process_host_client.h"
 
 namespace base {
 class DictionaryValue;
+class SequencedTaskRunner;
 }
 
 namespace extensions {
+class Extension;
 
 class SandboxedUnpackerClient
     : public base::RefCountedThreadSafe<SandboxedUnpackerClient> {
@@ -33,8 +35,8 @@ class SandboxedUnpackerClient
   //
   // extension - The extension that was unpacked. The client is responsible
   // for deleting this memory.
-  virtual void OnUnpackSuccess(const FilePath& temp_dir,
-                               const FilePath& extension_root,
+  virtual void OnUnpackSuccess(const base::FilePath& temp_dir,
+                               const base::FilePath& extension_root,
                                const base::DictionaryValue* original_manifest,
                                const Extension* extension) = 0;
   virtual void OnUnpackFailure(const string16& error) = 0;
@@ -68,15 +70,15 @@ class SandboxedUnpackerClient
 // NOTE: This class should only be used on the file thread.
 class SandboxedUnpacker : public content::UtilityProcessHostClient {
  public:
-
   // Unpacks the extension in |crx_path| into a temporary directory and calls
   // |client| with the result. If |run_out_of_process| is provided, unpacking
   // is done in a sandboxed subprocess. Otherwise, it is done in-process.
-  SandboxedUnpacker(const FilePath& crx_path,
+  SandboxedUnpacker(const base::FilePath& crx_path,
                     bool run_out_of_process,
-                    Extension::Location location,
+                    Manifest::Location location,
                     int creation_flags,
-                    const FilePath& extensions_dir,
+                    const base::FilePath& extensions_dir,
+                    base::SequencedTaskRunner* unpacker_io_task_runner,
                     SandboxedUnpackerClient* client);
 
   // Start unpacking the extension. The client is called with the results.
@@ -164,7 +166,7 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
   bool ValidateSignature();
 
   // Starts the utility process that unpacks our extension.
-  void StartProcessOnIOThread(const FilePath& temp_crx_path);
+  void StartProcessOnIOThread(const base::FilePath& temp_crx_path);
 
   // UtilityProcessHostClient
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -187,11 +189,11 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
   bool RewriteImageFiles();
   bool RewriteCatalogFiles();
 
-  // The path to the CRX to unpack.
-  FilePath crx_path_;
+  // Cleans up temp directory artifacts.
+  void Cleanup();
 
-  // Our client's thread. This is the thread we respond on.
-  content::BrowserThread::ID thread_identifier_;
+  // The path to the CRX to unpack.
+  base::FilePath crx_path_;
 
   // True if unpacking should be done by the utility process.
   bool run_out_of_process_;
@@ -200,13 +202,13 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
   scoped_refptr<SandboxedUnpackerClient> client_;
 
   // The Extensions directory inside the profile.
-  FilePath extensions_dir_;
+  base::FilePath extensions_dir_;
 
   // A temporary directory to use for unpacking.
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
 
   // The root directory of the unpacked extension. This is a child of temp_dir_.
-  FilePath extension_root_;
+  base::FilePath extension_root_;
 
   // Represents the extension we're unpacking.
   scoped_refptr<Extension> extension_;
@@ -225,11 +227,14 @@ class SandboxedUnpacker : public content::UtilityProcessHostClient {
   base::TimeTicks unpack_start_time_;
 
   // Location to use for the unpacked extension.
-  Extension::Location location_;
+  Manifest::Location location_;
 
   // Creation flags to use for the extension.  These flags will be used
   // when calling Extenion::Create() by the crx installer.
   int creation_flags_;
+
+  // Sequenced task runner where file I/O operations will be performed at.
+  scoped_refptr<base::SequencedTaskRunner> unpacker_io_task_runner_;
 };
 
 }  // namespace extensions

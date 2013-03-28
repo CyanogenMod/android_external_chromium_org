@@ -5,13 +5,14 @@
 #include "chrome/browser/extensions/api/preference/preference_helpers.h"
 
 #include "base/json/json_writer.h"
+#include "base/prefs/pref_service.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/incognito_handler.h"
 
 namespace extensions {
 namespace preference_helpers {
@@ -98,7 +99,7 @@ void DispatchEventToExtensions(
     // TODO(bauerb): Only iterate over registered event listeners.
     if (router->ExtensionHasEventListener(extension_id, event_name) &&
         (*it)->HasAPIPermission(permission) &&
-        (!incognito || (*it)->incognito_split_mode() ||
+        (!incognito || IncognitoInfo::IsSplitMode(*it) ||
          extension_service->CanCrossIncognito(*it))) {
       // Inject level of control key-value.
       DictionaryValue* dict;
@@ -114,7 +115,7 @@ void DispatchEventToExtensions(
       //    incognito pref has not alredy been set
       Profile* restrict_to_profile = NULL;
       bool from_incognito = false;
-      if ((*it)->incognito_split_mode()) {
+      if (IncognitoInfo::IsSplitMode(*it)) {
         if (incognito && extension_service->IsIncognitoEnabled(extension_id)) {
           restrict_to_profile = profile->GetOffTheRecordProfile();
         } else if (!incognito &&
@@ -128,9 +129,9 @@ void DispatchEventToExtensions(
       }
 
       scoped_ptr<ListValue> args_copy(args->DeepCopy());
-      router->DispatchEventToExtension(
-          extension_id, event_name, args_copy.Pass(), restrict_to_profile,
-          GURL());
+      scoped_ptr<Event> event(new Event(event_name, args_copy.Pass()));
+      event->restrict_to_profile = restrict_to_profile;
+      router->DispatchEventToExtension(extension_id, event.Pass());
     }
   }
 }

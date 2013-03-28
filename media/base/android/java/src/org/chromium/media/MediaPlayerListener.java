@@ -4,9 +4,10 @@
 
 package org.chromium.media;
 
+import android.Manifest.permission;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.Manifest.permission;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 
 import org.chromium.base.CalledByNative;
@@ -16,11 +17,12 @@ import org.chromium.base.JNINamespace;
 // Callbacks will be sent to the native class for processing.
 @JNINamespace("media")
 class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
-                                     MediaPlayer.OnCompletionListener,
-                                     MediaPlayer.OnBufferingUpdateListener,
-                                     MediaPlayer.OnSeekCompleteListener,
-                                     MediaPlayer.OnVideoSizeChangedListener,
-                                     MediaPlayer.OnErrorListener {
+    MediaPlayer.OnCompletionListener,
+    MediaPlayer.OnBufferingUpdateListener,
+    MediaPlayer.OnSeekCompleteListener,
+    MediaPlayer.OnVideoSizeChangedListener,
+    MediaPlayer.OnErrorListener,
+    AudioManager.OnAudioFocusChangeListener {
     // These values are mirrored as enums in media/base/android/media_player_bridge.h.
     // Please ensure they stay in sync.
     private static final int MEDIA_ERROR_FORMAT = 0;
@@ -34,9 +36,11 @@ class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
 
     // Used to determine the class instance to dispatch the native call to.
     private int mNativeMediaPlayerListener = 0;
+    private final Context mContext;
 
-    private MediaPlayerListener(int nativeMediaPlayerListener) {
+    private MediaPlayerListener(int nativeMediaPlayerListener, Context context) {
         mNativeMediaPlayerListener = nativeMediaPlayerListener;
+        mContext = context;
     }
 
     @Override
@@ -99,10 +103,30 @@ class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
         nativeOnMediaPrepared(mNativeMediaPlayerListener);
     }
 
+    @Override
+    public void onAudioFocusChange(int focusChange) {
+        if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+                focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            nativeOnMediaInterrupted(mNativeMediaPlayerListener);
+        }
+    }
+
     @CalledByNative
-    private static void create(int nativeMediaPlayerListener,
+    public void releaseResources() {
+        if (mContext != null) {
+            // Unregister the wish for audio focus.
+            AudioManager am = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+            if (am != null) {
+                am.abandonAudioFocus(this);
+            }
+        }
+    }
+
+    @CalledByNative
+    private static MediaPlayerListener create(int nativeMediaPlayerListener,
             Context context, MediaPlayer mediaPlayer) {
-        MediaPlayerListener listener = new MediaPlayerListener(nativeMediaPlayerListener);
+        final MediaPlayerListener listener =
+                new MediaPlayerListener(nativeMediaPlayerListener, context);
         mediaPlayer.setOnBufferingUpdateListener(listener);
         mediaPlayer.setOnCompletionListener(listener);
         mediaPlayer.setOnErrorListener(listener);
@@ -110,9 +134,18 @@ class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
         mediaPlayer.setOnSeekCompleteListener(listener);
         mediaPlayer.setOnVideoSizeChangedListener(listener);
         if (PackageManager.PERMISSION_GRANTED ==
-                context.checkCallingPermission(permission.WAKE_LOCK)) {
+                context.checkCallingOrSelfPermission(permission.WAKE_LOCK)) {
             mediaPlayer.setWakeMode(context, android.os.PowerManager.FULL_WAKE_LOCK);
         }
+
+        AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        am.requestAudioFocus(
+                listener,
+                AudioManager.STREAM_MUSIC,
+
+                // Request permanent focus.
+                AudioManager.AUDIOFOCUS_GAIN);
+        return listener;
     }
 
     /**
@@ -135,4 +168,6 @@ class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
     private native void nativeOnPlaybackComplete(int nativeMediaPlayerListener);
 
     private native void nativeOnSeekComplete(int nativeMediaPlayerListener);
+
+    private native void nativeOnMediaInterrupted(int nativeMediaPlayerListener);
 }

@@ -20,33 +20,33 @@ void TabStripModelObserver::TabDetachedAt(WebContents* contents,
                                           int index) {
 }
 
-void TabStripModelObserver::TabDeactivated(TabContents* contents) {
+void TabStripModelObserver::TabDeactivated(WebContents* contents) {
 }
 
-void TabStripModelObserver::ActiveTabChanged(TabContents* old_contents,
-                                             TabContents* new_contents,
+void TabStripModelObserver::ActiveTabChanged(WebContents* old_contents,
+                                             WebContents* new_contents,
                                              int index,
                                              bool user_gesture) {
 }
 
 void TabStripModelObserver::TabSelectionChanged(
     TabStripModel* tab_strip_model,
-    const TabStripSelectionModel& model) {
+    const ui::ListSelectionModel& model) {
 }
 
-void TabStripModelObserver::TabMoved(TabContents* contents,
+void TabStripModelObserver::TabMoved(WebContents* contents,
                                      int from_index,
                                      int to_index) {
 }
 
-void TabStripModelObserver::TabChangedAt(TabContents* contents,
+void TabStripModelObserver::TabChangedAt(WebContents* contents,
                                          int index,
                                          TabChangeType change_type) {
 }
 
 void TabStripModelObserver::TabReplacedAt(TabStripModel* tab_strip_model,
-                                          TabContents* old_contents,
-                                          TabContents* new_contents,
+                                          WebContents* old_contents,
+                                          WebContents* new_contents,
                                           int index) {
 }
 

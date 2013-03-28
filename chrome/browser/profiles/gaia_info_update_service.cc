@@ -5,8 +5,8 @@
 #include "chrome/browser/profiles/gaia_info_update_service.h"
 
 #include "base/command_line.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -32,7 +32,9 @@ const int kMinUpdateIntervalSeconds = 5;
 GAIAInfoUpdateService::GAIAInfoUpdateService(Profile* profile)
     : profile_(profile) {
   PrefService* prefs = profile_->GetPrefs();
-  username_pref_.Init(prefs::kGoogleServicesUsername, prefs, this);
+  username_pref_.Init(prefs::kGoogleServicesUsername, prefs,
+                      base::Bind(&GAIAInfoUpdateService::OnUsernameChanged,
+                                 base::Unretained(this)));
 
   last_updated_ = base::Time::FromInternalValue(
       prefs->GetInt64(prefs::kProfileGAIAInfoUpdateTime));
@@ -73,14 +75,6 @@ bool GAIAInfoUpdateService::ShouldUseGAIAProfileInfo(Profile* profile) {
 
   // This feature is disable by default.
   return false;
-}
-
-// static
-void GAIAInfoUpdateService::RegisterUserPrefs(PrefServiceBase* prefs) {
-  prefs->RegisterInt64Pref(
-      prefs::kProfileGAIAInfoUpdateTime, 0, PrefServiceBase::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(
-      prefs::kProfileGAIAInfoPictureURL, "", PrefServiceBase::UNSYNCABLE_PREF);
 }
 
 bool GAIAInfoUpdateService::NeedsProfilePicture() const {
@@ -131,7 +125,7 @@ void GAIAInfoUpdateService::OnProfileDownloadSuccess(
   if (picture_status == ProfileDownloader::PICTURE_SUCCESS) {
     profile_->GetPrefs()->SetString(prefs::kProfileGAIAInfoPictureURL,
                                     picture_url);
-    gfx::Image gfx_image(bitmap);
+    gfx::Image gfx_image = gfx::Image::CreateFrom1xBitmap(bitmap);
     cache.SetGAIAPictureOfProfileAtIndex(profile_index, &gfx_image);
   } else if (picture_status == ProfileDownloader::PICTURE_DEFAULT) {
     cache.SetGAIAPictureOfProfileAtIndex(profile_index, NULL);
@@ -154,7 +148,8 @@ void GAIAInfoUpdateService::OnProfileDownloadSuccess(
 }
 
 void GAIAInfoUpdateService::OnProfileDownloadFailure(
-    ProfileDownloader* downloader) {
+    ProfileDownloader* downloader,
+    ProfileDownloaderDelegate::FailureReason reason) {
   profile_image_downloader_.reset();
 
   // Save the last updated time.
@@ -162,12 +157,6 @@ void GAIAInfoUpdateService::OnProfileDownloadFailure(
   profile_->GetPrefs()->SetInt64(prefs::kProfileGAIAInfoUpdateTime,
                                  last_updated_.ToInternalValue());
   ScheduleNextUpdate();
-}
-
-void GAIAInfoUpdateService::OnPreferenceChanged(PrefServiceBase* service,
-                                                const std::string& pref_name) {
-  if (prefs::kGoogleServicesUsername == pref_name)
-    OnUsernameChanged();
 }
 
 void GAIAInfoUpdateService::OnUsernameChanged() {

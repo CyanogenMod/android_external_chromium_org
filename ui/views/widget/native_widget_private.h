@@ -98,8 +98,8 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   virtual ui::Compositor* GetCompositor() = 0;
 
   // See description in View for details.
-  virtual void CalculateOffsetToAncestorWithLayer(gfx::Point* offset,
-                                                  ui::Layer** layer_parent) = 0;
+  virtual gfx::Vector2d CalculateOffsetToAncestorWithLayer(
+      ui::Layer** layer_parent) = 0;
 
   // Notifies the NativeWidget that a view was removed from the Widget's view
   // hierarchy.
@@ -114,14 +114,6 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   // Returns the native widget's tooltip manager. Called from the View hierarchy
   // to update tooltips.
   virtual TooltipManager* GetTooltipManager() const = 0;
-
-  // Returns true if a system screen reader is active for the NativeWidget.
-  virtual bool IsScreenReaderActive() const = 0;
-
-  // Notify native Accessibility clients of an event.
-  virtual void SendNativeAccessibilityEvent(
-      View* view,
-      ui::AccessibilityTypes::Event event_type) = 0;
 
   // Sets or releases event capturing for this native widget.
   virtual void SetCapture() = 0;
@@ -157,11 +149,6 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   // app switching UI.
   virtual void SetWindowIcons(const gfx::ImageSkia& window_icon,
                               const gfx::ImageSkia& app_icon) = 0;
-
-  // Update native accessibility properties on the native window.
-  virtual void SetAccessibleName(const string16& name) = 0;
-  virtual void SetAccessibleRole(ui::AccessibilityTypes::Role role) = 0;
-  virtual void SetAccessibleState(ui::AccessibilityTypes::State state) = 0;
 
   // Initializes the modal type of the window to |modal_type|. Called from
   // NativeWidgetDelegate::OnNativeWidgetCreated() before the widget is
@@ -201,7 +188,6 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   virtual void SetOpacity(unsigned char opacity) = 0;
   virtual void SetUseDragFrame(bool use_drag_frame) = 0;
   virtual void FlashFrame(bool flash) = 0;
-  virtual bool IsAccessibleWidget() const = 0;
   virtual void RunShellDrag(View* view,
                             const ui::OSExchangeData& data,
                             const gfx::Point& location,
@@ -213,7 +199,8 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   virtual gfx::Rect GetWorkAreaBoundsInScreen() const = 0;
   virtual void SetInactiveRenderingDisabled(bool value) = 0;
   virtual Widget::MoveLoopResult RunMoveLoop(
-      const gfx::Vector2d& drag_offset) = 0;
+      const gfx::Vector2d& drag_offset,
+      Widget::MoveLoopSource source) = 0;
   virtual void EndMoveLoop() = 0;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) = 0;
   virtual ui::NativeTheme* GetNativeTheme() const = 0;

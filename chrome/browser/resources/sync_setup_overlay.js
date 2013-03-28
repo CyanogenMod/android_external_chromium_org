@@ -98,14 +98,14 @@ cr.define('options', function() {
       OptionsPage.closeOverlay();
     },
 
-    /** @inheritDoc */
+    /** @override */
     didShowPage: function() {
       var forceLogin = document.location.hash == '#forceLogin';
       var result = JSON.stringify({'forceLogin': forceLogin});
       chrome.send('SyncSetupAttachHandler', [result]);
     },
 
-    /** @inheritDoc */
+    /** @override */
     didClosePage: function() {
       chrome.send('SyncSetupDidClosePage');
     },
@@ -269,7 +269,7 @@ cr.define('options', function() {
         'extensionsSynced': syncAll || $('extensions-checkbox').checked,
         'typedUrlsSynced': syncAll || $('typed-urls-checkbox').checked,
         'appsSynced': syncAll || $('apps-checkbox').checked,
-        'sessionsSynced': syncAll || $('sessions-checkbox').checked,
+        'tabsSynced': syncAll || $('tabs-checkbox').checked,
         'encryptAllData': encryptAllData,
         'usePassphrase': usePassphrase,
         'isGooglePassphrase': googlePassphrase,
@@ -370,11 +370,11 @@ cr.define('options', function() {
       } else {
         $('apps-item').hidden = true;
       }
-      if (args.sessionsRegistered) {
-        $('sessions-checkbox').checked = args.sessionsSynced;
-        $('sessions-item').hidden = false;
+      if (args.tabsRegistered) {
+        $('tabs-checkbox').checked = args.tabsSynced;
+        $('tabs-item').hidden = false;
       } else {
-        $('sessions-item').hidden = true;
+        $('tabs-item').hidden = true;
       }
 
       this.setCheckboxesToKeepEverythingSynced_(args.syncAllDataTypes);
@@ -868,9 +868,14 @@ cr.define('options', function() {
         return false;
       }
       // If email is different from last email, and we have not already warned
-      // the user, tell them now.  Otherwise proceed as usual.
+      // the user, tell them now.  Otherwise proceed as usual. When comparing
+      // email ids, use @gmail.com as the domain if not provided.
+      function normalized_email(id) {
+        return ((id.indexOf('@') != -1) ? id : id + '@gmail.com');
+      }
       if (this.lastEmailAddress_.length > 0 &&
-          email.value != this.lastEmailAddress_ &&
+          normalized_email(email.value) !=
+              normalized_email(this.lastEmailAddress_) &&
           isErrormsgDifferentEmailHidden) {
         errormsgDifferentEmail.hidden = false;
         return false;

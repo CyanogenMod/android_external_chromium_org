@@ -2,37 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "web_image_layer_impl.h"
+#include "webkit/compositor_bindings/web_image_layer_impl.h"
 
-#include "cc/image_layer.h"
-#include "web_layer_impl.h"
+#include "base/command_line.h"
+#include "cc/base/switches.h"
+#include "cc/layers/image_layer.h"
+#include "cc/layers/picture_image_layer.h"
+#include "webkit/compositor_bindings/web_layer_impl.h"
+#include "webkit/compositor_bindings/web_layer_impl_fixed_bounds.h"
 
-using cc::ImageLayer;
-
-namespace WebKit {
-
-WebImageLayer* WebImageLayer::create()
-{
-    return new WebImageLayerImpl();
+static bool usingPictureLayer() {
+  return cc::switches::IsImplSidePaintingEnabled();
 }
 
-WebImageLayerImpl::WebImageLayerImpl()
-    : m_layer(new WebLayerImpl(ImageLayer::create()))
-{
+namespace webkit {
+
+WebImageLayerImpl::WebImageLayerImpl() {
+  if (usingPictureLayer())
+    layer_.reset(new WebLayerImplFixedBounds(cc::PictureImageLayer::Create()));
+  else
+    layer_.reset(new WebLayerImpl(cc::ImageLayer::Create()));
 }
 
-WebImageLayerImpl::~WebImageLayerImpl()
-{
+WebImageLayerImpl::~WebImageLayerImpl() {}
+
+WebKit::WebLayer* WebImageLayerImpl::layer() { return layer_.get(); }
+
+void WebImageLayerImpl::setBitmap(SkBitmap bitmap) {
+  if (usingPictureLayer()) {
+    static_cast<cc::PictureImageLayer*>(layer_->layer())->SetBitmap(bitmap);
+    static_cast<WebLayerImplFixedBounds*>(layer_.get())->SetFixedBounds(
+        gfx::Size(bitmap.width(), bitmap.height()));
+  } else {
+    static_cast<cc::ImageLayer*>(layer_->layer())->SetBitmap(bitmap);
+  }
 }
 
-WebLayer* WebImageLayerImpl::layer()
-{
-    return m_layer.get();
-}
-
-void WebImageLayerImpl::setBitmap(SkBitmap bitmap)
-{
-    static_cast<ImageLayer*>(m_layer->layer())->setBitmap(bitmap);
-}
-
-} // namespace WebKit
+}  // namespace webkit

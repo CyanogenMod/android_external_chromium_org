@@ -8,8 +8,8 @@
 #include "base/bind_helpers.h"
 #include "base/message_loop.h"
 #include "base/timer.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "webkit/glue/unittest_test_server.h"
 #include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
@@ -185,7 +185,7 @@ class EvilFetcherDelegate : public FetcherDelegate {
   }
 
   virtual void OnURLFetchComplete(const WebURLResponse& response,
-                                  const std::string& data) {
+                                  const std::string& data) OVERRIDE {
     // Destroy the ResourceFetcher here.  We are testing that upon returning
     // to the ResourceFetcher that it does not crash.
     fetcher_.reset();

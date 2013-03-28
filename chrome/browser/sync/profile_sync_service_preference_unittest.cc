@@ -22,11 +22,13 @@
 #include "chrome/browser/sync/glue/generic_change_processor.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/ui_data_type_controller.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_test_util.h"
 #include "chrome/browser/sync/test_profile_sync_service.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "sync/api/sync_data.h"
 #include "sync/internal_api/public/base/model_type.h"
@@ -52,16 +54,29 @@ typedef std::map<const std::string, const Value*> PreferenceValues;
 
 ACTION_P(CreateAndSaveChangeProcessor, change_processor) {
   syncer::UserShare* user_share = arg0->GetUserShare();
-  *change_processor = new GenericChangeProcessor(arg1, arg2, user_share);
+  *change_processor = new GenericChangeProcessor(arg1,
+                                                 arg2,
+                                                 arg3,
+                                                 user_share);
   return *change_processor;
+}
+
+ACTION_P(ReturnNewDataTypeManagerWithDebugListener, debug_listener) {
+  return new browser_sync::DataTypeManagerImpl(
+      debug_listener,
+      arg1,
+      arg2,
+      arg3,
+      arg4);
 }
 
 // TODO(zea): Refactor to remove the ProfileSyncService usage.
 class ProfileSyncServicePreferenceTest
-    : public AbstractProfileSyncServiceTest {
+    : public AbstractProfileSyncServiceTest,
+      public syncer::DataTypeDebugInfoListener {
  public:
   int64 SetSyncedValue(const std::string& name, const Value& value) {
-    syncer::WriteTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode root(&trans);
     if (root.InitByTagLookup(syncer::ModelTypeToRootTag(
             syncer::PREFERENCES)) != syncer::BaseNode::INIT_OK) {
@@ -84,9 +99,19 @@ class ProfileSyncServicePreferenceTest
     return syncer::kInvalidId;
   }
 
+  // DataTypeDebugInfoListener implementation.
+  virtual void OnDataTypeAssociationComplete(
+      const syncer::DataTypeAssociationStats& association_stats) OVERRIDE {
+    association_stats_ = association_stats;
+  }
+  virtual void OnConfigureComplete() OVERRIDE {
+    // Do nothing.
+  }
+
  protected:
   ProfileSyncServicePreferenceTest()
-      : example_url0_("http://example.com/0"),
+      : debug_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+        example_url0_("http://example.com/0"),
         example_url1_("http://example.com/1"),
         example_url2_("http://example.com/2"),
         not_synced_preference_name_("nonsense_pref_name"),
@@ -99,57 +124,76 @@ class ProfileSyncServicePreferenceTest
     profile_->CreateRequestContext();
     prefs_ = profile_->GetTestingPrefService();
 
-    prefs_->RegisterStringPref(not_synced_preference_name_.c_str(),
-                               not_synced_preference_default_value_,
-                               PrefService::UNSYNCABLE_PREF);
+    prefs_->registry()->RegisterStringPref(
+        not_synced_preference_name_.c_str(),
+        not_synced_preference_default_value_,
+        PrefRegistrySyncable::UNSYNCABLE_PREF);
   }
 
   virtual void TearDown() {
-    service_->Shutdown();
-    service_.reset();
     profile_.reset();
     AbstractProfileSyncServiceTest::TearDown();
   }
 
+  int GetSyncPreferenceCount() {
+    syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
+    syncer::ReadNode node(&trans);
+    if (node.InitByTagLookup(syncer::ModelTypeToRootTag(syncer::PREFERENCES)) !=
+        syncer::BaseNode::INIT_OK)
+      return 0;
+    return node.GetTotalNodeCount() - 1;
+  }
+
   bool StartSyncService(const base::Closure& callback,
                         bool will_fail_association) {
-    if (service_.get())
+    if (sync_service_)
       return false;
 
     SigninManager* signin = SigninManagerFactory::GetForProfile(profile_.get());
     signin->SetAuthenticatedUsername("test");
-    ProfileSyncComponentsFactoryMock* factory =
-        new ProfileSyncComponentsFactoryMock();
-    service_.reset(new TestProfileSyncService(
-        factory,
-        profile_.get(),
-        signin,
-        ProfileSyncService::AUTO_START,
-        false,
-        callback));
+    sync_service_ = static_cast<TestProfileSyncService*>(
+        ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+            profile_.get(), &TestProfileSyncService::BuildAutoStartAsyncInit));
+    sync_service_->set_backend_init_callback(callback);
     pref_sync_service_ = reinterpret_cast<PrefModelAssociator*>(
         prefs_->GetSyncableService());
     if (!pref_sync_service_)
       return false;
-    EXPECT_CALL(*factory, GetSyncableServiceForType(syncer::PREFERENCES)).
+    ProfileSyncComponentsFactoryMock* components =
+        sync_service_->components_factory_mock();
+    EXPECT_CALL(*components, GetSyncableServiceForType(syncer::PREFERENCES)).
         WillOnce(Return(pref_sync_service_->AsWeakPtr()));
 
-    EXPECT_CALL(*factory, CreateDataTypeManager(_, _, _, _)).
-        WillOnce(ReturnNewDataTypeManager());
+    EXPECT_CALL(*components, CreateDataTypeManager(_, _, _, _, _)).
+        WillOnce(ReturnNewDataTypeManagerWithDebugListener(
+                     syncer::MakeWeakHandle(debug_ptr_factory_.GetWeakPtr())));
     dtc_ = new UIDataTypeController(syncer::PREFERENCES,
-                                    factory,
+                                    components,
                                     profile_.get(),
-                                    service_.get());
-    EXPECT_CALL(*factory, CreateSharedChangeProcessor()).
+                                    sync_service_);
+    EXPECT_CALL(*components, CreateSharedChangeProcessor()).
         WillOnce(Return(new SharedChangeProcessor()));
-    EXPECT_CALL(*factory, CreateGenericChangeProcessor(_, _, _)).
-        WillOnce(CreateAndSaveChangeProcessor(&change_processor_));
-    service_->RegisterDataTypeController(dtc_);
+    EXPECT_CALL(*components, CreateGenericChangeProcessor(_, _, _, _)).
+        WillOnce(CreateAndSaveChangeProcessor(
+                     &change_processor_));
+    sync_service_->RegisterDataTypeController(dtc_);
     TokenServiceFactory::GetForProfile(profile_.get())->IssueAuthTokenForTest(
         GaiaConstants::kSyncService, "token");
 
-    service_->Initialize();
+    sync_service_->Initialize();
     MessageLoop::current()->Run();
+
+    // It's possible this test triggered an unrecoverable error, in which case
+    // we can't get the preference count.
+    if (sync_service_->ShouldPushChanges()) {
+        EXPECT_EQ(GetSyncPreferenceCount(),
+                  association_stats_.num_sync_items_after_association);
+    }
+    EXPECT_EQ(association_stats_.num_sync_items_after_association,
+              association_stats_.num_sync_items_before_association +
+              association_stats_.num_sync_items_added -
+              association_stats_.num_sync_items_deleted);
+
     return true;
   }
 
@@ -161,7 +205,7 @@ class ProfileSyncServicePreferenceTest
 
   // Caller gets ownership of the returned value.
   const Value* GetSyncedValue(const std::string& name) {
-    syncer::ReadTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode node(&trans);
 
     if (node.InitByClientTagLookup(syncer::PREFERENCES, name) !=
@@ -200,11 +244,13 @@ class ProfileSyncServicePreferenceTest
   }
 
   scoped_ptr<TestingProfile> profile_;
-  TestingPrefService* prefs_;
+  TestingPrefServiceSyncable* prefs_;
 
   UIDataTypeController* dtc_;
   PrefModelAssociator* pref_sync_service_;
   GenericChangeProcessor* change_processor_;
+  syncer::DataTypeAssociationStats association_stats_;
+  base::WeakPtrFactory<DataTypeDebugInfoListener> debug_ptr_factory_;
 
   std::string example_url0_;
   std::string example_url1_;
@@ -325,8 +371,7 @@ TEST_F(ProfileSyncServicePreferenceTest, ModelAssociationCloudHasData) {
   scoped_ptr<const Value> value(GetSyncedValue(prefs::kHomePage));
   ASSERT_TRUE(value.get());
   std::string string_value;
-  EXPECT_TRUE(static_cast<const StringValue*>(value.get())->
-              GetAsString(&string_value));
+  EXPECT_TRUE(value->GetAsString(&string_value));
   EXPECT_EQ(example_url1_, string_value);
   EXPECT_EQ(example_url1_, prefs_->GetString(prefs::kHomePage));
 
@@ -342,8 +387,7 @@ TEST_F(ProfileSyncServicePreferenceTest, ModelAssociationCloudHasData) {
 
   value.reset(GetSyncedValue(prefs::kDefaultCharset));
   ASSERT_TRUE(value.get());
-  EXPECT_TRUE(static_cast<const StringValue*>(value.get())->
-              GetAsString(&string_value));
+  EXPECT_TRUE(value->GetAsString(&string_value));
   EXPECT_EQ(non_default_charset_value_, string_value);
   EXPECT_EQ(non_default_charset_value_,
             prefs_->GetString(prefs::kDefaultCharset));
@@ -352,7 +396,7 @@ TEST_F(ProfileSyncServicePreferenceTest, ModelAssociationCloudHasData) {
 
 TEST_F(ProfileSyncServicePreferenceTest, FailModelAssociation) {
   ASSERT_TRUE(StartSyncService(base::Closure(), true));
-  EXPECT_TRUE(service_->HasUnrecoverableError());
+  EXPECT_TRUE(sync_service_->HasUnrecoverableError());
 }
 
 TEST_F(ProfileSyncServicePreferenceTest, UpdatedPreferenceWithDefaultValue) {
@@ -396,7 +440,7 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeActionUpdate) {
   int64 node_id = SetSyncedValue(prefs::kHomePage, *expected);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
-    syncer::WriteTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     change_processor_->ApplyChangesFromSyncModel(
         &trans, 0,
         ProfileSyncServiceTestHelper::MakeSingletonChangeRecordList(
@@ -417,7 +461,7 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeActionAdd) {
   int64 node_id = SetSyncedValue(prefs::kHomePage, *expected);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
-    syncer::WriteTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     change_processor_->ApplyChangesFromSyncModel(
         &trans, 0,
         ProfileSyncServiceTestHelper::MakeSingletonChangeRecordList(
@@ -440,7 +484,7 @@ TEST_F(ProfileSyncServicePreferenceTest, UpdatedSyncNodeUnknownPreference) {
   int64 node_id = SetSyncedValue("unknown preference", *expected);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
-    syncer::WriteTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     change_processor_->ApplyChangesFromSyncModel(
         &trans, 0,
         ProfileSyncServiceTestHelper::MakeSingletonChangeRecordList(
@@ -475,7 +519,7 @@ TEST_F(ProfileSyncServicePreferenceTest, ManagedPreferences) {
   int64 node_id = SetSyncedValue(prefs::kHomePage, *sync_value);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
-    syncer::WriteTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     change_processor_->ApplyChangesFromSyncModel(
         &trans, 0,
         ProfileSyncServiceTestHelper::MakeSingletonChangeRecordList(
@@ -485,6 +529,61 @@ TEST_F(ProfileSyncServicePreferenceTest, ManagedPreferences) {
 
   EXPECT_TRUE(managed_value->Equals(prefs_->GetManagedPref(prefs::kHomePage)));
   EXPECT_TRUE(sync_value->Equals(prefs_->GetUserPref(prefs::kHomePage)));
+}
+
+// List preferences have special handling at association time due to our ability
+// to merge the local and sync value. Make sure the merge logic doesn't merge
+// managed preferences.
+TEST_F(ProfileSyncServicePreferenceTest, ManagedListPreferences) {
+  // Make the list of urls to restore on startup managed.
+  ListValue managed_value;
+  managed_value.Append(Value::CreateStringValue(example_url0_));
+  managed_value.Append(Value::CreateStringValue(example_url1_));
+  prefs_->SetManagedPref(prefs::kURLsToRestoreOnStartup,
+                         managed_value.DeepCopy());
+
+  // Set a cloud version.
+  PreferenceValues cloud_data;
+  scoped_ptr<ListValue> urls_to_restore(new ListValue);
+  urls_to_restore->Append(Value::CreateStringValue(example_url1_));
+  urls_to_restore->Append(Value::CreateStringValue(example_url2_));
+  cloud_data[prefs::kURLsToRestoreOnStartup] = urls_to_restore.get();
+
+  // Start sync and verify the synced value didn't get merged.
+  AddPreferenceEntriesHelper helper(this, cloud_data);
+  ASSERT_TRUE(StartSyncService(helper.callback(), false));
+  ASSERT_TRUE(helper.success());
+  scoped_ptr<const Value> actual(
+      GetSyncedValue(prefs::kURLsToRestoreOnStartup));
+  EXPECT_TRUE(cloud_data[prefs::kURLsToRestoreOnStartup]->Equals(actual.get()));
+
+  // Changing the user's urls to restore on startup pref should not sync
+  // anything.
+  ListValue user_value;
+  user_value.Append(Value::CreateStringValue("http://chromium.org"));
+  prefs_->SetUserPref(prefs::kURLsToRestoreOnStartup, user_value.DeepCopy());
+  actual.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
+  EXPECT_TRUE(cloud_data[prefs::kURLsToRestoreOnStartup]->Equals(actual.get()));
+
+  // An incoming sync transaction should change the user value, not the managed
+  // value.
+  ListValue sync_value;
+  sync_value.Append(Value::CreateStringValue("http://crbug.com"));
+  int64 node_id = SetSyncedValue(prefs::kURLsToRestoreOnStartup, sync_value);
+  ASSERT_NE(node_id, syncer::kInvalidId);
+  {
+    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
+    change_processor_->ApplyChangesFromSyncModel(
+        &trans, 0,
+        ProfileSyncServiceTestHelper::MakeSingletonChangeRecordList(
+            node_id, ChangeRecord::ACTION_UPDATE));
+  }
+  change_processor_->CommitChangesFromSyncModel();
+
+  EXPECT_TRUE(managed_value.Equals(
+          prefs_->GetManagedPref(prefs::kURLsToRestoreOnStartup)));
+  EXPECT_TRUE(sync_value.Equals(
+          prefs_->GetUserPref(prefs::kURLsToRestoreOnStartup)));
 }
 
 TEST_F(ProfileSyncServicePreferenceTest, DynamicManagedPreferences) {
@@ -538,7 +637,7 @@ TEST_F(ProfileSyncServicePreferenceTest,
   int64 node_id = SetSyncedValue(prefs::kHomePage, *sync_value);
   ASSERT_NE(node_id, syncer::kInvalidId);
   {
-    syncer::WriteTransaction trans(FROM_HERE, service_->GetUserShare());
+    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     change_processor_->ApplyChangesFromSyncModel(
         &trans, 0,
         ProfileSyncServiceTestHelper::MakeSingletonChangeRecordList(

@@ -15,7 +15,6 @@
 #import "chrome/browser/ui/cocoa/multi_key_equivalent_button.h"
 #import "chrome/browser/ui/cocoa/tab_contents/favicon_util_mac.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/common/logging_chrome.h"
 #include "content/public/browser/render_process_host.h"
@@ -78,6 +77,9 @@ class WebContentsObserverBridge : public content::WebContentsObserver {
 - (void)dealloc {
   DCHECK(!g_instance);
   [tableView_ setDataSource:nil];
+  [tableView_ setDelegate:nil];
+  [killButton_ setTarget:nil];
+  [waitButton_ setTarget:nil];
   [super dealloc];
 }
 
@@ -158,6 +160,10 @@ class WebContentsObserverBridge : public content::WebContentsObserver {
   // actual dealloc.
   g_instance = nil;
 
+  // Prevent kills from happening after close if the user had the
+  // button depressed just when new activity was detected.
+  hungContents_ = NULL;
+
   [self autorelease];
 }
 
@@ -172,14 +178,13 @@ class WebContentsObserverBridge : public content::WebContentsObserver {
   hungContentsObserver_.reset(new WebContentsObserverBridge(contents, self));
   scoped_nsobject<NSMutableArray> titles([[NSMutableArray alloc] init]);
   scoped_nsobject<NSMutableArray> favicons([[NSMutableArray alloc] init]);
-  for (TabContentsIterator it; !it.done(); ++it) {
-    if (it->web_contents()->GetRenderProcessHost() ==
-        hungContents_->GetRenderProcessHost()) {
-      string16 title = it->web_contents()->GetTitle();
+  for (TabContentsIterator it; !it.done(); it.Next()) {
+    if (it->GetRenderProcessHost() == hungContents_->GetRenderProcessHost()) {
+      string16 title = it->GetTitle();
       if (title.empty())
         title = CoreTabHelper::GetDefaultTitle();
       [titles addObject:base::SysUTF16ToNSString(title)];
-      [favicons addObject:mac::FaviconForWebContents(it->web_contents())];
+      [favicons addObject:mac::FaviconForWebContents(*it)];
     }
   }
   hungTitles_.reset([titles copy]);

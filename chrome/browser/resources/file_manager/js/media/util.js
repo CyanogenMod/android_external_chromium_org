@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * A controller class detects mouse inactivity and hides "tool" elements.
  *
  * @param {Element} container The main DOM container.
- * @param {number} opt_timeout Hide timeout in ms.
+ * @param {number=} opt_timeout Hide timeout in ms.
  * @param {function():boolean=} opt_toolsActive Function that returns |true|
  *     if the tools are active and should not be hidden.
  * @constructor
@@ -22,7 +24,33 @@ function MouseInactivityWatcher(container, opt_timeout, opt_toolsActive) {
 
   this.clientX_ = 0;
   this.clientY_ = 0;
+
+  /**
+   * Indicates if the inactivity watcher is enabled or disabled. Use getters
+   * and setters.
+   * @type {boolean}
+   * @private
+   **/
+  this.disabled_ = false;
+  this.__defineSetter__('disabled', function(value) {
+    this.disabled_ = value;
+    if (value)
+      this.kick();
+    else
+      this.check();
+  });
+  this.__defineGetter__('disabled', function() {
+    return this.disabled_;
+  });
+
   this.container_.addEventListener('mousemove', this.onMouseMove_.bind(this));
+
+  // Show tools when the user touches the screen.
+  this.container_.addEventListener(
+      'touchstart', this.activityStarted_.bind(this));
+  var initiateFading = this.activityStopped_.bind(this, this.timeout_);
+  this.container_.addEventListener('touchend', initiateFading);
+  this.container_.addEventListener('touchcancel', initiateFading);
 }
 
 /**
@@ -41,7 +69,7 @@ MouseInactivityWatcher.prototype.showTools = function(on) {
 };
 
 /**
- * @param {Element} element DOM element
+ * @param {Element} element DOM element.
  * @return {boolean} True if the element is a tool. Tools should never be hidden
  *   while the mouse is over one of them.
  */
@@ -52,8 +80,9 @@ MouseInactivityWatcher.prototype.isToolElement = function(element) {
 /**
  * To be called when the user started activity. Shows the tools
  * and cancels the countdown.
+ * @private
  */
-MouseInactivityWatcher.prototype.startActivity = function() {
+MouseInactivityWatcher.prototype.activityStarted_ = function() {
   this.showTools(true);
 
   if (this.timeoutID_) {
@@ -64,10 +93,11 @@ MouseInactivityWatcher.prototype.startActivity = function() {
 
 /**
  * Called when user activity has stopped. Re-starts the countdown.
- * @param {number} opt_timeout Timeout.
+ * @param {number=} opt_timeout Timeout.
+ * @private
  */
-MouseInactivityWatcher.prototype.stopActivity = function(opt_timeout) {
-  if (this.mouseOverTool_ || this.toolsActive_())
+MouseInactivityWatcher.prototype.activityStopped_ = function(opt_timeout) {
+  if (this.disabled_ || this.mouseOverTool_ || this.toolsActive_())
     return;
 
   if (this.timeoutID_)
@@ -75,6 +105,26 @@ MouseInactivityWatcher.prototype.stopActivity = function(opt_timeout) {
 
   this.timeoutID_ = setTimeout(
       this.onTimeoutBound_, opt_timeout || this.timeout_);
+};
+
+/**
+ * Called when a user performed a short action (such as a click or a key press)
+ * that should show the tools if they are not visible.
+ * @param {number=} opt_timeout Timeout.
+ */
+MouseInactivityWatcher.prototype.kick = function(opt_timeout) {
+  this.activityStarted_();
+  this.activityStopped_(opt_timeout);
+};
+
+/**
+ * Check if the tools are active and update the tools visibility accordingly.
+ */
+MouseInactivityWatcher.prototype.check = function() {
+  if (this.toolsActive_())
+    this.activityStarted_();
+  else
+    this.activityStopped_();
 };
 
 /**
@@ -92,8 +142,6 @@ MouseInactivityWatcher.prototype.onMouseMove_ = function(e) {
   this.clientX_ = e.clientX;
   this.clientY_ = e.clientY;
 
-  this.startActivity();
-
   this.mouseOverTool_ = false;
   for (var elem = e.target; elem != this.container_; elem = elem.parentNode) {
     if (this.isToolElement(elem)) {
@@ -102,7 +150,11 @@ MouseInactivityWatcher.prototype.onMouseMove_ = function(e) {
     }
   }
 
-  this.stopActivity();
+  if (this.disabled_)
+    return;
+
+  this.activityStarted_();
+  this.activityStopped_();
 };
 
 /**
@@ -111,6 +163,6 @@ MouseInactivityWatcher.prototype.onMouseMove_ = function(e) {
  */
 MouseInactivityWatcher.prototype.onTimeout_ = function() {
   this.timeoutID_ = null;
-  if (!this.toolsActive_())
+  if (!this.disabled_ && !this.toolsActive_())
     this.showTools(false);
 };

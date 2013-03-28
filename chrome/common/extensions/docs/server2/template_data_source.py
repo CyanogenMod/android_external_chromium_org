@@ -4,24 +4,27 @@
 
 import logging
 
+from branch_utility import BranchUtility
 from docs_server_utils import FormatKey
-from file_system import FileNotFoundError
 import compiled_file_system as compiled_fs
+from file_system import FileNotFoundError
 from third_party.handlebar import Handlebar
+import url_constants
+
+# Increment this if there are changes to the data stored about templates.
+_VERSION = 2
 
 EXTENSIONS_URL = '/chrome/extensions'
 
 def _MakeChannelDict(channel_name):
-  return {
-    'showWarning': channel_name != 'stable',
-    'channels': [
-      { 'name': 'Stable', 'path': 'stable' },
-      { 'name': 'Dev',    'path': 'dev' },
-      { 'name': 'Beta',   'path': 'beta' },
-      { 'name': 'Trunk',  'path': 'trunk' }
-    ],
+  channel_dict = {
+    'channels': [{'name': name} for name in BranchUtility.GetAllBranchNames()],
     'current': channel_name
   }
+  for channel in channel_dict['channels']:
+    if channel['name'] == channel_name:
+      channel['isCurrent'] = True
+  return channel_dict
 
 class TemplateDataSource(object):
   """Renders Handlebar templates, providing them with the context in which to
@@ -48,6 +51,7 @@ class TemplateDataSource(object):
                  known_issues_data_source,
                  sidenav_data_source_factory,
                  cache_factory,
+                 ref_resolver_factory,
                  public_template_path,
                  private_template_path):
       self._branch_info = _MakeChannelDict(channel_name)
@@ -57,20 +61,22 @@ class TemplateDataSource(object):
       self._samples_data_source_factory = samples_data_source_factory
       self._known_issues_data_source = known_issues_data_source
       self._sidenav_data_source_factory = sidenav_data_source_factory
-      self._cache = cache_factory.Create(Handlebar, compiled_fs.HANDLEBAR)
+      self._cache = cache_factory.Create(self._CreateTemplate,
+                                         compiled_fs.HANDLEBAR,
+                                         version=_VERSION)
+      self._ref_resolver = ref_resolver_factory.Create()
       self._public_template_path = public_template_path
       self._private_template_path = private_template_path
-      self._static_resources = (
-          (('/' + channel_name) if channel_name != 'local' else '') + '/static')
+      self._static_resources = '/%s/static' % channel_name
+
+    def _CreateTemplate(self, template_name, text):
+      return Handlebar(self._ref_resolver.ResolveAllLinks(text))
 
     def Create(self, request, path):
       """Returns a new TemplateDataSource bound to |request|.
       """
-      branch_info = self._branch_info.copy()
-      branch_info['showWarning'] = (not path.startswith('apps') and
-                                    branch_info['showWarning'])
       return TemplateDataSource(
-          branch_info,
+          self._branch_info,
           self._api_data_source_factory.Create(request),
           self._api_list_data_source_factory.Create(),
           self._intro_data_source_factory.Create(),
@@ -128,8 +134,12 @@ class TemplateDataSource(object):
       'partials': self,
       'samples': self._samples_data_source,
       'static': self._static_resources,
+      'app': 'app',
+      'extension': 'extension',
       'apps_title': 'Apps',
       'extensions_title': 'Extensions',
+      'apps_samples_url': url_constants.GITHUB_BASE,
+      'extensions_samples_url': url_constants.EXTENSIONS_SAMPLES,
       'true': True,
       'false': False
     })

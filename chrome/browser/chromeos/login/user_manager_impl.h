@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_USER_MANAGER_IMPL_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_USER_MANAGER_IMPL_H_
 
+#include <map>
 #include <string>
 
 #include "base/basictypes.h"
@@ -12,44 +13,58 @@
 #include "base/memory/singleton.h"
 #include "base/observer_list.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/api/sync/profile_sync_service_observer.h"
+#include "base/values.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_image_manager_impl.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
+#include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
-class FilePath;
 class PrefService;
 class ProfileSyncService;
 
 namespace chromeos {
 
 class RemoveUserDelegate;
+class SessionLengthLimiter;
 
 // Implementation of the UserManager.
-class UserManagerImpl : public UserManager,
-                        public ProfileSyncServiceObserver,
-                        public content::NotificationObserver {
+class UserManagerImpl
+    : public UserManager,
+      public ProfileSyncServiceObserver,
+      public content::NotificationObserver,
+      public policy::DeviceLocalAccountPolicyService::Observer {
  public:
   virtual ~UserManagerImpl();
 
   // UserManager implementation:
+  virtual void Shutdown() OVERRIDE;
   virtual UserImageManager* GetUserImageManager() OVERRIDE;
   virtual const UserList& GetUsers() const OVERRIDE;
   virtual void UserLoggedIn(const std::string& email,
                             bool browser_restart) OVERRIDE;
-  virtual void DemoUserLoggedIn() OVERRIDE;
+  virtual void RetailModeUserLoggedIn() OVERRIDE;
   virtual void GuestUserLoggedIn() OVERRIDE;
-  virtual void EphemeralUserLoggedIn(const std::string& email) OVERRIDE;
+  virtual void KioskAppLoggedIn(const std::string& username) OVERRIDE;
+  virtual void LocallyManagedUserLoggedIn(const std::string& username) OVERRIDE;
+  virtual void PublicAccountUserLoggedIn(User* user) OVERRIDE;
+  virtual void RegularUserLoggedIn(const std::string& email,
+                                   bool browser_restart) OVERRIDE;
+  virtual void RegularUserLoggedInAsEphemeral(
+      const std::string& email) OVERRIDE;
   virtual void SessionStarted() OVERRIDE;
   virtual void RemoveUser(const std::string& email,
                           RemoveUserDelegate* delegate) OVERRIDE;
   virtual void RemoveUserFromList(const std::string& email) OVERRIDE;
   virtual bool IsKnownUser(const std::string& email) const OVERRIDE;
   virtual const User* FindUser(const std::string& email) const OVERRIDE;
+  virtual const User* FindLocallyManagedUser(
+      const string16& display_name) const OVERRIDE;
   virtual const User* GetLoggedInUser() const OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
   virtual void SaveUserOAuthStatus(
@@ -63,23 +78,41 @@ class UserManagerImpl : public UserManager,
                                     const std::string& display_email) OVERRIDE;
   virtual std::string GetUserDisplayEmail(
       const std::string& username) const OVERRIDE;
-  virtual void SaveLoggedInUserWallpaperProperties(User::WallpaperType type,
-                                                   int index) OVERRIDE;
-  virtual void SetLoggedInUserCustomWallpaperLayout(
-      ash::WallpaperLayout layout) OVERRIDE;
   virtual bool IsCurrentUserOwner() const OVERRIDE;
   virtual bool IsCurrentUserNew() const OVERRIDE;
-  virtual bool IsCurrentUserEphemeral() const OVERRIDE;
+  virtual bool IsCurrentUserNonCryptohomeDataEphemeral() const OVERRIDE;
+  virtual bool CanCurrentUserLock() const OVERRIDE;
   virtual bool IsUserLoggedIn() const OVERRIDE;
+  virtual bool IsLoggedInAsRegularUser() const OVERRIDE;
   virtual bool IsLoggedInAsDemoUser() const OVERRIDE;
   virtual bool IsLoggedInAsPublicAccount() const OVERRIDE;
   virtual bool IsLoggedInAsGuest() const OVERRIDE;
+  virtual bool IsLoggedInAsLocallyManagedUser() const OVERRIDE;
+  virtual bool IsLoggedInAsKioskApp() const OVERRIDE;
   virtual bool IsLoggedInAsStub() const OVERRIDE;
   virtual bool IsSessionStarted() const OVERRIDE;
-  virtual bool IsEphemeralUser(const std::string& email) const OVERRIDE;
+  virtual MergeSessionState GetMergeSessionState() const OVERRIDE;
+  virtual void SetMergeSessionState(MergeSessionState status) OVERRIDE;
+  virtual bool HasBrowserRestarted() const OVERRIDE;
+  virtual bool IsUserNonCryptohomeDataEphemeral(
+      const std::string& email) const OVERRIDE;
   virtual void AddObserver(UserManager::Observer* obs) OVERRIDE;
   virtual void RemoveObserver(UserManager::Observer* obs) OVERRIDE;
   virtual void NotifyLocalStateChanged() OVERRIDE;
+  virtual const User* CreateLocallyManagedUserRecord(
+      const std::string& e_mail,
+      const string16& display_name) OVERRIDE;
+  virtual std::string GenerateUniqueLocallyManagedUserId() OVERRIDE;
+  virtual void StartLocallyManagedUserCreationTransaction(
+      const string16& display_name) OVERRIDE;
+  virtual void SetLocallyManagedUserCreationTransactionUserId(
+      const std::string& email) OVERRIDE;
+  virtual void CommitLocallyManagedUserCreationTransaction() OVERRIDE;
+
+  virtual UserFlow* GetCurrentUserFlow() const OVERRIDE;
+  virtual UserFlow* GetUserFlow(const std::string& email) const OVERRIDE;
+  virtual void SetUserFlow(const std::string& email, UserFlow* flow) OVERRIDE;
+  virtual void ResetUserFlow(const std::string& email) OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -88,6 +121,10 @@ class UserManagerImpl : public UserManager,
 
   // ProfileSyncServiceObserver implementation.
   virtual void OnStateChanged() OVERRIDE;
+
+  // policy::DeviceLocalAccountPolicyService::Observer implementation.
+  virtual void OnPolicyUpdated(const std::string& account_id) OVERRIDE;
+  virtual void OnDeviceLocalAccountsChanged() OVERRIDE;
 
  private:
   friend class UserManagerImplWrapper;
@@ -121,12 +158,6 @@ class UserManagerImpl : public UserManager,
 
   void SetCurrentUserIsOwner(bool is_current_user_owner);
 
-  // Stores layout and type preference in local state. Runs on UI thread.
-  void SaveWallpaperToLocalState(const std::string& username,
-                                 const std::string& wallpaper_path,
-                                 ash::WallpaperLayout layout,
-                                 User::WallpaperType type);
-
   // Updates current user ownership on UI thread.
   void UpdateOwnership(DeviceSettingsService::OwnershipStatus status,
                        bool is_owner);
@@ -134,16 +165,48 @@ class UserManagerImpl : public UserManager,
   // Triggers an asynchronous ownership check.
   void CheckOwnership();
 
-  // Creates a new User instance.
-  User* CreateUser(const std::string& email, bool is_ephemeral) const;
+  // Removes data stored or cached outside the user's cryptohome (wallpaper,
+  // avatar, OAuth token status, display name, display email).
+  void RemoveNonCryptohomeData(const std::string& email);
 
-  // Removes the user from the persistent list only. Also removes the user's
-  // picture.
-  void RemoveUserFromListInternal(const std::string& email);
+  // Removes a regular or locally managed user from the user list.
+  // Returns the user if found or NULL otherwise.
+  // Also removes the user from the persistent user list.
+  User* RemoveRegularOrLocallyManagedUserFromList(const std::string& username);
 
-  // List of all known users. User instances are owned by |this| and deleted
-  // when users are removed by |RemoveUserFromListInternal|.
-  mutable UserList users_;
+  // Replaces the list of public accounts with |public_accounts|. Ensures that
+  // data belonging to accounts no longer on the list is removed. Returns |true|
+  // if the list has changed.
+  // Public accounts are defined by policy. This method is called whenever an
+  // updated list of public accounts is received from policy.
+  bool UpdateAndCleanUpPublicAccounts(const base::ListValue& public_accounts);
+
+  // Updates the display name for public account |username| from policy settings
+  // associated with that username.
+  void UpdatePublicAccountDisplayName(const std::string& username);
+
+  // Notifies the UI about a change to the user list.
+  void NotifyUserListChanged();
+
+  // Notifies observers that merge session state had changed.
+  void NotifyMergeSessionStateChanged();
+
+  // Lazily creates default user flow.
+  UserFlow* GetDefaultUserFlow() const;
+
+  // Interface to the signed settings store.
+  CrosSettings* cros_settings_;
+
+  // Interface to device-local account definitions and associated policy.
+  policy::DeviceLocalAccountPolicyService* device_local_account_policy_service_;
+
+  // True if users have been loaded from prefs already.
+  bool users_loaded_;
+
+  // List of all known users. User instances are owned by |this|. Regular users
+  // are removed by |RemoveUserFromList|, public accounts by
+  // |UpdateAndCleanUpPublicAccounts|.
+  UserList users_;
 
   // The logged-in user. NULL until a user has logged in, then points to one
   // of the User instances in |users_|, the |guest_user_| instance or an
@@ -162,18 +225,20 @@ class UserManagerImpl : public UserManager,
   // login.
   bool is_current_user_new_;
 
-  // Cached flag of whether the currently logged-in user is ephemeral. Storage
-  // of persistent information is avoided for such users by not adding them to
-  // the user list in local state, not downloading their custom user images and
-  // mounting their cryptohomes using tmpfs.
-  bool is_current_user_ephemeral_;
+  // Cached flag of whether the currently logged-in user is a regular user who
+  // logged in as ephemeral. Storage of persistent information is avoided for
+  // such users by not adding them to the persistent user list, not downloading
+  // their custom avatars and mounting their cryptohomes using tmpfs. Defaults
+  // to |false|.
+  bool is_current_user_ephemeral_regular_user_;
 
-  // Cached flag indicating whether ephemeral users are enabled. Defaults to
-  // |false| if the value has not been read from trusted device policy yet.
+  // Cached flag indicating whether the ephemeral user policy is enabled.
+  // Defaults to |false| if the value has not been read from trusted device
+  // policy yet.
   bool ephemeral_users_enabled_;
 
-  // True if user pod row is showed at login screen.
-  bool show_users_;
+  // Merge session state (cookie restore process state).
+  MergeSessionState merge_session_state_;
 
   // Cached name of device owner. Defaults to empty string if the value has not
   // been read from trusted device policy yet.
@@ -188,7 +253,19 @@ class UserManagerImpl : public UserManager,
 
   ObserverList<UserManager::Observer> observer_list_;
 
+  // User avatar manager.
   scoped_ptr<UserImageManagerImpl> user_image_manager_;
+
+  // Session length limiter.
+  scoped_ptr<SessionLengthLimiter> session_length_limiter_;
+
+  typedef std::map<std::string, UserFlow*> FlowMap;
+
+  // Lazy-initialized default flow.
+  mutable scoped_ptr<UserFlow> default_flow_;
+
+  // Specific flows by user e-mail.
+  FlowMap specific_flows_;
 
   DISALLOW_COPY_AND_ASSIGN(UserManagerImpl);
 };

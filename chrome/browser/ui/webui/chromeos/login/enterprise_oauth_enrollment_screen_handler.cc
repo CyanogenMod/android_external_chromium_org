@@ -4,16 +4,18 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/enterprise_oauth_enrollment_screen_handler.h"
 
+#include <algorithm>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/message_loop.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/net/gaia/gaia_oauth_fetcher.h"
-#include "chrome/browser/policy/message_util.h"
+#include "chrome/browser/policy/cloud/message_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -40,15 +42,23 @@ const char kEnrollmentStepWorking[] = "working";
 const char kEnrollmentStepError[] = "error";
 const char kEnrollmentStepSuccess[] = "success";
 
-// A helper class that takes care of asynchronously revoking a given token. It
-// will delete itself once done.
-class TokenRevoker : public GaiaOAuthConsumer {
+}  // namespace
+
+namespace chromeos {
+
+// EnterpriseOAuthEnrollmentScreenHandler::TokenRevoker ------------------------
+
+// A helper class that takes care of asynchronously revoking a given token.
+class EnterpriseOAuthEnrollmentScreenHandler::TokenRevoker
+    : public GaiaOAuthConsumer {
  public:
   TokenRevoker(const std::string& token,
                const std::string& secret,
-               Profile* profile)
+               Profile* profile,
+               EnterpriseOAuthEnrollmentScreenHandler* owner)
       : oauth_fetcher_(this, profile->GetRequestContext(),
-                       kServiceScopeChromeOSDeviceManagement) {
+                       kServiceScopeChromeOSDeviceManagement),
+        owner_(owner) {
     if (secret.empty())
       oauth_fetcher_.StartOAuthRevokeWrapToken(token);
     else
@@ -59,25 +69,21 @@ class TokenRevoker : public GaiaOAuthConsumer {
 
   virtual void OnOAuthRevokeTokenSuccess() OVERRIDE {
     LOG(INFO) << "Successfully revoked OAuth token.";
-    MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+    owner_->OnTokenRevokerDone(this);
   }
 
   virtual void OnOAuthRevokeTokenFailure(
       const GoogleServiceAuthError& error) OVERRIDE {
     LOG(ERROR) << "Failed to revoke OAuth token!";
-    MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+    owner_->OnTokenRevokerDone(this);
   }
 
  private:
   GaiaOAuthFetcher oauth_fetcher_;
-  std::string token_;
+  EnterpriseOAuthEnrollmentScreenHandler* owner_;
 
   DISALLOW_COPY_AND_ASSIGN(TokenRevoker);
 };
-
-}  // namespace
-
-namespace chromeos {
 
 // EnterpriseOAuthEnrollmentScreenHandler, public ------------------------------
 
@@ -254,7 +260,7 @@ void EnterpriseOAuthEnrollmentScreenHandler::ShowEnrollmentStatus(
     case policy::EnrollmentStatus::STATUS_VALIDATION_FAILED:
       ShowErrorMessage(
           l10n_util::GetStringFUTF8(
-              IDS_ENTERPRISE_ENROLLMENT_STATUS_POLICY_FETCH_FAILED,
+              IDS_ENTERPRISE_ENROLLMENT_STATUS_VALIDATION_FAILED,
               policy::FormatValidationStatus(status.validation_status())),
           true);
       return;
@@ -481,14 +487,25 @@ void EnterpriseOAuthEnrollmentScreenHandler::RevokeTokens() {
       web_ui()->GetWebContents()->GetBrowserContext());
 
   if (!access_token_.empty()) {
-    new TokenRevoker(access_token_, access_token_secret_, profile);
+    token_revokers_.push_back(
+        new TokenRevoker(access_token_, access_token_secret_, profile, this));
     access_token_.clear();
   }
 
   if (!wrap_token_.empty()) {
-    new TokenRevoker(wrap_token_, "", profile);
+    token_revokers_.push_back(new TokenRevoker(wrap_token_, "", profile, this));
     wrap_token_.clear();
   }
+}
+
+void EnterpriseOAuthEnrollmentScreenHandler::OnTokenRevokerDone(
+    TokenRevoker* revoker) {
+  ScopedVector<TokenRevoker>::iterator it =
+      std::find(token_revokers_.begin(), token_revokers_.end(), revoker);
+  if (it != token_revokers_.end())
+    token_revokers_.erase(it);
+  else
+    NOTREACHED();
 }
 
 void EnterpriseOAuthEnrollmentScreenHandler::DoShow() {
@@ -507,7 +524,7 @@ void EnterpriseOAuthEnrollmentScreenHandler::DoShow() {
     screen_data.SetString("test_password", test_password_);
   }
 
-  ShowScreen("oauth-enrollment", &screen_data);
+  ShowScreen(OobeUI::kScreenOobeEnrollment, &screen_data);
 }
 
 }  // namespace chromeos

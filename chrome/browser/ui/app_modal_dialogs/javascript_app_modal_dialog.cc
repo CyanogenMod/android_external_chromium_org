@@ -10,7 +10,11 @@
 #include "content/public/browser/web_contents_view.h"
 #include "ui/base/text/text_elider.h"
 
-using content::JavaScriptDialogCreator;
+#if defined(USE_AURA)
+#include "ui/aura/root_window.h"
+#endif
+
+using content::JavaScriptDialogManager;
 using content::WebContents;
 
 namespace {
@@ -61,7 +65,7 @@ JavaScriptAppModalDialog::JavaScriptAppModalDialog(
     bool display_suppress_checkbox,
     bool is_before_unload_dialog,
     bool is_reload,
-    const JavaScriptDialogCreator::DialogClosedCallback& callback)
+    const JavaScriptDialogManager::DialogClosedCallback& callback)
     : AppModalDialog(web_contents, title),
       extra_data_(extra_data),
       javascript_message_type_(javascript_message_type),
@@ -80,6 +84,13 @@ JavaScriptAppModalDialog::~JavaScriptAppModalDialog() {
 NativeAppModalDialog* JavaScriptAppModalDialog::CreateNativeDialog() {
   gfx::NativeWindow parent_window =
       web_contents()->GetView()->GetTopLevelNativeWindow();
+#if defined(USE_AURA)
+  if (!parent_window->GetRootWindow()) {
+    // When we are part of a WebContents that isn't actually being displayed on
+    // the screen, we can't actually attach to it.
+    parent_window = NULL;
+  }
+#endif
   return NativeAppModalDialog::CreateNativeJavaScriptPrompt(this,
                                                             parent_window);
 }

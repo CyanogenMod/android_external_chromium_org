@@ -6,8 +6,8 @@
 
 #include "base/base64.h"
 #include "base/bind.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/message_loop.h"
@@ -16,8 +16,8 @@
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
 #include "crypto/sha2.h"
-#include "net/base/transport_security_state.h"
 #include "net/base/x509_certificate.h"
+#include "net/http/transport_security_state.h"
 
 using content::BrowserThread;
 using net::HashValue;
@@ -29,16 +29,8 @@ namespace {
 
 ListValue* SPKIHashesToListValue(const HashValueVector& hashes) {
   ListValue* pins = new ListValue;
-
-  for (HashValueVector::const_iterator i = hashes.begin();
-       i != hashes.end(); ++i) {
-    std::string hash_str(reinterpret_cast<const char*>(i->data()), i->size());
-    std::string b64;
-    if (base::Base64Encode(hash_str, &b64))
-      pins->Append(new StringValue(TransportSecurityState::HashValueLabel(*i) +
-                                   b64));
-  }
-
+  for (size_t i = 0; i != hashes.size(); i++)
+    pins->Append(new StringValue(hashes[i].ToString()));
   return pins;
 }
 
@@ -48,7 +40,7 @@ void SPKIHashesFromListValue(const ListValue& pins, HashValueVector* hashes) {
     std::string type_and_base64;
     HashValue fingerprint;
     if (pins.GetString(i, &type_and_base64) &&
-        TransportSecurityState::ParsePin(type_and_base64, &fingerprint)) {
+        fingerprint.FromString(type_and_base64)) {
       hashes->push_back(fingerprint);
     }
   }
@@ -92,7 +84,7 @@ const char kCreated[] = "created";
 class TransportSecurityPersister::Loader {
  public:
   Loader(const base::WeakPtr<TransportSecurityPersister>& persister,
-         const FilePath& path)
+         const base::FilePath& path)
       : persister_(persister),
         path_(path),
         state_valid_(false) {
@@ -117,7 +109,7 @@ class TransportSecurityPersister::Loader {
  private:
   base::WeakPtr<TransportSecurityPersister> persister_;
 
-  FilePath path_;
+  base::FilePath path_;
 
   std::string state_;
   bool state_valid_;
@@ -127,7 +119,7 @@ class TransportSecurityPersister::Loader {
 
 TransportSecurityPersister::TransportSecurityPersister(
     TransportSecurityState* state,
-    const FilePath& profile_path,
+    const base::FilePath& profile_path,
     bool readonly)
     : transport_security_state_(state),
       writer_(profile_path.AppendASCII("TransportSecurity"),
@@ -224,7 +216,7 @@ bool TransportSecurityPersister::LoadEntries(const std::string& serialized,
                                              bool* dirty) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  transport_security_state_->Clear();
+  transport_security_state_->ClearDynamicData();
   return Deserialize(serialized, false, dirty, transport_security_state_);
 }
 
@@ -234,18 +226,17 @@ bool TransportSecurityPersister::Deserialize(const std::string& serialized,
                                              bool* dirty,
                                              TransportSecurityState* state) {
   scoped_ptr<Value> value(base::JSONReader::Read(serialized));
-  DictionaryValue* dict_value;
+  DictionaryValue* dict_value = NULL;
   if (!value.get() || !value->GetAsDictionary(&dict_value))
     return false;
 
   const base::Time current_time(base::Time::Now());
   bool dirtied = false;
 
-  for (DictionaryValue::key_iterator i = dict_value->begin_keys();
-       i != dict_value->end_keys(); ++i) {
-    DictionaryValue* parsed;
-    if (!dict_value->GetDictionaryWithoutPathExpansion(*i, &parsed)) {
-      LOG(WARNING) << "Could not parse entry " << *i << "; skipping entry";
+  for (DictionaryValue::Iterator i(*dict_value); !i.IsAtEnd(); i.Advance()) {
+    const DictionaryValue* parsed = NULL;
+    if (!i.value().GetAsDictionary(&parsed)) {
+      LOG(WARNING) << "Could not parse entry " << i.key() << "; skipping entry";
       continue;
     }
 
@@ -259,7 +250,7 @@ bool TransportSecurityPersister::Deserialize(const std::string& serialized,
                             &domain_state.include_subdomains) ||
         !parsed->GetString(kMode, &mode_string) ||
         !parsed->GetDouble(kExpiry, &expiry)) {
-      LOG(WARNING) << "Could not parse some elements of entry " << *i
+      LOG(WARNING) << "Could not parse some elements of entry " << i.key()
                    << "; skipping entry";
       continue;
     }
@@ -268,7 +259,7 @@ bool TransportSecurityPersister::Deserialize(const std::string& serialized,
     parsed->GetDouble(kDynamicSPKIHashesExpiry,
                       &dynamic_spki_hashes_expiry);
 
-    ListValue* pins_list = NULL;
+    const ListValue* pins_list = NULL;
     // preloaded_spki_hashes is a legacy synonym for static_spki_hashes.
     if (parsed->GetList(kStaticSPKIHashes, &pins_list))
       SPKIHashesFromListValue(*pins_list, &domain_state.static_spki_hashes);
@@ -286,7 +277,7 @@ bool TransportSecurityPersister::Deserialize(const std::string& serialized,
           TransportSecurityState::DomainState::MODE_DEFAULT;
     } else {
       LOG(WARNING) << "Unknown TransportSecurityState mode string "
-                   << mode_string << " found for entry " << *i
+                   << mode_string << " found for entry " << i.key()
                    << "; skipping entry";
       continue;
     }
@@ -310,7 +301,7 @@ bool TransportSecurityPersister::Deserialize(const std::string& serialized,
       continue;
     }
 
-    std::string hashed = ExternalStringToHashedDomain(*i);
+    std::string hashed = ExternalStringToHashedDomain(i.key());
     if (hashed.empty()) {
       dirtied = true;
       continue;

@@ -10,12 +10,16 @@
 #include "base/compiler_specific.h"
 #include "base/debug/alias.h"
 #include "base/lazy_instance.h"
-#include "base/string_tokenizer.h"
+#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_tokenizer.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/dump_without_crashing.h"
 #include "chrome/common/logging_chrome.h"
 
 #if defined(OS_WIN)
@@ -39,36 +43,44 @@ int* NullPointer() {
   return reinterpret_cast<int*>(NULL);
 }
 
+void NullPointerCrash(int line_number) {
+#ifndef NDEBUG
+  *NullPointer() = line_number;  // Crash.
+#else
+  logging::DumpWithoutCrashing();
+#endif
+}
+
 NOINLINE void ThreadUnresponsive_UI() {
-  *NullPointer() = __LINE__;
+  NullPointerCrash(__LINE__);
 }
 
 NOINLINE void ThreadUnresponsive_DB() {
-  *NullPointer() = __LINE__;
+  NullPointerCrash(__LINE__);
 }
 
 NOINLINE void ThreadUnresponsive_WEBKIT() {
-  *NullPointer() = __LINE__;
+  NullPointerCrash(__LINE__);
 }
 
 NOINLINE void ThreadUnresponsive_FILE() {
-  *NullPointer() = __LINE__;
+  NullPointerCrash(__LINE__);
 }
 
 NOINLINE void ThreadUnresponsive_FILE_USER_BLOCKING() {
-  *NullPointer() = __LINE__;
+  NullPointerCrash(__LINE__);
 }
 
 NOINLINE void ThreadUnresponsive_PROCESS_LAUNCHER() {
-  *NullPointer() = __LINE__;
+  NullPointerCrash(__LINE__);
 }
 
 NOINLINE void ThreadUnresponsive_CACHE() {
-  *NullPointer() = __LINE__;
+  NullPointerCrash(__LINE__);
 }
 
 NOINLINE void ThreadUnresponsive_IO() {
-  *NullPointer() = __LINE__;
+  NullPointerCrash(__LINE__);
 }
 
 MSVC_POP_WARNING()
@@ -405,15 +417,25 @@ const int ThreadWatcherList::kUnresponsiveCount = 9;
 // static
 const int ThreadWatcherList::kLiveThreadsThreshold = 3;
 
+ThreadWatcherList::CrashDataThresholds::CrashDataThresholds(
+    uint32 live_threads_threshold,
+    uint32 unresponsive_threshold)
+    : live_threads_threshold(live_threads_threshold),
+      unresponsive_threshold(unresponsive_threshold) {
+}
+
+ThreadWatcherList::CrashDataThresholds::CrashDataThresholds()
+    : live_threads_threshold(kLiveThreadsThreshold),
+      unresponsive_threshold(kUnresponsiveCount) {
+}
+
 // static
 void ThreadWatcherList::StartWatchingAll(const CommandLine& command_line) {
   uint32 unresponsive_threshold;
-  std::set<std::string> crash_on_hang_thread_names;
-  uint32 live_threads_threshold;
+  CrashOnHangThreadMap crash_on_hang_threads;
   ParseCommandLine(command_line,
                    &unresponsive_threshold,
-                   &crash_on_hang_thread_names,
-                   &live_threads_threshold);
+                   &crash_on_hang_threads);
 
   ThreadWatcherObserver::SetupNotifications(
       base::TimeDelta::FromSeconds(kSleepSeconds * unresponsive_threshold));
@@ -422,8 +444,7 @@ void ThreadWatcherList::StartWatchingAll(const CommandLine& command_line) {
       FROM_HERE,
       base::Bind(&ThreadWatcherList::InitializeAndStartWatching,
                  unresponsive_threshold,
-                 crash_on_hang_thread_names,
-                 live_threads_threshold),
+                 crash_on_hang_threads),
       base::TimeDelta::FromSeconds(120));
 }
 
@@ -497,9 +518,8 @@ ThreadWatcherList::~ThreadWatcherList() {
 void ThreadWatcherList::ParseCommandLine(
     const CommandLine& command_line,
     uint32* unresponsive_threshold,
-    std::set<std::string>* crash_on_hang_thread_names,
-    uint32* live_threads_threshold) {
-  // Determine |unresponsive_threshold| based on switches::kCrashOnHangSeconds.
+    CrashOnHangThreadMap* crash_on_hang_threads) {
+  // Initialize |unresponsive_threshold| to a default value.
   *unresponsive_threshold = kUnresponsiveCount;
 
   // Increase the unresponsive_threshold on the Stable and Beta channels to
@@ -519,47 +539,89 @@ void ThreadWatcherList::ParseCommandLine(
     *unresponsive_threshold *= 2;
 #endif
 
-  std::string crash_on_hang_seconds =
-      command_line.GetSwitchValueASCII(switches::kCrashOnHangSeconds);
-  if (!crash_on_hang_seconds.empty()) {
-    int crash_seconds = atoi(crash_on_hang_seconds.c_str());
-    if (crash_seconds > 0) {
-      *unresponsive_threshold = static_cast<uint32>(
-          ceil(static_cast<float>(crash_seconds) / kUnresponsiveSeconds));
+  uint32 crash_seconds = *unresponsive_threshold * kUnresponsiveSeconds;
+  std::string crash_on_hang_thread_names;
+  bool has_command_line_overwrite = false;
+  if (command_line.HasSwitch(switches::kCrashOnHangThreads)) {
+    crash_on_hang_thread_names =
+        command_line.GetSwitchValueASCII(switches::kCrashOnHangThreads);
+    has_command_line_overwrite = true;
+  } else if (channel != chrome::VersionInfo::CHANNEL_STABLE) {
+    // Default to crashing the browser if UI or IO or FILE threads are not
+    // responsive except in stable channel.
+    crash_on_hang_thread_names = base::StringPrintf(
+        "UI:%d:%d,IO:%d:%d,FILE:%d:%d",
+        kLiveThreadsThreshold, crash_seconds,
+        kLiveThreadsThreshold, crash_seconds,
+        kLiveThreadsThreshold, crash_seconds * 5);
+  }
+
+  ParseCommandLineCrashOnHangThreads(crash_on_hang_thread_names,
+                                     kLiveThreadsThreshold,
+                                     crash_seconds,
+                                     crash_on_hang_threads);
+
+  if (channel != chrome::VersionInfo::CHANNEL_CANARY ||
+      has_command_line_overwrite) {
+    return;
+  }
+
+  // Set up a field trial for 100% of the users to crash if either UI or IO
+  // thread is not responsive for 30 seconds (or 15 pings).
+  scoped_refptr<base::FieldTrial> field_trial(
+      base::FieldTrialList::FactoryGetFieldTrial(
+          "ThreadWatcher", 100, "default_hung_threads",
+          2013, 10, 30, NULL));
+  int hung_thread_group = field_trial->AppendGroup("hung_thread", 100);
+  if (field_trial->group() == hung_thread_group) {
+    for (CrashOnHangThreadMap::iterator it = crash_on_hang_threads->begin();
+         crash_on_hang_threads->end() != it;
+         ++it) {
+      if (it->first != "IO")
+        continue;
+      it->second.live_threads_threshold = INT_MAX;
+      it->second.unresponsive_threshold = 15;
     }
   }
+}
 
-  std::string crash_on_hang_threads;
+// static
+void ThreadWatcherList::ParseCommandLineCrashOnHangThreads(
+    const std::string& crash_on_hang_thread_names,
+    uint32 default_live_threads_threshold,
+    uint32 default_crash_seconds,
+    CrashOnHangThreadMap* crash_on_hang_threads) {
+  base::StringTokenizer tokens(crash_on_hang_thread_names, ",");
+  std::vector<std::string> values;
+  while (tokens.GetNext()) {
+    const std::string& token = tokens.token();
+    base::SplitString(token, ':', &values);
+    std::string thread_name = values[0];
 
-  // Default to crashing the browser if UI or IO threads are not responsive
-  // except in stable channel.
-  if (channel == chrome::VersionInfo::CHANNEL_STABLE)
-    crash_on_hang_threads = "";
-  else
-    crash_on_hang_threads = "UI,IO";
+    uint32 live_threads_threshold = default_live_threads_threshold;
+    uint32 crash_seconds = default_crash_seconds;
+    if (values.size() >= 2 &&
+        (!base::StringToUint(values[1], &live_threads_threshold))) {
+      continue;
+    }
+    if (values.size() >= 3 &&
+        (!base::StringToUint(values[2], &crash_seconds))) {
+      continue;
+    }
+    uint32 unresponsive_threshold = static_cast<uint32>(
+        ceil(static_cast<float>(crash_seconds) / kUnresponsiveSeconds));
 
-  if (command_line.HasSwitch(switches::kCrashOnHangThreads)) {
-    crash_on_hang_threads =
-        command_line.GetSwitchValueASCII(switches::kCrashOnHangThreads);
-  }
-  StringTokenizer tokens(crash_on_hang_threads, ",");
-  while (tokens.GetNext())
-    crash_on_hang_thread_names->insert(tokens.token());
-
-  // Determine |live_threads_threshold| based on switches::kCrashOnLive.
-  *live_threads_threshold = kLiveThreadsThreshold;
-  if (command_line.HasSwitch(switches::kCrashOnLive)) {
-    std::string live_threads =
-        command_line.GetSwitchValueASCII(switches::kCrashOnLive);
-    *live_threads_threshold = static_cast<uint32>(atoi(live_threads.c_str()));
+    CrashDataThresholds crash_data(live_threads_threshold,
+                                   unresponsive_threshold);
+    // Use the last specifier.
+    (*crash_on_hang_threads)[thread_name] = crash_data;
   }
 }
 
 // static
 void ThreadWatcherList::InitializeAndStartWatching(
     uint32 unresponsive_threshold,
-    const std::set<std::string>& crash_on_hang_thread_names,
-    uint32 live_threads_threshold) {
+    const CrashOnHangThreadMap& crash_on_hang_threads) {
   DCHECK(WatchDogThread::CurrentlyOnWatchDogThread());
 
   ThreadWatcherList* thread_watcher_list = new ThreadWatcherList();
@@ -576,24 +638,18 @@ void ThreadWatcherList::InitializeAndStartWatching(
       base::TimeDelta::FromSeconds(kUnresponsiveSeconds);
 
   StartWatching(BrowserThread::UI, "UI", kSleepTime, kUnresponsiveTime,
-                unresponsive_threshold, crash_on_hang_thread_names,
-                live_threads_threshold);
+                unresponsive_threshold, crash_on_hang_threads);
   StartWatching(BrowserThread::IO, "IO", kSleepTime, kUnresponsiveTime,
-                unresponsive_threshold, crash_on_hang_thread_names,
-                live_threads_threshold);
+                unresponsive_threshold, crash_on_hang_threads);
   StartWatching(BrowserThread::DB, "DB", kSleepTime, kUnresponsiveTime,
-                unresponsive_threshold, crash_on_hang_thread_names,
-                live_threads_threshold);
+                unresponsive_threshold, crash_on_hang_threads);
   StartWatching(BrowserThread::FILE, "FILE", kSleepTime, kUnresponsiveTime,
-                unresponsive_threshold, crash_on_hang_thread_names,
-                live_threads_threshold);
+                unresponsive_threshold, crash_on_hang_threads);
   StartWatching(BrowserThread::FILE_USER_BLOCKING, "FILE_USER_BLOCKING",
                 kSleepTime, kUnresponsiveTime,
-                unresponsive_threshold, crash_on_hang_thread_names,
-                live_threads_threshold);
+                unresponsive_threshold, crash_on_hang_threads);
   StartWatching(BrowserThread::CACHE, "CACHE", kSleepTime, kUnresponsiveTime,
-                unresponsive_threshold, crash_on_hang_thread_names,
-                live_threads_threshold);
+                unresponsive_threshold, crash_on_hang_threads);
 }
 
 // static
@@ -603,13 +659,18 @@ void ThreadWatcherList::StartWatching(
     const base::TimeDelta& sleep_time,
     const base::TimeDelta& unresponsive_time,
     uint32 unresponsive_threshold,
-    const std::set<std::string>& crash_on_hang_thread_names,
-    uint32 live_threads_threshold) {
+    const CrashOnHangThreadMap& crash_on_hang_threads) {
   DCHECK(WatchDogThread::CurrentlyOnWatchDogThread());
 
-  std::set<std::string>::const_iterator it =
-      crash_on_hang_thread_names.find(thread_name);
-  bool crash_on_hang = (it != crash_on_hang_thread_names.end());
+  CrashOnHangThreadMap::const_iterator it =
+      crash_on_hang_threads.find(thread_name);
+  bool crash_on_hang = false;
+  uint32 live_threads_threshold = 0;
+  if (it != crash_on_hang_threads.end()) {
+    crash_on_hang = true;
+    live_threads_threshold = it->second.live_threads_threshold;
+    unresponsive_threshold = it->second.unresponsive_threshold;
+  }
 
   ThreadWatcher::StartWatching(
       ThreadWatcher::WatchingParams(thread_id,
@@ -790,7 +851,7 @@ class StartupWatchDogThread : public base::Watchdog {
   // Alarm is called if the time expires after an Arm() without someone calling
   // Disarm(). When Alarm goes off, in release mode we get the crash dump
   // without crashing and in debug mode we break into the debugger.
-  virtual void Alarm() {
+  virtual void Alarm() OVERRIDE {
 #ifndef NDEBUG
     DCHECK(false);
 #else
@@ -814,7 +875,7 @@ class ShutdownWatchDogThread : public base::Watchdog {
 
   // Alarm is called if the time expires after an Arm() without someone calling
   // Disarm(). We crash the browser if this method is called.
-  virtual void Alarm() {
+  virtual void Alarm() OVERRIDE {
     CHECK(false);
   }
 

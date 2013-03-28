@@ -10,7 +10,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class BlockedContentContainer;
 class BlockedContentTabHelperDelegate;
@@ -74,7 +74,7 @@ class BlockedContentTabHelper
   // Object that holds any blocked WebContentses spawned from this WebContents.
   scoped_ptr<BlockedContentContainer> blocked_contents_;
 
-  // Should we block all child TabContents this attempts to spawn.
+  // Should we block all child WebContentses this attempts to spawn.
   bool all_contents_blocked_;
 
   // Delegate for notifying our owner (usually Browser) about stuff. Not owned

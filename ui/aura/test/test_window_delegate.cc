@@ -20,7 +20,8 @@ namespace test {
 
 TestWindowDelegate::TestWindowDelegate()
     : window_component_(HTCLIENT),
-      delete_on_destroyed_(false) {
+      delete_on_destroyed_(false),
+      can_focus_(true) {
 }
 
 TestWindowDelegate::~TestWindowDelegate() {
@@ -34,17 +35,15 @@ TestWindowDelegate* TestWindowDelegate::CreateSelfDestroyingDelegate() {
 }
 
 gfx::Size TestWindowDelegate::GetMinimumSize() const {
-  return gfx::Size();
+  return minimum_size_;
+}
+
+gfx::Size TestWindowDelegate::GetMaximumSize() const {
+  return maximum_size_;
 }
 
 void TestWindowDelegate::OnBoundsChanged(const gfx::Rect& old_bounds,
                                          const gfx::Rect& new_bounds) {
-}
-
-void TestWindowDelegate::OnFocus(Window* old_focused_window) {
-}
-
-void TestWindowDelegate::OnBlur() {
 }
 
 gfx::NativeCursor TestWindowDelegate::GetCursor(const gfx::Point& point) {
@@ -62,7 +61,7 @@ bool TestWindowDelegate::ShouldDescendIntoChildForEventHandling(
 }
 
 bool TestWindowDelegate::CanFocus() {
-  return true;
+  return can_focus_;
 }
 
 void TestWindowDelegate::OnCaptureLost() {
@@ -97,23 +96,6 @@ scoped_refptr<ui::Texture> TestWindowDelegate::CopyTexture() {
   return scoped_refptr<ui::Texture>();
 }
 
-ui::EventResult TestWindowDelegate::OnKeyEvent(ui::KeyEvent* event) {
-  return ui::ER_UNHANDLED;
-}
-
-ui::EventResult TestWindowDelegate::OnMouseEvent(ui::MouseEvent* event) {
-  return ui::ER_UNHANDLED;
-}
-
-ui::EventResult TestWindowDelegate::OnTouchEvent(ui::TouchEvent* event) {
-  return ui::ER_UNHANDLED;
-}
-
-ui::EventResult TestWindowDelegate::OnGestureEvent(
-    ui::GestureEvent* event) {
-  return ui::ER_UNHANDLED;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // ColorTestWindowDelegate
 
@@ -121,16 +103,19 @@ ColorTestWindowDelegate::ColorTestWindowDelegate(SkColor color)
     : color_(color),
       last_key_code_(ui::VKEY_UNKNOWN) {
 }
+
 ColorTestWindowDelegate::~ColorTestWindowDelegate() {
 }
 
-ui::EventResult ColorTestWindowDelegate::OnKeyEvent(ui::KeyEvent* event) {
+void ColorTestWindowDelegate::OnKeyEvent(ui::KeyEvent* event) {
   last_key_code_ = event->key_code();
-  return ui::ER_HANDLED;
+  event->SetHandled();
 }
+
 void ColorTestWindowDelegate::OnWindowDestroyed() {
   delete this;
 }
+
 void ColorTestWindowDelegate::OnPaint(gfx::Canvas* canvas) {
   canvas->DrawColor(color_, SkXfermode::kSrc_Mode);
 }
@@ -163,7 +148,7 @@ EventCountDelegate::EventCountDelegate()
     key_release_count_(0) {
 }
 
-ui::EventResult EventCountDelegate::OnKeyEvent(ui::KeyEvent* event) {
+void EventCountDelegate::OnKeyEvent(ui::KeyEvent* event) {
   switch (event->type()) {
     case ui::ET_KEY_PRESSED:
       key_press_count_++;
@@ -173,10 +158,9 @@ ui::EventResult EventCountDelegate::OnKeyEvent(ui::KeyEvent* event) {
     default:
       break;
   }
-  return ui::ER_UNHANDLED;
 }
 
-ui::EventResult EventCountDelegate::OnMouseEvent(ui::MouseEvent* event) {
+void EventCountDelegate::OnMouseEvent(ui::MouseEvent* event) {
   switch (event->type()) {
     case ui::ET_MOUSE_MOVED:
       mouse_move_count_++;
@@ -196,14 +180,13 @@ ui::EventResult EventCountDelegate::OnMouseEvent(ui::MouseEvent* event) {
     default:
       break;
   }
-  return ui::ER_UNHANDLED;
 }
 
 std::string EventCountDelegate::GetMouseMotionCountsAndReset() {
-  std::string result = StringPrintf("%d %d %d",
-                                    mouse_enter_count_,
-                                    mouse_move_count_,
-                                    mouse_leave_count_);
+  std::string result = base::StringPrintf("%d %d %d",
+                                          mouse_enter_count_,
+                                          mouse_move_count_,
+                                          mouse_leave_count_);
   mouse_enter_count_ = 0;
   mouse_move_count_ = 0;
   mouse_leave_count_ = 0;
@@ -211,9 +194,9 @@ std::string EventCountDelegate::GetMouseMotionCountsAndReset() {
 }
 
 std::string EventCountDelegate::GetMouseButtonCountsAndReset() {
-  std::string result = StringPrintf("%d %d",
-                                    mouse_press_count_,
-                                    mouse_release_count_);
+  std::string result = base::StringPrintf("%d %d",
+                                          mouse_press_count_,
+                                          mouse_release_count_);
   mouse_press_count_ = 0;
   mouse_release_count_ = 0;
   return result;
@@ -221,9 +204,9 @@ std::string EventCountDelegate::GetMouseButtonCountsAndReset() {
 
 
 std::string EventCountDelegate::GetKeyCountsAndReset() {
-  std::string result = StringPrintf("%d %d",
-                                    key_press_count_,
-                                    key_release_count_);
+  std::string result = base::StringPrintf("%d %d",
+                                          key_press_count_,
+                                          key_release_count_);
   key_press_count_ = 0;
   key_release_count_ = 0;
   return result;

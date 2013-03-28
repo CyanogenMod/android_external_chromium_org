@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "sync/syncable/nigori_handler.h"
 #include "sync/syncable/mutable_entry.h"
 #include "sync/syncable/syncable_util.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 #include "sync/util/cryptographer.h"
 
 namespace syncer {
@@ -151,7 +151,7 @@ bool VerifyDataTypeEncryptionForTest(
       }
     }
     // Push the successor.
-    to_visit.push(child.Get(NEXT_ID));
+    to_visit.push(child.GetSuccessorId());
   }
   return true;
 }
@@ -182,7 +182,7 @@ bool UpdateEntryWithEncryption(
   } else {
     // Encrypt new_specifics into generated_specifics.
     if (VLOG_IS_ON(2)) {
-      scoped_ptr<DictionaryValue> value(entry->ToValue());
+      scoped_ptr<DictionaryValue> value(entry->ToValue(NULL));
       std::string info;
       base::JSONWriter::WriteWithOptions(value.get(),
                                          base::JSONWriter::OPTIONS_PRETTY_PRINT,
@@ -252,7 +252,7 @@ void UpdateNigoriFromEncryptedTypes(ModelTypeSet encrypted_types,
                                     bool encrypt_everything,
                                     sync_pb::NigoriSpecifics* nigori) {
   nigori->set_encrypt_everything(encrypt_everything);
-  COMPILE_ASSERT(17, MODEL_TYPE_COUNT);
+  COMPILE_ASSERT(26 == MODEL_TYPE_COUNT, UpdateEncryptedTypes);
   nigori->set_encrypt_bookmarks(
       encrypted_types.Has(BOOKMARKS));
   nigori->set_encrypt_preferences(
@@ -275,6 +275,9 @@ void UpdateNigoriFromEncryptedTypes(ModelTypeSet encrypted_types,
   nigori->set_encrypt_apps(encrypted_types.Has(APPS));
   nigori->set_encrypt_app_notifications(
       encrypted_types.Has(APP_NOTIFICATIONS));
+  nigori->set_encrypt_dictionary(encrypted_types.Has(DICTIONARY));
+  nigori->set_encrypt_favicon_images(encrypted_types.Has(FAVICON_IMAGES));
+  nigori->set_encrypt_favicon_tracking(encrypted_types.Has(FAVICON_TRACKING));
 }
 
 ModelTypeSet GetEncryptedTypesFromNigori(
@@ -283,7 +286,7 @@ ModelTypeSet GetEncryptedTypesFromNigori(
     return ModelTypeSet::All();
 
   ModelTypeSet encrypted_types;
-  COMPILE_ASSERT(17, MODEL_TYPE_COUNT);
+  COMPILE_ASSERT(26 == MODEL_TYPE_COUNT, UpdateEncryptedTypes);
   if (nigori.encrypt_bookmarks())
     encrypted_types.Put(BOOKMARKS);
   if (nigori.encrypt_preferences())
@@ -310,6 +313,12 @@ ModelTypeSet GetEncryptedTypesFromNigori(
     encrypted_types.Put(APPS);
   if (nigori.encrypt_app_notifications())
     encrypted_types.Put(APP_NOTIFICATIONS);
+  if (nigori.encrypt_dictionary())
+    encrypted_types.Put(DICTIONARY);
+  if (nigori.encrypt_favicon_images())
+    encrypted_types.Put(FAVICON_IMAGES);
+  if (nigori.encrypt_favicon_tracking())
+    encrypted_types.Put(FAVICON_TRACKING);
   return encrypted_types;
 }
 

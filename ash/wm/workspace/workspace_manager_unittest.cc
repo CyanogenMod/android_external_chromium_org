@@ -4,16 +4,20 @@
 
 #include "ash/wm/workspace/workspace_manager.h"
 
+#include <map>
+
 #include "ash/ash_switches.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_ash.h"
+#include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/test/shell_test_api.h"
 #include "ash/wm/activation_controller.h"
 #include "ash/wm/property_util.h"
-#include "ash/wm/shelf_layout_manager.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace/workspace.h"
@@ -26,8 +30,10 @@
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
 
@@ -35,6 +41,44 @@ using aura::Window;
 
 namespace ash {
 namespace internal {
+
+// Returns a string containing the names of all the children of |window| (in
+// order). Each entry is separated by a space.
+std::string GetWindowNames(const aura::Window* window) {
+  std::string result;
+  for (size_t i = 0; i < window->children().size(); ++i) {
+    if (i != 0)
+      result += " ";
+    result += window->children()[i]->name();
+  }
+  return result;
+}
+
+// Returns a string containing the names of windows corresponding to each of the
+// child layers of |window|'s layer. Any layers that don't correspond to a child
+// Window of |window| are ignored. The result is ordered based on the layer
+// ordering.
+std::string GetLayerNames(const aura::Window* window) {
+  typedef std::map<const ui::Layer*, std::string> LayerToWindowNameMap;
+  LayerToWindowNameMap window_names;
+  for (size_t i = 0; i < window->children().size(); ++i) {
+    window_names[window->children()[i]->layer()] =
+        window->children()[i]->name();
+  }
+
+  std::string result;
+  const std::vector<ui::Layer*>& layers(window->layer()->children());
+  for (size_t i = 0; i < layers.size(); ++i) {
+    LayerToWindowNameMap::iterator layer_i =
+        window_names.find(layers[i]);
+    if (layer_i != window_names.end()) {
+      if (!result.empty())
+        result += " ";
+      result += layer_i->second;
+    }
+  }
+  return result;
+}
 
 class WorkspaceManagerTest : public test::AshTestBase {
  public:
@@ -54,7 +98,7 @@ class WorkspaceManagerTest : public test::AshTestBase {
     window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
     window->SetType(aura::client::WINDOW_TYPE_NORMAL);
     window->Init(ui::LAYER_TEXTURED);
-    window->SetParent(NULL);
+    SetDefaultParentByPrimaryRootWindow(window);
     return window;
   }
 
@@ -75,8 +119,12 @@ class WorkspaceManagerTest : public test::AshTestBase {
     return manager_->active_workspace_;
   }
 
-  ShelfLayoutManager* shelf_layout_manager() {
+  ShelfWidget* shelf_widget() {
     return Shell::GetPrimaryRootWindowController()->shelf();
+  }
+
+  ShelfLayoutManager* shelf_layout_manager() {
+    return Shell::GetPrimaryRootWindowController()->GetShelfLayoutManager();
   }
 
   bool GetWindowOverlapsShelf() {
@@ -99,6 +147,20 @@ class WorkspaceManagerTest : public test::AshTestBase {
         manager_->workspaces_.begin());
   }
 
+  // Returns a string description of the current state. The string has the
+  // following format:
+  // W* P=W* active=N
+  // Each W corresponds to a workspace. Each workspace is prefixed with an 'M'
+  // if the workspace is maximized and is followed by the number of windows in
+  // the workspace.
+  // 'P=' is used for the pending workspaces (see
+  // WorkspaceManager::pending_workspaces_ for details on pending workspaces).
+  // N is the index of the active workspace (index into
+  // WorkspaceManager::workspaces_).
+  // For example, '2 M1 P=M1 active=1' means the first workspace (the desktop)
+  // has 2 windows, the second workspace is a maximized workspace with 1 window,
+  // there is a pending maximized workspace with 1 window and the second
+  // workspace is active.
   std::string StateString() {
     std::string result;
     for (size_t i = 0; i < manager_->workspaces_.size(); ++i) {
@@ -126,7 +188,7 @@ class WorkspaceManagerTest : public test::AshTestBase {
   virtual void SetUp() OVERRIDE {
     test::AshTestBase::SetUp();
     WorkspaceControllerTestHelper workspace_helper(
-        Shell::TestApi(Shell::GetInstance()).workspace_controller());
+        test::ShellTestApi(Shell::GetInstance()).workspace_controller());
     manager_ = workspace_helper.workspace_manager();
   }
 
@@ -320,7 +382,7 @@ TEST_F(WorkspaceManagerTest, ChangeBoundsOfNormalWindow) {
 TEST_F(WorkspaceManagerTest, SnapToGrid) {
   scoped_ptr<Window> w1(CreateTestWindowUnparented());
   w1->SetBounds(gfx::Rect(1, 6, 25, 30));
-  w1->SetParent(NULL);
+  SetDefaultParentByPrimaryRootWindow(w1.get());
   // We are not aligning this anymore this way. When the window gets shown
   // the window is expected to be handled differently, but this cannot be
   // tested with this test. So the result of this test should be that the
@@ -486,25 +548,25 @@ TEST_F(WorkspaceManagerTest, ShelfStateUpdated) {
   w1->Show();
   wm::ActivateWindow(w1.get());
 
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
 
   // Maximize the window.
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE, shelf->visibility_state());
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
 
   // Restore.
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
   EXPECT_EQ("0,1 101x102", w1->bounds().ToString());
 
   // Fullscreen.
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_FULLSCREEN);
-  EXPECT_EQ(ShelfLayoutManager::HIDDEN, shelf->visibility_state());
+  EXPECT_EQ(SHELF_HIDDEN, shelf->visibility_state());
 
   // Normal.
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
   EXPECT_EQ("0,1 101x102", w1->bounds().ToString());
   EXPECT_FALSE(GetWindowOverlapsShelf());
 
@@ -518,12 +580,12 @@ TEST_F(WorkspaceManagerTest, ShelfStateUpdated) {
 
   // Maximize again.
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE, shelf->visibility_state());
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
 
   // Minimize.
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
 
   // Since the restore from minimize will restore to the pre-minimize
   // state (tested elsewhere), we abandon the current size and restore
@@ -536,7 +598,7 @@ TEST_F(WorkspaceManagerTest, ShelfStateUpdated) {
 
   // Restore.
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
   EXPECT_EQ("0,1 101x102", w1->bounds().ToString());
 
   // Create another window, maximized.
@@ -546,14 +608,14 @@ TEST_F(WorkspaceManagerTest, ShelfStateUpdated) {
   w2->Show();
   wm::ActivateWindow(w2.get());
   EXPECT_EQ(1, active_index());
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE, shelf->visibility_state());
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
   EXPECT_EQ("0,1 101x102", w1->bounds().ToString());
 
   // Switch to w1.
   wm::ActivateWindow(w1.get());
   EXPECT_EQ(0, active_index());
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
   EXPECT_EQ("0,1 101x102", w1->bounds().ToString());
   EXPECT_EQ(ScreenAsh::GetMaximizedWindowBoundsInParent(
                 w2->parent()).ToString(),
@@ -562,8 +624,8 @@ TEST_F(WorkspaceManagerTest, ShelfStateUpdated) {
   // Switch to w2.
   wm::ActivateWindow(w2.get());
   EXPECT_EQ(1, active_index());
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE, shelf->visibility_state());
-  EXPECT_EQ(ShelfLayoutManager::AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());
   EXPECT_EQ("0,1 101x102", w1->bounds().ToString());
   EXPECT_EQ(ScreenAsh::GetMaximizedWindowBoundsInParent(w2.get()).ToString(),
             w2->bounds().ToString());
@@ -721,26 +783,26 @@ TEST_F(WorkspaceManagerTest, GetWindowStateWithUnmanagedFullscreenWindow) {
 
   ASSERT_EQ("1 M1 active=1", StateString());
 
-  EXPECT_EQ(ShelfLayoutManager::HIDDEN, shelf->visibility_state());
+  EXPECT_EQ(SHELF_HIDDEN, shelf->visibility_state());
   EXPECT_EQ(WORKSPACE_WINDOW_STATE_FULL_SCREEN, manager_->GetWindowState());
 
   w2->Hide();
   ASSERT_EQ("1 P=M1 active=0", StateString());
-  EXPECT_EQ(ShelfLayoutManager::VISIBLE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_VISIBLE, shelf->visibility_state());
 
   w2->Show();
   ASSERT_EQ("1 P=M1 active=0", StateString());
-  EXPECT_EQ(ShelfLayoutManager::VISIBLE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_VISIBLE, shelf->visibility_state());
   EXPECT_EQ(WORKSPACE_WINDOW_STATE_DEFAULT, manager_->GetWindowState());
 
   wm::ActivateWindow(w2.get());
   ASSERT_EQ("1 M1 active=1", StateString());
-  EXPECT_EQ(ShelfLayoutManager::HIDDEN, shelf->visibility_state());
+  EXPECT_EQ(SHELF_HIDDEN, shelf->visibility_state());
   EXPECT_EQ(WORKSPACE_WINDOW_STATE_FULL_SCREEN, manager_->GetWindowState());
 
   w2.reset();
   ASSERT_EQ("1 active=0", StateString());
-  EXPECT_EQ(ShelfLayoutManager::VISIBLE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_VISIBLE, shelf->visibility_state());
   EXPECT_EQ(WORKSPACE_WINDOW_STATE_DEFAULT, manager_->GetWindowState());
 }
 
@@ -766,21 +828,21 @@ TEST_F(WorkspaceManagerTest,
 
   // Even though auto-hide behavior is NEVER full-screen windows cause the shelf
   // to hide.
-  EXPECT_EQ(ShelfLayoutManager::HIDDEN, shelf->visibility_state());
+  EXPECT_EQ(SHELF_HIDDEN, shelf->visibility_state());
   EXPECT_EQ(WORKSPACE_WINDOW_STATE_FULL_SCREEN,
             manager_->GetWindowState());
 
   w2->Hide();
-  EXPECT_EQ(ShelfLayoutManager::VISIBLE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_VISIBLE, shelf->visibility_state());
 
   w2->Show();
   wm::ActivateWindow(w2.get());
-  EXPECT_EQ(ShelfLayoutManager::HIDDEN, shelf->visibility_state());
+  EXPECT_EQ(SHELF_HIDDEN, shelf->visibility_state());
   EXPECT_EQ(WORKSPACE_WINDOW_STATE_FULL_SCREEN,
             manager_->GetWindowState());
 
   w2.reset();
-  EXPECT_EQ(ShelfLayoutManager::VISIBLE, shelf->visibility_state());
+  EXPECT_EQ(SHELF_VISIBLE, shelf->visibility_state());
 }
 
 // Verifies a window marked as persisting across all workspaces ends up in its
@@ -812,9 +874,9 @@ TEST_F(WorkspaceManagerTest, MinimizeResetsVisibility) {
   wm::ActivateWindow(w1.get());
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
-  EXPECT_EQ(ShelfLayoutManager::VISIBLE,
+  EXPECT_EQ(SHELF_VISIBLE,
             shelf_layout_manager()->visibility_state());
-  EXPECT_FALSE(Launcher::ForPrimaryDisplay()->paints_background());
+  EXPECT_FALSE(shelf_widget()->paints_background());
 }
 
 // Verifies transients are moved when maximizing.
@@ -836,7 +898,7 @@ TEST_F(WorkspaceManagerTest, MoveTransientOnMaximize) {
   // too.
   scoped_ptr<Window> w3(CreateTestWindowUnparented());
   w1->AddTransientChild(w3.get());
-  w3->SetParent(NULL);
+  SetDefaultParentByPrimaryRootWindow(w3.get());
   w3->Show();
   ASSERT_EQ("0 M3 active=1", StateString());
 
@@ -959,9 +1021,10 @@ TEST_F(WorkspaceManagerTest, MoveOnSwitch) {
 
   // Increase the size of the shelf. This would make |w1| fall completely out of
   // the display work area.
-  gfx::Size size(shelf->status_area_widget()->GetWindowBoundsInScreen().size());
+  gfx::Size size(shelf_widget()->status_area_widget()->
+      GetWindowBoundsInScreen().size());
   size.Enlarge(0, 30);
-  shelf->status_area_widget()->SetSize(size);
+  shelf_widget()->status_area_widget()->SetSize(size);
 
   // Switch to w1. The window should have moved.
   wm::ActivateWindow(w1.get());
@@ -1026,9 +1089,9 @@ TEST_F(WorkspaceManagerTest, DontCrashOnChangeAndActivate) {
   shelf->SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_NEVER);
 
   DontCrashOnChangeAndActivateDelegate delegate;
-  scoped_ptr<Window> w1(
-      CreateTestWindowWithDelegate(&delegate, 1000, gfx::Rect(10, 11, 250, 251),
-                                   NULL));
+  scoped_ptr<Window> w1(CreateTestWindowInShellWithDelegate(
+      &delegate, 1000, gfx::Rect(10, 11, 250, 251)));
+
   w1->Show();
   wm::ActivateWindow(w1.get());
   wm::MaximizeWindow(w1.get());
@@ -1040,7 +1103,7 @@ TEST_F(WorkspaceManagerTest, DontCrashOnChangeAndActivate) {
   // window active.
   shelf->SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
 
-  w1->SetParent(NULL);
+  SetDefaultParentByPrimaryRootWindow(w1.get());
   delegate.set_window(w1.get());
   w1->Show();
 }
@@ -1058,7 +1121,7 @@ TEST_F(WorkspaceManagerTest, TransientParent) {
   scoped_ptr<Window> w1(CreateTestWindowUnparented());
   Shell::GetInstance()->GetPrimaryRootWindow()->AddTransientChild(w1.get());
   w1->SetBounds(gfx::Rect(10, 11, 250, 251));
-  w1->SetParent(NULL);
+  SetDefaultParentByPrimaryRootWindow(w1.get());
   w1->Show();
   wm::ActivateWindow(w1.get());
 
@@ -1082,7 +1145,7 @@ TEST_F(WorkspaceManagerTest, TrackedByWorkspace) {
   scoped_ptr<Window> w2(CreateTestWindowUnparented());
   w2->SetBounds(gfx::Rect(1, 6, 25, 30));
   w2->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
-  w2->SetParent(NULL);
+  SetDefaultParentByPrimaryRootWindow(w2.get());
   w2->Show();
   SetTrackedByWorkspace(w2.get(), false);
   wm::ActivateWindow(w2.get());
@@ -1140,13 +1203,11 @@ TEST_F(WorkspaceManagerTest, DeactivateDropsToDesktop) {
 TEST_F(WorkspaceManagerTest, BasicAutoPlacing) {
   // Test 1: In case there is no manageable window, no window should shift.
 
-  scoped_ptr<aura::Window> window1(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(0));
   window1->SetBounds(gfx::Rect(16, 32, 640, 320));
   gfx::Rect desktop_area = window1->parent()->bounds();
 
-  scoped_ptr<aura::Window> window2(
-      aura::test::CreateTestWindowWithId(1, NULL));
+  scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(1));
   // Trigger the auto window placement function by making it visible.
   // Note that the bounds are getting changed while it is invisible.
   window2->Hide();
@@ -1164,8 +1225,7 @@ TEST_F(WorkspaceManagerTest, BasicAutoPlacing) {
 
   // Test 2: Set up two managed windows and check their auto positioning.
   ash::wm::SetWindowPositionManaged(window1.get(), true);
-  scoped_ptr<aura::Window> window3(
-      aura::test::CreateTestWindowWithId(2, NULL));
+  scoped_ptr<aura::Window> window3(CreateTestWindowInShellWithId(2));
   ash::wm::SetWindowPositionManaged(window3.get(), true);
   // To avoid any auto window manager changes due to SetBounds, the window
   // gets first hidden and then shown again.
@@ -1187,8 +1247,7 @@ TEST_F(WorkspaceManagerTest, BasicAutoPlacing) {
 
   // Test 3: Set up a manageable and a non manageable window and check
   // positioning.
-  scoped_ptr<aura::Window> window4(
-      aura::test::CreateTestWindowWithId(3, NULL));
+  scoped_ptr<aura::Window> window4(CreateTestWindowInShellWithId(3));
   // To avoid any auto window manager changes due to SetBounds, the window
   // gets first hidden and then shown again.
   window1->Hide();
@@ -1217,12 +1276,10 @@ TEST_F(WorkspaceManagerTest, BasicAutoPlacing) {
 
 // Test the proper usage of user window movement interaction.
 TEST_F(WorkspaceManagerTest, TestUserMovedWindowRepositioning) {
-  scoped_ptr<aura::Window> window1(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(0));
   window1->SetBounds(gfx::Rect(16, 32, 640, 320));
   gfx::Rect desktop_area = window1->parent()->bounds();
-  scoped_ptr<aura::Window> window2(
-      aura::test::CreateTestWindowWithId(1, NULL));
+  scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(1));
   window2->SetBounds(gfx::Rect(32, 48, 256, 512));
   window1->Hide();
   window2->Hide();
@@ -1244,11 +1301,11 @@ TEST_F(WorkspaceManagerTest, TestUserMovedWindowRepositioning) {
   // positionable again (user movement cleared).
   window2->Show();
 
-  // |window1| should be flush right and |window3| flush left.
-  EXPECT_EQ(base::IntToString(
-                desktop_area.width() - window1->bounds().width()) +
-            ",32 640x320", window1->bounds().ToString());
-  EXPECT_EQ("0,48 256x512", window2->bounds().ToString());
+  // |window1| should be flush left and |window3| flush right.
+  EXPECT_EQ("0,32 640x320", window1->bounds().ToString());
+  EXPECT_EQ(
+      base::IntToString(desktop_area.width() - window2->bounds().width()) +
+      ",48 256x512", window2->bounds().ToString());
   // FLag should now be reset.
   EXPECT_FALSE(ash::wm::HasUserChangedWindowPositionOrSize(window1.get()));
   EXPECT_FALSE(ash::wm::HasUserChangedWindowPositionOrSize(window1.get()));
@@ -1256,25 +1313,21 @@ TEST_F(WorkspaceManagerTest, TestUserMovedWindowRepositioning) {
   // Going back to one shown window should keep the state.
   ash::wm::SetUserHasChangedWindowPositionOrSize(window1.get(), true);
   window2->Hide();
-  EXPECT_EQ(base::IntToString(
-                desktop_area.width() - window1->bounds().width()) +
-            ",32 640x320", window1->bounds().ToString());
+  EXPECT_EQ("0,32 640x320", window1->bounds().ToString());
   EXPECT_TRUE(ash::wm::HasUserChangedWindowPositionOrSize(window1.get()));
 }
 
 // Test that user placed windows go back to their user placement after the user
 // closes all other windows.
 TEST_F(WorkspaceManagerTest, TestUserHandledWindowRestore) {
-  scoped_ptr<aura::Window> window1(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(0));
   gfx::Rect user_pos = gfx::Rect(16, 42, 640, 320);
   window1->SetBounds(user_pos);
   ash::wm::SetPreAutoManageWindowBounds(window1.get(), user_pos);
   gfx::Rect desktop_area = window1->parent()->bounds();
 
   // Create a second window to let the auto manager kick in.
-  scoped_ptr<aura::Window> window2(
-      aura::test::CreateTestWindowWithId(1, NULL));
+  scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(1));
   window2->SetBounds(gfx::Rect(32, 48, 256, 512));
   window1->Hide();
   window2->Hide();
@@ -1284,12 +1337,12 @@ TEST_F(WorkspaceManagerTest, TestUserHandledWindowRestore) {
   EXPECT_EQ(user_pos.ToString(), window1->bounds().ToString());
   window2->Show();
 
-  // |window1| should be flush right and |window2| flush left.
-  EXPECT_EQ(base::IntToString(
-                desktop_area.width() - window1->bounds().width()) + "," +
-            base::IntToString(user_pos.y()) +
+  // |window1| should be flush left and |window2| flush right.
+  EXPECT_EQ("0," + base::IntToString(user_pos.y()) +
             " 640x320", window1->bounds().ToString());
-  EXPECT_EQ("0,48 256x512", window2->bounds().ToString());
+  EXPECT_EQ(
+      base::IntToString(desktop_area.width() - window2->bounds().width()) +
+      ",48 256x512", window2->bounds().ToString());
   window2->Hide();
 
   // After the other window get hidden the window has to move back to the
@@ -1302,14 +1355,12 @@ TEST_F(WorkspaceManagerTest, TestUserHandledWindowRestore) {
 
 // Test that a window from normal to minimize will repos the remaining.
 TEST_F(WorkspaceManagerTest, ToMinimizeRepositionsRemaining) {
-  scoped_ptr<aura::Window> window1(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(0));
   ash::wm::SetWindowPositionManaged(window1.get(), true);
   window1->SetBounds(gfx::Rect(16, 32, 640, 320));
   gfx::Rect desktop_area = window1->parent()->bounds();
 
-  scoped_ptr<aura::Window> window2(
-      aura::test::CreateTestWindowWithId(1, NULL));
+  scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(1));
   ash::wm::SetWindowPositionManaged(window2.get(), true);
   window2->SetBounds(gfx::Rect(32, 48, 256, 512));
 
@@ -1332,13 +1383,11 @@ TEST_F(WorkspaceManagerTest, ToMinimizeRepositionsRemaining) {
 
 // Test that minimizing an initially maximized window will repos the remaining.
 TEST_F(WorkspaceManagerTest, MaxToMinRepositionsRemaining) {
-  scoped_ptr<aura::Window> window1(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(0));
   ash::wm::SetWindowPositionManaged(window1.get(), true);
   gfx::Rect desktop_area = window1->parent()->bounds();
 
-  scoped_ptr<aura::Window> window2(
-      aura::test::CreateTestWindowWithId(1, NULL));
+  scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(1));
   ash::wm::SetWindowPositionManaged(window2.get(), true);
   window2->SetBounds(gfx::Rect(32, 48, 256, 512));
 
@@ -1355,14 +1404,12 @@ TEST_F(WorkspaceManagerTest, MaxToMinRepositionsRemaining) {
 
 // Test that nomral, maximize, minimizing will repos the remaining.
 TEST_F(WorkspaceManagerTest, NormToMaxToMinRepositionsRemaining) {
-  scoped_ptr<aura::Window> window1(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(0));
   window1->SetBounds(gfx::Rect(16, 32, 640, 320));
   ash::wm::SetWindowPositionManaged(window1.get(), true);
   gfx::Rect desktop_area = window1->parent()->bounds();
 
-  scoped_ptr<aura::Window> window2(
-      aura::test::CreateTestWindowWithId(1, NULL));
+  scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(1));
   ash::wm::SetWindowPositionManaged(window2.get(), true);
   window2->SetBounds(gfx::Rect(32, 40, 256, 512));
 
@@ -1389,14 +1436,12 @@ TEST_F(WorkspaceManagerTest, NormToMaxToMinRepositionsRemaining) {
 
 // Test that nomral, maximize, normal will repos the remaining.
 TEST_F(WorkspaceManagerTest, NormToMaxToNormRepositionsRemaining) {
-  scoped_ptr<aura::Window> window1(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(0));
   window1->SetBounds(gfx::Rect(16, 32, 640, 320));
   ash::wm::SetWindowPositionManaged(window1.get(), true);
   gfx::Rect desktop_area = window1->parent()->bounds();
 
-  scoped_ptr<aura::Window> window2(
-      aura::test::CreateTestWindowWithId(1, NULL));
+  scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(1));
   ash::wm::SetWindowPositionManaged(window2.get(), true);
   window2->SetBounds(gfx::Rect(32, 40, 256, 512));
 
@@ -1422,14 +1467,13 @@ TEST_F(WorkspaceManagerTest, NormToMaxToNormRepositionsRemaining) {
 
 // Test that animations are triggered.
 TEST_F(WorkspaceManagerTest, AnimatedNormToMaxToNormRepositionsRemaining) {
-  ui::LayerAnimator::set_disable_animations_for_test(false);
-  scoped_ptr<aura::Window> window1(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  ui::ScopedAnimationDurationScaleMode normal_duration_mode(
+      ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+  scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(0));
   window1->Hide();
   window1->SetBounds(gfx::Rect(16, 32, 640, 320));
   gfx::Rect desktop_area = window1->parent()->bounds();
-  scoped_ptr<aura::Window> window2(
-      aura::test::CreateTestWindowWithId(1, NULL));
+  scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(1));
   window2->Hide();
   window2->SetBounds(gfx::Rect(32, 48, 256, 512));
 
@@ -1456,6 +1500,172 @@ TEST_F(WorkspaceManagerTest, AnimatedNormToMaxToNormRepositionsRemaining) {
                 desktop_area.width() - window1->bounds().width()) +
             ",32 640x320", window1->bounds().ToString());
   EXPECT_EQ("0,48 256x512", window2->bounds().ToString());
+}
+
+// This tests simulates a browser and an app and verifies the ordering of the
+// windows and layers doesn't get out of sync as various operations occur. Its
+// really testing code in FocusController, but easier to simulate here. Just as
+// with a real browser the browser here has a transient child window
+// (corresponds to the status bubble).
+TEST_F(WorkspaceManagerTest, VerifyLayerOrdering) {
+  scoped_ptr<Window> browser(
+      aura::test::CreateTestWindowWithDelegate(
+          NULL,
+          aura::client::WINDOW_TYPE_NORMAL,
+          gfx::Rect(5, 6, 7, 8),
+          NULL));
+  browser->SetName("browser");
+  SetDefaultParentByPrimaryRootWindow(browser.get());
+  browser->Show();
+  wm::ActivateWindow(browser.get());
+
+  // |status_bubble| is made a transient child of |browser| and as a result
+  // owned by |browser|.
+  aura::test::TestWindowDelegate* status_bubble_delegate =
+      aura::test::TestWindowDelegate::CreateSelfDestroyingDelegate();
+  status_bubble_delegate->set_can_focus(false);
+  Window* status_bubble =
+      aura::test::CreateTestWindowWithDelegate(
+          status_bubble_delegate,
+          aura::client::WINDOW_TYPE_POPUP,
+          gfx::Rect(5, 6, 7, 8),
+          NULL);
+  browser->AddTransientChild(status_bubble);
+  SetDefaultParentByPrimaryRootWindow(status_bubble);
+  status_bubble->SetName("status_bubble");
+
+  scoped_ptr<Window> app(
+      aura::test::CreateTestWindowWithDelegate(
+          NULL,
+          aura::client::WINDOW_TYPE_NORMAL,
+          gfx::Rect(5, 6, 7, 8),
+          NULL));
+  app->SetName("app");
+  SetDefaultParentByPrimaryRootWindow(app.get());
+
+  aura::Window* parent = browser->parent();
+
+  app->Show();
+  wm::ActivateWindow(app.get());
+  EXPECT_EQ(GetWindowNames(parent), GetLayerNames(parent));
+
+  // Minimize the app, focus should go the browser.
+  app->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
+  EXPECT_TRUE(wm::IsActiveWindow(browser.get()));
+  EXPECT_EQ(GetWindowNames(parent), GetLayerNames(parent));
+
+  // Minimize the browser (neither windows are focused).
+  browser->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
+  EXPECT_FALSE(wm::IsActiveWindow(browser.get()));
+  EXPECT_FALSE(wm::IsActiveWindow(app.get()));
+  EXPECT_EQ(GetWindowNames(parent), GetLayerNames(parent));
+
+  // Show the browser (which should restore it).
+  browser->Show();
+  EXPECT_EQ(GetWindowNames(parent), GetLayerNames(parent));
+
+  // Activate the browser.
+  ash::wm::ActivateWindow(browser.get());
+  EXPECT_TRUE(wm::IsActiveWindow(browser.get()));
+  EXPECT_EQ(GetWindowNames(parent), GetLayerNames(parent));
+
+  // Restore the app. This differs from above code for |browser| as internally
+  // the app code does this. Restoring this way or using Show() should not make
+  // a difference.
+  app->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
+  EXPECT_EQ(GetWindowNames(parent), GetLayerNames(parent));
+
+  // Activate the app.
+  ash::wm::ActivateWindow(app.get());
+  EXPECT_TRUE(wm::IsActiveWindow(app.get()));
+  EXPECT_EQ(GetWindowNames(parent), GetLayerNames(parent));
+}
+
+namespace {
+
+// Used by DragMaximizedNonTrackedWindow to track how many times the window
+// hierarchy changes.
+class DragMaximizedNonTrackedWindowObserver
+    : public aura::WindowObserver {
+ public:
+  DragMaximizedNonTrackedWindowObserver() : change_count_(0) {
+  }
+
+  // Number of times OnWindowHierarchyChanged() has been received.
+  void clear_change_count() { change_count_ = 0; }
+  int change_count() const {
+    return change_count_;
+  }
+
+  // aura::WindowObserver overrides:
+  virtual void OnWindowHierarchyChanged(
+      const HierarchyChangeParams& params) OVERRIDE {
+    change_count_++;
+  }
+
+ private:
+  int change_count_;
+
+  DISALLOW_COPY_AND_ASSIGN(DragMaximizedNonTrackedWindowObserver);
+};
+
+}  // namespace
+
+// Verifies setting tracked by workspace to false and then dragging a maximized
+// window doesn't result in changing the window hierarchy (which typically
+// indicates new workspaces have been created).
+TEST_F(WorkspaceManagerTest, DragMaximizedNonTrackedWindow) {
+  aura::test::EventGenerator generator(
+      Shell::GetPrimaryRootWindow(), gfx::Point());
+  generator.MoveMouseTo(5, 5);
+
+  aura::test::TestWindowDelegate delegate;
+  delegate.set_window_component(HTCAPTION);
+  scoped_ptr<Window> w1(
+      aura::test::CreateTestWindowWithDelegate(&delegate,
+                                               aura::client::WINDOW_TYPE_NORMAL,
+                                               gfx::Rect(5, 6, 7, 8),
+                                               NULL));
+  SetDefaultParentByPrimaryRootWindow(w1.get());
+  w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
+  w1->Show();
+  wm::ActivateWindow(w1.get());
+  DragMaximizedNonTrackedWindowObserver observer;
+  w1->parent()->parent()->AddObserver(&observer);
+  const gfx::Rect max_bounds(w1->bounds());
+
+  // There should be two workspace, one for the desktop and one for the
+  // maximized window with the maximized active.
+  EXPECT_EQ("0 M1 active=1", StateString());
+
+  generator.PressLeftButton();
+  generator.MoveMouseTo(100, 100);
+  // The bounds shouldn't change (drag should result in nothing happening
+  // now.
+  EXPECT_EQ(max_bounds.ToString(), w1->bounds().ToString());
+  EXPECT_EQ("0 M1 active=1", StateString());
+
+  generator.ReleaseLeftButton();
+  EXPECT_EQ(0, observer.change_count());
+
+  // Set tracked to false and repeat, now the window should move.
+  SetTrackedByWorkspace(w1.get(), false);
+  generator.MoveMouseTo(5, 5);
+  generator.PressLeftButton();
+  generator.MoveMouseBy(100, 100);
+  EXPECT_EQ(gfx::Rect(max_bounds.x() + 100, max_bounds.y() + 100,
+                      max_bounds.width(), max_bounds.height()).ToString(),
+            w1->bounds().ToString());
+  EXPECT_EQ("0 M1 active=1", StateString());
+
+  generator.ReleaseLeftButton();
+  SetTrackedByWorkspace(w1.get(), true);
+  // Marking the window tracked again should snap back to origin.
+  EXPECT_EQ("0 M1 active=1", StateString());
+  EXPECT_EQ(max_bounds.ToString(), w1->bounds().ToString());
+  EXPECT_EQ(0, observer.change_count());
+
+  w1->parent()->parent()->RemoveObserver(&observer);
 }
 
 }  // namespace internal

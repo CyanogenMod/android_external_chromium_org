@@ -5,12 +5,10 @@
 {
   'include_dirs': [
     '..',
-    '<(DEPTH)/third_party/khronos',
   ],
   'all_dependent_settings': {
     'include_dirs': [
       '..',
-      '<(DEPTH)/third_party/khronos',
     ],
   },
   'dependencies': [
@@ -21,6 +19,10 @@
     '../ui/surface/surface.gyp:surface',
     '../ui/ui.gyp:ui',
     '../third_party/angle/src/build_angle.gyp:translator_glsl',
+    '../third_party/khronos/khronos.gyp:khronos_headers',
+    '../third_party/protobuf/protobuf.gyp:protobuf_lite',
+    '../third_party/smhasher/smhasher.gyp:cityhash',
+    '../third_party/re2/re2.gyp:re2',
   ],
   'sources': [
     'command_buffer/service/buffer_manager.h',
@@ -61,6 +63,8 @@
     'command_buffer/service/gpu_scheduler_mock.h',
     'command_buffer/service/gpu_switches.h',
     'command_buffer/service/gpu_switches.cc',
+    'command_buffer/service/gpu_tracer.h',
+    'command_buffer/service/gpu_tracer.cc',
     'command_buffer/service/id_manager.h',
     'command_buffer/service/id_manager.cc',
     'command_buffer/service/image_manager.cc',
@@ -107,7 +111,7 @@
     }],
     ['ui_compositor_image_transport==1', {
       'include_dirs': [
-        '<(DEPTH)/third_party/angle/include',
+        '../third_party/angle/include',
       ],
     }],
   ],

@@ -2,14 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import download
+import copy
 import logging
 import os
-from sdk_update_common import Error
-import sdk_update_common
 import sys
 import urlparse
 import urllib2
+
+import command_common
+import download
+from sdk_update_common import Error
+import sdk_update_common
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(SCRIPT_DIR)
@@ -36,8 +39,8 @@ class UpdateDelegate(object):
   def DownloadToFile(self, url, dest_filename):
     raise NotImplementedError()
 
-  def ExtractArchive(self, archive, extract_dir, rename_from_dir,
-                     rename_to_dir):
+  def ExtractArchives(self, archives, extract_dir, rename_from_dir,
+                      rename_to_dir):
     raise NotImplementedError()
 
 
@@ -74,11 +77,10 @@ class RealUpdateDelegate(UpdateDelegate):
       if out_stream:
         out_stream.close()
 
-  def ExtractArchive(self, archive, extract_dir, rename_from_dir,
-                     rename_to_dir):
+  def ExtractArchives(self, archives, extract_dir, rename_from_dir,
+                      rename_to_dir):
     tar_file = None
 
-    archive_path = os.path.join(self.user_data_dir, archive)
     extract_path = os.path.join(self.install_dir, extract_dir)
     rename_from_path = os.path.join(self.install_dir, rename_from_dir)
     rename_to_path = os.path.join(self.install_dir, rename_to_dir)
@@ -93,18 +95,34 @@ class RealUpdateDelegate(UpdateDelegate):
 
     try:
       try:
-        tar_file = cygtar.CygTar(archive_path, 'r', verbose=True)
-      except Exception as e:
-        raise Error('Can\'t open archive "%s".\n  %s' % (archive_path, e))
-
-      try:
         logging.info('Changing the directory to %s' % (extract_path,))
         os.chdir(extract_path)
       except Exception as e:
         raise Error('Unable to chdir into "%s".\n  %s' % (extract_path, e))
 
-      logging.info('Extracting to %s' % (extract_path,))
-      tar_file.Extract()
+      for i, archive in enumerate(archives):
+        archive_path = os.path.join(self.user_data_dir, archive)
+
+        try:
+          logging.info('Opening file %s (%d/%d).' % (archive_path, i + 1,
+              len(archives)))
+          try:
+            tar_file = cygtar.CygTar(archive_path, 'r', verbose=True)
+          except Exception as e:
+            raise Error('Can\'t open archive "%s".\n  %s' % (archive_path, e))
+
+          logging.info('Extracting to %s' % (extract_path,))
+          if len(archives) > 1:
+            print '(file %d/%d - "%s")' % (
+                 i + 1, len(archives), os.path.basename(archive_path))
+          tar_file.Extract()
+        finally:
+          if tar_file:
+            tar_file.Close()
+
+          # Remove the archive.
+          if os.path.exists(archive_path):
+            os.remove(archive_path)
 
       logging.info('Changing the directory to %s' % (curpath,))
       os.chdir(curpath)
@@ -122,17 +140,11 @@ class RealUpdateDelegate(UpdateDelegate):
         logging.error('Failed to remove directory \"%s\".  %s' % (
             extract_path, e))
 
-      if tar_file:
-        tar_file.Close()
-
-    # Remove the archive.
-    os.remove(archive_path)
-
 
 def Update(delegate, remote_manifest, local_manifest, bundle_names, force):
   valid_bundles = set([bundle.name for bundle in remote_manifest.GetBundles()])
-  requested_bundles = _GetRequestedBundlesFromArgs(remote_manifest,
-                                                   bundle_names)
+  requested_bundles = _GetRequestedBundleNamesFromArgs(remote_manifest,
+                                                       bundle_names)
   invalid_bundles = requested_bundles - valid_bundles
   if invalid_bundles:
     logging.warn('Ignoring unknown bundle(s): %s' % (
@@ -151,6 +163,21 @@ def Update(delegate, remote_manifest, local_manifest, bundle_names, force):
           bundle_name, force)
   else:
     logging.warn('No bundles to update.')
+
+
+def Reinstall(delegate, local_manifest, bundle_names):
+  valid_bundles, invalid_bundles = \
+      command_common.GetValidBundles(local_manifest, bundle_names)
+  if invalid_bundles:
+    logging.warn('Unknown bundle(s): %s\n' % (', '.join(invalid_bundles)))
+
+  if not valid_bundles:
+    logging.warn('No bundles to reinstall.')
+    return
+
+  for bundle_name in valid_bundles:
+    bundle = copy.deepcopy(local_manifest.GetBundle(bundle_name))
+    _UpdateBundle(delegate, bundle, local_manifest)
 
 
 def UpdateBundleIfNeeded(delegate, remote_manifest, local_manifest,
@@ -175,18 +202,21 @@ def UpdateBundleIfNeeded(delegate, remote_manifest, local_manifest,
     logging.error('Bundle %s does not exist.' % (bundle_name,))
 
 
-def _GetRequestedBundlesFromArgs(remote_manifest, requested_bundles):
+def _GetRequestedBundleNamesFromArgs(remote_manifest, requested_bundles):
   requested_bundles = set(requested_bundles)
   if RECOMMENDED in requested_bundles:
     requested_bundles.discard(RECOMMENDED)
-    requested_bundles |= set(_GetRecommendedBundles(remote_manifest))
+    requested_bundles |= set(_GetRecommendedBundleNames(remote_manifest))
 
   return requested_bundles
 
 
-def _GetRecommendedBundles(remote_manifest):
-  return [bundle for bundle in remote_manifest.GetBundles() if
-      bundle.recommended]
+def _GetRecommendedBundleNames(remote_manifest):
+  result = []
+  for bundle in remote_manifest.GetBundles():
+    if bundle.recommended == 'yes' and bundle.name != SDK_TOOLS:
+      result.append(bundle.name)
+  return result
 
 
 def _BundleNeedsUpdate(delegate, local_manifest, bundle):
@@ -199,15 +229,24 @@ def _BundleNeedsUpdate(delegate, local_manifest, bundle):
 
 
 def _UpdateBundle(delegate, bundle, local_manifest):
-  archive = bundle.GetHostOSArchive()
-  if not archive:
+  archives = bundle.GetHostOSArchives()
+  if not archives:
     logging.warn('Bundle %s does not exist for this platform.' % (bundle.name,))
     return
 
+  archive_filenames = []
+
   print 'Downloading bundle %s' % (bundle.name,)
-  dest_filename = _GetFilenameFromURL(archive.url)
-  sha1, size = delegate.DownloadToFile(archive.url, dest_filename)
-  _ValidateArchive(archive, sha1, size)
+  for i, archive in enumerate(archives):
+    if len(archives) > 1:
+      print '(file %d/%d - "%s")' % (
+          i + 1, len(archives), os.path.basename(archive.url))
+
+    archive_filename = _GetFilenameFromURL(archive.url)
+    sha1, size = delegate.DownloadToFile(archive.url, archive_filename)
+    _ValidateArchive(archive, sha1, size)
+
+    archive_filenames.append(archive_filename)
 
   print 'Updating bundle %s to version %s, revision %s' % (
       bundle.name, bundle.version, bundle.revision)
@@ -217,18 +256,18 @@ def _UpdateBundle(delegate, bundle, local_manifest):
   if repath_dir:
     # If repath is specified:
     # The files are extracted to nacl_sdk/<bundle.name>_update/<repath>/...
-    # The destination directory is nacl_sdk/<repath>/...
+    # The destination directory is nacl_sdk/<bundle.name>/...
     rename_from_dir = os.path.join(extract_dir, repath_dir)
-    rename_to_dir = repath_dir
   else:
     # If no repath is specified:
     # The files are extracted to nacl_sdk/<bundle.name>_update/...
     # The destination directory is nacl_sdk/<bundle.name>/...
     rename_from_dir = extract_dir
-    rename_to_dir = bundle.name
 
-  delegate.ExtractArchive(dest_filename, extract_dir, rename_from_dir,
-                          rename_to_dir)
+  rename_to_dir = bundle.name
+
+  delegate.ExtractArchives(archive_filenames, extract_dir, rename_from_dir,
+                           rename_to_dir)
 
   logging.info('Updating local manifest to include bundle %s' % (bundle.name))
   local_manifest.MergeBundle(bundle)

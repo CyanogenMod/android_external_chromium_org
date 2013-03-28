@@ -25,7 +25,7 @@ namespace content {
 // This will initialize the entire array to zero.
 const unsigned char BaseFile::kEmptySha256Hash[] = { 0 };
 
-BaseFile::BaseFile(const FilePath& full_path,
+BaseFile::BaseFile(const base::FilePath& full_path,
                    const GURL& source_url,
                    const GURL& referrer_url,
                    int64 received_bytes,
@@ -63,7 +63,7 @@ BaseFile::~BaseFile() {
 }
 
 DownloadInterruptReason BaseFile::Initialize(
-    const FilePath& default_directory) {
+    const base::FilePath& default_directory) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   DCHECK(!detached_);
 
@@ -73,8 +73,8 @@ DownloadInterruptReason BaseFile::Initialize(
   }
 
   if (full_path_.empty()) {
-    FilePath initial_directory(default_directory);
-    FilePath temp_file;
+    base::FilePath initial_directory(default_directory);
+    base::FilePath temp_file;
     if (initial_directory.empty()) {
       initial_directory =
           GetContentClient()->browser()->GetDefaultDownloadDirectory();
@@ -148,7 +148,7 @@ DownloadInterruptReason BaseFile::AppendDataToFile(const char* data,
   return DOWNLOAD_INTERRUPT_REASON_NONE;
 }
 
-DownloadInterruptReason BaseFile::Rename(const FilePath& new_path) {
+DownloadInterruptReason BaseFile::Rename(const base::FilePath& new_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   DownloadInterruptReason rename_result = DOWNLOAD_INTERRUPT_REASON_NONE;
 
@@ -294,6 +294,24 @@ DownloadInterruptReason BaseFile::Open() {
     }
   } else {
     file_stream_->SetBoundNetLogSource(bound_net_log_);
+  }
+
+  int64 file_size = file_stream_->SeekSync(net::FROM_END, 0);
+  if (file_size > bytes_so_far_) {
+    // The file is larger than we expected.
+    // This is OK, as long as we don't use the extra.
+    // Truncate the file.
+    int64 truncate_result = file_stream_->Truncate(bytes_so_far_);
+    if (truncate_result < 0)
+      return LogNetError("Truncate", static_cast<net::Error>(truncate_result));
+
+    // If if wasn't an error, it should have truncated to the size
+    // specified.
+    DCHECK_EQ(bytes_so_far_, truncate_result);
+  } else if (file_size < bytes_so_far_) {
+    // The file is shorter than we expected.  Our hashes won't be valid.
+    return LogInterruptReason("Unable to seek to last written point", 0,
+                              DOWNLOAD_INTERRUPT_REASON_FILE_TOO_SHORT);
   }
 
   return DOWNLOAD_INTERRUPT_REASON_NONE;

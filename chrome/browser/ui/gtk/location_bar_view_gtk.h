@@ -16,8 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/public/pref_observer.h"
-#include "chrome/browser/api/prefs/pref_member.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
@@ -35,7 +34,7 @@
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/owned_widget_gtk.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class ActionBoxButtonGtk;
 class Browser;
@@ -56,14 +55,13 @@ class Image;
 }
 
 namespace ui {
-class AcceleratorGtk;
+class Accelerator;
 }
 
 class LocationBarViewGtk : public OmniboxEditController,
                            public LocationBar,
                            public LocationBarTesting,
-                           public content::NotificationObserver,
-                           public PrefObserver {
+                           public content::NotificationObserver {
  public:
   explicit LocationBarViewGtk(Browser* browser);
   virtual ~LocationBarViewGtk();
@@ -80,9 +78,6 @@ class LocationBarViewGtk : public OmniboxEditController,
   GtkWidget* location_entry_widget() const { return entry_box_; }
 
   Browser* browser() const { return browser_; }
-
-  // Returns the current WebContents.
-  content::WebContents* GetWebContents() const;
 
   // Sets |preview_enabled| for the PageActionViewGtk associated with this
   // |page_action|. If |preview_enabled| is true, the view will display the
@@ -107,12 +102,12 @@ class LocationBarViewGtk : public OmniboxEditController,
   // Shows the Chrome To Mobile bubble.
   void ShowChromeToMobileBubble();
 
-  // Shows the bookmark bubble.
-  void ShowZoomBubble();
-
   // Happens when the zoom changes for the active tab. |can_show_bubble| will be
   // true if it was a user action and a bubble could be shown.
   void ZoomChangedForActiveTab(bool can_show_bubble);
+
+  // Returns the zoom widget. Used by the zoom bubble for an anchor.
+  GtkWidget* zoom_widget() { return zoom_.get(); }
 
   // Set the starred state of the bookmark star.
   void SetStarred(bool starred);
@@ -130,7 +125,7 @@ class LocationBarViewGtk : public OmniboxEditController,
   virtual gfx::Image GetFavicon() const OVERRIDE;
   virtual string16 GetTitle() const OVERRIDE;
   virtual InstantController* GetInstant() OVERRIDE;
-  virtual TabContents* GetTabContents() const OVERRIDE;
+  virtual content::WebContents* GetWebContents() const OVERRIDE;
 
   // LocationBar:
   virtual void ShowFirstRunBubble() OVERRIDE;
@@ -145,7 +140,6 @@ class LocationBarViewGtk : public OmniboxEditController,
   virtual void UpdateContentSettingsIcons() OVERRIDE;
   virtual void UpdatePageActions() OVERRIDE;
   virtual void InvalidatePageActions() OVERRIDE;
-  virtual void UpdateWebIntentsButton() OVERRIDE;
   virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE;
   virtual void SaveStateToContents(content::WebContents* contents) OVERRIDE;
   virtual void Revert() OVERRIDE;
@@ -167,10 +161,6 @@ class LocationBarViewGtk : public OmniboxEditController,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // PrefObserver:
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
-
   // Edit background color.
   static const GdkColor kBackgroundColor;
 
@@ -184,7 +174,7 @@ class LocationBarViewGtk : public OmniboxEditController,
     GtkWidget* widget();
 
     bool IsVisible();
-    virtual void Update(TabContents* tab_contents) = 0;
+    virtual void Update(content::WebContents* web_contents) = 0;
 
     // Overridden from ui::AnimationDelegate:
     virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
@@ -329,9 +319,9 @@ class LocationBarViewGtk : public OmniboxEditController,
     GtkAccelGroup* accel_group_;
 
     // The keybinding accelerator registered to show the page action popup.
-    scoped_ptr<ui::AcceleratorGtk> page_action_keybinding_;
+    scoped_ptr<ui::Accelerator> page_action_keybinding_;
     // The keybinding accelerator registered to show the script badge popup.
-    scoped_ptr<ui::AcceleratorGtk> script_badge_keybinding_;
+    scoped_ptr<ui::Accelerator> script_badge_keybinding_;
 
     // This is used for post-install visual feedback. The page_action icon
     // is briefly shown even if it hasn't been enabled by its extension.
@@ -375,10 +365,14 @@ class LocationBarViewGtk : public OmniboxEditController,
                        GtkAllocation*);
   CHROMEGTK_CALLBACK_1(LocationBarViewGtk, gboolean, OnZoomButtonPress,
                        GdkEventButton*);
+  CHROMEGTK_CALLBACK_1(LocationBarViewGtk, gboolean, OnScriptBubbleButtonPress,
+                       GdkEventButton*);
   CHROMEGTK_CALLBACK_1(LocationBarViewGtk, void, OnStarButtonSizeAllocate,
                        GtkAllocation*);
   CHROMEGTK_CALLBACK_1(LocationBarViewGtk, gboolean, OnStarButtonPress,
                        GdkEventButton*);
+  CHROMEGTK_CALLBACK_1(LocationBarViewGtk, gboolean,
+                       OnScriptBubbleButtonExpose, GdkEventExpose*);
 
   // Updates the site type area: changes the icon and shows/hides the EV
   // certificate information.
@@ -400,12 +394,16 @@ class LocationBarViewGtk : public OmniboxEditController,
 
   void ShowFirstRunBubbleInternal();
 
+  // Shows the zoom bubble.
+  void ShowZoomBubble();
+
   // Show or hide |tab_to_search_box_| and |tab_to_search_hint_| according to
   // the value of |show_selected_keyword_|, |show_keyword_hint_|, and the
   // available horizontal space in the location bar.
   void AdjustChildrenVisibility();
 
-  // Build the zoom, and star icons.
+  // Helpers to build create the various buttons that show up in the location
+  // bar.
   GtkWidget* CreateIconButton(
       GtkWidget** image,
       int image_id,
@@ -413,12 +411,13 @@ class LocationBarViewGtk : public OmniboxEditController,
       int tooltip_id,
       gboolean (click_callback)(GtkWidget*, GdkEventButton*, gpointer));
   void CreateZoomButton();
+  void CreateScriptBubbleButton();
   void CreateStarButton();
 
-  // Update the zoom icon after zoom changes.
+  // Helpers to update state of the various buttons that show up in the
+  // location bar.
   void UpdateZoomIcon();
-
-  // Update the star icon after it is toggled or the theme changes.
+  void UpdateScriptBubbleIcon();
   void UpdateStarIcon();
 
   // Returns true if we should only show the URL and none of the extras like
@@ -431,6 +430,10 @@ class LocationBarViewGtk : public OmniboxEditController,
   // Zoom button.
   ui::OwnedWidgetGtk zoom_;
   GtkWidget* zoom_image_;
+
+  ui::OwnedWidgetGtk script_bubble_button_;
+  GtkWidget* script_bubble_button_image_;
+  size_t num_running_scripts_;
 
   // Star button.
   ui::OwnedWidgetGtk star_;
@@ -462,10 +465,6 @@ class LocationBarViewGtk : public OmniboxEditController,
   // Extension page action icons.
   ui::OwnedWidgetGtk page_action_hbox_;
   ScopedVector<PageActionViewGtk> page_action_views_;
-
-  // Control for web intents window disposition picker control.
-  ui::OwnedWidgetGtk web_intents_hbox_;
-  scoped_ptr<PageToolViewGtk> web_intents_button_view_;
 
   // The widget that contains our tab hints and the location bar.
   GtkWidget* entry_box_;

@@ -5,16 +5,22 @@
 #include "content/renderer/pepper/content_renderer_pepper_host_factory.h"
 
 #include "base/logging.h"
+#include "base/string_util.h"
 #include "content/renderer/pepper/pepper_audio_input_host.h"
+#include "content/renderer/pepper/pepper_directory_reader_host.h"
 #include "content/renderer/pepper/pepper_file_chooser_host.h"
-#include "content/renderer/pepper/pepper_flash_clipboard_host.h"
-#include "content/renderer/pepper/pepper_flash_host.h"
+#include "content/renderer/pepper/pepper_file_io_host.h"
+#include "content/renderer/pepper/pepper_graphics_2d_host.h"
+#include "content/renderer/pepper/pepper_truetype_font_host.h"
+#include "content/renderer/pepper/pepper_video_capture_host.h"
 #include "content/renderer/pepper/pepper_websocket_host.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
 #include "ppapi/host/resource_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/proxy/serialized_structs.h"
 
 using ppapi::host::ResourceHost;
+using ppapi::proxy::SerializedTrueTypeFontDesc;
 
 namespace content {
 
@@ -37,40 +43,63 @@ scoped_ptr<ResourceHost> ContentRendererPepperHostFactory::CreateResourceHost(
   if (!host_->IsValidInstance(instance))
     return scoped_ptr<ResourceHost>();
 
-  // Stable interfaces.
+  // Public interfaces.
   switch (message.type()) {
+    case PpapiHostMsg_Graphics2D_Create::ID: {
+      PpapiHostMsg_Graphics2D_Create::Schema::Param msg_params;
+      if (!PpapiHostMsg_Graphics2D_Create::Read(&message, &msg_params)) {
+        NOTREACHED();
+        return scoped_ptr<ResourceHost>();
+      }
+      return scoped_ptr<ResourceHost>(
+          PepperGraphics2DHost::Create(host_, instance, params.pp_resource(),
+                                       msg_params.a /* PP_Size */,
+                                       msg_params.b /* PP_Bool */));
+    }
     case PpapiHostMsg_WebSocket_Create::ID:
       return scoped_ptr<ResourceHost>(new PepperWebSocketHost(
           host_, instance, params.pp_resource()));
+    case PpapiHostMsg_FileIO_Create::ID:
+      return scoped_ptr<ResourceHost>(new PepperFileIOHost(
+          host_, instance, params.pp_resource()));
   }
 
-  // Resources for dev interfaces.
-  // TODO(brettw) when we support any public or private interfaces, put them in
-  // a separate switch above.
-
-  // TODO(brettw) put back this dev check! This was removed to fix issue 138902
-  // where the permissions for bundled Flash (but not Flash that you specify
-  // on the command line, making it difficult to test) are incorrect.
-  /*if (GetPermissions().HasPermission(ppapi::PERMISSION_DEV))*/ {
+  // Dev interfaces.
+  if (GetPermissions().HasPermission(ppapi::PERMISSION_DEV)) {
     switch (message.type()) {
       case PpapiHostMsg_AudioInput_Create::ID:
         return scoped_ptr<ResourceHost>(new PepperAudioInputHost(
             host_, instance, params.pp_resource()));
+      case PpapiHostMsg_DirectoryReader_Create::ID:
+        return scoped_ptr<ResourceHost>(new PepperDirectoryReaderHost(
+            host_, instance, params.pp_resource()));
       case PpapiHostMsg_FileChooser_Create::ID:
         return scoped_ptr<ResourceHost>(new PepperFileChooserHost(
             host_, instance, params.pp_resource()));
-    }
-  }
-
-  // Resources for Flash interfaces.
-  if (GetPermissions().HasPermission(ppapi::PERMISSION_FLASH)) {
-    switch (message.type()) {
-      case PpapiHostMsg_Flash_Create::ID:
-        return scoped_ptr<ResourceHost>(new PepperFlashHost(
-            host_, instance, params.pp_resource()));
-      case PpapiHostMsg_FlashClipboard_Create::ID:
-        return scoped_ptr<ResourceHost>(new PepperFlashClipboardHost(
-            host_, instance, params.pp_resource()));
+      case PpapiHostMsg_TrueTypeFont_Create::ID: {
+        PpapiHostMsg_TrueTypeFont_Create::Schema::Param msg_params;
+        if (!PpapiHostMsg_TrueTypeFont_Create::Read(&message, &msg_params)) {
+          NOTREACHED();
+          return scoped_ptr<ResourceHost>();
+        }
+        // Check that the family name is valid UTF-8 before passing it to the
+        // host OS.
+        const SerializedTrueTypeFontDesc& desc = msg_params.a;
+        if (IsStringUTF8(desc.family)) {
+          return scoped_ptr<ResourceHost>(new PepperTrueTypeFontHost(
+              host_, instance, params.pp_resource(), desc));
+        }
+        break;  // Drop through and return null host.
+      }
+      case PpapiHostMsg_VideoCapture_Create::ID: {
+        PepperVideoCaptureHost* host = new PepperVideoCaptureHost(
+            host_, instance, params.pp_resource());
+        if (!host->Init()) {
+          delete host;
+          return scoped_ptr<ResourceHost>();
+        }
+        return scoped_ptr<ResourceHost>(host);
+      }
     }
   }
 

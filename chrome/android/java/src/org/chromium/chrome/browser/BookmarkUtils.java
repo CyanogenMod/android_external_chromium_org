@@ -13,6 +13,8 @@ import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
@@ -21,7 +23,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
 
-import org.chromium.content.app.AppResource;
+import org.chromium.chrome.R;
 
 /**
  * Util class for bookmarks.
@@ -35,6 +37,7 @@ public class BookmarkUtils {
     private static final String TAG = "BookmarkUtils";
     public static final String REUSE_URL_MATCHING_TAB_ELSE_NEW_TAB =
             "REUSE_URL_MATCHING_TAB_ELSE_NEW_TAB";
+    private static final int INSET_DIMENSION_FOR_TOUCHICON = 1;
     private static final int SDK_VERSION_FOR_ACCESS_TO_METHODS = 15;
 
     /**
@@ -85,23 +88,26 @@ public class BookmarkUtils {
             int gValue, int bValue) {
         Bitmap bitmap = null;
         ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-        int iconDimension = am.getLauncherLargeIconSize();
-        int iconDensity = am.getLauncherLargeIconDensity();
+        final int iconDimension = am.getLauncherLargeIconSize();
+        final int iconDensity = am.getLauncherLargeIconDensity();
         try {
             bitmap = Bitmap.createBitmap(iconDimension, iconDimension, Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
             Rect iconBounds = new Rect(0, 0, bitmap.getWidth(), bitmap.getHeight());
             if (favicon == null) {
-                assert AppResource.DRAWABLE_ICON_DEFAULT_FAVICON != 0;
-                favicon = getBitmapFromResourceId(context,
-                        AppResource.DRAWABLE_ICON_DEFAULT_FAVICON, iconDensity);
+                favicon = getBitmapFromResourceId(context, R.drawable.globe_favicon, iconDensity);
                 rValue = gValue = bValue = DEFAULT_RGB_VALUE;
             }
-            Bitmap icon = getIconBackground(context, iconDensity);
-            if (icon != null) {
-                canvas.drawBitmap(icon, null, iconBounds, new Paint(Paint.ANTI_ALIAS_FLAG));
+            final int smallestSide = iconDimension;
+            if (favicon.getWidth() >= smallestSide / 2 && favicon.getHeight() >= smallestSide / 2) {
+                drawTouchIconToCanvas(context, favicon, canvas, iconBounds);
+            } else {
+                Bitmap icon = getIconBackground(context, iconDensity);
+                if (icon != null) {
+                    canvas.drawBitmap(icon, null, iconBounds, new Paint(Paint.ANTI_ALIAS_FLAG));
+                }
+                drawFaviconToCanvas(context, favicon, canvas, iconBounds, rValue, gValue, bValue);
             }
-            drawFaviconToCanvas(context, favicon, canvas, iconBounds, rValue, gValue, bValue);
             canvas.setBitmap(null);
         } catch (OutOfMemoryError e) {
             Log.w(TAG, "OutOfMemoryError while trying to draw bitmap on canvas.");
@@ -115,9 +121,7 @@ public class BookmarkUtils {
      * @return Bitmap favicon background asset.
      */
     private static Bitmap getIconBackground(Context context, int density) {
-        assert AppResource.MIPMAP_BOOKMARK_SHORTCUT_BACKGROUND != 0;
-        return getBitmapFromResourceId(context, AppResource.MIPMAP_BOOKMARK_SHORTCUT_BACKGROUND,
-                density);
+        return getBitmapFromResourceId(context, R.mipmap.homescreen_bg, density);
     }
 
     private static Bitmap getBitmapFromResourceId(Context context, int id, int density) {
@@ -136,6 +140,30 @@ public class BookmarkUtils {
     }
 
     /**
+     * Use touch-icon or higher-resolution favicon and round the corners.
+     * @param context    Context used to get resources.
+     * @param touchIcon  Touch icon bitmap.
+     * @param canvas     Canvas that holds the touch icon.
+     * @param iconBounds Rectangle bounds needed for adding rounded corners of the touch icon.
+     */
+    private static void drawTouchIconToCanvas(
+            Context context, Bitmap touchIcon, Canvas canvas, Rect iconBounds) {
+        Rect src = new Rect(0, 0, touchIcon.getWidth(), touchIcon.getHeight());
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setFilterBitmap(true);
+        canvas.drawBitmap(touchIcon, src, iconBounds, paint);
+        int borderRadii =
+                context.getResources().getDimensionPixelSize(R.dimen.touchicon_border_radii);
+        Path path = new Path();
+        path.setFillType(Path.FillType.INVERSE_WINDING);
+        RectF rect = new RectF(iconBounds);
+        rect.inset(INSET_DIMENSION_FOR_TOUCHICON, INSET_DIMENSION_FOR_TOUCHICON);
+        path.addRoundRect(rect, borderRadii, borderRadii, Path.Direction.CW);
+        paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+        canvas.drawPath(path, paint);
+    }
+
+    /**
      * Draw the favicon with dominant color.
      * @param context Context used to create the intent.
      * @param favicon favicon bitmap.
@@ -147,34 +175,20 @@ public class BookmarkUtils {
      */
     private static void drawFaviconToCanvas(Context context, Bitmap favicon,
             Canvas canvas, Rect iconBounds, int rValue, int gValue, int bValue) {
-        assert AppResource.DIMENSION_FAVICON_SIZE != 0;
-        assert AppResource.DIMENSION_FAVICON_COLORSTRIP_CORNER_RADII != 0;
-        assert AppResource.DIMENSION_FAVICON_COLORSTRIP_HEIGHT != 0;
-        assert AppResource.DIMENSION_FAVICON_COLORSTRIP_PADDING != 0;
-        assert AppResource.DIMENSION_FAVICON_COLORSTRIP_WIDTH != 0;
-        assert AppResource.DIMENSION_FAVICON_FOLD_BORDER != 0;
-        assert AppResource.DIMENSION_FAVICON_FOLD_CORNER_RADII != 0;
-        assert AppResource.DIMENSION_FAVICON_FOLD_SHADOW != 0;
-        assert AppResource.DIMENSION_FAVICON_FOLD_SIZE != 0;
-
         int colorStripWidth = context.getResources().getDimensionPixelSize(
-                AppResource.DIMENSION_FAVICON_COLORSTRIP_WIDTH);
+                R.dimen.favicon_colorstrip_width);
         int colorStripHeight = context.getResources().getDimensionPixelSize(
-                AppResource.DIMENSION_FAVICON_COLORSTRIP_HEIGHT);
+                R.dimen.favicon_colorstrip_height);
         int colorStripPadding = context.getResources().getDimensionPixelSize(
-                AppResource.DIMENSION_FAVICON_COLORSTRIP_PADDING);
+                R.dimen.favicon_colorstrip_padding);
         int colorStripCornerRadii = context.getResources().getDimensionPixelSize(
-                AppResource.DIMENSION_FAVICON_COLORSTRIP_CORNER_RADII);
-        int foldSize = context.getResources().getDimensionPixelSize(
-                AppResource.DIMENSION_FAVICON_FOLD_SIZE);
+                R.dimen.favicon_colorstrip_corner_radii);
+        int foldSize = context.getResources().getDimensionPixelSize(R.dimen.favicon_fold_size);
         int foldCornerRadii = context.getResources().getDimensionPixelSize(
-                AppResource.DIMENSION_FAVICON_FOLD_CORNER_RADII);
-        int foldBorder = context.getResources().getDimensionPixelSize(
-                AppResource.DIMENSION_FAVICON_FOLD_BORDER);
-        int foldShadow = context.getResources().getDimensionPixelSize(
-                AppResource.DIMENSION_FAVICON_FOLD_SHADOW);
-        int faviconSize = context.getResources().getDimensionPixelSize(
-                AppResource.DIMENSION_FAVICON_SIZE);
+                R.dimen.favicon_fold_corner_radii);
+        int foldBorder = context.getResources().getDimensionPixelSize(R.dimen.favicon_fold_border);
+        int foldShadow = context.getResources().getDimensionPixelSize(R.dimen.favicon_fold_shadow);
+        int faviconSize = context.getResources().getDimensionPixelSize(R.dimen.favicon_size);
 
         float x1 = iconBounds.exactCenterX() - (colorStripWidth / 2.0f);
         float x2 = x1 + colorStripWidth;

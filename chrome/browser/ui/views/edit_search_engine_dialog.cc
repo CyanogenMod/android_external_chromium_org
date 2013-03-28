@@ -18,7 +18,6 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/controls/table/table_view.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
@@ -97,10 +96,6 @@ bool EditSearchEngineDialog::Accept() {
   controller_->AcceptAddOrEdit(title_tf_->text(), keyword_tf_->text(),
                                UTF16ToUTF8(url_tf_->text()));
   return true;
-}
-
-views::View* EditSearchEngineDialog::GetContentsView() {
-  return this;
 }
 
 void EditSearchEngineDialog::ContentsChanged(Textfield* sender,

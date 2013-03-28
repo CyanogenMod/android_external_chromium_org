@@ -4,14 +4,18 @@
 
 #include "chrome/browser/net/chrome_network_delegate.h"
 
+#include <stdlib.h>
+
 #include <vector>
 
 #include "base/base_paths.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/string_split.h"
-#include "chrome/browser/api/prefs/pref_member.h"
+#include "base/prefs/pref_member.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
@@ -23,9 +27,10 @@
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/google/google_util.h"
+#include "chrome/browser/net/connect_interceptor.h"
 #include "chrome/browser/net/load_time_stats.h"
 #include "chrome/browser/performance_monitor/performance_monitor.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/common/pref_names.h"
@@ -33,6 +38,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_request_info.h"
+#include "extensions/common/constants.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
@@ -42,10 +48,6 @@
 #include "net/http/http_response_headers.h"
 #include "net/socket_stream/socket_stream.h"
 #include "net/url_request/url_request.h"
-
-#if !defined(OS_ANDROID)
-#include "chrome/browser/managed_mode/managed_mode_url_filter.h"
-#endif
 
 #if defined(OS_CHROMEOS)
 #include "base/chromeos/chromeos_version.h"
@@ -210,13 +212,38 @@ void ForwardRequestStatus(
   }
 }
 
+#if defined(OS_ANDROID)
+// Increments an int64, stored as a string, in a ListPref at the specified
+// index.  The value must already exist and be a string representation of a
+// number.
+void AddInt64ToListPref(size_t index, int64 length,
+                        ListPrefUpdate& list_update) {
+  int64 value = 0;
+  std::string old_string_value;
+  bool rv = list_update->GetString(index, &old_string_value);
+  DCHECK(rv);
+  if (rv) {
+    rv = base::StringToInt64(old_string_value, &value);
+    DCHECK(rv);
+  }
+  value += length;
+  list_update->Set(index, Value::CreateStringValue(base::Int64ToString(value)));
+}
+#endif  // defined(OS_ANDROID)
+
 void UpdateContentLengthPrefs(int received_content_length,
                               int original_content_length) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_GE(received_content_length, 0);
   DCHECK_GE(original_content_length, 0);
 
+  // Can be NULL in a unit test.
+  if (!g_browser_process)
+    return;
+
   PrefService* prefs = g_browser_process->local_state();
+  if (!prefs)
+    return;
 
   int64 total_received = prefs->GetInt64(prefs::kHttpReceivedContentLength);
   int64 total_original = prefs->GetInt64(prefs::kHttpOriginalContentLength);
@@ -224,6 +251,72 @@ void UpdateContentLengthPrefs(int received_content_length,
   total_original += original_content_length;
   prefs->SetInt64(prefs::kHttpReceivedContentLength, total_received);
   prefs->SetInt64(prefs::kHttpOriginalContentLength, total_original);
+
+#if defined(OS_ANDROID)
+  base::Time now = base::Time::Now().LocalMidnight();
+  const size_t kNumDaysInHistory = 60;
+
+  // Each day, we calculate the total number of bytes received and the total
+  // size of all corresponding resources before any data-reducing recompression
+  // is applied. These values are used to compute the data savings realized
+  // by applying our compression techniques. Totals for the last
+  // |kNumDaysInHistory| days are maintained.
+  ListPrefUpdate original_update(prefs, prefs::kDailyHttpOriginalContentLength);
+  ListPrefUpdate received_update(prefs, prefs::kDailyHttpReceivedContentLength);
+
+  // Determine how many days it has been since the last update.
+  int64 then_internal = prefs->GetInt64(
+      prefs::kDailyHttpContentLengthLastUpdateDate);
+  base::Time then = base::Time::FromInternalValue(then_internal);
+  int days_since_last_update = (now - then).InDays();
+
+  if (days_since_last_update) {
+    // Record the last update time.
+    prefs->SetInt64(prefs::kDailyHttpContentLengthLastUpdateDate,
+                    now.ToInternalValue());
+
+    if (days_since_last_update == -1) {
+      // The system may go backwards in time by up to a day for legitimate
+      // reasons, such as with changes to the time zone. In such cases the
+      // history is likely still valid. Shift backwards one day and retain all
+      // values.
+      original_update->Remove(kNumDaysInHistory - 1, NULL);
+      received_update->Remove(kNumDaysInHistory - 1, NULL);
+      original_update->Insert(0, new StringValue(base::Int64ToString(0)));
+      received_update->Insert(0, new StringValue(base::Int64ToString(0)));
+      days_since_last_update = 0;
+
+    } else if (days_since_last_update < -1) {
+      // Erase all entries if the system went backwards in time by more than
+      // a day.
+      original_update->Clear();
+      days_since_last_update = kNumDaysInHistory;
+    }
+
+    // Add entries for days since last update.
+    for (int i = 0;
+         i < days_since_last_update && i < static_cast<int>(kNumDaysInHistory);
+         ++i) {
+      original_update->AppendString(base::Int64ToString(0));
+      received_update->AppendString(base::Int64ToString(0));
+    }
+
+    // Maintain the invariant that there should never be more than
+    // |kNumDaysInHistory| days in the histories.
+    while (original_update->GetSize() > kNumDaysInHistory)
+      original_update->Remove(0, NULL);
+    while (received_update->GetSize() > kNumDaysInHistory)
+      received_update->Remove(0, NULL);
+  }
+  DCHECK_EQ(kNumDaysInHistory, original_update->GetSize());
+  DCHECK_EQ(kNumDaysInHistory, received_update->GetSize());
+
+  // Update the counts for the current day.
+  AddInt64ToListPref(kNumDaysInHistory - 1,
+                     original_content_length, original_update);
+  AddInt64ToListPref(kNumDaysInHistory - 1,
+                     received_content_length, received_update);
+#endif
 }
 
 void StoreAccumulatedContentLength(int received_content_length,
@@ -262,33 +355,37 @@ void RecordContentLengthHistograms(
 
 ChromeNetworkDelegate::ChromeNetworkDelegate(
     extensions::EventRouterForwarder* event_router,
-    ExtensionInfoMap* extension_info_map,
-    const policy::URLBlacklistManager* url_blacklist_manager,
-    const ManagedModeURLFilter* managed_mode_url_filter,
-    void* profile,
-    CookieSettings* cookie_settings,
-    BooleanPrefMember* enable_referrers,
-    BooleanPrefMember* enable_do_not_track,
-    BooleanPrefMember* force_google_safe_search,
-    chrome_browser_net::LoadTimeStats* load_time_stats)
+    BooleanPrefMember* enable_referrers)
     : event_router_(event_router),
-      profile_(profile),
-      cookie_settings_(cookie_settings),
-      extension_info_map_(extension_info_map),
+      profile_(NULL),
       enable_referrers_(enable_referrers),
-      enable_do_not_track_(enable_do_not_track),
-      force_google_safe_search_(force_google_safe_search),
-      url_blacklist_manager_(url_blacklist_manager),
-      managed_mode_url_filter_(managed_mode_url_filter),
-      load_time_stats_(load_time_stats),
+      enable_do_not_track_(NULL),
+      force_google_safe_search_(NULL),
+      url_blacklist_manager_(NULL),
+      load_time_stats_(NULL),
       received_content_length_(0),
       original_content_length_(0) {
   DCHECK(event_router);
   DCHECK(enable_referrers);
-  DCHECK(!profile || cookie_settings);
 }
 
 ChromeNetworkDelegate::~ChromeNetworkDelegate() {}
+
+void ChromeNetworkDelegate::set_extension_info_map(
+    ExtensionInfoMap* extension_info_map) {
+  extension_info_map_ = extension_info_map;
+}
+
+void ChromeNetworkDelegate::set_cookie_settings(
+    CookieSettings* cookie_settings) {
+  cookie_settings_ = cookie_settings;
+}
+
+void ChromeNetworkDelegate::set_predictor(
+    chrome_browser_net::Predictor* predictor) {
+  connect_interceptor_.reset(
+      new chrome_browser_net::ConnectInterceptor(predictor));
+}
 
 // static
 void ChromeNetworkDelegate::NeverThrottleRequests() {
@@ -302,16 +399,16 @@ void ChromeNetworkDelegate::InitializePrefsOnUIThread(
     BooleanPrefMember* force_google_safe_search,
     PrefService* pref_service) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  enable_referrers->Init(prefs::kEnableReferrers, pref_service, NULL);
+  enable_referrers->Init(prefs::kEnableReferrers, pref_service);
   enable_referrers->MoveToThread(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
   if (enable_do_not_track) {
-    enable_do_not_track->Init(prefs::kEnableDoNotTrack, pref_service, NULL);
+    enable_do_not_track->Init(prefs::kEnableDoNotTrack, pref_service);
     enable_do_not_track->MoveToThread(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
   }
   if (force_google_safe_search) {
-    force_google_safe_search->Init(prefs::kForceSafeSearch, pref_service, NULL);
+    force_google_safe_search->Init(prefs::kForceSafeSearch, pref_service);
     force_google_safe_search->MoveToThread(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
   }
@@ -330,15 +427,21 @@ Value* ChromeNetworkDelegate::HistoricNetworkStatsInfoToValue() {
   int64 total_original = prefs->GetInt64(prefs::kHttpOriginalContentLength);
 
   DictionaryValue* dict = new DictionaryValue();
-  dict->SetInteger("historic_received_content_length", total_received);
-  dict->SetInteger("historic_original_content_length", total_original);
+  // Use strings to avoid overflow.  base::Value only supports 32-bit integers.
+  dict->SetString("historic_received_content_length",
+                  base::Int64ToString(total_received));
+  dict->SetString("historic_original_content_length",
+                  base::Int64ToString(total_original));
   return dict;
 }
 
 Value* ChromeNetworkDelegate::SessionNetworkStatsInfoToValue() const {
   DictionaryValue* dict = new DictionaryValue();
-  dict->SetInteger("session_received_content_length", received_content_length_);
-  dict->SetInteger("session_original_content_length", original_content_length_);
+  // Use strings to avoid overflow.  base::Value only supports 32-bit integers.
+  dict->SetString("session_received_content_length",
+                  base::Int64ToString(received_content_length_));
+  dict->SetString("session_original_content_length",
+                  base::Int64ToString(original_content_length_));
   return dict;
 }
 
@@ -351,21 +454,13 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
   // blocked. However, an extension might redirect the request to another URL,
   // which is not blocked.
   if (url_blacklist_manager_ &&
-      url_blacklist_manager_->IsURLBlocked(request->url())) {
+      url_blacklist_manager_->IsRequestBlocked(*request)) {
     // URL access blocked by policy.
     request->net_log().AddEvent(
         net::NetLog::TYPE_CHROME_POLICY_ABORTED_REQUEST,
         net::NetLog::StringCallback("url",
                                     &request->url().possibly_invalid_spec()));
-    return net::ERR_NETWORK_ACCESS_DENIED;
-  }
-#endif
-
-#if !defined(OS_ANDROID)
-  if (managed_mode_url_filter_ &&
-      !managed_mode_url_filter_->IsURLWhitelisted(request->url())) {
-    // Block for now.
-    return net::ERR_NETWORK_ACCESS_DENIED;
+    return net::ERR_BLOCKED_BY_ADMINISTRATOR;
   }
 #endif
 
@@ -393,6 +488,9 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
 
   if (force_safe_search && rv == net::OK && new_url->is_empty())
     ForceGoogleSafeSearch(request, new_url);
+
+  if (connect_interceptor_)
+    connect_interceptor_->WitnessURLRequest(request);
 
   return rv;
 }
@@ -572,7 +670,7 @@ bool ChromeNetworkDelegate::OnCanSetCookie(const net::URLRequest& request,
 }
 
 bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
-                                            const FilePath& path) const {
+                                            const base::FilePath& path) const {
   if (g_allow_file_access_)
     return true;
 
@@ -600,7 +698,7 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
   };
 #elif defined(OS_ANDROID)
   // Access to files in external storage is allowed.
-  FilePath external_storage_path;
+  base::FilePath external_storage_path;
   PathService::Get(base::DIR_ANDROID_EXTERNAL_STORAGE, &external_storage_path);
   if (external_storage_path.IsParent(path))
     return true;
@@ -613,8 +711,8 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
 #endif
 
   for (size_t i = 0; i < arraysize(kLocalAccessWhiteList); ++i) {
-    const FilePath white_listed_path(kLocalAccessWhiteList[i]);
-    // FilePath::operator== should probably handle trailing separators.
+    const base::FilePath white_listed_path(kLocalAccessWhiteList[i]);
+    // base::FilePath::operator== should probably handle trailing separators.
     if (white_listed_path == path.StripTrailingSeparators() ||
         white_listed_path.IsParent(path)) {
       return true;
@@ -633,7 +731,7 @@ bool ChromeNetworkDelegate::OnCanThrottleRequest(
   }
 
   return request.first_party_for_cookies().scheme() ==
-      chrome::kExtensionScheme;
+      extensions::kExtensionScheme;
 }
 
 int ChromeNetworkDelegate::OnBeforeSocketStreamConnect(
@@ -647,7 +745,7 @@ int ChromeNetworkDelegate::OnBeforeSocketStreamConnect(
         net::NetLog::TYPE_CHROME_POLICY_ABORTED_REQUEST,
         net::NetLog::StringCallback("url",
                                     &socket->url().possibly_invalid_spec()));
-    return net::ERR_NETWORK_ACCESS_DENIED;
+    return net::ERR_BLOCKED_BY_ADMINISTRATOR;
   }
 #endif
   return net::OK;

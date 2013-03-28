@@ -32,7 +32,7 @@ class EulaScreen : public WizardScreen,
 
   // EulaScreenActor::Delegate implementation:
   virtual GURL GetOemEulaUrl() const OVERRIDE;
-  virtual void OnExit(bool accepted, bool is_usage_stats_checked) OVERRIDE;
+  virtual void OnExit(bool accepted, bool usage_stats_enabled) OVERRIDE;
   virtual void InitiatePasswordFetch() OVERRIDE;
   virtual bool IsUsageStatsEnabled() const OVERRIDE;
   virtual void OnActorDestroyed(EulaScreenActor* actor) OVERRIDE;

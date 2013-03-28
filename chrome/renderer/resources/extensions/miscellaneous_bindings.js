@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// This script contains unprivileged javascript APIs related to chrome
-// extensions.  It is loaded by any extension-related context, such as content
-// scripts or background pages.
-// See user_script_slave.cc for script that is loaded by content scripts only.
+// This contains unprivileged javascript APIs for extensions and apps.  It
+// can be loaded by any extension-related context, such as content scripts or
+// background pages. See user_script_slave.cc for script that is loaded by
+// content scripts only.
 
   require('json_schema');
-  require('event_bindings');
+  var json = require('json');
   var lastError = require('lastError');
   var miscNatives = requireNative('miscellaneous_bindings');
+  var chrome = requireNative('chrome').GetChrome();
   var CloseChannel = miscNatives.CloseChannel;
   var PortAddRef = miscNatives.PortAddRef;
   var PortRelease = miscNatives.PortRelease;
@@ -26,8 +27,8 @@
   // The reserved channel name for the sendRequest/sendMessage APIs.
   // Note: sendRequest is deprecated.
   chromeHidden.kRequestChannel = "chrome.extension.sendRequest";
-  chromeHidden.kMessageChannel = "chrome.extension.sendMessage";
-  chromeHidden.kNativeMessageChannel = "chrome.extension.sendNativeMessage";
+  chromeHidden.kMessageChannel = "chrome.runtime.sendMessage";
+  chromeHidden.kNativeMessageChannel = "chrome.runtime.sendNativeMessage";
 
   // Map of port IDs to port object.
   var ports = {};
@@ -52,10 +53,10 @@
   // Sends a message asynchronously to the context on the other end of this
   // port.
   PortImpl.prototype.postMessage = function(msg) {
-    // JSON.stringify doesn't support a root object which is undefined.
+    // json.stringify doesn't support a root object which is undefined.
     if (msg === undefined)
       msg = null;
-    PostMessage(this.portId_, chromeHidden.JSON.stringify(msg));
+    PostMessage(this.portId_, json.stringify(msg));
   };
 
   // Disconnects the port from the other end.
@@ -106,7 +107,7 @@
                                   sourceExtensionId, targetExtensionId) {
     var errorMsg;
     var eventName = (isSendMessage  ?
-        "chrome.extension.onMessage" : "chrome.extension.onRequest");
+        "chrome.runtime.onMessage" : "chrome.extension.onRequest");
     if (isSendMessage && !responseCallbackPreserved) {
       errorMsg =
           "The " + eventName + " listener must return true if you want to" +
@@ -120,7 +121,7 @@
     if (sourceExtensionId != targetExtensionId)
       errorMsg += " for extension " + targetExtensionId;
     errorMsg += ").";
-    lastError.set(errorMsg);
+    lastError.set(errorMsg, chrome);
     console.error("Could not send response: " + errorMsg);
   }
 
@@ -130,10 +131,10 @@
                              isExternal) {
     var isSendMessage = channelName == chromeHidden.kMessageChannel;
     var requestEvent = (isSendMessage ?
-       (isExternal ?
-           chrome.extension.onMessageExternal : chrome.extension.onMessage) :
-       (isExternal ?
-           chrome.extension.onRequestExternal : chrome.extension.onRequest));
+        (isExternal ?
+            chrome.runtime.onMessageExternal : chrome.runtime.onMessage) :
+        (isExternal ?
+            chrome.extension.onRequestExternal : chrome.extension.onRequest));
     if (requestEvent.hasListeners()) {
       var port = chromeHidden.Port.createPort(portId, channelName);
       port.onMessage.addListener(function(request) {
@@ -146,8 +147,8 @@
           } else {
             // We nulled out port when sending the response, and now the page
             // is trying to send another response for the same request.
-              handleSendRequestError(isSendMessage, responseCallbackPreserved,
-                                     sourceExtensionId, targetExtensionId);
+            handleSendRequestError(isSendMessage, responseCallbackPreserved,
+                                   sourceExtensionId, targetExtensionId);
           }
         };
         // In case the extension never invokes the responseCallback, and also
@@ -160,19 +161,19 @@
             port = null;
           }
         });
-          if (!isSendMessage) {
-            requestEvent.dispatch(request, sender, responseCallback);
-          } else {
-            var rv = requestEvent.dispatch(request, sender, responseCallback);
-            responseCallbackPreserved =
-                rv && rv.results && rv.results.indexOf(true) > -1;
-            if (!responseCallbackPreserved && port) {
-              // If they didn't access the response callback, they're not
-              // going to send a response, so clean up the port immediately.
-              port.destroy_();
-              port = null;
-            }
+        if (!isSendMessage) {
+          requestEvent.dispatch(request, sender, responseCallback);
+        } else {
+          var rv = requestEvent.dispatch(request, sender, responseCallback);
+          responseCallbackPreserved =
+              rv && rv.results && rv.results.indexOf(true) > -1;
+          if (!responseCallbackPreserved && port) {
+            // If they didn't access the response callback, they're not
+            // going to send a response, so clean up the port immediately.
+            port.destroy_();
+            port = null;
           }
+        }
       });
       return true;
     }
@@ -197,7 +198,7 @@
     var isExternal = sourceExtensionId != extensionId;
 
     if (tab)
-      tab = chromeHidden.JSON.parse(tab);
+      tab = json.parse(tab);
     var sender = {tab: tab, id: sourceExtensionId};
 
     // Special case for sendRequest/onRequest and sendMessage/onMessage.
@@ -209,7 +210,7 @@
     }
 
     var connectEvent = (isExternal ?
-        chrome.extension.onConnectExternal : chrome.extension.onConnect);
+        chrome.runtime.onConnectExternal : chrome.runtime.onConnect);
     if (connectEvent.hasListeners()) {
       var port = chromeHidden.Port.createPort(portId, channelName);
       port.sender = sender;
@@ -224,22 +225,20 @@
 
   // Called by native code when a channel has been closed.
   chromeHidden.Port.dispatchOnDisconnect = function(
-      portId, connectionInvalid) {
+      portId, errorMessage) {
     var port = ports[portId];
     if (port) {
       // Update the renderer's port bookkeeping, without notifying the browser.
       CloseChannel(portId, false);
-      if (connectionInvalid) {
-        var errorMsg =
-            "Could not establish connection. Receiving end does not exist.";
-        lastError.set(errorMsg);
-        console.error("Port error: " + errorMsg);
+      if (errorMessage) {
+        lastError.set(errorMessage, chrome);
+        console.error("Port error: " + errorMessage);
       }
       try {
         port.onDisconnect.dispatch(port);
       } finally {
         port.destroy_();
-        lastError.clear();
+        lastError.clear(chrome);
       }
     }
   };
@@ -249,13 +248,13 @@
     var port = ports[portId];
     if (port) {
       if (msg) {
-        msg = chromeHidden.JSON.parse(msg);
+        msg = json.parse(msg);
       }
       port.onMessage.dispatch(msg, port);
     }
   };
 
-  // Shared implementation used by tabs.sendMessage and extension.sendMessage.
+  // Shared implementation used by tabs.sendMessage and runtime.sendMessage.
   chromeHidden.Port.sendMessageImpl = function(port, request,
                                                responseCallback) {
     if (port.name != chromeHidden.kNativeMessageChannel)
@@ -291,4 +290,32 @@
         port = null;
       }
     });
+  };
+
+  function sendMessageUpdateArguments(functionName) {
+    // Align missing (optional) function arguments with the arguments that
+    // schema validation is expecting, e.g.
+    //   extension.sendRequest(req)     -> extension.sendRequest(null, req)
+    //   extension.sendRequest(req, cb) -> extension.sendRequest(null, req, cb)
+    var args = Array.prototype.splice.call(arguments, 1);  // skip functionName
+    var lastArg = args.length - 1;
+
+    // responseCallback (last argument) is optional.
+    var responseCallback = null;
+    if (typeof(args[lastArg]) == 'function')
+      responseCallback = args[lastArg--];
+
+    // request (second argument) is required.
+    var request = args[lastArg--];
+
+    // targetId (first argument, extensionId in the manfiest) is optional.
+    var targetId = null;
+    if (lastArg >= 0)
+      targetId = args[lastArg--];
+
+    if (lastArg != -1)
+      throw new Error('Invalid arguments to ' + functionName + '.');
+    return [targetId, request, responseCallback];
   }
+
+exports.sendMessageUpdateArguments = sendMessageUpdateArguments;

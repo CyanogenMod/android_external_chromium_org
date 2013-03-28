@@ -10,18 +10,18 @@
 #include "base/bind_helpers.h"
 #include "base/i18n/rtl.h"
 #include "chrome/browser/platform_util.h"
-#include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_creator.h"
+#include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/tabs/dragged_view_gtk.h"
 #include "chrome/browser/ui/gtk/tabs/tab_strip_gtk.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "ui/base/gtk/gtk_screen_util.h"
 #include "ui/gfx/screen.h"
 
@@ -91,7 +91,6 @@ void DraggedTabControllerGtk::CaptureDragInfo(const gfx::Point& mouse_offset) {
 
 void DraggedTabControllerGtk::Drag() {
   if (!drag_data_->GetSourceTabData()->tab_ ||
-      !drag_data_->GetSourceTabContents() ||
       !drag_data_->GetSourceWebContents()) {
     return;
   }
@@ -120,7 +119,7 @@ TabGtk* DraggedTabControllerGtk::GetDraggedTabForContents(
     WebContents* contents) {
   if (attached_tabstrip_ == source_tabstrip_) {
     for (size_t i = 0; i < drag_data_->size(); i++) {
-      if (contents == drag_data_->get(i)->contents_->web_contents())
+      if (contents == drag_data_->get(i)->contents_)
         return drag_data_->get(i)->tab_;
     }
   }
@@ -135,10 +134,10 @@ bool DraggedTabControllerGtk::IsDraggingTab(const TabGtk* tab) {
   return false;
 }
 
-bool DraggedTabControllerGtk::IsDraggingTabContents(
-    const TabContents* tab_contents) {
+bool DraggedTabControllerGtk::IsDraggingWebContents(
+    const WebContents* web_contents) {
   for (size_t i = 0; i < drag_data_->size(); i++) {
-    if (tab_contents == drag_data_->get(i)->contents_)
+    if (web_contents == drag_data_->get(i)->contents_)
       return true;
   }
   return false;
@@ -150,22 +149,21 @@ bool DraggedTabControllerGtk::IsTabDetached(const TabGtk* tab) {
 
 DraggedTabData DraggedTabControllerGtk::InitDraggedTabData(TabGtk* tab) {
   int source_model_index = source_tabstrip_->GetIndexOfTab(tab);
-  TabContents* contents =
-      source_tabstrip_->model()->GetTabContentsAt(source_model_index);
+  WebContents* contents =
+      source_tabstrip_->model()->GetWebContentsAt(source_model_index);
   bool pinned = source_tabstrip_->IsTabPinned(tab);
   bool mini = source_tabstrip_->model()->IsMiniTab(source_model_index);
   // We need to be the delegate so we receive messages about stuff,
   // otherwise our dragged_contents() may be replaced and subsequently
   // collected/destroyed while the drag is in process, leading to
   // nasty crashes.
-  content::WebContentsDelegate* original_delegate =
-      contents->web_contents()->GetDelegate();
-  contents->web_contents()->SetDelegate(this);
+  content::WebContentsDelegate* original_delegate = contents->GetDelegate();
+  contents->SetDelegate(this);
 
   DraggedTabData dragged_tab_data(tab, contents, original_delegate,
                                   source_model_index, pinned, mini);
   registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-      content::Source<WebContents>(contents->web_contents()));
+                 content::Source<WebContents>(contents));
   return dragged_tab_data;
 }
 
@@ -216,9 +214,9 @@ void DraggedTabControllerGtk::LoadingStateChanged(WebContents* source) {
     dragged_view_->Update();
 }
 
-content::JavaScriptDialogCreator*
-DraggedTabControllerGtk::GetJavaScriptDialogCreator() {
-  return GetJavaScriptDialogCreatorInstance();
+content::JavaScriptDialogManager*
+DraggedTabControllerGtk::GetJavaScriptDialogManager() {
+  return GetJavaScriptDialogManagerInstance();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -232,8 +230,7 @@ void DraggedTabControllerGtk::Observe(
   WebContents* destroyed_web_contents =
       content::Source<WebContents>(source).ptr();
   for (size_t i = 0; i < drag_data_->size(); ++i) {
-    if (drag_data_->get(i)->contents_->web_contents() ==
-        destroyed_web_contents) {
+    if (drag_data_->get(i)->contents_ == destroyed_web_contents) {
       // One of the tabs we're dragging has been destroyed. Cancel the drag.
       if (destroyed_web_contents->GetDelegate() == this)
         destroyed_web_contents->SetDelegate(NULL);
@@ -293,11 +290,11 @@ void DraggedTabControllerGtk::ContinueDragging() {
 
 void DraggedTabControllerGtk::RestoreSelection(TabStripModel* model) {
   for (size_t i = 0; i < drag_data_->size(); ++i) {
-    TabContents* contents = drag_data_->get(i)->contents_;
+    WebContents* contents = drag_data_->get(i)->contents_;
     // If a tab is destroyed while dragging contents might be null. See
     // http://crbug.com/115409.
-    if (contents != NULL) {
-      int index = model->GetIndexOfTabContents(contents);
+    if (contents) {
+      int index = model->GetIndexOfWebContents(contents);
       CHECK(index != TabStripModel::kNoTab);
       model->AddTabAtToSelection(index);
     }
@@ -320,7 +317,7 @@ void DraggedTabControllerGtk::MoveAttached(const gfx::Point& screen_point) {
   double ratio = unselected / TabGtk::GetStandardSize().width();
   int threshold = static_cast<int>(ratio * kHorizontalMoveThreshold);
 
-  // Update the model, moving the TabContents from one index to another.
+  // Update the model, moving the WebContents from one index to another.
   // Do this only if we have moved a minimum distance since the last reorder (to
   // prevent jitter) or if this is the first move and the tabs are not
   // consecutive.
@@ -430,17 +427,14 @@ void DraggedTabControllerGtk::Attach(TabStripGtk* attached_tabstrip,
 
   if (attached_dragged_tabs.size() == 0) {
     // There is no tab in |attached_tabstrip| that corresponds to the dragged
-    // TabContents. We must now create one.
+    // WebContents. We must now create one.
 
-    // Remove ourselves as the delegate now that the dragged TabContents
+    // Remove ourselves as the delegate now that the dragged WebContents
     // is being inserted back into a Browser.
     for (size_t i = 0; i < drag_data_->size(); ++i) {
-      drag_data_->get(i)->contents_->web_contents()->SetDelegate(NULL);
+      drag_data_->get(i)->contents_->SetDelegate(NULL);
       drag_data_->get(i)->original_delegate_ = NULL;
     }
-
-    // Return the TabContents to normalcy.
-    drag_data_->GetSourceWebContents()->SetCapturingContents(false);
 
     // We need to ask the tabstrip we're attached to ensure that the ideal
     // bounds for all its tabs are correctly generated, because the calculation
@@ -460,7 +454,7 @@ void DraggedTabControllerGtk::Attach(TabStripGtk* attached_tabstrip,
         GetDraggedViewTabStripBounds(GetDraggedViewPoint(screen_point));
     int index = GetInsertionIndexForDraggedBounds(GetEffectiveBounds(bounds));
     for (size_t i = 0; i < drag_data_->size(); ++i) {
-      attached_tabstrip_->model()->InsertTabContentsAt(
+      attached_tabstrip_->model()->InsertWebContentsAt(
           index + i, drag_data_->get(i)->contents_,
           drag_data_->GetAddTypesForDraggedTabAt(i));
     }
@@ -478,11 +472,11 @@ void DraggedTabControllerGtk::Detach() {
   TabStripModel* attached_model = attached_tabstrip_->model();
   for (size_t i = 0; i < drag_data_->size(); ++i) {
     int index =
-        attached_model->GetIndexOfTabContents(drag_data_->get(i)->contents_);
+        attached_model->GetIndexOfWebContents(drag_data_->get(i)->contents_);
     if (index >= 0 && index < attached_model->count()) {
-      // Sometimes, DetachTabContentsAt has consequences that result in
+      // Sometimes, DetachWebContentsAt has consequences that result in
       // attached_tabstrip_ being set to NULL, so we need to save it first.
-      attached_model->DetachTabContentsAt(index);
+      attached_model->DetachWebContentsAt(index);
     }
   }
 
@@ -499,7 +493,7 @@ void DraggedTabControllerGtk::Detach() {
 
   // Detaching resets the delegate, but we still want to be the delegate.
   for (size_t i = 0; i < drag_data_->size(); ++i)
-    drag_data_->get(i)->contents_->web_contents()->SetDelegate(this);
+    drag_data_->get(i)->contents_->SetDelegate(this);
 
   attached_tabstrip_ = NULL;
 }
@@ -556,7 +550,7 @@ int DraggedTabControllerGtk::GetInsertionIndexForDraggedBounds(
   }
 
   TabGtk* tab = GetTabMatchingDraggedContents(
-      attached_tabstrip_, drag_data_->GetSourceTabContents());
+      attached_tabstrip_, drag_data_->GetSourceWebContents());
   if (tab == NULL) {
     // If dragged tabs are not attached yet, we don't need to constrain the
     // index.
@@ -617,8 +611,8 @@ int DraggedTabControllerGtk::NormalizeIndexToAttachedTabStrip(int index) const {
 }
 
 TabGtk* DraggedTabControllerGtk::GetTabMatchingDraggedContents(
-    TabStripGtk* tabstrip, TabContents* tab_contents) {
-  int index = tabstrip->model()->GetIndexOfTabContents(tab_contents);
+    TabStripGtk* tabstrip, WebContents* web_contents) {
+  int index = tabstrip->model()->GetIndexOfWebContents(web_contents);
   return index == TabStripModel::kNoTab ? NULL : tabstrip->GetTabAt(index);
 }
 
@@ -692,9 +686,9 @@ void DraggedTabControllerGtk::RevertDrag() {
       for (size_t i = 0; i < drag_data_->size(); ++i) {
         if (!drag_data_->get(i)->contents_)
           continue;
-        int index = attached_tabstrip_->model()->GetIndexOfTabContents(
+        int index = attached_tabstrip_->model()->GetIndexOfWebContents(
             drag_data_->get(i)->contents_);
-        attached_tabstrip_->model()->DetachTabContentsAt(index);
+        attached_tabstrip_->model()->DetachWebContentsAt(index);
       }
       // TODO(beng): (Cleanup) seems like we should use Attach() for this
       //             somehow.
@@ -702,7 +696,7 @@ void DraggedTabControllerGtk::RevertDrag() {
       for (size_t i = 0; i < drag_data_->size(); ++i) {
         if (!drag_data_->get(i)->contents_)
           continue;
-        attached_tabstrip_->model()->InsertTabContentsAt(
+        attached_tabstrip_->model()->InsertWebContentsAt(
             drag_data_->get(i)->source_model_index_,
             drag_data_->get(i)->contents_,
             drag_data_->GetAddTypesForDraggedTabAt(i));
@@ -713,9 +707,9 @@ void DraggedTabControllerGtk::RevertDrag() {
       for (size_t i = 0; i < drag_data_->size(); ++i) {
         if (!drag_data_->get(i)->contents_)
           continue;
-        int index = attached_tabstrip_->model()->GetIndexOfTabContents(
+        int index = attached_tabstrip_->model()->GetIndexOfWebContents(
             drag_data_->get(i)->contents_);
-        source_tabstrip_->model()->MoveTabContentsAt(
+        source_tabstrip_->model()->MoveWebContentsAt(
             index, drag_data_->get(i)->source_model_index_, true);
       }
     }
@@ -729,7 +723,7 @@ void DraggedTabControllerGtk::RevertDrag() {
     for (size_t i = 0; i < drag_data_->size(); ++i) {
       if (!drag_data_->get(i)->contents_)
         continue;
-      source_tabstrip_->model()->InsertTabContentsAt(
+      source_tabstrip_->model()->InsertWebContentsAt(
           drag_data_->get(i)->source_model_index_,
           drag_data_->get(i)->contents_,
           drag_data_->GetAddTypesForDraggedTabAt(i));
@@ -765,7 +759,7 @@ bool DraggedTabControllerGtk::CompleteDrag() {
     std::vector<TabStripModelDelegate::NewStripContents> contentses;
     for (size_t i = 0; i < drag_data_->size(); ++i) {
       TabStripModelDelegate::NewStripContents item;
-      item.web_contents = drag_data_->get(i)->contents_->web_contents();
+      item.web_contents = drag_data_->get(i)->contents_;
       item.add_types = drag_data_->GetAddTypesForDraggedTabAt(i);
       contentses.push_back(item);
     };
@@ -784,7 +778,7 @@ bool DraggedTabControllerGtk::CompleteDrag() {
 void DraggedTabControllerGtk::ResetDelegates() {
   for (size_t i = 0; i < drag_data_->size(); ++i) {
     if (drag_data_->get(i)->contents_ &&
-        drag_data_->get(i)->contents_->web_contents()->GetDelegate() == this) {
+        drag_data_->get(i)->contents_->GetDelegate() == this) {
       drag_data_->get(i)->ResetDelegate();
     }
   }
@@ -793,7 +787,7 @@ void DraggedTabControllerGtk::ResetDelegates() {
 void DraggedTabControllerGtk::EnsureDraggedView() {
   if (!dragged_view_.get()) {
     gfx::Rect rect;
-    drag_data_->GetSourceWebContents()->GetContainerBounds(&rect);
+    drag_data_->GetSourceWebContents()->GetView()->GetContainerBounds(&rect);
     dragged_view_.reset(new DraggedViewGtk(drag_data_.get(), mouse_offset_,
                                            rect.size()));
   }
@@ -846,8 +840,7 @@ void DraggedTabControllerGtk::CleanUpDraggedTabs() {
     for (size_t i = 0; i < drag_data_->size(); ++i) {
       if (drag_data_->get(i)->contents_) {
         registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-            content::Source<WebContents>(
-                drag_data_->get(i)->contents_->web_contents()));
+            content::Source<WebContents>(drag_data_->get(i)->contents_));
       }
       source_tabstrip_->DestroyDraggedTab(drag_data_->get(i)->tab_);
       drag_data_->get(i)->tab_ = NULL;

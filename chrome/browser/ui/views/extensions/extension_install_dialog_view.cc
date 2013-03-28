@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
 #include "base/string_util.h"
@@ -12,11 +13,14 @@
 #include "chrome/browser/extensions/bundle_installer.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/installer/util/browser_distribution.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "grit/google_chrome_strings.h"
 #include "grit/theme_resources.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
@@ -61,11 +65,6 @@ const int kBundleLeftColumnWidth = 300;
 // this case, so make it wider than normal.
 const int kExternalInstallLeftColumnWidth = 350;
 
-// Heading font size correction.
-const int kHeadingFontSizeDelta = 1;
-
-const int kRatingFontSizeDelta = -1;
-
 void AddResourceIcon(const gfx::ImageSkia* skia_image, void* data) {
   views::View* parent = static_cast<views::View*>(data);
   views::ImageView* image_view = new views::ImageView();
@@ -96,6 +95,7 @@ class ExtensionInstallDialogView : public views::DialogDelegateView,
 
  private:
   // views::DialogDelegateView:
+  virtual int GetDialogButtons() const OVERRIDE;
   virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
   virtual int GetDefaultDialogButton() const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
@@ -104,7 +104,6 @@ class ExtensionInstallDialogView : public views::DialogDelegateView,
   // views::WidgetDelegate:
   virtual ui::ModalType GetModalType() const OVERRIDE;
   virtual string16 GetWindowTitle() const OVERRIDE;
-  virtual views::View* GetContentsView() OVERRIDE;
 
   // views::LinkListener:
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
@@ -182,15 +181,13 @@ class IssueAdviceView : public views::View,
 };
 
 void ShowExtensionInstallDialogImpl(
-    content::WebContents* parent_web_contents,
+    const ExtensionInstallPrompt::ShowParams& show_params,
     ExtensionInstallPrompt::Delegate* delegate,
     const ExtensionInstallPrompt::Prompt& prompt) {
-  gfx::NativeWindow parent = NULL;
-  if (parent_web_contents)
-    parent = parent_web_contents->GetView()->GetTopLevelNativeWindow();
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   views::Widget::CreateWindowWithParent(
-      new ExtensionInstallDialogView(parent_web_contents, delegate, prompt),
-      parent)->Show();
+      new ExtensionInstallDialogView(show_params.navigator, delegate, prompt),
+      show_params.parent_window)->Show();
 }
 
 }  // namespace
@@ -283,9 +280,10 @@ ExtensionInstallDialogView::ExtensionInstallDialogView(
 
   layout->StartRow(0, column_set_id);
 
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+
   views::Label* heading = new views::Label(prompt.GetHeading());
-  heading->SetFont(heading->font().DeriveFont(kHeadingFontSizeDelta,
-                                              gfx::Font::BOLD));
+  heading->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
   heading->SetMultiLine(true);
   heading->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   heading->SizeToFit(left_column_width);
@@ -327,8 +325,7 @@ ExtensionInstallDialogView::ExtensionInstallDialogView(
     prompt.AppendRatingStars(AddResourceIcon, rating);
 
     views::Label* rating_count = new views::Label(prompt.GetRatingCount());
-    rating_count->SetFont(
-        rating_count->font().DeriveFont(kRatingFontSizeDelta));
+    rating_count->SetFont(rb.GetFont(ui::ResourceBundle::SmallFont));
     // Add some space between the stars and the rating count.
     rating_count->set_border(views::Border::CreateEmptyBorder(0, 2, 0, 0));
     rating->AddChildView(rating_count);
@@ -337,13 +334,13 @@ ExtensionInstallDialogView::ExtensionInstallDialogView(
     views::Label* user_count = new views::Label(prompt.GetUserCount());
     user_count->SetAutoColorReadabilityEnabled(false);
     user_count->SetEnabledColor(SK_ColorGRAY);
-    user_count->SetFont(user_count->font().DeriveFont(kRatingFontSizeDelta));
+    user_count->SetFont(rb.GetFont(ui::ResourceBundle::SmallFont));
     layout->AddView(user_count);
 
     layout->StartRow(0, column_set_id);
     views::Link* store_link = new views::Link(
         l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_STORE_LINK));
-    store_link->SetFont(store_link->font().DeriveFont(kRatingFontSizeDelta));
+    store_link->SetFont(rb.GetFont(ui::ResourceBundle::SmallFont));
     store_link->set_listener(this);
     layout->AddView(store_link);
   }
@@ -378,13 +375,12 @@ ExtensionInstallDialogView::ExtensionInstallDialogView(
     layout->StartRow(0, column_set_id);
     views::Label* permissions_header = NULL;
     if (is_bundle_install()) {
-      // We need to make the font bold like this, rather than using SetFont,
-      // because otherwise SizeToFit mis-judges the width of the line.
-      gfx::Font bold_font = ui::ResourceBundle::GetSharedInstance().GetFont(
-          ui::ResourceBundle::BaseFont).DeriveFont(
-              kHeadingFontSizeDelta, gfx::Font::BOLD);
+      // We need to pass the Font in the constructor, rather than calling
+      // SetFont later, because otherwise SizeToFit mis-judges the width
+      // of the line.
       permissions_header = new views::Label(
-          prompt.GetPermissionsHeading(), bold_font);
+          prompt.GetPermissionsHeading(),
+          rb.GetFont(ui::ResourceBundle::MediumFont));
     } else {
       permissions_header = new views::Label(prompt.GetPermissionsHeading());
     }
@@ -406,8 +402,10 @@ ExtensionInstallDialogView::ExtensionInstallDialogView(
   }
 
   if (prompt.GetOAuthIssueCount()) {
-    // Slide in under the permissions; stretch all the way to the right of the
-    // dialog.
+    // Slide in under the permissions, if there are any. If there are
+    // permissions, the OAuth prompt stretches all the way to the right of the
+    // dialog. If there are no permissions, the OAuth prompt just takes up the
+    // left column.
     int space_for_oauth = left_column_width;
     if (prompt.GetPermissionCount()) {
       space_for_oauth += kIconSize;
@@ -440,11 +438,18 @@ ExtensionInstallDialogView::ExtensionInstallDialogView(
   }
 }
 
-ExtensionInstallDialogView::~ExtensionInstallDialogView() {
-}
+ExtensionInstallDialogView::~ExtensionInstallDialogView() {}
 
 void ExtensionInstallDialogView::SizeToContents() {
   GetWidget()->SetSize(GetWidget()->non_client_view()->GetPreferredSize());
+}
+
+int ExtensionInstallDialogView::GetDialogButtons() const {
+  int buttons = prompt_.GetDialogButtons();
+  // Simply having just an OK button is *not* supported. See comment on function
+  // GetDialogButtons in dialog_delegate.h for reasons.
+  DCHECK_GT(buttons & ui::DIALOG_BUTTON_CANCEL, 0);
+  return buttons;
 }
 
 string16 ExtensionInstallDialogView::GetDialogButtonLabel(
@@ -482,10 +487,6 @@ ui::ModalType ExtensionInstallDialogView::GetModalType() const {
 
 string16 ExtensionInstallDialogView::GetWindowTitle() const {
   return prompt_.GetDialogTitle();
-}
-
-views::View* ExtensionInstallDialogView::GetContentsView() {
-  return this;
 }
 
 void ExtensionInstallDialogView::LinkClicked(views::Link* source,
@@ -622,13 +623,13 @@ void IssueAdviceView::AnimationProgressed(const ui::Animation* animation) {
   if (arrow_view_) {
     gfx::Transform rotate;
     if (animation->GetCurrentValue() != 0.0) {
-      rotate.SetTranslate(-arrow_view_->width() / 2.0,
-                          -arrow_view_->height() / 2.0);
+      rotate.Translate(arrow_view_->width() / 2.0,
+                       arrow_view_->height() / 2.0);
       // TODO(estade): for some reason there are rendering errors at 90 degrees.
       // Figure out why.
-      rotate.ConcatRotate(animation->GetCurrentValue() * 89);
-      rotate.ConcatTranslate(arrow_view_->width() / 2.0,
-                             arrow_view_->height() / 2.0);
+      rotate.Rotate(animation->GetCurrentValue() * 89);
+      rotate.Translate(-arrow_view_->width() / 2.0,
+                       -arrow_view_->height() / 2.0);
     }
     arrow_view_->SetTransform(rotate);
   }

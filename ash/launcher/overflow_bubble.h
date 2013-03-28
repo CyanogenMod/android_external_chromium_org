@@ -5,7 +5,6 @@
 #ifndef ASH_LAUNCHER_OVERFLOW_BUBBLE_H_
 #define ASH_LAUNCHER_OVERFLOW_BUBBLE_H_
 
-#include "ash/wm/shelf_types.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ui/views/widget/widget_observer.h"
@@ -23,27 +22,26 @@ namespace internal {
 
 class LauncherView;
 
-// OverflowBubble displays an overflow bubble.
+// OverflowBubble displays the overflown launcher items in a bubble.
 class OverflowBubble : public views::WidgetObserver {
  public:
   OverflowBubble();
   virtual ~OverflowBubble();
 
-  void Show(LauncherDelegate* delegate,
-            LauncherModel* model,
-            views::View* anchor,
-            ShelfAlignment shelf_alignment,
-            int overflow_start_index);
+  // Shows an bubble pointing to |anchor| with |launcher_view| as its content.
+  void Show(views::View* anchor, LauncherView* launcher_view);
 
   void Hide();
 
   bool IsShowing() const { return !!bubble_; }
+  LauncherView* launcher_view() { return launcher_view_; }
 
  private:
   // Overridden from views::WidgetObserver:
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
   views::View* bubble_;  // Owned by views hierarchy.
+  LauncherView* launcher_view_;  // Owned by |bubble_|.
 
   DISALLOW_COPY_AND_ASSIGN(OverflowBubble);
 };

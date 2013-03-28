@@ -23,7 +23,8 @@ IPC_STRUCT_TRAITS_END()
 
 // Messages sent from the browser to the renderer.
 
-IPC_MESSAGE_ROUTED0(SpellCheckMsg_ToggleSpellCheck)
+IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableSpellCheck,
+                    bool)
 
 // Passes some initialization params to the renderer's spellchecker. This can
 // be called directly after startup or in (async) response to a
@@ -34,10 +35,11 @@ IPC_MESSAGE_CONTROL4(SpellCheckMsg_Init,
                      std::string /* language */,
                      bool /* auto spell correct */)
 
-// A word has been added to the custom dictionary; update the local custom
-// word list.
-IPC_MESSAGE_CONTROL1(SpellCheckMsg_WordAdded,
-                     std::string /* word */)
+// Words have been added and removed in the custom dictionary; update the local
+// custom word list.
+IPC_MESSAGE_CONTROL2(SpellCheckMsg_CustomDictionaryChanged,
+                     std::vector<std::string> /* words_added */,
+                     std::vector<std::string> /* words_removed */)
 
 // Toggle the auto spell correct functionality.
 IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableAutoSpellCorrect,
@@ -45,13 +47,13 @@ IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableAutoSpellCorrect,
 
 #if !defined(OS_MACOSX)
 // Sends text-check results from the Spelling service when the service finishes
-// checking text reveived by a SpellCheckHostMsg_CallSpellingService message.
-// If the service is not available, the 4th parameter should be false and
-// the 5th parameter should contain the requested setence.
+// checking text received by a SpellCheckHostMsg_CallSpellingService message.
+// If the service is not available, the 4th parameter should be false and the
+// 5th parameter should contain the requested sentence.
 IPC_MESSAGE_ROUTED5(SpellCheckMsg_RespondSpellingService,
                     int         /* request identifier given by WebKit */,
                     int         /* offset */,
-                    bool        /* succeeded calling serivce */,
+                    bool        /* succeeded calling service */,
                     string16    /* sentence */,
                     std::vector<SpellCheckResult>)
 #endif
@@ -61,7 +63,7 @@ IPC_MESSAGE_ROUTED5(SpellCheckMsg_RespondSpellingService,
 // sent when the user clicks the "Find Next" button on the spelling panel.
 IPC_MESSAGE_ROUTED0(SpellCheckMsg_AdvanceToNextMisspelling)
 
-// Sends when NSSpellChecker finishes checking text received by a preceeding
+// Sends when NSSpellChecker finishes checking text received by a preceding
 // SpellCheckHostMsg_RequestTextCheck message.
 IPC_MESSAGE_ROUTED2(SpellCheckMsg_RespondTextCheck,
                     int        /* request identifier given by WebKit */,

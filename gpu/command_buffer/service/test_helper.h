@@ -5,12 +5,18 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_TEST_HELPER_H_
 #define GPU_COMMAND_BUFFER_SERVICE_TEST_HELPER_H_
 
-#include "gpu/command_buffer/common/gl_mock.h"
+#include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_mock.h"
 
 namespace gpu {
 namespace gles2 {
 
 struct DisallowedFeatures;
+class Buffer;
+class BufferManager;
+class MockGLES2Decoder;
+class Texture;
+class TextureManager;
 
 class TestHelper {
  public:
@@ -66,7 +72,8 @@ class TestHelper {
       ::gfx::MockGLInterface* gl,
       const char* extensions,
       const char* vendor,
-      const char* renderer);
+      const char* renderer,
+      const char* version);
   static void SetupTextureManagerInitExpectations(
       ::gfx::MockGLInterface* gl, const char* extensions);
   static void SetupTextureManagerDestructionExpectations(
@@ -86,11 +93,33 @@ class TestHelper {
       UniformInfo* uniforms, size_t num_uniforms,
       GLuint service_id);
 
+  static void DoBufferData(
+      ::gfx::MockGLInterface* gl, MockGLES2Decoder* decoder,
+      BufferManager* manager, Buffer* buffer, GLsizeiptr size, GLenum usage,
+      const GLvoid* data, GLenum error);
+
+  static void SetTexParameterWithExpectations(
+      ::gfx::MockGLInterface* gl, MockGLES2Decoder* decoder,
+      TextureManager* manager, Texture* texture,
+      GLenum pname, GLint value, GLenum error);
+
  private:
   static void SetupTextureInitializationExpectations(
        ::gfx::MockGLInterface* gl, GLenum target);
   static void SetupTextureDestructionExpectations(
        ::gfx::MockGLInterface* gl, GLenum target);
+};
+
+// This object temporaritly Sets what gfx::GetGLImplementation returns. During
+// testing the GLImplementation is set to kGLImplemenationMockGL but lots of
+// code branches based on what gfx::GetGLImplementation returns.
+class ScopedGLImplementationSetter {
+ public:
+  explicit ScopedGLImplementationSetter(gfx::GLImplementation implementation);
+  ~ScopedGLImplementationSetter();
+
+ private:
+  gfx::GLImplementation old_implementation_;
 };
 
 }  // namespace gles2

@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "remoting/host/json_host_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -24,17 +24,17 @@ const char* kTestConfig =
 
 class JsonHostConfigTest : public testing::Test {
  protected:
-  static void WriteTestFile(const FilePath& filename) {
+  static void WriteTestFile(const base::FilePath& filename) {
     file_util::WriteFile(filename, kTestConfig, std::strlen(kTestConfig));
   }
 
   // The temporary directory used to contain the test operations.
-  ScopedTempDir test_dir_;
+  base::ScopedTempDir test_dir_;
 };
 
 TEST_F(JsonHostConfigTest, InvalidFile) {
   ASSERT_TRUE(test_dir_.CreateUniqueTempDir());
-  FilePath non_existent_file =
+  base::FilePath non_existent_file =
       test_dir_.path().AppendASCII("non_existent.json");
   JsonHostConfig target(non_existent_file);
   EXPECT_FALSE(target.Read());
@@ -42,7 +42,7 @@ TEST_F(JsonHostConfigTest, InvalidFile) {
 
 TEST_F(JsonHostConfigTest, Read) {
   ASSERT_TRUE(test_dir_.CreateUniqueTempDir());
-  FilePath test_file = test_dir_.path().AppendASCII("read.json");
+  base::FilePath test_file = test_dir_.path().AppendASCII("read.json");
   WriteTestFile(test_file);
   JsonHostConfig target(test_file);
   ASSERT_TRUE(target.Read());
@@ -65,7 +65,7 @@ TEST_F(JsonHostConfigTest, Read) {
 TEST_F(JsonHostConfigTest, Write) {
   ASSERT_TRUE(test_dir_.CreateUniqueTempDir());
 
-  FilePath test_file = test_dir_.path().AppendASCII("write.json");
+  base::FilePath test_file = test_dir_.path().AppendASCII("write.json");
   WriteTestFile(test_file);
   JsonHostConfig target(test_file);
   ASSERT_TRUE(target.Read());

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,12 @@
 #include "base/time.h"
 #include "base/timer.h"
 #include "net/base/backoff_entry.h"
+#include "sync/base/sync_export.h"
 #include "sync/notifier/invalidation_util.h"
+
+namespace base {
+class TickClock;
+}  // namespace base
 
 namespace syncer {
 
@@ -23,9 +28,9 @@ namespace syncer {
 // periodically triggers a callback for each timeout period. The timeout is a
 // simple exponentially increasing time that starts at 60 seconds and is capped
 // at 600 seconds.
-class AckTracker {
+class SYNC_EXPORT_PRIVATE AckTracker {
  public:
-  class Delegate {
+  class SYNC_EXPORT_PRIVATE Delegate {
    public:
     virtual ~Delegate();
 
@@ -33,11 +38,10 @@ class AckTracker {
     virtual void OnTimeout(const ObjectIdSet& ids) = 0;
   };
 
-  typedef base::Callback<base::TimeTicks()> NowCallback;
   typedef base::Callback<scoped_ptr<net::BackoffEntry>(
       const net::BackoffEntry::Policy* const)> CreateBackoffEntryCallback;
 
-  explicit AckTracker(Delegate* delegate);
+  AckTracker(base::TickClock* tick_clock, Delegate* delegate);
   ~AckTracker();
 
   // Equivalent to calling Ack() on all currently registered object IDs.
@@ -52,7 +56,6 @@ class AckTracker {
   void Ack(const ObjectIdSet& ids);
 
   // Testing methods.
-  void SetNowCallbackForTest(const NowCallback& now_callback);
   void SetCreateBackoffEntryCallbackForTest(
       const CreateBackoffEntryCallback& create_backoff_entry_callback);
   // Returns true iff there are no timeouts scheduled to occur before |now|.
@@ -82,8 +85,9 @@ class AckTracker {
       const net::BackoffEntry::Policy* const policy);
 
   // Used for testing purposes.
-  NowCallback now_callback_;
   CreateBackoffEntryCallback create_backoff_entry_callback_;
+
+  base::TickClock* const tick_clock_;
 
   Delegate* const delegate_;
 

@@ -158,7 +158,7 @@ bool CollectPCIVideoCardInfo(content::GPUInfo* gpu_info) {
 
 namespace gpu_info_collector {
 
-bool CollectGraphicsInfo(content::GPUInfo* gpu_info) {
+bool CollectContextGraphicsInfo(content::GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   TRACE_EVENT0("gpu", "gpu_info_collector::CollectGraphicsInfo");
@@ -169,7 +169,21 @@ bool CollectGraphicsInfo(content::GPUInfo* gpu_info) {
   return CollectGraphicsInfoGL(gpu_info);
 }
 
-bool CollectPreliminaryGraphicsInfo(content::GPUInfo* gpu_info) {
+bool CollectGpuID(uint32* vendor_id, uint32* device_id) {
+  DCHECK(vendor_id && device_id);
+  *vendor_id = 0;
+  *device_id = 0;
+
+  content::GPUInfo gpu_info;
+  if (CollectPCIVideoCardInfo(&gpu_info)) {
+    *vendor_id = gpu_info.gpu.vendor_id;
+    *device_id = gpu_info.gpu.device_id;
+    return true;
+  }
+  return false;
+}
+
+bool CollectBasicGraphicsInfo(content::GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   std::string model_name;
@@ -181,10 +195,6 @@ bool CollectPreliminaryGraphicsInfo(content::GPUInfo* gpu_info) {
                              "." + base::IntToString(model_minor);
 
   return CollectPCIVideoCardInfo(gpu_info);
-}
-
-bool CollectVideoCardInfo(content::GPUInfo* gpu_info) {
-  return CollectPreliminaryGraphicsInfo(gpu_info);
 }
 
 bool CollectDriverInfoGL(content::GPUInfo* gpu_info) {
@@ -200,6 +210,11 @@ bool CollectDriverInfoGL(content::GPUInfo* gpu_info) {
     return false;
   gpu_info->driver_version = gl_version_string.substr(pos + 1);
   return true;
+}
+
+void MergeGPUInfo(content::GPUInfo* basic_gpu_info,
+                  const content::GPUInfo& context_gpu_info) {
+  MergeGPUInfoGL(basic_gpu_info, context_gpu_info);
 }
 
 }  // namespace gpu_info_collector

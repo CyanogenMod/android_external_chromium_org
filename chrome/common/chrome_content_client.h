@@ -28,7 +28,6 @@ class ChromeContentClient : public content::ContentClient {
   virtual void AddAdditionalSchemes(
       std::vector<std::string>* standard_schemes,
       std::vector<std::string>* saveable_shemes) OVERRIDE;
-  virtual bool HasWebUIScheme(const GURL& url) const OVERRIDE;
   virtual bool CanHandleWhileSwappedOut(const IPC::Message& msg) OVERRIDE;
   virtual std::string GetProduct() const OVERRIDE;
   virtual std::string GetUserAgent() const OVERRIDE;
@@ -36,7 +35,10 @@ class ChromeContentClient : public content::ContentClient {
   virtual base::StringPiece GetDataResource(
       int resource_id,
       ui::ScaleFactor scale_factor) const OVERRIDE;
+  virtual base::RefCountedStaticMemory* GetDataResourceBytes(
+      int resource_id) const OVERRIDE;
   virtual gfx::Image& GetNativeImageNamed(int resource_id) const OVERRIDE;
+  virtual std::string GetProcessTypeNameInEnglish(int type) OVERRIDE;
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   virtual bool GetSandboxProfileForSandboxType(
@@ -44,19 +46,6 @@ class ChromeContentClient : public content::ContentClient {
       int* sandbox_profile_resource_id) const OVERRIDE;
   virtual std::string GetCarbonInterposePath() const OVERRIDE;
 #endif
-
-  // Gets information about the bundled Pepper Flash for field trial.
-  // |override_npapi_flash| indicates whether it should take precedence over
-  // the internal NPAPI Flash.
-  // Returns false if bundled Pepper Flash is not available. In that case,
-  // |plugin| and |override_npapi_flash| are not touched.
-  //
-  // TODO(yzshen): We need this method because currently we are having a field
-  // trial with bundled Pepper Flash, and need extra information about how to
-  // order bundled Pepper Flash and internal NPAPI Flash. Once the field trial
-  // is over, we should merge this into AddPepperPlugins().
-  bool GetBundledFieldTrialPepperFlash(content::PepperPluginInfo* plugin,
-                                       bool* override_npapi_flash);
 };
 
 }  // namespace chrome

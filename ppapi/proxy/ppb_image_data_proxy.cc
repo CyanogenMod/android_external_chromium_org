@@ -23,6 +23,7 @@
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/host_resource.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/thunk.h"
@@ -236,6 +237,8 @@ class ImageDataCache {
   // Notification from the renderer that the given image data is usable.
   void ImageDataUsable(ImageData* image_data);
 
+  void DidDeleteInstance(PP_Instance instance);
+
  private:
   friend struct LeakySingletonTraits<ImageDataCache>;
 
@@ -275,9 +278,9 @@ void ImageDataCache::Add(ImageData* image_data) {
   // Schedule a timer to invalidate this entry.
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&ImageDataCache::OnTimer,
-                 weak_factory_.GetWeakPtr(),
-                 image_data->pp_instance()),
+      RunWhileLocked(base::Bind(&ImageDataCache::OnTimer,
+                     weak_factory_.GetWeakPtr(),
+                     image_data->pp_instance())),
       base::TimeDelta::FromSeconds(kMaxAgeSeconds));
 }
 
@@ -285,6 +288,10 @@ void ImageDataCache::ImageDataUsable(ImageData* image_data) {
   CacheMap::iterator found = cache_.find(image_data->pp_instance());
   if (found != cache_.end())
     found->second.ImageDataUsable(image_data);
+}
+
+void ImageDataCache::DidDeleteInstance(PP_Instance instance) {
+  cache_.erase(instance);
 }
 
 void ImageDataCache::OnTimer(PP_Instance instance) {
@@ -343,6 +350,10 @@ void ImageData::LastPluginRefWasDeleted() {
     ImageDataCache::GetInstance()->Add(this);
 }
 
+void ImageData::InstanceWasDeleted() {
+  ImageDataCache::GetInstance()->DidDeleteInstance(pp_instance());
+}
+
 PP_Bool ImageData::Describe(PP_ImageDataDesc* desc) {
   memcpy(desc, &desc_, sizeof(PP_ImageDataDesc));
   return PP_TRUE;
@@ -386,7 +397,7 @@ int32_t ImageData::GetSharedMemory(int* /* handle */,
   return PP_ERROR_NOACCESS;
 }
 
-skia::PlatformCanvas* ImageData::GetPlatformCanvas() {
+SkCanvas* ImageData::GetPlatformCanvas() {
 #if defined(OS_NACL)
   return NULL;  // No canvas in NaCl.
 #else
@@ -400,6 +411,10 @@ SkCanvas* ImageData::GetCanvas() {
 #else
   return mapped_canvas_.get();
 #endif
+}
+
+void ImageData::SetUsedInReplaceContents() {
+  used_in_replace_contents_ = true;
 }
 
 void ImageData::RecycleToPlugin(bool zero_contents) {
@@ -492,10 +507,11 @@ PP_Resource PPB_ImageData_Proxy::CreateProxyResource(PP_Instance instance,
 bool PPB_ImageData_Proxy::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PPB_ImageData_Proxy, msg)
+#if !defined(OS_NACL)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBImageData_Create, OnHostMsgCreate)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBImageData_CreateNaCl,
                         OnHostMsgCreateNaCl)
-
+#endif
     IPC_MESSAGE_HANDLER(PpapiMsg_PPBImageData_NotifyUnusedImageData,
                         OnPluginMsgNotifyUnusedImageData)
 
@@ -504,6 +520,7 @@ bool PPB_ImageData_Proxy::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
+#if !defined(OS_NACL)
 void PPB_ImageData_Proxy::OnHostMsgCreate(PP_Instance instance,
                                           int32_t format,
                                           const PP_Size& size,
@@ -511,11 +528,6 @@ void PPB_ImageData_Proxy::OnHostMsgCreate(PP_Instance instance,
                                           HostResource* result,
                                           std::string* image_data_desc,
                                           ImageHandle* result_image_handle) {
-#if defined(OS_NACL)
-  // This message should never be received in untrusted code. To minimize the
-  // size of the IRT, we just don't handle it.
-  return;
-#else
   *result_image_handle = ImageData::NullHandle();
 
   thunk::EnterResourceCreation enter(instance);
@@ -547,7 +559,6 @@ void PPB_ImageData_Proxy::OnHostMsgCreate(PP_Instance instance,
     *result_image_handle = ImageData::HandleFromInt(handle);
 #endif  // defined(OS_WIN)
   }
-#endif  // defined(OS_NACL)
 }
 
 void PPB_ImageData_Proxy::OnHostMsgCreateNaCl(
@@ -558,11 +569,6 @@ void PPB_ImageData_Proxy::OnHostMsgCreateNaCl(
     HostResource* result,
     std::string* image_data_desc,
     ppapi::proxy::SerializedHandle* result_image_handle) {
-#if defined(OS_NACL)
-  // This message should never be received in untrusted code. To minimize the
-  // size of the IRT, we just don't handle it.
-  return;
-#else
   result_image_handle->set_null_shmem();
   HostDispatcher* dispatcher = HostDispatcher::GetForInstance(instance);
   if (!dispatcher)
@@ -604,8 +610,8 @@ void PPB_ImageData_Proxy::OnHostMsgCreateNaCl(
   result_image_handle->set_shmem(
       dispatcher->ShareHandleWithRemote(platform_file, false),
       byte_count);
-#endif  // defined(OS_NACL)
 }
+#endif  // !defined(OS_NACL)
 
 void PPB_ImageData_Proxy::OnPluginMsgNotifyUnusedImageData(
     const HostResource& old_image_data) {

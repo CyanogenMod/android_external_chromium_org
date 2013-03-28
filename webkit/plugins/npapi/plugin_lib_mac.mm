@@ -10,8 +10,8 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/native_library.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "webkit/plugins/npapi/plugin_list.h"
@@ -76,7 +76,7 @@ NSDictionary* GetMIMETypes(CFBundleRef bundle) {
   }
 }
 
-bool ReadPlistPluginInfo(const FilePath& filename, CFBundleRef bundle,
+bool ReadPlistPluginInfo(const base::FilePath& filename, CFBundleRef bundle,
                          WebPluginInfo* info) {
   NSDictionary* mime_types = GetMIMETypes(bundle);
   if (!mime_types)
@@ -84,8 +84,13 @@ bool ReadPlistPluginInfo(const FilePath& filename, CFBundleRef bundle,
 
   for (NSString* mime_type in [mime_types allKeys]) {
     NSDictionary* mime_dict = [mime_types objectForKey:mime_type];
+    NSNumber* type_enabled = [mime_dict objectForKey:@"WebPluginTypeEnabled"];
     NSString* mime_desc = [mime_dict objectForKey:@"WebPluginTypeDescription"];
     NSArray* mime_exts = [mime_dict objectForKey:@"WebPluginExtensions"];
+
+    // Skip any disabled types.
+    if (type_enabled && ![type_enabled boolValue])
+      continue;
 
     WebPluginMimeType mime;
     mime.mime_type = base::SysNSStringToUTF8([mime_type lowercaseString]);
@@ -132,7 +137,7 @@ bool ReadPlistPluginInfo(const FilePath& filename, CFBundleRef bundle,
 
 }  // anonymous namespace
 
-bool PluginLib::ReadWebPluginInfo(const FilePath &filename,
+bool PluginLib::ReadWebPluginInfo(const base::FilePath &filename,
                                   WebPluginInfo* info) {
   // There are three ways to get information about plugin capabilities:
   // 1) a set of Info.plist keys, documented at

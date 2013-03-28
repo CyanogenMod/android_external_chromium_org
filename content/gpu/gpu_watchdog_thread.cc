@@ -71,7 +71,7 @@ void GpuWatchdogThread::CheckArmed() {
 
 void GpuWatchdogThread::Init() {
   // Schedule the first check.
-  OnCheck();
+  OnCheck(false);
 }
 
 void GpuWatchdogThread::CleanUp() {
@@ -87,12 +87,12 @@ GpuWatchdogThread::GpuWatchdogTaskObserver::~GpuWatchdogTaskObserver() {
 }
 
 void GpuWatchdogThread::GpuWatchdogTaskObserver::WillProcessTask(
-    base::TimeTicks time_posted) {
+    const base::PendingTask& pending_task) {
   watchdog_->CheckArmed();
 }
 
 void GpuWatchdogThread::GpuWatchdogTaskObserver::DidProcessTask(
-    base::TimeTicks time_posted) {
+    const base::PendingTask& pending_task) {
   watchdog_->CheckArmed();
 }
 
@@ -120,14 +120,19 @@ void GpuWatchdogThread::OnAcknowledge() {
   weak_factory_.InvalidateWeakPtrs();
   armed_ = false;
 
+  // If it took a long time for the acknowledgement, assume the computer was
+  // recently suspended.
+  bool was_suspended = (base::Time::Now() > suspension_timeout_);
+
   // The monitored thread has responded. Post a task to check it again.
   message_loop()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&GpuWatchdogThread::OnCheck, weak_factory_.GetWeakPtr()),
+      base::Bind(&GpuWatchdogThread::OnCheck, weak_factory_.GetWeakPtr(),
+          was_suspended),
       base::TimeDelta::FromMilliseconds(kCheckPeriodMs));
 }
 
-void GpuWatchdogThread::OnCheck() {
+void GpuWatchdogThread::OnCheck(bool after_suspend) {
   if (armed_)
     return;
 
@@ -140,7 +145,10 @@ void GpuWatchdogThread::OnCheck() {
   arm_cpu_time_ = GetWatchedThreadTime();
 #endif
 
-  arm_absolute_time_ = base::Time::Now();
+  // Immediately after the computer is woken up from being suspended it might
+  // be pretty sluggish, so allow some extra time before the next timeout.
+  base::TimeDelta timeout = timeout_ * (after_suspend ? 3 : 1);
+  suspension_timeout_ = base::Time::Now() + timeout * 2;
 
   // Post a task to the monitored thread that does nothing but wake up the
   // TaskObserver. Any other tasks that are pending on the watched thread will
@@ -156,7 +164,7 @@ void GpuWatchdogThread::OnCheck() {
       base::Bind(
           &GpuWatchdogThread::DeliberatelyTerminateToRecoverFromHang,
           weak_factory_.GetWeakPtr()),
-      timeout_);
+      timeout);
 }
 
 // Use the --disable-gpu-watchdog command line switch to disable this.
@@ -180,9 +188,9 @@ void GpuWatchdogThread::DeliberatelyTerminateToRecoverFromHang() {
   // the watchdog check. This is to prevent the watchdog thread from terminating
   // when a machine wakes up from sleep or hibernation, which would otherwise
   // appear to be a hang.
-  if (base::Time::Now() - arm_absolute_time_ > timeout_ * 2) {
+  if (base::Time::Now() > suspension_timeout_) {
     armed_ = false;
-    OnCheck();
+    OnCheck(true);
     return;
   }
 
@@ -201,20 +209,8 @@ void GpuWatchdogThread::DeliberatelyTerminateToRecoverFromHang() {
   LOG(ERROR) << "The GPU process hung. Terminating after "
              << timeout_.InMilliseconds() << " ms.";
 
-  bool should_crash =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kCrashOnGpuHang);
-
-#if defined(OS_WIN)
-  should_crash = true;
-#endif
-
-  if (should_crash) {
-    // Deliberately crash the process to create a crash dump.
-    *((volatile int*)0) = 0x1337;
-  } else {
-    base::Process current_process(base::GetCurrentProcessHandle());
-    current_process.Terminate(RESULT_CODE_HUNG);
-  }
+  // Deliberately crash the process to create a crash dump.
+  *((volatile int*)0) = 0x1337;
 
   terminated = true;
 }

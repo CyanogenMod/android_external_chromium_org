@@ -11,6 +11,7 @@ from idl_parser import ParseFiles
 
 GeneratorList = []
 
+Option('out', 'List of output files', default='')
 Option('release', 'Which release to generate.', default='')
 Option('range', 'Which ranges in the form of MIN,MAX.', default='start,end')
 
@@ -106,7 +107,7 @@ class Generator(object):
       if releasestr == 'end':
         releasestr = ast.releases[-1]
 
-      if releasestr > ast.releases[0]:
+      if releasestr > ast.releases[-1]:
         InfoOut.Log('There is no unique release for %s, using last release.' %
                     releasestr)
         releasestr = ast.releases[-1]

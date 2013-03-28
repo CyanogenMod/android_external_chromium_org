@@ -5,10 +5,7 @@
 #include "ui/aura/env.h"
 
 #include "base/command_line.h"
-#include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env_observer.h"
-#include "ui/aura/event_filter.h"
-#include "ui/aura/display_manager.h"
 #include "ui/aura/root_window_host.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/compositor.h"
@@ -16,7 +13,6 @@
 
 #if defined(USE_X11)
 #include "base/message_pump_aurax11.h"
-#include "ui/aura/display_change_observer_x11.h"
 #endif
 
 namespace aura {
@@ -29,10 +25,8 @@ Env* Env::instance_ = NULL;
 
 Env::Env()
     : mouse_button_flags_(0),
-      is_cursor_hidden_(false),
       is_touch_down_(false),
-      render_white_bg_(true),
-      stacking_client_(NULL) {
+      render_white_bg_(true) {
 }
 
 Env::~Env() {
@@ -40,6 +34,8 @@ Env::~Env() {
   base::MessagePumpAuraX11::Current()->RemoveObserver(
       &device_list_updater_aurax11_);
 #endif
+
+  FOR_EACH_OBSERVER(EnvObserver, observers_, OnWillDestroyEnv());
 
   ui::Compositor::Terminate();
 }
@@ -67,36 +63,6 @@ void Env::RemoveObserver(EnvObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void Env::SetLastMouseLocation(const Window& window,
-                               const gfx::Point& location_in_root) {
-  last_mouse_location_ = location_in_root;
-  client::ScreenPositionClient* client =
-      client::GetScreenPositionClient(window.GetRootWindow());
-  if (client)
-    client->ConvertPointToScreen(&window, &last_mouse_location_);
-}
-
-void Env::SetCursorShown(bool cursor_shown) {
-  if (cursor_shown) {
-    // Protect against restoring a position that hadn't been saved.
-    if (is_cursor_hidden_)
-      last_mouse_location_ = hidden_cursor_location_;
-    is_cursor_hidden_ = false;
-  } else {
-    hidden_cursor_location_ = last_mouse_location_;
-    last_mouse_location_ = gfx::Point(-10000, -10000);
-    is_cursor_hidden_ = true;
-  }
-}
-
-void Env::SetDisplayManager(DisplayManager* display_manager) {
-  display_manager_.reset(display_manager);
-#if defined(USE_X11)
-  // Update the display manager with latest info.
-  display_change_observer_->NotifyDisplayChange();
-#endif
-}
-
 #if !defined(OS_MACOSX)
 MessageLoop::Dispatcher* Env::GetDispatcher() {
 #if defined(USE_X11)
@@ -107,6 +73,11 @@ MessageLoop::Dispatcher* Env::GetDispatcher() {
 }
 #endif
 
+void Env::RootWindowActivated(RootWindow* root_window) {
+  FOR_EACH_OBSERVER(EnvObserver, observers_,
+                    OnRootWindowActivated(root_window));
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Env, private:
 
@@ -115,8 +86,6 @@ void Env::Init() {
   dispatcher_.reset(CreateDispatcher());
 #endif
 #if defined(USE_X11)
-  display_change_observer_.reset(new internal::DisplayChangeObserverX11);
-
   // We can't do this with a root window listener because XI_HierarchyChanged
   // messages don't have a target window.
   base::MessagePumpAuraX11::Current()->AddObserver(
@@ -131,10 +100,16 @@ void Env::NotifyWindowInitialized(Window* window) {
   FOR_EACH_OBSERVER(EnvObserver, observers_, OnWindowInitialized(window));
 }
 
+void Env::NotifyRootWindowInitialized(RootWindow* root_window) {
+  FOR_EACH_OBSERVER(EnvObserver,
+                    observers_,
+                    OnRootWindowInitialized(root_window));
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Env, ui::EventTarget implementation:
 
-bool Env::CanAcceptEvents() {
+bool Env::CanAcceptEvent(const ui::Event& event) {
   return true;
 }
 

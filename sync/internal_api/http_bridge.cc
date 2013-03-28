@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,10 @@
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/string_number_conversions.h"
-#include "net/base/host_resolver.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/cookies/cookie_monster.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
 #include "net/http/http_response_headers.h"
@@ -111,7 +111,6 @@ HttpBridge::RequestContext::RequestContext(
   // figure out if we need to give the user explicit control over policies etc.
   http_user_agent_settings_.reset(new net::StaticHttpUserAgentSettings(
       baseline_context->GetAcceptLanguage(),
-      baseline_context->GetAcceptCharset(),
       user_agent));
   set_http_user_agent_settings(http_user_agent_settings_.get());
 
@@ -310,6 +309,11 @@ void HttpBridge::OnURLFetchComplete(const net::URLFetcher* source) {
   // Wake the blocked syncer thread in MakeSynchronousPost.
   // WARNING: DONT DO ANYTHING AFTER THIS CALL! |this| may be deleted!
   http_post_completed_.Signal();
+}
+
+net::URLRequestContextGetter* HttpBridge::GetRequestContextGetterForTest()
+    const {
+  return context_getter_for_request_;
 }
 
 }  // namespace syncer

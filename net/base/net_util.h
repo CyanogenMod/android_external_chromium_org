@@ -26,10 +26,10 @@
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
 
-class FilePath;
 class GURL;
 
 namespace base {
+class FilePath;
 class Time;
 }
 
@@ -79,13 +79,13 @@ NET_EXPORT_PRIVATE extern size_t GetCountOfExplicitlyAllowedPorts();
 
 // Given the full path to a file name, creates a file: URL. The returned URL
 // may not be valid if the input is malformed.
-NET_EXPORT GURL FilePathToFileURL(const FilePath& path);
+NET_EXPORT GURL FilePathToFileURL(const base::FilePath& path);
 
 // Converts a file: URL back to a filename that can be passed to the OS. The
 // file URL must be well-formed (GURL::is_valid() must return true); we don't
 // handle degenerate cases here. Returns true on success, false if it isn't a
 // valid file URL. On failure, *file_path will be empty.
-NET_EXPORT bool FileURLToFilePath(const GURL& url, FilePath* file_path);
+NET_EXPORT bool FileURLToFilePath(const GURL& url, base::FilePath* file_path);
 
 // Splits an input of the form <host>[":"<port>] into its consitituent parts.
 // Saves the result into |*host| and |*port|. If the input did not have
@@ -173,12 +173,6 @@ NET_EXPORT std::string GetHostOrSpecFromURL(const GURL& url);
 NET_EXPORT std::string GetSpecificHeader(const std::string& headers,
                                          const std::string& name);
 
-// TODO(abarth): Move these functions to http_content_disposition.cc.
-bool DecodeFilenameValue(const std::string& input,
-                         const std::string& referrer_charset,
-                         std::string* output);
-bool DecodeExtValue(const std::string& value, std::string* output);
-
 // Converts the given host name to unicode characters. This can be called for
 // any host name, if the input is not IDN or is invalid in some way, we'll just
 // return the ASCII source so it is still usable.
@@ -252,9 +246,8 @@ NET_EXPORT string16 StripWWWFromHost(const GURL& url);
 // Generates a filename using the first successful method from the following (in
 // order):
 //
-// 1) The raw Content-Disposition header in |content_disposition| (as read from
-//    the network.  |referrer_charset| is used as described in the comment for
-//    GetFileNameFromCD().
+// 1) The raw Content-Disposition header in |content_disposition| as read from
+//    the network.  |referrer_charset| is used to decode non-ASCII strings.
 // 2) |suggested_name| if specified.  |suggested_name| is assumed to be in
 //    UTF-8.
 // 3) The filename extracted from the |url|.  |referrer_charset| will be used to
@@ -285,12 +278,13 @@ NET_EXPORT string16 GetSuggestedFilename(const GURL& url,
                                          const std::string& default_name);
 
 // Similar to GetSuggestedFilename(), but returns a FilePath.
-NET_EXPORT FilePath GenerateFileName(const GURL& url,
-                                     const std::string& content_disposition,
-                                     const std::string& referrer_charset,
-                                     const std::string& suggested_name,
-                                     const std::string& mime_type,
-                                     const std::string& default_name);
+NET_EXPORT base::FilePath GenerateFileName(
+    const GURL& url,
+    const std::string& content_disposition,
+    const std::string& referrer_charset,
+    const std::string& suggested_name,
+    const std::string& mime_type,
+    const std::string& default_name);
 
 // Ensures that the filename and extension is safe to use in the filesystem.
 //
@@ -311,7 +305,7 @@ NET_EXPORT FilePath GenerateFileName(const GURL& url,
 // thread that allows IO.
 NET_EXPORT void GenerateSafeFileName(const std::string& mime_type,
                                      bool ignore_extension,
-                                     FilePath* file_path);
+                                     base::FilePath* file_path);
 
 // Checks |port| against a list of ports which are restricted by default.
 // Returns true if |port| is allowed, false if it is restricted.
@@ -521,6 +515,28 @@ typedef std::vector<NetworkInterface> NetworkInterfaceList;
 // the list for each address.
 // Can be called only on a thread that allows IO.
 NET_EXPORT bool GetNetworkList(NetworkInterfaceList* networks);
+
+// General category of the IEEE 802.11 (wifi) physical layer operating mode.
+enum WifiPHYLayerProtocol {
+  // No wifi support or no associated AP.
+  WIFI_PHY_LAYER_PROTOCOL_NONE,
+  // An obsolete modes introduced by the original 802.11, e.g. IR, FHSS,
+  WIFI_PHY_LAYER_PROTOCOL_ANCIENT,
+  // 802.11a, OFDM-based rates.
+  WIFI_PHY_LAYER_PROTOCOL_A,
+  // 802.11b, DSSS or HR DSSS.
+  WIFI_PHY_LAYER_PROTOCOL_B,
+  // 802.11g, same rates as 802.11a but compatible with 802.11b.
+  WIFI_PHY_LAYER_PROTOCOL_G,
+  // 802.11n, HT rates.
+  WIFI_PHY_LAYER_PROTOCOL_N,
+  // Unclassified mode or failure to identify.
+  WIFI_PHY_LAYER_PROTOCOL_UNKNOWN
+};
+
+// Characterize the PHY mode of the currently associated access point.
+// Currently only available on OS_WIN.
+NET_EXPORT WifiPHYLayerProtocol GetWifiPHYLayerProtocol();
 
 }  // namespace net
 

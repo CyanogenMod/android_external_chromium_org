@@ -12,32 +12,14 @@
 using browser_sync::SessionModelAssociator;
 
 SessionFaviconSource::SessionFaviconSource(Profile* profile)
-    : FaviconSource(profile,
-                    FaviconSource::FAVICON,
-                    chrome::kChromeUISessionFaviconHost) {
+    : FaviconSource(profile, FaviconSource::FAVICON) {
 }
 
 SessionFaviconSource::~SessionFaviconSource() {
 }
 
-void SessionFaviconSource::StartDataRequest(const std::string& path,
-                                            bool is_incognito,
-                                            int request_id) {
-  ProfileSyncService* sync_service =
-      ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile_);
-  SessionModelAssociator* associator = sync_service ?
-      sync_service->GetSessionModelAssociator() : NULL;
-
-  std::string favicon_data;
-  if (associator &&
-      associator->GetSyncedFaviconForPageURL(path, &favicon_data)) {
-    scoped_refptr<base::RefCountedString> response =
-        new base::RefCountedString();
-    response->data() = favicon_data;
-    SendResponse(request_id, response);
-  } else {
-    FaviconSource::StartDataRequest(path, is_incognito, request_id);
-  }
+std::string SessionFaviconSource::GetSource() {
+  return chrome::kChromeUISessionFaviconHost;
 }
 
 std::string SessionFaviconSource::GetMimeType(const std::string&) const {
@@ -53,5 +35,21 @@ bool SessionFaviconSource::ShouldReplaceExistingSource() const {
 bool SessionFaviconSource::AllowCaching() const {
   // Prevent responses from being cached, otherwise session favicons won't
   // update in a timely manner.
+  return false;
+}
+
+bool SessionFaviconSource::HandleMissingResource(const IconRequest& request) {
+  ProfileSyncService* sync_service =
+      ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile_);
+  SessionModelAssociator* associator = sync_service ?
+      sync_service->GetSessionModelAssociator() : NULL;
+
+  scoped_refptr<base::RefCountedMemory> response;
+  if (associator &&
+      associator->GetSyncedFaviconForPageURL(request.request_path,
+                                             &response)) {
+    request.callback.Run(response);
+    return true;
+  }
   return false;
 }

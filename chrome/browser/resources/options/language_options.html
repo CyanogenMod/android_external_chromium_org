@@ -42,13 +42,25 @@
           <span id="language-options-ui-language-message" hidden></span>
         </div>
 </if>
-        <div class="language-options-contents">
+        <div id="language-options-spellcheck" class="language-options-contents">
           <button id="language-options-spell-check-language-button"
               i18n-content="use_this_for_spell_checking">
           </button>
-          <span id="language-options-spell-check-language-message"
-              hidden>
+          <span id="language-options-spell-check-language-message" hidden>
           </span>
+          <span id="language-options-dictionary-downloading-message"
+              i18n-content="downloading_dictionary" hidden>
+          </span>
+        </div>
+        <div id="language-options-dictionary-download-failed-message"
+            class="language-options-notification" hidden>
+          <div i18n-content="download_failed"></div>
+          <div id="language-options-dictionary-download-fail-help-message"
+            i18n-content="download_fail_help" hidden>
+          </div>
+          <button id="dictionary-download-retry-button"
+              i18n-content="retry_button">
+          </button>
         </div>
         <div id="language-options-ui-notification-bar"
              class="language-options-notification" hidden>
@@ -81,6 +93,9 @@
 <if expr="pp_ifdef('chromeos')">
       <div i18n-content="switch_input_methods_hint"></div>
       <div i18n-content="select_previous_input_method_hint"></div>
+      <button id="edit-dictionary-button"
+          class="link-button standalone-link-button"
+          i18n-content="languageDictionaryOverlayTitle"></button>
 </if>
 <if expr="not pp_ifdef('chromeos') and not is_macosx">
       <div id="spell-check-option" class="checkbox">
@@ -89,6 +104,8 @@
               metric="Options_SpellCheck" type="checkbox">
           <span i18n-content="enable_spell_check"></span>
         </label>
+        <button id="edit-dictionary-button" class="link-button"
+            i18n-content="languageDictionaryOverlayTitle" hidden></button>
       </div>
       <div id="auto-spell-correction-option" class="checkbox" hidden>
         <label>
@@ -103,7 +120,7 @@
   </div>
   <div class="action-area">
     <div class="button-strip">
-      <button id="language-confirm" i18n-content="ok"></button>
+      <button id="language-confirm" i18n-content="done"></button>
     </div>
   </div>
 </div>

@@ -6,21 +6,26 @@
 
 #include "chrome/browser/defaults.h"
 #include "grit/theme_resources.h"
-#include "ui/views/controls/button/border_images.h"
+#include "ui/views/painter.h"
 
 namespace {
 
-const int kNormalImageSet[] = { BORDER_IMAGES(IDR_INFOBARBUTTON_NORMAL) };
-const int kHotImageSet[] = { BORDER_IMAGES(IDR_INFOBARBUTTON_HOVER) };
-const int kPushedImageSet[] = { BORDER_IMAGES(IDR_INFOBARBUTTON_PRESSED) };
+const int kNormalImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_NORMAL);
+const int kHotImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_HOVER);
+const int kPushedImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_PRESSED);
 
 }  // namespace
 
 InfoBarButtonBorder::InfoBarButtonBorder() {
-  set_vertical_padding(browser_defaults::kInfoBarBorderPaddingVertical);
-  set_normal_set(views::BorderImages(kNormalImageSet));
-  set_hot_set(views::BorderImages(kHotImageSet));
-  set_pushed_set(views::BorderImages(kPushedImageSet));
+  gfx::Insets insets = GetInsets();
+  SetInsets(gfx::Insets(browser_defaults::kInfoBarBorderPaddingVertical,
+                        insets.left(),
+                        browser_defaults::kInfoBarBorderPaddingVertical,
+                        insets.right()));
+
+  set_normal_painter(views::Painter::CreateImageGridPainter(kNormalImageSet));
+  set_hot_painter(views::Painter::CreateImageGridPainter(kHotImageSet));
+  set_pushed_painter(views::Painter::CreateImageGridPainter(kPushedImageSet));
 }
 
 InfoBarButtonBorder::~InfoBarButtonBorder() {

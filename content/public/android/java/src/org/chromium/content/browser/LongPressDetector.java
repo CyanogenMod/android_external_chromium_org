@@ -109,6 +109,7 @@ class LongPressDetector {
                 }
                 break;
             case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
                 if (mCurrentDownEvent.getDownTime() + TAP_TIMEOUT + LONGPRESS_TIMEOUT >
                     ev.getEventTime()) {
                     mInLongPress = false;
@@ -121,12 +122,12 @@ class LongPressDetector {
     }
 
     // Given a stream of pending events, cancel the LONG_PRESS timer if appropriate.
-    void cancelLongPressIfNeeded(Iterator<Pair<MotionEvent, Boolean>> pendingEvents) {
+    void cancelLongPressIfNeeded(Iterator<MotionEvent> pendingEvents) {
         if (mCurrentDownEvent == null)
             return;
         long currentDownTime = mCurrentDownEvent.getDownTime();
         while (pendingEvents.hasNext()) {
-            MotionEvent pending = pendingEvents.next().first;
+            MotionEvent pending = pendingEvents.next();
             if (pending.getDownTime() != currentDownTime) {
                 break;
             }
@@ -171,5 +172,14 @@ class LongPressDetector {
             }
         }
         return mMoveConfirmed;
+    }
+
+    /**
+     * This is for testing only.
+     * Sends a LongPress gesture. This should always be called after a down event.
+     */
+    void sendLongPressGestureForTest() {
+        if (mCurrentDownEvent == null) return;
+        dispatchLongPress();
     }
 }

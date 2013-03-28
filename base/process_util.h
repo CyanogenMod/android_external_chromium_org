@@ -37,7 +37,7 @@ typedef struct _malloc_zone_t malloc_zone_t;
 #include <vector>
 
 #include "base/base_export.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/process.h"
 
 #if defined(OS_POSIX)
@@ -79,7 +79,7 @@ const uint32 kProcessAccessQueryLimitedInfomation =
 const uint32 kProcessAccessWaitForTermination     = SYNCHRONIZE;
 #elif defined(OS_POSIX)
 
-struct ProcessEntry {
+struct BASE_EXPORT ProcessEntry {
   ProcessEntry();
   ~ProcessEntry();
 
@@ -197,6 +197,12 @@ BASE_EXPORT FilePath GetProcessExecutablePath(ProcessHandle process);
 // Exposed for testing.
 BASE_EXPORT int ParseProcStatCPU(const std::string& input);
 
+// Get the number of threads of |process| as available in /proc/<pid>/stat.
+// This should be used with care as no synchronization with running threads is
+// done. This is mostly useful to guarantee being single-threaded.
+// Returns 0 on failure.
+BASE_EXPORT int GetNumberOfThreads(ProcessHandle process);
+
 // The maximum allowed value for the OOM score.
 const int kMaxOomScore = 1000;
 
@@ -236,33 +242,49 @@ typedef int* LaunchSynchronizationHandle;
 // Options for launching a subprocess that are passed to LaunchProcess().
 // The default constructor constructs the object with default options.
 struct LaunchOptions {
-  LaunchOptions() : wait(false),
+  LaunchOptions()
+      : wait(false),
+        debug(false),
 #if defined(OS_WIN)
-                    start_hidden(false), inherit_handles(false), as_user(NULL),
-                    empty_desktop_name(false), job_handle(NULL),
-                    force_breakaway_from_job_(false)
+        start_hidden(false),
+        inherit_handles(false),
+        as_user(NULL),
+        empty_desktop_name(false),
+        job_handle(NULL),
+        stdin_handle(NULL),
+        stdout_handle(NULL),
+        stderr_handle(NULL),
+        force_breakaway_from_job_(false)
 #else
-                    environ(NULL), fds_to_remap(NULL), maximize_rlimits(NULL),
-                    new_process_group(false)
+        environ(NULL),
+        fds_to_remap(NULL),
+        maximize_rlimits(NULL),
+        new_process_group(false)
 #if defined(OS_LINUX)
-                  , clone_flags(0)
+      , clone_flags(0)
 #endif  // OS_LINUX
 #if defined(OS_CHROMEOS)
-                  , ctrl_terminal_fd(-1)
+      , ctrl_terminal_fd(-1)
 #endif  // OS_CHROMEOS
 #if defined(OS_MACOSX)
-                  , synchronize(NULL)
+      , synchronize(NULL)
 #endif  // defined(OS_MACOSX)
 #endif  // !defined(OS_WIN)
-      {}
+  {}
 
   // If true, wait for the process to complete.
   bool wait;
 
+  // If true, print more debugging info (OS-dependent).
+  bool debug;
+
 #if defined(OS_WIN)
   bool start_hidden;
 
-  // If true, the new process inherits handles from the parent.
+  // If true, the new process inherits handles from the parent. In production
+  // code this flag should be used only when running short-lived, trusted
+  // binaries, because open handles from other libraries and subsystems will
+  // leak to the child process, causing errors such as open socket hangs.
   bool inherit_handles;
 
   // If non-NULL, runs as if the user represented by the token had launched it.
@@ -281,6 +303,14 @@ struct LaunchOptions {
   // be terminated immediately and LaunchProcess() will fail if assignment to
   // the job object fails.
   HANDLE job_handle;
+
+  // Handles for the redirection of stdin, stdout and stderr. The handles must
+  // be inheritable. Caller should either set all three of them or none (i.e.
+  // there is no way to redirect stderr without redirecting stdin). The
+  // |inherit_handles| flag must be set to true when redirecting stdio stream.
+  HANDLE stdin_handle;
+  HANDLE stdout_handle;
+  HANDLE stderr_handle;
 
   // If set to true, ensures that the child process is launched with the
   // CREATE_BREAKAWAY_FROM_JOB flag which allows it to breakout of the parent
@@ -511,6 +541,15 @@ BASE_EXPORT bool KillProcessById(ProcessId process_id, int exit_code,
 // will no longer be available).
 BASE_EXPORT TerminationStatus GetTerminationStatus(ProcessHandle handle,
                                                    int* exit_code);
+
+#if defined(OS_POSIX)
+// Wait for the process to exit and get the termination status. See
+// GetTerminationStatus for more information. On POSIX systems, we can't call
+// WaitForExitCode and then GetTerminationStatus as the child will be reaped
+// when WaitForExitCode return and this information will be lost.
+BASE_EXPORT TerminationStatus WaitForTerminationStatus(ProcessHandle handle,
+                                                       int* exit_code);
+#endif  // defined(OS_POSIX)
 
 // Waits for process to exit. On POSIX systems, if the process hasn't been
 // signaled then puts the exit code in |exit_code|; otherwise it's considered

@@ -6,7 +6,6 @@
 
 #include "base/mac/mac_util.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
@@ -16,9 +15,8 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_utils.h"
-#include "ipc/ipc_message.h"
 #include "testing/gtest_mac.h"
-#include "ui/base/accelerators/accelerator_cocoa.h"
+#include "ui/base/accelerators/platform_accelerator_cocoa.h"
 
 using content::SiteInstance;
 using content::WebContents;
@@ -26,7 +24,8 @@ using content::WebContents;
 @interface FullscreenExitBubbleController(JustForTesting)
 // Already defined.
 + (NSString*)keyCommandString;
-+ (NSString*)keyCombinationForAccelerator:(const ui::AcceleratorCocoa&)item;
++ (NSString*)keyCombinationForAccelerator:
+    (const ui::PlatformAcceleratorCocoa&)item;
 @end
 
 @interface FullscreenExitBubbleController(ExposedForTesting)
@@ -66,10 +65,10 @@ class FullscreenExitBubbleControllerTest : public CocoaProfileTest {
   }
 
   void AppendTabToStrip() {
-    TabContents* tab_contents = chrome::TabContentsFactory(
-        profile(), site_instance_, MSG_ROUTING_NONE, NULL);
-    browser()->tab_strip_model()->AppendTabContents(
-        tab_contents, /*foreground=*/true);
+    WebContents* web_contents = WebContents::Create(
+        content::WebContents::CreateParams(profile(), site_instance_));
+    browser()->tab_strip_model()->AppendWebContents(
+        web_contents, /*foreground=*/true);
   }
 
   scoped_refptr<SiteInstance> site_instance_;
@@ -85,7 +84,8 @@ TEST_F(FullscreenExitBubbleControllerTest, DISABLED_DenyExitsFullscreen) {
   [bwc showWindow:nil];
 
   AppendTabToStrip();
-  WebContents* fullscreen_tab = chrome::GetActiveWebContents(browser());
+  WebContents* fullscreen_tab =
+      browser()->tab_strip_model()->GetActiveWebContents();
   {
     base::mac::ScopedNSAutoreleasePool pool;
     content::WindowedNotificationObserver fullscreen_observer(
@@ -116,8 +116,9 @@ TEST_F(FullscreenExitBubbleControllerTest, LabelWasReplaced) {
 }
 
 TEST_F(FullscreenExitBubbleControllerTest, ShortcutText) {
-  ui::AcceleratorCocoa cmd_F(@"F", NSCommandKeyMask);
-  ui::AcceleratorCocoa cmd_shift_f(@"f", NSCommandKeyMask|NSShiftKeyMask);
+  ui::PlatformAcceleratorCocoa cmd_F(@"F", NSCommandKeyMask);
+  ui::PlatformAcceleratorCocoa cmd_shift_f(
+      @"f", NSCommandKeyMask | NSShiftKeyMask);
   NSString* cmd_F_text = [FullscreenExitBubbleController
       keyCombinationForAccelerator:cmd_F];
   NSString* cmd_shift_f_text = [FullscreenExitBubbleController

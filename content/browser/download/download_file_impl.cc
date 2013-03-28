@@ -10,14 +10,14 @@
 #include "base/file_util.h"
 #include "base/message_loop_proxy.h"
 #include "base/time.h"
-#include "content/browser/download/byte_stream.h"
+#include "content/browser/byte_stream.h"
 #include "content/browser/download/download_create_info.h"
 #include "content/browser/download/download_interrupt_reasons_impl.h"
 #include "content/browser/download/download_net_log_parameters.h"
-#include "content/browser/power_save_blocker.h"
+#include "content/browser/download/download_stats.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_destination_observer.h"
-#include "content/browser/download/download_stats.h"
+#include "content/public/browser/power_save_blocker.h"
 #include "net/base/io_buffer.h"
 
 namespace content {
@@ -29,7 +29,7 @@ int DownloadFile::number_active_objects_ = 0;
 
 DownloadFileImpl::DownloadFileImpl(
     scoped_ptr<DownloadSaveInfo> save_info,
-    const FilePath& default_download_directory,
+    const base::FilePath& default_download_directory,
     const GURL& url,
     const GURL& referrer_url,
     bool calculate_hash,
@@ -76,6 +76,9 @@ void DownloadFileImpl::Initialize(const InitializeCallback& callback) {
 
   download_start_ = base::TimeTicks::Now();
 
+  // Primarily to make reset to zero in restart visible to owner.
+  SendUpdate();
+
   // Initial pull from the straw.
   StreamActive();
 
@@ -99,16 +102,17 @@ DownloadInterruptReason DownloadFileImpl::AppendDataToFile(
 }
 
 void DownloadFileImpl::RenameAndUniquify(
-    const FilePath& full_path, const RenameCompletionCallback& callback) {
+    const base::FilePath& full_path,
+    const RenameCompletionCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  FilePath new_path(full_path);
+  base::FilePath new_path(full_path);
 
   int uniquifier =
       file_util::GetUniquePathNumber(new_path, FILE_PATH_LITERAL(""));
   if (uniquifier > 0) {
     new_path = new_path.InsertBeforeExtensionASCII(
-        StringPrintf(" (%d)", uniquifier));
+        base::StringPrintf(" (%d)", uniquifier));
   }
 
   DownloadInterruptReason reason = file_.Rename(new_path);
@@ -129,10 +133,11 @@ void DownloadFileImpl::RenameAndUniquify(
 }
 
 void DownloadFileImpl::RenameAndAnnotate(
-    const FilePath& full_path, const RenameCompletionCallback& callback) {
+    const base::FilePath& full_path,
+    const RenameCompletionCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  FilePath new_path(full_path);
+  base::FilePath new_path(full_path);
 
   DownloadInterruptReason reason = DOWNLOAD_INTERRUPT_REASON_NONE;
   // Short circuit null rename.
@@ -173,7 +178,7 @@ void DownloadFileImpl::Cancel() {
   file_.Cancel();
 }
 
-FilePath DownloadFileImpl::FullPath() const {
+base::FilePath DownloadFileImpl::FullPath() const {
   return file_.full_path();
 }
 

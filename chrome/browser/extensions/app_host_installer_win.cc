@@ -18,8 +18,11 @@
 #include "base/logging.h"
 #include "base/process_util.h"
 #include "base/string16.h"
+#include "base/string_util.h"
+#include "base/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "chrome/installer/launcher_support/chrome_launcher_support.h"
+#include "chrome/installer/util/util_constants.h"
 
 namespace {
 
@@ -67,17 +70,23 @@ QuickEnableDelegate::QuickEnableDelegate(
 QuickEnableDelegate::~QuickEnableDelegate() {}
 
 void QuickEnableDelegate::OnObjectSignaled(HANDLE object) {
+  // Reset callback_ to free up references. But do it now because it's possible
+  // that callback_.Run() will cause this object to be deleted.
+  OnAppHostInstallationCompleteCallback callback(callback_);
+  callback_.Reset();
+
   int exit_code = 0;
   base::TerminationStatus status(
       base::GetTerminationStatus(object, &exit_code));
   if (status == base::TERMINATION_STATUS_NORMAL_TERMINATION) {
-    callback_.Run(true);
+    callback.Run(true);
   } else {
-    LOG(ERROR) << "App Host install failed, status = " << status
+    LOG(ERROR) << "App Launcher install failed, status = " << status
                << ", exit code = " << exit_code;
-    callback_.Run(false);
+    callback.Run(false);
   }
-  callback_.Reset();
+
+  // At this point 'this' may be deleted. Don't do anything else here.
 }
 
 // Reads the path to app_host.exe from the value "UninstallString" within the
@@ -126,6 +135,9 @@ namespace extensions {
 using content::BrowserThread;
 
 // static
+bool AppHostInstaller::install_with_launcher_ = false;
+
+// static
 void AppHostInstaller::EnsureAppHostInstalled(
     const OnAppHostInstallationCompleteCallback& completion_callback) {
   BrowserThread::ID caller_thread_id;
@@ -137,6 +149,15 @@ void AppHostInstaller::EnsureAppHostInstalled(
   // AppHostInstaler will delete itself
   (new AppHostInstaller(completion_callback, caller_thread_id))->
       EnsureAppHostInstalledInternal();
+}
+
+void AppHostInstaller::SetInstallWithLauncher(
+    bool install_with_launcher) {
+  install_with_launcher_ = install_with_launcher;
+}
+
+bool AppHostInstaller::GetInstallWithLauncher() {
+  return install_with_launcher_;
 }
 
 AppHostInstaller::AppHostInstaller(
@@ -158,10 +179,14 @@ void AppHostInstaller::EnsureAppHostInstalledInternal() {
     return;
   }
 
-  if (chrome_launcher_support::IsAppHostPresent())
+  if ((install_with_launcher_ &&
+       chrome_launcher_support::IsAppLauncherPresent()) ||
+      (!install_with_launcher_ &&
+       chrome_launcher_support::IsAppHostPresent())) {
     FinishOnCallerThread(true);
-  else
+  } else {
     InstallAppHostOnFileThread();
+  }
 }
 
 void AppHostInstaller::InstallAppHostOnFileThread() {

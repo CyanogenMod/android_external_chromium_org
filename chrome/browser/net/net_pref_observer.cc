@@ -4,11 +4,12 @@
 
 #include "chrome/browser/net/net_pref_observer.h"
 
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/net/predictor.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/http/http_stream_factory.h"
 
@@ -23,20 +24,17 @@ NetPrefObserver::NetPrefObserver(PrefService* prefs,
   DCHECK(prefs);
   DCHECK(predictor);
 
+  base::Closure prefs_callback = base::Bind(&NetPrefObserver::ApplySettings,
+                                            base::Unretained(this));
   network_prediction_enabled_.Init(prefs::kNetworkPredictionEnabled, prefs,
-                                   this);
-  spdy_disabled_.Init(prefs::kDisableSpdy, prefs, this);
+                                   prefs_callback);
+  spdy_disabled_.Init(prefs::kDisableSpdy, prefs, prefs_callback);
 
   ApplySettings();
 }
 
 NetPrefObserver::~NetPrefObserver() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-}
-
-void NetPrefObserver::OnPreferenceChanged(PrefServiceBase* service,
-                                          const std::string& pref_name) {
-  ApplySettings();
 }
 
 void NetPrefObserver::ApplySettings() {
@@ -50,11 +48,11 @@ void NetPrefObserver::ApplySettings() {
 }
 
 // static
-void NetPrefObserver::RegisterPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kNetworkPredictionEnabled,
-                             true,
-                             PrefService::SYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kDisableSpdy,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
+void NetPrefObserver::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(prefs::kNetworkPredictionEnabled,
+                                true,
+                                PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kDisableSpdy,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
 }

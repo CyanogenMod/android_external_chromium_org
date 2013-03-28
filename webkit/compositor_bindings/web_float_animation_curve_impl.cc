@@ -2,57 +2,56 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "web_float_animation_curve_impl.h"
+#include "webkit/compositor_bindings/web_float_animation_curve_impl.h"
 
-#include "cc/animation_curve.h"
-#include "cc/keyframed_animation_curve.h"
-#include "cc/timing_function.h"
-#include "web_animation_curve_common.h"
+#include "cc/animation/animation_curve.h"
+#include "cc/animation/keyframed_animation_curve.h"
+#include "cc/animation/timing_function.h"
+#include "webkit/compositor_bindings/web_animation_curve_common.h"
 
-namespace WebKit {
+using WebKit::WebFloatKeyframe;
 
-WebFloatAnimationCurve* WebFloatAnimationCurve::create()
-{
-    return new WebFloatAnimationCurveImpl();
-}
+namespace webkit {
 
 WebFloatAnimationCurveImpl::WebFloatAnimationCurveImpl()
-    : m_curve(cc::KeyframedFloatAnimationCurve::create())
-{
+    : curve_(cc::KeyframedFloatAnimationCurve::Create()) {}
+
+WebFloatAnimationCurveImpl::~WebFloatAnimationCurveImpl() {}
+
+WebKit::WebAnimationCurve::AnimationCurveType
+WebFloatAnimationCurveImpl::type() const {
+  return WebKit::WebAnimationCurve::AnimationCurveTypeFloat;
 }
 
-WebFloatAnimationCurveImpl::~WebFloatAnimationCurveImpl()
-{
+void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe) {
+  add(keyframe, TimingFunctionTypeEase);
 }
 
-WebAnimationCurve::AnimationCurveType WebFloatAnimationCurveImpl::type() const
-{
-    return WebAnimationCurve::AnimationCurveTypeFloat;
+void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe,
+                                     TimingFunctionType type) {
+  curve_->AddKeyframe(cc::FloatKeyframe::Create(
+      keyframe.time, keyframe.value, CreateTimingFunction(type)));
 }
 
-void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe)
-{
-    add(keyframe, TimingFunctionTypeEase);
+void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe,
+                                     double x1,
+                                     double y1,
+                                     double x2,
+                                     double y2) {
+  curve_->AddKeyframe(cc::FloatKeyframe::Create(
+      keyframe.time,
+      keyframe.value,
+      cc::CubicBezierTimingFunction::Create(x1, y1, x2, y2)
+          .PassAs<cc::TimingFunction>()));
 }
 
-void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe, TimingFunctionType type)
-{
-    m_curve->addKeyframe(cc::FloatKeyframe::create(keyframe.time, keyframe.value, createTimingFunction(type)));
+float WebFloatAnimationCurveImpl::getValue(double time) const {
+  return curve_->GetValue(time);
 }
 
-void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe, double x1, double y1, double x2, double y2)
-{
-    m_curve->addKeyframe(cc::FloatKeyframe::create(keyframe.time, keyframe.value, cc::CubicBezierTimingFunction::create(x1, y1, x2, y2).PassAs<cc::TimingFunction>()));
+scoped_ptr<cc::AnimationCurve>
+WebFloatAnimationCurveImpl::CloneToAnimationCurve() const {
+  return curve_->Clone();
 }
 
-float WebFloatAnimationCurveImpl::getValue(double time) const
-{
-    return m_curve->getValue(time);
-}
-
-scoped_ptr<cc::AnimationCurve> WebFloatAnimationCurveImpl::cloneToAnimationCurve() const
-{
-    return m_curve->clone();
-}
-
-} // namespace WebKit
+}  // namespace webkit

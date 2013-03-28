@@ -8,17 +8,11 @@
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
+#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-
-namespace {
-
-// Update screen ID.
-const char kUpdateScreen[] = "update";
-
-}  // namespace
 
 namespace chromeos {
 
@@ -60,6 +54,9 @@ void UpdateScreenHandler::GetLocalizedStrings(
       l10n_util::GetStringUTF16(IDS_UPDATE_CANCEL));
   localized_strings->SetString("cancelledUpdateMessage",
       l10n_util::GetStringUTF16(IDS_UPDATE_CANCELLED));
+#else
+  localized_strings->SetString("cancelUpdateHint", "");
+  localized_strings->SetString("cancelledUpdateMessage", "");
 #endif
 }
 
@@ -79,7 +76,7 @@ void UpdateScreenHandler::Show() {
     show_on_init_ = true;
     return;
   }
-  ShowScreen(kUpdateScreen, NULL);
+  ShowScreen(OobeUI::kScreenOobeUpdate, NULL);
 #if !defined(OFFICIAL_BUILD)
   web_ui()->CallJavascriptFunction("oobe.UpdateScreen.enableUpdateCancel");
 #endif

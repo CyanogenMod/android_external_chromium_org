@@ -4,14 +4,8 @@
 
 #include "content/gpu/gpu_info_collector.h"
 
-#include <dlfcn.h>
 #include <X11/Xlib.h>
 #include <vector>
-
-// TODO(phajdan.jr): Report problem upstream and make pci.h handle this.
-extern "C" {
-#include <pci/pci.h>
-}
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
@@ -20,9 +14,10 @@ extern "C" {
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/string_piece.h"
-#include "base/string_split.h"
-#include "base/string_tokenizer.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_tokenizer.h"
+#include "library_loaders/libpci.h"
 #include "third_party/libXNVCtrl/NVCtrl.h"
 #include "third_party/libXNVCtrl/NVCtrlLib.h"
 #include "ui/gl/gl_bindings.h"
@@ -33,111 +28,27 @@ extern "C" {
 
 namespace {
 
-// Define function types.
-typedef pci_access* (*FT_pci_alloc)();
-typedef void (*FT_pci_init)(pci_access*);
-typedef void (*FT_pci_cleanup)(pci_access*);
-typedef void (*FT_pci_scan_bus)(pci_access*);
-typedef void (*FT_pci_scan_bus)(pci_access*);
-typedef int (*FT_pci_fill_info)(pci_dev*, int);
-typedef char* (*FT_pci_lookup_name)(pci_access*, char*, int, int, ...);
-
-// This includes dynamically linked library handle and functions pointers from
-// libpci.
-struct PciInterface {
-  void* lib_handle;
-
-  FT_pci_alloc pci_alloc;
-  FT_pci_init pci_init;
-  FT_pci_cleanup pci_cleanup;
-  FT_pci_scan_bus pci_scan_bus;
-  FT_pci_fill_info pci_fill_info;
-  FT_pci_lookup_name pci_lookup_name;
-};
-
 // This checks if a system supports PCI bus.
 // We check the existence of /sys/bus/pci or /sys/bug/pci_express.
 bool IsPciSupported() {
-  const FilePath pci_path("/sys/bus/pci/");
-  const FilePath pcie_path("/sys/bus/pci_express/");
+  const base::FilePath pci_path("/sys/bus/pci/");
+  const base::FilePath pcie_path("/sys/bus/pci_express/");
   return (file_util::PathExists(pci_path) ||
           file_util::PathExists(pcie_path));
-}
-
-// This dynamically opens libpci and get function pointers we need.  Return
-// NULL if library fails to open or any functions can not be located.
-// Returned interface (if not NULL) should be deleted in FinalizeLibPci.
-PciInterface* InitializeLibPci(const char* lib_name) {
-  scoped_ptr<PciInterface> interface(new PciInterface);
-#if defined(DLOPEN_LIBPCI)
-  void* handle = dlopen(lib_name, RTLD_LAZY);
-  if (handle == NULL) {
-    VLOG(1) << "Failed to dlopen " << lib_name;
-    return NULL;
-  }
-  interface->lib_handle = handle;
-  interface->pci_alloc = reinterpret_cast<FT_pci_alloc>(
-      dlsym(handle, "pci_alloc"));
-  interface->pci_init = reinterpret_cast<FT_pci_init>(
-      dlsym(handle, "pci_init"));
-  interface->pci_cleanup = reinterpret_cast<FT_pci_cleanup>(
-      dlsym(handle, "pci_cleanup"));
-  interface->pci_scan_bus = reinterpret_cast<FT_pci_scan_bus>(
-      dlsym(handle, "pci_scan_bus"));
-  interface->pci_fill_info = reinterpret_cast<FT_pci_fill_info>(
-      dlsym(handle, "pci_fill_info"));
-  interface->pci_lookup_name = reinterpret_cast<FT_pci_lookup_name>(
-      dlsym(handle, "pci_lookup_name"));
-  if (interface->pci_alloc == NULL ||
-      interface->pci_init == NULL ||
-      interface->pci_cleanup == NULL ||
-      interface->pci_scan_bus == NULL ||
-      interface->pci_fill_info == NULL ||
-      interface->pci_lookup_name == NULL) {
-    VLOG(1) << "Missing required function(s) from " << lib_name;
-    dlclose(handle);
-    return NULL;
-  }
-#else  // !defined(DLOPEN_LIBPCI)
-  interface->lib_handle = NULL;
-  interface->pci_alloc = reinterpret_cast<FT_pci_alloc>(
-      &pci_alloc);
-  interface->pci_init = reinterpret_cast<FT_pci_init>(
-      &pci_init);
-  interface->pci_cleanup = reinterpret_cast<FT_pci_cleanup>(
-      &pci_cleanup);
-  interface->pci_scan_bus = reinterpret_cast<FT_pci_scan_bus>(
-      &pci_scan_bus);
-  interface->pci_fill_info = reinterpret_cast<FT_pci_fill_info>(
-      &pci_fill_info);
-  interface->pci_lookup_name = reinterpret_cast<FT_pci_lookup_name>(
-      &pci_lookup_name);
-#endif  // !defined(DLOPEN_LIBPCI)
-  return interface.release();
-}
-
-// This close the dynamically opened libpci and delete the interface.
-void FinalizeLibPci(PciInterface** interface) {
-#if defined(DLOPEN_LIBPCI)
-  DCHECK(interface && *interface && (*interface)->lib_handle);
-  dlclose((*interface)->lib_handle);
-#endif  // defined(DLOPEN_LIBPCI)
-  delete (*interface);
-  *interface = NULL;
 }
 
 // Scan /etc/ati/amdpcsdb.default for "ReleaseVersion".
 // Return empty string on failing.
 std::string CollectDriverVersionATI() {
-  const FilePath::CharType kATIFileName[] =
+  const base::FilePath::CharType kATIFileName[] =
       FILE_PATH_LITERAL("/etc/ati/amdpcsdb.default");
-  FilePath ati_file_path(kATIFileName);
+  base::FilePath ati_file_path(kATIFileName);
   if (!file_util::PathExists(ati_file_path))
     return std::string();
   std::string contents;
   if (!file_util::ReadFileToString(ati_file_path, &contents))
     return std::string();
-  StringTokenizer t(contents, "\r\n");
+  base::StringTokenizer t(contents, "\r\n");
   while (t.GetNext()) {
     std::string line = t.token();
     if (StartsWithASCII(line, "ReleaseVersion=", true)) {
@@ -186,74 +97,7 @@ const uint32 kVendorIDIntel = 0x8086;
 const uint32 kVendorIDNVidia = 0x10de;
 const uint32 kVendorIDAMD = 0x1002;
 
-}  // namespace anonymous
-
-namespace gpu_info_collector {
-
-bool CollectGraphicsInfo(content::GPUInfo* gpu_info) {
-  DCHECK(gpu_info);
-
-  TRACE_EVENT0("gpu", "gpu_info_collector::CollectGraphicsInfo");
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kGpuNoContextLost)) {
-    gpu_info->can_lose_context = false;
-  } else {
-#if defined(OS_CHROMEOS)
-    gpu_info->can_lose_context = false;
-#else
-    // TODO(zmo): need to consider the case where we are running on top
-    // of desktop GL and GL_ARB_robustness extension is available.
-    gpu_info->can_lose_context =
-        (gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2);
-#endif
-  }
-
-  gpu_info->finalized = true;
-  bool rt = CollectGraphicsInfoGL(gpu_info);
-
-  return rt;
-}
-
-bool CollectPreliminaryGraphicsInfo(content::GPUInfo* gpu_info) {
-  DCHECK(gpu_info);
-
-  bool rt = CollectVideoCardInfo(gpu_info);
-
-  std::string driver_version;
-  switch (gpu_info->gpu.vendor_id) {
-    case kVendorIDAMD:
-      driver_version = CollectDriverVersionATI();
-      if (!driver_version.empty()) {
-        gpu_info->driver_vendor = "ATI / AMD";
-        gpu_info->driver_version = driver_version;
-      }
-      break;
-    case kVendorIDNVidia:
-      driver_version = CollectDriverVersionNVidia();
-      if (!driver_version.empty()) {
-        gpu_info->driver_vendor = "NVIDIA";
-        gpu_info->driver_version = driver_version;
-      }
-      break;
-    case kVendorIDIntel:
-      // In dual-GPU cases, sometimes PCI scan only gives us the
-      // integrated GPU (i.e., the Intel one).
-      driver_version = CollectDriverVersionNVidia();
-      if (!driver_version.empty()) {
-        gpu_info->driver_vendor = "NVIDIA";
-        gpu_info->driver_version = driver_version;
-        // Machines with more than two GPUs are not handled.
-        if (gpu_info->secondary_gpus.size() <= 1)
-          gpu_info->optimus = true;
-      }
-      break;
-  }
-
-  return rt;
-}
-
-bool CollectVideoCardInfo(content::GPUInfo* gpu_info) {
+bool CollectPCIVideoCardInfo(content::GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   if (IsPciSupported() == false) {
@@ -262,22 +106,22 @@ bool CollectVideoCardInfo(content::GPUInfo* gpu_info) {
   }
 
   // TODO(zmo): be more flexible about library name.
-  PciInterface* interface = InitializeLibPci("libpci.so.3");
-  if (interface == NULL)
-    interface = InitializeLibPci("libpci.so");
-  if (interface == NULL) {
+  LibPciLoader libpci_loader;
+  if (!libpci_loader.Load("libpci.so.3") &&
+      !libpci_loader.Load("libpci.so")) {
     VLOG(1) << "Failed to locate libpci";
     return false;
   }
 
-  pci_access* access = (interface->pci_alloc)();
+  pci_access* access = (libpci_loader.pci_alloc)();
   DCHECK(access != NULL);
-  (interface->pci_init)(access);
-  (interface->pci_scan_bus)(access);
+  (libpci_loader.pci_init)(access);
+  (libpci_loader.pci_scan_bus)(access);
   bool primary_gpu_identified = false;
   for (pci_dev* device = access->devices;
        device != NULL; device = device->next) {
-    (interface->pci_fill_info)(device, 33);  // Fill the IDs and class fields.
+    // Fill the IDs and class fields.
+    (libpci_loader.pci_fill_info)(device, 33);
     // TODO(zmo): there might be other classes that qualify as display devices.
     if (device->device_class != 0x0300)  // Device class is DISPLAY_VGA.
       continue;
@@ -291,19 +135,19 @@ bool CollectVideoCardInfo(content::GPUInfo* gpu_info) {
     // The current implementation of pci_lookup_name returns the same pointer
     // as the passed in upon success, and a different one (NULL or a pointer
     // to an error message) upon failure.
-    if ((interface->pci_lookup_name)(access,
-                                     buffer.get(),
-                                     buffer_size,
-                                     1,
-                                     device->vendor_id) == buffer.get()) {
+    if ((libpci_loader.pci_lookup_name)(access,
+                                        buffer.get(),
+                                        buffer_size,
+                                        1,
+                                        device->vendor_id) == buffer.get()) {
       gpu.vendor_string = buffer.get();
     }
-    if ((interface->pci_lookup_name)(access,
-                                     buffer.get(),
-                                     buffer_size,
-                                     2,
-                                     device->vendor_id,
-                                     device->device_id) == buffer.get()) {
+    if ((libpci_loader.pci_lookup_name)(access,
+                                        buffer.get(),
+                                        buffer_size,
+                                        2,
+                                        device->vendor_id,
+                                        device->device_id) == buffer.get()) {
       std::string device_string = buffer.get();
       size_t begin = device_string.find_first_of('[');
       size_t end = device_string.find_last_of(']');
@@ -340,9 +184,89 @@ bool CollectVideoCardInfo(content::GPUInfo* gpu_info) {
       gpu_info->amd_switchable = true;
   }
 
-  (interface->pci_cleanup)(access);
-  FinalizeLibPci(&interface);
+  (libpci_loader.pci_cleanup)(access);
   return (primary_gpu_identified);
+}
+
+}  // namespace anonymous
+
+namespace gpu_info_collector {
+
+bool CollectContextGraphicsInfo(content::GPUInfo* gpu_info) {
+  DCHECK(gpu_info);
+
+  TRACE_EVENT0("gpu", "gpu_info_collector::CollectGraphicsInfo");
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kGpuNoContextLost)) {
+    gpu_info->can_lose_context = false;
+  } else {
+#if defined(OS_CHROMEOS)
+    gpu_info->can_lose_context = false;
+#else
+    // TODO(zmo): need to consider the case where we are running on top
+    // of desktop GL and GL_ARB_robustness extension is available.
+    gpu_info->can_lose_context =
+        (gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2);
+#endif
+  }
+
+  gpu_info->finalized = true;
+  bool rt = CollectGraphicsInfoGL(gpu_info);
+
+  return rt;
+}
+
+bool CollectGpuID(uint32* vendor_id, uint32* device_id) {
+  DCHECK(vendor_id && device_id);
+  *vendor_id = 0;
+  *device_id = 0;
+
+  content::GPUInfo gpu_info;
+  if (CollectPCIVideoCardInfo(&gpu_info)) {
+    *vendor_id = gpu_info.gpu.vendor_id;
+    *device_id = gpu_info.gpu.device_id;
+    return true;
+  }
+  return false;
+}
+
+bool CollectBasicGraphicsInfo(content::GPUInfo* gpu_info) {
+  DCHECK(gpu_info);
+
+  bool rt = CollectPCIVideoCardInfo(gpu_info);
+
+  std::string driver_version;
+  switch (gpu_info->gpu.vendor_id) {
+    case kVendorIDAMD:
+      driver_version = CollectDriverVersionATI();
+      if (!driver_version.empty()) {
+        gpu_info->driver_vendor = "ATI / AMD";
+        gpu_info->driver_version = driver_version;
+      }
+      break;
+    case kVendorIDNVidia:
+      driver_version = CollectDriverVersionNVidia();
+      if (!driver_version.empty()) {
+        gpu_info->driver_vendor = "NVIDIA";
+        gpu_info->driver_version = driver_version;
+      }
+      break;
+    case kVendorIDIntel:
+      // In dual-GPU cases, sometimes PCI scan only gives us the
+      // integrated GPU (i.e., the Intel one).
+      driver_version = CollectDriverVersionNVidia();
+      if (!driver_version.empty()) {
+        gpu_info->driver_vendor = "NVIDIA";
+        gpu_info->driver_version = driver_version;
+        // Machines with more than two GPUs are not handled.
+        if (gpu_info->secondary_gpus.size() <= 1)
+          gpu_info->optimus = true;
+      }
+      break;
+  }
+
+  return rt;
 }
 
 bool CollectDriverInfoGL(content::GPUInfo* gpu_info) {
@@ -368,6 +292,11 @@ bool CollectDriverInfoGL(content::GPUInfo* gpu_info) {
   gpu_info->driver_vendor = pieces[1];
   gpu_info->driver_version = driver_version;
   return true;
+}
+
+void MergeGPUInfo(content::GPUInfo* basic_gpu_info,
+                  const content::GPUInfo& context_gpu_info) {
+  MergeGPUInfoGL(basic_gpu_info, context_gpu_info);
 }
 
 }  // namespace gpu_info_collector

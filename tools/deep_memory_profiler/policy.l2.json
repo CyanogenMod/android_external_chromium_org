@@ -6,12 +6,12 @@
     "mmap-tcmalloc",
     "FROM_HERE_FOR_TOTAL",
     "mustbezero",
-    "nonprofiled-absent",
-    "nonprofiled-anonymous",
-    "nonprofiled-file-exec",
-    "nonprofiled-file-nonexec",
-    "nonprofiled-stack",
-    "nonprofiled-other",
+    "unhooked-absent",
+    "unhooked-anonymous",
+    "unhooked-file-exec",
+    "unhooked-file-nonexec",
+    "unhooked-stack",
+    "unhooked-other",
     "no-bucket",
     "mmap-v8-heap-newspace",
     "mmap-v8-heap-coderange",
@@ -45,11 +45,16 @@
     "tc-webkit-catch-all",
     "tc-v8-catch-all",
     "tc-toplevel-string",
+    "tc-std-treemap",
+    "tc-std-hashmap",
+    "tc-std-vector",
+    "tc-std-other",
     "tc-catch-all",
     "tc-unused",
     "UNTIL_HERE_FOR_TOTAL",
     "total-exclude-profiler",
     "total",
+    "absent",
     "anonymous",
     "file-exec",
     "file-nonexec",
@@ -96,32 +101,32 @@
       "allocator": "optional"
     },
     {
-      "name": "nonprofiled-absent",
+      "name": "unhooked-absent",
       "stacktrace": "optional",
       "allocator": "optional"
     },
     {
-      "name": "nonprofiled-anonymous",
+      "name": "unhooked-anonymous",
       "stacktrace": "optional",
       "allocator": "optional"
     },
     {
-      "name": "nonprofiled-file-exec",
+      "name": "unhooked-file-exec",
       "stacktrace": "optional",
       "allocator": "optional"
     },
     {
-      "name": "nonprofiled-file-nonexec",
+      "name": "unhooked-file-nonexec",
       "stacktrace": "optional",
       "allocator": "optional"
     },
     {
-      "name": "nonprofiled-stack",
+      "name": "unhooked-stack",
       "stacktrace": "optional",
       "allocator": "optional"
     },
     {
-      "name": "nonprofiled-other",
+      "name": "unhooked-other",
       "stacktrace": "optional",
       "allocator": "optional"
     },
@@ -396,6 +401,26 @@
       "allocator": "malloc"
     },
     {
+      "name": "tc-std-treemap",
+      "stacktrace": ".*::allocate std::(_Rb_tree|__1::__tree).*",
+      "allocator": "malloc"
+    },
+    {
+      "name": "tc-std-hashmap",
+      "stacktrace": ".*(std::vector::reserve __gnu_cxx::hashtable|::allocate std::_Hashtable|::allocate std::__1::__hash_table).*",
+      "allocator": "malloc"
+    },
+    {
+      "name": "tc-std-vector",
+      "stacktrace": ".*std::(_Vector_base::_M_allocate|__1::vector::allocate).*",
+      "allocator": "malloc"
+    },
+    {
+      "name": "tc-std-other",
+      "stacktrace": ".*(__gnu_cxx::new_allocator::allocate|std::__1::allocator::allocate).*",
+      "allocator": "malloc"
+    },
+    {
       "name": "tc-catch-all",
       "stacktrace": ".*",
       "allocator": "malloc"
@@ -412,6 +437,11 @@
     },
     {
       "name": "total",
+      "stacktrace": "optional",
+      "allocator": "optional"
+    },
+    {
+      "name": "absent",
       "stacktrace": "optional",
       "allocator": "optional"
     },

@@ -6,6 +6,7 @@
 
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/test/shell_test_api.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace_controller.h"
 #include "ash/wm/workspace_controller_test_helper.h"
@@ -28,7 +29,7 @@ class MultiWindowResizeControllerTest : public test::AshTestBase {
   virtual void SetUp() OVERRIDE {
     test::AshTestBase::SetUp();
     WorkspaceController* wc =
-        ash::Shell::TestApi(Shell::GetInstance()).workspace_controller();
+        test::ShellTestApi(Shell::GetInstance()).workspace_controller();
     WorkspaceEventHandler* event_handler =
         WorkspaceControllerTestHelper(wc).GetEventHandler();
     resize_controller_ = WorkspaceEventHandlerTestHelper(event_handler).
@@ -41,7 +42,7 @@ class MultiWindowResizeControllerTest : public test::AshTestBase {
     aura::Window* window = new aura::Window(delegate);
     window->SetType(aura::client::WINDOW_TYPE_NORMAL);
     window->Init(ui::LAYER_TEXTURED);
-    window->SetParent(NULL);
+    SetDefaultParentByPrimaryRootWindow(window);
     window->SetBounds(bounds);
     window->Show();
     return window;

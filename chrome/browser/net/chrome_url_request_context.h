@@ -8,11 +8,11 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_job_factory.h"
 
-class ChromeURLDataManagerBackend;
 class ChromeURLRequestContextFactory;
 class IOThread;
 class Profile;
@@ -47,21 +47,6 @@ class ChromeURLRequestContext : public net::URLRequestContext {
   // Copies the state from |other| into this context.
   void CopyFrom(ChromeURLRequestContext* other);
 
-  bool is_incognito() const {
-    return is_incognito_;
-  }
-
-  // TODO(willchan): Get rid of the need for this accessor. Really, this should
-  // move completely to ProfileIOData.
-  ChromeURLDataManagerBackend* chrome_url_data_manager_backend() const;
-
-  void set_is_incognito(bool is_incognito) {
-    is_incognito_ = is_incognito;
-  }
-
-  void set_chrome_url_data_manager_backend(
-      ChromeURLDataManagerBackend* backend);
-
  private:
   base::WeakPtrFactory<ChromeURLRequestContext> weak_factory_;
 
@@ -70,8 +55,6 @@ class ChromeURLRequestContext : public net::URLRequestContext {
   // be added to CopyFrom.
   // ---------------------------------------------------------------------------
 
-  ChromeURLDataManagerBackend* chrome_url_data_manager_backend_;
-  bool is_incognito_;
   chrome_browser_net::LoadTimeStats* load_time_stats_;
 
   // ---------------------------------------------------------------------------
@@ -100,20 +83,16 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter {
   // GetIOMessageLoopProxy however can be called from any thread.
   //
   // net::URLRequestContextGetter implementation.
-  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
+  virtual ChromeURLRequestContext* GetURLRequestContext() OVERRIDE;
   virtual scoped_refptr<base::SingleThreadTaskRunner>
       GetNetworkTaskRunner() const OVERRIDE;
-
-  // Convenience overload of GetURLRequestContext() that returns a
-  // ChromeURLRequestContext* rather than a net::URLRequestContext*.
-  ChromeURLRequestContext* GetIOContext() {
-    return reinterpret_cast<ChromeURLRequestContext*>(GetURLRequestContext());
-  }
 
   // Create an instance for use with an 'original' (non-OTR) profile. This is
   // expected to get called on the UI thread.
   static ChromeURLRequestContextGetter* CreateOriginal(
-      Profile* profile, const ProfileIOData* profile_io_data);
+      Profile* profile,
+      const ProfileIOData* profile_io_data,
+      content::ProtocolHandlerMap* protocol_handlers);
 
   // Create an instance for an original profile for media. This is expected to
   // get called on UI thread. This method takes a profile and reuses the
@@ -132,8 +111,9 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter {
       Profile* profile,
       const ProfileIOData* profile_io_data,
       const StoragePartitionDescriptor& partition_descriptor,
-      scoped_ptr<net::URLRequestJobFactory::Interceptor>
-          protocol_handler_interceptor);
+      scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
+          protocol_handler_interceptor,
+      content::ProtocolHandlerMap* protocol_handlers);
 
   // Create an instance for an original profile for media with isolated
   // storage. This is expected to get called on UI thread.
@@ -146,7 +126,9 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter {
   // Create an instance for use with an OTR profile. This is expected to get
   // called on the UI thread.
   static ChromeURLRequestContextGetter* CreateOffTheRecord(
-      Profile* profile, const ProfileIOData* profile_io_data);
+      Profile* profile,
+      const ProfileIOData* profile_io_data,
+      content::ProtocolHandlerMap* protocol_handlers);
 
   // Create an instance for an OTR profile for extensions. This is expected
   // to get called on UI thread.
@@ -159,8 +141,9 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter {
       Profile* profile,
       const ProfileIOData* profile_io_data,
       const StoragePartitionDescriptor& partition_descriptor,
-      scoped_ptr<net::URLRequestJobFactory::Interceptor>
-          protocol_handler_interceptor);
+      scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
+          protocol_handler_interceptor,
+      content::ProtocolHandlerMap* protocol_handlers);
 
  private:
   virtual ~ChromeURLRequestContextGetter();

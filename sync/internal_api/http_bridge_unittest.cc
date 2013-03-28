@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,8 @@ namespace syncer {
 
 namespace {
 // TODO(timsteele): Should use PathService here. See Chromium Issue 3113.
-const FilePath::CharType kDocRoot[] = FILE_PATH_LITERAL("chrome/test/data");
+const base::FilePath::CharType kDocRoot[] =
+    FILE_PATH_LITERAL("chrome/test/data");
 }
 
 class SyncHttpBridgeTest : public testing::Test {
@@ -24,7 +25,7 @@ class SyncHttpBridgeTest : public testing::Test {
   SyncHttpBridgeTest()
       : test_server_(net::TestServer::TYPE_HTTP,
                      net::TestServer::kLocalhost,
-                     FilePath(kDocRoot)),
+                     base::FilePath(kDocRoot)),
         fake_default_request_context_getter_(NULL),
         bridge_for_race_test_(NULL),
         io_thread_("IO thread") {
@@ -48,7 +49,7 @@ class SyncHttpBridgeTest : public testing::Test {
   HttpBridge* BuildBridge() {
     if (!fake_default_request_context_getter_) {
       fake_default_request_context_getter_ =
-          new TestURLRequestContextGetter(io_thread_.message_loop_proxy());
+          new net::TestURLRequestContextGetter(io_thread_.message_loop_proxy());
       fake_default_request_context_getter_->AddRef();
     }
     HttpBridge* bridge = new HttpBridge(
@@ -75,7 +76,7 @@ class SyncHttpBridgeTest : public testing::Test {
         test->GetTestRequestContextGetter()->GetURLRequestContext()->
         http_transaction_factory()->GetSession();
     EXPECT_EQ(test_session,
-              http_bridge->GetRequestContextGetter()->
+              http_bridge->GetRequestContextGetterForTest()->
                   GetURLRequestContext()->
                   http_transaction_factory()->GetSession());
     main_message_loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
@@ -86,7 +87,7 @@ class SyncHttpBridgeTest : public testing::Test {
   }
 
   // Note this is lazy created, so don't call this before your bridge.
-  TestURLRequestContextGetter* GetTestRequestContextGetter() {
+  net::TestURLRequestContextGetter* GetTestRequestContextGetter() {
     return fake_default_request_context_getter_;
   }
 
@@ -99,7 +100,7 @@ class SyncHttpBridgeTest : public testing::Test {
  private:
   // A make-believe "default" request context, as would be returned by
   // Profile::GetDefaultRequestContext().  Created lazily by BuildBridge.
-  TestURLRequestContextGetter* fake_default_request_context_getter_;
+  net::TestURLRequestContextGetter* fake_default_request_context_getter_;
 
   HttpBridge* bridge_for_race_test_;
 
@@ -123,7 +124,7 @@ class ShuntedHttpBridge : public HttpBridge {
               baseline_context_getter, "user agent")),
         test_(test), never_finishes_(never_finishes) { }
  protected:
-  virtual void MakeAsynchronousPost() {
+  virtual void MakeAsynchronousPost() OVERRIDE {
     ASSERT_TRUE(MessageLoop::current() == test_->GetIOThreadLoop());
     if (never_finishes_)
       return;
@@ -134,7 +135,7 @@ class ShuntedHttpBridge : public HttpBridge {
         base::Bind(&ShuntedHttpBridge::CallOnURLFetchComplete, this));
   }
  private:
-  ~ShuntedHttpBridge() {}
+  virtual ~ShuntedHttpBridge() {}
 
   void CallOnURLFetchComplete() {
     ASSERT_TRUE(MessageLoop::current() == test_->GetIOThreadLoop());
@@ -157,7 +158,7 @@ void SyncHttpBridgeTest::RunSyncThreadBridgeUseTest(
     base::WaitableEvent* signal_when_created,
     base::WaitableEvent* signal_when_released) {
   scoped_refptr<net::URLRequestContextGetter> ctx_getter(
-      new TestURLRequestContextGetter(io_thread_.message_loop_proxy()));
+      new net::TestURLRequestContextGetter(io_thread_.message_loop_proxy()));
   {
     scoped_refptr<ShuntedHttpBridge> bridge(new ShuntedHttpBridge(
         ctx_getter, this, true));
@@ -187,7 +188,7 @@ TEST_F(SyncHttpBridgeTest, TestUsesSameHttpNetworkSession) {
 // Test the HttpBridge without actually making any network requests.
 TEST_F(SyncHttpBridgeTest, TestMakeSynchronousPostShunted) {
   scoped_refptr<net::URLRequestContextGetter> ctx_getter(
-      new TestURLRequestContextGetter(io_thread()->message_loop_proxy()));
+      new net::TestURLRequestContextGetter(io_thread()->message_loop_proxy()));
   scoped_refptr<HttpBridge> http_bridge(new ShuntedHttpBridge(
       ctx_getter, this, false));
   http_bridge->SetURL("http://www.google.com", 9999);
@@ -309,7 +310,7 @@ TEST_F(SyncHttpBridgeTest, TestResponseHeader) {
 
 TEST_F(SyncHttpBridgeTest, Abort) {
   scoped_refptr<net::URLRequestContextGetter> ctx_getter(
-      new TestURLRequestContextGetter(io_thread()->message_loop_proxy()));
+      new net::TestURLRequestContextGetter(io_thread()->message_loop_proxy()));
   scoped_refptr<ShuntedHttpBridge> http_bridge(new ShuntedHttpBridge(
       ctx_getter, this, true));
   http_bridge->SetURL("http://www.google.com", 9999);
@@ -328,7 +329,7 @@ TEST_F(SyncHttpBridgeTest, Abort) {
 
 TEST_F(SyncHttpBridgeTest, AbortLate) {
   scoped_refptr<net::URLRequestContextGetter> ctx_getter(
-      new TestURLRequestContextGetter(io_thread()->message_loop_proxy()));
+      new net::TestURLRequestContextGetter(io_thread()->message_loop_proxy()));
   scoped_refptr<ShuntedHttpBridge> http_bridge(new ShuntedHttpBridge(
       ctx_getter, this, false));
   http_bridge->SetURL("http://www.google.com", 9999);

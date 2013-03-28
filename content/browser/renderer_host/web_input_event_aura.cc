@@ -144,7 +144,10 @@ WebKit::WebKeyboardEvent MakeWebKeyboardEvent(ui::KeyEvent* event) {
 WebKit::WebGestureEvent MakeWebGestureEvent(ui::GestureEvent* event) {
   WebKit::WebGestureEvent gesture_event;
 #if defined(OS_WIN)
-  gesture_event = MakeWebGestureEventFromNativeEvent(event->native_event());
+  if (event->HasNativeEvent())
+    gesture_event = MakeWebGestureEventFromNativeEvent(event->native_event());
+  else
+    gesture_event = MakeWebGestureEventFromUIEvent(*event);
 #else
   gesture_event = MakeWebGestureEventFromUIEvent(*event);
 #endif
@@ -183,6 +186,7 @@ WebKit::WebGestureEvent MakeWebGestureEventFlingCancel() {
 
   // All other fields are ignored on a GestureFlingCancel event.
   gesture_event.type = WebKit::WebInputEvent::GestureFlingCancel;
+  gesture_event.sourceDevice = WebKit::WebGestureEvent::Touchpad;
   return gesture_event;
 }
 

@@ -11,6 +11,9 @@
 #include "base/values.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest.h"
+
+class GURL;
 
 namespace extensions {
 
@@ -54,6 +57,7 @@ class Feature {
   enum AvailabilityResult {
     IS_AVAILABLE,
     NOT_FOUND_IN_WHITELIST,
+    INVALID_URL,
     INVALID_TYPE,
     INVALID_CONTEXT,
     INVALID_LOCATION,
@@ -73,6 +77,7 @@ class Feature {
     const std::string& message() const { return message_; }
 
    private:
+    friend class SimpleFeature;
     friend class Feature;
 
     // Instances should be created via Feature::CreateAvailability.
@@ -83,9 +88,11 @@ class Feature {
     const std::string message_;
   };
 
-  Feature();
-  Feature(const Feature& other);
   virtual ~Feature();
+
+  // Used by ChromeV8Context until the feature system is fully functional.
+  static Availability CreateAvailability(AvailabilityResult result,
+                                         const std::string& message);
 
   // Gets the current channel as seen by the Feature system.
   static chrome::VersionInfo::Channel GetCurrentChannel();
@@ -121,85 +128,45 @@ class Feature {
   // Gets the platform the code is currently running on.
   static Platform GetCurrentPlatform();
 
-  // Gets the Feature::Location value for the specified Extension::Location.
-  static Location ConvertLocation(Extension::Location extension_location);
+  // Gets the Feature::Location value for the specified Manifest::Location.
+  static Location ConvertLocation(Manifest::Location extension_location);
 
-  std::set<std::string>* whitelist() { return &whitelist_; }
-  std::set<Extension::Type>* extension_types() { return &extension_types_; }
-  std::set<Context>* contexts() { return &contexts_; }
-
-  Location location() const { return location_; }
-  void set_location(Location location) { location_ = location; }
-
-  Platform platform() const { return platform_; }
-  void set_platform(Platform platform) { platform_ = platform; }
-
-  int min_manifest_version() const { return min_manifest_version_; }
-  void set_min_manifest_version(int min_manifest_version) {
-    min_manifest_version_ = min_manifest_version;
-  }
-
-  int max_manifest_version() const { return max_manifest_version_; }
-  void set_max_manifest_version(int max_manifest_version) {
-    max_manifest_version_ = max_manifest_version;
-  }
-
-  // Parses the JSON representation of a feature into the fields of this object.
-  // Unspecified values in the JSON are not modified in the object. This allows
-  // us to implement inheritance by parsing one value after another.
-  void Parse(const DictionaryValue* value);
-
-  // Returns true if the feature contains the same values as another.
-  bool Equals(const Feature& other) const;
+  // TODO(justinlin): Remove and move to APIFeature when it exists.
+  virtual std::set<Context>* GetContexts() = 0;
 
   // Returns true if the feature is available to be parsed into a new extension
   // manifest.
   Availability IsAvailableToManifest(const std::string& extension_id,
-                                     Extension::Type type,
+                                     Manifest::Type type,
                                      Location location,
                                      int manifest_version) const {
     return IsAvailableToManifest(extension_id, type, location, manifest_version,
                                  GetCurrentPlatform());
   }
-  Availability IsAvailableToManifest(const std::string& extension_id,
-                                     Extension::Type type,
-                                     Location location,
-                                     int manifest_version,
-                                     Platform platform) const;
+  virtual Availability IsAvailableToManifest(const std::string& extension_id,
+                                             Manifest::Type type,
+                                             Location location,
+                                             int manifest_version,
+                                             Platform platform) const = 0;
 
   // Returns true if the feature is available to be used in the specified
   // extension and context.
   Availability IsAvailableToContext(const Extension* extension,
-                                    Context context) const {
-    return IsAvailableToContext(extension, context, GetCurrentPlatform());
+                                    Context context,
+                                    const GURL& url) const {
+    return IsAvailableToContext(extension, context, url, GetCurrentPlatform());
   }
   virtual Availability IsAvailableToContext(const Extension* extension,
                                             Context context,
-                                            Platform platform) const;
+                                            const GURL& url,
+                                            Platform platform) const = 0;
+
+  virtual std::string GetAvailabilityMessage(AvailabilityResult result,
+                                             Manifest::Type type,
+                                             const GURL& url) const = 0;
 
  protected:
-  Availability CreateAvailability(AvailabilityResult result) const;
-  Availability CreateAvailability(AvailabilityResult result,
-                                  Extension::Type type) const;
-
- private:
-  std::string GetAvailabilityMessage(
-      AvailabilityResult result, Extension::Type type) const;
-
   std::string name_;
-
-  // For clarify and consistency, we handle the default value of each of these
-  // members the same way: it matches everything. It is up to the higher level
-  // code that reads Features out of static data to validate that data and set
-  // sensible defaults.
-  std::set<std::string> whitelist_;
-  std::set<Extension::Type> extension_types_;
-  std::set<Context> contexts_;
-  Location location_;  // we only care about component/not-component now
-  Platform platform_;  // we only care about chromeos/not-chromeos now
-  int min_manifest_version_;
-  int max_manifest_version_;
-  chrome::VersionInfo::Channel channel_;
 };
 
 }  // namespace extensions

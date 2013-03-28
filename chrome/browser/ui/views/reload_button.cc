@@ -7,8 +7,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/event_disposition.h"
-#include "chrome/browser/ui/search/search.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "grit/generated_resources.h"
@@ -16,6 +15,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/theme_provider.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/views/metrics.h"
 #include "ui/views/widget/widget.h"
 
@@ -67,11 +67,7 @@ void ReloadButton::ChangeMode(Mode mode, bool force) {
     double_click_timer_.Stop();
     stop_to_reload_timer_.Stop();
     ChangeModeInternal(mode);
-    // For instant extended API, if mode is NTP, disable button state.
-    bool disabled = location_bar_ && location_bar_->search_model() &&
-        chrome::search::IsInstantExtendedAPIEnabled(location_bar_->profile()) &&
-        location_bar_->search_model()->mode().is_ntp();
-    SetEnabled(!disabled);
+    SetEnabled(true);
 
   // We want to disable the button if we're preventing a change from stop to
   // reload due to hovering, but not if we're preventing a change from reload to
@@ -91,15 +87,15 @@ void ReloadButton::ChangeMode(Mode mode, bool force) {
 }
 
 void ReloadButton::LoadImages(ui::ThemeProvider* tp) {
-  DCHECK_EQ(static_cast<int>(arraysize(kReloadImages)), BS_COUNT);
-  DCHECK_EQ(static_cast<int>(arraysize(kStopImages)), BS_COUNT);
+  DCHECK_EQ(static_cast<int>(arraysize(kReloadImages)), STATE_COUNT);
+  DCHECK_EQ(static_cast<int>(arraysize(kStopImages)), STATE_COUNT);
 
   gfx::ImageSkia* reload_images = images_;
   gfx::ImageSkia* stop_images = alternate_images_;
   if (visible_mode_ == MODE_STOP)
     std::swap(reload_images, stop_images);
 
-  for (int i = 0; i < BS_COUNT; i++) {
+  for (int i = 0; i < STATE_COUNT; i++) {
     reload_images[i] = *(tp->GetImageSkiaNamed(kReloadImages[i]));
     stop_images[i] = *(tp->GetImageSkiaNamed(kStopImages[i]));
   }
@@ -125,7 +121,7 @@ void ReloadButton::ButtonPressed(views::Button* /* button */,
     // Shift-clicking or ctrl-clicking the reload button means we should ignore
     // any cached content.
     int command;
-    int flags = mouse_event_flags();
+    int flags = event.flags();
     if (event.IsShiftDown() || event.IsControlDown()) {
       command = IDC_RELOAD_IGNORING_CACHE;
       // Mask off Shift and Control so they don't affect the disposition below.
@@ -207,10 +203,6 @@ bool ReloadButton::GetAcceleratorForCommandId(int command_id,
   return GetWidget()->GetAccelerator(command_id, accelerator);
 }
 
-void ReloadButton::ExecuteCommand(int command_id) {
-  ExecuteCommand(command_id, 0);
-}
-
 void ReloadButton::ExecuteCommand(int command_id, int event_flags) {
   int browser_command = 0;
   switch (command_id) {
@@ -233,12 +225,11 @@ void ReloadButton::ExecuteCommand(int command_id, int event_flags) {
 // ReloadButton, private:
 
 ui::SimpleMenuModel* ReloadButton::CreateMenuModel() {
-  ui::SimpleMenuModel* menu_model_ = new ui::SimpleMenuModel(this);
-  for (size_t i = 0; i < arraysize(kReloadMenuItems); i++) {
-    menu_model_->AddItemWithStringId(kReloadMenuItems[i],
-                                     kReloadMenuItems[i]);
-  }
-  return menu_model_;
+  ui::SimpleMenuModel* menu_model = new ui::SimpleMenuModel(this);
+  for (size_t i = 0; i < arraysize(kReloadMenuItems); ++i)
+    menu_model->AddItemWithStringId(kReloadMenuItems[i], kReloadMenuItems[i]);
+
+  return menu_model;
 }
 
 void ReloadButton::ExecuteBrowserCommand(int command, int event_flags) {
@@ -246,7 +237,7 @@ void ReloadButton::ExecuteBrowserCommand(int command, int event_flags) {
     return;
 
   WindowOpenDisposition disposition =
-      chrome::DispositionFromEventFlags(event_flags);
+      ui::DispositionFromEventFlags(event_flags);
   if ((disposition == CURRENT_TAB) && location_bar_) {
     // Forcibly reset the location bar, since otherwise it won't discard any
     // ongoing user edits, since it doesn't realize this is a user-initiated
@@ -260,7 +251,7 @@ void ReloadButton::ChangeModeInternal(Mode mode) {
   if (visible_mode_ == mode)
     return;
 
-  for (size_t i = 0; i < BS_COUNT; ++i)
+  for (size_t i = 0; i < STATE_COUNT; ++i)
     std::swap(images_[i], alternate_images_[i]);
   visible_mode_ = mode;
   SchedulePaint();

@@ -16,6 +16,7 @@
 #include "content/public/test/test_browser_thread.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_types.h"
+#include "webkit/fileapi/file_system_url.h"
 #include "webkit/fileapi/file_system_usage_cache.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 
@@ -74,13 +75,13 @@ class BrowsingDataFileSystemHelperTest : public testing::Test {
     helper_ = BrowsingDataFileSystemHelper::Create(
         BrowserContext::GetDefaultStoragePartition(profile_.get())->
             GetFileSystemContext());
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
     canned_helper_ = new CannedBrowsingDataFileSystemHelper(profile_.get());
   }
   virtual ~BrowsingDataFileSystemHelperTest() {
     // Avoid memory leaks.
     profile_.reset();
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   TestingProfile* GetProfile() {
@@ -172,8 +173,9 @@ class BrowsingDataFileSystemHelperTest : public testing::Test {
   // specified origin.
   void CreateDirectoryForOriginAndType(const GURL& origin,
                                        fileapi::FileSystemType type) {
-    FilePath target = sandbox_->GetFileSystemRootPathOnFileThread(
-        origin, type, FilePath(), true);
+    base::FilePath target = sandbox_->GetFileSystemRootPathOnFileThread(
+        fileapi::FileSystemURL::CreateForTest(origin, type, base::FilePath()),
+        true);
     EXPECT_TRUE(file_util::DirectoryExists(target));
   }
 

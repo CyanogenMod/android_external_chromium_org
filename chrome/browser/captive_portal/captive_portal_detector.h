@@ -12,14 +12,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
+#include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context_getter.h"
 
 class GURL;
-
-namespace net {
-class URLFetcher;
-}
 
 namespace captive_portal {
 
@@ -39,10 +36,13 @@ class CaptivePortalDetector : public net::URLFetcherDelegate,
                               public base::NonThreadSafe {
  public:
   struct Results {
-    Results() : result(RESULT_NO_RESPONSE) {
+    Results()
+        : result(RESULT_NO_RESPONSE),
+          response_code(net::URLFetcher::RESPONSE_CODE_INVALID) {
     }
 
     Result result;
+    int response_code;
     base::TimeDelta retry_after_delta;
   };
 
@@ -58,6 +58,8 @@ class CaptivePortalDetector : public net::URLFetcherDelegate,
   explicit CaptivePortalDetector(
       const scoped_refptr<net::URLRequestContextGetter>& request_context);
   virtual ~CaptivePortalDetector();
+
+  static std::string CaptivePortalResultToString(Result result);
 
   // Triggers a check for a captive portal. After completion, runs the
   // |callback|.

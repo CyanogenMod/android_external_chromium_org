@@ -38,7 +38,8 @@ PanelCocoa::PanelCocoa(Panel* panel, const gfx::Rect& bounds)
       bounds_(bounds),
       always_on_top_(false),
       is_shown_(false),
-      attention_request_id_(0) {
+      attention_request_id_(0),
+      corner_style_(panel::ALL_ROUNDED) {
   controller_ = [[PanelWindowControllerCocoa alloc] initWithPanel:this];
 }
 
@@ -114,7 +115,15 @@ void PanelCocoa::ClosePanel() {
       return;
 
   NSWindow* window = [controller_ window];
-  [window performClose:controller_];
+  // performClose: contains a nested message loop which can cause reentrancy
+  // if the browser is terminating and closing all the windows.
+  // Use this version that corresponds to protocol of performClose: but does not
+  // spin a nested loop.
+  // TODO(dimich): refactor similar method from BWC and reuse here.
+  if ([controller_ windowShouldClose:window]) {
+    [window orderOut:nil];
+    [window close];
+  }
 }
 
 void PanelCocoa::ActivatePanel() {
@@ -143,7 +152,7 @@ void PanelCocoa::PreventActivationByOS(bool prevent_activation) {
   return;
 }
 
-gfx::NativeWindow PanelCocoa::GetNativePanelHandle() {
+gfx::NativeWindow PanelCocoa::GetNativePanelWindow() {
   return [controller_ window];
 }
 
@@ -155,10 +164,6 @@ void PanelCocoa::UpdatePanelTitleBar() {
 
 void PanelCocoa::UpdatePanelLoadingAnimations(bool should_animate) {
   [controller_ updateThrobber:should_animate];
-}
-
-void PanelCocoa::NotifyPanelOnUserChangedTheme() {
-  NOTIMPLEMENTED();
 }
 
 void PanelCocoa::PanelWebContentsFocused(content::WebContents* contents) {
@@ -213,8 +218,22 @@ void PanelCocoa::HandlePanelKeyboardEvent(
   [event_window redispatchKeyEvent:event.os_event];
 }
 
-void PanelCocoa::FullScreenModeChanged(
-    bool is_full_screen) {
+void PanelCocoa::FullScreenModeChanged(bool is_full_screen) {
+  if (!is_shown_) {
+    // If the panel window is not shown due to that a Chrome tab window is in
+    // fullscreen mode when the panel is being created, we need to show the
+    // panel window now. In addition, its titlebar needs to be updated since it
+    // is not done at the panel creation time.
+    if (!is_full_screen) {
+      ShowPanelInactive();
+      UpdatePanelTitleBar();
+    }
+
+    // No need to proceed when the panel window was not shown previously.
+    // We either show the panel window or do not show it depending on current
+    // full screen state.
+    return;
+  }
   [controller_ fullScreenModeChanged:is_full_screen];
 }
 
@@ -227,6 +246,7 @@ void PanelCocoa::SetPanelAlwaysOnTop(bool on_top) {
     return;
   always_on_top_ = on_top;
   [controller_ updateWindowLevel];
+  [controller_ updateWindowCollectionBehavior];
 }
 
 void PanelCocoa::EnableResizeByMouse(bool enable) {
@@ -235,6 +255,21 @@ void PanelCocoa::EnableResizeByMouse(bool enable) {
 
 void PanelCocoa::UpdatePanelMinimizeRestoreButtonVisibility() {
   [controller_ updateTitleBarMinimizeRestoreButtonVisibility];
+}
+
+void PanelCocoa::SetWindowCornerStyle(panel::CornerStyle corner_style) {
+  corner_style_ = corner_style;
+
+  // TODO(dimich): investigate how to support it on Mac.
+}
+
+void PanelCocoa::MinimizePanelBySystem() {
+  NOTIMPLEMENTED();
+}
+
+bool PanelCocoa::IsPanelMinimizedBySystem() const {
+  NOTIMPLEMENTED();
+  return false;
 }
 
 void PanelCocoa::PanelExpansionStateChanging(
@@ -295,10 +330,12 @@ class CocoaNativePanelTesting : public NativePanelTesting {
   virtual bool VerifyDrawingAttention() const OVERRIDE;
   virtual bool VerifyActiveState(bool is_active) OVERRIDE;
   virtual bool VerifyAppIcon() const OVERRIDE;
+  virtual bool VerifySystemMinimizeState() const OVERRIDE;
   virtual bool IsWindowSizeKnown() const OVERRIDE;
   virtual bool IsAnimatingBounds() const OVERRIDE;
   virtual bool IsButtonVisible(
       panel::TitlebarButtonType button_type) const OVERRIDE;
+  virtual panel::CornerStyle GetWindowCornerStyle() const OVERRIDE;
 
  private:
   PanelTitlebarViewCocoa* titlebar() const;
@@ -363,7 +400,12 @@ bool CocoaNativePanelTesting::VerifyActiveState(bool is_active) {
 }
 
 bool CocoaNativePanelTesting::VerifyAppIcon() const {
-// Nothing to do since panel does not show dock icon.
+  // Nothing to do since panel does not show dock icon.
+  return true;
+}
+
+bool CocoaNativePanelTesting::VerifySystemMinimizeState() const {
+  // TODO(jianli): to be implemented.
   return true;
 }
 
@@ -388,4 +430,8 @@ bool CocoaNativePanelTesting::IsButtonVisible(
       NOTREACHED();
   }
   return false;
+}
+
+panel::CornerStyle CocoaNativePanelTesting::GetWindowCornerStyle() const {
+  return native_panel_window_->corner_style_;
 }

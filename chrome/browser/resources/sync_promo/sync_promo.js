@@ -4,8 +4,8 @@
 
 // TODO(sail): Refactor options_page and remove this include.
 <include src="../options/options_page.js"/>
-<include src="../shared/js/util.js"/>
 <include src="../sync_setup_overlay.js"/>
+<include src="../../../../ui/webui/resources/js/util.js"/>
 
 cr.define('sync_promo', function() {
   /**
@@ -151,7 +151,7 @@ cr.define('sync_promo', function() {
       chrome.send('SyncSetupDidClosePage');
     },
 
-    /** @inheritDoc */
+    /** @override */
     sendConfiguration_: function() {
       chrome.send('SyncPromo:UserFlowAction',
                   [actions.CONFIRMED_AFTER_SIGN_IN]);
@@ -159,7 +159,7 @@ cr.define('sync_promo', function() {
           arguments);
     },
 
-    /** @inheritDoc */
+    /** @override */
     setThrobbersVisible_: function(visible) {
       if (visible) {
         this.throbberStart_ = Date.now();

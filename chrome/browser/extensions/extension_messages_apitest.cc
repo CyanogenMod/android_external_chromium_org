@@ -33,35 +33,42 @@ class MessageSender : public content::NotificationObserver {
     return arguments.Pass();
   }
 
+  static scoped_ptr<extensions::Event> BuildEvent(
+      scoped_ptr<ListValue> event_args,
+      Profile* profile,
+      GURL event_url) {
+    scoped_ptr<extensions::Event> event(new extensions::Event(
+        "test.onMessage", event_args.Pass()));
+    event->restrict_to_profile = profile;
+    event->event_url = event_url;
+    return event.Pass();
+  }
+
   virtual void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details) {
+                       const content::NotificationDetails& details) OVERRIDE {
     extensions::EventRouter* event_router =
         extensions::ExtensionSystem::Get(
             content::Source<Profile>(source).ptr())->event_router();
 
     // Sends four messages to the extension. All but the third message sent
     // from the origin http://b.com/ are supposed to arrive.
-    event_router->DispatchEventToRenderers("test.onMessage",
+    event_router->BroadcastEvent(BuildEvent(
         BuildEventArguments(false, "no restriction"),
         content::Source<Profile>(source).ptr(),
-        GURL(),
-        extensions::EventFilteringInfo());
-    event_router->DispatchEventToRenderers("test.onMessage",
+        GURL()));
+    event_router->BroadcastEvent(BuildEvent(
         BuildEventArguments(false, "http://a.com/"),
         content::Source<Profile>(source).ptr(),
-        GURL("http://a.com/"),
-        extensions::EventFilteringInfo());
-    event_router->DispatchEventToRenderers("test.onMessage",
+        GURL("http://a.com/")));
+    event_router->BroadcastEvent(BuildEvent(
         BuildEventArguments(false, "http://b.com/"),
         content::Source<Profile>(source).ptr(),
-        GURL("http://b.com/"),
-        extensions::EventFilteringInfo());
-    event_router->DispatchEventToRenderers("test.onMessage",
+        GURL("http://b.com/")));
+    event_router->BroadcastEvent(BuildEvent(
         BuildEventArguments(true, "last message"),
         content::Source<Profile>(source).ptr(),
-        GURL(),
-        extensions::EventFilteringInfo());
+        GURL()));
   }
 
   content::NotificationRegistrar registrar_;
@@ -70,8 +77,7 @@ class MessageSender : public content::NotificationObserver {
 }  // namespace
 
 // Tests that message passing between extensions and content scripts works.
-// Flaky on the trybots. See http://crbug.com/96725.
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_Messaging) {
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, Messaging) {
   ASSERT_TRUE(StartTestServer());
   ASSERT_TRUE(RunExtensionTest("messaging/connect")) << message_;
 }
@@ -96,7 +102,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MessagingEventURL) {
 
 // Tests connecting from a panel to its extension.
 class PanelMessagingTest : public ExtensionApiTest {
-  virtual void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kEnablePanels);
   }

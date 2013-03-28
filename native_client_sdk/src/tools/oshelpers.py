@@ -9,9 +9,14 @@ import optparse
 import os
 import posixpath
 import shutil
+import stat
 import sys
 import time
 import zipfile
+
+if sys.version_info < (2, 6, 0):
+  sys.stderr.write("python 2.6 or later is required run this script\n")
+  sys.exit(1)
 
 
 def IncludeFiles(filters, files):
@@ -128,7 +133,7 @@ def Copy(args):
   src_list = []
   for src in srcs:
     files = glob.glob(src)
-    if len(files) == 0:
+    if not files:
       raise OSError('cp: no such file or directory: ' + src)
     if files:
       src_list.extend(files)
@@ -254,11 +259,10 @@ def Remove(args):
   try:
     for pattern in files:
       dst_files = glob.glob(pattern)
-      # Ignore non existing files when using force
-      if len(dst_files) == 0 and options.force:
-        print "rm: Skipping " + pattern
-        continue
-      elif len(dst_files) == 0:
+      if not dst_files:
+        # Ignore non existing files when using force
+        if options.force:
+          continue
         raise OSError('rm: no such file or directory: ' + pattern)
 
       for dst in dst_files:
@@ -358,7 +362,7 @@ def Zip(args):
   src_files = []
   for src_arg in src_args:
     globbed_src_args = glob.glob(src_arg)
-    if len(globbed_src_args) == 0:
+    if not globbed_src_args:
       if not options.quiet:
         print 'zip warning: name not matched: %s' % (src_arg,)
 
@@ -425,7 +429,24 @@ def Zip(args):
         zip_path = file_info_or_zip_path
 
       if os_path:
-        zip_stream.write(os_path, zip_path)
+        st = os.stat(os_path)
+        if stat.S_ISDIR(st.st_mode):
+          # Python 2.6 on the buildbots doesn't support writing directories to
+          # zip files. This was resolved in a later version of Python 2.6.
+          # We'll work around it by writing an empty file with the correct
+          # path. (This is basically what later versions do anyway.)
+          zip_info = zipfile.ZipInfo()
+          zip_info.filename = zip_path
+          zip_info.date_time = time.localtime(st.st_mtime)[0:6]
+          zip_info.compress_type = zip_stream.compression
+          zip_info.flag_bits = 0x00
+          zip_info.external_attr = (st[0] & 0xFFFF) << 16L
+          zip_info.CRC = 0
+          zip_info.compress_size = 0
+          zip_info.file_size = 0
+          zip_stream.writestr(zip_info, '')
+        else:
+          zip_stream.write(os_path, zip_path)
       else:
         zip_stream.writestr(file_info_or_zip_path, file_bytes)
 
@@ -447,22 +468,69 @@ def Zip(args):
   return 0
 
 
+def FindExeInPath(filename):
+  env_path = os.environ.get('PATH', '')
+  paths = env_path.split(os.pathsep)
+
+  def IsExecutableFile(path):
+    return os.path.isfile(path) and os.access(path, os.X_OK)
+
+  if os.path.sep in filename:
+    if IsExecutableFile(filename):
+      return filename
+
+  for path in paths:
+    filepath = os.path.join(path, filename)
+    if IsExecutableFile(filepath):
+      return os.path.abspath(os.path.join(path, filename))
+
+
+def Which(args):
+  """A Unix style which.
+
+  Looks for all arguments in the PATH environment variable, and prints their
+  path if they are executable files.
+
+  Note: If you pass an argument with a path to which, it will just test if it
+  is executable, not if it is in the path.
+  """
+  parser = optparse.OptionParser(usage='usage: which args...')
+  _, files = parser.parse_args(args)
+  if not files:
+    return 0
+
+  retval = 0
+  for filename in files:
+    fullname = FindExeInPath(filename)
+    if fullname:
+      print fullname
+    else:
+      retval = 1
+
+  return retval
+
+
 FuncMap = {
   'cp': Copy,
   'mkdir': Mkdir,
   'mv': Move,
   'rm': Remove,
   'zip': Zip,
+  'which': Which,
 }
 
 
 def main(args):
-  func = FuncMap.get(args[1])
-  if not func:
-    print 'Do not recognize command: ' + args[1]
+  if not args:
+    print 'No command specified'
     print 'Available commands: %s' % ' '.join(FuncMap)
     return 1
-  return func(args[2:])
+  func = FuncMap.get(args[0])
+  if not func:
+    print 'Do not recognize command: ' + args[0]
+    print 'Available commands: %s' % ' '.join(FuncMap)
+    return 1
+  return func(args[1:])
 
 if __name__ == '__main__':
-  sys.exit(main(sys.argv))
+  sys.exit(main(sys.argv[1:]))

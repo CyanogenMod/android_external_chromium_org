@@ -7,14 +7,19 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/ui_test_utils.h"
 
 namespace extensions {
 namespace {
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ActiveTab) {
+// Times out on win asan, http://crbug.com/166026
+#if defined(OS_WIN) && defined(ADDRESS_SANITIZER)
+#define MAYBE_ActiveTab DISABLED_ActiveTab
+#else
+#define MAYBE_ActiveTab ActiveTab
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_ActiveTab) {
   ASSERT_TRUE(StartTestServer());
 
   const Extension* extension =

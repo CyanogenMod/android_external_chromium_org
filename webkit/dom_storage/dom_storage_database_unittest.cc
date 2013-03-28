@@ -4,10 +4,10 @@
 
 #include "webkit/dom_storage/dom_storage_database.h"
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/utf_string_conversions.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -108,9 +108,9 @@ TEST(DomStorageDatabaseTest, SimpleOpenAndClose) {
 }
 
 TEST(DomStorageDatabaseTest, CloseEmptyDatabaseDeletesFile) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  FilePath file_name = temp_dir.path().AppendASCII("TestDomStorageDatabase.db");
+  base::FilePath file_name = temp_dir.path().AppendASCII("TestDomStorageDatabase.db");
   ValuesMap storage;
   CreateMapWithValues(&storage);
 
@@ -165,9 +165,9 @@ TEST(DomStorageDatabaseTest, CloseEmptyDatabaseDeletesFile) {
 TEST(DomStorageDatabaseTest, TestLazyOpenIsLazy) {
   // This test needs to operate with a file on disk to ensure that we will
   // open a file that already exists when only invoking ReadAllValues.
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  FilePath file_name = temp_dir.path().AppendASCII("TestDomStorageDatabase.db");
+  base::FilePath file_name = temp_dir.path().AppendASCII("TestDomStorageDatabase.db");
 
   DomStorageDatabase db(file_name);
   EXPECT_FALSE(db.IsOpen());
@@ -212,9 +212,9 @@ TEST(DomStorageDatabaseTest, TestLazyOpenUpgradesDatabase) {
   // can create a table at version 1 and then close it again
   // so that LazyOpen sees there is work to do (LazyOpen will return
   // early if the database is already open).
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  FilePath file_name = temp_dir.path().AppendASCII("TestDomStorageDatabase.db");
+  base::FilePath file_name = temp_dir.path().AppendASCII("TestDomStorageDatabase.db");
 
   DomStorageDatabase db(file_name);
   db.db_.reset(new sql::Connection());
@@ -301,7 +301,7 @@ TEST(DomStorageDatabaseTest, TestSimpleRemoveOneValue) {
 }
 
 TEST(DomStorageDatabaseTest, TestCanOpenAndReadWebCoreDatabase) {
-  FilePath webcore_database;
+  base::FilePath webcore_database;
   PathService::Get(base::DIR_SOURCE_ROOT, &webcore_database);
   webcore_database = webcore_database.AppendASCII("webkit");
   webcore_database = webcore_database.AppendASCII("data");
@@ -332,9 +332,9 @@ TEST(DomStorageDatabaseTest, TestCanOpenAndReadWebCoreDatabase) {
 
 TEST(DomStorageDatabaseTest, TestCanOpenFileThatIsNotADatabase) {
   // Write into the temporary file first.
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  FilePath file_name = temp_dir.path().AppendASCII("TestDomStorageDatabase.db");
+  base::FilePath file_name = temp_dir.path().AppendASCII("TestDomStorageDatabase.db");
 
   const char kData[] = "I am not a database.";
   file_util::WriteFile(file_name, kData, strlen(kData));

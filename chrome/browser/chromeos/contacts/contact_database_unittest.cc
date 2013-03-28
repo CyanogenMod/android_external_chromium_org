@@ -7,12 +7,12 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop.h"
-#include "base/scoped_temp_dir.h"
 #include "chrome/browser/chromeos/contacts/contact.pb.h"
 #include "chrome/browser/chromeos/contacts/contact_test_util.h"
 #include "content/public/browser/browser_thread.h"
@@ -27,7 +27,7 @@ namespace test {
 
 // Name of the directory created within a temporary directory to store the
 // contacts database.
-const FilePath::CharType kDatabaseDirectoryName[] =
+const base::FilePath::CharType kDatabaseDirectoryName[] =
     FILE_PATH_LITERAL("contacts");
 
 class ContactDatabaseTest : public testing::Test {
@@ -52,7 +52,7 @@ class ContactDatabaseTest : public testing::Test {
   }
 
  protected:
-  FilePath database_path() const {
+  base::FilePath database_path() const {
     return temp_dir_.path().Append(kDatabaseDirectoryName);
   }
 
@@ -133,7 +133,7 @@ class ContactDatabaseTest : public testing::Test {
   content::TestBrowserThread ui_thread_;
 
   // Temporary directory where the database is saved.
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
 
   // This class retains ownership of this object.
   ContactDatabase* db_;
@@ -316,7 +316,7 @@ TEST_F(ContactDatabaseTest, DeleteWhenCorrupt) {
   // Overwrite all of the files in the database with a space character.
   file_util::FileEnumerator enumerator(
       database_path(), false, file_util::FileEnumerator::FILES);
-  for (FilePath path = enumerator.Next(); !path.empty();
+  for (base::FilePath path = enumerator.Next(); !path.empty();
        path = enumerator.Next()) {
     file_util::WriteFile(path, " ", 1);
   }

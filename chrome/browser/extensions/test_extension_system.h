@@ -8,8 +8,10 @@
 #include "chrome/browser/extensions/extension_system.h"
 
 class CommandLine;
-class FilePath;
+
 namespace base {
+class Clock;
+class FilePath;
 class Time;
 }
 
@@ -27,19 +29,15 @@ class TestExtensionSystem : public ExtensionSystem {
   // Creates an ExtensionService initialized with the testing profile and
   // returns it.
   ExtensionService* CreateExtensionService(const CommandLine* command_line,
-                                           const FilePath& install_directory,
+                                           const base::FilePath& install_directory,
                                            bool autoupdate_enabled);
-
-  // Creates and returns a ManagementPolicy with the ExtensionService and
-  // ExtensionPrefs registered. If not invoked, the ManagementPolicy is NULL.
-  ManagementPolicy* CreateManagementPolicy();
 
   // Creates an ExtensionProcessManager. If not invoked, the
   // ExtensionProcessManager is NULL.
   void CreateExtensionProcessManager();
 
   // Creates an AlarmManager. Will be NULL otherwise.
-  void CreateAlarmManager(base::Time (*now)());
+  void CreateAlarmManager(base::Clock* clock);
 
   void CreateSocketManager();
 
@@ -49,10 +47,11 @@ class TestExtensionSystem : public ExtensionSystem {
   virtual ExtensionService* extension_service() OVERRIDE;
   virtual ManagementPolicy* management_policy() OVERRIDE;
   virtual UserScriptMaster* user_script_master() OVERRIDE;
-  virtual ExtensionDevToolsManager* devtools_manager() OVERRIDE;
   virtual ExtensionProcessManager* process_manager() OVERRIDE;
   virtual AlarmManager* alarm_manager() OVERRIDE;
   virtual StateStore* state_store() OVERRIDE;
+  virtual StateStore* rules_store() OVERRIDE;
+  virtual ExtensionPrefs* extension_prefs() OVERRIDE;
   virtual ShellWindowGeometryCache* shell_window_geometry_cache() OVERRIDE;
   virtual ExtensionInfoMap* info_map() OVERRIDE;
   virtual LazyBackgroundTaskQueue* lazy_background_task_queue() OVERRIDE;
@@ -64,6 +63,8 @@ class TestExtensionSystem : public ExtensionSystem {
   virtual ApiResourceManager<Socket>* socket_manager() OVERRIDE;
   virtual ApiResourceManager<UsbDeviceResource>* usb_device_resource_manager()
       OVERRIDE;
+  virtual ExtensionWarningService* warning_service() OVERRIDE;
+  virtual Blacklist* blacklist() OVERRIDE;
 
   // Factory method for tests to use with SetTestingProfile.
   static ProfileKeyedService* Build(Profile* profile);
@@ -77,8 +78,11 @@ class TestExtensionSystem : public ExtensionSystem {
   scoped_ptr<ExtensionPrefs> extension_prefs_;
   scoped_ptr<StateStore> state_store_;
   scoped_ptr<ShellWindowGeometryCache> shell_window_geometry_cache_;
-  scoped_ptr<ExtensionService> extension_service_;
+  scoped_ptr<Blacklist> blacklist_;
+  scoped_ptr<StandardManagementPolicyProvider>
+      standard_management_policy_provider_;
   scoped_ptr<ManagementPolicy> management_policy_;
+  scoped_ptr<ExtensionService> extension_service_;
   scoped_ptr<ExtensionProcessManager> extension_process_manager_;
   scoped_ptr<AlarmManager> alarm_manager_;
   scoped_refptr<ExtensionInfoMap> info_map_;

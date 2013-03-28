@@ -5,13 +5,63 @@
 #include "webkit/glue/resource_request_body.h"
 
 #include "base/logging.h"
-#include "net/base/upload_data.h"
+#include "net/base/upload_bytes_element_reader.h"
+#include "net/base/upload_data_stream.h"
+#include "net/base/upload_file_element_reader.h"
 #include "webkit/blob/blob_storage_controller.h"
+#include "webkit/fileapi/upload_file_system_file_element_reader.h"
 
 using webkit_blob::BlobData;
 using webkit_blob::BlobStorageController;
 
 namespace webkit_glue {
+
+namespace {
+
+// A subclass of net::UploadBytesElementReader which owns ResourceRequestBody.
+class BytesElementReader : public net::UploadBytesElementReader {
+ public:
+  BytesElementReader(ResourceRequestBody* resource_request_body,
+                     const ResourceRequestBody::Element& element)
+      : net::UploadBytesElementReader(element.bytes(), element.length()),
+        resource_request_body_(resource_request_body) {
+    DCHECK_EQ(ResourceRequestBody::Element::TYPE_BYTES, element.type());
+  }
+
+  virtual ~BytesElementReader() {}
+
+ private:
+  scoped_refptr<ResourceRequestBody> resource_request_body_;
+
+  DISALLOW_COPY_AND_ASSIGN(BytesElementReader);
+};
+
+// A subclass of net::UploadFileElementReader which owns ResourceRequestBody.
+// This class is necessary to ensure the BlobData and any attached shareable
+// files survive until upload completion.
+class FileElementReader : public net::UploadFileElementReader {
+ public:
+  FileElementReader(ResourceRequestBody* resource_request_body,
+                    base::TaskRunner* task_runner,
+                    const ResourceRequestBody::Element& element)
+      : net::UploadFileElementReader(task_runner,
+                                     element.path(),
+                                     element.offset(),
+                                     element.length(),
+                                     element.expected_modification_time()),
+        resource_request_body_(resource_request_body) {
+    DCHECK_EQ(ResourceRequestBody::Element::TYPE_FILE, element.type());
+  }
+
+  virtual ~FileElementReader() {}
+
+ private:
+  scoped_refptr<ResourceRequestBody> resource_request_body_;
+
+  DISALLOW_COPY_AND_ASSIGN(FileElementReader);
+};
+
+}  // namespace
 
 ResourceRequestBody::ResourceRequestBody() : identifier_(0) {}
 
@@ -23,7 +73,7 @@ void ResourceRequestBody::AppendBytes(const char* bytes, int bytes_len) {
 }
 
 void ResourceRequestBody::AppendFileRange(
-    const FilePath& file_path,
+    const base::FilePath& file_path,
     uint64 offset, uint64 length,
     const base::Time& expected_modification_time) {
   elements_.push_back(Element());
@@ -44,8 +94,11 @@ void ResourceRequestBody::AppendFileSystemFileRange(
                                            expected_modification_time);
 }
 
-net::UploadData* ResourceRequestBody::ResolveElementsAndCreateUploadData(
-    BlobStorageController* blob_controller) {
+net::UploadDataStream*
+ResourceRequestBody::ResolveElementsAndCreateUploadDataStream(
+    BlobStorageController* blob_controller,
+    fileapi::FileSystemContext* file_system_context,
+    base::TaskRunner* file_task_runner) {
   // Resolve all blob elements.
   std::vector<const Element*> resolved_elements;
   for (size_t i = 0; i < elements_.size(); ++i) {
@@ -58,31 +111,25 @@ net::UploadData* ResourceRequestBody::ResolveElementsAndCreateUploadData(
     }
   }
 
-  net::UploadData* upload_data = new net::UploadData;
-  // We attach 'this' to UploadData so that we do not need to copy
-  // bytes for TYPE_BYTES.
-  upload_data->SetUserData(
-      this, new base::UserDataAdapter<ResourceRequestBody>(this));
-  std::vector<net::UploadElement>* elements =
-      upload_data->elements_mutable();
+  ScopedVector<net::UploadElementReader> element_readers;
   for (size_t i = 0; i < resolved_elements.size(); ++i) {
     const Element& element = *resolved_elements[i];
     switch (element.type()) {
       case Element::TYPE_BYTES:
-        elements->push_back(net::UploadElement());
-        elements->back().SetToSharedBytes(element.bytes(), element.length());
+        element_readers.push_back(new BytesElementReader(this, element));
         break;
       case Element::TYPE_FILE:
-        elements->push_back(net::UploadElement());
-        elements->back().SetToFilePathRange(
-            element.path(),
-            element.offset(),
-            element.length(),
-            element.expected_modification_time());
+        element_readers.push_back(
+            new FileElementReader(this, file_task_runner, element));
         break;
       case Element::TYPE_FILE_FILESYSTEM:
-        // TODO(kinuko): Resolve FileSystemURL before creating UploadData.
-        NOTREACHED();
+        element_readers.push_back(
+            new fileapi::UploadFileSystemFileElementReader(
+                file_system_context,
+                element.url(),
+                element.offset(),
+                element.length(),
+                element.expected_modification_time()));
         break;
       case Element::TYPE_BLOB:
         // Blob elements should be resolved beforehand.
@@ -93,8 +140,7 @@ net::UploadData* ResourceRequestBody::ResolveElementsAndCreateUploadData(
         break;
     }
   }
-  upload_data->set_identifier(identifier_);
-  return upload_data;
+  return new net::UploadDataStream(&element_readers, identifier_);
 }
 
 ResourceRequestBody::~ResourceRequestBody() {}

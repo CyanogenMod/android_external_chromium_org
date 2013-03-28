@@ -10,10 +10,14 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
+#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/controls/message_box_view.h"
+#include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
 
 // static
@@ -21,47 +25,27 @@ TabModalConfirmDialog* TabModalConfirmDialog::Create(
     TabModalConfirmDialogDelegate* delegate,
     content::WebContents* web_contents) {
   return new TabModalConfirmDialogViews(
-      delegate, web_contents, chrome::UseChromeStyleDialogs());
+      delegate, web_contents);
 }
-
-namespace {
-
-const int kChromeStyleInterRowVerticalSpacing = 17;
-
-views::MessageBoxView::InitParams CreateMessageBoxViewInitParams(
-    const string16& message,
-    bool enable_chrome_style) {
-  views::MessageBoxView::InitParams params(message);
-
-  if (enable_chrome_style) {
-    params.top_inset = 0;
-    params.bottom_inset = 0;
-    params.left_inset = 0;
-    params.right_inset = 0;
-
-    params.inter_row_vertical_spacing = kChromeStyleInterRowVerticalSpacing;
-  }
-
-  return params;
-}
-
-}  // namespace
 
 //////////////////////////////////////////////////////////////////////////////
 // TabModalConfirmDialogViews, constructor & destructor:
 
 TabModalConfirmDialogViews::TabModalConfirmDialogViews(
     TabModalConfirmDialogDelegate* delegate,
-    content::WebContents* web_contents,
-    bool enable_chrome_style)
+    content::WebContents* web_contents)
     : delegate_(delegate),
       message_box_view_(new views::MessageBoxView(
-          CreateMessageBoxViewInitParams(delegate->GetMessage(),
-                                         enable_chrome_style))),
-      enable_chrome_style_(enable_chrome_style) {
-  delegate_->set_window(new ConstrainedWindowViews(
-      web_contents, this, enable_chrome_style,
-      ConstrainedWindowViews::DEFAULT_INSETS));
+          views::MessageBoxView::InitParams(delegate->GetMessage()))),
+      dialog_(NULL),
+      browser_context_(web_contents->GetBrowserContext()) {
+  dialog_ = CreateWebContentsModalDialogViews(
+      this,
+      web_contents->GetView()->GetNativeView());
+  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+      WebContentsModalDialogManager::FromWebContents(web_contents);
+  web_contents_modal_dialog_manager->ShowDialog(dialog_->GetNativeView());
+  delegate_->set_close_delegate(this);
 }
 
 TabModalConfirmDialogViews::~TabModalConfirmDialogViews() {
@@ -73,6 +57,10 @@ void TabModalConfirmDialogViews::AcceptTabModalDialog() {
 
 void TabModalConfirmDialogViews::CancelTabModalDialog() {
   GetDialogClientView()->CancelWindow();
+}
+
+void TabModalConfirmDialogViews::CloseDialog() {
+  dialog_->Close();
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -89,10 +77,6 @@ string16 TabModalConfirmDialogViews::GetDialogButtonLabel(
   if (button == ui::DIALOG_BUTTON_CANCEL)
     return delegate_->GetCancelButtonTitle();
   return string16();
-}
-
-bool TabModalConfirmDialogViews::UseChromeStyle() const {
-  return enable_chrome_style_;
 }
 
 bool TabModalConfirmDialogViews::Cancel() {
@@ -112,6 +96,13 @@ views::View* TabModalConfirmDialogViews::GetContentsView() {
   return message_box_view_;
 }
 
+// TODO(wittman): Remove this override once we move to the new style frame view
+// on all dialogs.
+views::NonClientFrameView* TabModalConfirmDialogViews::CreateNonClientFrameView(
+    views::Widget* widget) {
+  return CreateConstrainedStyleNonClientFrameView(widget, browser_context_);
+}
+
 views::Widget* TabModalConfirmDialogViews::GetWidget() {
   return message_box_view_->GetWidget();
 }
@@ -122,4 +113,12 @@ const views::Widget* TabModalConfirmDialogViews::GetWidget() const {
 
 void TabModalConfirmDialogViews::DeleteDelegate() {
   delete this;
+}
+
+ui::ModalType TabModalConfirmDialogViews::GetModalType() const {
+#if defined(USE_ASH)
+  return ui::MODAL_TYPE_CHILD;
+#else
+  return views::WidgetDelegate::GetModalType();
+#endif
 }

@@ -16,7 +16,7 @@
 namespace content {
 
 // Types of media streams.
-enum MediaStreamDeviceType {
+enum MediaStreamType {
   MEDIA_NO_SERVICE = 0,
 
   // A device provided by the operating system (e.g., webcam input).
@@ -27,45 +27,80 @@ enum MediaStreamDeviceType {
   MEDIA_TAB_AUDIO_CAPTURE,
   MEDIA_TAB_VIDEO_CAPTURE,
 
+  // Capture content of the screen.
+  MEDIA_SCREEN_VIDEO_CAPTURE,
+
   NUM_MEDIA_TYPES
+};
+
+// Types of media stream requests that can be made to the media controller.
+enum MediaStreamRequestType {
+  MEDIA_DEVICE_ACCESS = 0,
+  MEDIA_GENERATE_STREAM,
+  MEDIA_ENUMERATE_DEVICES,
+  MEDIA_OPEN_DEVICE
 };
 
 // Convenience predicates to determine whether the given type represents some
 // audio or some video device.
-CONTENT_EXPORT bool IsAudioMediaType(MediaStreamDeviceType type);
-CONTENT_EXPORT bool IsVideoMediaType(MediaStreamDeviceType type);
+CONTENT_EXPORT bool IsAudioMediaType(MediaStreamType type);
+CONTENT_EXPORT bool IsVideoMediaType(MediaStreamType type);
 
 // TODO(xians): Change the structs to classes.
 // Represents one device in a request for media stream(s).
 struct CONTENT_EXPORT MediaStreamDevice {
+  MediaStreamDevice();
+
   MediaStreamDevice(
-      MediaStreamDeviceType type,
-      const std::string& device_id,
+      MediaStreamType type,
+      const std::string& id,
       const std::string& name);
+
+  MediaStreamDevice(
+      MediaStreamType type,
+      const std::string& id,
+      const std::string& name,
+      int sample_rate,
+      int channel_layout);
 
   ~MediaStreamDevice();
 
   // The device's type.
-  MediaStreamDeviceType type;
+  MediaStreamType type;
 
   // The device's unique ID.
-  std::string device_id;
+  std::string id;
 
   // The device's "friendly" name. Not guaranteed to be unique.
   std::string name;
+
+  // Preferred sample rate in samples per second for the device.
+  // Only utilized for audio devices. Will be set to 0 if the constructor
+  // with three parameters (intended for video) is used.
+  int sample_rate;
+
+  // Preferred channel configuration for the device.
+  // Only utilized for audio devices. Will be set to 0 if the constructor
+  // with three parameters (intended for video) is used.
+  // TODO(henrika): ideally, we would like to use media::ChannelLayout here
+  // but including media/base/channel_layout.h violates checkdeps rules.
+  int channel_layout;
 };
 
 typedef std::vector<MediaStreamDevice> MediaStreamDevices;
 
-typedef std::map<MediaStreamDeviceType, MediaStreamDevices>
-    MediaStreamDeviceMap;
+typedef std::map<MediaStreamType, MediaStreamDevices> MediaStreamDeviceMap;
 
 // Represents a request for media streams (audio/video).
 struct CONTENT_EXPORT MediaStreamRequest {
   MediaStreamRequest(
       int render_process_id,
       int render_view_id,
-      const GURL& security_origin);
+      const GURL& security_origin,
+      MediaStreamRequestType request_type,
+      const std::string& requested_device_id,
+      MediaStreamType audio_type,
+      MediaStreamType video_type);
 
   ~MediaStreamRequest();
 
@@ -78,10 +113,22 @@ struct CONTENT_EXPORT MediaStreamRequest {
   // The WebKit security origin for the current request (e.g. "html5rocks.com").
   GURL security_origin;
 
-  // A list of devices present on the user's computer, for each device type
-  // requested.
-  // All the elements in this map will be deleted in ~MediaStreamRequest().
-  MediaStreamDeviceMap devices;
+  // Stores the type of request that was made to the media controller. Right now
+  // this is only used to distinguish between WebRTC and Pepper requests, as the
+  // latter should not be subject to user approval but only to policy check.
+  // Pepper requests are signified by the |MEDIA_OPEN_DEVICE| value.
+  MediaStreamRequestType request_type;
+
+  // Stores the requested device id. Used only if the |request_type| filed is
+  // set to |MEDIA_OPEN_DEVICE| to indicate which device the request is for as
+  // in that case the decision is not left to the user but to the media client.
+  std::string requested_device_id;
+
+  // Flag to indicate if the request contains audio.
+  MediaStreamType audio_type;
+
+  // Flag to indicate if the request contains video.
+  MediaStreamType video_type;
 };
 
 }  // namespace content

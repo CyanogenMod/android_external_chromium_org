@@ -12,14 +12,12 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
-#include "base/scoped_temp_dir.h"
-#include "base/string_piece.h"
-#if defined(OS_MACOSX)
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/lazy_instance.h"
-#endif
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/string_piece.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationPolicy.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/tools/test_shell/webview_host.h"
@@ -61,7 +59,7 @@ public:
       bool dump_pixels;
 
       // Filename we dump pixels to (when pixel testing is enabled).
-      FilePath pixel_file_name;
+      base::FilePath pixel_file_name;
       // The md5 hash of the bitmap dump (when pixel testing is enabled).
       std::string pixel_hash;
       // URL of the test.
@@ -152,14 +150,14 @@ public:
       return true;
     }
 
-    void LoadFile(const FilePath& file);
+    void LoadFile(const base::FilePath& file);
     void LoadURL(const GURL& url);
     void LoadURLForFrame(const GURL& url, const string16& frame_name);
     void GoBackOrForward(int offset);
     void Reload();
     bool Navigate(const TestNavigationEntry& entry, bool reload);
 
-    bool PromptForSaveFile(const wchar_t* prompt_title, FilePath* result);
+    bool PromptForSaveFile(const wchar_t* prompt_title, base::FilePath* result);
     string16 GetDocumentText();
     void DumpDocumentText();
     void DumpRenderTree();

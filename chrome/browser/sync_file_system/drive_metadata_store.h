@@ -7,9 +7,11 @@
 
 #include <map>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "base/callback_forward.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -35,13 +37,18 @@ class DriveMetadataStore
     : public base::NonThreadSafe,
       public base::SupportsWeakPtr<DriveMetadataStore> {
  public:
-  typedef std::map<GURL, std::string> ResourceIDMap;
-  typedef std::map<FilePath, DriveMetadata> PathToMetadata;
+  typedef std::map<GURL, std::string> ResourceIdByOrigin;
+  typedef std::map<std::string, GURL> OriginByResourceId;
+  typedef std::map<base::FilePath, DriveMetadata> PathToMetadata;
   typedef std::map<GURL, PathToMetadata> MetadataMap;
-  typedef base::Callback<void(fileapi::SyncStatusCode status, bool created)>
+  typedef std::vector<std::pair<fileapi::FileSystemURL, std::string> >
+      URLAndResourceIdList;
+  typedef base::Callback<void(SyncStatusCode status, bool created)>
       InitializationCallback;
 
-  DriveMetadataStore(const FilePath& base_dir,
+  static const base::FilePath::CharType kDatabaseName[];
+
+  DriveMetadataStore(const base::FilePath& base_dir,
                      base::SequencedTaskRunner* file_task_runner);
   ~DriveMetadataStore();
 
@@ -49,19 +56,26 @@ class DriveMetadataStore
   // This function works asynchronously.
   void Initialize(const InitializationCallback& callback);
 
-  void SetLargestChangeStamp(int64 largest_changestamp);
+  void SetLargestChangeStamp(int64 largest_changestamp,
+                             const SyncStatusCallback& callback);
   int64 GetLargestChangeStamp() const;
 
-  // Updates database entry.
-  fileapi::SyncStatusCode UpdateEntry(const fileapi::FileSystemURL& url,
-                                      const DriveMetadata& metadata);
+  // Updates database entry. Invokes |callback|, upon completion.
+  void UpdateEntry(const fileapi::FileSystemURL& url,
+                   const DriveMetadata& metadata,
+                   const SyncStatusCallback& callback);
 
-  // Deletes database entry for |url|.
-  fileapi::SyncStatusCode DeleteEntry(const fileapi::FileSystemURL& url);
+  // Deletes database entry for |url|. Invokes |callback|, upon completion.
+  void DeleteEntry(const fileapi::FileSystemURL& url,
+                   const SyncStatusCallback& callback);
 
   // Lookups and reads the database entry for |url|.
-  fileapi::SyncStatusCode ReadEntry(const fileapi::FileSystemURL& url,
-                                    DriveMetadata* metadata) const;
+  SyncStatusCode ReadEntry(const fileapi::FileSystemURL& url,
+                           DriveMetadata* metadata) const;
+
+  // Returns true if |origin| is a batch sync origin, a incremental sync origin
+  // or a disabled origin.
+  bool IsKnownOrigin(const GURL& origin) const;
 
   // Returns true if |origin| is a batch sync origin, i.e. the origin's entire
   // file list hasn't been fully fetched and processed yet.
@@ -72,6 +86,9 @@ class DriveMetadataStore
   // incrementally.
   bool IsIncrementalSyncOrigin(const GURL& origin) const;
 
+  // Returns true if |origin| is a disabled origin.
+  bool IsOriginDisabled(const GURL& origin) const;
+
   // Marks |origin| as a batch sync origin and associates it with the directory
   // identified by |resource_id|.
   // |origin| must not be a batch sync origin nor an incremental sync origin.
@@ -81,58 +98,103 @@ class DriveMetadataStore
   // |origin| must be a batch sync origin.
   void MoveBatchSyncOriginToIncremental(const GURL& origin);
 
+  void EnableOrigin(const GURL& origin,
+                    const SyncStatusCallback& callback);
+
+  void DisableOrigin(const GURL& origin,
+                     const SyncStatusCallback& callback);
+
+  void RemoveOrigin(const GURL& origin,
+                    const SyncStatusCallback& callback);
+
   // Sets the directory identified by |resource_id| as the sync data directory.
   // All data for the Sync FileSystem should be store into the directory.
-  // It is invalid to overwrite the directory.
   void SetSyncRootDirectory(const std::string& resource_id);
+  void SetOriginRootDirectory(const GURL& origin,
+                              const std::string& resource_id);
 
   // Returns a set of URLs for files in conflict.
-  fileapi::SyncStatusCode GetConflictURLs(fileapi::FileSystemURLSet* urls);
+  SyncStatusCode GetConflictURLs(
+      fileapi::FileSystemURLSet* urls) const;
+
+  // Returns a set of URLs and Resource IDs for files to be fetched.
+  SyncStatusCode GetToBeFetchedFiles(URLAndResourceIdList* list) const;
+
+  // Returns resource id for |origin|.
+  // This may return an empty string if |origin| is not a batch, incremental
+  // or disabled origin.
+  std::string GetResourceIdForOrigin(const GURL& origin) const;
 
   const std::string& sync_root_directory() const {
     DCHECK(CalledOnValidThread());
     return sync_root_directory_resource_id_;
   }
 
-  const ResourceIDMap& batch_sync_origins() const {
+  const ResourceIdByOrigin& batch_sync_origins() const {
     DCHECK(CalledOnValidThread());
     return batch_sync_origins_;
   }
 
-  const ResourceIDMap& incremental_sync_origins() const {
+  const ResourceIdByOrigin& incremental_sync_origins() const {
     DCHECK(CalledOnValidThread());
     return incremental_sync_origins_;
   }
 
+  const ResourceIdByOrigin& disabled_origins() const {
+    DCHECK(CalledOnValidThread());
+    return disabled_origins_;
+  }
+
+  // Returns tracked and enabled origins. i.e. Union of batch_sync_origins_ and
+  // incremental_sync_origins_.
+  void GetEnabledOrigins(std::vector<GURL>* origins);
+
+  // Returns tracked but disabled origins. i.e. disabled_origins_.
+  void GetDisabledOrigins(std::vector<GURL>* origins);
+
+  // Maps |resource_id| to corresponding |origin|.
+  // Returns true if the directory indicated by |resource_id| is not an origin
+  // root directory.
+  bool GetOriginByOriginRootDirectoryId(const std::string& resource_id,
+                                        GURL* origin);
+
  private:
   friend class DriveMetadataStoreTest;
 
-  void UpdateDBStatus(fileapi::SyncStatusCode status);
+  void UpdateDBStatus(SyncStatusCode status);
+  void UpdateDBStatusAndInvokeCallback(const SyncStatusCallback& callback,
+                                       SyncStatusCode status);
   void DidInitialize(const InitializationCallback& callback,
                      DriveMetadataDBContents* contents,
-                     fileapi::SyncStatusCode error);
+                     SyncStatusCode error);
+  void DidUpdateOrigin(const SyncStatusCallback& callback,
+                       SyncStatusCode status);
 
   // These are only for testing.
-  void RestoreSyncRootDirectory(const fileapi::SyncStatusCallback& callback);
-  void DidRestoreSyncRootDirectory(const fileapi::SyncStatusCallback& callback,
+  void RestoreSyncRootDirectory(const SyncStatusCallback& callback);
+  void DidRestoreSyncRootDirectory(const SyncStatusCallback& callback,
                                    std::string* sync_root_directory_resource_id,
-                                   fileapi::SyncStatusCode status);
-  void RestoreSyncOrigins(const fileapi::SyncStatusCallback& callback);
-  void DidRestoreSyncOrigins(const fileapi::SyncStatusCallback& callback,
-                             ResourceIDMap* batch_sync_origins,
-                             ResourceIDMap* incremental_sync_origins,
-                             fileapi::SyncStatusCode status);
+                                   SyncStatusCode status);
+  void RestoreOrigins(const SyncStatusCallback& callback);
+  void DidRestoreOrigins(const SyncStatusCallback& callback,
+                         ResourceIdByOrigin* batch_sync_origins,
+                         ResourceIdByOrigin* incremental_sync_origins,
+                         ResourceIdByOrigin* disabled_origins,
+                         SyncStatusCode status);
 
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
   scoped_ptr<DriveMetadataDB> db_;
-  fileapi::SyncStatusCode db_status_;
+  SyncStatusCode db_status_;
 
   int64 largest_changestamp_;
   MetadataMap metadata_map_;
 
   std::string sync_root_directory_resource_id_;
-  ResourceIDMap batch_sync_origins_;
-  ResourceIDMap incremental_sync_origins_;
+  ResourceIdByOrigin batch_sync_origins_;
+  ResourceIdByOrigin incremental_sync_origins_;
+  ResourceIdByOrigin disabled_origins_;
+
+  OriginByResourceId origin_by_resource_id_;
 
   DISALLOW_COPY_AND_ASSIGN(DriveMetadataStore);
 };

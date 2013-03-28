@@ -22,17 +22,6 @@
 using content::BrowserThread;
 using content::NavigationEntry;
 
-// InternalGetCommandsRequest -------------------------------------------------
-
-BaseSessionService::InternalGetCommandsRequest::InternalGetCommandsRequest(
-    const CallbackType& callback)
-    : CancelableRequest<InternalGetCommandsCallback>(callback) {
-}
-
-BaseSessionService::InternalGetCommandsRequest::~InternalGetCommandsRequest() {
-  STLDeleteElements(&commands);
-}
-
 // BaseSessionService ---------------------------------------------------------
 
 namespace {
@@ -51,6 +40,29 @@ void WriteStringToPickle(Pickle& pickle, int* bytes_written, int max_bytes,
   }
 }
 
+// Helper used by ScheduleGetLastSessionCommands. It runs callback on TaskRunner
+// thread if it's not canceled.
+void RunIfNotCanceled(
+    const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+    const BaseSessionService::InternalGetCommandsCallback& callback,
+    ScopedVector<SessionCommand> commands) {
+  if (is_canceled.Run())
+    return;
+  callback.Run(commands.Pass());
+}
+
+void PostOrRunInternalGetCommandsCallback(
+    base::TaskRunner* task_runner,
+    const BaseSessionService::InternalGetCommandsCallback& callback,
+    ScopedVector<SessionCommand> commands) {
+  if (task_runner->RunsTasksOnCurrentThread()) {
+    callback.Run(commands.Pass());
+  } else {
+    task_runner->PostTask(FROM_HERE,
+                          base::Bind(callback, base::Passed(&commands)));
+  }
+}
+
 }  // namespace
 
 // Delay between when a command is received, and when we save it to the
@@ -62,7 +74,7 @@ const int BaseSessionService::max_persist_navigation_count = 6;
 
 BaseSessionService::BaseSessionService(SessionType type,
                                        Profile* profile,
-                                       const FilePath& path)
+                                       const base::FilePath& path)
     : profile_(profile),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       pending_reset_(false),
@@ -259,16 +271,25 @@ bool BaseSessionService::ShouldTrackEntry(const GURL& url) {
   return url.is_valid();
 }
 
-BaseSessionService::Handle BaseSessionService::ScheduleGetLastSessionCommands(
-    InternalGetCommandsRequest* request,
-    CancelableRequestConsumerBase* consumer) {
-  scoped_refptr<InternalGetCommandsRequest> request_wrapper(request);
-  AddRequest(request, consumer);
+CancelableTaskTracker::TaskId
+    BaseSessionService::ScheduleGetLastSessionCommands(
+    const InternalGetCommandsCallback& callback,
+    CancelableTaskTracker* tracker) {
+  CancelableTaskTracker::IsCanceledCallback is_canceled;
+  CancelableTaskTracker::TaskId id = tracker->NewTrackedTaskId(&is_canceled);
+
+  InternalGetCommandsCallback run_if_not_canceled =
+      base::Bind(&RunIfNotCanceled, is_canceled, callback);
+
+  InternalGetCommandsCallback callback_runner =
+      base::Bind(&PostOrRunInternalGetCommandsCallback,
+                 base::MessageLoopProxy::current(), run_if_not_canceled);
+
   RunTaskOnBackendThread(
       FROM_HERE,
       base::Bind(&SessionBackend::ReadLastSessionCommands, backend(),
-                 request_wrapper));
-  return request->handle();
+                 is_canceled, callback_runner));
+  return id;
 }
 
 bool BaseSessionService::RunTaskOnBackendThread(

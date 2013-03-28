@@ -13,13 +13,12 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/cc/cc.gyp:cc',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
         '<(DEPTH)/ui/ui.gyp:ui',
-        '<(DEPTH)/webkit/support/webkit_support.gyp:glue',
-        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_gpu',
-        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_storage',
+        '<(DEPTH)/webkit/gpu/webkit_gpu.gyp:webkit_gpu',
       ],
       'defines': [
         'COMPOSITOR_IMPLEMENTATION',
@@ -36,6 +35,8 @@
         'debug_utils.h',
         'dip_util.cc',
         'dip_util.h',
+        'float_animation_curve_adapter.cc',
+        'float_animation_curve_adapter.h',
         'layer.cc',
         'layer.h',
         'layer_animation_delegate.h',
@@ -51,11 +52,15 @@
         'layer_owner.cc',
         'layer_owner.h',
         'layer_type.h',
+        'scoped_animation_duration_scale_mode.cc',
+        'scoped_animation_duration_scale_mode.h',
         'scoped_layer_animation_settings.cc',
         'scoped_layer_animation_settings.h',
         # UI tests need TestWebGraphicsContext3D, so we always build it.
         'test_web_graphics_context_3d.cc',
         'test_web_graphics_context_3d.h',
+        'transform_animation_curve_adapter.cc',
+        'transform_animation_curve_adapter.h',
       ],
       'conditions': [
         ['OS == "win" and use_aura == 1', {
@@ -99,6 +104,8 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:test_support_base',
+        '<(DEPTH)/cc/cc.gyp:cc',
+        '<(DEPTH)/cc/cc_tests.gyp:cc_test_utils',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
@@ -113,6 +120,8 @@
         'layer_animator_unittest.cc',
         'layer_unittest.cc',
         'run_all_unittests.cc',
+        'test/layer_animator_test_controller.cc',
+        'test/layer_animator_test_controller.h',
         'test/test_compositor_host.h',
         'test/test_compositor_host_linux.cc',
         'test/test_compositor_host_mac.mm',

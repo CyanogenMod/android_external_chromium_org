@@ -14,17 +14,17 @@ using content::BrowserThread;
 
 namespace chromeos {
 
-AuthAttemptState::AuthAttemptState(const std::string& username,
-                                   const std::string& password,
+AuthAttemptState::AuthAttemptState(const UserCredentials& credentials,
                                    const std::string& ascii_hash,
                                    const std::string& login_token,
                                    const std::string& login_captcha,
+                                   const User::UserType user_type,
                                    const bool user_is_new)
-    : username(username),
-      password(password),
+    : credentials(credentials),
       ascii_hash(ascii_hash),
       login_token(login_token),
       login_captcha(login_captcha),
+      user_type(user_type),
       unlock(false),
       online_complete_(false),
       online_outcome_(LoginFailure::NONE),
@@ -37,8 +37,9 @@ AuthAttemptState::AuthAttemptState(const std::string& username,
 
 AuthAttemptState::AuthAttemptState(const std::string& username,
                                    const std::string& ascii_hash)
-    : username(username),
+    : credentials(username, "", ""),
       ascii_hash(ascii_hash),
+      user_type(User::USER_TYPE_REGULAR),
       unlock(true),
       online_complete_(true),
       online_outcome_(LoginFailure::UNLOCK_FAILED),
@@ -49,13 +50,12 @@ AuthAttemptState::AuthAttemptState(const std::string& username,
       cryptohome_code_(cryptohome::MOUNT_ERROR_NONE) {
 }
 
-AuthAttemptState::AuthAttemptState(const std::string& username,
-                                   const std::string& password,
+AuthAttemptState::AuthAttemptState(const UserCredentials& credentials,
                                    const std::string& ascii_hash,
                                    const bool user_is_new)
-    : username(username),
-      password(password),
+    : credentials(credentials),
       ascii_hash(ascii_hash),
+      user_type(User::USER_TYPE_REGULAR),
       unlock(true),
       online_complete_(false),
       online_outcome_(LoginFailure::NONE),
@@ -132,13 +132,6 @@ bool AuthAttemptState::cryptohome_outcome() {
 cryptohome::MountError AuthAttemptState::cryptohome_code() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return cryptohome_code_;
-}
-
-void AuthAttemptState::SetOAuth1Token(const std::string& token,
-                                      const std::string& secret) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  oauth1_access_token_ = token;
-  oauth1_access_secret_ = secret;
 }
 
 }  // namespace chromeos

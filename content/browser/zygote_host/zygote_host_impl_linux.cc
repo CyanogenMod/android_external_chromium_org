@@ -11,7 +11,6 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
-#include "base/eintr_wrapper.h"
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/linux_util.h"
@@ -20,7 +19,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/posix/unix_domain_socket.h"
+#include "base/posix/eintr_wrapper.h"
+#include "base/posix/unix_domain_socket_linux.h"
 #include "base/process_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
@@ -68,7 +68,7 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   DCHECK(!init_);
   init_ = true;
 
-  FilePath chrome_path;
+  base::FilePath chrome_path;
   CHECK(PathService::Get(base::FILE_EXE, &chrome_path));
   CommandLine cmd_line(chrome_path);
 
@@ -111,10 +111,6 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
     switches::kTouchOptimizedUI,
 
     switches::kNoSandbox,
-
-#if !defined(OS_CHROMEOS)
-    switches::kEnableTouchEvents,
-#endif
   };
   cmd_line.CopySwitchesFrom(browser_command_line, kForwardSwitches,
                             arraysize(kForwardSwitches));
@@ -147,8 +143,8 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
                  << sandbox_binary_ << " is owned by root and has mode 4755.";
     }
   } else {
-    LOG(WARNING) << "Running without the SUID sandbox! See "
-        "http://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
+    LOG(ERROR) << "Running without the SUID sandbox! See "
+        "https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
         "for more information on developing with the sandbox on.";
   }
 
@@ -277,7 +273,7 @@ pid_t ZygoteHostImpl::ForkRequest(
     pickle.WriteUInt32(i->id);
     fds.push_back(i->fd.fd);
     if (i->fd.auto_close) {
-      // Auto-close means we need to close the FDs after they habe been passed
+      // Auto-close means we need to close the FDs after they have been passed
       // to the other process.
       linked_ptr<file_util::ScopedFD> ptr(
           new file_util::ScopedFD(&(fds.back())));
@@ -315,12 +311,13 @@ pid_t ZygoteHostImpl::ForkRequest(
       // Here we're using whatever name we got from the other side.
       // But since it's likely that the same one will be used repeatedly
       // (even though it's not guaranteed), we cache it here.
-      static base::Histogram* uma_histogram;
+      static base::HistogramBase* uma_histogram;
       if (!uma_histogram || uma_histogram->histogram_name() != uma_name) {
         uma_histogram = base::LinearHistogram::FactoryGet(
             uma_name, 1,
             uma_boundary_value,
-            uma_boundary_value + 1, base::Histogram::kUmaTargetedHistogramFlag);
+            uma_boundary_value + 1,
+            base::HistogramBase::kUmaTargetedHistogramFlag);
       }
       uma_histogram->Add(uma_sample);
     }
@@ -375,7 +372,7 @@ void ZygoteHostImpl::AdjustRendererOOMScore(base::ProcessHandle pid,
   static bool selinux_valid = false;
 
   if (!selinux_valid) {
-    const FilePath kSelinuxPath("/selinux");
+    const base::FilePath kSelinuxPath("/selinux");
     selinux = access(kSelinuxPath.value().c_str(), X_OK) == 0 &&
         file_util::CountFilesCreatedAfter(kSelinuxPath,
                                           base::Time::UnixEpoch()) > 0;
@@ -455,10 +452,12 @@ void ZygoteHostImpl::EnsureProcessTerminated(pid_t process) {
 
 base::TerminationStatus ZygoteHostImpl::GetTerminationStatus(
     base::ProcessHandle handle,
+    bool known_dead,
     int* exit_code) {
   DCHECK(init_);
   Pickle pickle;
   pickle.WriteInt(kZygoteCommandGetTerminationStatus);
+  pickle.WriteBool(known_dead);
   pickle.WriteInt(handle);
 
   // Set this now to handle the early termination cases.

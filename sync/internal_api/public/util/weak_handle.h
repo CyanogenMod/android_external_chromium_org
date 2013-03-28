@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,6 +58,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "sync/base/sync_export.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -99,7 +100,7 @@ struct ParamTraits<T[]> {
 
 // Base class for WeakHandleCore<T> to avoid template bloat.  Handles
 // the interaction with the owner thread and its message loop.
-class WeakHandleCoreBase {
+class SYNC_EXPORT WeakHandleCoreBase {
  public:
   // Assumes the current thread is the owner thread.
   WeakHandleCoreBase();

@@ -38,8 +38,6 @@ class ConnectionToClient : public base::NonThreadSafe,
  public:
   class EventHandler {
    public:
-    virtual ~EventHandler() {}
-
     // Called when the network connection is authenticated.
     virtual void OnConnectionAuthenticated(ConnectionToClient* connection) = 0;
 
@@ -61,6 +59,9 @@ class ConnectionToClient : public base::NonThreadSafe,
     virtual void OnRouteChange(ConnectionToClient* connection,
                                const std::string& channel_name,
                                const TransportRoute& route) = 0;
+
+   protected:
+    virtual ~EventHandler() {}
   };
 
   // Constructs a ConnectionToClient object for the |session|. Takes
@@ -83,6 +84,8 @@ class ConnectionToClient : public base::NonThreadSafe,
   virtual void UpdateSequenceNumber(int64 sequence_number);
 
   // Get the stubs used by the host to transmit messages to the client.
+  // The stubs must not be accessed before OnConnectionAuthenticated(), or
+  // after OnConnectionClosed().
   // Note that the audio stub will be NULL if audio is not enabled.
   virtual VideoStub* video_stub();
   virtual AudioStub* audio_stub();

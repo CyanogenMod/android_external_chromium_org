@@ -13,7 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
-#include "ppapi/c/dev/ppb_console_dev.h"
+#include "ppapi/c/ppb_console.h"
 #include "ppapi/shared_impl/host_resource.h"
 
 // All resource types should be added here. This implements our hand-rolled
@@ -24,9 +24,10 @@
   F(PPB_AudioInput_API) \
   F(PPB_AudioTrusted_API) \
   F(PPB_Broker_API) \
+  F(PPB_Broker_Instance_API) \
+  F(PPB_BrowserFont_Singleton_API) \
   F(PPB_BrowserFont_Trusted_API) \
   F(PPB_Buffer_API) \
-  F(PPB_BufferTrusted_API) \
   F(PPB_DeviceRef_API) \
   F(PPB_DirectoryReader_API) \
   F(PPB_FileChooser_API) \
@@ -36,10 +37,13 @@
   F(PPB_Find_API) \
   F(PPB_Flash_Clipboard_API) \
   F(PPB_Flash_DeviceID_API) \
+  F(PPB_Flash_File_API) \
   F(PPB_Flash_FontFile_API) \
+  F(PPB_Flash_Fullscreen_API) \
   F(PPB_Flash_Functions_API) \
   F(PPB_Flash_Menu_API) \
   F(PPB_Flash_MessageLoop_API) \
+  F(PPB_Gamepad_API) \
   F(PPB_Graphics2D_API) \
   F(PPB_Graphics3D_API) \
   F(PPB_HostResolver_Private_API) \
@@ -49,11 +53,12 @@
   F(PPB_MessageLoop_API) \
   F(PPB_NetworkList_Private_API) \
   F(PPB_NetworkMonitor_Private_API) \
-  F(PPB_PDFFont_API) \
   F(PPB_Printing_API) \
   F(PPB_ResourceArray_API) \
   F(PPB_Scrollbar_API) \
   F(PPB_Talk_Private_API) \
+  F(PPB_TrueTypeFont_API) \
+  F(PPB_TrueTypeFont_Singleton_API) \
   F(PPB_TCPServerSocket_Private_API) \
   F(PPB_TCPSocket_Private_API) \
   F(PPB_UDPSocket_Private_API) \
@@ -199,7 +204,7 @@ class PPAPI_SHARED_EXPORT Resource : public base::RefCounted<Resource> {
 
  protected:
   // Logs a message to the console from this resource.
-  void Log(PP_LogLevel_Dev level, const std::string& message);
+  void Log(PP_LogLevel level, const std::string& message);
 
   // Notifications for subclasses.
   virtual void LastPluginRefWasDeleted() {}

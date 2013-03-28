@@ -8,16 +8,19 @@
 #include "base/process.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
-#include "ipc/ipc_platform_file.h"
 
 class CommandLine;
+
+namespace base {
 class FilePath;
+}
 
 namespace sandbox {
 struct SandboxInterfaceInfo;
 }
 
 namespace content {
+class SandboxedProcessLauncherDelegate;
 
 #if defined(OS_WIN)
 
@@ -50,11 +53,11 @@ CONTENT_EXPORT bool BrokerDuplicateHandle(HANDLE source_handle,
 // false otherwise.
 CONTENT_EXPORT bool BrokerAddTargetPeer(HANDLE peer_process);
 
-// Starts a sandboxed process with the given directory unsandboxed
-// and returns a handle to it.
-CONTENT_EXPORT base::ProcessHandle StartProcessWithAccess(
-    CommandLine* cmd_line,
-    const FilePath& exposed_dir);
+// Launch a sandboxed process. |delegate| may be NULL. If |delegate| is non-NULL
+// then it just has to outlive this method call.
+CONTENT_EXPORT base::ProcessHandle StartSandboxedProcess(
+    SandboxedProcessLauncherDelegate* delegate,
+    CommandLine* cmd_line);
 
 #elif defined(OS_MACOSX)
 
@@ -73,7 +76,7 @@ CONTENT_EXPORT base::ProcessHandle StartProcessWithAccess(
 // occurred.  If process_type isn't one that needs sandboxing, no action is
 // taken and true is always returned.
 CONTENT_EXPORT bool InitializeSandbox(int sandbox_type,
-                                      const FilePath& allowed_path);
+                                      const base::FilePath& allowed_path);
 
 #elif defined(OS_LINUX)
 
@@ -89,15 +92,6 @@ CONTENT_EXPORT bool InitializeSandbox(int sandbox_type,
 CONTENT_EXPORT bool InitializeSandbox();
 
 #endif
-
-// Platform neutral wrapper for making an exact copy of a handle for use in
-// the target process. On Windows this wraps BrokerDuplicateHandle() with the
-// DUPLICATE_SAME_ACCESS flag. On posix it behaves essentially the same as
-// IPC::GetFileHandleForProcess()
-CONTENT_EXPORT IPC::PlatformFileForTransit BrokerGetFileHandleForProcess(
-    base::PlatformFile handle,
-    base::ProcessId target_process_id,
-    bool should_close_source);
 
 }  // namespace content
 

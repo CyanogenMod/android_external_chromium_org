@@ -22,6 +22,7 @@ class BookmarkNode;
 
 namespace syncer {
 class BaseNode;
+class BaseTransaction;
 struct UserShare;
 }
 
@@ -57,7 +58,9 @@ class BookmarkModelAssociator
   // node.  After successful completion, the models should be identical and
   // corresponding. Returns true on success.  On failure of this step, we
   // should abort the sync operation and report an error to the user.
-  virtual syncer::SyncError AssociateModels() OVERRIDE;
+  virtual syncer::SyncError AssociateModels(
+      syncer::SyncMergeResult* local_merge_result,
+      syncer::SyncMergeResult* syncer_merge_result) OVERRIDE;
 
   virtual syncer::SyncError DisassociateModels() OVERRIDE;
 
@@ -112,7 +115,13 @@ class BookmarkModelAssociator
 
   // Matches up the bookmark model and the sync model to build model
   // associations.
-  syncer::SyncError BuildAssociations();
+  syncer::SyncError BuildAssociations(
+      syncer::SyncMergeResult* local_merge_result,
+      syncer::SyncMergeResult* syncer_merge_result);
+
+  // Removes bookmark nodes whose corresponding sync nodes have been deleted
+  // according to sync delete journals. Return number of deleted bookmarks.
+  int64 ApplyDeletesFromSyncJournal(syncer::BaseTransaction* trans);
 
   // Associate a top-level node of the bookmark model with a permanent node in
   // the sync domain.  Such permanent nodes are identified by a tag that is
@@ -145,8 +154,6 @@ class BookmarkModelAssociator
   // guarantees no invocations can occur if |this| has been deleted. (This
   // allows this class to be non-refcounted).
   base::WeakPtrFactory<BookmarkModelAssociator> weak_factory_;
-
-  int number_of_new_sync_nodes_created_at_association_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkModelAssociator);
 };

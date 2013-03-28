@@ -8,6 +8,9 @@
 #include "ash/shell_window_ids.h"
 #include "ash/system/chromeos/network/network_observer.h"
 #include "ash/system/tray/system_tray.h"
+#include "ash/system/tray/system_tray_notifier.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
@@ -15,7 +18,6 @@
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/mobile_config.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
@@ -126,9 +128,9 @@ DataPromoNotification::~DataPromoNotification() {
   CloseNotification();
 }
 
-void DataPromoNotification::RegisterPrefs(PrefService* local_state) {
+void DataPromoNotification::RegisterPrefs(PrefRegistrySimple* registry) {
   // Carrier deal notification shown count defaults to 0.
-  local_state->RegisterIntegerPref(prefs::kCarrierDealPromoShown, 0);
+  registry->RegisterIntegerPref(prefs::kCarrierDealPromoShown, 0);
 }
 
 void DataPromoNotification::ShowOptionalMobileDataPromoNotification(
@@ -162,30 +164,12 @@ void DataPromoNotification::ShowOptionalMobileDataPromoNotification(
       return;
     }
 
-    gfx::Rect button_bounds = host->GetBoundsInScreen();
-    // StatusArea button Y position is usually -1, fix it so that
-    // Contains() method for screen bounds works correctly.
-    button_bounds.set_y(button_bounds.y() + 1);
-    gfx::Rect screen_bounds(chromeos::CalculateScreenBounds(gfx::Size()));
-
-    // Chrome window is initialized in visible state off screen and then is
-    // moved into visible screen area. Make sure that we're on screen
-    // so that bubble is shown correctly.
-    if (!screen_bounds.Contains(button_bounds)) {
-      // If we're not on screen yet, delay notification display.
-      // It may be shown earlier, on next NetworkLibrary callback processing.
-      if (!weak_ptr_factory_.HasWeakPtrs()) {
-        MessageLoop::current()->PostDelayedTask(FROM_HERE,
-            base::Bind(
-                &DataPromoNotification::ShowOptionalMobileDataPromoNotification,
-                weak_ptr_factory_.GetWeakPtr(),
-                cros,
-                host,
-                listener),
-            base::TimeDelta::FromMilliseconds(kPromoShowDelayMs));
-      }
+    const chromeos::CellularNetwork* cellular = cros->cellular_network();
+    DCHECK(cellular);
+    // If we do not know the technology type, do not show the notification yet.
+    // The next NetworkLibrary Manager update should trigger it.
+    if (cellular->network_technology() == NETWORK_TECHNOLOGY_UNKNOWN)
       return;
-    }
 
     string16 message = l10n_util::GetStringUTF16(IDS_3G_NOTIFICATION_MESSAGE);
     if (!deal_text.empty())
@@ -198,16 +182,19 @@ void DataPromoNotification::ShowOptionalMobileDataPromoNotification(
     else
       link_message_id = IDS_STATUSBAR_NETWORK_VIEW_ACCOUNT;
 
+    ash::NetworkObserver::NetworkType type =
+        (cellular->network_technology() == NETWORK_TECHNOLOGY_LTE ||
+         cellular->network_technology() == NETWORK_TECHNOLOGY_LTE_ADVANCED)
+        ? ash::NetworkObserver::NETWORK_CELLULAR_LTE
+        : ash::NetworkObserver::NETWORK_CELLULAR;
+
     std::vector<string16> links;
     links.push_back(l10n_util::GetStringUTF16(link_message_id));
     if (!deal_info_url_.empty())
       links.push_back(l10n_util::GetStringUTF16(IDS_LEARN_MORE));
-    if (ash::Shell::GetInstance()->system_tray()->network_observer()) {
-      ash::Shell::GetInstance()->system_tray()->network_observer()->
-          SetNetworkMessage(listener, ash::NetworkObserver::MESSAGE_DATA_PROMO,
-              string16(), message, links);
-    }
-
+    ash::Shell::GetInstance()->system_tray_notifier()->NotifySetNetworkMessage(
+        listener, ash::NetworkObserver::MESSAGE_DATA_PROMO,
+        type, string16(), message, links);
     check_for_promo_ = false;
     SetShow3gPromoNotification(false);
     if (carrier_deal_promo_pref != kNotificationCountPrefDefault)
@@ -216,11 +203,8 @@ void DataPromoNotification::ShowOptionalMobileDataPromoNotification(
 }
 
 void DataPromoNotification::CloseNotification() {
-  if (ash::Shell::GetInstance()->status_area_widget() &&
-      ash::Shell::GetInstance()->system_tray()->network_observer()) {
-    ash::Shell::GetInstance()->system_tray()->network_observer()->
-        ClearNetworkMessage(ash::NetworkObserver::MESSAGE_DATA_PROMO);
-  }
+  ash::Shell::GetInstance()->system_tray_notifier()->NotifyClearNetworkMessage(
+      ash::NetworkObserver::MESSAGE_DATA_PROMO);
 }
 
 }  // namespace chromeos

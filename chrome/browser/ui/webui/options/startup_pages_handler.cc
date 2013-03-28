@@ -6,14 +6,13 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/string_number_conversions.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/custom_home_pages_table_model.h"
 #include "chrome/browser/net/url_fixer_upper.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -90,7 +89,10 @@ void StartupPagesHandler::InitializeHandler() {
   startup_custom_pages_table_model_->SetObserver(this);
 
   pref_change_registrar_.Init(profile->GetPrefs());
-  pref_change_registrar_.Add(prefs::kURLsToRestoreOnStartup, this);
+  pref_change_registrar_.Add(
+      prefs::kURLsToRestoreOnStartup,
+      base::Bind(&StartupPagesHandler::UpdateStartupPages,
+                 base::Unretained(this)));
 
   autocomplete_controller_.reset(new AutocompleteController(profile, this,
       AutocompleteClassifier::kDefaultOmniboxProviders));
@@ -110,7 +112,7 @@ void StartupPagesHandler::OnModelChanged() {
     entry->SetString("url", urls[i].spec());
     entry->SetString("tooltip",
                      startup_custom_pages_table_model_->GetTooltip(i));
-    entry->SetString("modelIndex", base::IntToString(i));
+    entry->SetInteger("modelIndex", i);
     startup_pages.Append(entry);
   }
 
@@ -130,15 +132,6 @@ void StartupPagesHandler::OnItemsRemoved(int start, int length) {
   OnModelChanged();
 }
 
-void StartupPagesHandler::OnPreferenceChanged(PrefServiceBase* service,
-                                              const std::string& pref_name) {
-  if (pref_name == prefs::kURLsToRestoreOnStartup) {
-    UpdateStartupPages();
-  } else {
-    NOTREACHED();
-  }
-}
-
 void StartupPagesHandler::SetStartupPagesToCurrentPages(
     const ListValue* args) {
   startup_custom_pages_table_model_->SetToCurrentlyOpenPages();
@@ -146,11 +139,9 @@ void StartupPagesHandler::SetStartupPagesToCurrentPages(
 
 void StartupPagesHandler::RemoveStartupPages(const ListValue* args) {
   for (int i = args->GetSize() - 1; i >= 0; --i) {
-    std::string string_value;
-    CHECK(args->GetString(i, &string_value));
-
     int selected_index;
-    base::StringToInt(string_value, &selected_index);
+    CHECK(args->GetInteger(i, &selected_index));
+
     if (selected_index < 0 ||
         selected_index >= startup_custom_pages_table_model_->RowCount()) {
       NOTREACHED();
@@ -174,11 +165,9 @@ void StartupPagesHandler::AddStartupPage(const ListValue* args) {
 
 void StartupPagesHandler::EditStartupPage(const ListValue* args) {
   std::string url_string;
-  std::string index_string;
   int index;
   CHECK_EQ(args->GetSize(), 2U);
-  CHECK(args->GetString(0, &index_string));
-  CHECK(base::StringToInt(index_string, &index));
+  CHECK(args->GetInteger(0, &index));
   CHECK(args->GetString(1, &url_string));
 
   if (index < 0 || index > startup_custom_pages_table_model_->RowCount()) {
@@ -194,17 +183,9 @@ void StartupPagesHandler::EditStartupPage(const ListValue* args) {
 void StartupPagesHandler::DragDropStartupPage(const ListValue* args) {
   CHECK_EQ(args->GetSize(), 2U);
 
-  // TODO(dcheng): Due to http://crbug.com/122102, we can receive drag and drop
-  // events even if there are no entries in the model. Remove this check once
-  // that bug is fixed.
-  if (startup_custom_pages_table_model_->RowCount() == 0)
-    return;
-
-  std::string value;
   int to_index;
 
-  CHECK(args->GetString(0, &value));
-  base::StringToInt(value, &to_index);
+  CHECK(args->GetInteger(0, &to_index));
 
   const ListValue* selected;
   CHECK(args->GetList(1, &selected));
@@ -212,8 +193,7 @@ void StartupPagesHandler::DragDropStartupPage(const ListValue* args) {
   std::vector<int> index_list;
   for (size_t i = 0; i < selected->GetSize(); ++i) {
     int index;
-    CHECK(selected->GetString(i, &value));
-    base::StringToInt(value, &index);
+    CHECK(selected->GetInteger(i, &index));
     index_list.push_back(index);
   }
 
@@ -246,8 +226,9 @@ void StartupPagesHandler::RequestAutocompleteSuggestions(
   CHECK_EQ(args->GetSize(), 1U);
   CHECK(args->GetString(0, &input));
 
-  autocomplete_controller_->Start(input, string16(), true, false, false,
-                                  AutocompleteInput::ALL_MATCHES);
+  autocomplete_controller_->Start(AutocompleteInput(
+      input, string16::npos, string16(), GURL(), true,
+      false, false, AutocompleteInput::ALL_MATCHES));
 }
 
 void StartupPagesHandler::OnResultChanged(bool default_match_changed) {

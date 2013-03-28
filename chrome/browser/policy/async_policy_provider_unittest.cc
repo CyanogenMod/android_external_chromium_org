@@ -26,8 +26,10 @@ namespace {
 void SetPolicy(PolicyBundle* bundle,
                const std::string& name,
                const std::string& value) {
-  bundle->Get(POLICY_DOMAIN_CHROME, "")
-      .Set(name, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+  bundle->Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
+      .Set(name,
+           POLICY_LEVEL_MANDATORY,
+           POLICY_SCOPE_USER,
            base::Value::CreateStringValue(value));
 }
 
@@ -107,7 +109,7 @@ void AsyncPolicyProviderTest::SetUp() {
   // Verify that the initial load is done synchronously:
   EXPECT_TRUE(provider_->policies().Equals(initial_bundle_));
 
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(loader_);
 
   EXPECT_CALL(*loader_, LastModificationTime())
@@ -119,7 +121,7 @@ void AsyncPolicyProviderTest::TearDown() {
     provider_->Shutdown();
     provider_.reset();
   }
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 TEST_F(AsyncPolicyProviderTest, RefreshPolicies) {
@@ -131,7 +133,7 @@ TEST_F(AsyncPolicyProviderTest, RefreshPolicies) {
   provider_->AddObserver(&observer);
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(1);
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   // The refreshed policies are now provided.
   EXPECT_TRUE(provider_->policies().Equals(refreshed_bundle));
   provider_->RemoveObserver(&observer);
@@ -155,7 +157,7 @@ TEST_F(AsyncPolicyProviderTest, RefreshPoliciesTwice) {
   Mock::VerifyAndClearExpectations(&observer);
 
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(1);
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   // The refreshed policies are now provided.
   EXPECT_TRUE(provider_->policies().Equals(refreshed_bundle));
   Mock::VerifyAndClearExpectations(&observer);
@@ -191,7 +193,7 @@ TEST_F(AsyncPolicyProviderTest, RefreshPoliciesDuringReload) {
   Mock::VerifyAndClearExpectations(&observer);
 
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(1);
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   // The refreshed policies are now provided, and the |reloaded_bundle| was
   // dropped.
   EXPECT_TRUE(provider_->policies().Equals(refreshed_bundle));
@@ -213,7 +215,7 @@ TEST_F(AsyncPolicyProviderTest, Shutdown) {
 
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(0);
   provider_->Shutdown();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(&observer);
 
   provider_->RemoveObserver(&observer);

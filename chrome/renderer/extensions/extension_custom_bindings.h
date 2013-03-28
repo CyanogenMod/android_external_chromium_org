@@ -13,17 +13,11 @@ class Dispatcher;
 // Implements custom bindings for the extension API.
 class ExtensionCustomBindings : public ChromeV8Extension {
  public:
-  explicit ExtensionCustomBindings(Dispatcher* dispatcher);
+  explicit ExtensionCustomBindings(Dispatcher* dispatcher,
+                                   v8::Handle<v8::Context> context);
 
  private:
-  static v8::Handle<v8::Value> GetExtensionViews(const v8::Arguments& args);
-
-  // Creates a new messaging channel to the given extension.
-  static v8::Handle<v8::Value> OpenChannelToExtension(
-      const v8::Arguments& args);
-
-  static v8::Handle<v8::Value> OpenChannelToNativeApp(
-      const v8::Arguments& args);
+  v8::Handle<v8::Value> GetExtensionViews(const v8::Arguments& args);
 };
 
 }  // namespace extensions

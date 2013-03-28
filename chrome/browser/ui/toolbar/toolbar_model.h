@@ -24,13 +24,9 @@ class ToolbarModel {
   // don't need two sets of security UI levels.  SECURITY_STYLE_AUTHENTICATED
   // needs to be refined into three levels: warning, standard, and EV.
   enum SecurityLevel {
-    NONE = 0,          // HTTP/no URL/user is editing
-    EV_SECURE,         // HTTPS with valid EV cert
-    SECURE,            // HTTPS (non-EV)
-    SECURITY_WARNING,  // HTTPS, but unable to check certificate revocation
-                       // status or with insecure content on the page
-    SECURITY_ERROR,    // Attempted HTTPS and failed, page not authenticated
-    NUM_SECURITY_LEVELS,
+#define DEFINE_TOOLBAR_MODEL_SECURITY_LEVEL(name,value)  name = value,
+#include "chrome/browser/ui/toolbar/toolbar_model_security_level_list.h"
+#undef DEFINE_TOOLBAR_MODEL_SECURITY_LEVEL
   };
 
   virtual ~ToolbarModel() {}
@@ -43,6 +39,13 @@ class ToolbarModel {
   //   extracted from search URLs for the user's default search engine and those
   //   will be displayed in place of the URL.
   virtual string16 GetText(bool display_search_urls_as_search_terms) const = 0;
+
+  // Some search URLs bundle a special "corpus" param that we can extract and
+  // display next to users' search terms in cases where we'd show the search
+  // terms instead of the URL anyway.  For example, a Google image search might
+  // show the corpus "Images:" plus a search string.  This is only used on
+  // mobile.
+  virtual string16 GetCorpusNameForMobile() const = 0;
 
   // Returns the URL of the current navigation entry.
   virtual GURL GetURL() const = 0;

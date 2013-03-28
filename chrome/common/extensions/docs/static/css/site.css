@@ -8,18 +8,10 @@
 }
 
 body {
-  color: #333;
-  font: 13px/22px 'Open Sans',arial,sans-serif;
-  font-weight: 400;
-  background-color: white;
+  font: 14px/22px 'Open Sans',arial,sans-serif;
   margin: auto;
   padding: 0;
-}
-
-p {
-  margin: 1em 0 0 0;
-  color: #767676;
-  font-size: 14px;
+  background-color: white;
 }
 
 p.note,
@@ -50,61 +42,18 @@ p.warning strong {
 
 a, a:link {
   text-decoration: none;
-  color: #39F;
+  color: #4787ed;
   font-weight: 600;
 }
 
+a:active,
+a:hover,
 a:visited {
   color: #236bb2;
 }
 
-a:active,
-a:hover {
-  color: #3bf;
-}
-
 #toc a {
   color: black;
-}
-
-ol, ul {
-  color: #767676;
-}
-
-#header {
-  margin: auto;
-  max-width: 1160px;
-  padding: 0 50px;
-  position: relative;
-  height: 60px;
-}
-
-#logo {
-  position: relative;
-  padding-top: 10px;
-  z-index: 2;
-}
-
-#logo img {
-  padding: 10px 0;
-}
-
-#cse {
-  width: 400px;
-  padding-top: 5px;
-  z-index: 1;
-  position: absolute;
-  right: 50px;
-}
-
-/*
- * Without a border, the results from the custom search are hard to tell apart
- * from the rest of the content
- */
-.gsc-resultsbox-visible {
-  border-left: 1px solid #E9E9E9;
-  border-right: 1px solid #E9E9E9;
-  border-bottom: 1px solid #E9E9E9;
 }
 
 li {
@@ -180,22 +129,11 @@ dd {
   font-weight: normal;
 }
 
-.displayModeWarning {
-  background-color: #FF7735;
-  color: white;
-  font-weight: bold;
-  padding: 6px 8px;
-}
-
-span.displayModeWarning {
-  margin-right: 2px;
-}
-
 #gc-container {
   margin: auto;
+  margin-top: 2em;
   max-width: 1160px;
   padding: 0 50px;
-  position: relative;
   height: auto;
 }
 
@@ -203,101 +141,173 @@ span.displayModeWarning {
   font-size: 1em;
   margin: auto;
   max-width: 1160px;
-  padding: 0;
   white-space: nowrap;
   background-color: white;
-  border-top: 1px solid #E5E5E5;
-  border-bottom: 1px solid #E5E5E5;
+  border-bottom: 1px solid #F5F5F5;
+  line-height: 50px;
+  padding: 0 7px;
 }
 
-#gc-topnav h1 {
-  font-size: 1.5em;
-  line-height: 1.3em;
-  font-weight: bold;
-  background-color: transparent;
-  border: 0;
-  margin: 0;
-  padding: 0 0 0 14px;
-  float: left;
-  border-top: 10px solid white;
+#gc-topnav * {
+  padding: 0;
+}
+
+#gc-topnav table {
+  border-spacing: 0;
 }
 
 #gc-topnav li {
   font-weight: 600;
-  height: 45px;
   text-transform: uppercase;
   white-space: nowrap;
   display: inline-block;
-  margin: 0;
-  padding: 0;
+  margin: 0 0 0 25px;
+}
+#gc-topnav li:first-child {
+  margin-left: 0;
 }
 
 #gc-topnav ul {
   font-size: 12px;
-  height: 45px;
-  text-align: right;
-  list-style: none;
   margin: 0;
 }
 
-#gc-topnav li a {
+#gc-topnav a {
   color: #333;
 }
-#gc-topnav li a:hover {
-  color: #39f;
+#gc-topnav a:hover {
+  color: #4787ed;
 }
 
-#gc-topnav div {
-  border-top: 10px solid white;
-  margin: 0 30px;
+#gc-topnav #chrome-logo {
+  width: 100%;
+  font-size: 1.7em;
+}
+
+#gc-topnav #chrome-logo a {
+  font-weight: 400;
+  color: #77787a;
+  margin: 0;
+}
+
+#gc-topnav #chrome-logo img {
+  vertical-align: middle;
+}
+
+#gc-topnav a,
+#gc-topnav button {
+  background: none;
+  border: none;
+  color: #333;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  font-style: inherit;
+  font-weight: bold;
+  margin: 0; padding: 0;
+  outline: none;
+}
+#gc-topnav a:focus,
+#gc-topnav button:focus {
+  outline: 1px dotted;
+}
+
+#branch-chooser {
+  display: inline;
   position: relative;
-  height: 29px;
+  font-weight: bold;
+}
+#branch-chooser .stable {
+  color: #0d68ae;
+}
+#branch-chooser .beta {
+  color: #409544;
+}
+#branch-chooser .dev {
+  color: #dba30d;
+}
+#branch-chooser .trunk {
+  color: #e02629;
 }
 
-.pageData {
+#branch-chooser-popup {
+  /* Make it appear to be an extension of the header. */
+  background-color: white;
+  border: 1px solid #F5F5F5;
+  border-top: none;
+  z-index: 4;
+  /* Ready to be shown by popup.js. */
+  position: absolute;
   display: none;
+  /* Align with the button, which have padding:6px. */
+  left: -6px;
+}
+
+#branch-chooser-popup button {
+  display: block;
+  padding: 6px;
+  width: 100%;
+  text-align: left;
+}
+#branch-chooser-popup button:hover {
+  background-color: #F5F5F5;
+}
+
+/* Make it look like other Google buttons. */
+#send-feedback {
+  background-color: #f5f5f5;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-right: none; border-bottom: none;
+  text-transform: uppercase;
+  border-radius: 2px 0 0 0;
+    -webkit-border-radius: 2px 0 0 0;
+    -moz-border-radius: 2px 0 0 0;
+  white-space: nowrap;
+  text-align: center;
+  height: 27px;
+  padding: 5px 12px;
+  margin: 0;
+  position: fixed; right: 0; bottom: 0;
+  z-index: 5;
+}
+#send-feedback:hover {
+  border-color: #c6c6c6;
+  box-shadow: 0 -1px 1px rgba(0,0,0,0.1);
+    -webkit-box-shadow: 0 -1px 1px rgba(0,0,0,0.1);
+    -moz-box-shadow: 0 -1px 1px rgba(0,0,0,0.1);
+}
+#send-feedback:active {
+  background-color: #f1f1f1;
+  box-shadow: inset 0 0px 2px rgba(0,0,0,0.2);
+    -webkit-box-shadow: inset 0 0px 2px rgba(0,0,0,0.2);
+    -moz-box-shadow: inset 0 0px 2px rgba(0,0,0,0.2);
 }
 
 #gc-pagecontent {
-  margin: 30px 0 100px 250px;
+  margin: 0 0 100px 250px;
+}
+
+#gc-pagecontent h1 {
+  line-height: 130%;
+  font-size: 320%;
+  font-weight: normal;
 }
 
 #gc-pagecontent h2 {
-  border-top: 1px solid #CCC;
   font-size: 170%;
   font-weight: normal;
-  margin: 2em 0 0 0;
-  padding: 40px 0;
 }
 
 #gc-pagecontent h3 {
   font-size: 130%;
-  font-weight: bold;
-  margin: 1.5em 0 0 0;
-  top: 0em;
 }
 
 #gc-pagecontent h4 {
   font-size: 110%;
-  margin: .7em 0 0 0;
-  position: relative;
-  top: .4em;
 }
 
 #gc-pagecontent h5 {
   font-size: 100%;
-  margin: 0;
-}
-
-#gc-pagecontent h1.page_title,
-#gc-pagecontent h2.page_title {
-  line-height: 130%;
-  font-size: 320%;
-  margin: 0;
-  padding: .8em 0 0;
-  border: none;
-  background: none;
-  font-weight: normal;
 }
 
 #gc-pagecontent table {
@@ -310,6 +320,54 @@ span.displayModeWarning {
 #gc-pagecontent td {
   padding: 6px 12px;
   border: 1px solid #36C;
+  vertical-align: top;
+}
+
+/* Provide an intro table for api reference docs. */
+#gc-pagecontent table.intro
+#gc-pagecontent table.intro th,
+#gc-pagecontent table.intro td {
+  border-collapse: separate;
+  border-style: none;
+}
+
+#gc-pagecontent table.intro {
+  padding: 0;
+}
+
+#gc-pagecontent table.intro th {
+  border-style: none;
+  padding: 6px 12px;
+  text-align: left;
+}
+
+#gc-pagecontent table.intro td {
+  border-bottom: 1px solid #F5F5F5;
+  padding: 6px 12px;
+  vertical-align: top;
+}
+
+/* Provide an intro table for api reference docs. */
+#gc-pagecontent table.intro
+#gc-pagecontent table.intro th,
+#gc-pagecontent table.intro td {
+  border-collapse: separate;
+  border-style: none;
+}
+
+#gc-pagecontent table.intro {
+  padding: 0;
+}
+
+#gc-pagecontent table.intro th {
+  border-style: none;
+  padding: 6px 12px;
+  text-align: left;
+}
+
+#gc-pagecontent table.intro td {
+  border-bottom: 1px solid #F5F5F5;
+  padding: 6px 12px;
   vertical-align: top;
 }
 
@@ -329,47 +387,51 @@ span.displayModeWarning {
 }
 
 #gc-footer {
-  clear: both;
   margin: auto;
-  color: #666;
   max-width: 1160px;
-  padding: 0 50px;
+  padding: 0 150px 0 400px;
 }
 
 #gc-footer .text {
   text-align: center;
+  color: #666;
   padding: 30px 0;
-  margin: 0 0 0 0;
+  margin: 0;
 }
 
 #gc-sidebar {
-  margin: 0;
-  margin-top: 2.5em;
   width: 180px;
   float: left;
+}
+
+/* scroll.js adds and removes the floating class depending on the scroll
+ * position. */
+#gc-sidebar.floating {
+  position: fixed;
+  top: 0; bottom: 0;
+  overflow: auto;
 }
 
 /* Sidebar link/button styling. */
 #gc-sidebar span,
 #gc-sidebar a {
-  color: #767676;
+  color: black;
   display: block;
   position: relative;
   font-weight: normal;
 }
-#gc-sidebar a:visited {
-  color: #767676;
-}
 #gc-sidebar a:hover,
 #gc-sidebar a.selected {
-  color: #39F;
-}
-#gc-sidebar a.button {
-  color: #767676;
+  color: #0d68ae;
 }
 #gc-sidebar span.level2,
 #gc-sidebar a.level2 {
   font-weight: bold;
+}
+#gc-sidebar a.button,
+#gc-sidebar .level3,
+#gc-sidebar .level4 {
+  color: #444;
 }
 
 #gc-sidebar .toggleIndicator {
@@ -388,6 +450,7 @@ span.displayModeWarning {
 #gc-sidebar ul {
   list-style: none;
   padding: 0;
+  margin: 0;
 }
 #gc-sidebar ul.level2 {
   margin-left: 10px;
@@ -399,21 +462,17 @@ span.displayModeWarning {
   list-style: url(../images/sidearrow.png);
 }
 
-/* Sidebar list element styling. */
 #gc-sidebar li {
   margin: 0;
   padding: 8px 0;
   line-height: 120%;
 }
-#gc-sidebar li.level2 {
-  border-top: 1px solid #E5E5E5;
-}
 
-#gc-toc div.line {
-  border-top: thin solid #FAFAFA;
-  height: 1px;
-  margin: 1.3em 1em 0 0;
-  padding: 0;
+#gc-sidebar li.level2 {
+  border-top: 1px solid #F5F5F5;
+}
+#gc-sidebar li.level2:first-child {
+  border-top: none;
 }
 
 #toc {
@@ -435,7 +494,9 @@ span.displayModeWarning {
 #toc * {
   padding: 0;
   list-style: none;
-  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #toc h2 {
@@ -460,7 +521,11 @@ span.displayModeWarning {
 }
 
 #toc ol li ol li {
-  margin: .5em 0 .5em 1em;
+  margin: .5em 0 0 1em;
+}
+
+#toc .api-reference {
+  border-top: 1px solid #e5e5e5;
 }
 
 .filtered_item {
@@ -475,42 +540,12 @@ span.displayModeWarning {
   display: none;
 }
 
-input.gsc-search-button.gsc-search-button-v2 {
-  padding: 8px 30px;
-  margin-top: 5px;
-}
-
-div.gsc-control-cse {
-  margin: 0;
-  padding: 0;
-  position: relative;
-  z-index: 2;
-}
-
-td.gsc-input {
-  padding: 0 0;
-}
-
-div.gsc-input-box {
-  height: 30px;
-  width: 250px;
-  float: right;
-}
-
 #known_issues {
   background: #F5F5F5;
   padding-top: 1px;
   padding-bottom: 16px;
   padding-right: 16px;
   padding-left: 16px;
-}
-
-#search_results td {
-  border: none;
-}
-
-#search_results {
-  float: left;
 }
 
 /* List with largeish images floated to the right. */

@@ -9,12 +9,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/autocomplete/autocomplete_log.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -24,7 +24,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -42,28 +41,24 @@
 using content::NavigationController;
 using content::NavigationEntry;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(OmniboxSearchHint)
-
-// The URLs of search engines for which we want to trigger the infobar.
-const char* const kSearchEngineURLs[] = {
-    "http://www.google.com/",
-    "http://www.yahoo.com/",
-    "http://www.bing.com/",
-    "http://www.altavista.com/",
-    "http://www.ask.com/",
-    "http://www.wolframalpha.com/",
-};
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(OmniboxSearchHint);
 
 
-// HintInfoBar ----------------------------------------------------------------
+// HintInfoBarDelegate ---------------------------------------------------------
 
-class HintInfoBar : public ConfirmInfoBarDelegate {
+class HintInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  HintInfoBar(OmniboxSearchHint* omnibox_hint,
-              InfoBarTabHelper* infobar_tab_helper);
+  // If the active entry for |web_contents| is a navigation to the user's
+  // default search engine, and the engine is on a small whitelist, creates a
+  // "you can search from the omnibox" hint delegate and adds it to the
+  // InfoBarService for |web_contents|.
+  static void Create(content::WebContents* web_contents,
+                     OmniboxSearchHint* omnibox_hint);
 
  private:
-  virtual ~HintInfoBar();
+  HintInfoBarDelegate(OmniboxSearchHint* omnibox_hint,
+                      InfoBarService* infobar_service);
+  virtual ~HintInfoBarDelegate();
 
   void AllowExpiry() { should_expire_ = true; }
 
@@ -88,14 +83,56 @@ class HintInfoBar : public ConfirmInfoBarDelegate {
   bool should_expire_;
 
   // Used to delay the expiration of the info-bar.
-  base::WeakPtrFactory<HintInfoBar> weak_factory_;
+  base::WeakPtrFactory<HintInfoBarDelegate> weak_factory_;
 
-  DISALLOW_COPY_AND_ASSIGN(HintInfoBar);
+  DISALLOW_COPY_AND_ASSIGN(HintInfoBarDelegate);
 };
 
-HintInfoBar::HintInfoBar(OmniboxSearchHint* omnibox_hint,
-                         InfoBarTabHelper* infobar_tab_helper)
-    : ConfirmInfoBarDelegate(infobar_tab_helper),
+// static
+void HintInfoBarDelegate::Create(content::WebContents* web_contents,
+                                 OmniboxSearchHint* omnibox_hint) {
+  // The URLs of search engines for which we want to trigger the infobar.
+  const char* const kSearchEngineURLs[] = {
+      "http://www.google.com/",
+      "http://www.yahoo.com/",
+      "http://www.bing.com/",
+      "http://www.altavista.com/",
+      "http://www.ask.com/",
+      "http://www.wolframalpha.com/",
+  };
+  CR_DEFINE_STATIC_LOCAL(std::set<std::string>, search_engine_urls, ());
+  if (search_engine_urls.empty()) {
+    for (size_t i = 0; i < arraysize(kSearchEngineURLs); ++i)
+      search_engine_urls.insert(kSearchEngineURLs[i]);
+  }
+
+  content::NavigationEntry* entry =
+      web_contents->GetController().GetActiveEntry();
+  if (search_engine_urls.find(entry->GetURL().spec()) ==
+      search_engine_urls.end()) {
+    // The search engine is not in our white-list, bail.
+    return;
+  }
+
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  const TemplateURL* const default_provider =
+      TemplateURLServiceFactory::GetForProfile(profile)->
+          GetDefaultSearchProvider();
+  if (!default_provider)
+    return;
+
+  if (default_provider->url_ref().GetHost() == entry->GetURL().host()) {
+    InfoBarService* infobar_service =
+        InfoBarService::FromWebContents(web_contents);
+    infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
+        new HintInfoBarDelegate(omnibox_hint, infobar_service)));
+  }
+}
+
+HintInfoBarDelegate::HintInfoBarDelegate(OmniboxSearchHint* omnibox_hint,
+                                         InfoBarService* infobar_service)
+    : ConfirmInfoBarDelegate(infobar_service),
       omnibox_hint_(omnibox_hint),
       action_taken_(false),
       should_expire_(false),
@@ -104,46 +141,46 @@ HintInfoBar::HintInfoBar(OmniboxSearchHint* omnibox_hint,
   // on the next navigation after that.
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&HintInfoBar::AllowExpiry, weak_factory_.GetWeakPtr()),
+      base::Bind(&HintInfoBarDelegate::AllowExpiry, weak_factory_.GetWeakPtr()),
       base::TimeDelta::FromSeconds(8));
 }
 
-HintInfoBar::~HintInfoBar() {
+HintInfoBarDelegate::~HintInfoBarDelegate() {
   if (!action_taken_)
     UMA_HISTOGRAM_COUNTS("OmniboxSearchHint.Ignored", 1);
 }
 
-void HintInfoBar::InfoBarDismissed() {
+void HintInfoBarDelegate::InfoBarDismissed() {
   action_taken_ = true;
   UMA_HISTOGRAM_COUNTS("OmniboxSearchHint.Closed", 1);
   // User closed the infobar, let's not bug him again with this in the future.
   omnibox_hint_->DisableHint();
 }
 
-gfx::Image* HintInfoBar::GetIcon() const {
+gfx::Image* HintInfoBarDelegate::GetIcon() const {
   return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
      IDR_INFOBAR_QUESTION_MARK);
 }
 
-InfoBarDelegate::Type HintInfoBar::GetInfoBarType() const {
+InfoBarDelegate::Type HintInfoBarDelegate::GetInfoBarType() const {
   return PAGE_ACTION_TYPE;
 }
 
-string16 HintInfoBar::GetMessageText() const {
+string16 HintInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_OMNIBOX_SEARCH_HINT_INFOBAR_TEXT);
 }
 
-int HintInfoBar::GetButtons() const {
+int HintInfoBarDelegate::GetButtons() const {
   return BUTTON_OK;
 }
 
-string16 HintInfoBar::GetButtonLabel(InfoBarButton button) const {
+string16 HintInfoBarDelegate::GetButtonLabel(InfoBarButton button) const {
   DCHECK_EQ(BUTTON_OK, button);
   return l10n_util::GetStringUTF16(
       IDS_OMNIBOX_SEARCH_HINT_INFOBAR_BUTTON_LABEL);
 }
 
-bool HintInfoBar::Accept() {
+bool HintInfoBarDelegate::Accept() {
   action_taken_ = true;
   UMA_HISTOGRAM_COUNTS("OmniboxSearchHint.ShowMe", 1);
   omnibox_hint_->DisableHint();
@@ -151,7 +188,7 @@ bool HintInfoBar::Accept() {
   return true;
 }
 
-bool HintInfoBar::ShouldExpireInternal(
+bool HintInfoBarDelegate::ShouldExpireInternal(
     const content::LoadCommittedDetails& details) const {
   return should_expire_;
 }
@@ -166,9 +203,6 @@ OmniboxSearchHint::OmniboxSearchHint(content::WebContents* web_contents)
       this,
       content::NOTIFICATION_NAV_ENTRY_COMMITTED,
       content::Source<NavigationController>(controller));
-  // Fill the search_engine_urls_ map, used for faster look-up (overkill?).
-  for (size_t i = 0; i < arraysize(kSearchEngineURLs); ++i)
-    search_engine_urls_[kSearchEngineURLs[i]] = 1;
 
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
@@ -185,23 +219,7 @@ void OmniboxSearchHint::Observe(int type,
                                 const content::NotificationSource& source,
                                 const content::NotificationDetails& details) {
   if (type == content::NOTIFICATION_NAV_ENTRY_COMMITTED) {
-    content::NavigationEntry* entry =
-        web_contents_->GetController().GetActiveEntry();
-    if (search_engine_urls_.find(entry->GetURL().spec()) ==
-        search_engine_urls_.end()) {
-      // The search engine is not in our white-list, bail.
-      return;
-    }
-    Profile* profile =
-        Profile::FromBrowserContext(web_contents_->GetBrowserContext());
-    const TemplateURL* const default_provider =
-        TemplateURLServiceFactory::GetForProfile(profile)->
-            GetDefaultSearchProvider();
-    if (!default_provider)
-      return;
-
-    if (default_provider->url_ref().GetHost() == entry->GetURL().host())
-      ShowInfoBar();
+    HintInfoBarDelegate::Create(web_contents_, this);
   } else if (type == chrome::NOTIFICATION_OMNIBOX_OPENED_URL) {
     AutocompleteLog* log = content::Details<AutocompleteLog>(details).ptr();
     AutocompleteMatch::Type type =
@@ -214,14 +232,8 @@ void OmniboxSearchHint::Observe(int type,
   }
 }
 
-void OmniboxSearchHint::ShowInfoBar() {
-  InfoBarTabHelper* infobar_tab_helper =
-      InfoBarTabHelper::FromWebContents(web_contents_);
-  infobar_tab_helper->AddInfoBar(new HintInfoBar(this, infobar_tab_helper));
-}
-
 void OmniboxSearchHint::ShowEnteringQuery() {
-  LocationBar* location_bar = browser::FindBrowserWithWebContents(
+  LocationBar* location_bar = chrome::FindBrowserWithWebContents(
       web_contents_)->window()->GetLocationBar();
   OmniboxView* omnibox_view = location_bar->GetLocationEntry();
   location_bar->FocusLocation(true);

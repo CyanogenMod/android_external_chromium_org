@@ -4,10 +4,11 @@
 
 #include "chrome/browser/chromeos/ui/idle_logout_dialog_view.h"
 
+#include "ash/shell.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
-#include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -15,6 +16,7 @@
 #include "chromeos/dbus/session_manager_client.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
+#include "ui/aura/root_window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/label.h"
@@ -91,10 +93,6 @@ string16 IdleLogoutDialogView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_IDLE_LOGOUT_TITLE);
 }
 
-views::View* IdleLogoutDialogView::GetContentsView() {
-  return this;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // IdleLogoutDialog private methods
 IdleLogoutDialogView::IdleLogoutDialogView()
@@ -151,7 +149,8 @@ void IdleLogoutDialogView::Show() {
 
   UpdateCountdown();
 
-  views::Widget::CreateWindow(this);
+  views::Widget::CreateWindowWithContext(this,
+                                         ash::Shell::GetPrimaryRootWindow());
   GetWidget()->SetAlwaysOnTop(true);
   GetWidget()->Show();
 

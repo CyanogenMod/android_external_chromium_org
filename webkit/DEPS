@@ -30,6 +30,7 @@ include_rules = [
   "+gpu/command_buffer/client",
   "+gpu/command_buffer/common",
   "+gpu/command_buffer/service",
+  "+gpu/GLES2",
   "+third_party/khronos/GLES2",
 
   # For shared USB keycode conversion tables used by ppapi plugin code.
@@ -39,9 +40,11 @@ include_rules = [
   "+crypto",
   "+net/base",
   "+net/cookies",
+  "+net/dns",
   "+net/ftp",
   "+net/http",
   "+net/proxy",
+  "+net/ssl",
   "+net/socket",
   "+net/socket_stream",
   "+net/test",

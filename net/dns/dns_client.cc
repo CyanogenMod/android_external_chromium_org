@@ -10,6 +10,7 @@
 #include "net/dns/address_sorter.h"
 #include "net/dns/dns_config_service.h"
 #include "net/dns/dns_session.h"
+#include "net/dns/dns_socket_pool.h"
 #include "net/dns/dns_transaction.h"
 #include "net/socket/client_socket_factory.h"
 
@@ -27,8 +28,12 @@ class DnsClientImpl : public DnsClient {
     factory_.reset();
     session_ = NULL;
     if (config.IsValid()) {
+      ClientSocketFactory* factory = ClientSocketFactory::GetDefaultFactory();
+      scoped_ptr<DnsSocketPool> socket_pool(
+          config.randomize_ports ? DnsSocketPool::CreateDefault(factory)
+                                 : DnsSocketPool::CreateNull(factory));
       session_ = new DnsSession(config,
-                                ClientSocketFactory::GetDefaultFactory(),
+                                socket_pool.Pass(),
                                 base::Bind(&base::RandInt),
                                 net_log_);
       factory_ = DnsTransactionFactory::CreateFactory(session_);

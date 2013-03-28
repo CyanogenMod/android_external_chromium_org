@@ -4,11 +4,12 @@
 
 #include "chrome/renderer/extensions/app_runtime_custom_bindings.h"
 
-#include "base/string_number_conversions.h"
+#include "base/bind.h"
+#include "base/strings/string_number_conversions.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBlob.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSerializedScriptValue.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebSerializedScriptValue.h"
 
 using WebKit::WebBlob;
 using WebKit::WebSerializedScriptValue;
@@ -55,11 +56,12 @@ v8::Handle<v8::Value> CreateBlob(const v8::Arguments &args) {
 
 namespace extensions {
 
-AppRuntimeCustomBindings::AppRuntimeCustomBindings()
-    : ChromeV8Extension(NULL) {
-  RouteStaticFunction("DeserializeString", &DeserializeString);
-  RouteStaticFunction("SerializeToString", &SerializeToString);
-  RouteStaticFunction("CreateBlob", &CreateBlob);
+AppRuntimeCustomBindings::AppRuntimeCustomBindings(
+    Dispatcher* dispatcher,
+    v8::Handle<v8::Context> context) : ChromeV8Extension(dispatcher, context) {
+  RouteFunction("DeserializeString", base::Bind(&DeserializeString));
+  RouteFunction("SerializeToString", base::Bind(&SerializeToString));
+  RouteFunction("CreateBlob", base::Bind(&CreateBlob));
 }
 
 }  // namespace extensions

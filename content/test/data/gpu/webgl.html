@@ -6,6 +6,8 @@ var w, h;
 var gl;
 var extension;
 
+var alreadySetAutomationId = false;
+
 function testHorizontalBands() {
   gl.enable(gl.SCISSOR_TEST);
 
@@ -29,15 +31,18 @@ function testHorizontalBands() {
 
 function testContextLost(e) {
   e.preventDefault();
-  setTimeout(function() {
-    extension.restoreContext();
-  }, 0);
+  if (extension) {
+    setTimeout(function() {
+      extension.restoreContext();
+      extension = null;
+    }, 0);
+  }
 }
 
 function testContextRestored() {
   gl = canvas.getContext("experimental-webgl");
   if (!gl || gl.isContextLost()) {
-    document.title = "FAILED: could not get recovered context";
+    // Might just be blocked because of infobar.
     return;
   }
   gl.clearColor(0, 0, 1, 1);
@@ -46,7 +51,8 @@ function testContextRestored() {
   var a = new Uint8Array(w * h * 4);
   gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, a);
 
-  window.domAutomationController.setAutomationId(1);
+  if (!alreadySetAutomationId)
+    window.domAutomationController.setAutomationId(1);
   if (a[0] == 0 && a[1] == 0 && a[2] == 255)
     window.domAutomationController.send("SUCCESS");
   else
@@ -66,6 +72,13 @@ function contextLostTest(kind)
       // nothing -- the browser test navigates to about:gpucrash and kills
       // the GPU process.
       break;
+    case "kill_after_notification":
+      // The browser test waits for notification from the page that it
+      // has been loaded before navigating to about:gpucrash.
+      window.domAutomationController.setAutomationId(1);
+      alreadySetAutomationId = true;
+      window.domAutomationController.send("LOADED");
+      break;
   }
 }
 
@@ -73,31 +86,21 @@ function onLoad() {
   canvas = document.getElementById("canvas1");
   w = canvas.width;
   h = canvas.height;
-  if (!canvas) {
-    document.title = "FAILED: canvas element not found";
+  if (!canvas)
     return;
-  }
   canvas.addEventListener("webglcontextlost", testContextLost, false);
   canvas.addEventListener("webglcontextrestored", testContextRestored, false);
 
   gl = canvas.getContext("experimental-webgl");
-  if (!gl) {
-    document.title = "FAILED: could not get webgl context for canvas";
+  if (!gl)
     return;
-  }
 
-  if (!testHorizontalBands()) {
-    document.title = "FAILED: did not render correctly";
+  if (!testHorizontalBands())
     return;
-  }
 
   var query = /query=(.*)/.exec(window.location.href);
-  if (query) {
+  if (query)
     contextLostTest(query[1]);
-  } else {
-    var renderer = gl.getParameter(gl.RENDERER);
-    document.title = "SUCCESS: " + renderer;
-  }
 }
 </script>
 </head>

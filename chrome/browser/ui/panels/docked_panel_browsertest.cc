@@ -4,10 +4,10 @@
 
 #include "base/message_loop.h"
 #include "chrome/browser/ui/panels/base_panel_browser_test.h"
-#include "chrome/browser/ui/panels/docked_panel_strip.h"
+#include "chrome/browser/ui/panels/docked_panel_collection.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
-#include "chrome/browser/ui/panels/test_panel_strip_squeeze_observer.h"
+#include "chrome/browser/ui/panels/test_panel_collection_squeeze_observer.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
@@ -17,24 +17,30 @@ class DockedPanelBrowserTest : public BasePanelBrowserTest {
   virtual void SetUpOnMainThread() OVERRIDE {
     BasePanelBrowserTest::SetUpOnMainThread();
 
-    // All the tests here assume using mocked 800x600 screen area for the
+    // All the tests here assume using mocked 800x600 display area for the
     // primary monitor. Do the check now.
-    gfx::Rect primary_screen_area = PanelManager::GetInstance()->
-        display_settings_provider()->GetPrimaryScreenArea();
-    DCHECK(primary_screen_area.width() == 800);
-    DCHECK(primary_screen_area.height() == 600);
+    gfx::Rect primary_display_area = PanelManager::GetInstance()->
+        display_settings_provider()->GetPrimaryDisplayArea();
+    DCHECK(primary_display_area.width() == 800);
+    DCHECK(primary_display_area.height() == 600);
   }
 };
 
-IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, SqueezePanelsInDock) {
+// http://crbug.com/143247
+#if !defined(OS_WIN)
+#define MAYBE_SqueezePanelsInDock DISABLED_SqueezePanelsInDock
+#else
+#define MAYBE_SqueezePanelsInDock SqueezePanelsInDock
+#endif
+IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, MAYBE_SqueezePanelsInDock) {
   PanelManager* panel_manager = PanelManager::GetInstance();
-  DockedPanelStrip* docked_strip = panel_manager->docked_strip();
+  DockedPanelCollection* docked_collection = panel_manager->docked_collection();
 
   // Create some docked panels.
   Panel* panel1 = CreateDockedPanel("1", gfx::Rect(0, 0, 200, 100));
   Panel* panel2 = CreateDockedPanel("2", gfx::Rect(0, 0, 200, 100));
   Panel* panel3 = CreateDockedPanel("3", gfx::Rect(0, 0, 200, 100));
-  ASSERT_EQ(3, docked_strip->num_panels());
+  ASSERT_EQ(3, docked_collection->num_panels());
 
   // Check that nothing has been squeezed so far.
   EXPECT_EQ(panel1->GetBounds().width(), panel1->GetRestoredBounds().width());
@@ -48,12 +54,12 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, SqueezePanelsInDock) {
   Panel* panel7 = CreateDockedPanel("7", gfx::Rect(0, 0, 200, 100));
 
   // Wait for active states to settle.
-  PanelStripSqueezeObserver panel7_settled(docked_strip, panel7);
+  PanelCollectionSqueezeObserver panel7_settled(docked_collection, panel7);
   panel7_settled.Wait();
 
   // The active panel should be at full width.
   EXPECT_EQ(panel7->GetBounds().width(), panel7->GetRestoredBounds().width());
-  EXPECT_GT(panel7->GetBounds().x(), docked_strip->display_area().x());
+  EXPECT_GT(panel7->GetBounds().x(), docked_collection->work_area().x());
 
   // The rest of them should be at reduced width.
   EXPECT_LT(panel1->GetBounds().width(), panel1->GetRestoredBounds().width());
@@ -68,7 +74,7 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, SqueezePanelsInDock) {
   WaitForPanelActiveState(panel2, SHOW_AS_ACTIVE);
 
   // Wait for active states to settle.
-  PanelStripSqueezeObserver panel2_settled(docked_strip, panel2);
+  PanelCollectionSqueezeObserver panel2_settled(docked_collection, panel2);
   panel2_settled.Wait();
 
   // The active panel should be at full width.
@@ -85,9 +91,15 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, SqueezePanelsInDock) {
   panel_manager->CloseAll();
 }
 
-IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, SqueezeAndThenSomeMore) {
+// http://crbug.com/143247
+#if !defined(OS_WIN)
+#define MAYBE_SqueezeAndThenSomeMore DISABLED_SqueezeAndThenSomeMore
+#else
+#define MAYBE_SqueezeAndThenSomeMore SqueezeAndThenSomeMore
+#endif
+IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, MAYBE_SqueezeAndThenSomeMore) {
   PanelManager* panel_manager = PanelManager::GetInstance();
-  DockedPanelStrip* docked_strip = panel_manager->docked_strip();
+  DockedPanelCollection* docked_collection = panel_manager->docked_collection();
 
   // Create enough docked panels to get into squeezing.
   Panel* panel1 = CreateDockedPanel("1", gfx::Rect(0, 0, 200, 100));
@@ -98,7 +110,7 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, SqueezeAndThenSomeMore) {
   Panel* panel6 = CreateDockedPanel("6", gfx::Rect(0, 0, 200, 100));
 
   // Wait for active states to settle.
-  PanelStripSqueezeObserver panel6_settled(docked_strip, panel6);
+  PanelCollectionSqueezeObserver panel6_settled(docked_collection, panel6);
   panel6_settled.Wait();
 
   // Record current widths of some panels.
@@ -118,7 +130,7 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, SqueezeAndThenSomeMore) {
   Panel* panel7 = CreateDockedPanel("7", gfx::Rect(0, 0, 200, 100));
 
   // Wait for active states to settle.
-  PanelStripSqueezeObserver panel7_settled(docked_strip, panel7);
+  PanelCollectionSqueezeObserver panel7_settled(docked_collection, panel7);
   panel7_settled.Wait();
 
   // The active panel should be at full width.
@@ -134,9 +146,15 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, SqueezeAndThenSomeMore) {
   panel_manager->CloseAll();
 }
 
-IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, MinimizeSqueezedActive) {
+// http://crbug.com/143247
+#if !defined(OS_WIN)
+#define MAYBE_MinimizeSqueezedActive DISABLED_MinimizeSqueezedActive
+#else
+#define MAYBE_MinimizeSqueezedActive MinimizeSqueezedActive
+#endif
+IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, MAYBE_MinimizeSqueezedActive) {
   PanelManager* panel_manager = PanelManager::GetInstance();
-  DockedPanelStrip* docked_strip = panel_manager->docked_strip();
+  DockedPanelCollection* docked_collection = panel_manager->docked_collection();
 
   // Create enough docked panels to get into squeezing.
   Panel* panel1 = CreateDockedPanel("1", gfx::Rect(0, 0, 200, 100));
@@ -148,7 +166,7 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, MinimizeSqueezedActive) {
   Panel* panel7 = CreateDockedPanel("7", gfx::Rect(0, 0, 200, 100));
 
   // Wait for active states to settle.
-  PanelStripSqueezeObserver panel7_settled(docked_strip, panel7);
+  PanelCollectionSqueezeObserver panel7_settled(docked_collection, panel7);
   panel7_settled.Wait();
 
   // The active panel should be at full width.
@@ -171,7 +189,7 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, MinimizeSqueezedActive) {
 
   // Minimize the active panel. It should become inactive and shrink in width.
   content::WindowedNotificationObserver signal(
-      chrome::NOTIFICATION_PANEL_STRIP_UPDATED,
+      chrome::NOTIFICATION_PANEL_COLLECTION_UPDATED,
       content::NotificationService::AllSources());
   panel7->Minimize();
 
@@ -187,9 +205,15 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, MinimizeSqueezedActive) {
   panel_manager->CloseAll();
 }
 
-IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, CloseSqueezedPanels) {
+// http://crbug.com/143247
+#if !defined(OS_WIN)
+#define MAYBE_CloseSqueezedPanels DISABLED_CloseSqueezedPanels
+#else
+#define MAYBE_CloseSqueezedPanels CloseSqueezedPanels
+#endif
+IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, MAYBE_CloseSqueezedPanels) {
   PanelManager* panel_manager = PanelManager::GetInstance();
-  DockedPanelStrip* docked_strip = panel_manager->docked_strip();
+  DockedPanelCollection* docked_collection = panel_manager->docked_collection();
 
   // Create enough docked panels to get into squeezing.
   Panel* panel1 = CreateDockedPanel("1", gfx::Rect(0, 0, 200, 100));
@@ -201,7 +225,7 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, CloseSqueezedPanels) {
   Panel* panel7 = CreateDockedPanel("7", gfx::Rect(0, 0, 200, 100));
 
   // Wait for active states to settle.
-  PanelStripSqueezeObserver panel7_settled(docked_strip, panel7);
+  PanelCollectionSqueezeObserver panel7_settled(docked_collection, panel7);
   panel7_settled.Wait();
 
   // Record current widths of some panels.
@@ -226,7 +250,7 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, CloseSqueezedPanels) {
 
   // Close one panel.
   content::WindowedNotificationObserver signal(
-      chrome::NOTIFICATION_PANEL_STRIP_UPDATED,
+      chrome::NOTIFICATION_PANEL_COLLECTION_UPDATED,
       content::NotificationService::AllSources());
   CloseWindowAndWait(panel2);
   signal.Wait();
@@ -245,9 +269,9 @@ IN_PROC_BROWSER_TEST_F(DockedPanelBrowserTest, CloseSqueezedPanels) {
   CloseWindowAndWait(panel3);
   CloseWindowAndWait(panel5);
 
-  // Wait for strip update after last close.
+  // Wait for collection update after last close.
   content::WindowedNotificationObserver signal2(
-      chrome::NOTIFICATION_PANEL_STRIP_UPDATED,
+      chrome::NOTIFICATION_PANEL_COLLECTION_UPDATED,
       content::NotificationService::AllSources());
   CloseWindowAndWait(panel7);
   signal2.Wait();

@@ -10,20 +10,26 @@
 #include "base/compiler_specific.h"
 #include "base/observer_list.h"
 #include "base/time.h"
-#include "ui/aura/event_filter.h"
+#include "ui/base/events/event_handler.h"
 
 namespace ash {
 
 class UserActivityObserver;
 
 // Watches for input events and notifies observers that the user is active.
-class ASH_EXPORT UserActivityDetector : public aura::EventFilter {
+class ASH_EXPORT UserActivityDetector : public ui::EventHandler {
  public:
   // Minimum amount of time between notifications to observers.
-  static const double kNotifyIntervalMs;
+  static const int kNotifyIntervalMs;
+
+  // Amount of time that mouse events should be ignored after notification
+  // is received that displays' power states are being changed.
+  static const int kDisplayPowerChangeIgnoreMouseMs;
 
   UserActivityDetector();
   virtual ~UserActivityDetector();
+
+  base::TimeTicks last_activity_time() const { return last_activity_time_; }
 
   void set_now_for_test(base::TimeTicks now) { now_for_test_ = now; }
 
@@ -31,28 +37,29 @@ class ASH_EXPORT UserActivityDetector : public aura::EventFilter {
   void AddObserver(UserActivityObserver* observer);
   void RemoveObserver(UserActivityObserver* observer);
 
-  // Called when chrome has received a request to turn of all displays.
-  void OnAllOutputsTurnedOff();
+  // Called when displays are about to be turned on or off.
+  void OnDisplayPowerChanging();
 
-  // aura::EventFilter implementation.
-  virtual bool PreHandleKeyEvent(
-      aura::Window* target,
-      ui::KeyEvent* event) OVERRIDE;
-  virtual bool PreHandleMouseEvent(
-      aura::Window* target,
-      ui::MouseEvent* event) OVERRIDE;
-  virtual ui::EventResult PreHandleTouchEvent(
-      aura::Window* target,
-      ui::TouchEvent* event) OVERRIDE;
-  virtual ui::EventResult PreHandleGestureEvent(
-      aura::Window* target,
-      ui::GestureEvent* event) OVERRIDE;
+  // ui::EventHandler implementation.
+  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
+  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
  private:
-  // Notifies observers if enough time has passed since the last notification.
-  void MaybeNotify();
+  // Returns |now_for_test_| if set or base::TimeTicks::Now() otherwise.
+  base::TimeTicks GetCurrentTime() const;
+
+  // Updates |last_activity_time_|.  Additionally notifies observers and
+  // updates |last_observer_notification_time_| if enough time has passed
+  // since the last notification.
+  void HandleActivity();
 
   ObserverList<UserActivityObserver> observers_;
+
+  // Last time at which user activity was observed.
+  base::TimeTicks last_activity_time_;
 
   // Last time at which we notified observers that the user was active.
   base::TimeTicks last_observer_notification_time_;
@@ -61,10 +68,10 @@ class ASH_EXPORT UserActivityDetector : public aura::EventFilter {
   // simulate the passage of time.
   base::TimeTicks now_for_test_;
 
-  // When this is true, the next mouse event is ignored. This is to
-  // avoid mis-detecting a mouse enter event that occurs when turning
-  // off display as a user activity.
-  bool ignore_next_mouse_event_;
+  // If set, mouse events will be ignored until this time is reached. This
+  // is to avoid reporting mouse events that occur when displays are turned
+  // on or off as user activity.
+  base::TimeTicks honor_mouse_events_time_;
 
   DISALLOW_COPY_AND_ASSIGN(UserActivityDetector);
 };

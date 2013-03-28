@@ -7,11 +7,9 @@
 
 #include "base/callback_forward.h"
 
-class ConstrainedWindow;
-class TabContents;
-
 namespace content {
 class DownloadItem;
+class WebContents;
 }
 
 // Prompts the user for whether to Keep a dangerous DownloadItem using native
@@ -32,12 +30,15 @@ class DownloadDangerPrompt {
   // Return a new self-deleting DownloadDangerPrompt. |accepted| or |canceled|
   // will be run when the the respective action is invoked. |canceled| may also
   // be called when |item| is either no longer dangerous or no longer in
-  // progress, or if the tab corresponding to |tab_contents| is
+  // progress, or if the tab corresponding to |web_contents| is
   // closing. The returned DownloadDangerPrompt* is only used for testing. The
   // caller does not own the object and receive no guarantees about lifetime.
+  // If |show_context|, then the prompt message will contain some information
+  // about the download and its danger; otherwise it won't.
   static DownloadDangerPrompt* Create(
       content::DownloadItem* item,
-      TabContents* tab_contents,
+      content::WebContents* web_contents,
+      bool show_context,
       const base::Closure& accepted,
       const base::Closure& canceled);
 

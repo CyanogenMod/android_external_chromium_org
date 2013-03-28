@@ -15,19 +15,14 @@ namespace media {
 AudioFileReader::AudioFileReader(FFmpegURLProtocol* protocol)
     : codec_context_(NULL),
       stream_index_(0),
-      protocol_(protocol) {
+      protocol_(protocol),
+      channels_(0),
+      sample_rate_(0),
+      av_sample_format_(0) {
 }
 
 AudioFileReader::~AudioFileReader() {
   Close();
-}
-
-int AudioFileReader::channels() const {
-  return codec_context_->channels;
-}
-
-int AudioFileReader::sample_rate() const {
-  return codec_context_->sample_rate;
 }
 
 base::TimeDelta AudioFileReader::duration() const {
@@ -79,16 +74,41 @@ bool AudioFileReader::Open() {
 
   AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
   if (codec) {
+    // MP3 decodes to S16P which we don't support, tell it to use S16 instead.
+    if (codec_context_->sample_fmt == AV_SAMPLE_FMT_S16P)
+      codec_context_->request_sample_fmt = AV_SAMPLE_FMT_S16;
+
     if ((result = avcodec_open2(codec_context_, codec, NULL)) < 0) {
       DLOG(WARNING) << "AudioFileReader::Open() : could not open codec -"
-          << " result: " << result;
+                    << " result: " << result;
+      return false;
+    }
+
+    // Ensure avcodec_open2() respected our format request.
+    if (codec_context_->sample_fmt == AV_SAMPLE_FMT_S16P) {
+      DLOG(ERROR) << "AudioFileReader::Open() : unable to configure a"
+                  << " supported sample format - "
+                  << codec_context_->sample_fmt;
       return false;
     }
   } else {
     DLOG(WARNING) << "AudioFileReader::Open() : could not find codec -"
-        << " result: " << result;
+                  << " result: " << result;
     return false;
   }
+
+  // Verify the channel layout is supported by Chrome.  Acts as a sanity check
+  // against invalid files.  See http://crbug.com/171962
+  if (ChannelLayoutToChromeChannelLayout(
+          codec_context_->channel_layout, codec_context_->channels) ==
+      CHANNEL_LAYOUT_UNSUPPORTED) {
+    return false;
+  }
+
+  // Store initial values to guard against midstream configuration changes.
+  channels_ = codec_context_->channels;
+  sample_rate_ = codec_context_->sample_rate;
+  av_sample_format_ = codec_context_->sample_fmt;
 
   return true;
 }
@@ -159,14 +179,48 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
         break;
       }
 
+      if (av_frame->sample_rate != sample_rate_ ||
+          av_frame->channels != channels_ ||
+          av_frame->format != av_sample_format_) {
+        DLOG(ERROR) << "Unsupported midstream configuration change!"
+                    << " Sample Rate: " << av_frame->sample_rate << " vs "
+                    << sample_rate_
+                    << ", Channels: " << av_frame->channels << " vs "
+                    << channels_
+                    << ", Sample Format: " << av_frame->format << " vs "
+                    << av_sample_format_;
+
+        // This is an unrecoverable error, so bail out.
+        continue_decoding = false;
+        break;
+      }
+
       // Truncate, if necessary, if the destination isn't big enough.
       if (current_frame + frames_read > audio_bus->frames())
         frames_read = audio_bus->frames() - current_frame;
 
-      // Deinterleave each channel and convert to 32bit floating-point
-      // with nominal range -1.0 -> +1.0.
-      audio_bus->FromInterleavedPartial(
-          av_frame->data[0], current_frame, frames_read, bytes_per_sample);
+      // Deinterleave each channel and convert to 32bit floating-point with
+      // nominal range -1.0 -> +1.0.  If the output is already in float planar
+      // format, just copy it into the AudioBus.
+      if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT) {
+        float* decoded_audio_data = reinterpret_cast<float*>(av_frame->data[0]);
+        int channels = audio_bus->channels();
+        for (int ch = 0; ch < channels; ++ch) {
+          float* bus_data = audio_bus->channel(ch) + current_frame;
+          for (int i = 0, offset = ch; i < frames_read;
+               ++i, offset += channels) {
+            bus_data[i] = decoded_audio_data[offset];
+          }
+        }
+      } else if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLTP) {
+        for (int ch = 0; ch < audio_bus->channels(); ++ch) {
+          memcpy(audio_bus->channel(ch) + current_frame,
+                 av_frame->extended_data[ch], sizeof(float) * frames_read);
+        }
+      } else {
+        audio_bus->FromInterleavedPartial(
+            av_frame->data[0], current_frame, frames_read, bytes_per_sample);
+      }
 
       current_frame += frames_read;
     } while (packet_temp.size > 0);

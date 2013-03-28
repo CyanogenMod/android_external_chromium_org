@@ -14,10 +14,10 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/test/test_browser_thread.h"
 #include "grit/generated_resources.h"
@@ -56,30 +56,22 @@ class BookmarkContextMenuTest : public testing::Test {
         model_(NULL) {
   }
 
-  virtual void SetUp() {
-#if defined(OS_WIN)
-    bookmark_utils::DisableBookmarkBarViewAnimationsForTesting(true);
-#endif
-
+  virtual void SetUp() OVERRIDE {
     profile_.reset(new TestingProfile());
     profile_->CreateBookmarkModel(true);
-    profile_->BlockUntilBookmarkModelLoaded();
 
     model_ = BookmarkModelFactory::GetForProfile(profile_.get());
+    ui_test_utils::WaitForBookmarkModelToLoad(model_);
 
     AddTestData();
   }
 
-  virtual void TearDown() {
-#if defined(OS_WIN)
-    bookmark_utils::DisableBookmarkBarViewAnimationsForTesting(false);
-#endif
-
+  virtual void TearDown() OVERRIDE {
     ui::Clipboard::DestroyClipboardForCurrentThread();
 
     BrowserThread::GetBlockingPool()->FlushForTesting();
     // Flush the message loop to make application verifiers happy.
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
  protected:
@@ -95,6 +87,7 @@ class BookmarkContextMenuTest : public testing::Test {
   // a
   // F1
   //  f1a
+  // -f1b as "chrome://settings"
   //  F11
   //   f11a
   // F2
@@ -107,7 +100,8 @@ class BookmarkContextMenuTest : public testing::Test {
     model_->AddURL(bb_node, 0, ASCIIToUTF16("a"), GURL(test_base + "a"));
     const BookmarkNode* f1 = model_->AddFolder(bb_node, 1, ASCIIToUTF16("F1"));
     model_->AddURL(f1, 0, ASCIIToUTF16("f1a"), GURL(test_base + "f1a"));
-    const BookmarkNode* f11 = model_->AddFolder(f1, 1, ASCIIToUTF16("F11"));
+    model_->AddURL(f1, 1, ASCIIToUTF16("f1b"), GURL("chrome://settings"));
+    const BookmarkNode* f11 = model_->AddFolder(f1, 2, ASCIIToUTF16("F11"));
     model_->AddURL(f11, 0, ASCIIToUTF16("f11a"), GURL(test_base + "f11a"));
     model_->AddFolder(bb_node, 2, ASCIIToUTF16("F2"));
     model_->AddFolder(bb_node, 3, ASCIIToUTF16("F3"));
@@ -125,7 +119,7 @@ TEST_F(BookmarkContextMenuTest, DeleteURL) {
   GURL url = model_->bookmark_bar_node()->GetChild(0)->url();
   ASSERT_TRUE(controller.IsCommandEnabled(IDC_BOOKMARK_BAR_REMOVE));
   // Delete the URL.
-  controller.ExecuteCommand(IDC_BOOKMARK_BAR_REMOVE);
+  controller.ExecuteCommand(IDC_BOOKMARK_BAR_REMOVE, 0);
   // Model shouldn't have URL anymore.
   ASSERT_FALSE(model_->IsBookmarked(url));
 }
@@ -133,9 +127,19 @@ TEST_F(BookmarkContextMenuTest, DeleteURL) {
 // Tests open all on a folder with a couple of bookmarks.
 TEST_F(BookmarkContextMenuTest, OpenAll) {
   const BookmarkNode* folder = model_->bookmark_bar_node()->GetChild(1);
-  chrome::OpenAll(NULL, &navigator_, folder, NEW_FOREGROUND_TAB);
+  chrome::OpenAll(NULL, &navigator_, folder, NEW_FOREGROUND_TAB, NULL);
 
   // Should have navigated to F1's child but not F11's child.
+  ASSERT_EQ(static_cast<size_t>(2), navigator_.urls_.size());
+  ASSERT_TRUE(folder->GetChild(0)->url() == navigator_.urls_[0]);
+}
+
+// Tests open all on a folder with a couple of bookmarks in incognito window.
+TEST_F(BookmarkContextMenuTest, OpenAllIngonito) {
+  const BookmarkNode* folder = model_->bookmark_bar_node()->GetChild(1);
+  chrome::OpenAll(NULL, &navigator_, folder, OFF_THE_RECORD, NULL);
+
+  // Should have navigated to only f1a but not f2a.
   ASSERT_EQ(static_cast<size_t>(1), navigator_.urls_.size());
   ASSERT_TRUE(folder->GetChild(0)->url() == navigator_.urls_[0]);
 }
@@ -302,12 +306,12 @@ TEST_F(BookmarkContextMenuTest, CutCopyPasteNode) {
   EXPECT_TRUE(controller->IsCommandEnabled(IDC_CUT));
 
   // Copy the URL.
-  controller->ExecuteCommand(IDC_COPY);
+  controller->ExecuteCommand(IDC_COPY, 0);
 
   controller.reset(new BookmarkContextMenu(
       NULL, NULL, profile_.get(), NULL, nodes[0]->parent(), nodes, false));
   int old_count = bb_node->child_count();
-  controller->ExecuteCommand(IDC_PASTE);
+  controller->ExecuteCommand(IDC_PASTE, 0);
 
   ASSERT_TRUE(bb_node->GetChild(1)->is_url());
   ASSERT_EQ(old_count + 1, bb_node->child_count());
@@ -316,7 +320,7 @@ TEST_F(BookmarkContextMenuTest, CutCopyPasteNode) {
   controller.reset(new BookmarkContextMenu(
       NULL, NULL, profile_.get(), NULL, nodes[0]->parent(), nodes, false));
   // Cut the URL.
-  controller->ExecuteCommand(IDC_CUT);
+  controller->ExecuteCommand(IDC_CUT, 0);
   ASSERT_TRUE(bb_node->GetChild(0)->is_url());
   ASSERT_TRUE(bb_node->GetChild(1)->is_folder());
   ASSERT_EQ(old_count, bb_node->child_count());

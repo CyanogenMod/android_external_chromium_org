@@ -12,9 +12,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
-#include "chrome/browser/google_apis/operations_base.h"
 
 class Profile;
+
+namespace net {
+class URLRequestContextGetter;
+}
 
 namespace google_apis {
 
@@ -26,7 +29,17 @@ class OperationRegistry;
 // retries and authentication.
 class OperationRunner {
  public:
-  OperationRunner(Profile* profile, const std::vector<std::string>& scopes);
+  // |url_request_context_getter| is used to perform authentication with
+  // AuthService.
+  //
+  // |scopes| specifies OAuth2 scopes.
+  //
+  // |custom_user_agent| will be used for the User-Agent header in HTTP
+  // requests issued through the operation runner if the value is not empty.
+  OperationRunner(Profile* profile,
+                  net::URLRequestContextGetter* url_request_context_getter,
+                  const std::vector<std::string>& scopes,
+                  const std::string& custom_user_agent);
   virtual ~OperationRunner();
 
   AuthService* auth_service() { return auth_service_.get(); }
@@ -40,35 +53,27 @@ class OperationRunner {
   // Cancels all in-flight operations.
   void CancelAll();
 
-  // Authenticates the user by fetching the auth token as needed. |callback|
-  // will be run with the error code and the auth token, on the thread this
-  // function is run.
-  void Authenticate(const AuthStatusCallback& callback);
-
   // Starts an operation implementing the AuthenticatedOperationInterface
   // interface, and makes the operation retry upon authentication failures by
   // calling back to RetryOperation.
   void StartOperationWithRetry(AuthenticatedOperationInterface* operation);
 
-  // Starts an operation implementing the AuthenticatedOperationInterface
-  // interface.
-  void StartOperation(AuthenticatedOperationInterface* operation);
-
-  // Called when the authentication token is refreshed.
-  void OnOperationAuthRefresh(
+ private:
+  // Called when the access token is fetched.
+  void OnAccessTokenFetched(
       const base::WeakPtr<AuthenticatedOperationInterface>& operation,
       GDataErrorCode error,
-      const std::string& auth_token);
+      const std::string& access_token);
 
-  // Clears any authentication token and retries the operation, which
-  // forces an authentication token refresh.
+  // Clears any authentication token and retries the operation, which forces
+  // an authentication token refresh.
   void RetryOperation(AuthenticatedOperationInterface* operation);
 
- private:
-  Profile* profile_;  // not owned
+  Profile* profile_;  // Not owned.
 
   scoped_ptr<AuthService> auth_service_;
   scoped_ptr<OperationRegistry> operation_registry_;
+  const std::string custom_user_agent_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the omnibox API. Only injected into the v8 contexts
+// Custom binding for the omnibox API. Only injected into the v8 contexts
 // for extensions which have permission for the omnibox API.
+
+var binding = require('binding').Binding.create('omnibox');
 
 var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
 var sendRequest = require('sendRequest').sendRequest;
@@ -46,7 +48,7 @@ function parseOmniboxDescription(input) {
   };
 
   // Recursively walk the tree.
-  (function(node) {
+  function walk(node) {
     for (var i = 0, child; child = node.childNodes[i]; i++) {
       // Append text nodes to our description.
       if (child.nodeType == Node.TEXT_NODE) {
@@ -64,21 +66,22 @@ function parseOmniboxDescription(input) {
           'offset': result.description.length
         };
         result.descriptionStyles.push(style);
-        arguments.callee(child);
+        walk(child);
         style.length = result.description.length - style.offset;
         continue;
       }
 
       // Descend into all other nodes, even if they are unrecognized, for
       // forward compat.
-      arguments.callee(child);
+      walk(child);
     }
-  })(root);
+  };
+  walk(root);
 
   return result;
 }
 
-chromeHidden.registerCustomHook('omnibox', function(bindingsAPI) {
+binding.registerCustomHook(function(bindingsAPI) {
   var apiFunctions = bindingsAPI.apiFunctions;
 
   apiFunctions.setHandleRequest('setDefaultSuggestion', function(details) {
@@ -108,3 +111,5 @@ chromeHidden.Event.registerArgumentMassager('omnibox.onInputChanged',
   };
   dispatch([text, suggestCallback]);
 });
+
+exports.binding = binding.generate();

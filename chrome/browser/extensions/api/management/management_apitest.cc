@@ -13,7 +13,8 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_iterator.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/manifest.h"
@@ -27,13 +28,11 @@ namespace {
 // Find a browser other than |browser|.
 Browser* FindOtherBrowser(Browser* browser) {
   Browser* found = NULL;
-  for (BrowserList::const_iterator it = BrowserList::begin();
-       it != BrowserList::end(); ++it) {
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
     if (*it == browser)
       continue;
     found = *it;
   }
-
   return found;
 }
 
@@ -41,13 +40,13 @@ Browser* FindOtherBrowser(Browser* browser) {
 
 class ExtensionManagementApiTest : public ExtensionApiTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kEnablePanels);
   }
 
   virtual void LoadExtensions() {
-    FilePath basedir = test_data_dir_.AppendASCII("management");
+    base::FilePath basedir = test_data_dir_.AppendASCII("management");
 
     // Load 4 enabled items.
     LoadNamedExtension(basedir, "enabled_extension");
@@ -76,16 +75,16 @@ class ExtensionManagementApiTest : public ExtensionApiTest {
   }
 
  protected:
-  void LoadNamedExtension(const FilePath& path,
+  void LoadNamedExtension(const base::FilePath& path,
                           const std::string& name) {
     const Extension* extension = LoadExtension(path.AppendASCII(name));
     ASSERT_TRUE(extension);
     extension_ids_[name] = extension->id();
   }
 
-  void InstallNamedExtension(const FilePath& path,
+  void InstallNamedExtension(const base::FilePath& path,
                              const std::string& name,
-                             Extension::Location install_source) {
+                             Manifest::Location install_source) {
     const Extension* extension = InstallExtension(path.AppendASCII(name), 1,
                                                   install_source);
     ASSERT_TRUE(extension);
@@ -99,17 +98,24 @@ class ExtensionManagementApiTest : public ExtensionApiTest {
 IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, Basics) {
   LoadExtensions();
 
-  FilePath basedir = test_data_dir_.AppendASCII("management");
-  InstallNamedExtension(basedir, "internal_extension", Extension::INTERNAL);
+  base::FilePath basedir = test_data_dir_.AppendASCII("management");
+  InstallNamedExtension(basedir, "internal_extension", Manifest::INTERNAL);
   InstallNamedExtension(basedir, "external_extension",
-                        Extension::EXTERNAL_PREF);
+                        Manifest::EXTERNAL_PREF);
   InstallNamedExtension(basedir, "admin_extension",
-                        Extension::EXTERNAL_POLICY_DOWNLOAD);
+                        Manifest::EXTERNAL_POLICY_DOWNLOAD);
 
   ASSERT_TRUE(RunExtensionSubtest("management/test", "basics.html"));
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, Uninstall) {
+// Disabled: http://crbug.com/174411
+#if defined(OS_WIN)
+#define MAYBE_Uninstall DISABLED_Uninstall
+#else
+#define MAYBE_Uninstall Uninstall
+#endif
+
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, MAYBE_Uninstall) {
   LoadExtensions();
   ASSERT_TRUE(RunExtensionSubtest("management/test", "uninstall.html"));
 }
@@ -117,7 +123,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, Uninstall) {
 // Tests actions on extensions when no management policy is in place.
 IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, ManagementPolicyAllowed) {
   LoadExtensions();
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   EXPECT_TRUE(service->GetExtensionById(extension_ids_["enabled_extension"],
                                         false));
 
@@ -135,7 +142,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, ManagementPolicyAllowed) {
 // Tests actions on extensions when management policy prohibits those actions.
 IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, ManagementPolicyProhibited) {
   LoadExtensions();
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   EXPECT_TRUE(service->GetExtensionById(extension_ids_["enabled_extension"],
                                         false));
 
@@ -150,8 +158,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, ManagementPolicyProhibited) {
                                   "prohibited.html"));
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchPanelApp) {
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+// Disabled. See http://crbug.com/176023
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, DISABLED_LaunchPanelApp) {
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
 
   // Load an extension that calls launchApp() on any app that gets
   // installed.
@@ -166,7 +176,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchPanelApp) {
   ASSERT_FALSE(HasFatalFailure());  // Stop the test if any ASSERT failed.
 
   // Find the app's browser.  Check that it is a popup.
-  ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile()));
+  ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile(),
+                                        browser()->host_desktop_type()));
   Browser* app_browser = FindOtherBrowser(browser());
   ASSERT_TRUE(app_browser->is_type_popup());
   ASSERT_TRUE(app_browser->is_app());
@@ -181,7 +192,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchPanelApp) {
 
   // Unload the extension.
   UninstallExtension(app_id);
-  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile()));
+  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile(),
+                                        browser()->host_desktop_type()));
   ASSERT_FALSE(service->GetExtensionById(app_id, true));
 
   // Set a pref indicating that the user wants to launch in a regular tab.
@@ -199,14 +211,16 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchPanelApp) {
 
   // Find the app's browser.  Apps that should load in a panel ignore
   // prefs, so we should still see the launch in a popup.
-  ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile()));
+  ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile(),
+                                        browser()->host_desktop_type()));
   app_browser = FindOtherBrowser(browser());
   ASSERT_TRUE(app_browser->is_type_popup());
   ASSERT_TRUE(app_browser->is_app());
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchTabApp) {
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
 
   // Load an extension that calls launchApp() on any app that gets
   // installed.
@@ -217,8 +231,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchTabApp) {
 
   // Code below assumes that the test starts with a single browser window
   // hosting one tab.
-  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile()));
-  ASSERT_EQ(1, browser()->tab_count());
+  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile(),
+                                        browser()->host_desktop_type()));
+  ASSERT_EQ(1, browser()->tab_strip_model()->count());
 
   // Load an app with app.launch.container = "tab".
   std::string app_id;
@@ -226,12 +241,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchTabApp) {
   ASSERT_FALSE(HasFatalFailure());
 
   // Check that the app opened in a new tab of the existing browser.
-  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile()));
-  ASSERT_EQ(2, browser()->tab_count());
+  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile(),
+                                        browser()->host_desktop_type()));
+  ASSERT_EQ(2, browser()->tab_strip_model()->count());
 
   // Unload the extension.
   UninstallExtension(app_id);
-  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile()));
+  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile(),
+                                        browser()->host_desktop_type()));
   ASSERT_FALSE(service->GetExtensionById(app_id, true));
 
   // Set a pref indicating that the user wants to launch in a window.
@@ -248,12 +265,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchTabApp) {
 #if defined(OS_MACOSX)
   // App windows are not yet implemented on mac os.  We should fall back
   // to a normal tab.
-  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile()));
-  ASSERT_EQ(2, browser()->tab_count());
+  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile(),
+                                        browser()->host_desktop_type()));
+  ASSERT_EQ(2, browser()->tab_strip_model()->count());
 #else
   // Find the app's browser.  Opening in a new window will create
   // a new browser.
-  ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile()));
+  ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile(),
+                                        browser()->host_desktop_type()));
   Browser* app_browser = FindOtherBrowser(browser());
   ASSERT_TRUE(app_browser->is_app());
   ASSERT_FALSE(app_browser->is_type_panel());

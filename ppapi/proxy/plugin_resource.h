@@ -26,6 +26,11 @@ class PluginDispatcher;
 
 class PPAPI_PROXY_EXPORT PluginResource : public Resource {
  public:
+  enum Destination {
+    RENDERER = 0,
+    BROWSER = 1
+  };
+
   PluginResource(Connection connection, PP_Instance instance);
   virtual ~PluginResource();
 
@@ -48,19 +53,16 @@ class PPAPI_PROXY_EXPORT PluginResource : public Resource {
   virtual void NotifyLastPluginRefWasDeleted() OVERRIDE;
   virtual void NotifyInstanceWasDeleted() OVERRIDE;
 
- protected:
-  enum Destination {
-    RENDERER = 0,
-    BROWSER = 1
-  };
-
-  IPC::Sender* GetSender(Destination dest) {
-    return dest == RENDERER ? connection_.renderer_sender :
-                              connection_.browser_sender;
-  }
 
   // Sends a create message to the browser or renderer for the current resource.
   void SendCreate(Destination dest, const IPC::Message& msg);
+
+  // When the host returnes a resource to the plugin, it will create a pending
+  // ResourceHost and send an ID back to the plugin that identifies the pending
+  // object. The plugin uses this function to connect the plugin resource with
+  // the pending host resource. See also PpapiHostMsg_AttachToPendingHost. This
+  // is in lieu of sending a create message.
+  void AttachToPendingHost(Destination dest, int pending_host_id);
 
   // Sends the given IPC message as a resource request to the host
   // corresponding to this resource object and does not expect a reply.
@@ -124,16 +126,22 @@ class PPAPI_PROXY_EXPORT PluginResource : public Resource {
   int32_t SyncCall(
       Destination dest, const IPC::Message& msg, A* a, B* b, C* c, D* d, E* e);
 
+  int32_t GenericSyncCall(Destination dest,
+                          const IPC::Message& msg,
+                          IPC::Message* reply_msg,
+                          ResourceMessageReplyParams* reply_params);
+
  private:
+  IPC::Sender* GetSender(Destination dest) {
+    return dest == RENDERER ? connection_.renderer_sender :
+                              connection_.browser_sender;
+  }
+
   // Helper function to send a |PpapiHostMsg_ResourceCall| to the given
   // destination with |nested_msg| and |call_params|.
   bool SendResourceCall(Destination dest,
                         const ResourceMessageCallParams& call_params,
                         const IPC::Message& nested_msg);
-
-  int32_t GenericSyncCall(Destination dest,
-                          const IPC::Message& msg,
-                          IPC::Message* reply_msg);
 
   int32_t GetNextSequence();
 
@@ -170,14 +178,16 @@ int32_t PluginResource::Call(Destination dest,
 template <class ReplyMsgClass>
 int32_t PluginResource::SyncCall(Destination dest, const IPC::Message& msg) {
   IPC::Message reply;
-  return GenericSyncCall(dest, msg, &reply);
+  ResourceMessageReplyParams reply_params;
+  return GenericSyncCall(dest, msg, &reply, &reply_params);
 }
 
 template <class ReplyMsgClass, class A>
 int32_t PluginResource::SyncCall(
     Destination dest, const IPC::Message& msg, A* a) {
   IPC::Message reply;
-  int32_t result = GenericSyncCall(dest, msg, &reply);
+  ResourceMessageReplyParams reply_params;
+  int32_t result = GenericSyncCall(dest, msg, &reply, &reply_params);
 
   if (UnpackMessage<ReplyMsgClass>(reply, a))
     return result;
@@ -188,7 +198,8 @@ template <class ReplyMsgClass, class A, class B>
 int32_t PluginResource::SyncCall(
     Destination dest, const IPC::Message& msg, A* a, B* b) {
   IPC::Message reply;
-  int32_t result = GenericSyncCall(dest, msg, &reply);
+  ResourceMessageReplyParams reply_params;
+  int32_t result = GenericSyncCall(dest, msg, &reply, &reply_params);
 
   if (UnpackMessage<ReplyMsgClass>(reply, a, b))
     return result;
@@ -199,7 +210,8 @@ template <class ReplyMsgClass, class A, class B, class C>
 int32_t PluginResource::SyncCall(
     Destination dest, const IPC::Message& msg, A* a, B* b, C* c) {
   IPC::Message reply;
-  int32_t result = GenericSyncCall(dest, msg, &reply);
+  ResourceMessageReplyParams reply_params;
+  int32_t result = GenericSyncCall(dest, msg, &reply, &reply_params);
 
   if (UnpackMessage<ReplyMsgClass>(reply, a, b, c))
     return result;
@@ -210,7 +222,8 @@ template <class ReplyMsgClass, class A, class B, class C, class D>
 int32_t PluginResource::SyncCall(
     Destination dest, const IPC::Message& msg, A* a, B* b, C* c, D* d) {
   IPC::Message reply;
-  int32_t result = GenericSyncCall(dest, msg, &reply);
+  ResourceMessageReplyParams reply_params;
+  int32_t result = GenericSyncCall(dest, msg, &reply, &reply_params);
 
   if (UnpackMessage<ReplyMsgClass>(reply, a, b, c, d))
     return result;
@@ -221,7 +234,8 @@ template <class ReplyMsgClass, class A, class B, class C, class D, class E>
 int32_t PluginResource::SyncCall(
     Destination dest, const IPC::Message& msg, A* a, B* b, C* c, D* d, E* e) {
   IPC::Message reply;
-  int32_t result = GenericSyncCall(dest, msg, &reply);
+  ResourceMessageReplyParams reply_params;
+  int32_t result = GenericSyncCall(dest, msg, &reply, &reply_params);
 
   if (UnpackMessage<ReplyMsgClass>(reply, a, b, c, d, e))
     return result;

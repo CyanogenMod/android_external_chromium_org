@@ -1,6 +1,7 @@
 {
-  'TOOLS': ['newlib', 'glibc', 'win', 'linux', 'pnacl'],
+  'TOOLS': ['newlib', 'glibc', 'pnacl', 'linux', 'win'],
   'SEARCH': [
+    '.',
     '../../../../testing/gmock/include/gmock',
     '../../../../testing/gmock/include/gmock/internal',
     '../../../../testing/gmock/src',

@@ -7,94 +7,83 @@
 
 #include <string>
 
+#include "chrome/common/content_settings.h"
 #include "content/public/browser/web_contents_delegate.h"
 
+class PrefRegistrySyncable;
 class Profile;
+class TabSpecificContentSettings;
 
 class MediaStreamDevicesController {
  public:
-  // TODO(xians): Use const content::MediaStreamRequest& instead of *.
   MediaStreamDevicesController(Profile* profile,
-                               const content::MediaStreamRequest* request,
+                               TabSpecificContentSettings* content_settings,
+                               const content::MediaStreamRequest& request,
                                const content::MediaResponseCallback& callback);
 
   virtual ~MediaStreamDevicesController();
 
-  // Public method to be called before creating the MediaStreamInfoBarDelegate.
-  // This function will check the content settings exceptions and take the
-  // corresponding action on exception which matches the request.
-  bool DismissInfoBarAndTakeActionOnSettings();
+  // Registers the prefs backing the audio and video policies.
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+
+  // Called before creating the MediaStreamInfoBarDelegate. Processes the media
+  // stream request and returns true if the request could have been completed
+  // based on the current permission settings (content settings). Returns false
+  // if the user must be asked for permission.
+  bool ProcessRequest();
 
   // Public methods to be called by MediaStreamInfoBarDelegate;
-  bool has_audio() const { return has_audio_; }
-  bool has_video() const { return has_video_; }
-  const std::string& GetSecurityOriginSpec() const;
-  content::MediaStreamDevices GetAudioDevices() const;
-  content::MediaStreamDevices GetVideoDevices() const;
-  bool IsSafeToAlwaysAllowAudio() const;
-  bool IsSafeToAlwaysAllowVideo() const;
-  void Accept(const std::string& audio_id,
-              const std::string& video_id,
-              bool always_allow);
-  void Deny();
+
+  // Returns true if the user has to be prompted for microphone stream access.
+  bool IsMicrophoneRequested() const;
+
+  // Returns true if the user has to be prompted for camera stream access.
+  bool IsCameraRequested() const;
+
+  // Returns the origin of the media stream requests.
+  const GURL& GetRequestOrigin() const;
+
+  // Called after the user has granted the requested media stream permissions.
+  void OnGrantPermission();
+
+  // Called after the user has denied the requested media stream permissions.
+  void OnDenyPermission();
+
+  // Called after the user has cancled the media stream permission request.
+  void OnCancel();
 
  private:
-  // Used by the various helper methods below to filter an operation on devices
-  // of a particular type.
-  typedef bool (*FilterByDeviceTypeFunc)(content::MediaStreamDeviceType);
+  enum MediaAccess {
+    MEDIA_ACCESS_NOT_REQUESTED = 0,
+    MEDIA_ACCESS_REQUESTED,
+    MEDIA_ACCESS_ALLOWED,
+    MEDIA_ACCESS_BLOCKED,
+    MEDIA_ACCESS_NO_DEVICE
+  };
 
-  // Returns true if a secure scheme is being used by the origin AND only
-  // devices of the given physical |device_type| are present in the subset of
-  // devices selected by the |is_included| function.
-  bool IsSafeToAlwaysAllow(FilterByDeviceTypeFunc is_included,
-                           content::MediaStreamDeviceType device_type) const;
+  // Process screen capture requests.
+  bool ProcessScreenCaptureRequest();
 
-  // Returns true if the media section in content settings is set to
-  // |CONTENT_SETTING_BLOCK|, otherwise returns false.
-  bool IsMediaDeviceBlocked();
+  // Process microphone and camera requests.
+  bool ProcessMicrophoneCameraRequest();
 
-  // NOTE on AlwaysAllowOrigin functionality: The rules only apply to physical
-  // capture devices, and not tab mirroring (or other "virtual device" types).
-  // Virtual devices are always denied an AlwaysAllowOrigin status because they
-  // refer to internal objects whose "IDs" might be re-used for different
-  // objects across browser sessions.
+  // Completes processing the media stream request. This method is called if the
+  // media stream request can be completed based on the existing permission
+  // setting or after the user granted or denied the appropriate permission.
+  void CompleteProcessingRequest();
 
-  // Returns true if request's origin is from internal objects like
-  // chrome://URLs, otherwise returns false.
-  bool ShouldAlwaysAllowOrigin();
-
-  // Grants "always allow" exception for the origin to use the selected devices.
-  void AlwaysAllowOriginAndDevices(const std::string& audio_device,
-                                   const std::string& video_device);
-
-  // Gets the respective "always allowed" devices for the origin in |request_|.
-  // |audio_id| and |video_id| will be empty if there is no "always allowed"
-  // device for the origin, or any of the devices is not listed on the devices
-  // list in |request_|.
-  void GetAlwaysAllowedDevices(std::string* audio_id,
-                               std::string* video_id);
-
-  std::string GetDeviceIdByName(content::MediaStreamDeviceType type,
-                                const std::string& name);
-
-  std::string GetFirstDeviceId(content::MediaStreamDeviceType type);
-
-  // Copies all devices passing the |is_included| predicate to the given output
-  // container.
-  void FindSubsetOfDevices(FilterByDeviceTypeFunc is_included,
-                           content::MediaStreamDevices* out) const;
-
-  // Finds the first device with the given |device_id| within the subset of
-  // devices passing the |is_included| predicate, or return NULL.
-  const content::MediaStreamDevice* FindFirstDeviceWithIdInSubset(
-      FilterByDeviceTypeFunc is_included,
-      const std::string& device_id) const;
-
-  bool has_audio_;
-  bool has_video_;
+  // Maps a content |setting| to media stream access value.
+  MediaAccess ContentSettingToMediaAccess(ContentSetting setting) const;
 
   // The owner of this class needs to make sure it does not outlive the profile.
   Profile* profile_;
+
+  // Weak pointer to the tab specific content settings of the tab for which the
+  // MediaStreamDevicesController was created. The tab specific content
+  // settings are associated with a the web contents of the tab. The
+  // MediaStreamDeviceController must not outlive the web contents for which it
+  // was created.
+  TabSpecificContentSettings* content_settings_;
 
   // The original request for access to devices.
   const content::MediaStreamRequest request_;
@@ -102,6 +91,13 @@ class MediaStreamDevicesController {
   // The callback that needs to be Run to notify WebRTC of whether access to
   // audio/video devices was granted or not.
   content::MediaResponseCallback callback_;
+
+  // Contains the microphone access state.
+  MediaAccess microphone_access_;
+
+  // Contains the camera access state.
+  MediaAccess camera_access_;
+
   DISALLOW_COPY_AND_ASSIGN(MediaStreamDevicesController);
 };
 

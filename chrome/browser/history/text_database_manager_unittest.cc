@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
+#include <set>
+
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/text_database_manager.h"
@@ -49,11 +51,11 @@ class InMemDB : public URLDatabase, public VisitDatabase {
     CreateURLTable(false);
     InitVisitTable();
   }
-  ~InMemDB() {
+  virtual ~InMemDB() {
   }
 
  private:
-  virtual sql::Connection& GetDB() { return db_; }
+  virtual sql::Connection& GetDB() OVERRIDE { return db_; }
 
   sql::Connection db_;
 
@@ -155,17 +157,17 @@ class TextDatabaseManagerTest : public testing::Test {
   }
 
  protected:
-  void SetUp() {
+  virtual void SetUp() {
   }
 
-  void TearDown() {
+  virtual void TearDown() {
     file_util::Delete(dir_, true);
   }
 
   MessageLoop message_loop_;
 
   // Directory containing the databases.
-  FilePath dir_;
+  base::FilePath dir_;
 };
 
 // Tests basic querying.
@@ -532,6 +534,65 @@ TEST_F(TextDatabaseManagerTest, QueryBackwards) {
   options.end_time = first_time_searched;
   manager.GetTextMatches(foo, options, &results, &first_time_searched);
   EXPECT_EQ(0U, results.size());
+}
+
+// Tests deletion of uncommitted entries.
+TEST_F(TextDatabaseManagerTest, DeleteUncommitted) {
+  ASSERT_TRUE(Init());
+  InMemDB visit_db;
+  TextDatabaseManager manager(dir_, &visit_db, &visit_db);
+  ASSERT_TRUE(manager.Init(NULL));
+
+  manager.AddPageURL(GURL(kURL1), 0, 0, Time::FromInternalValue(1));
+  manager.AddPageURL(GURL(kURL2), 0, 0, Time::FromInternalValue(2));
+  manager.AddPageURL(GURL(kURL3), 0, 0, Time::FromInternalValue(3));
+  manager.AddPageURL(GURL(kURL4), 0, 0, Time::FromInternalValue(4));
+  manager.AddPageURL(GURL(kURL5), 0, 0, Time::FromInternalValue(5));
+
+  EXPECT_EQ(5u, manager.GetUncommittedEntryCountForTest());
+
+  // Should delete the first two entries.
+  manager.DeleteFromUncommitted(std::set<GURL>(),
+                                Time::FromInternalValue(1),
+                                Time::FromInternalValue(3));
+
+  EXPECT_EQ(3u, manager.GetUncommittedEntryCountForTest());
+
+  // Should delete the third entry.
+  {
+    std::set<GURL> urls;
+    urls.insert(GURL(kURL3));
+    manager.DeleteFromUncommitted(urls, Time(), Time());
+  }
+
+  EXPECT_EQ(2u, manager.GetUncommittedEntryCountForTest());
+}
+
+// Tests deletion of uncommitted entries by time.
+TEST_F(TextDatabaseManagerTest, DeleteUncommittedForTimes) {
+  ASSERT_TRUE(Init());
+  InMemDB visit_db;
+  TextDatabaseManager manager(dir_, &visit_db, &visit_db);
+  ASSERT_TRUE(manager.Init(NULL));
+
+  manager.AddPageURL(GURL(kURL1), 0, 0, Time::FromInternalValue(2));
+  manager.AddPageURL(GURL(kURL2), 0, 0, Time::FromInternalValue(3));
+  manager.AddPageURL(GURL(kURL3), 0, 0, Time::FromInternalValue(4));
+  manager.AddPageURL(GURL(kURL4), 0, 0, Time::FromInternalValue(5));
+  manager.AddPageURL(GURL(kURL5), 0, 0, Time::FromInternalValue(6));
+
+  EXPECT_EQ(5u, manager.GetUncommittedEntryCountForTest());
+
+  std::vector<base::Time> times;
+  times.push_back(Time::FromInternalValue(9));
+  times.push_back(Time::FromInternalValue(7));
+  times.push_back(Time::FromInternalValue(5));
+  times.push_back(Time::FromInternalValue(5));
+  times.push_back(Time::FromInternalValue(3));
+  times.push_back(Time::FromInternalValue(1));
+  manager.DeleteFromUncommittedForTimes(times);
+
+  EXPECT_EQ(3u, manager.GetUncommittedEntryCountForTest());
 }
 
 }  // namespace history

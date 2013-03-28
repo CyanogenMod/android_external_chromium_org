@@ -56,6 +56,8 @@ class FindBarGtk : public FindBar,
   virtual void AudibleAlert() OVERRIDE;
   virtual bool IsFindBarVisible() OVERRIDE;
   virtual void RestoreSavedFocus() OVERRIDE;
+  virtual bool HasGlobalFindPasteboard() OVERRIDE;
+  virtual void UpdateFindBarForChangedWebContents() OVERRIDE;
   virtual FindBarTesting* GetFindBarTesting() OVERRIDE;
 
   // Methods from FindBarTesting.
@@ -151,6 +153,9 @@ class FindBarGtk : public FindBar,
 
   // Handles Enter key.
   CHROMEGTK_CALLBACK_0(FindBarGtk, void, OnActivate);
+
+  // After Copy and cut handlers.
+  CHROMEGTK_CALLBACK_0(FindBarGtk, void, HandleAfterCopyOrCutClipboard);
 
   static void OnWidgetDirectionChanged(GtkWidget* widget,
                                        GtkTextDirection previous_direction,

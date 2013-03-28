@@ -24,10 +24,25 @@ ash::user::LoginStatus GetCurrentLoginStatus() {
   const UserManager* user_manager = UserManager::Get();
   if (!user_manager->IsUserLoggedIn())
     return ash::user::LOGGED_IN_NONE;
+  if (user_manager->IsCurrentUserOwner())
+    return ash::user::LOGGED_IN_OWNER;
 
-  if (user_manager->GetLoggedInUser()->is_guest())
-    return ash::user::LOGGED_IN_GUEST;
+  switch (user_manager->GetLoggedInUser()->GetType()) {
+    case User::USER_TYPE_REGULAR:
+      return ash::user::LOGGED_IN_USER;
+    case User::USER_TYPE_GUEST:
+      return ash::user::LOGGED_IN_GUEST;
+    case User::USER_TYPE_RETAIL_MODE:
+      return ash::user::LOGGED_IN_RETAIL_MODE;
+    case User::USER_TYPE_PUBLIC_ACCOUNT:
+      return ash::user::LOGGED_IN_PUBLIC;
+    case User::USER_TYPE_LOCALLY_MANAGED:
+      return ash::user::LOGGED_IN_LOCALLY_MANAGED;
+    case User::USER_TYPE_KIOSK_APP:
+      return ash::user::LOGGED_IN_KIOSK_APP;
+  }
 
+  NOTREACHED();
   return ash::user::LOGGED_IN_USER;
 }
 
@@ -87,16 +102,10 @@ void PowerButtonObserver::Observe(int type,
   }
 }
 
-void PowerButtonObserver::PowerButtonStateChanged(
+void PowerButtonObserver::PowerButtonEventReceived(
     bool down, const base::TimeTicks& timestamp) {
   ash::Shell::GetInstance()->power_button_controller()->
       OnPowerButtonEvent(down, timestamp);
-}
-
-void PowerButtonObserver::LockButtonStateChanged(
-    bool down, const base::TimeTicks& timestamp) {
-  ash::Shell::GetInstance()->power_button_controller()->
-      OnLockButtonEvent(down, timestamp);
 }
 
 void PowerButtonObserver::LockScreen() {

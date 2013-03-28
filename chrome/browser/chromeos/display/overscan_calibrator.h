@@ -29,8 +29,15 @@ class OverscanCalibrator : public ui::LayerDelegate {
   // Commits the current insets data to the system.
   void Commit();
 
+  // Reset the overscan insets to default value.  If the display has
+  // overscan, the default value is the display's default overscan
+  // value. Otherwise, the default value is the old |initial_insets_|.
+  void Reset();
+
   // Updates the insets and redraw the visual feedback.
   void UpdateInsets(const gfx::Insets& insets);
+
+  const gfx::Insets& insets() const { return insets_; }
 
  private:
   // ui::LayerDelegate overrides:
@@ -38,9 +45,22 @@ class OverscanCalibrator : public ui::LayerDelegate {
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE;
 
+  // The target display.
   const gfx::Display display_;
+
+  // The current insets.
   gfx::Insets insets_;
-  gfx::Rect inner_bounds_;
+
+  // The insets initially given. Stored so we can undo the insets later.
+  gfx::Insets initial_insets_;
+
+  // The insets claimed by the display.
+  gfx::Insets native_insets_;
+
+  // Whether the current insets are committed to the system or not.
+  bool committed_;
+
+  // The visualization layer for the current calibration region.
   scoped_ptr<ui::Layer> calibration_layer_;
 
   DISALLOW_COPY_AND_ASSIGN(OverscanCalibrator);

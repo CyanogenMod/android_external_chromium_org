@@ -8,8 +8,8 @@
 #include <functional>
 
 #include "base/bind.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
 #include "base/threading/thread_restrictions.h"
@@ -19,10 +19,10 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_controls.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -33,7 +33,6 @@
 #include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
-#include "ui/ui_controls/ui_controls.h"
 
 using content::BrowserThread;
 
@@ -51,9 +50,9 @@ class TestData {
     base::ThreadRestrictions::ScopedAllowIO allow_io;
 
     if (test_data_.empty()) {
-      FilePath test_data_directory;
+      base::FilePath test_data_directory;
       PathService::Get(chrome::DIR_TEST_DATA, &test_data_directory);
-      FilePath test_file =
+      base::FilePath test_file =
           test_data_directory.AppendASCII("printing/cloud_print_uitest.html");
       file_util::ReadFileToString(test_file, &test_data_);
     }
@@ -79,7 +78,7 @@ class SimpleTestJob : public net::URLRequestTestJob {
                                TestData::GetInstance()->GetTestData(),
                                true) {}
 
-  virtual void GetResponseInfo(net::HttpResponseInfo* info) {
+  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE {
     net::URLRequestTestJob::GetResponseInfo(info);
     if (request_->url().SchemeIsSecure()) {
       // Make up a fake certificate for this response since we don't have
@@ -99,7 +98,7 @@ class SimpleTestJob : public net::URLRequestTestJob {
   }
 
  private:
-  ~SimpleTestJob() {}
+  virtual ~SimpleTestJob() {}
 };
 
 class TestController {
@@ -119,10 +118,10 @@ class TestController {
   const GURL expected_url() {
     return expected_url_;
   }
-  void set_delegate(TestDelegate* delegate) {
+  void set_delegate(net::TestDelegate* delegate) {
     delegate_ = delegate;
   }
-  TestDelegate* delegate() {
+  net::TestDelegate* delegate() {
     return delegate_;
   }
   void set_use_delegate(bool value) {
@@ -140,7 +139,7 @@ class TestController {
   bool result_;
   bool use_delegate_;
   GURL expected_url_;
-  TestDelegate* delegate_;
+  net::TestDelegate* delegate_;
 
   friend struct DefaultSingletonTraits<TestController>;
 };
@@ -156,25 +155,26 @@ class PrintDialogCloudTest : public InProcessBrowserTest {
   // Must be static for handing into AddHostnameHandler.
   static net::URLRequest::ProtocolFactory Factory;
 
-  class AutoQuitDelegate : public TestDelegate {
+  class AutoQuitDelegate : public net::TestDelegate {
    public:
     AutoQuitDelegate() {}
 
-    virtual void OnResponseCompleted(net::URLRequest* request) {
+    virtual void OnResponseCompleted(net::URLRequest* request) OVERRIDE {
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                               MessageLoop::QuitClosure());
     }
   };
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     TestController::GetInstance()->set_result(false);
     InProcessBrowserTest::SetUp();
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     if (handler_added_) {
-      net::URLRequestFilter* filter = net::URLRequestFilter::GetInstance();
-      filter->RemoveHostnameHandler(scheme_, host_name_);
+      BrowserThread::PostTask(
+          BrowserThread::IO, FROM_HERE,
+          base::Bind(UnregisterTestHandlers, scheme_, host_name_));
       handler_added_ = false;
       TestController::GetInstance()->set_delegate(NULL);
     }
@@ -187,14 +187,14 @@ class PrintDialogCloudTest : public InProcessBrowserTest {
   // individual test functions seems to fix that.
   void AddTestHandlers() {
     if (!handler_added_) {
-      net::URLRequestFilter* filter = net::URLRequestFilter::GetInstance();
       GURL cloud_print_service_url =
           CloudPrintURL(browser()->profile()).
           GetCloudPrintServiceURL();
       scheme_ = cloud_print_service_url.scheme();
       host_name_ = cloud_print_service_url.host();
-      filter->AddHostnameHandler(scheme_, host_name_,
-                                 &PrintDialogCloudTest::Factory);
+      BrowserThread::PostTask(
+          BrowserThread::IO, FROM_HERE,
+          base::Bind(RegisterTestHandlers, scheme_, host_name_));
       handler_added_ = true;
 
       GURL cloud_print_dialog_url =
@@ -208,20 +208,32 @@ class PrintDialogCloudTest : public InProcessBrowserTest {
   }
 
   void CreateDialogForTest() {
-    FilePath path_to_pdf =
+    base::FilePath path_to_pdf =
         test_data_directory_.AppendASCII("printing/cloud_print_uitest.pdf");
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        base::Bind(&internal_cloud_print_helpers::CreateDialogFullImpl,
+        base::Bind(&print_dialog_cloud::CreatePrintDialogForFile,
                    browser()->profile(), browser()->window()->GetNativeWindow(),
                    path_to_pdf, string16(), string16(),
                    std::string("application/pdf"), false));
   }
 
+ private:
+  static void RegisterTestHandlers(const std::string& scheme,
+                       const std::string& host_name) {
+    net::URLRequestFilter::GetInstance()->AddHostnameHandler(
+        scheme, host_name, &PrintDialogCloudTest::Factory);
+  }
+  static void UnregisterTestHandlers(const std::string& scheme,
+                         const std::string& host_name) {
+    net::URLRequestFilter::GetInstance()->RemoveHostnameHandler(scheme,
+                                                                host_name);
+  }
+
   bool handler_added_;
   std::string scheme_;
   std::string host_name_;
-  FilePath test_data_directory_;
+  base::FilePath test_data_directory_;
   AutoQuitDelegate delegate_;
 };
 
@@ -243,12 +255,7 @@ net::URLRequestJob* PrintDialogCloudTest::Factory(
                                     true);
 }
 
-#if defined(OS_WIN)
-#define MAYBE_HandlersRegistered FLAKY_HandlersRegistered
-#else
-#define MAYBE_HandlersRegistered HandlersRegistered
-#endif
-IN_PROC_BROWSER_TEST_F(PrintDialogCloudTest, MAYBE_HandlersRegistered) {
+IN_PROC_BROWSER_TEST_F(PrintDialogCloudTest, HandlersRegistered) {
   AddTestHandlers();
 
   TestController::GetInstance()->set_use_delegate(true);

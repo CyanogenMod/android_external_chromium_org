@@ -7,12 +7,11 @@
 
 #include "remoting/host/win/wts_session_process_delegate.h"
 
-#include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
@@ -24,20 +23,17 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_message.h"
 #include "remoting/host/host_exit_codes.h"
-#include "remoting/host/ipc_consts.h"
+#include "remoting/host/host_main.h"
+#include "remoting/host/ipc_constants.h"
 #include "remoting/host/win/launch_process_with_token.h"
 #include "remoting/host/win/worker_process_launcher.h"
-#include "remoting/host/win/wts_console_monitor.h"
+#include "remoting/host/win/wts_terminal_monitor.h"
 #include "remoting/host/worker_process_ipc_delegate.h"
 
 using base::win::ScopedHandle;
 
-const char kElevateSwitchName[] = "elevate";
-
-// The command line parameters that should be copied from the service's command
-// line to the host process.
-const char* kCopiedSwitchNames[] = {
-    "host-config", switches::kV, switches::kVModule };
+// Name of the default session desktop.
+const char kDefaultDesktopName[] = "winsta0\\default";
 
 namespace remoting {
 
@@ -53,7 +49,7 @@ class WtsSessionProcessDelegate::Core
   // Stop() method has been called.
   Core(scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
        scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-       const FilePath& binary_path,
+       scoped_ptr<CommandLine> target_command,
        bool launch_elevated,
        const std::string& channel_security);
 
@@ -66,6 +62,7 @@ class WtsSessionProcessDelegate::Core
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
   // WorkerProcessLauncher::Delegate implementation.
+  virtual void CloseChannel() OVERRIDE;
   virtual DWORD GetProcessId() const OVERRIDE;
   virtual bool IsPermanentError(int failure_count) const OVERRIDE;
   virtual void KillProcess(DWORD exit_code) OVERRIDE;
@@ -106,8 +103,8 @@ class WtsSessionProcessDelegate::Core
   // The task runner serving job object notifications.
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
-  // Path to the worker process binary.
-  FilePath binary_path_;
+  // Command line of the launched process.
+  scoped_ptr<CommandLine> target_command_;
 
   // The server end of the IPC channel used to communicate to the worker
   // process.
@@ -148,12 +145,12 @@ class WtsSessionProcessDelegate::Core
 WtsSessionProcessDelegate::Core::Core(
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-    const FilePath& binary_path,
+    scoped_ptr<CommandLine> target_command,
     bool launch_elevated,
     const std::string& channel_security)
     : main_task_runner_(main_task_runner),
       io_task_runner_(io_task_runner),
-      binary_path_(binary_path),
+      target_command_(target_command.Pass()),
       channel_security_(channel_security),
       get_named_pipe_client_pid_(NULL),
       launch_elevated_(launch_elevated),
@@ -177,12 +174,19 @@ void WtsSessionProcessDelegate::Core::OnIOCompleted(
 bool WtsSessionProcessDelegate::Core::Send(IPC::Message* message) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
 
-  if (channel_.get()) {
+  if (channel_) {
     return channel_->Send(message);
   } else {
     delete message;
     return false;
   }
+}
+
+void WtsSessionProcessDelegate::Core::CloseChannel() {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+
+  channel_.reset();
+  pipe_.Close();
 }
 
 DWORD WtsSessionProcessDelegate::Core::GetProcessId() const {
@@ -238,7 +242,7 @@ bool WtsSessionProcessDelegate::Core::LaunchProcess(
     ScopedHandle* process_exit_event_out) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
 
-  CommandLine command_line(CommandLine::NO_PROGRAM);
+  CommandLine command_line(target_command_->argv());
   if (launch_elevated_) {
     // The job object is not ready. Retry starting the host process later.
     if (!job_.IsValid()) {
@@ -246,18 +250,17 @@ bool WtsSessionProcessDelegate::Core::LaunchProcess(
     }
 
     // Construct the helper binary name.
-    FilePath daemon_binary;
-    if (!GetInstalledBinaryPath(kDaemonBinaryName, &daemon_binary))
+    base::FilePath helper_binary;
+    if (!GetInstalledBinaryPath(kHostBinaryName, &helper_binary))
       return false;
 
     // Create the command line passing the name of the IPC channel to use and
     // copying known switches from the caller's command line.
-    command_line.SetProgram(daemon_binary);
-    command_line.AppendSwitchPath(kElevateSwitchName, binary_path_);
+    command_line.SetProgram(helper_binary);
+    command_line.AppendSwitchPath(kElevateSwitchName,
+                                  target_command_->GetProgram());
 
     CHECK(ResetEvent(process_exit_event_));
-  } else {
-    command_line.SetProgram(binary_path_);
   }
 
   // Create the server end of the IPC channel.
@@ -273,13 +276,9 @@ bool WtsSessionProcessDelegate::Core::LaunchProcess(
       delegate,
       io_task_runner_));
 
-  // Create the command line passing the name of the IPC channel to use and
-  // copying known switches from the caller's command line.
+  // Pass the name of the IPC channel to use.
   command_line.AppendSwitchNative(kDaemonPipeSwitchName,
                                   UTF8ToWide(channel_name));
-  command_line.CopySwitchesFrom(*CommandLine::ForCurrentProcess(),
-                                kCopiedSwitchNames,
-                                arraysize(kCopiedSwitchNames));
 
   // Try to launch the process.
   ScopedHandle worker_process;
@@ -287,8 +286,11 @@ bool WtsSessionProcessDelegate::Core::LaunchProcess(
   if (!LaunchProcessWithToken(command_line.GetProgram(),
                               command_line.GetCommandLineString(),
                               session_token_,
+                              NULL,
+                              NULL,
                               false,
                               CREATE_SUSPENDED | CREATE_BREAKAWAY_FROM_JOB,
+                              UTF8ToUTF16(kDefaultDesktopName).c_str(),
                               &worker_process,
                               &worker_thread)) {
     return false;
@@ -337,7 +339,7 @@ bool WtsSessionProcessDelegate::Core::LaunchProcess(
 }
 
 bool WtsSessionProcessDelegate::Core::Initialize(uint32 session_id) {
-  if (base::win::GetVersion() == base::win::VERSION_XP)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA)
     launch_elevated_ = false;
 
   if (launch_elevated_) {
@@ -479,11 +481,11 @@ void WtsSessionProcessDelegate::Core::OnJobNotification(DWORD message,
 WtsSessionProcessDelegate::WtsSessionProcessDelegate(
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-    const FilePath& binary_path,
+    scoped_ptr<CommandLine> target_command,
     uint32 session_id,
     bool launch_elevated,
     const std::string& channel_security) {
-  core_ = new Core(main_task_runner, io_task_runner, binary_path,
+  core_ = new Core(main_task_runner, io_task_runner, target_command.Pass(),
                    launch_elevated, channel_security);
   if (!core_->Initialize(session_id)) {
     core_->Stop();
@@ -500,6 +502,11 @@ WtsSessionProcessDelegate::~WtsSessionProcessDelegate() {
 
 bool WtsSessionProcessDelegate::Send(IPC::Message* message) {
   return core_->Send(message);
+}
+
+void WtsSessionProcessDelegate::CloseChannel() {
+  if (core_)
+    core_->CloseChannel();
 }
 
 DWORD WtsSessionProcessDelegate::GetProcessId() const {

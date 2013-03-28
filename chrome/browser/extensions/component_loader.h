@@ -8,21 +8,21 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "base/values.h"
 
 class ExtensionServiceInterface;
 class PrefService;
+class PrefRegistrySyncable;
 
 namespace extensions {
 
 class Extension;
 
 // For registering, loading, and unloading component extensions.
-class ComponentLoader : public PrefObserver {
+class ComponentLoader {
  public:
   ComponentLoader(ExtensionServiceInterface* extension_service,
                   PrefService* prefs,
@@ -33,8 +33,12 @@ class ComponentLoader : public PrefObserver {
     return component_extensions_.size();
   }
 
-  // Loads any registered component extensions.
+  // Creates and loads all registered component extensions.
   void LoadAll();
+
+  // Clear the list of all registered extensions and unloads them from the
+  // extension service.
+  void RemoveAll();
 
   // Registers and possibly loads a component extension. If ExtensionService
   // has been initialized, the extension is loaded; otherwise, the load is
@@ -48,32 +52,35 @@ class ComponentLoader : public PrefObserver {
   //   ssh-keygen -t rsa -b 1024 -N '' -f /tmp/key.pem
   //   openssl rsa -pubout -outform DER < /tmp/key.pem 2>/dev/null | base64 -w 0
   std::string Add(const std::string& manifest_contents,
-                  const FilePath& root_directory);
+                  const base::FilePath& root_directory);
 
   // Convenience method for registering a component extension by resource id.
   std::string Add(int manifest_resource_id,
-                  const FilePath& root_directory);
+                  const base::FilePath& root_directory);
 
   // Loads a component extension from file system. Replaces previously added
   // extension with the same ID.
-  std::string AddOrReplace(const FilePath& path);
+  std::string AddOrReplace(const base::FilePath& path);
 
   // Returns true if an extension with the specified id has been added.
   bool Exists(const std::string& id) const;
 
   // Unloads a component extension and removes it from the list of component
   // extensions to be loaded.
-  void Remove(const FilePath& root_directory);
+  void Remove(const base::FilePath& root_directory);
   void Remove(const std::string& id);
 
-  // Adds the default component extensions.
-  void AddDefaultComponentExtensions();
+  // Call this during test setup to load component extensions that have
+  // background pages for testing, which could otherwise interfere with tests.
+  static void EnableBackgroundExtensionsForTesting();
 
-  // PrefObserver implementation
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
+  // Adds the default component extensions. If |skip_session_components|
+  // the loader will skip loading component extensions that weren't supposed to
+  // be loaded unless we are in signed user session (ChromeOS). For all other
+  // platforms this |skip_session_components| is expected to be unset.
+  void AddDefaultComponentExtensions(bool skip_session_components);
 
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
   // Parse the given JSON manifest. Returns NULL if it cannot be parsed, or if
   // if the result is not a DictionaryValue.
@@ -85,36 +92,32 @@ class ComponentLoader : public PrefObserver {
   // Reloads a registered component extension.
   void Reload(const std::string& extension_id);
 
-  // Adds the "Script Bubble" component extension, which puts an icon in the
-  // omnibox indiciating the number of extensions running script in a tab.
-  void AddScriptBubble();
-
-  // Returns the extension previously added by AddScriptBubble(), if any.
-  const Extension* GetScriptBubble() const;
-
  private:
   // Information about a registered component extension.
   struct ComponentExtensionInfo {
     ComponentExtensionInfo(const DictionaryValue* manifest,
-                           const FilePath& root_directory);
+                           const base::FilePath& root_directory);
 
     // The parsed contents of the extensions's manifest file.
     const DictionaryValue* manifest;
 
     // Directory where the extension is stored.
-    FilePath root_directory;
+    base::FilePath root_directory;
 
     // The component extension's ID.
     std::string extension_id;
   };
 
   std::string Add(const DictionaryValue* parsed_manifest,
-                  const FilePath& root_directory);
+                  const base::FilePath& root_directory);
 
   // Loads a registered component extension.
-  const Extension* Load(const ComponentExtensionInfo& info);
+  void Load(const ComponentExtensionInfo& info);
 
+  void AddDefaultComponentExtensionsWithBackgroundPages(
+      bool skip_session_components);
   void AddFileManagerExtension();
+  void AddImageLoaderExtension();
 
 #if defined(OS_CHROMEOS)
   void AddGaiaAuthExtension();
@@ -125,18 +128,19 @@ class ComponentLoader : public PrefObserver {
 
   void AddChromeApp();
 
-  PrefService* prefs_;
+  // Unloads |component| from the memory.
+  void UnloadComponent(ComponentExtensionInfo* component);
+
+  PrefService* profile_prefs_;
   PrefService* local_state_;
 
   ExtensionServiceInterface* extension_service_;
 
-  // List of registered component extensions (see Extension::Location).
+  // List of registered component extensions (see Manifest::Location).
   typedef std::vector<ComponentExtensionInfo> RegisteredComponentExtensions;
   RegisteredComponentExtensions component_extensions_;
 
   PrefChangeRegistrar pref_change_registrar_;
-
-  std::string script_bubble_id_;
 
   DISALLOW_COPY_AND_ASSIGN(ComponentLoader);
 };

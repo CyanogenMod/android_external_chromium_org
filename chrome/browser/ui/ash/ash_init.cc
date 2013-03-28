@@ -8,18 +8,19 @@
 #include "ash/ash_switches.h"
 #include "ash/high_contrast/high_contrast_controller.h"
 #include "ash/magnifier/magnification_controller.h"
+#include "ash/magnifier/partial_magnification_controller.h"
 #include "ash/shell.h"
 #include "ash/wm/event_rewriter_event_filter.h"
 #include "ash/wm/property_util.h"
 #include "base/command_line.h"
+#include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
+#include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 #include "chrome/browser/ui/ash/event_rewriter.h"
 #include "chrome/browser/ui/ash/screenshot_taker.h"
 #include "chrome/common/chrome_switches.h"
-#include "ui/aura/aura_switches.h"
-#include "ui/aura/display_manager.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/compositor/compositor_setup.h"
@@ -40,31 +41,32 @@ bool ShouldOpenAshOnStartup() {
   return true;
 #endif
   // TODO(scottmg): http://crbug.com/133312, will need this for Win8 too.
-  return false;
+  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kOpenAsh);
 }
 
-void OpenAsh() {
-  bool use_fullscreen = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kAuraHostWindowUseFullscreen);
+#if defined(OS_CHROMEOS)
+// Returns true if the cursor should be initially hidden.
+bool ShouldInitiallyHideCursor() {
+  if (base::chromeos::IsRunningOnChromeOS())
+    return !chromeos::UserManager::Get()->IsUserLoggedIn();
+  else
+    return CommandLine::ForCurrentProcess()->HasSwitch(switches::kLoginManager);
+}
+#endif
 
+void OpenAsh() {
 #if defined(OS_CHROMEOS)
   if (base::chromeos::IsRunningOnChromeOS()) {
-    use_fullscreen = true;
     // Hides the cursor outside of the Aura root window. The cursor will be
     // drawn within the Aura root window, and it'll remain hidden after the
     // Aura window is closed.
     ui::HideHostCursor();
   }
-#endif
 
-  if (use_fullscreen) {
-    aura::DisplayManager::set_use_fullscreen_host_window(true);
-#if defined(OS_CHROMEOS)
-    // Hide the mouse cursor completely at boot.
-    if (!chromeos::UserManager::Get()->IsUserLoggedIn())
-      ash::Shell::set_initially_hide_cursor(true);
+  // Hide the mouse cursor completely at boot.
+  if (ShouldInitiallyHideCursor())
+    ash::Shell::set_initially_hide_cursor(true);
 #endif
-  }
 
   // Its easier to mark all windows as persisting and exclude the ones we care
   // about (browser windows), rather than explicitly excluding certain windows.
@@ -85,20 +87,31 @@ void OpenAsh() {
   ash::Shell::GetInstance()->high_contrast_controller()->SetEnabled(
       chromeos::accessibility::IsHighContrastEnabled());
 
-  ash::Shell::GetInstance()->magnification_controller()->SetEnabled(
-      chromeos::accessibility::IsScreenMagnifierEnabled());
+  DCHECK(chromeos::MagnificationManager::Get());
+  bool magnifier_enabled =
+      chromeos::MagnificationManager::Get()->IsMagnifierEnabled();
+  ash::MagnifierType magnifier_type =
+      chromeos::MagnificationManager::Get()->GetMagnifierType();
+  ash::Shell::GetInstance()->magnification_controller()->
+      SetEnabled(magnifier_enabled && magnifier_type == ash::MAGNIFIER_FULL);
+  ash::Shell::GetInstance()->partial_magnification_controller()->
+      SetEnabled(magnifier_enabled && magnifier_type == ash::MAGNIFIER_PARTIAL);
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableZeroBrowsersOpenForTests)) {
-    browser::StartKeepAlive();
+    chrome::StartKeepAlive();
   }
 #endif
   ash::Shell::GetPrimaryRootWindow()->ShowRootWindow();
 }
 
 void CloseAsh() {
-  if (ash::Shell::HasInstance())
+  // If shutdown is initiated by |BrowserX11IOErrorHandler|, don't
+  // try to cleanup resources.
+  if (!browser_shutdown::ShuttingDownWithoutClosingBrowsers() &&
+      ash::Shell::HasInstance()) {
     ash::Shell::DeleteInstance();
+  }
 }
 
 }  // namespace chrome

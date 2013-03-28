@@ -8,11 +8,11 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/string_piece.h"
+#include "extensions/common/url_pattern.h"
+#include "extensions/common/url_pattern_set.h"
 #include "googleurl/src/gurl.h"
-#include "chrome/common/extensions/url_pattern.h"
-#include "chrome/common/extensions/url_pattern_set.h"
 
 class Pickle;
 class PickleIterator;
@@ -26,17 +26,13 @@ class UserScript {
   // The file extension for standalone user scripts.
   static const char kFileExtension[];
 
-  // The bitmask for valid user script injectable schemes used by URLPattern.
-  enum {
-    kValidUserScriptSchemes = URLPattern::SCHEME_HTTP |
-                              URLPattern::SCHEME_HTTPS |
-                              URLPattern::SCHEME_FILE |
-                              URLPattern::SCHEME_FTP
-  };
-
   // Check if a URL should be treated as a user script and converted to an
   // extension.
   static bool IsURLUserScript(const GURL& url, const std::string& mime_type);
+
+  // Get the valid user script schemes for the current process. If
+  // canExecuteScriptEverywhere is true, this will return ALL_SCHEMES.
+  static int ValidUserScriptSchemes(bool canExecuteScriptEverywhere = false);
 
   // Locations that user scripts can be run inside the document.
   enum RunLocation {
@@ -55,13 +51,14 @@ class UserScript {
   // Holds actual script file info.
   class File {
    public:
-    File(const FilePath& extension_root, const FilePath& relative_path,
+    File(const base::FilePath& extension_root,
+         const base::FilePath& relative_path,
          const GURL& url);
     File();
     ~File();
 
-    const FilePath& extension_root() const { return extension_root_; }
-    const FilePath& relative_path() const { return relative_path_; }
+    const base::FilePath& extension_root() const { return extension_root_; }
+    const base::FilePath& relative_path() const { return relative_path_; }
 
     const GURL& url() const { return url_; }
     void set_url(const GURL& url) { url_ = url; }
@@ -89,8 +86,8 @@ class UserScript {
    private:
     // Where the script file lives on the disk. We keep the path split so that
     // it can be localized at will.
-    FilePath extension_root_;
-    FilePath relative_path_;
+    base::FilePath extension_root_;
+    base::FilePath relative_path_;
 
     // The url to this scipt file.
     GURL url_;

@@ -21,10 +21,10 @@
 //
 // Option (2) is not easy because pyautolib uses code from Chrome
 // (see chrome_tests.gypi, dependencies for target_name: pyautolib) that
-// has been instrumented with ASAN. So even if we disable -faddress-sanitizer
+// has been instrumented with ASAN. So even if we disable -sanitize=address
 // for pyautolib own sources, ASAN instrumentation will creep in from there.
 // To avoid ASAN instrumentation, we might force Chrome build to compile all our
-// dependencies one more time without -faddress-sanitizer.
+// dependencies one more time without -fsanitize=address.
 //
 // Note also that using these empty stubs prevents ASAN from catching bugs in
 // Python-pyautolib process. But we do not need it, we are interested in Chrome
@@ -60,16 +60,25 @@ void __asan_init() {
   }
 }
 
-void __asan_register_globals() { }
-void __asan_unregister_globals() { }
+// Update the name when asan api updates.
+void __asan_init_v1() {
+  __asan_init();
+}
+
 void __asan_handle_no_return() { }
+void __asan_register_globals() { }
 void __asan_report_load1() { }
+void __asan_report_load16() { }
 void __asan_report_load2() { }
 void __asan_report_load4() { }
 void __asan_report_load8() { }
-void __asan_report_load16() { }
+void __asan_report_load_n() { }
 void __asan_report_store1() { }
+void __asan_report_store16() { }
 void __asan_report_store2() { }
 void __asan_report_store4() { }
 void __asan_report_store8() { }
-void __asan_report_store16() { }
+void __asan_report_store_n() { }
+void __asan_set_error_report_callback() { }
+void __asan_unregister_globals() { }
+void __sanitizer_sandbox_on_notify() { }

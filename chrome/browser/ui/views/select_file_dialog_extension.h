@@ -10,8 +10,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/ui/views/extensions/extension_dialog_observer.h"
-#include "ui/base/dialogs/select_file_dialog.h"
 #include "ui/gfx/native_widget_types.h"  // gfx::NativeWindow
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 class ExtensionDialog;
 class Profile;
@@ -58,14 +58,15 @@ class SelectFileDialogExtension
 
  protected:
   // SelectFileDialog implementation.
-  virtual void SelectFileImpl(Type type,
-                              const string16& title,
-                              const FilePath& default_path,
-                              const FileTypeInfo* file_types,
-                              int file_type_index,
-                              const FilePath::StringType& default_extension,
-                              gfx::NativeWindow owning_window,
-                              void* params) OVERRIDE;
+  virtual void SelectFileImpl(
+      Type type,
+      const string16& title,
+      const base::FilePath& default_path,
+      const FileTypeInfo* file_types,
+      int file_type_index,
+      const base::FilePath::StringType& default_extension,
+      gfx::NativeWindow owning_window,
+      void* params) OVERRIDE;
 
  private:
   friend class SelectFileDialogExtensionBrowserTest;

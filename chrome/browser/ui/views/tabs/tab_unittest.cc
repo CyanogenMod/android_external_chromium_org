@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/tabs/tab.h"
-
-#include "chrome/browser/ui/tabs/tab_strip_selection_model.h"
 #include "chrome/browser/ui/views/tabs/tab_controller.h"
+
+#include "base/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/models/list_selection_model.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/widget.h"
 
@@ -14,54 +15,70 @@ using views::Widget;
 
 class FakeTabController : public TabController {
  public:
-  FakeTabController() {
+  FakeTabController() : immersive_style_(false) {
   }
   virtual ~FakeTabController() {}
 
-  virtual const TabStripSelectionModel& GetSelectionModel() OVERRIDE {
+  void set_immersive_style(bool value) { immersive_style_ = value; }
+
+  virtual const ui::ListSelectionModel& GetSelectionModel() OVERRIDE {
     return selection_model_;
   }
   virtual bool SupportsMultipleSelection() OVERRIDE { return false; }
-  virtual void SelectTab(BaseTab* tab) OVERRIDE {}
-  virtual void ExtendSelectionTo(BaseTab* tab) OVERRIDE {}
-  virtual void ToggleSelected(BaseTab* tab) OVERRIDE {}
-  virtual void AddSelectionFromAnchorTo(BaseTab* tab) OVERRIDE {}
-  virtual void CloseTab(BaseTab* tab, CloseTabSource source) OVERRIDE {}
-  virtual void ShowContextMenuForTab(BaseTab* tab,
+  virtual void SelectTab(Tab* tab) OVERRIDE {}
+  virtual void ExtendSelectionTo(Tab* tab) OVERRIDE {}
+  virtual void ToggleSelected(Tab* tab) OVERRIDE {}
+  virtual void AddSelectionFromAnchorTo(Tab* tab) OVERRIDE {}
+  virtual void CloseTab(Tab* tab, CloseTabSource source) OVERRIDE {}
+  virtual void ShowContextMenuForTab(Tab* tab,
                                      const gfx::Point& p) OVERRIDE {}
-  virtual bool IsActiveTab(const BaseTab* tab) const OVERRIDE { return false; }
-  virtual bool IsTabSelected(const BaseTab* tab) const OVERRIDE {
+  virtual bool IsActiveTab(const Tab* tab) const OVERRIDE { return false; }
+  virtual bool IsTabSelected(const Tab* tab) const OVERRIDE {
     return false;
   }
-  virtual bool IsTabPinned(const BaseTab* tab) const OVERRIDE { return false; }
+  virtual bool IsTabPinned(const Tab* tab) const OVERRIDE { return false; }
   virtual void MaybeStartDrag(
-      BaseTab* tab,
+      Tab* tab,
       const ui::LocatedEvent& event,
-      const TabStripSelectionModel& original_selection) OVERRIDE {}
+      const ui::ListSelectionModel& original_selection) OVERRIDE {}
   virtual void ContinueDrag(views::View* view,
-                            const gfx::Point& location) OVERRIDE {}
+                            const ui::LocatedEvent& event) OVERRIDE {}
   virtual bool EndDrag(EndDragReason reason) OVERRIDE { return false; }
-  virtual BaseTab* GetTabAt(BaseTab* tab,
-                            const gfx::Point& tab_in_tab_coordinates) OVERRIDE {
+  virtual Tab* GetTabAt(Tab* tab,
+                        const gfx::Point& tab_in_tab_coordinates) OVERRIDE {
     return NULL;
   }
   virtual void OnMouseEventInTab(views::View* source,
                                  const ui::MouseEvent& event) OVERRIDE {}
-  virtual bool ShouldPaintTab(const BaseTab* tab, gfx::Rect* clip) OVERRIDE {
+  virtual bool ShouldPaintTab(const Tab* tab, gfx::Rect* clip) OVERRIDE {
     return true;
   }
+  virtual bool IsImmersiveStyle() const OVERRIDE { return immersive_style_; }
 
  private:
-  TabStripSelectionModel selection_model_;
+  ui::ListSelectionModel selection_model_;
+  bool immersive_style_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeTabController);
 };
 
-typedef views::ViewsTestBase TabTest;
+class TabTest : public views::ViewsTestBase {
+ public:
+  TabTest() {}
+  virtual ~TabTest() {}
+
+  static bool IconAnimationInvariant(const Tab& tab) {
+    bool capture_invariant =
+        tab.data().CaptureActive() == (tab.icon_animation_.get() != NULL);
+    bool audio_invariant =
+        !tab.data().AudioActive() || tab.tab_audio_indicator_->IsAnimating();
+    return capture_invariant && audio_invariant;
+  }
+};
 
 TEST_F(TabTest, HitTestTopPixel) {
   Widget widget;
-  Widget::InitParams params;
+  Widget::InitParams params(CreateParams(Widget::InitParams::TYPE_WINDOW));
   params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds.SetRect(10, 20, 300, 400);
   widget.Init(params);
@@ -87,4 +104,91 @@ TEST_F(TabTest, HitTestTopPixel) {
   // But clicks in the area above the slanted sides should still miss.
   EXPECT_FALSE(tab.HitTestPoint(gfx::Point(0, 0)));
   EXPECT_FALSE(tab.HitTestPoint(gfx::Point(tab.width() - 1, 0)));
+}
+
+TEST_F(TabTest, ActivityIndicators) {
+  FakeTabController controller;
+  Tab tab(&controller);
+
+  SkBitmap bitmap;
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
+  bitmap.allocPixels();
+
+  TabRendererData data;
+  data.favicon = gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
+  tab.SetData(data);
+
+  // Audio starts and stops.
+  data.audio_state = TabRendererData::AUDIO_STATE_PLAYING;
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+  EXPECT_EQ(TabRendererData::AUDIO_STATE_PLAYING, tab.data().audio_state);
+  EXPECT_EQ(TabRendererData::CAPTURE_STATE_NONE, tab.data().capture_state);
+  data.audio_state = TabRendererData::AUDIO_STATE_NONE;
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+  EXPECT_EQ(TabRendererData::AUDIO_STATE_NONE, tab.data().audio_state);
+  EXPECT_EQ(TabRendererData::CAPTURE_STATE_NONE, tab.data().capture_state);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+
+  // Capture starts and stops.
+  data.capture_state = TabRendererData::CAPTURE_STATE_RECORDING;
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+  EXPECT_EQ(TabRendererData::AUDIO_STATE_NONE, tab.data().audio_state);
+  EXPECT_EQ(TabRendererData::CAPTURE_STATE_RECORDING, tab.data().capture_state);
+  data.capture_state = TabRendererData::CAPTURE_STATE_NONE;
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+  EXPECT_EQ(TabRendererData::AUDIO_STATE_NONE, tab.data().audio_state);
+  EXPECT_EQ(TabRendererData::CAPTURE_STATE_NONE, tab.data().capture_state);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+
+  // Audio starts then capture starts, then audio stops then capture stops.
+  data.audio_state = TabRendererData::AUDIO_STATE_PLAYING;
+  tab.SetData(data);
+  data.capture_state = TabRendererData::CAPTURE_STATE_RECORDING;
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+  EXPECT_EQ(TabRendererData::AUDIO_STATE_PLAYING, tab.data().audio_state);
+  EXPECT_EQ(TabRendererData::CAPTURE_STATE_RECORDING, tab.data().capture_state);
+
+  data.title = ASCIIToUTF16("test X");
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+
+  data.audio_state = TabRendererData::AUDIO_STATE_NONE;
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+  EXPECT_EQ(TabRendererData::CAPTURE_STATE_RECORDING, tab.data().capture_state);
+  data.capture_state = TabRendererData::CAPTURE_STATE_NONE;
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+  EXPECT_EQ(TabRendererData::AUDIO_STATE_NONE, tab.data().audio_state);
+  EXPECT_EQ(TabRendererData::CAPTURE_STATE_NONE, tab.data().capture_state);
+
+  // Audio starts then capture starts, then capture stops then audio stops.
+  data.audio_state = TabRendererData::AUDIO_STATE_PLAYING;
+  tab.SetData(data);
+  data.capture_state = TabRendererData::CAPTURE_STATE_RECORDING;
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+  EXPECT_EQ(TabRendererData::AUDIO_STATE_PLAYING, tab.data().audio_state);
+  EXPECT_EQ(TabRendererData::CAPTURE_STATE_RECORDING, tab.data().capture_state);
+
+  data.title = ASCIIToUTF16("test Y");
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+
+  data.capture_state = TabRendererData::CAPTURE_STATE_NONE;
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+  EXPECT_EQ(TabRendererData::CAPTURE_STATE_NONE, tab.data().capture_state);
+
+  data.audio_state = TabRendererData::AUDIO_STATE_NONE;
+  tab.SetData(data);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
+  EXPECT_EQ(TabRendererData::AUDIO_STATE_NONE, tab.data().audio_state);
+  EXPECT_EQ(TabRendererData::CAPTURE_STATE_NONE, tab.data().capture_state);
+  EXPECT_TRUE(IconAnimationInvariant(tab));
 }

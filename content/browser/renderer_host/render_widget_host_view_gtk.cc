@@ -25,10 +25,11 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/string_number_conversions.h"
+#include "base/strings/utf_offset_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_offset_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility_gtk.h"
+#include "content/browser/accessibility/browser_accessibility_manager_gtk.h"
 #include "content/browser/renderer_host/backing_store_gtk.h"
 #include "content/browser/renderer_host/gtk_im_context_wrapper.h"
 #include "content/browser/renderer_host/gtk_key_bindings_handler.h"
@@ -36,6 +37,7 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
@@ -43,6 +45,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/gtk/WebInputEventFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/x11/WebScreenInfoFactory.h"
+#include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/text/text_elider.h"
 #include "ui/base/x/active_window_watcher_x.h"
@@ -101,7 +104,7 @@ GdkCursor* GetMozSpinningCursor() {
   return moz_spinning_cursor;
 }
 
-bool MovedToCenter(const WebKit::WebMouseEvent& mouse_event,
+bool MovedToPoint(const WebKit::WebMouseEvent& mouse_event,
                    const gfx::Point& center) {
   return mouse_event.globalX == center.x() &&
          mouse_event.globalY == center.y();
@@ -224,9 +227,6 @@ class RenderWidgetHostViewGtkWidget {
         host_view->is_fullscreen_;
     if (should_close_on_escape && GDK_Escape == event->keyval) {
       host_view->host_->Shutdown();
-    } else if (host_view->host_ &&
-               host_view->host_->KeyPressListenersHandleEvent(event)) {
-      return TRUE;
     } else {
       // Send key event to input method.
       host_view->im_context_->ProcessKeyEvent(event);
@@ -391,7 +391,7 @@ class RenderWidgetHostViewGtkWidget {
     if (host_view->mouse_locked_) {
       gfx::Point center = host_view->GetWidgetCenter();
 
-      bool moved_to_center = MovedToCenter(mouse_event, center);
+      bool moved_to_center = MovedToPoint(mouse_event, center);
       if (moved_to_center)
         host_view->mouse_has_been_warped_to_new_center_ = true;
 
@@ -408,8 +408,12 @@ class RenderWidgetHostViewGtkWidget {
       }
     } else {  // Mouse is not locked.
       host_view->ModifyEventMovementAndCoords(&mouse_event);
-      RenderWidgetHostImpl::From(
-          host_view->GetRenderWidgetHost())->ForwardMouseEvent(mouse_event);
+      // Do not send mouse events while the mouse cursor is being warped back
+      // to the unlocked location.
+      if (!host_view->mouse_is_being_warped_to_unlocked_position_) {
+        RenderWidgetHostImpl::From(
+            host_view->GetRenderWidgetHost())->ForwardMouseEvent(mouse_event);
+      }
     }
     return FALSE;
   }
@@ -454,27 +458,6 @@ class RenderWidgetHostViewGtkWidget {
             << " data_format: " << event->data_format
             << " data: " << event->data.l;
     return TRUE;
-  }
-
-  // Allow the vertical scroll delta to be overridden from the command line.
-  // This will allow us to test more easily to discover the amount
-  // (either hard coded or computed) that's best.
-  static float GetScrollPixelsPerTick() {
-    static float scroll_pixels = -1;
-    if (scroll_pixels < 0) {
-      // TODO(brettw): Remove the command line switch (crbug.com/63525)
-      scroll_pixels = kDefaultScrollPixelsPerTick;
-      CommandLine* command_line = CommandLine::ForCurrentProcess();
-      std::string scroll_pixels_option =
-          command_line->GetSwitchValueASCII(switches::kScrollPixels);
-      if (!scroll_pixels_option.empty()) {
-        double v;
-        if (base::StringToDouble(scroll_pixels_option, &v))
-          scroll_pixels = static_cast<float>(v);
-      }
-      DCHECK_GT(scroll_pixels, 0);
-    }
-    return scroll_pixels;
   }
 
   // Return the net up / down (or left / right) distance represented by events
@@ -522,7 +505,7 @@ class RenderWidgetHostViewGtkWidget {
       gdk_event_put(event);
       gdk_event_free(event);
     }
-    return num_clicks * GetScrollPixelsPerTick();
+    return num_clicks * kDefaultScrollPixelsPerTick;
   }
 
   static gboolean OnMouseScrollEvent(GtkWidget* widget,
@@ -546,15 +529,15 @@ class RenderWidgetHostViewGtkWidget {
     if (event->direction == GDK_SCROLL_UP ||
         event->direction == GDK_SCROLL_DOWN) {
       if (event->direction == GDK_SCROLL_UP)
-        web_event.deltaY = GetScrollPixelsPerTick();
+        web_event.deltaY = kDefaultScrollPixelsPerTick;
       else
-        web_event.deltaY = -GetScrollPixelsPerTick();
+        web_event.deltaY = -kDefaultScrollPixelsPerTick;
       web_event.deltaY += GetPendingScrollDelta(true, event->state);
     } else {
       if (event->direction == GDK_SCROLL_LEFT)
-        web_event.deltaX = GetScrollPixelsPerTick();
+        web_event.deltaX = kDefaultScrollPixelsPerTick;
       else
-        web_event.deltaX = -GetScrollPixelsPerTick();
+        web_event.deltaX = -kDefaultScrollPixelsPerTick;
       web_event.deltaX += GetPendingScrollDelta(false, event->state);
     }
     RenderWidgetHostImpl::From(
@@ -576,6 +559,7 @@ RenderWidgetHostViewGtk::RenderWidgetHostViewGtk(RenderWidgetHost* widget_host)
       do_x_grab_(false),
       is_fullscreen_(false),
       made_active_(false),
+      mouse_is_being_warped_to_unlocked_position_(false),
       destroy_handler_id_(0),
       dragged_at_horizontal_edge_(0),
       dragged_at_vertical_edge_(0),
@@ -588,6 +572,18 @@ RenderWidgetHostViewGtk::~RenderWidgetHostViewGtk() {
   UnlockMouse();
   set_last_mouse_down(NULL);
   view_.Destroy();
+}
+
+bool RenderWidgetHostViewGtk::OnMessageReceived(const IPC::Message& message) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostViewGtk, message)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_CreatePluginContainer,
+                        OnCreatePluginContainer)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DestroyPluginContainer,
+                        OnDestroyPluginContainer)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
 }
 
 void RenderWidgetHostViewGtk::InitAsChild(
@@ -730,6 +726,7 @@ void RenderWidgetHostViewGtk::SetSize(const gfx::Size& size) {
   if (requested_size_.width() != width ||
       requested_size_.height() != height) {
     requested_size_ = gfx::Size(width, height);
+    host_->SendScreenRects();
     host_->WasResized();
   }
 }
@@ -776,7 +773,7 @@ void RenderWidgetHostViewGtk::Blur() {
 }
 
 bool RenderWidgetHostViewGtk::HasFocus() const {
-  return gtk_widget_is_focus(view_.get());
+  return gtk_widget_has_focus(view_.get());
 }
 
 void RenderWidgetHostViewGtk::ActiveWindowChanged(GdkWindow* window) {
@@ -789,6 +786,10 @@ void RenderWidgetHostViewGtk::ActiveWindowChanged(GdkWindow* window) {
   // down.
   if (is_fullscreen_ && our_window != window && made_active_)
     host_->Shutdown();
+}
+
+bool RenderWidgetHostViewGtk::Send(IPC::Message* message) {
+  return host_->Send(message);
 }
 
 bool RenderWidgetHostViewGtk::IsSurfaceAvailableForCopy() const {
@@ -846,8 +847,14 @@ void RenderWidgetHostViewGtk::ImeCancelComposition() {
   im_context_->CancelComposition();
 }
 
+void RenderWidgetHostViewGtk::ImeCompositionRangeChanged(
+    const ui::Range& range,
+    const std::vector<gfx::Rect>& character_bounds) {
+}
+
 void RenderWidgetHostViewGtk::DidUpdateBackingStore(
-    const gfx::Rect& scroll_rect, int scroll_dx, int scroll_dy,
+    const gfx::Rect& scroll_rect,
+    const gfx::Vector2d& scroll_delta,
     const std::vector<gfx::Rect>& copy_rects) {
   TRACE_EVENT0("ui::gtk", "RenderWidgetHostViewGtk::DidUpdateBackingStore");
 
@@ -895,27 +902,29 @@ void RenderWidgetHostViewGtk::Destroy() {
     gdk_display_keyboard_ungrab(display, GDK_CURRENT_TIME);
   }
 
-  // If this is a popup or fullscreen widget, then we need to destroy the window
-  // that we created to hold it.
-  if (IsPopup() || is_fullscreen_) {
-    GtkWidget* window = gtk_widget_get_parent(view_.get());
+  if (view_.get()) {
+    // If this is a popup or fullscreen widget, then we need to destroy the
+    // window that we created to hold it.
+    if (IsPopup() || is_fullscreen_) {
+      GtkWidget* window = gtk_widget_get_parent(view_.get());
 
-    ui::ActiveWindowWatcherX::RemoveObserver(this);
+      ui::ActiveWindowWatcherX::RemoveObserver(this);
 
-    // Disconnect the destroy handler so that we don't try to shutdown twice.
-    if (is_fullscreen_)
-      g_signal_handler_disconnect(window, destroy_handler_id_);
+      // Disconnect the destroy handler so that we don't try to shutdown twice.
+      if (is_fullscreen_)
+        g_signal_handler_disconnect(window, destroy_handler_id_);
 
-    gtk_widget_destroy(window);
+      gtk_widget_destroy(window);
+    }
+
+    // Remove |view_| from all containers now, so nothing else can hold a
+    // reference to |view_|'s widget except possibly a gtk signal handler if
+    // this code is currently executing within the context of a gtk signal
+    // handler.  Note that |view_| is still alive after this call.  It will be
+    // deallocated in the destructor.
+    // See http://crbug.com/11847 for details.
+    gtk_widget_destroy(view_.get());
   }
-
-  // Remove |view_| from all containers now, so nothing else can hold a
-  // reference to |view_|'s widget except possibly a gtk signal handler if
-  // this code is currently executing within the context of a gtk signal
-  // handler.  Note that |view_| is still alive after this call.  It will be
-  // deallocated in the destructor.
-  // See http://www.crbug.com/11847 for details.
-  gtk_widget_destroy(view_.get());
 
   // The RenderWidgetHost's destruction led here, so don't call it.
   host_ = NULL;
@@ -957,18 +966,22 @@ void RenderWidgetHostViewGtk::SelectionChanged(const string16& text,
     return;
   }
 
-  std::string utf8_selection = UTF16ToUTF8(text.substr(pos, n));
-  GtkClipboard* x_clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
-  gtk_clipboard_set_text(
-      x_clipboard, utf8_selection.c_str(), utf8_selection.length());
+  BrowserContext* browser_context = host_->GetProcess()->GetBrowserContext();
+  // Set the BUFFER_SELECTION to the ui::Clipboard.
+  ui::ScopedClipboardWriter clipboard_writer(
+      ui::Clipboard::GetForCurrentThread(),
+      ui::Clipboard::BUFFER_SELECTION,
+      BrowserContext::GetMarkerForOffTheRecordContext(browser_context));
+  clipboard_writer.WriteText(text.substr(pos, n));
 }
 
 void RenderWidgetHostViewGtk::SelectionBoundsChanged(
-    const gfx::Rect& start_rect,
-    WebKit::WebTextDirection start_direction,
-    const gfx::Rect& end_rect,
-    WebKit::WebTextDirection end_direction) {
-  im_context_->UpdateCaretBounds(gfx::UnionRects(start_rect, end_rect));
+    const ViewHostMsg_SelectionBounds_Params& params) {
+  im_context_->UpdateCaretBounds(
+      gfx::UnionRects(params.anchor_rect, params.focus_rect));
+}
+
+void RenderWidgetHostViewGtk::ScrollOffsetChanged() {
 }
 
 GdkEventButton* RenderWidgetHostViewGtk::GetLastMouseDown() {
@@ -1037,51 +1050,46 @@ BackingStore* RenderWidgetHostViewGtk::AllocBackingStore(
 void RenderWidgetHostViewGtk::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& /* dst_size */,
-    const base::Callback<void(bool)>& callback,
-    skia::PlatformBitmap* output) {
-  base::ScopedClosureRunner scoped_callback_runner(base::Bind(callback, false));
+    const base::Callback<void(bool, const SkBitmap&)>& callback) {
+  // Grab the snapshot from the renderer as that's the only reliable way to
+  // readback from the GPU for this platform right now.
+  GetRenderWidgetHost()->GetSnapshotFromRenderer(src_subrect, callback);
+}
 
-  gfx::Rect src_subrect_in_view = src_subrect;
-  src_subrect_in_view.Offset(GetViewBounds().OffsetFromOrigin());
+void RenderWidgetHostViewGtk::CopyFromCompositingSurfaceToVideoFrame(
+      const gfx::Rect& src_subrect,
+      const scoped_refptr<media::VideoFrame>& target,
+      const base::Callback<void(bool)>& callback) {
+  NOTIMPLEMENTED();
+  callback.Run(false);
+}
 
-  ui::XScopedImage image(XGetImage(ui::GetXDisplay(), ui::GetX11RootWindow(),
-                                   src_subrect_in_view.x(),
-                                   src_subrect_in_view.y(),
-                                   src_subrect_in_view.width(),
-                                   src_subrect_in_view.height(),
-                                   AllPlanes, ZPixmap));
-  if (!image.get())
-    return;
-
-  if (!output->Allocate(src_subrect.width(), src_subrect.height(), true))
-    return;
-
-  const SkBitmap& bitmap = output->GetBitmap();
-  const size_t bitmap_size = bitmap.getSize();
-  DCHECK_EQ(bitmap_size,
-            static_cast<size_t>(image->height * image->bytes_per_line));
-  unsigned char* pixels = static_cast<unsigned char*>(bitmap.getPixels());
-  memcpy(pixels, image->data, bitmap_size);
-
-  scoped_callback_runner.Release();
-  callback.Run(true);
+bool RenderWidgetHostViewGtk::CanCopyToVideoFrame() const {
+  return false;
 }
 
 void RenderWidgetHostViewGtk::AcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
     int gpu_host_id) {
-  RenderWidgetHostImpl::AcknowledgeBufferPresent(
-      params.route_id, gpu_host_id, true, 0);
+   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
+   ack_params.sync_point = 0;
+   RenderWidgetHostImpl::AcknowledgeBufferPresent(
+      params.route_id, gpu_host_id, ack_params);
 }
 
 void RenderWidgetHostViewGtk::AcceleratedSurfacePostSubBuffer(
     const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
     int gpu_host_id) {
-  RenderWidgetHostImpl::AcknowledgeBufferPresent(
-      params.route_id, gpu_host_id, true, 0);
+   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
+   ack_params.sync_point = 0;
+   RenderWidgetHostImpl::AcknowledgeBufferPresent(
+      params.route_id, gpu_host_id, ack_params);
 }
 
 void RenderWidgetHostViewGtk::AcceleratedSurfaceSuspend() {
+}
+
+void RenderWidgetHostViewGtk::AcceleratedSurfaceRelease() {
 }
 
 bool RenderWidgetHostViewGtk::HasAcceleratedSurface(
@@ -1094,7 +1102,7 @@ bool RenderWidgetHostViewGtk::HasAcceleratedSurface(
 
 void RenderWidgetHostViewGtk::SetBackground(const SkBitmap& background) {
   RenderWidgetHostViewBase::SetBackground(background);
-  host_->Send(new ViewMsg_SetBackground(host_->GetRoutingID(), background));
+  Send(new ViewMsg_SetBackground(host_->GetRoutingID(), background));
 }
 
 void RenderWidgetHostViewGtk::ModifyEventForEdgeDragging(
@@ -1233,16 +1241,6 @@ void RenderWidgetHostViewGtk::ShowCurrentCursor() {
   gdk_window_set_cursor(gtk_widget_get_window(view_.get()), gdk_cursor);
 }
 
-void RenderWidgetHostViewGtk::CreatePluginContainer(
-    gfx::PluginWindowHandle id) {
-  plugin_container_manager_.CreatePluginContainer(id);
-}
-
-void RenderWidgetHostViewGtk::DestroyPluginContainer(
-    gfx::PluginWindowHandle id) {
-  plugin_container_manager_.DestroyPluginContainer(id);
-}
-
 void RenderWidgetHostViewGtk::SetHasHorizontalScrollbar(
     bool has_horizontal_scrollbar) {
 }
@@ -1273,12 +1271,12 @@ void RenderWidgetHostViewGtk::GetScreenInfo(WebScreenInfo* results) {
 gfx::Rect RenderWidgetHostViewGtk::GetBoundsInRootWindow() {
   GtkWidget* toplevel = gtk_widget_get_toplevel(view_.get());
   if (!toplevel)
-    return gfx::Rect();
+    return GetViewBounds();
 
   GdkRectangle frame_extents;
   GdkWindow* gdk_window = gtk_widget_get_window(toplevel);
   if (!gdk_window)
-    return gfx::Rect();
+    return GetViewBounds();
 
   gdk_window_get_frame_extents(gdk_window, &frame_extents);
   return gfx::Rect(frame_extents.x, frame_extents.y,
@@ -1294,7 +1292,7 @@ gfx::GLSurfaceHandle RenderWidgetHostViewGtk::GetCompositingSurface() {
       DLOG(ERROR) << "Can't find XID for view id " << view_id;
     }
   }
-  return gfx::GLSurfaceHandle(compositing_surface_, true);
+  return gfx::GLSurfaceHandle(compositing_surface_, gfx::NATIVE_TRANSPORT);
 }
 
 bool RenderWidgetHostViewGtk::LockMouse() {
@@ -1357,6 +1355,7 @@ void RenderWidgetHostViewGtk::UnlockMouse() {
   gdk_display_warp_pointer(display, screen,
                            unlocked_global_mouse_position_.x(),
                            unlocked_global_mouse_position_.y());
+  mouse_is_being_warped_to_unlocked_position_ = true;
 
   if (host_)
     host_->LostMouseLock();
@@ -1370,7 +1369,7 @@ void RenderWidgetHostViewGtk::ForwardKeyboardEvent(
   EditCommands edit_commands;
   if (!event.skip_in_browser &&
       key_bindings_handler_->Match(event, &edit_commands)) {
-    host_->Send(new ViewMsg_SetEditCommandsForNextKeyEvent(
+    Send(new ViewMsg_SetEditCommandsForNextKeyEvent(
         host_->GetRoutingID(), edit_commands));
     NativeWebKeyboardEvent copy_event(event);
     copy_event.match_edit_command = true;
@@ -1395,7 +1394,7 @@ bool RenderWidgetHostViewGtk::RetrieveSurrounding(std::string* text,
     return true;
   }
 
-  *text = UTF16ToUTF8AndAdjustOffset(
+  *text = base::UTF16ToUTF8AndAdjustOffset(
       base::StringPiece16(selection_text_), &offset);
   if (offset == string16::npos) {
     NOTREACHED() << "Invalid offset in UTF16 string.";
@@ -1449,6 +1448,15 @@ void RenderWidgetHostViewGtk::ModifyEventMovementAndCoords(
   // effect.
   event->movementX = event->globalX - global_mouse_position_.x();
   event->movementY = event->globalY - global_mouse_position_.y();
+
+  // While the cursor is being warped back to the unlocked position, suppress
+  // the movement member data.
+  if (mouse_is_being_warped_to_unlocked_position_) {
+    event->movementX = 0;
+    event->movementY = 0;
+    if (MovedToPoint(*event, unlocked_global_mouse_position_))
+      mouse_is_being_warped_to_unlocked_position_ = false;
+  }
 
   global_mouse_position_.SetPoint(event->globalX, event->globalY);
 
@@ -1526,14 +1534,23 @@ gfx::Point RenderWidgetHostViewGtk::GetLastTouchEventLocation() const {
   return gfx::Point();
 }
 
+void RenderWidgetHostViewGtk::FatalAccessibilityTreeError() {
+  if (host_) {
+    host_->FatalAccessibilityTreeError();
+    SetBrowserAccessibilityManager(NULL);
+  } else {
+    CHECK(FALSE);
+  }
+}
+
 void RenderWidgetHostViewGtk::OnAccessibilityNotifications(
     const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
   if (!browser_accessibility_manager_.get()) {
     GtkWidget* parent = gtk_widget_get_parent(view_.get());
     browser_accessibility_manager_.reset(
-        BrowserAccessibilityManager::CreateEmptyDocument(
+        new BrowserAccessibilityManagerGtk(
             parent,
-            static_cast<AccessibilityNodeData::State>(0),
+            BrowserAccessibilityManagerGtk::GetEmptyDocument(),
             this));
   }
   browser_accessibility_manager_->OnAccessibilityNotifications(params);
@@ -1543,9 +1560,9 @@ AtkObject* RenderWidgetHostViewGtk::GetAccessible() {
   if (!browser_accessibility_manager_.get()) {
     GtkWidget* parent = gtk_widget_get_parent(view_.get());
     browser_accessibility_manager_.reset(
-        BrowserAccessibilityManager::CreateEmptyDocument(
+        new BrowserAccessibilityManagerGtk(
             parent,
-            static_cast<AccessibilityNodeData::State>(0),
+            BrowserAccessibilityManagerGtk::GetEmptyDocument(),
             this));
   }
   BrowserAccessibilityGtk* root =
@@ -1553,6 +1570,16 @@ AtkObject* RenderWidgetHostViewGtk::GetAccessible() {
 
   atk_object_set_role(root->GetAtkObject(), ATK_ROLE_HTML_CONTAINER);
   return root->GetAtkObject();
+}
+
+void RenderWidgetHostViewGtk::OnCreatePluginContainer(
+    gfx::PluginWindowHandle id) {
+  plugin_container_manager_.CreatePluginContainer(id);
+}
+
+void RenderWidgetHostViewGtk::OnDestroyPluginContainer(
+    gfx::PluginWindowHandle id) {
+  plugin_container_manager_.DestroyPluginContainer(id);
 }
 
 }  // namespace content

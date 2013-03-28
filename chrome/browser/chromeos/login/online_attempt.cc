@@ -7,11 +7,13 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state_resolver.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -39,37 +41,26 @@ namespace chromeos {
 // static
 const int OnlineAttempt::kClientLoginTimeoutMs = 10000;
 
-OnlineAttempt::OnlineAttempt(bool using_oauth,
-                             AuthAttemptState* current_attempt,
+OnlineAttempt::OnlineAttempt(AuthAttemptState* current_attempt,
                              AuthAttemptStateResolver* callback)
-    : using_oauth_(using_oauth),
-      attempt_(current_attempt),
+    : attempt_(current_attempt),
       resolver_(callback),
       weak_factory_(this),
       try_again_(true) {
+  DCHECK(attempt_->user_type == User::USER_TYPE_REGULAR);
 }
 
 OnlineAttempt::~OnlineAttempt() {
   // Just to be sure.
   if (client_fetcher_.get())
     client_fetcher_->CancelRequest();
-
-  if (oauth_fetcher_.get())
-    oauth_fetcher_->CancelRequest();
 }
 
 void OnlineAttempt::Initiate(Profile* auth_profile) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (using_oauth_) {
-    oauth_fetcher_.reset(
-        new GaiaOAuthFetcher(this,
-                             auth_profile->GetRequestContext(),
-                             kServiceScopeChromeOS));
-  } else {
-    client_fetcher_.reset(
-        new GaiaAuthFetcher(this, GaiaConstants::kChromeOSSource,
-                            auth_profile->GetRequestContext()));
-  }
+  client_fetcher_.reset(
+      new GaiaAuthFetcher(this, GaiaConstants::kChromeOSSource,
+                          auth_profile->GetRequestContext()));
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&OnlineAttempt::TryClientLogin, weak_factory_.GetWeakPtr()));
@@ -95,7 +86,7 @@ void OnlineAttempt::OnClientLoginSuccess(
     TryClientLogin();
     return;
   }
-  TriggerResolve(LoginFailure::None());
+  TriggerResolve(LoginFailure::LoginFailureNone());
 }
 
 void OnlineAttempt::OnClientLoginFailure(
@@ -130,24 +121,12 @@ void OnlineAttempt::OnClientLoginFailure(
 
   if (error.state() == GoogleServiceAuthError::TWO_FACTOR) {
     LOG(WARNING) << "Two factor authenticated. Sync will not work.";
-    TriggerResolve(LoginFailure::None());
+    TriggerResolve(LoginFailure::LoginFailureNone());
 
     return;
   }
   VLOG(2) << "ClientLogin attempt failed with " << error.state();
   TriggerResolve(LoginFailure::FromNetworkAuthFailure(error));
-}
-
-void OnlineAttempt::OnOAuthLoginSuccess(const std::string& sid,
-                                        const std::string& lsid,
-                                        const std::string& auth) {
-  GaiaAuthConsumer::ClientLoginResult credentials(sid,
-    lsid, auth, std::string());
-  OnClientLoginSuccess(credentials);
-}
-
-void OnlineAttempt::OnOAuthLoginFailure(const GoogleServiceAuthError& error) {
-  OnClientLoginFailure(error);
 }
 
 void OnlineAttempt::TryClientLogin() {
@@ -158,34 +137,17 @@ void OnlineAttempt::TryClientLogin() {
       base::Bind(&OnlineAttempt::CancelClientLogin, weak_factory_.GetWeakPtr()),
       base::TimeDelta::FromMilliseconds(kClientLoginTimeoutMs));
 
-  if (using_oauth_) {
-    if (!attempt_->oauth1_access_token().length() ||
-        !attempt_->oauth1_access_secret().length()) {
-      // Empty OAuth1 access token and secret probably means that we are
-      // dealing with a legacy ChromeOS account. This should be treated as
-      // invalid/expired token.
-      OnClientLoginFailure(GoogleServiceAuthError(
-          GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
-    } else {
-      oauth_fetcher_->StartOAuthLogin(GaiaConstants::kChromeOSSource,
-                                      GaiaConstants::kPicasaService,
-                                      attempt_->oauth1_access_token(),
-                                      attempt_->oauth1_access_secret());
-    }
-  } else {
-    client_fetcher_->StartClientLogin(
-        attempt_->username,
-        attempt_->password,
-        GaiaConstants::kPicasaService,
-        attempt_->login_token,
-        attempt_->login_captcha,
-        attempt_->hosted_policy());
-  }
+  client_fetcher_->StartClientLogin(
+      attempt_->credentials.username,
+      attempt_->credentials.password,
+      GaiaConstants::kSyncService,
+      attempt_->login_token,
+      attempt_->login_captcha,
+      attempt_->hosted_policy());
 }
 
 bool OnlineAttempt::HasPendingFetch() {
-  return using_oauth_ ? oauth_fetcher_->HasPendingFetch() :
-      client_fetcher_->HasPendingFetch();
+  return client_fetcher_->HasPendingFetch();
 }
 
 void OnlineAttempt::CancelRequest() {
@@ -206,7 +168,6 @@ void OnlineAttempt::TriggerResolve(
     const LoginFailure& outcome) {
   attempt_->RecordOnlineLoginStatus(outcome);
   client_fetcher_.reset(NULL);
-  oauth_fetcher_.reset(NULL);
   resolver_->Resolve();
 }
 

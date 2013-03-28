@@ -5,6 +5,7 @@
 <translation id="IDS_DEFAULT_ENCODING">ISO-8859-1</translation>
 <translation id="IDS_USES_UNIVERSAL_DETECTOR">false</translation>
 <translation id="IDS_SPELLCHECK_DICTIONARY">es</translation>
+<translation id="IDS_SYSTEM_TRAY_MENU_BUBBLE_WIDTH_PIXELS">350</translation>
 <translation id="IDS_OPTIONS_DIALOG_LEFT_COLUMN_WIDTH_CHARS">24</translation>
 <translation id="IDS_OPTIONS_RESET_CONFIRM_BOX_WIDTH_CHARS">80</translation>
 <translation id="IDS_URLPICKER_DIALOG_WIDTH_CHARS">80</translation>
@@ -53,6 +54,8 @@
 <translation id="IDS_SELECT_PROFILE_DIALOG_WIDTH_CHARS">60</translation>
 <translation id="IDS_SELECT_PROFILE_DIALOG_HEIGHT_LINES">5</translation>
 <translation id="IDS_FLASH_STORAGE_URL">http://www.adobe.com/go/settmgr_storage_es</translation>
+<translation id="IDS_FLASH_GLOBAL_PRIVACY_URL">http://www.macromedia.com/support/documentation/es/flashplayer/help/settings_manager02.html</translation>
+<translation id="IDS_FLASH_WEBSITE_PRIVACY_URL">http://www.macromedia.com/support/documentation/es/flashplayer/help/settings_manager06.html</translation>
 <translation id="IDS_NEW_PROFILE_DIALOG_WIDTH_CHARS">60</translation>
 <translation id="IDS_SYNC_SETUP_WIZARD_WIDTH_CHARS">46</translation>
 <translation id="IDS_SYNC_SETUP_WIZARD_HEIGHT_LINES">16</translation>

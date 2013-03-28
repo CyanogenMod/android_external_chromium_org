@@ -11,7 +11,7 @@
 #include "chrome/browser/notifications/balloon_host.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/panels/docked_panel_strip.h"
+#include "chrome/browser/ui/panels/docked_panel_collection.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -45,7 +45,7 @@ BalloonCollectionImpl::BalloonCollectionImpl()
       added_as_message_loop_observer_(false)
 #endif
 {
-  registrar_.Add(this, chrome::NOTIFICATION_PANEL_STRIP_UPDATED,
+  registrar_.Add(this, chrome::NOTIFICATION_PANEL_COLLECTION_UPDATED,
                  content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_PANEL_CHANGED_EXPANSION_STATE,
                  content::NotificationService::AllSources());
@@ -92,12 +92,20 @@ void BalloonCollectionImpl::Add(const Notification& notification,
   AddImpl(notification, profile, false);
 }
 
+bool BalloonCollectionImpl::DoesIdExist(const std::string& id) {
+  return base_.DoesIdExist(id);
+}
+
 bool BalloonCollectionImpl::RemoveById(const std::string& id) {
   return base_.CloseById(id);
 }
 
 bool BalloonCollectionImpl::RemoveBySourceOrigin(const GURL& origin) {
   return base_.CloseAllBySourceOrigin(origin);
+}
+
+bool BalloonCollectionImpl::RemoveByProfile(Profile* profile) {
+  return base_.CloseAllByProfile(profile);
 }
 
 void BalloonCollectionImpl::RemoveAll() {
@@ -182,7 +190,7 @@ void BalloonCollectionImpl::Observe(
     const content::NotificationDetails& details) {
   gfx::Rect bounds;
   switch (type) {
-    case chrome::NOTIFICATION_PANEL_STRIP_UPDATED:
+    case chrome::NOTIFICATION_PANEL_COLLECTION_UPDATED:
     case chrome::NOTIFICATION_PANEL_CHANGED_EXPANSION_STATE:
       layout_.enable_computing_panel_offset();
       if (layout_.ComputeOffsetToMoveAbovePanels())
@@ -413,14 +421,14 @@ bool BalloonCollectionImpl::Layout::ComputeOffsetToMoveAbovePanels() {
   if (!need_to_compute_panel_offset_)
     return false;
 
-  const DockedPanelStrip::Panels& panels =
-      PanelManager::GetInstance()->docked_strip()->panels();
+  const DockedPanelCollection::Panels& panels =
+      PanelManager::GetInstance()->docked_collection()->panels();
   int offset_to_move_above_panels = 0;
 
   // The offset is the maximum height of panels that could overlap with the
   // balloons.
   if (NeedToMoveAboveLeftSidePanels()) {
-    for (DockedPanelStrip::Panels::const_reverse_iterator iter =
+    for (DockedPanelCollection::Panels::const_reverse_iterator iter =
              panels.rbegin();
          iter != panels.rend(); ++iter) {
       // No need to check panels beyond the area occupied by the balloons.
@@ -432,7 +440,7 @@ bool BalloonCollectionImpl::Layout::ComputeOffsetToMoveAbovePanels() {
         offset_to_move_above_panels = current_height;
     }
   } else if (NeedToMoveAboveRightSidePanels()) {
-    for (DockedPanelStrip::Panels::const_iterator iter = panels.begin();
+    for (DockedPanelCollection::Panels::const_iterator iter = panels.begin();
          iter != panels.end(); ++iter) {
       // No need to check panels beyond the area occupied by the balloons.
       if ((*iter)->GetBounds().right() <=

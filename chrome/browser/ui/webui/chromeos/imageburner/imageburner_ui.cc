@@ -5,22 +5,21 @@
 #include "chrome/browser/ui/webui/chromeos/imageburner/imageburner_ui.h"
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/imageburner/burn_controller.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/time_format.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
+#include "googleurl/src/gurl.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/text/bytes_formatting.h"
 
@@ -39,9 +38,9 @@ const char kPropertyDeviceType[] = "type";
 const char kMoreInfoLink[] =
     "http://www.chromium.org/chromium-os/chromiumos-design-docs/recovery-mode";
 
-ChromeWebUIDataSource* CreateImageburnerUIHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIImageBurnerHost);
+content::WebUIDataSource* CreateImageburnerUIHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIImageBurnerHost);
 
   source->AddLocalizedString("headerTitle", IDS_IMAGEBURN_HEADER_TITLE);
   source->AddLocalizedString("headerDescription",
@@ -80,9 +79,9 @@ ChromeWebUIDataSource* CreateImageburnerUIHTMLSource() {
   source->AddLocalizedString("retryButton", IDS_IMAGEBURN_RETRY_BUTTON);
   source->AddString("moreInfoLink", ASCIIToUTF16(kMoreInfoLink));
 
-  source->set_json_path("strings.js");
-  source->add_resource_path("image_burner.js", IDR_IMAGEBURNER_JS);
-  source->set_default_resource(IDR_IMAGEBURNER_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("image_burner.js", IDR_IMAGEBURNER_JS);
+  source->SetDefaultResource(IDR_IMAGEBURNER_HTML);
   return source;
 }
 
@@ -224,10 +223,10 @@ class WebUIHandler
   // It may be called with NULL if there is a handler that has started burning,
   // and thus set the target paths.
   void HandleBurnImage(const ListValue* args) {
-    FilePath target_device_path;
+    base::FilePath target_device_path;
     ExtractTargetedDevicePath(*args, 0, &target_device_path);
 
-    FilePath target_file_path;
+    base::FilePath target_file_path;
     ExtractTargetedDevicePath(*args, 1, &target_file_path);
 
     burn_controller_->StartBurnImage(target_device_path, target_file_path);
@@ -292,15 +291,13 @@ class WebUIHandler
   // device_path has to be previously created.
   void ExtractTargetedDevicePath(const ListValue& list_value,
                                  int index,
-                                 FilePath* device_path) {
+                                 base::FilePath* device_path) {
     const Value* list_member;
+    std::string image_dest;
     if (list_value.Get(index, &list_member) &&
-        list_member->GetType() == Value::TYPE_STRING) {
-      const StringValue* string_value =
-          static_cast<const StringValue*>(list_member);
-      std::string image_dest;
-      string_value->GetAsString(&image_dest);
-      *device_path = FilePath(image_dest);
+        list_member->GetType() == Value::TYPE_STRING &&
+        list_member->GetAsString(&image_dest)) {
+      *device_path = base::FilePath(image_dest);
     } else {
       LOG(ERROR) << "Unable to get path string";
       device_path->clear();
@@ -329,6 +326,6 @@ ImageBurnUI::ImageBurnUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   web_ui->AddMessageHandler(handler);
 
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile,
-      chromeos::imageburner::CreateImageburnerUIHTMLSource());
+  content::WebUIDataSource::Add(
+      profile, chromeos::imageburner::CreateImageburnerUIHTMLSource());
 }

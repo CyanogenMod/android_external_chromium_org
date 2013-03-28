@@ -67,6 +67,12 @@ class CONTENT_EXPORT DownloadUrlParameters {
     referrer_encoding_ = referrer_encoding;
   }
   void set_load_flags(int load_flags) { load_flags_ |= load_flags; }
+  void set_last_modified(const std::string& last_modified) {
+    last_modified_ = last_modified;
+  }
+  void set_etag(const std::string& etag) {
+    etag_ = etag;
+  }
   void set_method(const std::string& method) {
     method_ = method;
   }
@@ -80,7 +86,7 @@ class CONTENT_EXPORT DownloadUrlParameters {
   void set_callback(const OnStartedCallback& callback) {
     callback_ = callback;
   }
-  void set_file_path(const FilePath& file_path) {
+  void set_file_path(const base::FilePath& file_path) {
     save_info_.file_path = file_path;
   }
   void set_suggested_name(const string16& suggested_name) {
@@ -98,6 +104,8 @@ class CONTENT_EXPORT DownloadUrlParameters {
   const OnStartedCallback& callback() const { return callback_; }
   bool content_initiated() const { return content_initiated_; }
   int load_flags() const { return load_flags_; }
+  const std::string& last_modified() { return last_modified_; }
+  const std::string& etag() { return etag_; }
   const std::string& method() const { return method_; }
   const std::string& post_body() const { return post_body_; }
   int64 post_id() const { return post_id_; }
@@ -120,7 +128,7 @@ class CONTENT_EXPORT DownloadUrlParameters {
   ResourceDispatcherHost* resource_dispatcher_host() const {
     return resource_dispatcher_host_;
   }
-  const FilePath& file_path() const { return save_info_.file_path; }
+  const base::FilePath& file_path() const { return save_info_.file_path; }
   const string16& suggested_name() const { return save_info_.suggested_name; }
   int64 offset() const { return save_info_.offset; }
   const std::string& hash_state() const { return save_info_.hash_state; }
@@ -138,6 +146,8 @@ class CONTENT_EXPORT DownloadUrlParameters {
   bool content_initiated_;
   RequestHeadersType request_headers_;
   int load_flags_;
+  std::string last_modified_;
+  std::string etag_;
   std::string method_;
   std::string post_body_;
   int64 post_id_;

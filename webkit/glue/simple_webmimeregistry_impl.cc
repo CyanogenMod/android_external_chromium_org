@@ -7,8 +7,9 @@
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "media/filters/stream_parser_factory.h"
 #include "net/base/mime_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/media/crypto/key_systems.h"
 
@@ -106,6 +107,18 @@ WebMimeRegistry::SupportsType SimpleWebMimeRegistryImpl::supportsMediaMIMEType(
   return IsSupported;
 }
 
+bool SimpleWebMimeRegistryImpl::supportsMediaSourceMIMEType(
+    const WebKit::WebString& mime_type,
+    const WebString& codecs) {
+  const std::string mime_type_ascii = ToASCIIOrEmpty(mime_type);
+  std::vector<std::string> parsed_codec_ids;
+  net::ParseCodecString(ToASCIIOrEmpty(codecs), &parsed_codec_ids, false);
+  if (mime_type_ascii.empty() || parsed_codec_ids.size() == 0)
+    return false;
+  return media::StreamParserFactory::IsTypeSupported(
+      mime_type_ascii, parsed_codec_ids);
+}
+
 WebMimeRegistry::SupportsType
     SimpleWebMimeRegistryImpl::supportsNonImageMIMEType(
     const WebString& mime_type) {
@@ -139,7 +152,7 @@ WebString SimpleWebMimeRegistryImpl::mimeTypeFromFile(
 
 WebString SimpleWebMimeRegistryImpl::preferredExtensionForMIMEType(
     const WebString& mime_type) {
-  FilePath::StringType file_extension;
+  base::FilePath::StringType file_extension;
   net::GetPreferredExtensionForMimeType(ToASCIIOrEmpty(mime_type),
                                         &file_extension);
   return webkit_base::FilePathStringToWebString(file_extension);

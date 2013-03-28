@@ -5,9 +5,7 @@
 #ifndef CHROME_BROWSER_INFOBARS_INSECURE_CONTENT_INFOBAR_DELEGATE_H_
 #define CHROME_BROWSER_INFOBARS_INSECURE_CONTENT_INFOBAR_DELEGATE_H_
 
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
-
-class InfoBarTabHelper;
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 
 // Base class for delegates that show warnings on HTTPS pages which try to
 // display or run insecure content.
@@ -18,11 +16,11 @@ class InsecureContentInfoBarDelegate : public ConfirmInfoBarDelegate {
     RUN,      // Shown when "active" content (e.g. script) has been blocked.
   };
 
-  InsecureContentInfoBarDelegate(InfoBarTabHelper* infobar_helper,
-                                 InfoBarType type);
-  virtual ~InsecureContentInfoBarDelegate();
-
-  InfoBarType type() const { return type_; }
+  // Depending on the |type| requested and whether an insecure content infobar
+  // is already present in |infobar_service|, may do nothing; otherwise, creates
+  // an insecure content delegate and either adds it to |infobar_service| or
+  // replaces the existing infobar delegate.
+  static void Create(InfoBarService* infobar_service, InfoBarType type);
 
  private:
   enum HistogramEvents {
@@ -36,6 +34,10 @@ class InsecureContentInfoBarDelegate : public ConfirmInfoBarDelegate {
     RUN_INFOBAR_DISMISSED,
     NUM_EVENTS
   };
+
+  InsecureContentInfoBarDelegate(InfoBarService* infobar_service,
+                                 InfoBarType type);
+  virtual ~InsecureContentInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
   virtual void InfoBarDismissed() OVERRIDE;

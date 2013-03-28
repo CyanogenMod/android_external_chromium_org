@@ -4,11 +4,17 @@
 
 #include "ui/gl/gl_share_group.h"
 
+#include "base/logging.h"
 #include "ui/gl/gl_context.h"
 
 namespace gfx {
 
-GLShareGroup::GLShareGroup() {
+GLShareGroup::GLShareGroup()
+    : shared_context_(NULL)
+#if defined(OS_MACOSX)
+    , renderer_id_(-1)
+#endif
+    {
 }
 
 void GLShareGroup::AddContext(GLContext* context) {
@@ -17,6 +23,8 @@ void GLShareGroup::AddContext(GLContext* context) {
 
 void GLShareGroup::RemoveContext(GLContext* context) {
   contexts_.erase(context);
+  if (shared_context_ == context)
+    shared_context_ = NULL;
 }
 
 void* GLShareGroup::GetHandle() {
@@ -37,6 +45,25 @@ GLContext* GLShareGroup::GetContext() {
 
   return NULL;
 }
+
+void GLShareGroup::SetSharedContext(GLContext* context) {
+  DCHECK(contexts_.find(context) != contexts_.end());
+  shared_context_ = context;
+}
+
+GLContext* GLShareGroup::GetSharedContext() {
+  return shared_context_;
+}
+
+#if defined(OS_MACOSX)
+void GLShareGroup::SetRendererID(int renderer_id) {
+  renderer_id_ = renderer_id;
+}
+
+int GLShareGroup::GetRendererID() {
+  return renderer_id_;
+}
+#endif
 
 GLShareGroup::~GLShareGroup() {
 }

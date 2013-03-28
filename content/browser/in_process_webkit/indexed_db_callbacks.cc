@@ -4,6 +4,8 @@
 
 #include "content/browser/in_process_webkit/indexed_db_callbacks.h"
 
+#include <vector>
+
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "webkit/quota/quota_manager.h"
 
@@ -15,128 +17,121 @@ const int32 kDatabaseNotAdded = -1;
 
 IndexedDBCallbacksBase::IndexedDBCallbacksBase(
     IndexedDBDispatcherHost* dispatcher_host,
-    int32 thread_id,
-    int32 response_id)
+    int32 ipc_thread_id,
+    int32 ipc_callbacks_id)
     : dispatcher_host_(dispatcher_host),
-      response_id_(response_id),
-      thread_id_(thread_id) {
+      ipc_callbacks_id_(ipc_callbacks_id),
+      ipc_thread_id_(ipc_thread_id) {
 }
 
 IndexedDBCallbacksBase::~IndexedDBCallbacksBase() {}
 
 void IndexedDBCallbacksBase::onError(const WebKit::WebIDBDatabaseError& error) {
   dispatcher_host_->Send(new IndexedDBMsg_CallbacksError(
-      thread_id_, response_id_, error.code(), error.message()));
+      ipc_thread_id_, ipc_callbacks_id_, error.code(), error.message()));
 }
 
 void IndexedDBCallbacksBase::onBlocked(long long old_version) {
   dispatcher_host_->Send(new IndexedDBMsg_CallbacksIntBlocked(
-      thread_id_, response_id_, old_version));
-}
-
-void IndexedDBCallbacksBase::onBlocked() {
-  dispatcher_host_->Send(new IndexedDBMsg_CallbacksBlocked(thread_id_,
-                                                           response_id_));
-}
-
-IndexedDBCallbacksTransaction::IndexedDBCallbacksTransaction(
-      IndexedDBDispatcherHost* dispatcher_host,
-      int32 thread_id,
-      int32 response_id,
-      const GURL& origin_url)
-      : IndexedDBCallbacksBase(dispatcher_host, thread_id, response_id),
-        origin_url_(origin_url) {
-}
-
-void IndexedDBCallbacksTransaction::onSuccess(
-    WebKit::WebIDBTransaction* idb_object) {
-  int32 object_id =
-      dispatcher_host()->Add(idb_object, thread_id(), origin_url_);
-  dispatcher_host()->Send(
-      new IndexedDBMsg_CallbacksSuccessIDBTransaction(thread_id(),
-          response_id(), object_id));
+      ipc_thread_id_, ipc_callbacks_id_, old_version));
 }
 
 IndexedDBCallbacksDatabase::IndexedDBCallbacksDatabase(
     IndexedDBDispatcherHost* dispatcher_host,
-    int32 thread_id,
-    int32 response_id,
+    int32 ipc_thread_id,
+    int32 ipc_callbacks_id,
+    int32 ipc_database_callbacks_id,
+    int64 host_transaction_id,
     const GURL& origin_url)
-    : IndexedDBCallbacksBase(dispatcher_host, thread_id, response_id),
+    : IndexedDBCallbacksBase(dispatcher_host, ipc_thread_id, ipc_callbacks_id),
+      host_transaction_id_(host_transaction_id),
       origin_url_(origin_url),
-      database_id_(kDatabaseNotAdded) {
+      ipc_database_id_(kDatabaseNotAdded),
+      ipc_database_callbacks_id_(ipc_database_callbacks_id) {
 }
 
 void IndexedDBCallbacksDatabase::onSuccess(
-    WebKit::WebIDBDatabase* idb_object) {
-  int32 object_id = database_id_;
-  if (object_id == kDatabaseNotAdded) {
-    object_id = dispatcher_host()->Add(idb_object, thread_id(), origin_url_);
+    WebKit::WebIDBDatabase* idb_object,
+    const WebKit::WebIDBMetadata& metadata) {
+  int32 ipc_object_id = ipc_database_id_;
+  if (ipc_object_id == kDatabaseNotAdded) {
+    ipc_object_id = dispatcher_host()->Add(idb_object, ipc_thread_id(),
+                                           origin_url_);
   } else {
     // We already have this database and don't need a new copy of it.
     delete idb_object;
   }
+  IndexedDBDatabaseMetadata idb_metadata =
+          IndexedDBDispatcherHost::ConvertMetadata(metadata);
+
   dispatcher_host()->Send(
-      new IndexedDBMsg_CallbacksSuccessIDBDatabase(thread_id(), response_id(),
-          object_id));
+      new IndexedDBMsg_CallbacksSuccessIDBDatabase(ipc_thread_id(),
+                                                   ipc_callbacks_id(),
+                                                   ipc_database_callbacks_id_,
+                                                   ipc_object_id,
+                                                   idb_metadata));
 }
 
 void IndexedDBCallbacksDatabase::onUpgradeNeeded(
     long long old_version,
-    WebKit::WebIDBTransaction* transaction,
-    WebKit::WebIDBDatabase* database) {
-  int32 transaction_id = dispatcher_host()->Add(transaction, thread_id(),
-                                                origin_url_);
-  int32 database_id = dispatcher_host()->Add(database, thread_id(),
-                                             origin_url_);
-  database_id_ = database_id;
-  dispatcher_host()->Send(
-      new IndexedDBMsg_CallbacksUpgradeNeeded(
-          thread_id(), response_id(), transaction_id, database_id,
-          old_version));
+    WebKit::WebIDBDatabase* database,
+    const WebKit::WebIDBMetadata& metadata) {
+  dispatcher_host()->RegisterTransactionId(host_transaction_id_, origin_url_);
+  int32 ipc_database_id = dispatcher_host()->Add(database, ipc_thread_id(),
+                                                 origin_url_);
+  ipc_database_id_ = ipc_database_id;
+  IndexedDBMsg_CallbacksUpgradeNeeded_Params params;
+  params.ipc_thread_id = ipc_thread_id();
+  params.ipc_callbacks_id = ipc_callbacks_id();
+  params.ipc_database_id = ipc_database_id;
+  params.ipc_database_callbacks_id = ipc_database_callbacks_id_;
+  params.old_version = old_version;
+  params.idb_metadata = IndexedDBDispatcherHost::ConvertMetadata(metadata);
+  dispatcher_host()->Send(new IndexedDBMsg_CallbacksUpgradeNeeded(params));
 }
 
 void IndexedDBCallbacks<WebKit::WebIDBCursor>::onSuccess(
-    WebKit::WebIDBCursor* idb_object,
+    WebKit::WebIDBCursor* idb_cursor,
     const WebKit::WebIDBKey& key,
     const WebKit::WebIDBKey& primaryKey,
-    const WebKit::WebSerializedScriptValue& value) {
-  int32 object_id = dispatcher_host()->Add(idb_object);
+    const WebKit::WebData& value) {
+  int32 ipc_object_id = dispatcher_host()->Add(idb_cursor);
   IndexedDBMsg_CallbacksSuccessIDBCursor_Params params;
-  params.thread_id = thread_id();
-  params.response_id = response_id();
-  params.cursor_id = object_id;
+  params.ipc_thread_id = ipc_thread_id();
+  params.ipc_callbacks_id = ipc_callbacks_id();
+  params.ipc_cursor_id = ipc_object_id;
   params.key = IndexedDBKey(key);
   params.primary_key = IndexedDBKey(primaryKey);
-  params.serialized_value = SerializedScriptValue(value);
+  params.value.assign(value.data(), value.data() + value.size());
   dispatcher_host()->Send(new IndexedDBMsg_CallbacksSuccessIDBCursor(params));
 }
 
 void IndexedDBCallbacks<WebKit::WebIDBCursor>::onSuccess(
-    const WebKit::WebSerializedScriptValue& value) {
+    const WebKit::WebData& webValue) {
+    std::vector<char> value(webValue.data(), webValue.data() + webValue.size());
   dispatcher_host()->Send(
-      new IndexedDBMsg_CallbacksSuccessSerializedScriptValue(
-          thread_id(), response_id(), SerializedScriptValue(value)));
+      new IndexedDBMsg_CallbacksSuccessValue(
+          ipc_thread_id(), ipc_callbacks_id(), value));
 }
 
 void IndexedDBCallbacks<WebKit::WebIDBCursor>::onSuccess(
     const WebKit::WebIDBKey& key,
     const WebKit::WebIDBKey& primaryKey,
-    const WebKit::WebSerializedScriptValue& value) {
-  DCHECK(cursor_id_ != -1);
+    const WebKit::WebData& value) {
+  DCHECK_NE(ipc_cursor_id_, -1);
   WebKit::WebIDBCursor* idb_cursor = dispatcher_host()->GetCursorFromId(
-      cursor_id_);
+      ipc_cursor_id_);
 
   DCHECK(idb_cursor);
   if (!idb_cursor)
     return;
   IndexedDBMsg_CallbacksSuccessCursorContinue_Params params;
-  params.thread_id = thread_id();
-  params.response_id = response_id();
-  params.cursor_id = cursor_id_;
+  params.ipc_thread_id = ipc_thread_id();
+  params.ipc_callbacks_id = ipc_callbacks_id();
+  params.ipc_cursor_id = ipc_cursor_id_;
   params.key = IndexedDBKey(key);
   params.primary_key = IndexedDBKey(primaryKey);
-  params.serialized_value = SerializedScriptValue(value);
+  params.value.assign(value.data(), value.data() + value.size());
   dispatcher_host()->Send(
       new IndexedDBMsg_CallbacksSuccessCursorContinue(params));
 }
@@ -144,23 +139,25 @@ void IndexedDBCallbacks<WebKit::WebIDBCursor>::onSuccess(
 void IndexedDBCallbacks<WebKit::WebIDBCursor>::onSuccessWithPrefetch(
     const WebKit::WebVector<WebKit::WebIDBKey>& keys,
     const WebKit::WebVector<WebKit::WebIDBKey>& primaryKeys,
-    const WebKit::WebVector<WebKit::WebSerializedScriptValue>& values) {
-  DCHECK(cursor_id_ != -1);
+    const WebKit::WebVector<WebKit::WebData>& values) {
+  DCHECK_NE(ipc_cursor_id_, -1);
 
   std::vector<IndexedDBKey> msgKeys;
   std::vector<IndexedDBKey> msgPrimaryKeys;
-  std::vector<SerializedScriptValue> msgValues;
+  std::vector<std::vector<char> > msgValues;
 
   for (size_t i = 0; i < keys.size(); ++i) {
     msgKeys.push_back(IndexedDBKey(keys[i]));
     msgPrimaryKeys.push_back(IndexedDBKey(primaryKeys[i]));
-    msgValues.push_back(SerializedScriptValue(values[i]));
+    msgValues.push_back(
+        std::vector<char>(values[i].data(),
+                          values[i].data() + values[i].size()));
   }
 
   IndexedDBMsg_CallbacksSuccessCursorPrefetch_Params params;
-  params.thread_id = thread_id();
-  params.response_id = response_id();
-  params.cursor_id = cursor_id_;
+  params.ipc_thread_id = ipc_thread_id();
+  params.ipc_callbacks_id = ipc_callbacks_id();
+  params.ipc_cursor_id = ipc_cursor_id_;
   params.keys = msgKeys;
   params.primary_keys = msgPrimaryKeys;
   params.values = msgValues;
@@ -172,7 +169,7 @@ void IndexedDBCallbacks<WebKit::WebIDBKey>::onSuccess(
     const WebKit::WebIDBKey& value) {
   dispatcher_host()->Send(
       new IndexedDBMsg_CallbacksSuccessIndexedDBKey(
-          thread_id(), response_id(), IndexedDBKey(value)));
+          ipc_thread_id(), ipc_callbacks_id(), IndexedDBKey(value)));
 }
 
 void IndexedDBCallbacks<WebKit::WebDOMStringList>::onSuccess(
@@ -184,38 +181,47 @@ void IndexedDBCallbacks<WebKit::WebDOMStringList>::onSuccess(
 
   dispatcher_host()->Send(
       new IndexedDBMsg_CallbacksSuccessStringList(
-          thread_id(), response_id(), list));
+          ipc_thread_id(), ipc_callbacks_id(), list));
 }
 
-void IndexedDBCallbacks<WebKit::WebSerializedScriptValue>::onSuccess(
-    const WebKit::WebSerializedScriptValue& value) {
+void IndexedDBCallbacks<WebKit::WebData>::onSuccess(
+    const WebKit::WebData& value) {
   dispatcher_host()->Send(
-      new IndexedDBMsg_CallbacksSuccessSerializedScriptValue(
-          thread_id(), response_id(), SerializedScriptValue(value)));
+      new IndexedDBMsg_CallbacksSuccessValue(
+          ipc_thread_id(), ipc_callbacks_id(),
+          std::vector<char>(value.data(), value.data() + value.size())));
 }
 
-void IndexedDBCallbacks<WebKit::WebSerializedScriptValue>::onSuccess(
-    const WebKit::WebSerializedScriptValue& value,
+void IndexedDBCallbacks<WebKit::WebData>::onSuccess(
+    const WebKit::WebData& value,
     const WebKit::WebIDBKey& primaryKey,
     const WebKit::WebIDBKeyPath& keyPath) {
   dispatcher_host()->Send(
-      new IndexedDBMsg_CallbacksSuccessSerializedScriptValueWithKey(
-          thread_id(), response_id(), SerializedScriptValue(value),
+      new IndexedDBMsg_CallbacksSuccessValueWithKey(
+          ipc_thread_id(), ipc_callbacks_id(),
+          std::vector<char>(value.data(), value.data() + value.size()),
           IndexedDBKey(primaryKey), IndexedDBKeyPath(keyPath)));
 }
 
-void IndexedDBCallbacks<WebKit::WebSerializedScriptValue>::onSuccess(
+void IndexedDBCallbacks<WebKit::WebData>::onSuccess(
     long long value) {
     dispatcher_host()->Send(
-        new IndexedDBMsg_CallbacksSuccessInteger(thread_id(),
-                                                 response_id(),
+        new IndexedDBMsg_CallbacksSuccessInteger(ipc_thread_id(),
+                                                 ipc_callbacks_id(),
                                                  value));
 }
 
-void IndexedDBCallbacks<WebKit::WebSerializedScriptValue>::onSuccess() {
+void IndexedDBCallbacks<WebKit::WebData>::onSuccess() {
     dispatcher_host()->Send(
-        new IndexedDBMsg_CallbacksSuccessUndefined(thread_id(),
-                                                   response_id()));
+        new IndexedDBMsg_CallbacksSuccessUndefined(ipc_thread_id(),
+                                                   ipc_callbacks_id()));
+}
+
+void IndexedDBCallbacks<WebKit::WebData>::onSuccess(
+    const WebKit::WebIDBKey& value) {
+  dispatcher_host()->Send(
+      new IndexedDBMsg_CallbacksSuccessIndexedDBKey(
+          ipc_thread_id(), ipc_callbacks_id(), IndexedDBKey(value)));
 }
 
 }  // namespace content

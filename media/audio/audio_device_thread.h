@@ -37,9 +37,9 @@ class MEDIA_EXPORT AudioDeviceThread {
   class Callback {
    public:
     Callback(const AudioParameters& audio_parameters,
-             int input_channels,
              base::SharedMemoryHandle memory,
-             int memory_length);
+             int memory_length,
+             int total_segments);
     virtual ~Callback();
 
     // One time initialization for the callback object on the audio thread.
@@ -57,12 +57,13 @@ class MEDIA_EXPORT AudioDeviceThread {
     // The variables are 'const' since values are calculated/set in the
     // constructor and must never change.
     const AudioParameters audio_parameters_;
-    const int input_channels_;
     const int samples_per_ms_;
     const int bytes_per_ms_;
 
     base::SharedMemory shared_memory_;
     const int memory_length_;
+    const int total_segments_;
+    int segment_length_;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(Callback);

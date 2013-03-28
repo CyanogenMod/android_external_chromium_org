@@ -5,10 +5,11 @@
 #ifndef CHROME_BROWSER_UI_EXTENSIONS_APPLICATION_LAUNCH_H_
 #define CHROME_BROWSER_UI_EXTENSIONS_APPLICATION_LAUNCH_H_
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
+#include "ui/gfx/rect.h"
 
 class Browser;
 class CommandLine;
@@ -22,17 +23,26 @@ namespace extensions {
 class Extension;
 }
 
-namespace gfx {
-class Rect;
-}
+namespace chrome {
 
-namespace application_launch {
+struct AppLaunchParams {
+  AppLaunchParams(Profile* profile,
+                  const extensions::Extension* extension,
+                  extension_misc::LaunchContainer container,
+                  WindowOpenDisposition disposition);
 
-struct LaunchParams {
-  LaunchParams(Profile* profile,
-               const extensions::Extension* extension,
-               extension_misc::LaunchContainer container,
-               WindowOpenDisposition disposition);
+  // Helper to create AppLaunchParams using ExtensionPrefs::GetLaunchContainer
+  // with ExtensionPrefs::LAUNCH_REGULAR to check for a user-configured
+  // container.
+  AppLaunchParams(Profile* profile,
+                  const extensions::Extension* extension,
+                  WindowOpenDisposition disposition);
+
+  // Helper to create AppLaunchParams using event flags that allows user to
+  // override the user-configured container using modifier keys.
+  AppLaunchParams(Profile* profile,
+                  const extensions::Extension* extension,
+                  int event_flags);
 
   // The profile to load the application from.
   Profile* profile;
@@ -49,17 +59,21 @@ struct LaunchParams {
   // If non-empty, use override_url in place of the application's launch url.
   GURL override_url;
 
+  // If non-empty, use override_boudns in place of the application's default
+  // position and dimensions.
+  gfx::Rect override_bounds;
+
   // If non-NULL, information from the command line may be passed on to the
   // application.
   const CommandLine* command_line;
 
   // If non-empty, the current directory from which any relative paths on the
   // command line should be expanded from.
-  FilePath current_directory;
+  base::FilePath current_directory;
 };
 
 // Open the application in a way specified by |params|.
-content::WebContents* OpenApplication(const LaunchParams& params);
+content::WebContents* OpenApplication(const AppLaunchParams& params);
 
 // Open |url| in an app shortcut window. |override_bounds| param is optional.
 // There are two kinds of app shortcuts: Shortcuts to a URL,
@@ -70,6 +84,6 @@ content::WebContents* OpenAppShortcutWindow(Profile* profile,
                                             const GURL& url,
                                             const gfx::Rect& override_bounds);
 
-}  // namespace application_launch
+}  // namespace chrome
 
 #endif  // CHROME_BROWSER_UI_EXTENSIONS_APPLICATION_LAUNCH_H_

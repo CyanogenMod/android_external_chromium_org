@@ -39,15 +39,18 @@ class ASH_EXPORT WorkspaceController
   // Sets the active workspace based on |window|.
   void SetActiveWorkspaceByWindow(aura::Window* window);
 
-  // See description in BaseWorkspaceManager::GetParentForNewWindow().
+  // Returns the container window for the active workspace, never NULL.
+  aura::Window* GetActiveWorkspaceWindow();
+
+  // See description in WorkspaceManager::GetParentForNewWindow().
   aura::Window* GetParentForNewWindow(aura::Window* window);
 
   // Starts the animation that occurs on first login.
   void DoInitialAnimation();
 
   // aura::client::ActivationChangeObserver overrides:
-  virtual void OnWindowActivated(aura::Window* window,
-                                 aura::Window* old_active) OVERRIDE;
+  virtual void OnWindowActivated(aura::Window* gained_active,
+                                 aura::Window* lost_active) OVERRIDE;
 
  private:
   friend class WorkspaceControllerTestHelper;

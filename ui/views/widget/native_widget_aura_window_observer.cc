@@ -26,11 +26,10 @@ NativeWidgetAuraWindowObserver::~NativeWidgetAuraWindowObserver() {
 }
 
 void NativeWidgetAuraWindowObserver::OnWindowActivated(
-    aura::Window* active,
-    aura::Window* old_active) {
-  if (!active || active->transient_parent() != native_view_) {
+    aura::Window* gained_active,
+    aura::Window* lost_active) {
+  if (!gained_active || gained_active->transient_parent() != native_view_)
     delegate_->EnableInactiveRendering();
-  }
 }
 
 void NativeWidgetAuraWindowObserver::OnWindowRemovingFromRootWindow(

@@ -10,6 +10,8 @@
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/synchronization/waitable_event.h"
+#include "base/threading/platform_thread.h"
 #include "media/base/audio_renderer_mixer.h"
 #include "media/base/audio_renderer_mixer_input.h"
 #include "media/base/fake_audio_render_callback.h"
@@ -77,8 +79,8 @@ class AudioRendererMixerTest
     fake_callbacks_.reserve(count);
 
     // Setup FakeAudioRenderCallback step to compensate for resampling.
-    double scale_factor = input_parameters_.sample_rate()
-        / static_cast<double>(output_parameters_.sample_rate());
+    double scale_factor = input_parameters_.sample_rate() /
+        static_cast<double>(output_parameters_.sample_rate());
     double step = kSineCycles / (scale_factor *
         static_cast<double>(output_parameters_.frames_per_buffer()));
 
@@ -95,14 +97,14 @@ class AudioRendererMixerTest
     EXPECT_CALL(*this, RemoveMixer(testing::_)).Times(count);
   }
 
-  bool ValidateAudioData(int index, int frames, float scale) {
+  bool ValidateAudioData(int index, int frames, float scale, double epsilon) {
     for (int i = 0; i < audio_bus_->channels(); ++i) {
       for (int j = index; j < frames; j++) {
         double error = fabs(audio_bus_->channel(i)[j] -
             expected_audio_bus_->channel(i)[j] * scale);
-        if (error > epsilon_) {
+        if (error > epsilon) {
           EXPECT_NEAR(expected_audio_bus_->channel(i)[j] * scale,
-                      audio_bus_->channel(i)[j], epsilon_)
+                      audio_bus_->channel(i)[j], epsilon)
               << " i=" << i << ", j=" << j;
           return false;
         }
@@ -111,17 +113,17 @@ class AudioRendererMixerTest
     return true;
   }
 
-  bool RenderAndValidateAudioData(float scale) {
-    // Half fill won't be exactly half when resampling since the resampler
-    // will have enough data to fill out more of the buffer based on its
-    // internal buffer and kernel size.  So special case some of the checks.
-    bool resampling = input_parameters_.sample_rate()
-        != output_parameters_.sample_rate();
+  bool ValidateAudioData(int index, int frames, float scale) {
+    return ValidateAudioData(index, frames, scale, epsilon_);
+  }
 
+  bool RenderAndValidateAudioData(float scale) {
     if (half_fill_) {
       for (size_t i = 0; i < fake_callbacks_.size(); ++i)
         fake_callbacks_[i]->set_half_fill(true);
       expected_callback_->set_half_fill(true);
+      // Initialize the AudioBus completely or we'll run into Valgrind problems
+      // during the verification step below.
       expected_audio_bus_->Zero();
     }
 
@@ -134,13 +136,10 @@ class AudioRendererMixerTest
     expected_callback_->Render(expected_audio_bus_.get(), 0);
 
     if (half_fill_) {
-      // Verify first half of audio data for both resampling and non-resampling.
-      if (!ValidateAudioData(0, frames / 2, scale))
-        return false;
-      // Verify silence in the second half if we're not resampling.
-      if (!resampling)
-        return ValidateAudioData(frames / 2, frames, 0);
-      return true;
+      // In this case, just verify that every frame was initialized, this will
+      // only fail under tooling such as valgrind.
+      return ValidateAudioData(
+          0, frames, 0, std::numeric_limits<double>::max());
     } else {
       return ValidateAudioData(0, frames, scale);
     }
@@ -289,6 +288,12 @@ class AudioRendererMixerTest
   DISALLOW_COPY_AND_ASSIGN(AudioRendererMixerTest);
 };
 
+class AudioRendererMixerBehavioralTest : public AudioRendererMixerTest {};
+
+ACTION_P(SignalEvent, event) {
+  event->Signal();
+}
+
 // Verify a mixer with no inputs returns silence for all requested frames.
 TEST_P(AudioRendererMixerTest, NoInputs) {
   FillAudioData(1.0f);
@@ -376,10 +381,11 @@ TEST_P(AudioRendererMixerTest, ManyInputMixedStopPlay) {
     mixer_inputs_[i]->Stop();
 }
 
-TEST_P(AudioRendererMixerTest, OnRenderError) {
+TEST_P(AudioRendererMixerBehavioralTest, OnRenderError) {
   InitializeInputs(kMixerInputs);
   for (size_t i = 0; i < mixer_inputs_.size(); ++i) {
     mixer_inputs_[i]->Start();
+    mixer_inputs_[i]->Play();
     EXPECT_CALL(*fake_callbacks_[i], OnRenderError()).Times(1);
   }
 
@@ -388,29 +394,9 @@ TEST_P(AudioRendererMixerTest, OnRenderError) {
     mixer_inputs_[i]->Stop();
 }
 
-// Verify that audio delay information is scaled to the input parameters.
-TEST_P(AudioRendererMixerTest, DelayTest) {
-  InitializeInputs(1);
-  static const int kAudioDelayMilliseconds = 100;
-  ASSERT_EQ(mixer_inputs_.size(), 1u);
-
-  // Start the input and issue a single render callback.
-  mixer_inputs_[0]->Start();
-  mixer_inputs_[0]->Play();
-  mixer_callback_->Render(audio_bus_.get(), kAudioDelayMilliseconds);
-
-  // The input to output ratio should only include the sample rate difference.
-  double io_ratio = input_parameters_.sample_rate() /
-      static_cast<double>(output_parameters_.sample_rate());
-
-  EXPECT_EQ(static_cast<int>(kAudioDelayMilliseconds / io_ratio),
-            fake_callbacks_[0]->last_audio_delay_milliseconds());
-  mixer_inputs_[0]->Stop();
-}
-
 // Ensure constructing an AudioRendererMixerInput, but not initializing it does
 // not call RemoveMixer().
-TEST_P(AudioRendererMixerTest, NoInitialize) {
+TEST_P(AudioRendererMixerBehavioralTest, NoInitialize) {
   EXPECT_CALL(*this, RemoveMixer(testing::_)).Times(0);
   scoped_refptr<AudioRendererMixerInput> audio_renderer_mixer =
       new AudioRendererMixerInput(
@@ -418,6 +404,46 @@ TEST_P(AudioRendererMixerTest, NoInitialize) {
                      base::Unretained(this)),
           base::Bind(&AudioRendererMixerTest::RemoveMixer,
                      base::Unretained(this)));
+}
+
+// Ensure the physical stream is paused after a certain amount of time with no
+// inputs playing.  The test will hang if the behavior is incorrect.
+TEST_P(AudioRendererMixerBehavioralTest, MixerPausesStream) {
+  const base::TimeDelta kPauseTime = base::TimeDelta::FromMilliseconds(500);
+  // This value can't be too low or valgrind, tsan will timeout on the bots.
+  const base::TimeDelta kTestTimeout = 10 * kPauseTime;
+  mixer_->set_pause_delay_for_testing(kPauseTime);
+
+  base::WaitableEvent pause_event(true, false);
+  EXPECT_CALL(*sink_, Pause(testing::_))
+      .Times(2).WillRepeatedly(SignalEvent(&pause_event));
+  InitializeInputs(1);
+
+  // Ensure never playing the input results in a sink pause.
+  const base::TimeDelta kSleepTime = base::TimeDelta::FromMilliseconds(100);
+  base::Time start_time = base::Time::Now();
+  while (!pause_event.IsSignaled()) {
+    mixer_callback_->Render(audio_bus_.get(), 0);
+    base::PlatformThread::Sleep(kSleepTime);
+    ASSERT_TRUE(base::Time::Now() - start_time < kTestTimeout);
+  }
+  pause_event.Reset();
+
+  // Playing the input for the first time should cause a sink play.
+  mixer_inputs_[0]->Start();
+  EXPECT_CALL(*sink_, Play());
+  mixer_inputs_[0]->Play();
+  mixer_inputs_[0]->Pause(false);
+
+  // Ensure once the input is paused the sink eventually pauses.
+  start_time = base::Time::Now();
+  while (!pause_event.IsSignaled()) {
+    mixer_callback_->Render(audio_bus_.get(), 0);
+    base::PlatformThread::Sleep(kSleepTime);
+    ASSERT_TRUE(base::Time::Now() - start_time < kTestTimeout);
+  }
+
+  mixer_inputs_[0]->Stop();
 }
 
 INSTANTIATE_TEST_CASE_P(
@@ -430,5 +456,13 @@ INSTANTIATE_TEST_CASE_P(
 
         // Downsampling.
         std::tr1::make_tuple(48000, 41000, 0.042)));
+
+// Test cases for behavior which is independent of parameters.  Values() doesn't
+// support single item lists and we don't want these test cases to run for every
+// parameter set.
+INSTANTIATE_TEST_CASE_P(
+    AudioRendererMixerBehavioralTest, AudioRendererMixerBehavioralTest,
+    testing::ValuesIn(std::vector<AudioRendererMixerTestData>(
+        1, std::tr1::make_tuple(44100, 44100, 0))));
 
 }  // namespace media

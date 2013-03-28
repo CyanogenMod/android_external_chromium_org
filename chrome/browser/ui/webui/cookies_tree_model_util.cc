@@ -8,9 +8,9 @@
 
 #include "base/i18n/time_formatting.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/values.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "grit/generated_resources.h"
@@ -25,8 +25,6 @@ const char kKeyTitle[] = "title";
 const char kKeyIcon[] = "icon";
 const char kKeyType[] = "type";
 const char kKeyHasChildren[] = "hasChildren";
-
-const char kKeyAppId[] = "appId";
 
 const char kKeyAppsProtectingThis[] = "appsProtectingThis";
 const char kKeyName[] = "name";
@@ -62,6 +60,8 @@ std::string ClientCertTypeToString(net::SSLClientCertType type) {
   switch (type) {
     case net::CLIENT_CERT_RSA_SIGN:
       return l10n_util::GetStringUTF8(IDS_CLIENT_CERT_RSA_SIGN);
+    case net::CLIENT_CERT_DSS_SIGN:
+      return l10n_util::GetStringUTF8(IDS_CLIENT_CERT_DSS_SIGN);
     case net::CLIENT_CERT_ECDSA_SIGN:
       return l10n_util::GetStringUTF8(IDS_CLIENT_CERT_ECDSA_SIGN);
     default:
@@ -98,7 +98,6 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
   switch (node.GetDetailedInfo().node_type) {
     case CookieTreeNode::DetailedInfo::TYPE_HOST: {
       dict->SetString(kKeyType, "origin");
-      dict->SetString(kKeyAppId, node.GetDetailedInfo().app_id);
 #if defined(OS_MACOSX)
       dict->SetString(kKeyIcon, "chrome://theme/IDR_BOOKMARK_BAR_FOLDER");
 #endif

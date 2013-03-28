@@ -10,7 +10,7 @@
 #include "base/guid.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/common/metrics/entropy_provider.h"
 #include "chrome/common/metrics/metrics_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -79,7 +79,7 @@ class SHA1EntropyGenerator : public TrialEntropyGenerator {
       : trial_name_(trial_name) {
   }
 
-  ~SHA1EntropyGenerator() {
+  virtual ~SHA1EntropyGenerator() {
   }
 
   virtual double GenerateEntropyValue() const OVERRIDE {
@@ -110,7 +110,7 @@ class PermutedEntropyGenerator : public TrialEntropyGenerator {
     internal::PermuteMappingUsingTrialName(trial_name, &mapping_);
   }
 
-  ~PermutedEntropyGenerator() {
+  virtual ~PermutedEntropyGenerator() {
   }
 
   virtual double GenerateEntropyValue() const OVERRIDE {
@@ -192,9 +192,9 @@ TEST_F(EntropyProviderTest, UseOneTimeRandomizationSHA1) {
   base::FieldTrialList field_trial_list(new SHA1EntropyProvider("client_id"));
   scoped_refptr<base::FieldTrial> trials[] = {
       base::FieldTrialList::FactoryGetFieldTrial("one", 100, "default",
-          base::FieldTrialList::kExpirationYearInFuture, 1, 1, NULL),
+          base::FieldTrialList::kNoExpirationYear, 1, 1, NULL),
       base::FieldTrialList::FactoryGetFieldTrial("two", 100, "default",
-          base::FieldTrialList::kExpirationYearInFuture, 1, 1, NULL) };
+          base::FieldTrialList::kNoExpirationYear, 1, 1, NULL) };
 
   for (size_t i = 0; i < arraysize(trials); ++i) {
     trials[i]->UseOneTimeRandomization();
@@ -220,9 +220,9 @@ TEST_F(EntropyProviderTest, UseOneTimeRandomizationPermuted) {
       new PermutedEntropyProvider(1234, kMaxLowEntropySize));
   scoped_refptr<base::FieldTrial> trials[] = {
       base::FieldTrialList::FactoryGetFieldTrial("one", 100, "default",
-          base::FieldTrialList::kExpirationYearInFuture, 1, 1, NULL),
+          base::FieldTrialList::kNoExpirationYear, 1, 1, NULL),
       base::FieldTrialList::FactoryGetFieldTrial("two", 100, "default",
-          base::FieldTrialList::kExpirationYearInFuture, 1, 1, NULL) };
+          base::FieldTrialList::kNoExpirationYear, 1, 1, NULL) };
 
   for (size_t i = 0; i < arraysize(trials); ++i) {
     trials[i]->UseOneTimeRandomization();

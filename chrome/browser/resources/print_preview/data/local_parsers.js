@@ -18,6 +18,7 @@ cr.define('print_preview', function() {
     return new print_preview.Destination(
         destinationInfo.deviceName,
         print_preview.Destination.Type.LOCAL,
+        print_preview.Destination.AuthType.LOCAL,
         destinationInfo.printerName,
         false /*isRecent*/,
         print_preview.Destination.ConnectionStatus.ONLINE);
@@ -34,11 +35,8 @@ cr.define('print_preview', function() {
    *     capabilities.
    */
   LocalCapabilitiesParser.parse = function(settingsInfo) {
-    var hasColorCapability = false;
-    var defaultIsColorEnabled = false;
-    if (hasColorCapability = !settingsInfo['disableColorOption']) {
-      defaultIsColorEnabled = settingsInfo['setColorAsDefault'];
-    }
+    var hasColorCapability = !settingsInfo['disableColorOption'] || false;
+    var defaultIsColorEnabled = settingsInfo['setColorAsDefault'] || false;
 
     var hasDuplexCapability = false;
     var defaultIsDuplexEnabled = false;

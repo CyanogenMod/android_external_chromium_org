@@ -10,11 +10,12 @@
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/test_browser_window.h"
@@ -46,7 +47,7 @@ class FaviconDelegate : public ui::MenuModelDelegate {
  public:
   FaviconDelegate() : was_called_(false) {}
 
-  void OnIconChanged(int model_index) {
+  virtual void OnIconChanged(int model_index) OVERRIDE {
     was_called_ = true;
     MessageLoop::current()->Quit();
   }
@@ -506,8 +507,10 @@ TEST_F(BackFwdMenuModelTest, EscapeLabel) {
 TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
   profile()->CreateHistoryService(true, false);
   profile()->CreateFaviconService();
+  Browser::CreateParams native_params(profile(),
+                                      chrome::HOST_DESKTOP_TYPE_NATIVE);
   scoped_ptr<Browser> browser(
-      chrome::CreateBrowserWithTestWindowForProfile(profile()));
+      chrome::CreateBrowserWithTestWindowForParams(&native_params));
   FaviconDelegate favicon_delegate;
 
   BackForwardMenuModel back_model(
@@ -531,7 +534,8 @@ TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
           url1, base::Time::Now(), history::SOURCE_BROWSED);
   FaviconServiceFactory::GetForProfile(
       profile(), Profile::EXPLICIT_ACCESS)->SetFavicons(
-          url1, url1_favicon, history::FAVICON, gfx::Image(new_icon_bitmap));
+          url1, url1_favicon, history::FAVICON,
+          gfx::Image::CreateFrom1xBitmap(new_icon_bitmap));
 
   // Will return the current icon (default) but start an anync call
   // to retrieve the favicon from the favicon service.
@@ -566,7 +570,7 @@ TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
                       new_icon_bitmap.getSize()));
 
   // Make sure the browser deconstructor doesn't have problems.
-  chrome::CloseAllTabs(browser.get());
+  browser->tab_strip_model()->CloseAllTabs();
   // This is required to prevent the message loop from hanging.
   profile()->DestroyHistoryService();
 }

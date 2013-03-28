@@ -147,6 +147,16 @@ SpdyPriority ConvertRequestPriorityToSpdyPriority(
   }
 }
 
+NET_EXPORT_PRIVATE RequestPriority ConvertSpdyPriorityToRequestPriority(
+    SpdyPriority priority,
+    int protocol_version) {
+  // Handle invalid values gracefully, and pick LOW to map 2 back
+  // to for SPDY/2.
+  SpdyPriority idle_cutoff = (protocol_version == 2) ? 3 : 5;
+  return (priority >= idle_cutoff) ?
+      IDLE : static_cast<RequestPriority>(HIGHEST - priority);
+}
+
 GURL GetUrlFromHeaderBlock(const SpdyHeaderBlock& headers,
                            int protocol_version,
                            bool pushed) {
@@ -181,6 +191,14 @@ GURL GetUrlFromHeaderBlock(const SpdyHeaderBlock& headers,
   std::string url =  (scheme.empty() || host_port.empty() || path.empty())
       ? "" : scheme + "://" + host_port + path;
   return GURL(url);
+}
+
+bool ShouldShowHttpHeaderValue(const std::string& header_name) {
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  if (header_name == "proxy-authorization")
+    return false;
+#endif
+  return true;
 }
 
 }  // namespace net

@@ -46,6 +46,7 @@
             "parameters": [
               {
                 "type": "string",
+                "name": "state",
                 "enum": [ "not_installed", "installed", "disabled" ]
               }
             ]
@@ -61,12 +62,6 @@
           "type": "string",
           "enum": [ "running", "cannot_run", "ready_to_run" ]
         }
-      },
-      {
-        "name": "install",
-        "description": "TODO",
-        "type": "function",
-        "parameters": []
       },
       {
         "name": "getDetails",

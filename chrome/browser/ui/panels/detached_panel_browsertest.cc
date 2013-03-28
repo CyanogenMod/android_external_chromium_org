@@ -4,7 +4,7 @@
 
 #include "base/message_loop.h"
 #include "chrome/browser/ui/panels/base_panel_browser_test.h"
-#include "chrome/browser/ui/panels/detached_panel_strip.h"
+#include "chrome/browser/ui/panels/detached_panel_collection.h"
 #include "chrome/browser/ui/panels/native_panel.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
@@ -12,9 +12,17 @@
 class DetachedPanelBrowserTest : public BasePanelBrowserTest {
 };
 
-IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, CheckDetachedPanelProperties) {
+// http://crbug.com/143247
+#if !defined(OS_WIN)
+#define MAYBE_CheckDetachedPanelProperties DISABLED_CheckDetachedPanelProperties
+#else
+#define MAYBE_CheckDetachedPanelProperties CheckDetachedPanelProperties
+#endif
+IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest,
+                       MAYBE_CheckDetachedPanelProperties) {
   PanelManager* panel_manager = PanelManager::GetInstance();
-  DetachedPanelStrip* detached_strip = panel_manager->detached_strip();
+  DetachedPanelCollection* detached_collection =
+      panel_manager->detached_collection();
 
   // Create an initially detached panel (as opposed to other tests which create
   // a docked panel, then detaches it).
@@ -26,16 +34,24 @@ IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, CheckDetachedPanelProperties) {
       CreateNativePanelTesting(panel));
 
   EXPECT_EQ(1, panel_manager->num_panels());
-  EXPECT_TRUE(detached_strip->HasPanel(panel));
+  EXPECT_TRUE(detached_collection->HasPanel(panel));
 
-  EXPECT_EQ(bounds, panel->GetBounds());
+  EXPECT_EQ(bounds.x(), panel->GetBounds().x());
+  // Ignore checking y position since the detached panel will be placed near
+  // the top if the stacking mode is enabled.
+  if (!PanelManager::IsPanelStackingEnabled())
+    EXPECT_EQ(bounds.y(), panel->GetBounds().y());
+  EXPECT_EQ(bounds.width(), panel->GetBounds().width());
+  EXPECT_EQ(bounds.height(), panel->GetBounds().height());
   EXPECT_FALSE(panel->IsAlwaysOnTop());
 
   EXPECT_TRUE(panel_testing->IsButtonVisible(panel::CLOSE_BUTTON));
-  EXPECT_FALSE(panel_testing->IsButtonVisible(panel::MINIMIZE_BUTTON));
+  EXPECT_TRUE(panel_testing->IsButtonVisible(panel::MINIMIZE_BUTTON));
   EXPECT_FALSE(panel_testing->IsButtonVisible(panel::RESTORE_BUTTON));
 
-  EXPECT_EQ(panel::RESIZABLE_ALL_SIDES, panel->CanResizeByMouse());
+  EXPECT_EQ(panel::RESIZABLE_ALL, panel->CanResizeByMouse());
+
+  EXPECT_EQ(panel::ALL_ROUNDED, panel_testing->GetWindowCornerStyle());
 
   Panel::AttentionMode expected_attention_mode =
       static_cast<Panel::AttentionMode>(Panel::USE_PANEL_ATTENTION |
@@ -45,7 +61,13 @@ IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, CheckDetachedPanelProperties) {
   panel_manager->CloseAll();
 }
 
-IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, DrawAttentionOnActive) {
+// http://crbug.com/143247
+#if !defined(OS_WIN)
+#define MAYBE_DrawAttentionOnActive DISABLED_DrawAttentionOnActive
+#else
+#define MAYBE_DrawAttentionOnActive DrawAttentionOnActive
+#endif
+IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, MAYBE_DrawAttentionOnActive) {
   // Create a detached panel that is initially active.
   Panel* panel = CreateDetachedPanel("1", gfx::Rect(300, 200, 250, 200));
   scoped_ptr<NativePanelTesting> native_panel_testing(
@@ -57,14 +79,19 @@ IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, DrawAttentionOnActive) {
   EXPECT_FALSE(panel->IsDrawingAttention());
   panel->FlashFrame(true);
   EXPECT_FALSE(panel->IsDrawingAttention());
-  MessageLoop::current()->RunAllPending();
   EXPECT_FALSE(native_panel_testing->VerifyDrawingAttention());
 
   panel->Close();
 }
 
+// http://crbug.com/143247
+#if !defined(OS_WIN)
+#define MAYBE_DrawAttentionOnInactive DISABLED_DrawAttentionOnInactive
+#else
+#define MAYBE_DrawAttentionOnInactive DrawAttentionOnInactive
+#endif
 IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest,
-                       DrawAttentionOnInactive) {
+                       MAYBE_DrawAttentionOnInactive) {
   // Create two panels so that first panel becomes inactive.
   Panel* panel = CreateDetachedPanel("1", gfx::Rect(300, 200, 250, 200));
   CreateDetachedPanel("2", gfx::Rect(100, 100, 250, 200));
@@ -78,19 +105,24 @@ IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest,
   EXPECT_FALSE(panel->IsDrawingAttention());
   panel->FlashFrame(true);
   EXPECT_TRUE(panel->IsDrawingAttention());
-  MessageLoop::current()->RunAllPending();
   EXPECT_TRUE(native_panel_testing->VerifyDrawingAttention());
 
   // Stop drawing attention.
   panel->FlashFrame(false);
   EXPECT_FALSE(panel->IsDrawingAttention());
-  MessageLoop::current()->RunAllPending();
   EXPECT_FALSE(native_panel_testing->VerifyDrawingAttention());
 
   PanelManager::GetInstance()->CloseAll();
 }
 
-IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, DrawAttentionResetOnActivate) {
+// http://crbug.com/143247
+#if !defined(OS_WIN)
+#define MAYBE_DrawAttentionResetOnActivate DISABLED_DrawAttentionResetOnActivate
+#else
+#define MAYBE_DrawAttentionResetOnActivate DrawAttentionResetOnActivate
+#endif
+IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest,
+                       MAYBE_DrawAttentionResetOnActivate) {
   // Create 2 panels so we end up with an inactive panel that can
   // be made to draw attention.
   Panel* panel1 = CreateDetachedPanel("test panel1",
@@ -105,7 +137,6 @@ IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, DrawAttentionResetOnActivate) {
   // Test that the attention is drawn when the detached panel is not in focus.
   panel1->FlashFrame(true);
   EXPECT_TRUE(panel1->IsDrawingAttention());
-  MessageLoop::current()->RunAllPending();
   EXPECT_TRUE(native_panel_testing->VerifyDrawingAttention());
 
   // Test that the attention is cleared when panel gets focus.
@@ -118,7 +149,13 @@ IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, DrawAttentionResetOnActivate) {
   panel2->Close();
 }
 
-IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, ClickTitlebar) {
+// http://crbug.com/143247
+#if !defined(OS_WIN)
+#define MAYBE_ClickTitlebar DISABLED_ClickTitlebar
+#else
+#define MAYBE_ClickTitlebar ClickTitlebar
+#endif
+IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, MAYBE_ClickTitlebar) {
   PanelManager* panel_manager = PanelManager::GetInstance();
 
   Panel* panel = CreateDetachedPanel("1", gfx::Rect(300, 200, 250, 200));
@@ -149,6 +186,67 @@ IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest, ClickTitlebar) {
   test_panel->ReleaseMouseButtonTitlebar();
   WaitForPanelActiveState(panel, SHOW_AS_ACTIVE);
   EXPECT_FALSE(panel->IsMinimized());
+
+  panel_manager->CloseAll();
+}
+
+IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest,
+                       UpdateDetachedPanelOnPrimaryDisplayChange) {
+  PanelManager* panel_manager = PanelManager::GetInstance();
+
+  // Create a big detached panel on the primary display.
+  gfx::Rect initial_bounds(50, 50, 700, 500);
+  Panel* panel = CreateDetachedPanel("1", initial_bounds);
+  EXPECT_EQ(initial_bounds, panel->GetBounds());
+
+  // Make the primary display smaller.
+  // Expect that the panel should be resized to fit within the display.
+  gfx::Rect primary_display_area(0, 0, 500, 300);
+  gfx::Rect primary_work_area(0, 0, 500, 280);
+  mock_display_settings_provider()->SetPrimaryDisplay(
+      primary_display_area, primary_work_area);
+
+  gfx::Rect bounds = panel->GetBounds();
+  EXPECT_LE(primary_work_area.x(), bounds.x());
+  EXPECT_LE(bounds.x(), primary_work_area.right());
+  EXPECT_LE(primary_work_area.y(), bounds.y());
+  EXPECT_LE(bounds.y(), primary_work_area.bottom());
+
+  panel_manager->CloseAll();
+}
+
+IN_PROC_BROWSER_TEST_F(DetachedPanelBrowserTest,
+                       UpdateDetachedPanelOnSecondaryDisplayChange) {
+  PanelManager* panel_manager = PanelManager::GetInstance();
+
+  // Setup 2 displays with secondary display on the right side of primary
+  // display.
+  gfx::Rect primary_display_area(0, 0, 400, 600);
+  gfx::Rect primary_work_area(0, 0, 400, 560);
+  mock_display_settings_provider()->SetPrimaryDisplay(
+      primary_display_area, primary_work_area);
+  gfx::Rect secondary_display_area(400, 0, 400, 500);
+  gfx::Rect secondary_work_area(400, 0, 400, 460);
+  mock_display_settings_provider()->SetSecondaryDisplay(
+      secondary_display_area, secondary_work_area);
+
+  // Create a big detached panel on the seconday display.
+  gfx::Rect initial_bounds(450, 50, 350, 400);
+  Panel* panel = CreateDetachedPanel("1", initial_bounds);
+  EXPECT_EQ(initial_bounds, panel->GetBounds());
+
+  // Move down the secondary display and make it smaller.
+  // Expect that the panel should be resized to fit within the display.
+  secondary_display_area.SetRect(400, 100, 300, 400);
+  secondary_work_area.SetRect(400, 100, 300, 360);
+  mock_display_settings_provider()->SetSecondaryDisplay(
+      secondary_display_area, secondary_work_area);
+
+  gfx::Rect bounds = panel->GetBounds();
+  EXPECT_LE(secondary_work_area.x(), bounds.x());
+  EXPECT_LE(bounds.x(), secondary_work_area.right());
+  EXPECT_LE(secondary_work_area.y(), bounds.y());
+  EXPECT_LE(bounds.y(), secondary_work_area.bottom());
 
   panel_manager->CloseAll();
 }

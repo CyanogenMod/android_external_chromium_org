@@ -11,6 +11,11 @@
 #include "media/audio/audio_manager_base.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if defined(OS_ANDROID)
+#include "base/android/jni_android.h"
+#include "media/audio/audio_manager_base.h"
+#endif
+
 namespace media {
 
 static const int kSamplingRate = 8000;
@@ -25,8 +30,11 @@ class TestInputCallback : public AudioInputStream::AudioInputCallback {
         had_error_(0),
         max_data_bytes_(max_data_bytes) {
   }
-  virtual void OnData(AudioInputStream* stream, const uint8* data,
-                      uint32 size, uint32 hardware_delay_bytes, double volume) {
+  virtual void OnData(AudioInputStream* stream,
+                      const uint8* data,
+                      uint32 size,
+                      uint32 hardware_delay_bytes,
+                      double volume) OVERRIDE {
     ++callback_count_;
     // Read the first byte to make sure memory is good.
     if (size) {
@@ -35,8 +43,8 @@ class TestInputCallback : public AudioInputStream::AudioInputCallback {
       EXPECT_GE(value, 0);
     }
   }
-  virtual void OnClose(AudioInputStream* stream) {}
-  virtual void OnError(AudioInputStream* stream, int code) {
+  virtual void OnClose(AudioInputStream* stream) OVERRIDE {}
+  virtual void OnError(AudioInputStream* stream) OVERRIDE {
     ++had_error_;
   }
   // Returns how many times OnData() has been called.
@@ -64,6 +72,11 @@ static bool CanRunAudioTests(AudioManager* audio_man) {
 }
 
 static AudioInputStream* CreateTestAudioInputStream(AudioManager* audio_man) {
+#if defined(OS_ANDROID)
+  bool ret = media::AudioManagerBase::RegisterAudioManager(
+                 base::android::AttachCurrentThread());
+  EXPECT_TRUE(ret);
+#endif
   AudioInputStream* ais = audio_man->MakeAudioInputStream(
       AudioParameters(AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_STEREO,
                       kSamplingRate, 16, kSamplesPerPacket),
@@ -152,9 +165,9 @@ TEST(AudioInputTest, Record) {
   message_loop.PostDelayedTask(
       FROM_HERE,
       MessageLoop::QuitClosure(),
-      base::TimeDelta::FromMilliseconds(590));
+      base::TimeDelta::FromMilliseconds(690));
   message_loop.Run();
-  EXPECT_GE(test_callback.callback_count(), 10);
+  EXPECT_GE(test_callback.callback_count(), 1);
   EXPECT_FALSE(test_callback.had_error());
 
   ais->Stop();

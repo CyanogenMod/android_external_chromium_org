@@ -4,16 +4,19 @@
 
 #include "chrome/browser/signin/signin_manager_factory.h"
 
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_registry_simple.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/token_service_factory.h"
+#include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 
 SigninManagerFactory::SigninManagerFactory()
     : ProfileKeyedServiceFactory("SigninManager",
                                  ProfileDependencyManager::GetInstance()) {
   DependsOn(TokenServiceFactory::GetInstance());
+  DependsOn(GlobalErrorServiceFactory::GetInstance());
 }
 
 SigninManagerFactory::~SigninManagerFactory() {}
@@ -25,29 +28,33 @@ SigninManager* SigninManagerFactory::GetForProfile(Profile* profile) {
 }
 
 // static
+SigninManager* SigninManagerFactory::GetForProfileIfExists(Profile* profile) {
+  return static_cast<SigninManager*>(
+      GetInstance()->GetServiceForProfile(profile, false));
+}
+
+// static
 SigninManagerFactory* SigninManagerFactory::GetInstance() {
   return Singleton<SigninManagerFactory>::get();
 }
 
-void SigninManagerFactory::RegisterUserPrefs(PrefService* user_prefs) {
-  user_prefs->RegisterStringPref(prefs::kGoogleServicesLastUsername, "",
-                                 PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterStringPref(prefs::kGoogleServicesUsername, "",
-                                 PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kAutologinEnabled, true,
-                                  PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kReverseAutologinEnabled, true,
-                                  PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterListPref(prefs::kReverseAutologinRejectedEmailList,
-                               new ListValue, PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kIsGooglePlusUser, false,
-                                 PrefService::UNSYNCABLE_PREF);
+void SigninManagerFactory::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterStringPref(prefs::kGoogleServicesLastUsername, "",
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kGoogleServicesUsername, "",
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kAutologinEnabled, true,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kReverseAutologinEnabled, true,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kReverseAutologinRejectedEmailList,
+                             new ListValue,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // static
-void SigninManagerFactory::RegisterPrefs(PrefService* local_state) {
-  local_state->RegisterStringPref(prefs::kGoogleServicesUsernamePattern, "",
-                                  PrefService::UNSYNCABLE_PREF);
+void SigninManagerFactory::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterStringPref(prefs::kGoogleServicesUsernamePattern, "");
 }
 
 ProfileKeyedService* SigninManagerFactory::BuildServiceInstanceFor(

@@ -5,12 +5,18 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 
 #include "chrome/browser/chromeos/login/user_manager_impl.h"
-#include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
 
 // static
 const char UserManager::kStubUser[] = "stub-user@example.com";
+
+// static
+const char UserManager::kLocallyManagedUserDomain[] =
+    "locally-managed.localhost";
+
+// static
+const char UserManager::kKioskAppUserDomain[] = "kiosk-apps.localhost";
 
 // Class that is holds pointer to UserManager instance.
 // One could set UserManager mock instance through it (see UserManager::Set).

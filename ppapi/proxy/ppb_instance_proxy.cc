@@ -4,6 +4,7 @@
 
 #include "ppapi/proxy/ppb_instance_proxy.h"
 
+#include "base/memory/ref_counted.h"
 #include "build/build_config.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_time.h"
@@ -13,22 +14,27 @@
 #include "ppapi/c/ppb_messaging.h"
 #include "ppapi/c/ppb_mouse_lock.h"
 #include "ppapi/c/private/pp_content_decryptor.h"
+#include "ppapi/proxy/broker_resource.h"
+#include "ppapi/proxy/browser_font_singleton_resource.h"
 #include "ppapi/proxy/content_decryptor_private_serializer.h"
 #include "ppapi/proxy/enter_proxy.h"
 #include "ppapi/proxy/flash_clipboard_resource.h"
+#include "ppapi/proxy/flash_file_resource.h"
+#include "ppapi/proxy/flash_fullscreen_resource.h"
 #include "ppapi/proxy/flash_resource.h"
 #include "ppapi/proxy/gamepad_resource.h"
 #include "ppapi/proxy/host_dispatcher.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
-#include "ppapi/proxy/plugin_proxy_delegate.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "ppapi/proxy/ppb_flash_proxy.h"
 #include "ppapi/proxy/serialized_var.h"
+#include "ppapi/proxy/truetype_font_singleton_resource.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppb_url_util_shared.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
+#include "ppapi/thunk/ppb_graphics_2d_api.h"
+#include "ppapi/thunk/ppb_graphics_3d_api.h"
 #include "ppapi/thunk/thunk.h"
 
 // Windows headers interfere with this file.
@@ -38,6 +44,8 @@
 
 using ppapi::thunk::EnterInstanceNoLock;
 using ppapi::thunk::EnterResourceNoLock;
+using ppapi::thunk::PPB_Graphics2D_API;
+using ppapi::thunk::PPB_Graphics3D_API;
 using ppapi::thunk::PPB_Instance_API;
 
 namespace ppapi {
@@ -97,10 +105,13 @@ bool PPB_Instance_Proxy::OnMessageReceived(const IPC::Message& msg) {
   // This must happen OUTSIDE of ExecuteScript since the SerializedVars use
   // the dispatcher upon return of the function (converting the
   // SerializedVarReturnValue/OutParam to a SerializedVar in the destructor).
+#if !defined(OS_NACL)
   ScopedModuleReference death_grip(dispatcher());
+#endif
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PPB_Instance_Proxy, msg)
+#if !defined(OS_NACL)
     // Plugin -> Host messages.
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_GetWindowObject,
                         OnHostMsgGetWindowObject)
@@ -130,8 +141,6 @@ bool PPB_Instance_Proxy::OnMessageReceived(const IPC::Message& msg) {
                         OnHostMsgRequestInputEvents)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_ClearInputEvents,
                         OnHostMsgClearInputEvents)
-    IPC_MESSAGE_HANDLER(PpapiMsg_PPPInputEvent_HandleInputEvent_ACK,
-                        OnMsgHandleInputEventAck)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_LockMouse,
                         OnHostMsgLockMouse)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_UnlockMouse,
@@ -148,8 +157,6 @@ bool PPB_Instance_Proxy::OnMessageReceived(const IPC::Message& msg) {
                         OnHostMsgUpdateSurroundingText)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_GetDocumentURL,
                         OnHostMsgGetDocumentURL)
-
-#if !defined(OS_NACL)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_ResolveRelativeToDocument,
                         OnHostMsgResolveRelativeToDocument)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_DocumentCanRequest,
@@ -194,18 +201,35 @@ PP_Bool PPB_Instance_Proxy::BindGraphics(PP_Instance instance,
   // If device is 0, pass a null HostResource. This signals the host to unbind
   // all devices.
   HostResource host_resource;
+  PP_Resource pp_resource = 0;
   if (device) {
     Resource* resource =
         PpapiGlobals::Get()->GetResourceTracker()->GetResource(device);
     if (!resource || resource->pp_instance() != instance)
       return PP_FALSE;
     host_resource = resource->host_resource();
+    pp_resource = resource->pp_resource();
+  } else {
+    // Passing 0 means unbinding all devices.
+    dispatcher()->Send(new PpapiHostMsg_PPBInstance_BindGraphics(
+        API_ID_PPB_INSTANCE, instance, 0));
+    return PP_TRUE;
   }
 
-  PP_Bool result = PP_FALSE;
-  dispatcher()->Send(new PpapiHostMsg_PPBInstance_BindGraphics(
-      API_ID_PPB_INSTANCE, instance, host_resource, &result));
-  return result;
+  // We need to pass different resource to Graphics 2D and 3D right now.  Once
+  // 3D is migrated to the new design, we should be able to unify this.
+  EnterResourceNoLock<PPB_Graphics2D_API> enter_2d(device, false);
+  EnterResourceNoLock<PPB_Graphics3D_API> enter_3d(device, false);
+  if (enter_2d.succeeded()) {
+    dispatcher()->Send(new PpapiHostMsg_PPBInstance_BindGraphics(
+        API_ID_PPB_INSTANCE, instance, pp_resource));
+    return PP_TRUE;
+  } else if (enter_3d.succeeded()) {
+    dispatcher()->Send(new PpapiHostMsg_PPBInstance_BindGraphics(
+        API_ID_PPB_INSTANCE, instance, host_resource.host_resource()));
+    return PP_TRUE;
+  }
+  return PP_FALSE;
 }
 
 PP_Bool PPB_Instance_Proxy::IsFullFrame(PP_Instance instance) {
@@ -221,6 +245,13 @@ const ViewData* PPB_Instance_Proxy::GetViewData(PP_Instance instance) {
   if (!data)
     return NULL;
   return &data->view;
+}
+
+PP_Bool PPB_Instance_Proxy::FlashIsFullscreen(PP_Instance instance) {
+  // This function is only used for proxying in the renderer process. It is not
+  // implemented in the plugin process.
+  NOTREACHED();
+  return PP_FALSE;
 }
 
 PP_Var PPB_Instance_Proxy::GetWindowObject(PP_Instance instance) {
@@ -291,21 +322,6 @@ void PPB_Instance_Proxy::SelectedFindResultChanged(PP_Instance instance,
   NOTIMPLEMENTED();  // Not proxied yet.
 }
 
-PP_Var PPB_Instance_Proxy::GetFontFamilies(PP_Instance instance) {
-  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance);
-  if (!dispatcher)
-    return PP_MakeUndefined();
-
-  // Assume the font families don't change, so we can cache the result globally.
-  CR_DEFINE_STATIC_LOCAL(std::string, families, ());
-  if (families.empty()) {
-    PluginGlobals::Get()->plugin_proxy_delegate()->SendToBrowser(
-        new PpapiHostMsg_PPBInstance_GetFontFamilies(&families));
-  }
-
-  return StringVar::StringToPPVar(families);
-}
-
 PP_Bool PPB_Instance_Proxy::SetFullscreen(PP_Instance instance,
                                           PP_Bool fullscreen) {
   PP_Bool result = PP_FALSE;
@@ -322,72 +338,70 @@ PP_Bool PPB_Instance_Proxy::GetScreenSize(PP_Instance instance,
   return result;
 }
 
-thunk::PPB_Flash_API* PPB_Instance_Proxy::GetFlashAPI() {
-  InterfaceProxy* ip = dispatcher()->GetInterfaceProxy(API_ID_PPB_FLASH);
-  return static_cast<PPB_Flash_Proxy*>(ip);
-}
+Resource* PPB_Instance_Proxy::GetSingletonResource(PP_Instance instance,
+                                                   SingletonResourceID id) {
+  InstanceData* data = static_cast<PluginDispatcher*>(dispatcher())->
+      GetInstanceData(instance);
 
-// TODO(raymes): We can most likely cut down this boilerplate for grabbing
-// singleton resource APIs.
-thunk::PPB_Flash_Functions_API* PPB_Instance_Proxy::GetFlashFunctionsAPI(
-    PP_Instance instance) {
+  InstanceData::SingletonResourceMap::iterator it =
+      data->singleton_resources.find(id);
+  if (it != data->singleton_resources.end())
+    return it->second.get();
+
+  scoped_refptr<Resource> new_singleton;
+  Connection connection(PluginGlobals::Get()->GetBrowserSender(), dispatcher());
+
+  switch (id) {
+    case BROKER_SINGLETON_ID:
+      new_singleton = new BrokerResource(connection, instance);
+      break;
+    case GAMEPAD_SINGLETON_ID:
+      new_singleton = new GamepadResource(connection, instance);
+      break;
+    case TRUETYPE_FONT_SINGLETON_ID:
+      new_singleton = new TrueTypeFontSingletonResource(connection, instance);
+      break;
+// Flash/trusted resources aren't needed for NaCl.
 #if !defined(OS_NACL) && !defined(NACL_WIN64)
-  InstanceData* data = static_cast<PluginDispatcher*>(dispatcher())->
-      GetInstanceData(instance);
-  if (!data)
-    return NULL;
-
-  if (!data->flash_resource.get()) {
-    Connection connection(
-        PluginGlobals::Get()->plugin_proxy_delegate()->GetBrowserSender(),
-        dispatcher());
-    data->flash_resource = new FlashResource(connection, instance);
-  }
-  return data->flash_resource.get();
+    case BROWSER_FONT_SINGLETON_ID:
+      new_singleton = new BrowserFontSingletonResource(connection, instance);
+      break;
+    case FLASH_CLIPBOARD_SINGLETON_ID:
+      new_singleton = new FlashClipboardResource(connection, instance);
+      break;
+    case FLASH_FILE_SINGLETON_ID:
+      new_singleton = new FlashFileResource(connection, instance);
+      break;
+    case FLASH_FULLSCREEN_SINGLETON_ID:
+      new_singleton = new FlashFullscreenResource(connection, instance);
+      break;
+    case FLASH_SINGLETON_ID:
+      new_singleton = new FlashResource(connection, instance,
+          static_cast<PluginDispatcher*>(dispatcher()));
+      break;
+    case PDF_SINGLETON_ID:
+      // TODO(raymes): fill this in.
+      break;
 #else
-  // Flash functions aren't implemented for nacl.
-  NOTIMPLEMENTED();
-  return NULL;
+    case BROWSER_FONT_SINGLETON_ID:
+    case FLASH_CLIPBOARD_SINGLETON_ID:
+    case FLASH_FILE_SINGLETON_ID:
+    case FLASH_FULLSCREEN_SINGLETON_ID:
+    case FLASH_SINGLETON_ID:
+    case PDF_SINGLETON_ID:
+      NOTREACHED();
+      break;
 #endif  // !defined(OS_NACL) && !defined(NACL_WIN64)
-}
-
-thunk::PPB_Flash_Clipboard_API* PPB_Instance_Proxy::GetFlashClipboardAPI(
-    PP_Instance instance) {
-#if !defined(OS_NACL) && !defined(NACL_WIN64)
-  InstanceData* data = static_cast<PluginDispatcher*>(dispatcher())->
-      GetInstanceData(instance);
-  if (!data)
-    return NULL;
-
-  if (!data->flash_clipboard_resource.get()) {
-    Connection connection(
-        PluginGlobals::Get()->plugin_proxy_delegate()->GetBrowserSender(),
-        dispatcher());
-    data->flash_clipboard_resource =
-        new FlashClipboardResource(connection, instance);
   }
-  return data->flash_clipboard_resource.get();
-#else
-  // Flash functions aren't implemented for nacl.
-  NOTIMPLEMENTED();
-  return NULL;
-#endif  // !defined(OS_NACL) && !defined(NACL_WIN64)
-}
 
-thunk::PPB_Gamepad_API* PPB_Instance_Proxy::GetGamepadAPI(
-    PP_Instance instance) {
-  InstanceData* data = static_cast<PluginDispatcher*>(dispatcher())->
-      GetInstanceData(instance);
-  if (!data)
+  if (!new_singleton) {
+    // Getting here implies that a constructor is missing in the above switch.
+    NOTREACHED();
     return NULL;
-
-  if (!data->gamepad_resource.get()) {
-    Connection connection(
-        PluginGlobals::Get()->plugin_proxy_delegate()->GetBrowserSender(),
-        dispatcher());
-    data->gamepad_resource = new GamepadResource(connection, instance);
   }
-  return data->gamepad_resource.get();
+
+  data->singleton_resources[id] = new_singleton;
+  return new_singleton.get();
 }
 
 int32_t PPB_Instance_Proxy::RequestInputEvents(PP_Instance instance,
@@ -417,12 +431,6 @@ void PPB_Instance_Proxy::ClearInputEventRequest(PP_Instance instance,
                                                 uint32_t event_classes) {
   dispatcher()->Send(new PpapiHostMsg_PPBInstance_ClearInputEvents(
       API_ID_PPB_INSTANCE, instance, event_classes));
-}
-
-void PPB_Instance_Proxy::ClosePendingUserGesture(PP_Instance instance,
-                                                 PP_TimeTicks timestamp) {
-  // Not called on the plugin side.
-  NOTREACHED();
 }
 
 void PPB_Instance_Proxy::ZoomChanged(PP_Instance instance,
@@ -520,19 +528,15 @@ void PPB_Instance_Proxy::KeyAdded(PP_Instance instance,
 void PPB_Instance_Proxy::KeyMessage(PP_Instance instance,
                                     PP_Var key_system,
                                     PP_Var session_id,
-                                    PP_Resource message,
+                                    PP_Var message,
                                     PP_Var default_url) {
-  Resource* object =
-      PpapiGlobals::Get()->GetResourceTracker()->GetResource(message);
-  if (!object || object->pp_instance() != instance)
-    return;
   dispatcher()->Send(
       new PpapiHostMsg_PPBInstance_KeyMessage(
           API_ID_PPB_INSTANCE,
           instance,
           SerializedVarSendInput(dispatcher(), key_system),
           SerializedVarSendInput(dispatcher(), session_id),
-          object->host_resource().host_resource(),
+          SerializedVarSendInput(dispatcher(), message),
           SerializedVarSendInput(dispatcher(), default_url)));
 }
 
@@ -680,7 +684,8 @@ void PPB_Instance_Proxy::PostMessage(PP_Instance instance,
                                      PP_Var message) {
   dispatcher()->Send(new PpapiHostMsg_PPBInstance_PostMessage(
       API_ID_PPB_INSTANCE,
-      instance, SerializedVarSendInput(dispatcher(), message)));
+      instance, SerializedVarSendInputShmem(dispatcher(), message,
+                                            instance)));
 }
 
 PP_Bool PPB_Instance_Proxy::SetCursor(PP_Instance instance,
@@ -752,7 +757,7 @@ void PPB_Instance_Proxy::CancelCompositionText(PP_Instance instance) {
 
 void PPB_Instance_Proxy::SelectionChanged(PP_Instance instance) {
   // The "right" way to do this is to send the message to the host. However,
-  // all it will do it call RequestSurroundingText with a hardcoded number of
+  // all it will do is call RequestSurroundingText with a hardcoded number of
   // characters in response, which is an entire IPC round-trip.
   //
   // We can avoid this round-trip by just implementing the
@@ -771,7 +776,7 @@ void PPB_Instance_Proxy::SelectionChanged(PP_Instance instance) {
   if (!data->is_request_surrounding_text_pending) {
     MessageLoop::current()->PostTask(
         FROM_HERE,
-        base::Bind(&RequestSurroundingText, instance));
+        RunWhileLocked(base::Bind(&RequestSurroundingText, instance)));
     data->is_request_surrounding_text_pending = true;
   }
 }
@@ -784,9 +789,12 @@ void PPB_Instance_Proxy::UpdateSurroundingText(PP_Instance instance,
       API_ID_PPB_INSTANCE, instance, text, caret, anchor));
 }
 
+#if !defined(OS_NACL)
 void PPB_Instance_Proxy::OnHostMsgGetWindowObject(
     PP_Instance instance,
     SerializedVarReturnValue result) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded())
     result.Return(dispatcher(), enter.functions()->GetWindowObject(instance));
@@ -795,6 +803,8 @@ void PPB_Instance_Proxy::OnHostMsgGetWindowObject(
 void PPB_Instance_Proxy::OnHostMsgGetOwnerElementObject(
     PP_Instance instance,
     SerializedVarReturnValue result) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     result.Return(dispatcher(),
@@ -803,13 +813,14 @@ void PPB_Instance_Proxy::OnHostMsgGetOwnerElementObject(
 }
 
 void PPB_Instance_Proxy::OnHostMsgBindGraphics(PP_Instance instance,
-                                               const HostResource& device,
-                                               PP_Bool* result) {
+                                               PP_Resource device) {
+  // Note that we ignroe the return value here. Otherwise, this would need to
+  // be a slow sync call, and the plugin side of the proxy will have already
+  // validated the resources, so we shouldn't see errors here that weren't
+  // already caught.
   EnterInstanceNoLock enter(instance);
-  if (enter.succeeded()) {
-    *result = enter.functions()->BindGraphics(instance,
-                                              device.host_resource());
-  }
+  if (enter.succeeded())
+    enter.functions()->BindGraphics(instance, device);
 }
 
 void PPB_Instance_Proxy::OnHostMsgGetAudioHardwareOutputSampleRate(
@@ -838,6 +849,8 @@ void PPB_Instance_Proxy::OnHostMsgExecuteScript(
     SerializedVarReceiveInput script,
     SerializedVarOutParam out_exception,
     SerializedVarReturnValue result) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.failed())
     return;
@@ -856,6 +869,8 @@ void PPB_Instance_Proxy::OnHostMsgExecuteScript(
 void PPB_Instance_Proxy::OnHostMsgGetDefaultCharSet(
     PP_Instance instance,
     SerializedVarReturnValue result) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded())
     result.Return(dispatcher(), enter.functions()->GetDefaultCharSet(instance));
@@ -897,19 +912,14 @@ void PPB_Instance_Proxy::OnHostMsgClearInputEvents(PP_Instance instance,
     enter.functions()->ClearInputEventRequest(instance, event_classes);
 }
 
-void PPB_Instance_Proxy::OnMsgHandleInputEventAck(PP_Instance instance,
-                                                  PP_TimeTicks timestamp) {
-  EnterInstanceNoLock enter(instance);
-  if (enter.succeeded())
-    enter.functions()->ClosePendingUserGesture(instance, timestamp);
-}
-
 void PPB_Instance_Proxy::OnHostMsgPostMessage(
     PP_Instance instance,
     SerializedVarReceiveInput message) {
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded())
-    enter.functions()->PostMessage(instance, message.Get(dispatcher()));
+    enter.functions()->PostMessage(instance,
+                                   message.GetForInstance(dispatcher(),
+                                                          instance));
 }
 
 void PPB_Instance_Proxy::OnHostMsgLockMouse(PP_Instance instance) {
@@ -932,6 +942,8 @@ void PPB_Instance_Proxy::OnHostMsgGetDocumentURL(
     PP_Instance instance,
     PP_URLComponents_Dev* components,
     SerializedVarReturnValue result) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     PP_Var document_url = enter.functions()->GetDocumentURL(instance,
@@ -940,11 +952,12 @@ void PPB_Instance_Proxy::OnHostMsgGetDocumentURL(
   }
 }
 
-#if !defined(OS_NACL)
 void PPB_Instance_Proxy::OnHostMsgResolveRelativeToDocument(
     PP_Instance instance,
     SerializedVarReceiveInput relative,
     SerializedVarReturnValue result) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     result.Return(dispatcher(),
@@ -957,6 +970,8 @@ void PPB_Instance_Proxy::OnHostMsgDocumentCanRequest(
     PP_Instance instance,
     SerializedVarReceiveInput url,
     PP_Bool* result) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     *result = enter.functions()->DocumentCanRequest(instance,
@@ -967,6 +982,8 @@ void PPB_Instance_Proxy::OnHostMsgDocumentCanRequest(
 void PPB_Instance_Proxy::OnHostMsgDocumentCanAccessDocument(PP_Instance active,
                                                             PP_Instance target,
                                                             PP_Bool* result) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
+    return;
   EnterInstanceNoLock enter(active);
   if (enter.succeeded())
     *result = enter.functions()->DocumentCanAccessDocument(active, target);
@@ -975,6 +992,8 @@ void PPB_Instance_Proxy::OnHostMsgDocumentCanAccessDocument(PP_Instance active,
 void PPB_Instance_Proxy::OnHostMsgGetPluginInstanceURL(
     PP_Instance instance,
     SerializedVarReturnValue result) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     result.Return(dispatcher(),
@@ -986,6 +1005,8 @@ void PPB_Instance_Proxy::OnHostMsgNeedKey(PP_Instance instance,
                                           SerializedVarReceiveInput key_system,
                                           SerializedVarReceiveInput session_id,
                                           SerializedVarReceiveInput init_data) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     enter.functions()->NeedKey(instance,
@@ -999,6 +1020,8 @@ void PPB_Instance_Proxy::OnHostMsgKeyAdded(
     PP_Instance instance,
     SerializedVarReceiveInput key_system,
     SerializedVarReceiveInput session_id) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     enter.functions()->KeyAdded(instance,
@@ -1011,14 +1034,16 @@ void PPB_Instance_Proxy::OnHostMsgKeyMessage(
     PP_Instance instance,
     SerializedVarReceiveInput key_system,
     SerializedVarReceiveInput session_id,
-    PP_Resource message,
+    SerializedVarReceiveInput message,
     SerializedVarReceiveInput default_url) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     enter.functions()->KeyMessage(instance,
                                   key_system.Get(dispatcher()),
                                   session_id.Get(dispatcher()),
-                                  message,
+                                  message.Get(dispatcher()),
                                   default_url.Get(dispatcher()));
   }
 }
@@ -1029,6 +1054,8 @@ void PPB_Instance_Proxy::OnHostMsgKeyError(
     SerializedVarReceiveInput session_id,
     int32_t media_error,
     int32_t system_error) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     enter.functions()->KeyError(instance,
@@ -1043,6 +1070,8 @@ void PPB_Instance_Proxy::OnHostMsgDeliverBlock(
     PP_Instance instance,
     PP_Resource decrypted_block,
     const std::string& serialized_block_info) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   PP_DecryptedBlockInfo block_info;
   if (!DeserializeBlockInfo(serialized_block_info, &block_info))
     return;
@@ -1057,6 +1086,8 @@ void PPB_Instance_Proxy::OnHostMsgDecoderInitializeDone(
     PP_DecryptorStreamType decoder_type,
     uint32_t request_id,
     PP_Bool success) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     enter.functions()->DecoderInitializeDone(instance,
@@ -1070,6 +1101,8 @@ void PPB_Instance_Proxy::OnHostMsgDecoderDeinitializeDone(
     PP_Instance instance,
     PP_DecryptorStreamType decoder_type,
     uint32_t request_id) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded())
     enter.functions()->DecoderDeinitializeDone(instance,
@@ -1081,6 +1114,8 @@ void PPB_Instance_Proxy::OnHostMsgDecoderResetDone(
     PP_Instance instance,
     PP_DecryptorStreamType decoder_type,
     uint32_t request_id) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded())
     enter.functions()->DecoderResetDone(instance, decoder_type, request_id);
@@ -1090,6 +1125,8 @@ void PPB_Instance_Proxy::OnHostMsgDeliverFrame(
     PP_Instance instance,
     PP_Resource decrypted_frame,
     const std::string& serialized_frame_info) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   PP_DecryptedFrameInfo frame_info;
   if (!DeserializeBlockInfo(serialized_frame_info, &frame_info))
     return;
@@ -1103,6 +1140,8 @@ void PPB_Instance_Proxy::OnHostMsgDeliverSamples(
     PP_Instance instance,
     PP_Resource audio_frames,
     const std::string& serialized_block_info) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
   PP_DecryptedBlockInfo block_info;
   if (!DeserializeBlockInfo(serialized_block_info, &block_info))
     return;
@@ -1111,13 +1150,13 @@ void PPB_Instance_Proxy::OnHostMsgDeliverSamples(
   if (enter.succeeded())
     enter.functions()->DeliverSamples(instance, audio_frames, &block_info);
 }
-#endif  // !defined(OS_NACL)
 
-void  PPB_Instance_Proxy::OnHostMsgSetCursor(
+void PPB_Instance_Proxy::OnHostMsgSetCursor(
     PP_Instance instance,
     int32_t type,
     const ppapi::HostResource& custom_image,
     const PP_Point& hot_spot) {
+  // This API serves PPB_CursorControl_Dev and PPB_MouseCursor, so is public.
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     enter.functions()->SetCursor(
@@ -1128,6 +1167,8 @@ void  PPB_Instance_Proxy::OnHostMsgSetCursor(
 
 void PPB_Instance_Proxy::OnHostMsgSetTextInputType(PP_Instance instance,
                                                    PP_TextInput_Type type) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded())
     enter.functions()->SetTextInputType(instance, type);
@@ -1137,6 +1178,8 @@ void PPB_Instance_Proxy::OnHostMsgUpdateCaretPosition(
     PP_Instance instance,
     const PP_Rect& caret,
     const PP_Rect& bounding_box) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded())
     enter.functions()->UpdateCaretPosition(instance, caret, bounding_box);
@@ -1144,6 +1187,8 @@ void PPB_Instance_Proxy::OnHostMsgUpdateCaretPosition(
 
 void PPB_Instance_Proxy::OnHostMsgCancelCompositionText(PP_Instance instance) {
   EnterInstanceNoLock enter(instance);
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
+    return;
   if (enter.succeeded())
     enter.functions()->CancelCompositionText(instance);
 }
@@ -1153,15 +1198,21 @@ void PPB_Instance_Proxy::OnHostMsgUpdateSurroundingText(
     const std::string& text,
     uint32_t caret,
     uint32_t anchor) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_DEV))
+    return;
   EnterInstanceNoLock enter(instance);
   if (enter.succeeded()) {
     enter.functions()->UpdateSurroundingText(instance, text.c_str(), caret,
                                              anchor);
   }
 }
+#endif  // !defined(OS_NACL)
 
 void PPB_Instance_Proxy::OnPluginMsgMouseLockComplete(PP_Instance instance,
                                                       int32_t result) {
+  if (!dispatcher()->IsPlugin())
+    return;
+
   // Save the mouse callback on the instance data.
   InstanceData* data = static_cast<PluginDispatcher*>(dispatcher())->
       GetInstanceData(instance);
@@ -1174,11 +1225,13 @@ void PPB_Instance_Proxy::OnPluginMsgMouseLockComplete(PP_Instance instance,
   data->mouse_lock_callback->Run(result);
 }
 
+#if !defined(OS_NACL)
 void PPB_Instance_Proxy::MouseLockCompleteInHost(int32_t result,
                                                  PP_Instance instance) {
   dispatcher()->Send(new PpapiMsg_PPBInstance_MouseLockComplete(
       API_ID_PPB_INSTANCE, instance, result));
 }
+#endif  // !defined(OS_NACL)
 
 void PPB_Instance_Proxy::CancelAnyPendingRequestSurroundingText(
     PP_Instance instance) {

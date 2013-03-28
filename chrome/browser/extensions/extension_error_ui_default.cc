@@ -23,7 +23,8 @@ ExtensionErrorUIDefault::~ExtensionErrorUIDefault() {
 
 bool ExtensionErrorUIDefault::ShowErrorInBubbleView() {
   Browser* browser =
-      chrome::FindLastActiveWithProfile(extension_service()->profile());
+      chrome::FindLastActiveWithProfile(extension_service()->profile(),
+                                        chrome::GetActiveDesktop());
   if (!browser)
     return false;
 
@@ -34,7 +35,7 @@ bool ExtensionErrorUIDefault::ShowErrorInBubbleView() {
 
 void ExtensionErrorUIDefault::ShowExtensions() {
   DCHECK(browser_);
-  chrome::ShowExtensions(browser_);
+  chrome::ShowExtensions(browser_, std::string());
 }
 
 ExtensionErrorUIDefault::ExtensionGlobalError::ExtensionGlobalError(

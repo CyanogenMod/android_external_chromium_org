@@ -10,12 +10,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/browser_feature_extractor.h"
 #include "chrome/browser/safe_browsing/client_side_detection_service.h"
+#include "chrome/browser/safe_browsing/database_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -42,6 +43,9 @@ using content::WebContents;
 
 namespace safe_browsing {
 
+const int ClientSideDetectionHost::kMaxHostsPerIP = 20;
+const int ClientSideDetectionHost::kMaxIPsPerBrowse = 200;
+
 namespace {
 
 void EmptyUrlCheckCallback(bool processed) {
@@ -54,9 +58,9 @@ void EmptyUrlCheckCallback(bool processed) {
 // asynchronously checks whether the phishing classifier should run for this
 // URL.  If so, it notifies the renderer with a StartPhishingDetection IPC.
 // Objects of this class are ref-counted and will be destroyed once nobody
-// uses it anymore.  If |tab_contents|, |csd_service| or |host| go away you need
-// to call Cancel().  We keep the |sb_service| alive in a ref pointer for as
-// long as it takes.
+// uses it anymore.  If |web_contents|, |csd_service| or |host| go away you need
+// to call Cancel().  We keep the |database_manager| alive in a ref pointer for
+// as long as it takes.
 class ClientSideDetectionHost::ShouldClassifyUrlRequest
     : public base::RefCountedThreadSafe<
           ClientSideDetectionHost::ShouldClassifyUrlRequest> {
@@ -64,18 +68,18 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
   ShouldClassifyUrlRequest(const content::FrameNavigateParams& params,
                            WebContents* web_contents,
                            ClientSideDetectionService* csd_service,
-                           SafeBrowsingService* sb_service,
+                           SafeBrowsingDatabaseManager* database_manager,
                            ClientSideDetectionHost* host)
       : canceled_(false),
         params_(params),
         web_contents_(web_contents),
         csd_service_(csd_service),
-        sb_service_(sb_service),
+        database_manager_(database_manager),
         host_(host) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     DCHECK(web_contents_);
     DCHECK(csd_service_);
-    DCHECK(sb_service_);
+    DCHECK(database_manager_);
     DCHECK(host_);
   }
 
@@ -161,7 +165,8 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
 
   void CheckCsdWhitelist(const GURL& url) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    if (!sb_service_ || sb_service_->MatchCsdWhitelistUrl(url)) {
+    if (!database_manager_ ||
+        database_manager_->MatchCsdWhitelistUrl(url)) {
       // We're done.  There is no point in going back to the UI thread.
       VLOG(1) << "Skipping phishing classification for URL: " << url
               << " because it matches the csd whitelist";
@@ -226,9 +231,9 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
   content::FrameNavigateParams params_;
   WebContents* web_contents_;
   ClientSideDetectionService* csd_service_;
-  // We keep a ref pointer here just to make sure the service class stays alive
-  // long enough.
-  scoped_refptr<SafeBrowsingService> sb_service_;
+  // We keep a ref pointer here just to make sure the safe browsing
+  // database manager stays alive long enough.
+  scoped_refptr<SafeBrowsingDatabaseManager> database_manager_;
   ClientSideDetectionHost* host_;
 
   DISALLOW_COPY_AND_ASSIGN(ShouldClassifyUrlRequest);
@@ -246,21 +251,24 @@ ClientSideDetectionHost::ClientSideDetectionHost(WebContents* tab)
       weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
       unsafe_unique_page_id_(-1) {
   DCHECK(tab);
+  // Note: csd_service_ and sb_service will be NULL here in testing.
   csd_service_ = g_browser_process->safe_browsing_detection_service();
   feature_extractor_.reset(new BrowserFeatureExtractor(tab, csd_service_));
-  sb_service_ = g_browser_process->safe_browsing_service();
-  // Note: csd_service_ and sb_service_ will be NULL here in testing.
   registrar_.Add(this, content::NOTIFICATION_RESOURCE_RESPONSE_STARTED,
                  content::Source<WebContents>(tab));
-  if (sb_service_) {
-    sb_service_->AddObserver(this);
+
+  scoped_refptr<SafeBrowsingService> sb_service =
+      g_browser_process->safe_browsing_service();
+  if (sb_service) {
+    ui_manager_ = sb_service->ui_manager();
+    database_manager_ = sb_service->database_manager();
+    ui_manager_->AddObserver(this);
   }
 }
 
 ClientSideDetectionHost::~ClientSideDetectionHost() {
-  if (sb_service_) {
-    sb_service_->RemoveObserver(this);
-  }
+  if (ui_manager_)
+    ui_manager_->RemoveObserver(this);
 }
 
 bool ClientSideDetectionHost::OnMessageReceived(const IPC::Message& message) {
@@ -315,13 +323,13 @@ void ClientSideDetectionHost::DidNavigateMainFrame(
   classification_request_ = new ShouldClassifyUrlRequest(params,
                                                          web_contents(),
                                                          csd_service_,
-                                                         sb_service_,
+                                                         database_manager_,
                                                          this);
   classification_request_->Start();
 }
 
 void ClientSideDetectionHost::OnSafeBrowsingHit(
-    const SafeBrowsingService::UnsafeResource& resource) {
+    const SafeBrowsingUIManager::UnsafeResource& resource) {
   // Check that this notification is really for us and that it corresponds to
   // either a malware or phishing hit.  In this case we store the unique page
   // ID for later.
@@ -337,7 +345,7 @@ void ClientSideDetectionHost::OnSafeBrowsingHit(
         web_contents()->GetController().GetActiveEntry()->GetUniqueID();
     // We also keep the resource around in order to be able to send the
     // malicious URL to the server.
-    unsafe_resource_.reset(new SafeBrowsingService::UnsafeResource(resource));
+    unsafe_resource_.reset(new SafeBrowsingUIManager::UnsafeResource(resource));
     unsafe_resource_->callback.Reset();  // Don't do anything stupid.
   }
 }
@@ -371,22 +379,32 @@ void ClientSideDetectionHost::OnPhishingDetectionDone(
       !weak_factory_.HasWeakPtrs() &&
       browse_info_.get() &&
       verdict->ParseFromString(verdict_str) &&
-      verdict->IsInitialized() &&
-      // We only send the verdict to the server if the verdict is phishing or if
-      // a SafeBrowsing interstitial was already shown for this site.  E.g., a
-      // malware or phishing interstitial was shown but the user clicked
-      // through.
-      (verdict->is_phishing() || DidShowSBInterstitial())) {
-    if (DidShowSBInterstitial()) {
-      browse_info_->unsafe_resource.reset(unsafe_resource_.release());
-    }
-    // Start browser-side feature extraction.  Once we're done it will send
-    // the client verdict request.
-    feature_extractor_->ExtractFeatures(
+      verdict->IsInitialized()) {
+    scoped_ptr<ClientMalwareRequest> malware_verdict(new ClientMalwareRequest);
+    // Start browser-side malware feature extraction.  Once we're done it will
+    // send the malware client verdict request.
+    malware_verdict->set_url(verdict->url());
+    feature_extractor_->ExtractMalwareFeatures(
         browse_info_.get(),
-        verdict.release(),
-        base::Bind(&ClientSideDetectionHost::FeatureExtractionDone,
-                   weak_factory_.GetWeakPtr()));
+        malware_verdict.get());
+    MalwareFeatureExtractionDone(malware_verdict.Pass());
+
+    // We only send phishing verdict to the server if the verdict is phishing or
+    // if a SafeBrowsing interstitial was already shown for this site.  E.g., a
+    // malware or phishing interstitial was shown but the user clicked
+    // through.
+    if (verdict->is_phishing() || DidShowSBInterstitial()) {
+      if (DidShowSBInterstitial()) {
+        browse_info_->unsafe_resource.reset(unsafe_resource_.release());
+      }
+      // Start browser-side feature extraction.  Once we're done it will send
+      // the client verdict request.
+      feature_extractor_->ExtractFeatures(
+          browse_info_.get(),
+          verdict.release(),
+          base::Bind(&ClientSideDetectionHost::FeatureExtractionDone,
+                     weak_factory_.GetWeakPtr()));
+    }
   }
   browse_info_.reset();
 }
@@ -398,8 +416,8 @@ void ClientSideDetectionHost::MaybeShowPhishingWarning(GURL phishing_url,
           << " is_phishing:" << is_phishing;
   if (is_phishing) {
     DCHECK(web_contents());
-    if (sb_service_) {
-      SafeBrowsingService::UnsafeResource resource;
+    if (ui_manager_) {
+      SafeBrowsingUIManager::UnsafeResource resource;
       resource.url = phishing_url;
       resource.original_url = phishing_url;
       resource.is_subresource = false;
@@ -408,12 +426,12 @@ void ClientSideDetectionHost::MaybeShowPhishingWarning(GURL phishing_url,
           web_contents()->GetRenderProcessHost()->GetID();
       resource.render_view_id =
           web_contents()->GetRenderViewHost()->GetRoutingID();
-      if (!sb_service_->IsWhitelisted(resource)) {
+      if (!ui_manager_->IsWhitelisted(resource)) {
         // We need to stop any pending navigations, otherwise the interstital
         // might not get created properly.
         web_contents()->GetController().DiscardNonCommittedEntries();
         resource.callback = base::Bind(&EmptyUrlCheckCallback);
-        sb_service_->DoDisplayBlockingPage(resource);
+        ui_manager_->DoDisplayBlockingPage(resource);
       }
     }
   }
@@ -441,6 +459,42 @@ void ClientSideDetectionHost::FeatureExtractionDone(
       callback);
 }
 
+void ClientSideDetectionHost::MalwareFeatureExtractionDone(
+    scoped_ptr<ClientMalwareRequest> request) {
+  if (!request) {
+    DLOG(FATAL) << "Invalid request object in MalwareFeatureExtractionDone";
+    return;
+  }
+  VLOG(2) << "Malware Feature extraction done for URL: " << request->url()
+          << ", with features count:" << request->feature_map_size();
+
+  // Send ping if there is matching features.
+  if (request->feature_map_size() > 0) {
+    VLOG(1) << "Start sending client malware request.";
+    ClientSideDetectionService::ClientReportMalwareRequestCallback callback;
+    csd_service_->SendClientReportMalwareRequest(
+        request.release(),  // The service takes ownership of the request object
+        callback);  // no action after request sent for now
+  }
+}
+
+void ClientSideDetectionHost::UpdateIPHostMap(const std::string& ip,
+                                              const std::string& host) {
+  if (ip.empty() || host.empty())
+    return;
+
+  IPHostMap::iterator it = browse_info_->ips.find(ip);
+  if (it == browse_info_->ips.end()) {
+    if (int(browse_info_->ips.size()) < kMaxIPsPerBrowse) {
+      std::set<std::string> hosts;
+      hosts.insert(host);
+      browse_info_->ips.insert(make_pair(ip, hosts));
+    }
+  } else if (int(it->second.size()) < kMaxHostsPerIP) {
+    it->second.insert(host);
+  }
+}
+
 void ClientSideDetectionHost::Observe(
     int type,
     const content::NotificationSource& source,
@@ -450,7 +504,8 @@ void ClientSideDetectionHost::Observe(
   const ResourceRequestDetails* req = content::Details<ResourceRequestDetails>(
       details).ptr();
   if (req && browse_info_.get()) {
-    browse_info_->ips.insert(req->socket_address.host());
+    UpdateIPHostMap(req->socket_address.host() /* ip */,
+                    req->url.host()  /* url host */);
   }
 }
 
@@ -468,15 +523,17 @@ void ClientSideDetectionHost::set_client_side_detection_service(
   csd_service_ = service;
 }
 
-void ClientSideDetectionHost::set_safe_browsing_service(
-    SafeBrowsingService* service) {
-  if (sb_service_) {
-    sb_service_->RemoveObserver(this);
-  }
-  sb_service_ = service;
-  if (sb_service_) {
-    sb_service_->AddObserver(this);
-  }
+void ClientSideDetectionHost::set_safe_browsing_managers(
+    SafeBrowsingUIManager* ui_manager,
+    SafeBrowsingDatabaseManager* database_manager) {
+  if (ui_manager_)
+    ui_manager_->RemoveObserver(this);
+
+  ui_manager_ = ui_manager;
+  if (ui_manager)
+    ui_manager_->AddObserver(this);
+
+  database_manager_ = database_manager;
 }
 
 }  // namespace safe_browsing

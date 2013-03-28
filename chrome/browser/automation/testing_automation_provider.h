@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,9 +16,8 @@
 #include "chrome/browser/automation/automation_event_queue.h"
 #include "chrome/browser/automation/automation_provider.h"
 #include "chrome/browser/automation/automation_provider_json.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/importer/importer_list_observer.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/common/page_type.h"
@@ -120,13 +119,6 @@ class TestingAutomationProvider : public AutomationProvider,
                            bool* success, gfx::Rect* bounds);
   void SetWindowBounds(int handle, const gfx::Rect& bounds, bool* result);
   void SetWindowVisible(int handle, bool visible, bool* result);
-  void WindowSimulateMouseMove(const IPC::Message& message,
-                               int handle,
-                               const gfx::Point& location);
-  void WindowSimulateKeyPress(const IPC::Message& message,
-                              int handle,
-                              int key,
-                              int flags);
   void GetTabCount(int handle, int* tab_count);
   void GetType(int handle, int* type_as_int);
   void GetTab(int win_handle, int tab_index, int* tab_handle);
@@ -380,20 +372,6 @@ class TestingAutomationProvider : public AutomationProvider,
                                    base::DictionaryValue* args,
                                    IPC::Message* reply_message);
 
-#if defined(ENABLE_PROTECTOR_SERVICE)
-  // Get ProtectorService state.
-  // Uses the JSON interface for input/output.
-  void GetProtectorState(Browser* browser,
-                         base::DictionaryValue* args,
-                         IPC::Message* reply_message);
-
-  // Perform a given action on the ProtectorService.
-  // Uses the JSON interface for input/output.
-  void PerformProtectorAction(Browser* browser,
-                              base::DictionaryValue* args,
-                              IPC::Message* reply_message);
-#endif
-
   // Get info about preferences stored in Local State.
   // Uses the JSON interface for input/output.
   void GetLocalStatePrefsInfo(base::DictionaryValue* args,
@@ -472,12 +450,6 @@ class TestingAutomationProvider : public AutomationProvider,
   void OmniboxAcceptInput(Browser* browser,
                           base::DictionaryValue* args,
                           IPC::Message* reply_message);
-
-  // Generate dictionary info about instant tab.
-  // Uses the JSON interface for input/output.
-  void GetInstantInfo(Browser* browser,
-                      base::DictionaryValue* args,
-                      IPC::Message* reply_message);
 
   // Save the contents of a tab into a file.
   // Uses the JSON interface for input/output.
@@ -562,11 +534,6 @@ class TestingAutomationProvider : public AutomationProvider,
   void OverrideGeoposition(base::DictionaryValue* args,
                            IPC::Message* reply_message);
 
-  // Append a command-line switch.
-  // Uses the JSON interface for input/output.
-  void AppendSwitchASCIIToCommandLine(base::DictionaryValue* args,
-                                      IPC::Message* reply_message);
-
   // Responds to the Find request and returns the match count.
   void FindInPage(Browser* browser,
                   base::DictionaryValue* args,
@@ -585,42 +552,6 @@ class TestingAutomationProvider : public AutomationProvider,
   //   output: { "is_visible": true }
   void IsFindInPageVisible(base::DictionaryValue* args,
                            IPC::Message* reply_message);
-
-  // Signs in to sync using the given username and password.
-  // Uses the JSON interface for input/output.
-  void SignInToSync(Browser* browser,
-                    base::DictionaryValue* args,
-                    IPC::Message* reply_message);
-
-  // Returns info about sync.
-  // Uses the JSON interface for input/output.
-  void GetSyncInfo(Browser* browser,
-                   base::DictionaryValue* args,
-                   IPC::Message* reply_message);
-
-  // Waits for the ongoing sync cycle to complete.
-  // Uses the JSON interface for input/output.
-  void AwaitFullSyncCompletion(Browser* browser,
-                               base::DictionaryValue* args,
-                               IPC::Message* reply_message);
-
-  // Waits for sync to reinitialize (for example, after a browser restart).
-  // Uses the JSON interface for input/output.
-  void AwaitSyncRestart(Browser* browser,
-                        base::DictionaryValue* args,
-                        IPC::Message* reply_message);
-
-  // Enables sync for one or more sync datatypes.
-  // Uses the JSON interface for input/output.
-  void EnableSyncForDatatypes(Browser* browser,
-                              base::DictionaryValue* args,
-                              IPC::Message* reply_message);
-
-  // Disables sync for one or more sync datatypes.
-  // Uses the JSON interface for input/output.
-  void DisableSyncForDatatypes(Browser* browser,
-                               base::DictionaryValue* args,
-                               IPC::Message* reply_message);
 
   // Get ordered list of all active and queued HTML5 notifications.
   // Uses the JSON interface for input/output.
@@ -1239,22 +1170,6 @@ class TestingAutomationProvider : public AutomationProvider,
   void SendWebkitKeyEvent(base::DictionaryValue* args,
                           IPC::Message* message);
 
-  // Sends the key event from the OS level to the browser window,
-  // allowing it to be preprocessed by some external application (ie. IME).
-  // Will switch to the tab specified by tab_index before sending the event.
-  // The pair |windex| and |tab_index| or the single |auto_id| must be given
-  // to specify the tab.
-  // Example:
-  //   input: { "windex": 1,
-  //            "tab_index": 1,
-  //            "auto_id": { "type": 0, "id": "awoein" },
-  //            "keyCode": ui::VKEY_X,
-  //            "modifiers": automation::kShiftKeyMask,
-  //          }
-  //   output: none
-  void SendOSLevelKeyEventToTab(base::DictionaryValue* args,
-                                IPC::Message* message);
-
   // Processes the WebKit mouse event with the specified properties.
   // The pair |windex| and |tab_index| or the single |auto_id| must be given
   // to specify the render view.
@@ -1517,15 +1432,6 @@ class TestingAutomationProvider : public AutomationProvider,
   void DisconnectFromPrivateNetwork(base::DictionaryValue* args,
                                     IPC::Message* reply_message);
 
-  // Enterprise policy.
-  void IsEnterpriseDevice(DictionaryValue* args, IPC::Message* reply_message);
-
-  void EnrollEnterpriseDevice(DictionaryValue* args,
-                              IPC::Message* reply_message);
-
-  void GetEnterprisePolicyInfo(DictionaryValue* args,
-                               IPC::Message* reply_message);
-
   // Accessibility.
   void EnableSpokenFeedback(DictionaryValue* args, IPC::Message* reply_message);
 
@@ -1595,9 +1501,6 @@ class TestingAutomationProvider : public AutomationProvider,
 
   std::map<std::string, JsonHandler> handler_map_;
   std::map<std::string, BrowserJsonHandler> browser_handler_map_;
-
-  // Used to wait on various browser sync events.
-  scoped_ptr<ProfileSyncServiceHarness> sync_waiter_;
 
   content::NotificationRegistrar registrar_;
 

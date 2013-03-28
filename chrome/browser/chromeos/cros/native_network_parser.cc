@@ -22,6 +22,8 @@ namespace {
 const char kPostMethod[] = "post";
 
 EnumMapper<PropertyIndex>::Pair property_index_table[] = {
+  { shill::kActivateOverNonCellularNetworkProperty,
+    PROPERTY_INDEX_ACTIVATE_OVER_NON_CELLULAR_NETWORK },
   { flimflam::kActivationStateProperty, PROPERTY_INDEX_ACTIVATION_STATE },
   { flimflam::kActiveProfileProperty, PROPERTY_INDEX_ACTIVE_PROFILE },
   { flimflam::kArpGatewayProperty, PROPERTY_INDEX_ARP_GATEWAY },
@@ -107,6 +109,7 @@ EnumMapper<PropertyIndex>::Pair property_index_table[] = {
   { flimflam::kOfflineModeProperty, PROPERTY_INDEX_OFFLINE_MODE },
   { flimflam::kOperatorCodeProperty, PROPERTY_INDEX_OPERATOR_CODE },
   { flimflam::kOperatorNameProperty, PROPERTY_INDEX_OPERATOR_NAME },
+  { shill::kOutOfCreditsProperty, PROPERTY_INDEX_OUT_OF_CREDITS },
   { flimflam::kPRLVersionProperty, PROPERTY_INDEX_PRL_VERSION },
   { flimflam::kPassphraseProperty, PROPERTY_INDEX_PASSPHRASE },
   { flimflam::kPassphraseRequiredProperty, PROPERTY_INDEX_PASSPHRASE_REQUIRED },
@@ -140,6 +143,8 @@ EnumMapper<PropertyIndex>::Pair property_index_table[] = {
   { flimflam::kTechnologyFamilyProperty, PROPERTY_INDEX_TECHNOLOGY_FAMILY },
   { flimflam::kTypeProperty, PROPERTY_INDEX_TYPE },
   { flimflam::kUIDataProperty, PROPERTY_INDEX_UI_DATA },
+  { shill::kUninitializedTechnologiesProperty,
+    PROPERTY_INDEX_UNINITIALIZED_TECHNOLOGIES },
   { flimflam::kUsageURLProperty, PROPERTY_INDEX_USAGE_URL },
   { flimflam::kOpenVPNClientCertIdProperty,
     PROPERTY_INDEX_OPEN_VPN_CLIENT_CERT_ID },
@@ -460,9 +465,13 @@ bool NativeNetworkDeviceParser::ParseValue(
       device->set_sim_present(sim_present);
       return true;
     }
-    case PROPERTY_INDEX_POWERED:
-      // we don't care about the value, just the fact that it changed
+    case PROPERTY_INDEX_POWERED: {
+      bool powered;
+      if (!value.GetAsBoolean(&powered))
+        return false;
+      device->set_powered(powered);
       return true;
+    }
     case PROPERTY_INDEX_PRL_VERSION: {
       int prl_version;
       if (!value.GetAsInteger(&prl_version))
@@ -836,6 +845,9 @@ ConnectionError NativeNetworkParser::ParseError(const std::string& error) {
     { flimflam::kErrorIpsecPskAuthFailed, ERROR_IPSEC_PSK_AUTH_FAILED },
     { flimflam::kErrorIpsecCertAuthFailed, ERROR_IPSEC_CERT_AUTH_FAILED },
     { flimflam::kErrorPppAuthFailed, ERROR_PPP_AUTH_FAILED },
+    { shill::kErrorEapAuthenticationFailed, ERROR_EAP_AUTHENTICATION_FAILED },
+    { shill::kErrorEapLocalTlsFailed, ERROR_EAP_LOCAL_TLS_FAILED },
+    { shill::kErrorEapRemoteTlsFailed, ERROR_EAP_REMOTE_TLS_FAILED },
   };
   CR_DEFINE_STATIC_LOCAL(EnumMapper<ConnectionError>, parser,
       (table, arraysize(table), ERROR_NO_ERROR));
@@ -886,14 +898,20 @@ bool NativeCellularNetworkParser::ParseValue(PropertyIndex index,
   CHECK_EQ(TYPE_CELLULAR, network->type());
   CellularNetwork* cellular_network = static_cast<CellularNetwork*>(network);
   switch (index) {
+    case PROPERTY_INDEX_ACTIVATE_OVER_NON_CELLULAR_NETWORK: {
+      bool activate_over_non_cellular_network;
+      if (value.GetAsBoolean(&activate_over_non_cellular_network)) {
+        cellular_network->set_activate_over_non_cellular_network(
+            activate_over_non_cellular_network);
+        return true;
+      }
+      break;
+    }
     case PROPERTY_INDEX_ACTIVATION_STATE: {
       std::string activation_state_string;
       if (value.GetAsString(&activation_state_string)) {
-        ActivationState prev_state = cellular_network->activation_state();
         cellular_network->set_activation_state(
             ParseActivationState(activation_state_string));
-        if (cellular_network->activation_state() != prev_state)
-          cellular_network->RefreshDataPlansIfNeeded();
         return true;
       }
       break;
@@ -944,6 +962,14 @@ bool NativeCellularNetworkParser::ParseValue(PropertyIndex index,
         break;
       cellular_network->set_operator_code(value_str);
       return true;
+    }
+    case PROPERTY_INDEX_OUT_OF_CREDITS: {
+      bool out_of_credits;
+      if (value.GetAsBoolean(&out_of_credits)) {
+        cellular_network->set_out_of_credits(out_of_credits);
+        return true;
+      }
+      break;
     }
     case PROPERTY_INDEX_SERVING_OPERATOR: {
       if (value.IsType(base::Value::TYPE_DICTIONARY)) {
@@ -997,13 +1023,8 @@ bool NativeCellularNetworkParser::ParseValue(PropertyIndex index,
       // This property is ignored.
       return true;
     case PROPERTY_INDEX_STATE: {
-      // Save previous state before calling WirelessNetwork::ParseValue.
-      ConnectionState prev_state = cellular_network->state();
-      if (NativeWirelessNetworkParser::ParseValue(index, value, network)) {
-        if (cellular_network->state() != prev_state)
-          cellular_network->RefreshDataPlansIfNeeded();
+      if (NativeWirelessNetworkParser::ParseValue(index, value, network))
         return true;
-      }
       break;
     }
     default:
@@ -1316,17 +1337,13 @@ bool NativeVirtualNetworkParser::ParseValue(PropertyIndex index,
         return false;
 
       const DictionaryValue& dict = static_cast<const DictionaryValue&>(value);
-      for (DictionaryValue::key_iterator iter = dict.begin_keys();
-           iter != dict.end_keys(); ++iter) {
-        const std::string& key = *iter;
-        const base::Value* provider_value;
-        bool res = dict.GetWithoutPathExpansion(key, &provider_value);
-        DCHECK(res);
-        if (res) {
-          PropertyIndex index = mapper().Get(key);
-          if (!ParseProviderValue(index, *provider_value, virtual_network))
-            VLOG(1) << network->name() << ": Provider unhandled key: " << key
-                    << " Type: " << provider_value->GetType();
+      for (DictionaryValue::Iterator iter(dict);
+           !iter.IsAtEnd();
+           iter.Advance()) {
+        PropertyIndex index = mapper().Get(iter.key());
+        if (!ParseProviderValue(index, iter.value(), virtual_network)) {
+          VLOG(1) << network->name() << ": Provider unhandled key: "
+                  << iter.key() << " Type: " << iter.value().GetType();
         }
       }
       return true;

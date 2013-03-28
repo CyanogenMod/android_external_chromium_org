@@ -18,24 +18,12 @@ struct WebDropData;
 
 namespace content {
 
-class RenderViewHost;
-class RenderWidgetHost;
-class RenderWidgetHostView;
-
 // The WebContentsView is an interface that is implemented by the platform-
 // dependent web contents views. The WebContents uses this interface to talk to
 // them.
 class CONTENT_EXPORT WebContentsView {
  public:
   virtual ~WebContentsView() {}
-
-  virtual void CreateView(const gfx::Size& initial_size) = 0;
-
-  // Sets up the View that holds the rendered web page, receives messages for
-  // it and contains page plugins. The host view should be sized to the current
-  // size of the WebContents.
-  virtual RenderWidgetHostView* CreateViewForWidget(
-      RenderWidgetHost* render_widget_host) = 0;
 
   // Returns the native widget that contains the contents of the tab.
   virtual gfx::NativeView GetNativeView() const = 0;
@@ -61,12 +49,6 @@ class CONTENT_EXPORT WebContentsView {
     return gfx::Size(rc.width(), rc.height());
   }
 
-  // Sets the page title for the native widgets corresponding to the view. This
-  // is not strictly necessary and isn't expected to be displayed anywhere, but
-  // can aid certain debugging tools such as Spy++ on Windows where you are
-  // trying to find a specific window.
-  virtual void SetPageTitle(const string16& title) = 0;
-
   // Used to notify the view that a tab has crashed.
   virtual void OnTabCrashed(base::TerminationStatus status, int error_code) = 0;
 
@@ -79,10 +61,6 @@ class CONTENT_EXPORT WebContentsView {
   // should be cleaned up or done some other way, since this works for normal
   // WebContents without the special code.
   virtual void SizeContents(const gfx::Size& size) = 0;
-
-  // Invoked when the WebContents is notified that the RenderView has been
-  // fully created.
-  virtual void RenderViewCreated(RenderViewHost* host) = 0;
 
   // Sets focus to the native widget for this tab.
   virtual void Focus() = 0;
@@ -101,16 +79,18 @@ class CONTENT_EXPORT WebContentsView {
   // Returns the current drop data, if any.
   virtual WebDropData* GetDropData() const = 0;
 
-  // If we close the tab while a UI control is in an event-tracking
-  // loop, the control may message freed objects and crash.
-  // WebContents::Close() calls IsEventTracking(), and if it returns
-  // true CloseTabAfterEventTracking() is called and the close is not
-  // completed.
-  virtual bool IsEventTracking() const = 0;
-  virtual void CloseTabAfterEventTracking() = 0;
-
   // Get the bounds of the View, relative to the parent.
   virtual gfx::Rect GetViewBounds() const = 0;
+
+#if defined(OS_MACOSX)
+  // The web contents view assumes that its view will never be overlapped by
+  // another view (either partially or fully). This allows it to perform
+  // optimizations. If the view is in a view hierarchy where it might be
+  // overlapped by another view, notify the view by calling this with |true|
+  // before it draws for the first time. After the first draw, do not change
+  // this setting.
+  virtual void SetAllowOverlappingViews(bool overlapping) = 0;
+#endif
 };
 
 }  // namespace content

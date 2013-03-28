@@ -5,11 +5,11 @@
 #ifndef CHROME_COMMON_EXTENSIONS_FEATURES_MANIFEST_FEATURE_H_
 #define CHROME_COMMON_EXTENSIONS_FEATURES_MANIFEST_FEATURE_H_
 
-#include "chrome/common/extensions/features/feature.h"
+#include "chrome/common/extensions/features/simple_feature.h"
 
 namespace extensions {
 
-class ManifestFeature : public Feature {
+class ManifestFeature : public SimpleFeature {
  public:
   ManifestFeature();
   virtual ~ManifestFeature();
@@ -17,6 +17,7 @@ class ManifestFeature : public Feature {
   virtual Feature::Availability IsAvailableToContext(
       const Extension* extension,
       Feature::Context context,
+      const GURL& url,
       Feature::Platform platform) const OVERRIDE;
 };
 

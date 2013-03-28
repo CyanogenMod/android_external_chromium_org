@@ -37,7 +37,6 @@ ppapi_scons_files['untrusted_irt_scons_files'] = []
 ppapi_scons_files['nonvariant_test_scons_files'] = [
     'tests/breakpad_crash_test/nacl.scons',
     'tests/nacl_browser/browser_dynamic_library/nacl.scons',
-    'tests/nacl_browser/inbrowser_test_runner/nacl.scons',
     'tests/nacl_browser/manifest_file/nacl.scons',
     'tests/nacl_browser/nameservice/nacl.scons',
     'tests/nacl_browser/postmessage_redir/nacl.scons',
@@ -51,6 +50,9 @@ ppapi_scons_files['nonvariant_test_scons_files'] = [
 ]
 
 ppapi_scons_files['irt_variant_test_scons_files'] = [
+    # 'inbrowser_test_runner' must be in the irt_variant list
+    # otherwise it will run no tests.
+    'tests/nacl_browser/inbrowser_test_runner/nacl.scons',
     # Disabled by Brad Chen 4 Sep to try to green Chromium
     # nacl_integration tests
     #'tests/nacl_browser/fault_injection/nacl.scons',
@@ -488,9 +490,6 @@ def PPAPIBrowserTester(env,
   if env.Bit('pnacl_generate_pexe'):
     # We likely prefer to choose the 'portable' field in nmfs in this mode.
     args = args + ['--prefer_portable_in_manifest']
-    # Pass through env var controlling streaming translation
-    if 'NACL_STREAMING_TRANSLATION' in os.environ:
-      env['ENV']['NACL_STREAMING_TRANSLATION'] = 'true'
 
   # Lint the extra arguments that are being passed to the tester.
   special_args = ['--ppapi_plugin', '--sel_ldr', '--irt_library', '--file',
@@ -522,13 +521,9 @@ def PPAPIBrowserTester(env,
   for extension in extensions:
     command.extend(['--extension', extension])
   if env.Bit('bitcode'):
-    # TODO(jvoung): remove this --extension once we have --pnacl-dir working.
-    command.extend(['--extension', env.GetPnaclExtensionNode().abspath])
     # Enable the installed version of pnacl, and point to a custom install
     # directory for testing purposes.
     browser_flags.append('--enable-pnacl')
-    browser_flags.append('--pnacl-dir=%s' %
-                         env.GetPnaclExtensionRootNode().abspath)
   for dest_path, dep_file in map_files:
     command.extend(['--map_file', dest_path, dep_file])
   for file_ext, mime_type in mime_types:

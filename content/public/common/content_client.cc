@@ -9,7 +9,7 @@
 #include "ui/gfx/image/image.h"
 #include "webkit/user_agent/user_agent.h"
 
-#if !defined(OS_IOS)
+#if defined(ENABLE_PLUGINS)
 #include "webkit/plugins/ppapi/host_globals.h"
 #endif
 
@@ -38,10 +38,10 @@ const std::string& GetUserAgent(const GURL& url) {
 }
 
 webkit::ppapi::HostGlobals* GetHostGlobals() {
-#if defined(OS_IOS)
-  return NULL;
-#else
+#if defined(ENABLE_PLUGINS)
   return webkit::ppapi::HostGlobals::Get();
+#else
+  return NULL;
 #endif
 }
 
@@ -52,7 +52,7 @@ ContentClient::ContentClient()
 ContentClient::~ContentClient() {
 }
 
-bool ContentClient::HasWebUIScheme(const GURL& url) const {
+bool ContentClient::CanSendWhileSwappedOut(const IPC::Message* message) {
   return false;
 }
 
@@ -78,9 +78,19 @@ base::StringPiece ContentClient::GetDataResource(
   return base::StringPiece();
 }
 
+base::RefCountedStaticMemory* ContentClient::GetDataResourceBytes(
+    int resource_id) const {
+  return NULL;
+}
+
 gfx::Image& ContentClient::GetNativeImageNamed(int resource_id) const {
   CR_DEFINE_STATIC_LOCAL(gfx::Image, kEmptyImage, ());
   return kEmptyImage;
+}
+
+std::string ContentClient::GetProcessTypeNameInEnglish(int type) {
+  NOTIMPLEMENTED();
+  return std::string();
 }
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)

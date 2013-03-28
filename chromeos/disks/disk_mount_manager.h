@@ -7,25 +7,12 @@
 
 #include <map>
 
+#include "base/callback_forward.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/cros_disks_client.h"
 
 namespace chromeos {
 namespace disks {
-
-// Types of events DiskMountManager sends to its observers.
-enum DiskMountManagerEventType {
-  MOUNT_DISK_ADDED,
-  MOUNT_DISK_REMOVED,
-  MOUNT_DISK_CHANGED,
-  MOUNT_DISK_MOUNTED,
-  MOUNT_DISK_UNMOUNTED,
-  MOUNT_DEVICE_ADDED,
-  MOUNT_DEVICE_REMOVED,
-  MOUNT_DEVICE_SCANNED,
-  MOUNT_FORMATTING_STARTED,
-  MOUNT_FORMATTING_FINISHED,
-};
 
 // Condition of mounted filesystem.
 enum MountCondition {
@@ -38,10 +25,27 @@ enum MountCondition {
 // Other classes can add themselves as observers.
 class CHROMEOS_EXPORT DiskMountManager {
  public:
-  // Event type given to observers' MountCompleted method.
+  // Event types passed to the observers.
+  enum DiskEvent {
+    DISK_ADDED,
+    DISK_REMOVED,
+    DISK_CHANGED,
+  };
+
+  enum DeviceEvent {
+    DEVICE_ADDED,
+    DEVICE_REMOVED,
+    DEVICE_SCANNED,
+  };
+
   enum MountEvent {
     MOUNTING,
     UNMOUNTING,
+  };
+
+  enum FormatEvent {
+    FORMAT_STARTED,
+    FORMAT_COMPLETED
   };
 
   // Used to house an instance of each found mount device.
@@ -187,25 +191,31 @@ class CHROMEOS_EXPORT DiskMountManager {
   // MountPointMap key is mount_path.
   typedef std::map<std::string, MountPointInfo> MountPointMap;
 
-  // A callback function type which is called after UnmountDeviceRecursive
+  // A callback function type which is called after UnmountDeviceRecursively
   // finishes.
-  typedef void(*UnmountDeviceRecursiveCallbackType)(void*, bool);
+  typedef base::Callback<void(bool)> UnmountDeviceRecursivelyCallbackType;
+
+  // A callback type for UnmountPath method.
+  typedef base::Callback<void(MountError error_code)> UnmountPathCallback;
 
   // Implement this interface to be notified about disk/mount related events.
   class Observer {
    public:
     virtual ~Observer() {}
 
-    // A function called when disk mount status is changed.
-    virtual void DiskChanged(DiskMountManagerEventType event,
-                             const Disk* disk) = 0;
-    // A function called when device status is changed.
-    virtual void DeviceChanged(DiskMountManagerEventType event,
+    // Called when disk mount status is changed.
+    virtual void OnDiskEvent(DiskEvent event, const Disk* disk) = 0;
+    // Called when device status is changed.
+    virtual void OnDeviceEvent(DeviceEvent event,
                                const std::string& device_path) = 0;
-    // A function called after mount is completed.
-    virtual void MountCompleted(MountEvent event_type,
-                                MountError error_code,
-                                const MountPointInfo& mount_info) = 0;
+    // Called after a mount point has been mounted or unmounted.
+    virtual void OnMountEvent(MountEvent event,
+                              MountError error_code,
+                              const MountPointInfo& mount_info) = 0;
+    // Called on format process events.
+    virtual void OnFormatEvent(FormatEvent event,
+                               FormatError error_code,
+                               const std::string& device_path) = 0;
   };
 
   virtual ~DiskMountManager() {}
@@ -230,6 +240,9 @@ class CHROMEOS_EXPORT DiskMountManager {
   virtual void RequestMountInfoRefresh() = 0;
 
   // Mounts a device.
+  // Note that the mount operation may fail. To find out the result, one should
+  // observe DiskMountManager for |Observer::OnMountEvent| event, which will be
+  // raised upon the mount operation completion.
   virtual void MountPath(const std::string& source_path,
                          const std::string& source_format,
                          const std::string& mount_label,
@@ -237,22 +250,27 @@ class CHROMEOS_EXPORT DiskMountManager {
 
   // Unmounts a mounted disk.
   // |UnmountOptions| enum defined in chromeos/dbus/cros_disks_client.h.
+  // When the method is complete, |callback| will be called and observers'
+  // |OnMountEvent| will be raised.
+  //
+  // |callback| may be empty, in which case it gets ignored.
   virtual void UnmountPath(const std::string& mount_path,
-                           UnmountOptions options) = 0;
-
-  // Formats device given its file path.
-  // Example: file_path: /dev/sdb1
-  virtual void FormatUnmountedDevice(const std::string& file_path) = 0;
+                           UnmountOptions options,
+                           const UnmountPathCallback& callback) = 0;
 
   // Formats Device given its mount path. Unmounts the device.
   // Example: mount_path: /media/VOLUME_LABEL
   virtual void FormatMountedDevice(const std::string& mount_path) = 0;
 
   // Unmounts device_path and all of its known children.
-  virtual void UnmountDeviceRecursive(
+  virtual void UnmountDeviceRecursively(
       const std::string& device_path,
-      UnmountDeviceRecursiveCallbackType callback,
-      void* user_data) = 0;
+      const UnmountDeviceRecursivelyCallbackType& callback) = 0;
+
+  // Used in tests to initialize the manager's disk and mount point sets.
+  // Default implementation does noting. It just fails.
+  virtual bool AddDiskForTest(Disk* disk);
+  virtual bool AddMountPointForTest(const MountPointInfo& mount_point);
 
   // Returns corresponding string to |type| like "device" or "file".
   static std::string MountTypeToString(MountType type);

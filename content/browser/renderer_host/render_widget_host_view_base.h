@@ -45,25 +45,37 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual ~RenderWidgetHostViewBase();
 
   // RenderWidgetHostViewPort implementation.
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void SelectionChanged(const string16& text,
                                 size_t offset,
                                 const ui::Range& range) OVERRIDE;
   virtual void SetBackground(const SkBitmap& background) OVERRIDE;
   virtual const SkBitmap& GetBackground() OVERRIDE;
+  virtual gfx::Size GetPhysicalBackingSize() const OVERRIDE;
+  virtual float GetOverdrawBottomHeight() const OVERRIDE;
   virtual bool IsShowingContextMenu() const OVERRIDE;
   virtual void SetShowingContextMenu(bool showing_menu) OVERRIDE;
+  virtual string16 GetSelectedText() const OVERRIDE;
   virtual bool IsMouseLocked() OVERRIDE;
   virtual void UnhandledWheelEvent(
       const WebKit::WebMouseWheelEvent& event) OVERRIDE;
+  virtual InputEventAckState FilterInputEvent(
+      const WebKit::WebInputEvent& input_event) OVERRIDE;
   virtual void SetPopupType(WebKit::WebPopupType popup_type) OVERRIDE;
   virtual WebKit::WebPopupType GetPopupType() OVERRIDE;
   virtual BrowserAccessibilityManager*
       GetBrowserAccessibilityManager() const OVERRIDE;
   virtual void ProcessAckedTouchEvent(const WebKit::WebTouchEvent& touch,
-                                      bool processed) OVERRIDE;
+                                      InputEventAckState ack_result) OVERRIDE;
   virtual SmoothScrollGesture* CreateSmoothScrollGesture(
       bool scroll_down, int pixels_to_scroll, int mouse_event_x,
       int mouse_event_y) OVERRIDE;
+  virtual bool CanSubscribeFrame() const OVERRIDE;
+  virtual void BeginFrameSubscription(
+      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
+  virtual void EndFrameSubscription() OVERRIDE;
+  virtual void OnSwapCompositorFrame(
+      scoped_ptr<cc::CompositorFrame> frame) OVERRIDE {}
 
   void SetBrowserAccessibilityManager(BrowserAccessibilityManager* manager);
 
@@ -123,12 +135,15 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // The current selection range relative to the start of the web page.
   ui::Range selection_range_;
 
+protected:
+  // The scale factor of the display the renderer is currently on.
+  float current_device_scale_factor_;
+
  private:
   // Manager of the tree representation of the WebKit render tree.
   scoped_ptr<BrowserAccessibilityManager> browser_accessibility_manager_;
 
   gfx::Rect current_display_area_;
-  float current_device_scale_factor_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewBase);
 };

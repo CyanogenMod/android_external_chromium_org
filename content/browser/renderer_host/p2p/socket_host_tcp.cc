@@ -6,6 +6,7 @@
 
 #include "base/sys_byteorder.h"
 #include "content/common/p2p_messages.h"
+#include "ipc/ipc_sender.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
@@ -164,21 +165,26 @@ void P2PSocketHostTcp::DidCompleteRead(int result) {
   }
 
   read_buffer_->set_offset(read_buffer_->offset() + result);
-  if (read_buffer_->offset() > kPacketHeaderSize) {
+  char* head = read_buffer_->StartOfBuffer();  // Purely a convenience.
+  int consumed = 0;
+  while (consumed + kPacketHeaderSize <= read_buffer_->offset() &&
+         state_ == STATE_OPEN) {
     int packet_size = base::NetToHost16(
-        *reinterpret_cast<uint16*>(read_buffer_->StartOfBuffer()));
-    if (packet_size + kPacketHeaderSize <= read_buffer_->offset()) {
-      // We've got a full packet!
-      char* start = read_buffer_->StartOfBuffer() + kPacketHeaderSize;
-      std::vector<char> data(start, start + packet_size);
-      OnPacket(data);
-
-      // Move remaining data to the start of the buffer.
-      memmove(read_buffer_->StartOfBuffer(), start + packet_size,
-              read_buffer_->offset() - packet_size - kPacketHeaderSize);
-      read_buffer_->set_offset(read_buffer_->offset() - packet_size -
-                               kPacketHeaderSize);
-    }
+        *reinterpret_cast<uint16*>(head + consumed));
+    if (consumed + packet_size + kPacketHeaderSize > read_buffer_->offset())
+      break;
+    // We've got a full packet!
+    consumed += kPacketHeaderSize;
+    char* cur = head + consumed;
+    std::vector<char> data(cur, cur + packet_size);
+    OnPacket(data);
+    consumed += packet_size;
+  }
+  // We've consumed all complete packets from the buffer; now move any remaining
+  // bytes to the head of the buffer and set offset to reflect this.
+  if (consumed && consumed <= read_buffer_->offset()) {
+    memmove(head, head + consumed, read_buffer_->offset() - consumed);
+    read_buffer_->set_offset(read_buffer_->offset() - consumed);
   }
 }
 

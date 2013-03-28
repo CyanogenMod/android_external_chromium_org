@@ -4,35 +4,45 @@
 
 #include "ash/system/web_notification/web_notification_tray.h"
 
+#include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
+#include "ash/shell_window_ids.h"
 #include "ash/system/status_area_widget.h"
+#include "ash/system/tray/tray_background_view.h"
 #include "ash/system/tray/tray_bubble_wrapper.h"
 #include "ash/system/tray/tray_constants.h"
-#include "ash/system/tray/tray_views.h"
-#include "ash/wm/shelf_layout_manager.h"
-#include "base/message_loop.h"
-#include "base/stringprintf.h"
 #include "grit/ash_resources.h"
-#include "grit/ash_strings.h"
+#include "grit/ui_strings.h"
+#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/screen.h"
-#include "ui/message_center/message_center_bubble.h"
-#include "ui/message_center/message_popup_bubble.h"
+#include "ui/message_center/message_center_tray_delegate.h"
+#include "ui/message_center/message_center_util.h"
+#include "ui/message_center/views/message_bubble_base.h"
+#include "ui/message_center/views/message_center_bubble.h"
+#include "ui/message_center/views/message_popup_bubble.h"
+#include "ui/message_center/views/message_popup_collection.h"
 #include "ui/views/bubble/tray_bubble_view.h"
-#include "ui/views/widget/widget_observer.h"
+#include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/menu/menu_model_adapter.h"
+#include "ui/views/controls/menu/menu_runner.h"
 
-namespace {
+#if defined(OS_CHROMEOS)
 
-// Tray constants
-const int kTrayContainerVerticalPaddingBottomAlignment = 3;
-const int kTrayContainerHorizontalPaddingBottomAlignment = 1;
-const int kTrayContainerVerticalPaddingVerticalAlignment = 1;
-const int kTrayContainerHorizontalPaddingVerticalAlignment = 0;
-const int kPaddingFromLeftEdgeOfSystemTrayBottomAlignment = 8;
-const int kPaddingFromTopEdgeOfSystemTrayVerticalAlignment = 10;
+namespace message_center {
 
-}  // namespace
+MessageCenterTrayDelegate* CreateMessageCenterTray() {
+  // On Windows+Ash the Tray will not be hosted in ash::Shell.
+  NOTREACHED();
+  return NULL;
+}
+
+}  // namespace message_center
+
+#endif  // defined(OS_CHROMEOS)
 
 namespace ash {
 
@@ -77,109 +87,203 @@ class WebNotificationBubbleWrapper {
 
 WebNotificationTray::WebNotificationTray(
     internal::StatusAreaWidget* status_area_widget)
-    : internal::TrayBackgroundView(status_area_widget),
+    : TrayBackgroundView(status_area_widget),
       button_(NULL),
       show_message_center_on_unlock_(false) {
-  message_center_.reset(new message_center::MessageCenter(this));
   button_ = new views::ImageButton(this);
+  button_->set_triggerable_event_flags(
+      ui::EF_LEFT_MOUSE_BUTTON | ui::EF_RIGHT_MOUSE_BUTTON);
   tray_container()->AddChildView(button_);
-  UpdateTray();
+  SetVisible(false);
+  message_center_tray_.reset(new message_center::MessageCenterTray(
+      this,
+      message_center::MessageCenter::Get()));
+  OnMessageCenterTrayChanged();
 }
 
 WebNotificationTray::~WebNotificationTray() {
-  // message_center_ has a weak pointer to this; destroy it early.
-  message_center_.reset();
   // Release any child views that might have back pointers before ~View().
   message_center_bubble_.reset();
   popup_bubble_.reset();
+  popup_collection_.reset();
 }
 
-void WebNotificationTray::ShowMessageCenterBubble() {
-  if (status_area_widget()->login_status() == user::LOGGED_IN_LOCKED)
-    return;
-  if (message_center_bubble()) {
-    UpdateTray();
-    return;
+// Public methods.
+
+bool WebNotificationTray::ShowMessageCenter() {
+  if (!ShouldShowMessageCenter())
+    return false;
+
+  message_center::MessageCenterBubble* message_center_bubble =
+      new message_center::MessageCenterBubble(message_center());
+
+  // TODO(mukai): move this to WebNotificationBubbleWrapper if it's safe
+  // to set the height of the popup.
+  int max_height = 0;
+  aura::Window* status_area_window = status_area_widget()->GetNativeWindow();
+  switch (GetShelfLayoutManager()->GetAlignment()) {
+    case SHELF_ALIGNMENT_BOTTOM: {
+      gfx::Rect shelf_bounds = GetShelfLayoutManager()->GetIdealBounds();
+      max_height = shelf_bounds.y();
+      break;
+    }
+    case SHELF_ALIGNMENT_TOP: {
+      aura::RootWindow* root = status_area_window->GetRootWindow();
+      max_height =
+          root->bounds().height() - status_area_window->bounds().height();
+      break;
+    }
+    case SHELF_ALIGNMENT_LEFT:
+    case SHELF_ALIGNMENT_RIGHT: {
+      // Assume that the bottom line of the status area widget and the bubble
+      // are aligned.
+      max_height = status_area_window->GetBoundsInRootWindow().bottom();
+      break;
+    }
+    default:
+      NOTREACHED();
   }
-  // Indicate that the message center is visible. Clears the unread count.
-  message_center_->SetMessageCenterVisible(true);
-  UpdateTray();
-  HidePopupBubble();
-  message_center::MessageCenterBubble* bubble =
-      new message_center::MessageCenterBubble(message_center_.get());
+  max_height = std::max(0, max_height - kTraySpacing);
+  message_center_bubble->SetMaxHeight(max_height);
   message_center_bubble_.reset(
-      new internal::WebNotificationBubbleWrapper(this, bubble));
+      new internal::WebNotificationBubbleWrapper(this, message_center_bubble));
 
   status_area_widget()->SetHideSystemNotifications(true);
   GetShelfLayoutManager()->UpdateAutoHideState();
+  return true;
 }
 
-void WebNotificationTray::HideMessageCenterBubble() {
+void WebNotificationTray::UpdateMessageCenter() {
+  if (message_center_bubble())
+    message_center_bubble()->bubble()->ScheduleUpdate();
+}
+
+void WebNotificationTray::HideMessageCenter() {
   if (!message_center_bubble())
     return;
   message_center_bubble_.reset();
   show_message_center_on_unlock_ = false;
-  message_center_->SetMessageCenterVisible(false);
-  UpdateTray();
   status_area_widget()->SetHideSystemNotifications(false);
   GetShelfLayoutManager()->UpdateAutoHideState();
 }
 
 void WebNotificationTray::SetHidePopupBubble(bool hide) {
   if (hide)
-    HidePopupBubble();
+    message_center_tray_->HidePopupBubble();
   else
-    ShowPopupBubble();
+    message_center_tray_->ShowPopupBubble();
 }
 
-void WebNotificationTray::ShowPopupBubble() {
-  if (status_area_widget()->login_status() == user::LOGGED_IN_LOCKED)
-    return;
-  if (message_center_bubble())
-    return;
-  if (!status_area_widget()->ShouldShowWebNotifications())
-    return;
-  UpdateTray();
-  if (popup_bubble()) {
-    popup_bubble()->bubble()->ScheduleUpdate();
-  } else if (message_center_->HasPopupNotifications()) {
-    popup_bubble_.reset(
-        new internal::WebNotificationBubbleWrapper(
-            this, new message_center::MessagePopupBubble(
-                message_center_.get())));
+bool WebNotificationTray::ShowPopups() {
+  if (status_area_widget()->login_status() == user::LOGGED_IN_LOCKED ||
+      message_center_bubble() ||
+      !status_area_widget()->ShouldShowWebNotifications()) {
+    return false;
   }
+  if (message_center::IsRichNotificationEnabled()) {
+    // No bubble wrappers here, since |popup_collection_| is not a bubble but a
+    // collection of widgets.
+    popup_collection_.reset(new message_center::MessagePopupCollection(
+        GetWidget()->GetNativeView(), message_center()));
+  } else {
+    message_center::MessagePopupBubble* popup_bubble =
+        new message_center::MessagePopupBubble(message_center());
+    popup_bubble_.reset(new internal::WebNotificationBubbleWrapper(
+        this, popup_bubble));
+  }
+  return true;
 }
 
-void WebNotificationTray::HidePopupBubble() {
+void WebNotificationTray::UpdatePopups() {
+  if (popup_bubble())
+    popup_bubble()->bubble()->ScheduleUpdate();
+  if (popup_collection_.get())
+    popup_collection_->UpdatePopups();
+};
+
+void WebNotificationTray::HidePopups() {
   popup_bubble_.reset();
+  popup_collection_.reset();
+}
+
+// Private methods.
+
+bool WebNotificationTray::ShouldShowMessageCenter() {
+  return status_area_widget()->login_status() != user::LOGGED_IN_LOCKED &&
+      status_area_widget()->ShouldShowWebNotifications();
+}
+
+void WebNotificationTray::ShowQuietModeMenu() {
+  views::MenuModelAdapter menu_model_adapter(
+      message_center_tray_->CreateQuietModeMenu());
+  quiet_mode_menu_runner_.reset(
+      new views::MenuRunner(menu_model_adapter.CreateMenu()));
+  gfx::Point point;
+  views::View::ConvertPointToScreen(this, &point);
+  ignore_result(quiet_mode_menu_runner_->RunMenuAt(
+      GetWidget(),
+      NULL,
+      gfx::Rect(point, bounds().size()),
+      views::MenuItemView::BUBBLE_ABOVE,
+      views::MenuRunner::HAS_MNEMONICS));
+  quiet_mode_menu_runner_.reset();
+  GetShelfLayoutManager()->UpdateAutoHideState();
+}
+
+bool WebNotificationTray::ShouldShowQuietModeMenu(const ui::Event& event) {
+  // TODO(mukai): Add keyboard event handler.
+  if (!event.IsMouseEvent())
+    return false;
+
+  const ui::MouseEvent* mouse_event =
+      static_cast<const ui::MouseEvent*>(&event);
+
+  return mouse_event->IsRightMouseButton();
 }
 
 void WebNotificationTray::UpdateAfterLoginStatusChange(
     user::LoginStatus login_status) {
+  if (message_center::IsRichNotificationEnabled()) {
+    // The status icon should be always visible except for lock screen / login
+    // screen, to allow quiet mode and settings. This is valid only when rich
+    // notification is enabled, since old UI doesn't have settings.
+    SetVisible((login_status != user::LOGGED_IN_NONE) &&
+               (login_status != user::LOGGED_IN_LOCKED));
+  }
+
   if (login_status == user::LOGGED_IN_LOCKED) {
-    if (message_center_bubble()) {
-      message_center_bubble_.reset();
-      show_message_center_on_unlock_ = true;
-    }
-    HidePopupBubble();
+    show_message_center_on_unlock_ =
+        message_center_tray_->HideMessageCenterBubble();
+    message_center_tray_->HidePopupBubble();
   } else {
+    // Only try once to show the message center bubble on login status change,
+    // so always set |show_message_center_on_unlock_| to false.
     if (show_message_center_on_unlock_)
-      ShowMessageCenterBubble();
+      message_center_tray_->ShowMessageCenterBubble();
     show_message_center_on_unlock_ = false;
   }
-  UpdateTray();
+}
+
+bool WebNotificationTray::ShouldBlockLauncherAutoHide() const {
+  return IsMessageCenterBubbleVisible() ||
+      (quiet_mode_menu_runner_.get() && quiet_mode_menu_runner_->IsRunning());
 }
 
 bool WebNotificationTray::IsMessageCenterBubbleVisible() const {
   return (message_center_bubble() &&
-          message_center_bubble_->bubble()->IsVisible());
+          message_center_bubble()->bubble()->IsVisible());
 }
 
 bool WebNotificationTray::IsMouseInNotificationBubble() const {
   if (!popup_bubble())
     return false;
-  return popup_bubble_->bubble_view()->GetBoundsInScreen().Contains(
+  return popup_bubble()->bubble_view()->GetBoundsInScreen().Contains(
       Shell::GetScreen()->GetCursorScreenPoint());
+}
+
+void WebNotificationTray::ShowMessageCenterBubble() {
+  if (!IsMessageCenterBubbleVisible())
+    message_center_tray_->ShowMessageCenterBubble();
 }
 
 void WebNotificationTray::SetShelfAlignment(ShelfAlignment alignment) {
@@ -187,40 +291,51 @@ void WebNotificationTray::SetShelfAlignment(ShelfAlignment alignment) {
     return;
   internal::TrayBackgroundView::SetShelfAlignment(alignment);
   // Destroy any existing bubble so that it will be rebuilt correctly.
-  HideMessageCenterBubble();
-  HidePopupBubble();
+  message_center_tray_->HideMessageCenterBubble();
+  message_center_tray_->HidePopupBubble();
 }
 
 void WebNotificationTray::AnchorUpdated() {
-  if (popup_bubble_.get()) {
-    popup_bubble_->bubble_view()->UpdateBubble();
+  if (popup_bubble()) {
+    popup_bubble()->bubble_view()->UpdateBubble();
     // Ensure that the notification buble is above the launcher/status area.
-    popup_bubble_->bubble_view()->GetWidget()->StackAtTop();
-    UpdateBubbleViewArrow(popup_bubble_->bubble_view());
+    popup_bubble()->bubble_view()->GetWidget()->StackAtTop();
+    UpdateBubbleViewArrow(popup_bubble()->bubble_view());
   }
-  if (message_center_bubble_.get()) {
-    message_center_bubble_->bubble_view()->UpdateBubble();
-    UpdateBubbleViewArrow(message_center_bubble_->bubble_view());
+  if (popup_collection_.get())
+    popup_collection_->UpdatePopups();
+  if (message_center_bubble()) {
+    message_center_bubble()->bubble_view()->UpdateBubble();
+    UpdateBubbleViewArrow(message_center_bubble()->bubble_view());
   }
 }
 
 string16 WebNotificationTray::GetAccessibleNameForTray() {
   return l10n_util::GetStringUTF16(
-      IDS_ASH_WEB_NOTIFICATION_TRAY_ACCESSIBLE_NAME);
+      IDS_MESSAGE_CENTER_ACCESSIBLE_NAME);
 }
 
 void WebNotificationTray::HideBubbleWithView(
     const views::TrayBubbleView* bubble_view) {
   if (message_center_bubble() &&
       bubble_view == message_center_bubble()->bubble_view()) {
-    HideMessageCenterBubble();
-  } else if (popup_bubble() && bubble_view == popup_bubble()->bubble_view()) {
-    HidePopupBubble();
+    message_center_tray_->HideMessageCenterBubble();
+  } else if ((popup_bubble() && bubble_view == popup_bubble()->bubble_view()) ||
+             popup_collection_.get()) {
+    message_center_tray_->HidePopupBubble();
   }
 }
 
 bool WebNotificationTray::PerformAction(const ui::Event& event) {
-  ToggleMessageCenterBubble();
+  if (ShouldShowQuietModeMenu(event)) {
+    ShowQuietModeMenu();
+    return true;
+  }
+
+  if (message_center_bubble())
+    message_center_tray_->HideMessageCenterBubble();
+  else
+    message_center_tray_->ShowMessageCenterBubble();
   return true;
 }
 
@@ -245,9 +360,10 @@ string16 WebNotificationTray::GetAccessibleNameForBubble() {
   return GetAccessibleNameForTray();
 }
 
-gfx::Rect WebNotificationTray::GetAnchorRect(views::Widget* anchor_widget,
-                                             AnchorType anchor_type,
-                                             AnchorAlignment anchor_alignment) {
+gfx::Rect WebNotificationTray::GetAnchorRect(
+    views::Widget* anchor_widget,
+    views::TrayBubbleView::AnchorType anchor_type,
+    views::TrayBubbleView::AnchorAlignment anchor_alignment) {
   return GetBubbleAnchorRect(anchor_widget, anchor_type, anchor_alignment);
 }
 
@@ -255,66 +371,46 @@ void WebNotificationTray::HideBubble(const views::TrayBubbleView* bubble_view) {
   HideBubbleWithView(bubble_view);
 }
 
-void WebNotificationTray::MessageCenterChanged(bool new_notification) {
-  if (message_center_bubble()) {
-    if (message_center_->NotificationCount() == 0)
-      HideMessageCenterBubble();
-    else
-      message_center_bubble()->bubble()->ScheduleUpdate();
-  }
-  if (popup_bubble()) {
-    if (message_center_->NotificationCount() == 0)
-      HidePopupBubble();
-    else
-      popup_bubble()->bubble()->ScheduleUpdate();
-  }
-  UpdateTray();
-  if (new_notification)
-    ShowPopupBubble();
-}
-
 void WebNotificationTray::ButtonPressed(views::Button* sender,
                                         const ui::Event& event) {
-  DCHECK(sender == button_);
-  ToggleMessageCenterBubble();
+  DCHECK_EQ(button_, sender);
+  PerformAction(event);
 }
 
-// Private methods
-
-void WebNotificationTray::ToggleMessageCenterBubble() {
-  if (message_center_bubble())
-    HideMessageCenterBubble();
-  else
-    ShowMessageCenterBubble();
-  UpdateTray();
-}
-
-void WebNotificationTray::UpdateTray() {
+void WebNotificationTray::OnMessageCenterTrayChanged() {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  if (message_center_->UnreadNotificationCount() > 0) {
-    button_->SetImage(views::CustomButton::BS_NORMAL, rb.GetImageSkiaNamed(
+  message_center::MessageCenter* message_center =
+      message_center_tray_->message_center();
+  if (message_center->UnreadNotificationCount() > 0) {
+    button_->SetImage(views::CustomButton::STATE_NORMAL, rb.GetImageSkiaNamed(
         IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_ACTIVE_NORMAL));
-    button_->SetImage(views::CustomButton::BS_HOT, rb.GetImageSkiaNamed(
+    button_->SetImage(views::CustomButton::STATE_HOVERED, rb.GetImageSkiaNamed(
         IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_ACTIVE_HOVER));
-    button_->SetImage(views::CustomButton::BS_PUSHED, rb.GetImageSkiaNamed(
+    button_->SetImage(views::CustomButton::STATE_PRESSED, rb.GetImageSkiaNamed(
         IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_ACTIVE_PRESSED));
   } else {
-    button_->SetImage(views::CustomButton::BS_NORMAL, rb.GetImageSkiaNamed(
+    button_->SetImage(views::CustomButton::STATE_NORMAL, rb.GetImageSkiaNamed(
         IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_INACTIVE_NORMAL));
-    button_->SetImage(views::CustomButton::BS_HOT, rb.GetImageSkiaNamed(
+    button_->SetImage(views::CustomButton::STATE_HOVERED, rb.GetImageSkiaNamed(
         IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_INACTIVE_HOVER));
-    button_->SetImage(views::CustomButton::BS_PUSHED, rb.GetImageSkiaNamed(
+    button_->SetImage(views::CustomButton::STATE_PRESSED, rb.GetImageSkiaNamed(
         IDR_AURA_UBER_TRAY_NOTIFY_BUTTON_INACTIVE_PRESSED));
   }
-  if (message_center_bubble())
-    button_->SetState(views::CustomButton::BS_PUSHED);
+  if (IsMessageCenterBubbleVisible())
+    button_->SetState(views::CustomButton::STATE_PRESSED);
   else
-    button_->SetState(views::CustomButton::BS_NORMAL);
-  bool is_visible =
-      (status_area_widget()->login_status() != user::LOGGED_IN_NONE) &&
-      (status_area_widget()->login_status() != user::LOGGED_IN_LOCKED) &&
-      (message_center_->NotificationCount() > 0);
-  SetVisible(is_visible);
+    button_->SetState(views::CustomButton::STATE_NORMAL);
+  // Change the visibility of the buttons here when rich notifications are not
+  // enabled. If rich notifications are enabled, the visibility is changed at
+  // UpdateAfterLoginStatusChange() since the visibility won't depend on the
+  // number of notifications.
+  if (!message_center::IsRichNotificationEnabled()) {
+    bool is_visible =
+        (status_area_widget()->login_status() != user::LOGGED_IN_NONE) &&
+        (status_area_widget()->login_status() != user::LOGGED_IN_LOCKED) &&
+        (message_center->NotificationCount() > 0);
+    SetVisible(is_visible);
+  }
   Layout();
   SchedulePaint();
 }
@@ -323,26 +419,34 @@ bool WebNotificationTray::ClickedOutsideBubble() {
   // Only hide the message center.
   if (!message_center_bubble())
     return false;
-  HideMessageCenterBubble();
+  message_center_tray_->HideMessageCenterBubble();
   return true;
+}
+
+message_center::MessageCenter* WebNotificationTray::message_center() {
+  return message_center_tray_->message_center();
 }
 
 // Methods for testing
 
+bool WebNotificationTray::IsPopupVisible() const {
+  return message_center_tray_->popups_visible();
+}
+
 message_center::MessageCenterBubble*
 WebNotificationTray::GetMessageCenterBubbleForTest() {
-  if (!message_center_bubble_.get())
+  if (!message_center_bubble())
     return NULL;
   return static_cast<message_center::MessageCenterBubble*>(
-      message_center_bubble_->bubble());
+      message_center_bubble()->bubble());
 }
 
 message_center::MessagePopupBubble*
 WebNotificationTray::GetPopupBubbleForTest() {
-  if (!popup_bubble_.get())
+  if (!popup_bubble())
     return NULL;
   return static_cast<message_center::MessagePopupBubble*>(
-      popup_bubble_->bubble());
+      popup_bubble()->bubble());
 }
 
 }  // namespace ash

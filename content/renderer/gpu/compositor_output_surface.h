@@ -10,9 +10,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/threading/platform_thread.h"
 #include "base/time.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCompositorOutputSurface.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCompositorSoftwareOutputDevice.h"
+#include "cc/output/output_surface.h"
 
 namespace base {
 class TaskRunner;
@@ -23,30 +23,36 @@ class ForwardingMessageFilter;
 class Message;
 }
 
+namespace cc {
+class CompositorFrameAck;
+}
+
 namespace content {
 
 // This class can be created only on the main thread, but then becomes pinned
 // to a fixed thread when bindToClient is called.
 class CompositorOutputSurface
-    : NON_EXPORTED_BASE(public WebKit::WebCompositorOutputSurface), 
-    NON_EXPORTED_BASE(public base::NonThreadSafe) {
+    : NON_EXPORTED_BASE(public cc::OutputSurface),
+      NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   static IPC::ForwardingMessageFilter* CreateFilter(
       base::TaskRunner* target_task_runner);
 
   CompositorOutputSurface(int32 routing_id,
                           WebKit::WebGraphicsContext3D* context3d,
-                          WebKit::WebCompositorSoftwareOutputDevice* software);
+                          cc::SoftwareOutputDevice* software);
   virtual ~CompositorOutputSurface();
 
-  // WebCompositorOutputSurface implementation.
-  virtual bool bindToClient(
-      WebKit::WebCompositorOutputSurfaceClient* client) OVERRIDE;
-  virtual const Capabilities& capabilities() const OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* context3D() const OVERRIDE;
-  virtual WebKit::WebCompositorSoftwareOutputDevice* softwareDevice() const;
-  virtual void sendFrameToParentCompositor(
-      const WebKit::WebCompositorFrame&) OVERRIDE;
+  // cc::OutputSurface implementation.
+  virtual bool BindToClient(cc::OutputSurfaceClient* client) OVERRIDE;
+  virtual void SendFrameToParentCompositor(cc::CompositorFrame*) OVERRIDE;
+
+  // TODO(epenner): This seems out of place here and would be a better fit
+  // int CompositorThread after it is fully refactored (http://crbug/170828)
+  virtual void UpdateSmoothnessTakesPriority(bool prefer_smoothness) OVERRIDE;
+
+ protected:
+  virtual void OnSwapAck(const cc::CompositorFrameAck& ack);
 
  private:
   class CompositorOutputSurfaceProxy :
@@ -72,14 +78,13 @@ class CompositorOutputSurface
   void OnMessageReceived(const IPC::Message& message);
   void OnUpdateVSyncParameters(
       base::TimeTicks timebase, base::TimeDelta interval);
+  bool Send(IPC::Message* message);
 
   scoped_refptr<IPC::ForwardingMessageFilter> output_surface_filter_;
-  WebKit::WebCompositorOutputSurfaceClient* client_;
   scoped_refptr<CompositorOutputSurfaceProxy> output_surface_proxy_;
   int routing_id_;
-  Capabilities capabilities_;
-  scoped_ptr<WebKit::WebGraphicsContext3D> context3D_;
-  scoped_ptr<WebKit::WebCompositorSoftwareOutputDevice> software_device_;
+  bool prefers_smoothness_;
+  base::PlatformThreadId main_thread_id_;
 };
 
 }  // namespace content

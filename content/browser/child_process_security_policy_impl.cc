@@ -4,7 +4,8 @@
 
 #include "content/browser/child_process_security_policy_impl.h"
 
-#include "base/file_path.h"
+#include "base/command_line.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
@@ -12,7 +13,9 @@
 #include "base/string_util.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/common/bindings_policy.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
@@ -35,6 +38,9 @@ const int kWriteFilePermissions =
     base::PLATFORM_FILE_EXCLUSIVE_WRITE |
     base::PLATFORM_FILE_ASYNC |
     base::PLATFORM_FILE_WRITE_ATTRIBUTES;
+
+const int kCreateFilePermissions =
+    base::PLATFORM_FILE_CREATE;
 
 const int kEnumerateDirectoryPermissions =
     kReadFilePermissions |
@@ -74,21 +80,21 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
   }
 
   // Grant certain permissions to a file.
-  void GrantPermissionsForFile(const FilePath& file, int permissions) {
-    FilePath stripped = file.StripTrailingSeparators();
+  void GrantPermissionsForFile(const base::FilePath& file, int permissions) {
+    base::FilePath stripped = file.StripTrailingSeparators();
     file_permissions_[stripped] |= permissions;
     UMA_HISTOGRAM_COUNTS("ChildProcessSecurityPolicy.FilePermissionPathLength",
                          stripped.value().size());
   }
 
   // Grant navigation to a file but not the file:// scheme in general.
-  void GrantRequestOfSpecificFile(const FilePath &file) {
+  void GrantRequestOfSpecificFile(const base::FilePath &file) {
     request_file_set_.insert(file.StripTrailingSeparators());
   }
 
   // Revokes all permissions granted to a file.
-  void RevokeAllPermissionsForFile(const FilePath& file) {
-    FilePath stripped = file.StripTrailingSeparators();
+  void RevokeAllPermissionsForFile(const base::FilePath& file) {
+    base::FilePath stripped = file.StripTrailingSeparators();
     file_permissions_.erase(stripped);
     request_file_set_.erase(stripped);
   }
@@ -99,7 +105,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     if (filesystem_permissions_.find(filesystem_id) ==
         filesystem_permissions_.end())
       fileapi::IsolatedContext::GetInstance()->AddReference(filesystem_id);
-    filesystem_permissions_[filesystem_id] = permissions;
+    filesystem_permissions_[filesystem_id] |= permissions;
   }
 
   bool HasPermissionsForFileSystem(const std::string& filesystem_id,
@@ -133,7 +139,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     // file:// URLs are more granular.  The child may have been given
     // permission to a specific file but not the file:// scheme in general.
     if (url.SchemeIs(chrome::kFileScheme)) {
-      FilePath path;
+      base::FilePath path;
       if (net::FileURLToFilePath(url, &path))
         return request_file_set_.find(path) != request_file_set_.end();
     }
@@ -142,12 +148,23 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
   }
 
   // Determine if the certain permissions have been granted to a file.
-  bool HasPermissionsForFile(const FilePath& file, int permissions) {
-    FilePath current_path = file.StripTrailingSeparators();
-    FilePath last_path;
+  bool HasPermissionsForFile(const base::FilePath& file, int permissions) {
+    if (!permissions || file.empty() || !file.IsAbsolute())
+      return false;
+    base::FilePath current_path = file.StripTrailingSeparators();
+    base::FilePath last_path;
+    int skip = 0;
     while (current_path != last_path) {
-      if (file_permissions_.find(current_path) != file_permissions_.end())
-        return (file_permissions_[current_path] & permissions) == permissions;
+      base::FilePath base_name =  current_path.BaseName();
+      if (base_name.value() == base::FilePath::kParentDirectory) {
+        ++skip;
+      } else if (skip > 0) {
+        if (base_name.value() != base::FilePath::kCurrentDirectory)
+          --skip;
+      } else {
+        if (file_permissions_.find(current_path) != file_permissions_.end())
+          return (file_permissions_[current_path] & permissions) == permissions;
+      }
       last_path = current_path;
       current_path = current_path.DirName();
     }
@@ -155,9 +172,42 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     return false;
   }
 
-  bool CanUseCookiesForOrigin(const GURL& gurl) {
+  bool CanLoadPage(const GURL& gurl) {
     if (origin_lock_.is_empty())
       return true;
+
+    // TODO(creis): We must pass the valid browser_context to convert hosted
+    // apps URLs.  Currently, hosted apps cannot be loaded in this mode.
+    // See http://crbug.com/160576.
+    GURL site_gurl = SiteInstanceImpl::GetSiteForURL(NULL, gurl);
+    return origin_lock_ == site_gurl;
+  }
+
+  bool CanAccessCookiesForOrigin(const GURL& gurl) {
+    if (origin_lock_.is_empty())
+      return true;
+    // TODO(creis): We must pass the valid browser_context to convert hosted
+    // apps URLs.  Currently, hosted apps cannot set cookies in this mode.
+    // See http://crbug.com/160576.
+    GURL site_gurl = SiteInstanceImpl::GetSiteForURL(NULL, gurl);
+    return origin_lock_ == site_gurl;
+  }
+
+  bool CanSendCookiesForOrigin(const GURL& gurl) {
+    // We only block cross-site cookies on network requests if the
+    // --enable-strict-site-isolation flag is passed.  This is expected to break
+    // compatibility with many sites.  The similar --site-per-process flag only
+    // blocks JavaScript access to cross-site cookies (in
+    // CanAccessCookiesForOrigin).
+    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    if (!command_line.HasSwitch(switches::kEnableStrictSiteIsolation))
+      return true;
+
+    if (origin_lock_.is_empty())
+      return true;
+    // TODO(creis): We must pass the valid browser_context to convert hosted
+    // apps URLs.  Currently, hosted apps cannot set cookies in this mode.
+    // See http://crbug.com/160576.
     GURL site_gurl = SiteInstanceImpl::GetSiteForURL(NULL, gurl);
     return origin_lock_ == site_gurl;
   }
@@ -178,9 +228,9 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
   typedef std::map<std::string, bool> SchemeMap;
 
   typedef int FilePermissionFlags;  // bit-set of PlatformFileFlags
-  typedef std::map<FilePath, FilePermissionFlags> FileMap;
+  typedef std::map<base::FilePath, FilePermissionFlags> FileMap;
   typedef std::map<std::string, FilePermissionFlags> FileSystemMap;
-  typedef std::set<FilePath> FileSet;
+  typedef std::set<base::FilePath> FileSet;
 
   // Maps URL schemes to whether permission has been granted or revoked:
   //   |true| means the scheme has been granted.
@@ -356,24 +406,24 @@ void ChildProcessSecurityPolicyImpl::GrantRequestSpecificFileURL(
 
     // When the child process has been commanded to request a file:// URL,
     // then we grant it the capability for that URL only.
-    FilePath path;
+    base::FilePath path;
     if (net::FileURLToFilePath(url, &path))
-        state->second->GrantRequestOfSpecificFile(path);
+      state->second->GrantRequestOfSpecificFile(path);
   }
 }
 
 void ChildProcessSecurityPolicyImpl::GrantReadFile(int child_id,
-                                                   const FilePath& file) {
+                                                   const base::FilePath& file) {
   GrantPermissionsForFile(child_id, file, kReadFilePermissions);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantReadDirectory(
-    int child_id, const FilePath& directory) {
+    int child_id, const base::FilePath& directory) {
   GrantPermissionsForFile(child_id, directory, kEnumerateDirectoryPermissions);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantPermissionsForFile(
-    int child_id, const FilePath& file, int permissions) {
+    int child_id, const base::FilePath& file, int permissions) {
   base::AutoLock lock(lock_);
 
   SecurityStateMap::iterator state = security_state_.find(child_id);
@@ -384,7 +434,7 @@ void ChildProcessSecurityPolicyImpl::GrantPermissionsForFile(
 }
 
 void ChildProcessSecurityPolicyImpl::RevokeAllPermissionsForFile(
-    int child_id, const FilePath& file) {
+    int child_id, const base::FilePath& file) {
   base::AutoLock lock(lock_);
 
   SecurityStateMap::iterator state = security_state_.find(child_id);
@@ -399,11 +449,15 @@ void ChildProcessSecurityPolicyImpl::GrantReadFileSystem(
   GrantPermissionsForFileSystem(child_id, filesystem_id, kReadFilePermissions);
 }
 
-void ChildProcessSecurityPolicyImpl::GrantReadWriteFileSystem(
+void ChildProcessSecurityPolicyImpl::GrantWriteFileSystem(
+    int child_id, const std::string& filesystem_id) {
+  GrantPermissionsForFileSystem(child_id, filesystem_id, kWriteFilePermissions);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantCreateFileForFileSystem(
     int child_id, const std::string& filesystem_id) {
   GrantPermissionsForFileSystem(child_id, filesystem_id,
-                                kReadFilePermissions |
-                                kWriteFilePermissions);
+                                kCreateFilePermissions);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantScheme(int child_id,
@@ -453,13 +507,28 @@ void ChildProcessSecurityPolicyImpl::RevokeReadRawCookies(int child_id) {
   state->second->RevokeReadRawCookies();
 }
 
+bool ChildProcessSecurityPolicyImpl::CanLoadPage(
+    int child_id,
+    const GURL& url,
+    ResourceType::Type resource_type) {
+  // If --site-per-process flag is passed, we should enforce
+  // stronger security restrictions on page navigation.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess) &&
+      ResourceType::IsFrame(resource_type)) {
+    // TODO(nasko): Do the proper check for site-per-process, once
+    // out-of-process iframes is ready to go.
+    return true;
+  }
+  return true;
+}
+
 bool ChildProcessSecurityPolicyImpl::CanRequestURL(
     int child_id, const GURL& url) {
   if (!url.is_valid())
     return false;  // Can't request invalid URLs.
 
   if (IsDisabledScheme(url.scheme()))
-    return false; // The scheme is disabled by policy.
+    return false;  // The scheme is disabled by policy.
 
   if (IsWebSafeScheme(url.scheme()))
     return true;  // The scheme has been white-listed for every child process.
@@ -506,12 +575,12 @@ bool ChildProcessSecurityPolicyImpl::CanRequestURL(
 }
 
 bool ChildProcessSecurityPolicyImpl::CanReadFile(int child_id,
-                                                 const FilePath& file) {
+                                                 const base::FilePath& file) {
   return HasPermissionsForFile(child_id, file, kReadFilePermissions);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanReadDirectory(
-    int child_id, const FilePath& directory) {
+    int child_id, const base::FilePath& directory) {
   return HasPermissionsForFile(child_id,
                                directory,
                                kEnumerateDirectoryPermissions);
@@ -533,7 +602,7 @@ bool ChildProcessSecurityPolicyImpl::CanReadWriteFileSystem(
 }
 
 bool ChildProcessSecurityPolicyImpl::HasPermissionsForFile(
-    int child_id, const FilePath& file, int permissions) {
+    int child_id, const base::FilePath& file, int permissions) {
   base::AutoLock lock(lock_);
   bool result = ChildProcessHasPermissionsForFile(child_id, file, permissions);
   if (!result) {
@@ -579,20 +648,29 @@ void ChildProcessSecurityPolicyImpl::AddChild(int child_id) {
 }
 
 bool ChildProcessSecurityPolicyImpl::ChildProcessHasPermissionsForFile(
-    int child_id, const FilePath& file, int permissions) {
+    int child_id, const base::FilePath& file, int permissions) {
   SecurityStateMap::iterator state = security_state_.find(child_id);
   if (state == security_state_.end())
     return false;
   return state->second->HasPermissionsForFile(file, permissions);
 }
 
-bool ChildProcessSecurityPolicyImpl::CanUseCookiesForOrigin(int child_id,
-                                                            const GURL& gurl) {
+bool ChildProcessSecurityPolicyImpl::CanAccessCookiesForOrigin(
+    int child_id, const GURL& gurl) {
   base::AutoLock lock(lock_);
   SecurityStateMap::iterator state = security_state_.find(child_id);
   if (state == security_state_.end())
     return false;
-  return state->second->CanUseCookiesForOrigin(gurl);
+  return state->second->CanAccessCookiesForOrigin(gurl);
+}
+
+bool ChildProcessSecurityPolicyImpl::CanSendCookiesForOrigin(int child_id,
+                                                             const GURL& gurl) {
+  base::AutoLock lock(lock_);
+  SecurityStateMap::iterator state = security_state_.find(child_id);
+  if (state == security_state_.end())
+    return false;
+  return state->second->CanSendCookiesForOrigin(gurl);
 }
 
 void ChildProcessSecurityPolicyImpl::LockToOrigin(int child_id,

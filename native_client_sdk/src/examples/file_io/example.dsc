@@ -1,5 +1,5 @@
 {
-  'TOOLS': ['newlib', 'glibc', 'pnacl'],
+  'TOOLS': ['newlib', 'glibc', 'pnacl', 'win', 'linux'],
   'TARGETS': [
     {
       'NAME' : 'file_io',
@@ -8,13 +8,16 @@
       'LIBS' : ['ppapi_cpp', 'ppapi', 'pthread']
     }
   ],
-  'DATA': ['example.js'],
+  'DATA': [
+    'example.js',
+  ],
   'DEST': 'examples',
   'NAME': 'file_io',
   'TITLE': 'File I/O',
   'DESC': """
 The File IO example demonstrates saving, loading, and deleting files
 from the persistent file store.""",
-  'INFO': 'Teaching focus: File input and output.'
+  'FOCUS': 'File input and output.',
+  'GROUP': 'API'
 }
 

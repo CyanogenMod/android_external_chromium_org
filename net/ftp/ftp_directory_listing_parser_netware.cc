@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "net/ftp/ftp_directory_listing_parser.h"
 #include "net/ftp/ftp_util.h"
@@ -49,7 +49,7 @@ bool ParseFtpDirectoryListingNetware(
     std::vector<string16> columns;
     base::SplitString(CollapseWhitespace(lines[i], false), ' ', &columns);
 
-    if (columns.size() != 8)
+    if (columns.size() < 8)
       return false;
 
     FtpDirectoryListingEntry entry;
@@ -83,7 +83,7 @@ bool ParseFtpDirectoryListingNetware(
       return false;
     }
 
-    entry.name = columns[7];
+    entry.name = FtpUtil::GetStringPartAfterColumns(lines[i], 7);
 
     entries->push_back(entry);
   }

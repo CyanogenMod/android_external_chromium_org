@@ -40,6 +40,17 @@ GLXApi::GLXApi() {
 GLXApi::~GLXApi() {
 }
 
+GLXApiBase::GLXApiBase()
+    : driver_(NULL) {
+}
+
+GLXApiBase::~GLXApiBase() {
+}
+
+void GLXApiBase::InitializeBase(DriverGLX* driver) {
+  driver_ = driver;
+}
+
 RealGLXApi::RealGLXApi() {
 }
 
@@ -47,7 +58,10 @@ RealGLXApi::~RealGLXApi() {
 }
 
 void RealGLXApi::Initialize(DriverGLX* driver) {
-  driver_ = driver;
+  InitializeBase(driver);
+}
+
+TraceGLXApi::~TraceGLXApi() {
 }
 
 }  // namespace gfx

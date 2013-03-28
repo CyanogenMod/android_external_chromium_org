@@ -13,15 +13,16 @@
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/task_manager/task_manager_browsertest_util.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/common/content_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if !defined(USE_ASH)
-// These tests do not apply on Ash where notifications do not instantiate
-// a new renderer.
+#if !defined(ENABLE_MESSAGE_CENTER)
+// These tests do not apply with Message Center platforms
+// where notifications do not instantiate a new renderer.
 
 class TaskManagerNotificationBrowserTest : public ExtensionBrowserTest {
  public:
@@ -39,12 +40,18 @@ class TaskManagerNotificationBrowserTest : public ExtensionBrowserTest {
   }
 };
 
+// TODO(linux_aura) http://crbug.com/163931
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+#define MAYBE_NoticeNotificationChanges DISABLED_NoticeNotificationChanges
+#else
+#define MAYBE_NoticeNotificationChanges NoticeNotificationChanges
+#endif
 IN_PROC_BROWSER_TEST_F(TaskManagerNotificationBrowserTest,
-                       NoticeNotificationChanges) {
+                       MAYBE_NoticeNotificationChanges) {
   EXPECT_EQ(0, model()->ResourceCount());
 
   // Show the task manager.
-  browser()->window()->ShowTaskManager();
+  chrome::ShowTaskManager(browser(), false);
   // Expect to see the browser and the New Tab Page renderer.
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(1);
 
@@ -73,4 +80,4 @@ IN_PROC_BROWSER_TEST_F(TaskManagerNotificationBrowserTest,
   TaskManagerBrowserTestUtil::WaitForWebResourceChange(1);
 }
 
-#endif  // !USE_ASH
+#endif  // !ENABLE_MESSAGE_CENTER

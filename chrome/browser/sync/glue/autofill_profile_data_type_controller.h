@@ -7,18 +7,18 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/autofill/personal_data_manager_observer.h"
-#include "chrome/browser/sync/glue/new_non_frontend_data_type_controller.h"
+#include "chrome/browser/sync/glue/non_ui_data_type_controller.h"
+#include "components/autofill/browser/personal_data_manager_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
+class AutofillWebDataService;
 class PersonalDataManager;
-class WebDataService;
 
 namespace browser_sync {
 
 class AutofillProfileDataTypeController
-    : public NewNonFrontendDataTypeController,
+    : public NonUIDataTypeController,
       public content::NotificationObserver,
       public PersonalDataManagerObserver {
  public:
@@ -27,7 +27,7 @@ class AutofillProfileDataTypeController
       Profile* profile,
       ProfileSyncService* sync_service);
 
-  // NewNonFrontendDataTypeController implementation.
+  // NonUIDataTypeController implementation.
   virtual syncer::ModelType type() const OVERRIDE;
   virtual syncer::ModelSafeGroup model_safe_group() const OVERRIDE;
 
@@ -42,7 +42,7 @@ class AutofillProfileDataTypeController
  protected:
   virtual ~AutofillProfileDataTypeController();
 
-  // NewNonFrontendDataTypeController implementation.
+  // NonUIDataTypeController implementation.
   virtual bool PostTaskOnBackendThread(
       const tracked_objects::Location& from_here,
       const base::Closure& task) OVERRIDE;
@@ -51,7 +51,7 @@ class AutofillProfileDataTypeController
 
  private:
   PersonalDataManager* personal_data_;
-  scoped_refptr<WebDataService> web_data_service_;
+  scoped_refptr<AutofillWebDataService> web_data_service_;
   content::NotificationRegistrar notification_registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillProfileDataTypeController);

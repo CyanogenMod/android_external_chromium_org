@@ -4,17 +4,18 @@
 
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
 
+#include "base/prefs/pref_service.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 
@@ -52,8 +53,7 @@ static void EncodePinnedTab(TabStripModel* model,
                             ListValue* values) {
   scoped_ptr<DictionaryValue> value(new DictionaryValue());
 
-  content::WebContents* web_contents =
-      model->GetTabContentsAt(index)->web_contents();
+  content::WebContents* web_contents = model->GetWebContentsAt(index);
   if (model->IsAppTab(index)) {
     const extensions::Extension* extension =
         extensions::TabHelper::FromWebContents(web_contents)->extension_app();
@@ -99,8 +99,9 @@ static bool DecodeTab(const DictionaryValue& value, StartupTab* tab) {
 }
 
 // static
-void PinnedTabCodec::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterListPref(prefs::kPinnedTabs, PrefService::UNSYNCABLE_PREF);
+void PinnedTabCodec::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterListPref(prefs::kPinnedTabs,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // static
@@ -110,9 +111,8 @@ void PinnedTabCodec::WritePinnedTabs(Profile* profile) {
     return;
 
   ListValue values;
-  for (BrowserList::const_iterator i = BrowserList::begin();
-       i != BrowserList::end(); ++i) {
-    Browser* browser = *i;
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
     if (browser->is_type_tabbed() &&
         browser->profile() == profile && HasPinnedTabs(browser)) {
       EncodePinnedTabs(browser, &values);

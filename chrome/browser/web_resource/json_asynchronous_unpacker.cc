@@ -31,7 +31,7 @@ class JSONAsynchronousUnpackerImpl
       got_response_(false) {
   }
 
-  void Start(const std::string& json_data) {
+  virtual void Start(const std::string& json_data) OVERRIDE {
     AddRef();  // balanced in Cleanup.
 
     // TODO(willchan): Look for a better signal of whether we're in a unit test
@@ -105,7 +105,8 @@ class JSONAsynchronousUnpackerImpl
 
   void StartProcessOnIOThread(BrowserThread::ID thread_id,
                               const std::string& json_data) {
-    UtilityProcessHost* host = UtilityProcessHost::Create(this, thread_id);
+    UtilityProcessHost* host = UtilityProcessHost::Create(
+        this, BrowserThread::GetMessageLoopProxyForThread(thread_id));
     host->EnableZygote();
     // TODO(mrc): get proper file path when we start using web resources
     // that need to be unpacked.

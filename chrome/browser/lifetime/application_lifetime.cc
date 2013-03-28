@@ -2,23 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "base/prefs/pref_service.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/metrics/thread_watcher.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -26,6 +29,10 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/notification_service.h"
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/lifetime/application_lifetime_android.h"
+#endif
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/chrome_browser_application_mac.h"
@@ -40,15 +47,15 @@
 #include "chromeos/dbus/update_engine_client.h"
 #endif
 
-namespace browser {
+namespace chrome {
 namespace {
 
 // Returns true if all browsers can be closed without user interaction.
 // This currently checks if there is pending download, or if it needs to
 // handle unload handler.
 bool AreAllBrowsersCloseable() {
-  BrowserList::const_iterator browser_it = BrowserList::begin();
-  if (browser_it == BrowserList::end())
+  chrome::BrowserIterator browser_it;
+  if (browser_it.done())
     return true;
 
   // If there are any downloads active, all browsers are not closeable.
@@ -56,8 +63,8 @@ bool AreAllBrowsersCloseable() {
     return false;
 
   // Check TabsNeedBeforeUnloadFired().
-  for (; browser_it != BrowserList::end(); ++browser_it) {
-    if ((*browser_it)->TabsNeedBeforeUnloadFired())
+  for (; !browser_it.done(); browser_it.Next()) {
+    if (browser_it->TabsNeedBeforeUnloadFired())
       return false;
   }
   return true;
@@ -74,10 +81,8 @@ bool g_session_manager_requested_shutdown = true;
 
 void MarkAsCleanShutdown() {
   // TODO(beng): Can this use ProfileManager::GetLoadedProfiles() instead?
-  for (BrowserList::const_iterator i = BrowserList::begin();
-       i != BrowserList::end(); ++i) {
-    (*i)->profile()->SetExitType(Profile::EXIT_NORMAL);
-  }
+  for (chrome::BrowserIterator it; !it.done(); it.Next())
+    it->profile()->SetExitType(Profile::EXIT_NORMAL);
 }
 
 void AttemptExitInternal() {
@@ -86,70 +91,18 @@ void AttemptExitInternal() {
       content::NotificationService::AllSources(),
       content::NotificationService::NoDetails());
 
-#if !defined(OS_MACOSX)
-  // On most platforms, closing all windows causes the application to exit.
-  CloseAllBrowsers();
-#else
+#if defined(OS_ANDROID)
+  // Tell the Java code to finish() the Activity.
+  TerminateAndroid();
+#elif defined(OS_MACOSX)
   // On the Mac, the application continues to run once all windows are closed.
   // Terminate will result in a CloseAllBrowsers() call, and once (and if)
   // that is done, will cause the application to exit cleanly.
   chrome_browser_application_mac::Terminate();
+#else
+  // On most platforms, closing all windows causes the application to exit.
+  CloseAllBrowsers();
 #endif
-}
-
-void NotifyAppTerminating() {
-  static bool notified = false;
-  if (notified)
-    return;
-  notified = true;
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_APP_TERMINATING,
-      content::NotificationService::AllSources(),
-      content::NotificationService::NoDetails());
-}
-
-void NotifyAndTerminate(bool fast_path) {
-#if defined(OS_CHROMEOS)
-  static bool notified = false;
-  // Don't ask SessionManager to shutdown if
-  // a) a shutdown request has already been sent.
-  // b) shutdown request comes from session manager.
-  if (notified || g_session_manager_requested_shutdown)
-    return;
-  notified = true;
-#endif
-
-  if (fast_path)
-    NotifyAppTerminating();
-
-#if defined(OS_CHROMEOS)
-  if (base::chromeos::IsRunningOnChromeOS()) {
-    // If we're on a ChromeOS device, reboot if an update has been applied,
-    // or else signal the session manager to log out.
-    chromeos::UpdateEngineClient* update_engine_client
-        = chromeos::DBusThreadManager::Get()->GetUpdateEngineClient();
-    if (update_engine_client->GetLastStatus().status ==
-        chromeos::UpdateEngineClient::UPDATE_STATUS_UPDATED_NEED_REBOOT) {
-      update_engine_client->RebootAfterUpdate();
-    } else {
-      chromeos::DBusThreadManager::Get()->GetSessionManagerClient()
-          ->StopSession();
-    }
-  } else {
-    // If running the Chrome OS build, but we're not on the device, act
-    // as if we received signal from SessionManager.
-    content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
-                                     base::Bind(&browser::ExitCleanly));
-  }
-#endif
-}
-
-void OnAppExiting() {
-  static bool notified = false;
-  if (notified)
-    return;
-  notified = true;
-  HandleAppExitingForPlatform();
 }
 
 void CloseAllBrowsers() {
@@ -167,9 +120,9 @@ void CloseAllBrowsers() {
   // If there are no browsers, send the APP_TERMINATING action here. Otherwise,
   // it will be sent by RemoveBrowser() when the last browser has closed.
   if (browser_shutdown::ShuttingDownWithoutClosingBrowsers() ||
-      BrowserList::empty()) {
-    NotifyAndTerminate(true);
-    OnAppExiting();
+      chrome::GetTotalBrowserCount() == 0) {
+    chrome::NotifyAndTerminate(true);
+    chrome::OnAppExiting();
     return;
   }
 
@@ -177,12 +130,13 @@ void CloseAllBrowsers() {
   chromeos::BootTimesLoader::Get()->AddLogoutTimeMarker(
       "StartedClosingWindows", false);
 #endif
-  for (BrowserList::const_iterator i = BrowserList::begin();
-       i != BrowserList::end();) {
-    Browser* browser = *i;
+  for (scoped_ptr<chrome::BrowserIterator> it_ptr(
+           new chrome::BrowserIterator());
+       !it_ptr->done();) {
+    Browser* browser = **it_ptr;
     browser->window()->Close();
     if (!session_ending) {
-      ++i;
+      it_ptr->Next();
     } else {
       // This path is hit during logoff/power-down. In this case we won't get
       // a final message and so we force the browser to be deleted.
@@ -191,11 +145,11 @@ void CloseAllBrowsers() {
       // session we need to make sure the browser is destroyed now. So, invoke
       // DestroyBrowser to make sure the browser is deleted and cleanup can
       // happen.
-      while (browser->tab_count())
-        delete chrome::GetTabContentsAt(browser, 0);
+      while (browser->tab_strip_model()->count())
+        delete browser->tab_strip_model()->GetWebContentsAt(0);
       browser->window()->DestroyBrowser();
-      i = BrowserList::begin();
-      if (i != BrowserList::end() && browser == *i) {
+      it_ptr.reset(new chrome::BrowserIterator());
+      if (!it_ptr->done() && browser == **it_ptr) {
         // Destroying the browser should have removed it from the browser list.
         // We should never get here.
         NOTREACHED();
@@ -226,7 +180,7 @@ void AttemptUserExit() {
   g_session_manager_requested_shutdown = false;
   // On ChromeOS, always terminate the browser, regardless of the result of
   // AreAllBrowsersCloseable(). See crbug.com/123107.
-  NotifyAndTerminate(true);
+  chrome::NotifyAndTerminate(true);
 #else
   // Reset the restart bit that might have been set in cancelled restart
   // request.
@@ -236,11 +190,12 @@ void AttemptUserExit() {
 #endif
 }
 
+// The Android implementation is in application_lifetime_android.cc
+#if !defined(OS_ANDROID)
 void AttemptRestart() {
   // TODO(beng): Can this use ProfileManager::GetLoadedProfiles instead?
-  BrowserList::const_iterator it;
-  for (it = BrowserList::begin(); it != BrowserList::end(); ++it)
-    content::BrowserContext::SaveSessionState((*it)->profile());
+  for (chrome::BrowserIterator it; !it.done(); it.Next())
+    content::BrowserContext::SaveSessionState(it->profile());
 
   PrefService* pref_service = g_browser_process->local_state();
   pref_service->SetBoolean(prefs::kWasRestarted, true);
@@ -256,6 +211,7 @@ void AttemptRestart() {
   AttemptExit();
 #endif
 }
+#endif
 
 #if defined(OS_WIN)
 void AttemptRestartWithModeSwitch() {
@@ -263,7 +219,7 @@ void AttemptRestartWithModeSwitch() {
   // operating systems so there is no need for OS version check.
   PrefService* prefs = g_browser_process->local_state();
   prefs->SetBoolean(prefs::kRestartSwitchMode, true);
-  browser::AttemptRestart();
+  AttemptRestart();
 }
 #endif
 
@@ -272,8 +228,11 @@ void AttemptExit() {
   // don't notify users of crashes beyond this point.
   // Note that MarkAsCleanShutdown() does not set UMA's exit cleanly bit
   // so crashes during shutdown are still reported in UMA.
+#if !defined(OS_ANDROID)
+  // Android doesn't use Browser.
   if (AreAllBrowsersCloseable())
     MarkAsCleanShutdown();
+#endif
   AttemptExitInternal();
 }
 
@@ -358,9 +317,11 @@ void EndKeepAlive() {
     // If there are no browsers open and we aren't already shutting down,
     // initiate a shutdown. Also skips shutdown if this is a unit test
     // (MessageLoop::current() == null).
-    if (BrowserList::empty() && !browser_shutdown::IsTryingToQuit() &&
-        MessageLoop::current())
+    if (chrome::GetTotalBrowserCount() == 0 &&
+        !browser_shutdown::IsTryingToQuit() &&
+        MessageLoop::current()) {
       CloseAllBrowsers();
+    }
   }
 }
 
@@ -368,4 +329,59 @@ bool WillKeepAlive() {
   return g_keep_alive_count > 0;
 }
 
-}  // namespace browser
+void NotifyAppTerminating() {
+  static bool notified = false;
+  if (notified)
+    return;
+  notified = true;
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_APP_TERMINATING,
+      content::NotificationService::AllSources(),
+      content::NotificationService::NoDetails());
+}
+
+void NotifyAndTerminate(bool fast_path) {
+#if defined(OS_CHROMEOS)
+  static bool notified = false;
+  // Return if a shutdown request has already been sent.
+  if (notified)
+    return;
+  notified = true;
+#endif
+
+  if (fast_path)
+    NotifyAppTerminating();
+
+#if defined(OS_CHROMEOS)
+  if (base::chromeos::IsRunningOnChromeOS()) {
+    // If we're on a ChromeOS device, reboot if an update has been applied,
+    // or else signal the session manager to log out.
+    chromeos::UpdateEngineClient* update_engine_client
+        = chromeos::DBusThreadManager::Get()->GetUpdateEngineClient();
+    if (update_engine_client->GetLastStatus().status ==
+        chromeos::UpdateEngineClient::UPDATE_STATUS_UPDATED_NEED_REBOOT) {
+      update_engine_client->RebootAfterUpdate();
+    } else if (!g_session_manager_requested_shutdown) {
+      // Don't ask SessionManager to stop session if the shutdown request comes
+      // from session manager.
+      chromeos::DBusThreadManager::Get()->GetSessionManagerClient()
+          ->StopSession();
+    }
+  } else {
+    // If running the Chrome OS build, but we're not on the device, act
+    // as if we received signal from SessionManager.
+    content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
+                                     base::Bind(&ExitCleanly));
+  }
+#endif
+}
+
+void OnAppExiting() {
+  static bool notified = false;
+  if (notified)
+    return;
+  notified = true;
+  HandleAppExitingForPlatform();
+}
+
+}  // namespace chrome

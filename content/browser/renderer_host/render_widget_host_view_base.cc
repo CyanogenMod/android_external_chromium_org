@@ -6,11 +6,16 @@
 
 #include "base/logging.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/renderer_host/basic_mouse_wheel_smooth_scroll_gesture.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/port/browser/smooth_scroll_gesture.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/size_f.h"
 
 #if defined(OS_WIN)
 #include "base/command_line.h"
@@ -242,8 +247,8 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
         // PluginProcessHost to destroy the intermediate HWNDs.
         cur_parent = ReparentWindow(window, parent);
         ::ShowWindow(window, SW_SHOW);  // Window was created hidden.
-      } else {
-        CHECK(IsPluginWrapperWindow(cur_parent));
+      } else if (!IsPluginWrapperWindow(cur_parent)) {
+        continue;  // Race if plugin process is shutting down.
       }
 
       // We move the intermediate parent window which doesn't result in cross-
@@ -352,12 +357,28 @@ RenderWidgetHostViewBase::~RenderWidgetHostViewBase() {
   DCHECK(!mouse_locked_);
 }
 
+bool RenderWidgetHostViewBase::OnMessageReceived(const IPC::Message& msg){
+  return false;
+}
+
 void RenderWidgetHostViewBase::SetBackground(const SkBitmap& background) {
   background_ = background;
 }
 
 const SkBitmap& RenderWidgetHostViewBase::GetBackground() {
   return background_;
+}
+
+gfx::Size RenderWidgetHostViewBase::GetPhysicalBackingSize() const {
+  gfx::NativeView view = GetNativeView();
+  gfx::Display display =
+      gfx::Screen::GetScreenFor(view)->GetDisplayNearestWindow(view);
+  return gfx::ToCeiledSize(gfx::ScaleSize(GetViewBounds().size(),
+                                          display.device_scale_factor()));
+}
+
+float RenderWidgetHostViewBase::GetOverdrawBottomHeight() const {
+  return 0.f;
 }
 
 void RenderWidgetHostViewBase::SelectionChanged(const string16& text,
@@ -378,6 +399,14 @@ void RenderWidgetHostViewBase::SetShowingContextMenu(bool showing) {
   showing_context_menu_ = showing;
 }
 
+string16 RenderWidgetHostViewBase::GetSelectedText() const {
+  if (!selection_range_.IsValid())
+    return string16();
+  return selection_text_.substr(
+      selection_range_.GetMin() - selection_text_offset_,
+      selection_range_.length());
+}
+
 bool RenderWidgetHostViewBase::IsMouseLocked() {
   return mouse_locked_;
 }
@@ -385,6 +414,12 @@ bool RenderWidgetHostViewBase::IsMouseLocked() {
 void RenderWidgetHostViewBase::UnhandledWheelEvent(
     const WebKit::WebMouseWheelEvent& event) {
   // Most implementations don't need to do anything here.
+}
+
+InputEventAckState RenderWidgetHostViewBase::FilterInputEvent(
+    const WebKit::WebInputEvent& input_event) {
+  // By default, input events are simply forwarded to the renderer.
+  return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
 }
 
 void RenderWidgetHostViewBase::SetPopupType(WebKit::WebPopupType popup_type) {
@@ -414,63 +449,21 @@ void RenderWidgetHostViewBase::UpdateScreenInfo(gfx::NativeView view) {
     impl->SendScreenRects();
 
   gfx::Display display =
-      gfx::Screen::GetScreenFor(view)->GetDisplayNearestPoint(
-          GetViewBounds().origin());
-  if (current_display_area_ == display.bounds() &&
-      current_device_scale_factor_ == display.device_scale_factor())
+      gfx::Screen::GetScreenFor(view)->GetDisplayNearestWindow(view);
+  if (current_display_area_ == display.work_area() &&
+      current_device_scale_factor_ == display.device_scale_factor()) {
     return;
-  current_display_area_ = display.bounds();
+  }
+  bool device_scale_factor_changed =
+      current_device_scale_factor_ != display.device_scale_factor();
+  current_display_area_ = display.work_area();
   current_device_scale_factor_ = display.device_scale_factor();
-  if (impl)
+  if (impl) {
     impl->NotifyScreenInfoChanged();
+    if (device_scale_factor_changed)
+      impl->WasResized();
   }
-
-class BasicMouseWheelSmoothScrollGesture
-    : public SmoothScrollGesture {
- public:
-  BasicMouseWheelSmoothScrollGesture(bool scroll_down, int pixels_to_scroll,
-                                     int mouse_event_x, int mouse_event_y)
-      : scroll_down_(scroll_down),
-        pixels_scrolled_(0),
-        pixels_to_scroll_(pixels_to_scroll),
-        mouse_event_x_(mouse_event_x),
-        mouse_event_y_(mouse_event_y) { }
-
-  virtual bool ForwardInputEvents(base::TimeTicks now,
-                                  RenderWidgetHost* host) OVERRIDE {
-
-    if (pixels_scrolled_ >= pixels_to_scroll_)
-      return false;
-
-    WebKit::WebMouseWheelEvent event;
-    event.type = WebKit::WebInputEvent::MouseWheel;
-    // TODO(nduca): Figure out plausible value.
-    event.deltaY = scroll_down_ ? -10 : 10;
-    event.wheelTicksY = (scroll_down_ ? 1 : -1);
-    event.modifiers = 0;
-
-    // TODO(nduca): Figure out plausible x and y values.
-    event.globalX = 0;
-    event.globalY = 0;
-    event.x = mouse_event_x_;
-    event.y = mouse_event_y_;
-    event.windowX = event.x;
-    event.windowY = event.y;
-    host->ForwardWheelEvent(event);
-
-    pixels_scrolled_ += abs(event.deltaY);
-
-    return true;
-  }
-
- private:
-  virtual ~BasicMouseWheelSmoothScrollGesture() { }
-  bool scroll_down_;
-  int pixels_scrolled_;
-  int pixels_to_scroll_;
-  int mouse_event_x_;
-  int mouse_event_y_;
-};
+}
 
 SmoothScrollGesture* RenderWidgetHostViewBase::CreateSmoothScrollGesture(
     bool scroll_down, int pixels_to_scroll, int mouse_event_x,
@@ -480,8 +473,43 @@ SmoothScrollGesture* RenderWidgetHostViewBase::CreateSmoothScrollGesture(
 }
 
 void RenderWidgetHostViewBase::ProcessAckedTouchEvent(
-    const WebKit::WebTouchEvent& touch,
-    bool processed) {
+    const WebKit::WebTouchEvent& touch, InputEventAckState ack_result) {
+}
+
+// Platform implementation should override this method to allow frame
+// subscription. Frame subscriber is set to RenderProcessHost, which is
+// platform independent. It should be set to the specific presenter on each
+// platform.
+bool RenderWidgetHostViewBase::CanSubscribeFrame() const {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+// Base implementation for this method sets the subscriber to RenderProcessHost,
+// which is platform independent. Note: Implementation only support subscribing
+// to accelerated composited frames.
+void RenderWidgetHostViewBase::BeginFrameSubscription(
+    scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) {
+  RenderWidgetHostImpl* impl = NULL;
+  if (GetRenderWidgetHost())
+    impl = RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  if (!impl)
+    return;
+  RenderProcessHostImpl* render_process_host =
+      static_cast<RenderProcessHostImpl*>(impl->GetProcess());
+  render_process_host->BeginFrameSubscription(impl->GetRoutingID(),
+                                              subscriber.Pass());
+}
+
+void RenderWidgetHostViewBase::EndFrameSubscription() {
+  RenderWidgetHostImpl* impl = NULL;
+  if (GetRenderWidgetHost())
+    impl = RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  if (!impl)
+    return;
+  RenderProcessHostImpl* render_process_host =
+      static_cast<RenderProcessHostImpl*>(impl->GetProcess());
+  render_process_host->EndFrameSubscription(impl->GetRoutingID());
 }
 
 }  // namespace content

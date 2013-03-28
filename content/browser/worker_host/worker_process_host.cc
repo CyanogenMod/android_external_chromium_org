@@ -20,13 +20,14 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/browser_child_process_host_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/debugger/worker_devtools_manager.h"
-#include "content/browser/debugger/worker_devtools_message_filter.h"
+#include "content/browser/devtools/worker_devtools_manager.h"
+#include "content/browser/devtools/worker_devtools_message_filter.h"
 #include "content/browser/fileapi/fileapi_message_filter.h"
 #include "content/browser/in_process_webkit/indexed_db_dispatcher_host.h"
 #include "content/browser/mime_registry_message_filter.h"
 #include "content/browser/renderer_host/database_message_filter.h"
 #include "content/browser/renderer_host/file_utilities_message_filter.h"
+#include "content/browser/renderer_host/quota_dispatcher_host.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/socket_stream_dispatcher_host.h"
@@ -35,7 +36,6 @@
 #include "content/browser/worker_host/worker_message_filter.h"
 #include "content/browser/worker_host/worker_service_impl.h"
 #include "content/common/child_process_host_impl.h"
-#include "content/common/debug_flags.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -52,8 +52,28 @@
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/glue/resource_type.h"
 
+#if defined(OS_WIN)
+#include "content/common/sandbox_win.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
+#endif
+
 namespace content {
 namespace {
+
+#if defined(OS_WIN)
+// NOTE: changes to this class need to be reviewed by the security team.
+class WorkerSandboxedProcessLauncherDelegate
+    : public content::SandboxedProcessLauncherDelegate {
+ public:
+  WorkerSandboxedProcessLauncherDelegate() {}
+  virtual ~WorkerSandboxedProcessLauncherDelegate() {}
+
+  virtual void PreSpawnTarget(sandbox::TargetPolicy* policy,
+                              bool* success) {
+    AddBaseHandleClosePolicy(policy);
+  }
+};
+#endif  // OS_WIN
 
 // Helper class that we pass to SocketStreamDispatcherHost so that it can find
 // the right net::URLRequestContext for a request.
@@ -69,7 +89,7 @@ class URLRequestContextSelector
   virtual ~URLRequestContextSelector() {}
 
   virtual net::URLRequestContext* GetRequestContext(
-      ResourceType::Type resource_type) {
+      ResourceType::Type resource_type) OVERRIDE {
     if (resource_type == ResourceType::MEDIA)
       return media_url_request_context_->GetURLRequestContext();
     return url_request_context_->GetURLRequestContext();
@@ -136,7 +156,7 @@ bool WorkerProcessHost::Init(int render_process_id) {
   int flags = ChildProcessHost::CHILD_NORMAL;
 #endif
 
-  FilePath exe_path = ChildProcessHost::GetChildPath(flags);
+  base::FilePath exe_path = ChildProcessHost::GetChildPath(flags);
   if (exe_path.empty())
     return false;
 
@@ -191,7 +211,7 @@ bool WorkerProcessHost::Init(int render_process_id) {
 
   process_->Launch(
 #if defined(OS_WIN)
-      FilePath(),
+      new WorkerSandboxedProcessLauncherDelegate,
 #elif defined(OS_POSIX)
       use_zygote,
       base::EnvironmentVector(),
@@ -200,46 +220,6 @@ bool WorkerProcessHost::Init(int render_process_id) {
 
   ChildProcessSecurityPolicyImpl::GetInstance()->AddWorker(
       process_->GetData().id, render_process_id);
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableFileSystem)) {
-    // Grant most file permissions to this worker.
-    // PLATFORM_FILE_TEMPORARY, PLATFORM_FILE_HIDDEN and
-    // PLATFORM_FILE_DELETE_ON_CLOSE are not granted, because no existing API
-    // requests them.
-    // This is for the filesystem sandbox.
-    ChildProcessSecurityPolicyImpl::GetInstance()->GrantPermissionsForFile(
-        process_->GetData().id,
-        partition_.filesystem_context()->sandbox_provider()->new_base_path(),
-        base::PLATFORM_FILE_OPEN |
-        base::PLATFORM_FILE_CREATE |
-        base::PLATFORM_FILE_OPEN_ALWAYS |
-        base::PLATFORM_FILE_CREATE_ALWAYS |
-        base::PLATFORM_FILE_OPEN_TRUNCATED |
-        base::PLATFORM_FILE_READ |
-        base::PLATFORM_FILE_WRITE |
-        base::PLATFORM_FILE_EXCLUSIVE_READ |
-        base::PLATFORM_FILE_EXCLUSIVE_WRITE |
-        base::PLATFORM_FILE_ASYNC |
-        base::PLATFORM_FILE_WRITE_ATTRIBUTES |
-        base::PLATFORM_FILE_ENUMERATE);
-    // This is so that we can read and move stuff out of the old filesystem
-    // sandbox.
-    ChildProcessSecurityPolicyImpl::GetInstance()->GrantPermissionsForFile(
-        process_->GetData().id,
-        partition_.filesystem_context()->sandbox_provider()->old_base_path(),
-        base::PLATFORM_FILE_READ | base::PLATFORM_FILE_WRITE |
-            base::PLATFORM_FILE_WRITE_ATTRIBUTES |
-            base::PLATFORM_FILE_ENUMERATE);
-    // This is so that we can rename the old sandbox out of the way so that
-    // we know we've taken care of it.
-    ChildProcessSecurityPolicyImpl::GetInstance()->GrantPermissionsForFile(
-        process_->GetData().id,
-        partition_.filesystem_context()->sandbox_provider()->
-            renamed_old_base_path(),
-        base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_CREATE_ALWAYS |
-            base::PLATFORM_FILE_WRITE);
-  }
-
   CreateMessageFilters(render_process_id);
 
   return true;
@@ -258,6 +238,7 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
       process_->GetData().id, PROCESS_TYPE_WORKER, resource_context_,
       partition_.appcache_service(),
       blob_storage_context,
+      partition_.filesystem_context(),
       new URLRequestContextSelector(url_request_context,
                                     media_url_request_context));
   process_->GetHost()->AddFilter(resource_message_filter);
@@ -280,6 +261,10 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
   process_->GetHost()->AddFilter(new MimeRegistryMessageFilter());
   process_->GetHost()->AddFilter(
       new DatabaseMessageFilter(partition_.database_tracker()));
+  process_->GetHost()->AddFilter(new QuotaDispatcherHost(
+      process_->GetData().id,
+      partition_.quota_manager(),
+      GetContentClient()->browser()->CreateQuotaPermissionContext()));
 
   SocketStreamDispatcherHost* socket_stream_dispatcher_host =
       new SocketStreamDispatcherHost(
@@ -346,7 +331,7 @@ bool WorkerProcessHost::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowFileSystem, OnAllowFileSystem)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowIndexedDB, OnAllowIndexedDB)
     IPC_MESSAGE_UNHANDLED(handled = false)
-    IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP_EX()
 
   if (!msg_is_ok) {
     NOTREACHED();
@@ -531,7 +516,7 @@ void WorkerProcessHost::UpdateTitle() {
     display_title += *i;
   }
 
-  process_->SetName(ASCIIToUTF16(display_title));
+  process_->SetName(UTF8ToUTF16(display_title));
 }
 
 void WorkerProcessHost::DocumentDetached(WorkerMessageFilter* filter,

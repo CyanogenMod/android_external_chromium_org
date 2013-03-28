@@ -11,12 +11,13 @@
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 
 using content::BrowserThread;
 using extensions::APIPermission;
 using extensions::Extension;
+using extensions::Manifest;
 using WebKit::WebSecurityOrigin;
 using WebKit::WebString;
 
@@ -40,9 +41,9 @@ class ExtensionInfoMapTest : public testing::Test {
 // Returns a barebones test Extension object with the given name.
 static scoped_refptr<Extension> CreateExtension(const std::string& name) {
 #if defined(OS_WIN)
-  FilePath path(FILE_PATH_LITERAL("c:\\foo"));
+  base::FilePath path(FILE_PATH_LITERAL("c:\\foo"));
 #elif defined(OS_POSIX)
-  FilePath path(FILE_PATH_LITERAL("/foo"));
+  base::FilePath path(FILE_PATH_LITERAL("/foo"));
 #endif
 
   DictionaryValue manifest;
@@ -51,7 +52,7 @@ static scoped_refptr<Extension> CreateExtension(const std::string& name) {
 
   std::string error;
   scoped_refptr<Extension> extension = Extension::Create(
-      path.AppendASCII(name), Extension::INVALID, manifest,
+      path.AppendASCII(name), Manifest::INVALID_LOCATION, manifest,
       Extension::NO_FLAGS, &error);
   EXPECT_TRUE(extension) << error;
 
@@ -60,7 +61,7 @@ static scoped_refptr<Extension> CreateExtension(const std::string& name) {
 
 static scoped_refptr<Extension> LoadManifest(const std::string& dir,
                                              const std::string& test_file) {
-  FilePath path;
+  base::FilePath path;
   PathService::Get(chrome::DIR_TEST_DATA, &path);
   path = path.AppendASCII("extensions")
              .AppendASCII(dir)
@@ -73,7 +74,8 @@ static scoped_refptr<Extension> LoadManifest(const std::string& dir,
 
   std::string error;
   scoped_refptr<Extension> extension = Extension::Create(
-      path, Extension::INVALID, *static_cast<DictionaryValue*>(result.get()),
+      path, Manifest::INVALID_LOCATION,
+      *static_cast<DictionaryValue*>(result.get()),
       Extension::NO_FLAGS, &error);
   EXPECT_TRUE(extension) << error;
 

@@ -11,7 +11,6 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/prerender_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
@@ -23,7 +22,10 @@
 #include "grit/generated_resources.h"
 #include "grit/renderer_resources.h"
 #include "grit/webkit_strings.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebPoint.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
@@ -35,11 +37,9 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCaseSensitivity.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebPoint.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/webui/jstemplate_builder.h"
 #include "webkit/glue/webpreferences.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/webview_plugin.h"
@@ -109,10 +109,14 @@ PluginPlaceholder* PluginPlaceholder::CreateMissingPlugin(
           IDR_BLOCKED_PLUGIN_HTML));
 
   DictionaryValue values;
+#if defined(ENABLE_PLUGIN_INSTALLATION)
   values.SetString("message", l10n_util::GetStringUTF8(IDS_PLUGIN_SEARCHING));
+#else
+  values.SetString("message",
+      l10n_util::GetStringUTF8(IDS_PLUGIN_NOT_SUPPORTED));
+#endif
 
-  std::string html_data =
-      jstemplate_builder::GetI18nTemplateHtml(template_html, &values);
+  std::string html_data = webui::GetI18nTemplateHtml(template_html, &values);
 
   // |missing_plugin| will destroy itself when its WebViewPlugin is going away.
   PluginPlaceholder* missing_plugin = new PluginPlaceholder(
@@ -122,15 +126,13 @@ PluginPlaceholder* PluginPlaceholder::CreateMissingPlugin(
   RenderThread::Get()->Send(new ChromeViewHostMsg_FindMissingPlugin(
       missing_plugin->routing_id(), missing_plugin->CreateRoutingId(),
       params.mimeType.utf8()));
-#else
-  missing_plugin->OnDidNotFindMissingPlugin();
 #endif
   return missing_plugin;
 }
 
 PluginPlaceholder* PluginPlaceholder::CreateErrorPlugin(
     RenderView* render_view,
-    const FilePath& file_path) {
+    const base::FilePath& file_path) {
   DictionaryValue values;
   values.SetString("message",
                    l10n_util::GetStringUTF8(IDS_PLUGIN_INITIALIZATION_ERROR));
@@ -138,8 +140,7 @@ PluginPlaceholder* PluginPlaceholder::CreateErrorPlugin(
   const base::StringPiece template_html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           IDR_BLOCKED_PLUGIN_HTML));
-  std::string html_data =
-      jstemplate_builder::GetI18nTemplateHtml(template_html, &values);
+  std::string html_data = webui::GetI18nTemplateHtml(template_html, &values);
 
   WebPluginParams params;
   // |missing_plugin| will destroy itself when its WebViewPlugin is going away.
@@ -173,8 +174,7 @@ PluginPlaceholder* PluginPlaceholder::CreateBlockedPlugin(
 
   DCHECK(!template_html.empty()) << "unable to load template. ID: "
                                  << template_id;
-  std::string html_data = jstemplate_builder::GetI18nTemplateHtml(
-      template_html, &values);
+  std::string html_data = webui::GetI18nTemplateHtml(template_html, &values);
 
   // |blocked_plugin| will destroy itself when its WebViewPlugin is going away.
   PluginPlaceholder* blocked_plugin = new PluginPlaceholder(
@@ -196,8 +196,7 @@ PluginPlaceholder* PluginPlaceholder::CreateMobileYoutubePlugin(
 
   DictionaryValue values;
   values.SetString("video_id", GetYoutubeVideoId(params));
-  std::string html_data = jstemplate_builder::GetI18nTemplateHtml(
-      template_html, &values);
+  std::string html_data = webui::GetI18nTemplateHtml(template_html, &values);
 
   // |youtube_plugin| will destroy itself when its WebViewPlugin is going away.
   PluginPlaceholder* youtube_plugin = new PluginPlaceholder(
@@ -407,11 +406,11 @@ void PluginPlaceholder::WillDestroyPlugin() {
   delete this;
 }
 
+#if defined(ENABLE_PLUGIN_INSTALLATION)
 void PluginPlaceholder::OnDidNotFindMissingPlugin() {
   SetMessage(l10n_util::GetStringUTF16(IDS_PLUGIN_NOT_FOUND));
 }
 
-#if defined(ENABLE_PLUGIN_INSTALLATION)
 void PluginPlaceholder::OnFoundMissingPlugin(const string16& plugin_name) {
   if (status_->value == ChromeViewHostMsg_GetPluginInfo_Status::kNotFound)
     SetMessage(l10n_util::GetStringFUTF16(IDS_PLUGIN_FOUND, plugin_name));
@@ -614,7 +613,7 @@ void PluginPlaceholder::OpenYoutubeUrlCallback(const CppArgumentList& args,
   request.initialize();
   request.setURL(url);
   render_view()->LoadURLExternally(
-      frame_, request, WebKit::WebNavigationPolicyCurrentTab);
+      frame_, request, WebKit::WebNavigationPolicyNewForegroundTab);
 }
 
 bool PluginPlaceholder::IsValidYouTubeVideo(const std::string& path) {

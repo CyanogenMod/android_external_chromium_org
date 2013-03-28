@@ -4,7 +4,7 @@
 
 #include "remoting/host/audio_capturer_linux.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "remoting/proto/audio.pb.h"
@@ -22,16 +22,22 @@ base::LazyInstance<scoped_refptr<AudioPipeReader> >::Leaky
 
 }  // namespace
 
+// TODO(wez): Remove this and have the DesktopEnvironmentFactory own the
+// AudioPipeReader rather than having it process-global.
+// See crbug.com/161373 and crbug.com/104544.
 void AudioCapturerLinux::InitializePipeReader(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    const FilePath& pipe_name) {
-  g_pulseaudio_pipe_sink_reader.Get() =
-      new AudioPipeReader(task_runner, pipe_name);
+    const base::FilePath& pipe_name) {
+  scoped_refptr<AudioPipeReader> pipe_reader;
+  if (!pipe_name.empty())
+    pipe_reader = AudioPipeReader::Create(task_runner, pipe_name);
+  g_pulseaudio_pipe_sink_reader.Get() = pipe_reader;
 }
 
 AudioCapturerLinux::AudioCapturerLinux(
     scoped_refptr<AudioPipeReader> pipe_reader)
-    : pipe_reader_(pipe_reader) {
+    : pipe_reader_(pipe_reader),
+      silence_detector_(0) {
 }
 
 AudioCapturerLinux::~AudioCapturerLinux() {
@@ -39,6 +45,7 @@ AudioCapturerLinux::~AudioCapturerLinux() {
 
 bool AudioCapturerLinux::Start(const PacketCapturedCallback& callback) {
   callback_ = callback;
+  silence_detector_.Reset(kSamplingRate, AudioPacket::CHANNELS_STEREO);
   pipe_reader_->AddObserver(this);
   return true;
 }
@@ -55,6 +62,12 @@ bool AudioCapturerLinux::IsStarted() {
 void AudioCapturerLinux::OnDataRead(
     scoped_refptr<base::RefCountedString> data) {
   DCHECK(!callback_.is_null());
+
+  if (silence_detector_.IsSilence(
+          reinterpret_cast<const int16*>(data->data().data()),
+          data->data().size() / sizeof(int16))) {
+    return;
+  }
 
   scoped_ptr<AudioPacket> packet(new AudioPacket());
   packet->add_data(data->data());

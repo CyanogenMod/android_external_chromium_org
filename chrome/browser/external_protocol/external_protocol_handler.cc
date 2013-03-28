@@ -9,12 +9,13 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/platform_util.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -172,6 +173,9 @@ void ExternalProtocolHandler::PrepopulateDictionary(DictionaryValue* win_pref) {
     "mailto",
     "news",
     "snews",
+#if defined(OS_WIN)
+    "ms-windows-store",
+#endif
   };
 
   bool should_block;
@@ -293,8 +297,8 @@ void ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(const GURL& url) {
 }
 
 // static
-void ExternalProtocolHandler::RegisterPrefs(PrefService* prefs) {
-  prefs->RegisterDictionaryPref(prefs::kExcludedSchemes);
+void ExternalProtocolHandler::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterDictionaryPref(prefs::kExcludedSchemes);
 }
 
 // static

@@ -10,7 +10,7 @@
 
 // Used for observing function of the backend datasource for this page by
 // tests.
-var webui_responded_ = false;
+var webuiResponded = false;
 
 cr.define('extensions', function() {
   var ExtensionsList = options.ExtensionsList;
@@ -87,6 +87,14 @@ cr.define('extensions', function() {
       $('dev-controls').addEventListener('webkitTransitionEnd',
           this.handleDevControlsTransitionEnd_.bind(this));
 
+      $('unlock-button').addEventListener('click', function() {
+        chrome.send('setElevated', [true]);
+      });
+
+      $('lock-button').addEventListener('click', function() {
+        chrome.send('setElevated', [false]);
+      });
+
       // Set up the three dev mode buttons (load unpacked, pack and update).
       $('load-unpacked').addEventListener('click',
           this.handleLoadUnpackedExtension_.bind(this));
@@ -125,7 +133,7 @@ cr.define('extensions', function() {
           this.showExtensionCommandsConfigUi_();
       }
 
-      preventDefaultOnPoundLinkClicks();  // From shared/js/util.js.
+      preventDefaultOnPoundLinkClicks();  // From webui/js/util.js.
     },
 
     /**
@@ -226,7 +234,7 @@ cr.define('extensions', function() {
       document.documentElement.classList.remove('loading');
     }, 0);
 
-    webui_responded_ = true;
+    webuiResponded = true;
 
     if (extensionsData.extensions.length > 0) {
       // Enforce order specified in the data or (if equal) then sort by
@@ -244,14 +252,19 @@ cr.define('extensions', function() {
 
     var pageDiv = $('extension-settings');
     var marginTop = 0;
-    if (extensionsData.managedMode) {
+    if (extensionsData.profileIsManaged) {
+      pageDiv.classList.add('profile-is-managed');
+    } else {
+      pageDiv.classList.remove('profile-is-managed');
+    }
+    if (extensionsData.profileIsManaged && !extensionsData.profileIsElevated) {
       pageDiv.classList.add('showing-banner');
-      pageDiv.classList.add('managed-mode');
+      pageDiv.classList.add('managed-user-locked');
       $('toggle-dev-on').disabled = true;
       marginTop += 45;
     } else {
       pageDiv.classList.remove('showing-banner');
-      pageDiv.classList.remove('managed-mode');
+      pageDiv.classList.remove('managed-user-locked');
       $('toggle-dev-on').disabled = false;
     }
 
@@ -262,7 +275,7 @@ cr.define('extensions', function() {
     }
     pageDiv.style.marginTop = marginTop + 'px';
 
-    if (extensionsData.developerMode && !extensionsData.managedMode) {
+    if (extensionsData.developerMode) {
       pageDiv.classList.add('dev-mode');
       $('toggle-dev-on').checked = true;
       $('dev-controls').hidden = false;

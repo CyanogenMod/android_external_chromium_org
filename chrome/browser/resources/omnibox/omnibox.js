@@ -25,6 +25,9 @@ cr.define('omniboxDebug', function() {
   function initialize() {
     $('omnibox-input-form').addEventListener(
         'submit', startOmniboxQuery, false);
+    $('prevent-inline-autocomplete').addEventListener(
+        'change', startOmniboxQuery);
+    $('prefer-keyword').addEventListener('change', startOmniboxQuery);
     $('show-details').addEventListener('change', refresh);
     $('show-incomplete-results').addEventListener('change', refresh);
     $('show-all-providers').addEventListener('change', refresh);
@@ -39,6 +42,14 @@ cr.define('omniboxDebug', function() {
   var progressiveAutocompleteResults = [];
 
   /**
+   * @type {number} the value for cursor position we sent with the most
+   *     recent request.  We need to remember this in order to display it
+   *     in the output; otherwise it's hard or impossible to determine
+   *     from screen captures or print-to-PDFs.
+   */
+  var cursorPositionUsed = -1;
+
+  /**
    * Extracts the input text from the text field and sends it to the
    * C++ portion of chrome to handle.  The C++ code will iteratively
    * call handleNewAutocompleteResult as results come in.
@@ -46,8 +57,17 @@ cr.define('omniboxDebug', function() {
   function startOmniboxQuery(event) {
     // First, clear the results of past calls (if any).
     progressiveAutocompleteResults = [];
-    // Then, call chrome with a one-element list: the value in the text box.
-    chrome.send('startOmniboxQuery', [$('input-text').value]);
+    // Then, call chrome with a four-element list:
+    // - first element: the value in the text box
+    // - second element: the location of the cursor in the text box
+    // - third element: the value of prevent-inline-autocomplete
+    // - forth element: the value of prefer-keyword
+    cursorPositionUsed = $('input-text').selectionEnd;
+    chrome.send('startOmniboxQuery', [
+        $('input-text').value,
+        cursorPositionUsed,
+        $('prevent-inline-autocomplete').checked,
+        $('prefer-keyword').checked]);
     // Cancel the submit action.  i.e., don't submit the form.  (We handle
     // display the results solely with Javascript.)
     event.preventDefault();
@@ -248,6 +268,8 @@ cr.define('omniboxDebug', function() {
    * {
    *   'done': false,
    *   'time_since_omnibox_started_ms': 15,
+   *   'host': 'mai',
+   *   'is_typed_host': false,
    *   'combined_results' : {
    *     'num_items': 4,
    *     'item_0': {
@@ -284,6 +306,11 @@ cr.define('omniboxDebug', function() {
     var showIncompleteResults = $('show-incomplete-results').checked;
     var showPerProviderResults = $('show-all-providers').checked;
 
+    // Always output cursor position.
+    var p = document.createElement('p');
+    p.textContent = 'cursor position = ' + cursorPositionUsed;
+    output.appendChild(p);
+
     // Output the result-level features in detailed mode and in
     // show incomplete results mode.  We do the latter because without
     // these result-level features, one can't make sense of each
@@ -296,6 +323,15 @@ cr.define('omniboxDebug', function() {
       var p2 = document.createElement('p');
       p2.textContent = 'all providers done = ' + result.done;
       output.appendChild(p2);
+      var p3 = document.createElement('p');
+      p3.textContent = 'host = ' + result.host;
+      if ('is_typed_host' in result) {
+        // Only output the is_typed_host information if available.  (It may
+        // be missing if the history database lookup failed.)
+        p3.textContent = p3.textContent + ' has is_typed_host = ' +
+            result.is_typed_host;
+      }
+      output.appendChild(p3);
     }
 
     // Combined results go after the lines below.

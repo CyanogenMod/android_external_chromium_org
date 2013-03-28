@@ -2,40 +2,50 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef WebFloatAnimationCurveImpl_h
-#define WebFloatAnimationCurveImpl_h
+#ifndef WEBKIT_COMPOSITOR_BINDINGS_WEB_FLOAT_ANIMATION_CURVE_IMPL_H_
+#define WEBKIT_COMPOSITOR_BINDINGS_WEB_FLOAT_ANIMATION_CURVE_IMPL_H_
 
 #include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFloatAnimationCurve.h"
+#include "webkit/compositor_bindings/webkit_compositor_bindings_export.h"
 
 namespace cc {
 class AnimationCurve;
 class KeyframedFloatAnimationCurve;
 }
 
-namespace WebKit {
+namespace WebKit { struct WebFloatKeyframe; }
 
-class WebFloatAnimationCurveImpl : public WebFloatAnimationCurve {
-public:
-    WebFloatAnimationCurveImpl();
-    virtual ~WebFloatAnimationCurveImpl();
+namespace webkit {
 
-    // WebAnimationCurve implementation.
-    virtual AnimationCurveType type() const OVERRIDE;
+class WebFloatAnimationCurveImpl : public WebKit::WebFloatAnimationCurve {
+ public:
+  WEBKIT_COMPOSITOR_BINDINGS_EXPORT WebFloatAnimationCurveImpl();
+  virtual ~WebFloatAnimationCurveImpl();
 
-    // WebFloatAnimationCurve implementation.
-    virtual void add(const WebFloatKeyframe&) OVERRIDE;
-    virtual void add(const WebFloatKeyframe&, TimingFunctionType) OVERRIDE;
-    virtual void add(const WebFloatKeyframe&, double x1, double y1, double x2, double y2) OVERRIDE;
+  // WebAnimationCurve implementation.
+  virtual AnimationCurveType type() const;
 
-    virtual float getValue(double time) const OVERRIDE;
+  // WebFloatAnimationCurve implementation.
+  virtual void add(const WebKit::WebFloatKeyframe& keyframe);
+  virtual void add(const WebKit::WebFloatKeyframe& keyframe,
+                   TimingFunctionType type);
+  virtual void add(const WebKit::WebFloatKeyframe& keyframe,
+                   double x1,
+                   double y1,
+                   double x2,
+                   double y2);
 
-    scoped_ptr<cc::AnimationCurve> cloneToAnimationCurve() const;
+  virtual float getValue(double time) const;
 
-private:
-    scoped_ptr<cc::KeyframedFloatAnimationCurve> m_curve;
+  scoped_ptr<cc::AnimationCurve> CloneToAnimationCurve() const;
+
+ private:
+  scoped_ptr<cc::KeyframedFloatAnimationCurve> curve_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebFloatAnimationCurveImpl);
 };
 
-}
+}  // namespace webkit
 
-#endif // WebFloatAnimationCurveImpl_h
+#endif  // WEBKIT_COMPOSITOR_BINDINGS_WEB_FLOAT_ANIMATION_CURVE_IMPL_H_

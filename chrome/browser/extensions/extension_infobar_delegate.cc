@@ -4,17 +4,34 @@
 
 #include "chrome/browser/extensions/extension_infobar_delegate.h"
 
-#include "chrome/browser/api/infobars/infobar_service.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/infobars/infobar.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+
+
+ExtensionInfoBarDelegate::~ExtensionInfoBarDelegate() {
+  if (observer_)
+    observer_->OnDelegateDeleted();
+}
+
+// static
+void ExtensionInfoBarDelegate::Create(InfoBarService* infobar_service,
+                                      Browser* browser,
+                                      const extensions::Extension* extension,
+                                      const GURL& url,
+                                      int height) {
+  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
+      new ExtensionInfoBarDelegate(browser, infobar_service, extension, url,
+                                   height)));
+}
 
 ExtensionInfoBarDelegate::ExtensionInfoBarDelegate(
     Browser* browser,
@@ -52,11 +69,6 @@ ExtensionInfoBarDelegate::ExtensionInfoBarDelegate(
   height_ = std::min(2 * default_height, height_);
   if (height_ == 0)
     height_ = default_height;
-}
-
-ExtensionInfoBarDelegate::~ExtensionInfoBarDelegate() {
-  if (observer_)
-    observer_->OnDelegateDeleted();
 }
 
 bool ExtensionInfoBarDelegate::EqualsDelegate(InfoBarDelegate* delegate) const {

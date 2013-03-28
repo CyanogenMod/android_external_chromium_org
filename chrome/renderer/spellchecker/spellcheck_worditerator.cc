@@ -14,10 +14,10 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
-#include "unicode/normlzr.h"
-#include "unicode/schriter.h"
-#include "unicode/uscript.h"
-#include "unicode/ulocdata.h"
+#include "third_party/icu/public/common/unicode/normlzr.h"
+#include "third_party/icu/public/common/unicode/schriter.h"
+#include "third_party/icu/public/common/unicode/uscript.h"
+#include "third_party/icu/public/i18n/unicode/ulocdata.h"
 
 // SpellcheckCharAttribute implementation:
 
@@ -312,6 +312,11 @@ bool SpellcheckWordIterator::Initialize(
   UErrorCode open_status = U_ZERO_ERROR;
   UParseError parse_status;
   string16 rule(attribute->GetRuleSet(allow_contraction));
+
+  // If there is no rule set, the attributes were invalid.
+  if (rule.empty())
+    return false;
+
   iterator_ = ubrk_openRules(rule.c_str(), rule.length(), NULL, 0,
                              &parse_status, &open_status);
   if (U_FAILURE(open_status))

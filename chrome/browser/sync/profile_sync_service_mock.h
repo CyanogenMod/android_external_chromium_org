@@ -63,7 +63,7 @@ class ProfileSyncServiceMock : public ProfileSyncService {
                     browser_sync::ChangeProcessor*));
   MOCK_METHOD1(DeactivateDataType, void(syncer::ModelType));
 
-  MOCK_METHOD0(InitializeBackend, void());
+  MOCK_METHOD0(StartUp, void());
   MOCK_METHOD1(AddObserver, void(Observer*));
   MOCK_METHOD1(RemoveObserver, void(Observer*));
   MOCK_METHOD0(GetJsController, base::WeakPtr<syncer::JsController>());
@@ -86,9 +86,11 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   MOCK_CONST_METHOD0(GetLastSyncedTimeString, string16());
   MOCK_CONST_METHOD0(HasUnrecoverableError, bool());
   MOCK_CONST_METHOD0(sync_initialized, bool());
+  MOCK_CONST_METHOD0(IsStartSuppressed, bool());
   MOCK_CONST_METHOD0(waiting_for_auth, bool());
   MOCK_METHOD1(OnActionableError, void(
       const syncer::SyncProtocolError&));
+  MOCK_METHOD1(SetSetupInProgress, void(bool));
 
   // DataTypeManagerObserver mocks.
   MOCK_METHOD0(OnConfigureBlocked, void());
@@ -98,6 +100,7 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   MOCK_METHOD0(OnConfigureStart, void());
 
   MOCK_METHOD0(IsSyncEnabledAndLoggedIn, bool());
+  MOCK_CONST_METHOD0(IsManaged, bool());
   MOCK_METHOD0(IsSyncTokenAvailable, bool());
 
   MOCK_CONST_METHOD0(IsPassphraseRequired, bool());

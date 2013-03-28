@@ -5,26 +5,33 @@
 #include "ui/aura/focus_manager.h"
 
 #include "ui/aura/client/activation_client.h"
-#include "ui/aura/focus_change_observer.h"
+#include "ui/aura/client/focus_change_observer.h"
+#include "ui/aura/root_window.h"
 #include "ui/aura/window_delegate.h"
 
 namespace aura {
+
+////////////////////////////////////////////////////////////////////////////////
+// FocusManager, public:
+
 FocusManager::FocusManager() : focused_window_(NULL) {
 }
 
 FocusManager::~FocusManager() {
 }
 
-void FocusManager::AddObserver(FocusChangeObserver* observer) {
+////////////////////////////////////////////////////////////////////////////////
+// FocusManager, client::FocusClient implementation:
+
+void FocusManager::AddObserver(client::FocusChangeObserver* observer) {
   observers_.AddObserver(observer);
 }
 
-void FocusManager::RemoveObserver(FocusChangeObserver* observer) {
+void FocusManager::RemoveObserver(client::FocusChangeObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void FocusManager::SetFocusedWindow(Window* focused_window,
-                                    const ui::Event* event) {
+void FocusManager::FocusWindow(Window* focused_window) {
   if (focused_window == focused_window_)
     return;
   if (focused_window && !focused_window->CanFocus())
@@ -38,29 +45,61 @@ void FocusManager::SetFocusedWindow(Window* focused_window,
     DCHECK(root);
     if (client::GetActivationClient(root) &&
         !client::GetActivationClient(root)->OnWillFocusWindow(
-            focused_window, event)) {
+            focused_window, NULL)) {
       return;
     }
   }
 
   Window* old_focused_window = focused_window_;
   focused_window_ = focused_window;
-  if (old_focused_window && old_focused_window->delegate())
-    old_focused_window->delegate()->OnBlur();
-  if (focused_window_ && focused_window_->delegate())
-    focused_window_->delegate()->OnFocus(old_focused_window);
-  if (focused_window_) {
-    FOR_EACH_OBSERVER(FocusChangeObserver, observers_,
-                      OnWindowFocused(focused_window));
-  }
+
+  FOR_EACH_OBSERVER(client::FocusChangeObserver, observers_,
+                    OnWindowFocused(focused_window, old_focused_window));
+  client::FocusChangeObserver* observer =
+      client::GetFocusChangeObserver(old_focused_window);
+  if (observer)
+    observer->OnWindowFocused(focused_window_, old_focused_window);
+  observer = client::GetFocusChangeObserver(focused_window_);
+  if (observer)
+    observer->OnWindowFocused(focused_window_, old_focused_window);
+}
+
+void FocusManager::ResetFocusWithinActiveWindow(Window* window) {
+  FocusWindow(window);
 }
 
 Window* FocusManager::GetFocusedWindow() {
   return focused_window_;
 }
 
-bool FocusManager::IsFocusedWindow(const Window* window) const {
-  return focused_window_ == window;
+void FocusManager::OnWindowHiddenInRootWindow(
+    aura::Window* window,
+    aura::RootWindow* root_window,
+    bool destroyed) {
+  Window* focused_window =
+      client::GetFocusClient(root_window)->GetFocusedWindow();
+  if (window->Contains(focused_window)) {
+    Window* focus_to = window->transient_parent();
+    if (focus_to) {
+      // Has to be removed from the transient parent before focusing,
+      // otherwise |window| will be focused again.
+      if (destroyed)
+        focus_to->RemoveTransientChild(window);
+    } else {
+      // If the invisible view has no visible transient window, focus to the
+      // topmost visible parent window.
+      focus_to = window->parent();
+    }
+    if (focus_to &&
+        (!focus_to->IsVisible() ||
+          !focus_to->CanFocus() ||
+          (client::GetActivationClient(root_window) &&
+          !client::GetActivationClient(root_window)->OnWillFocusWindow(
+              focus_to, NULL)))) {
+      focus_to = NULL;
+    }
+    client::GetFocusClient(root_window)->FocusWindow(focus_to);
+  }
 }
 
-}  // namespace ash
+}  // namespace aura

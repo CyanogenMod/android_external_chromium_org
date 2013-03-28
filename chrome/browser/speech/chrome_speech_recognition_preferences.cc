@@ -5,12 +5,13 @@
 #include "chrome/browser/speech/chrome_speech_recognition_preferences.h"
 
 #include "base/bind.h"
+#include "base/prefs/pref_service.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 
@@ -36,8 +37,16 @@ ChromeSpeechRecognitionPreferences::Factory::GetForProfile(Profile* profile) {
   DCHECK(profile);
   // GetServiceForProfile will let us instantiate a new (if not already cached
   // for the profile) Service through BuildServiceInstanceFor method.
-  return static_cast<ChromeSpeechRecognitionPreferences::Service*>(
-        GetServiceForProfile(profile, true))->GetPreferences();
+  ChromeSpeechRecognitionPreferences::Service* service =
+      static_cast<ChromeSpeechRecognitionPreferences::Service*>(
+          GetServiceForProfile(profile, true));
+
+  if (!service) {
+    // Incognito won't have this service.
+    return NULL;
+  }
+
+  return service->GetPreferences();
 }
 
 ChromeSpeechRecognitionPreferences::Factory::Factory()
@@ -57,15 +66,15 @@ ChromeSpeechRecognitionPreferences::Factory::BuildServiceInstanceFor(
 }
 
 void ChromeSpeechRecognitionPreferences::Factory::RegisterUserPrefs(
-    PrefService* prefs) {
+    PrefRegistrySyncable* prefs) {
   prefs->RegisterBooleanPref(
       prefs::kSpeechRecognitionFilterProfanities,
       kDefaultFilterProfanities,
-      PrefService::UNSYNCABLE_PREF);
+      PrefRegistrySyncable::UNSYNCABLE_PREF);
 
   prefs->RegisterListPref(
       prefs::kSpeechRecognitionTrayNotificationShownContexts,
-      PrefService::UNSYNCABLE_PREF);
+      PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 bool ChromeSpeechRecognitionPreferences::Factory::
@@ -103,12 +112,19 @@ ChromeSpeechRecognitionPreferences::Service::GetPreferences() const {
 
 scoped_refptr<ChromeSpeechRecognitionPreferences>
 ChromeSpeechRecognitionPreferences::GetForProfile(Profile* profile) {
+  scoped_refptr<ChromeSpeechRecognitionPreferences> ret;
   if (profile) {
-    return Factory::GetInstance()->GetForProfile(profile);
-  } else {
-    // Create a detached preferences object if no profile is provided.
-    return new ChromeSpeechRecognitionPreferences(NULL);
+    // Note that when in incognito, GetForProfile will return NULL.
+    // We catch that case below and return the default preferences.
+    ret = Factory::GetInstance()->GetForProfile(profile);
   }
+
+  if (!ret) {
+    // Create a detached preferences object if no profile is provided.
+    ret = new ChromeSpeechRecognitionPreferences(NULL);
+  }
+
+  return ret;
 }
 
 ChromeSpeechRecognitionPreferences::ChromeSpeechRecognitionPreferences(
@@ -123,12 +139,17 @@ ChromeSpeechRecognitionPreferences::ChromeSpeechRecognitionPreferences(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   pref_change_registrar_->Init(profile_->GetPrefs());
 
-  ReloadPreference(prefs::kSpeechRecognitionFilterProfanities);
-  pref_change_registrar_->Add(prefs::kSpeechRecognitionFilterProfanities, this);
-
-  ReloadPreference(prefs::kSpeechRecognitionTrayNotificationShownContexts);
+  ReloadFilterProfanities();
   pref_change_registrar_->Add(
-      prefs::kSpeechRecognitionTrayNotificationShownContexts, this);
+      prefs::kSpeechRecognitionFilterProfanities,
+      base::Bind(&ChromeSpeechRecognitionPreferences::ReloadFilterProfanities,
+                 base::Unretained(this)));
+
+  ReloadNotificationsShown();
+  pref_change_registrar_->Add(
+      prefs::kSpeechRecognitionTrayNotificationShownContexts,
+      base::Bind(&ChromeSpeechRecognitionPreferences::ReloadNotificationsShown,
+                 base::Unretained(this)));
 }
 
 ChromeSpeechRecognitionPreferences::~ChromeSpeechRecognitionPreferences() {
@@ -139,13 +160,6 @@ void ChromeSpeechRecognitionPreferences::DetachFromProfile() {
   DCHECK(profile_);
   pref_change_registrar_.reset();
   profile_ = NULL;
-}
-
-void ChromeSpeechRecognitionPreferences::OnPreferenceChanged(
-    PrefServiceBase* service,
-    const std::string& pref_name) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  ReloadPreference(pref_name);
 }
 
 bool ChromeSpeechRecognitionPreferences::FilterProfanities() const {
@@ -193,19 +207,17 @@ void ChromeSpeechRecognitionPreferences::SetHasShownSecurityNotification(
   }
 }
 
-void ChromeSpeechRecognitionPreferences::ReloadPreference(
-    const std::string& key) {
+void ChromeSpeechRecognitionPreferences::ReloadFilterProfanities() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(profile_);
   base::AutoLock write_lock(preferences_lock_);
-  PrefService* pref_service = profile_->GetPrefs();
-  if (key == prefs::kSpeechRecognitionFilterProfanities) {
-    filter_profanities_ =
-          pref_service->GetBoolean(prefs::kSpeechRecognitionFilterProfanities);
-  } else if (key == prefs::kSpeechRecognitionTrayNotificationShownContexts) {
-    const base::ListValue* pref_list = profile_->GetPrefs()->GetList(
-        prefs::kSpeechRecognitionTrayNotificationShownContexts);
-    DCHECK(pref_list);
-    notifications_shown_.reset(pref_list->DeepCopy());
-  }
+  filter_profanities_ = profile_->GetPrefs()->GetBoolean(
+      prefs::kSpeechRecognitionFilterProfanities);
+}
+
+void ChromeSpeechRecognitionPreferences::ReloadNotificationsShown() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  base::AutoLock write_lock(preferences_lock_);
+  const base::ListValue* pref_list = profile_->GetPrefs()->GetList(
+      prefs::kSpeechRecognitionTrayNotificationShownContexts);
+  notifications_shown_.reset(pref_list->DeepCopy());
 }

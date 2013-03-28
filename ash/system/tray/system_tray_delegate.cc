@@ -9,8 +9,10 @@
 namespace ash {
 
 NetworkIconInfo::NetworkIconInfo()
-    : highlight(false),
-      tray_icon_visible(true) {
+    : connecting(false),
+      connected(false),
+      tray_icon_visible(true),
+      is_cellular(false) {
 }
 
 NetworkIconInfo::~NetworkIconInfo() {

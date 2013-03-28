@@ -8,19 +8,27 @@
 #include <string>
 #include <vector>
 
+#include "base/lazy_instance.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_piece.h"
-#include "base/string_split.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/strings/string_split.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/common/extensions/api/i18n.h"
+#include "chrome/common/extensions/api/i18n/default_locale_handler.h"
+#include "chrome/common/pref_names.h"
 
 namespace GetAcceptLanguages = extensions::api::i18n::GetAcceptLanguages;
+
+namespace extensions {
+
+namespace {
 
 // Errors.
 static const char kEmptyAcceptLanguagesError[] = "accept-languages is empty.";
 
-bool GetAcceptLanguagesFunction::RunImpl() {
+}
+
+bool I18nGetAcceptLanguagesFunction::RunImpl() {
   std::string accept_languages =
       profile()->GetPrefs()->GetString(prefs::kAcceptLanguages);
   // Currently, there are 2 ways to set browser's accept-languages: through UI
@@ -51,3 +59,20 @@ bool GetAcceptLanguagesFunction::RunImpl() {
   results_ = GetAcceptLanguages::Results::Create(languages);
   return true;
 }
+
+I18nAPI::I18nAPI(Profile* profile) {
+  (new DefaultLocaleHandler)->Register();
+}
+
+I18nAPI::~I18nAPI() {
+}
+
+static base::LazyInstance<ProfileKeyedAPIFactory<I18nAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+ProfileKeyedAPIFactory<I18nAPI>* I18nAPI::GetFactoryInstance() {
+  return &g_factory.Get();
+}
+
+}  // namespace extensions

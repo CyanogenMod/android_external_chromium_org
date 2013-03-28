@@ -6,7 +6,7 @@
 
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "grit/theme_resources.h"
+#include "grit/ash_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -84,7 +84,7 @@ class NetworkMenuIconTest : public testing::Test {
     cros_ = CrosLibrary::Get()->GetNetworkLibrary();
     // Ethernet connected = WIRED icon, no badges.
     ethernet_connected_image_ = NetworkMenuIcon::GenerateImageFromComponents(
-        *rb_.GetImageSkiaNamed(IDR_STATUSBAR_WIRED),
+        *rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_WIRED),
         NULL, NULL, NULL, NULL);
     // Wifi connected, strength = 100% = ARCS4 icon, no badges.
     wifi_connected_100_image_ = NetworkMenuIcon::GenerateImageFromComponents(
@@ -98,8 +98,8 @@ class NetworkMenuIconTest : public testing::Test {
         NetworkMenuIcon::GetImage(NetworkMenuIcon::ARCS, 3,
                                   NetworkMenuIcon::COLOR_DARK),
         NULL, NULL, NULL,
-        rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_SECURE_DARK));
-    // Wifi connecting = IDR_STATUSBAR_NETWORK_ARCS1 (faded).
+        rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_SECURE_DARK));
+    // Wifi connecting = IDR_AURA_UBER_TRAY_NETWORK_ARCS1 (faded).
     wifi_connecting_image_ = NetworkMenuIcon::GenerateConnectingImage(
         NetworkMenuIcon::GetImage(NetworkMenuIcon::ARCS, 1,
                                   NetworkMenuIcon::COLOR_DARK));
@@ -109,7 +109,8 @@ class NetworkMenuIconTest : public testing::Test {
             NetworkMenuIcon::GetImage(
                 NetworkMenuIcon::BARS, 3,
                 NetworkMenuIcon::COLOR_DARK),
-        rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_4G_DARK), NULL, NULL, NULL);
+            rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_4G_DARK),
+            NULL, NULL, NULL);
     // 3G connected, strength = 100% = BARS4 icon + 3G badge.
     cellular_connected_100_image_ =
         NetworkMenuIcon::GenerateImageFromComponents(
@@ -117,14 +118,15 @@ class NetworkMenuIconTest : public testing::Test {
                 NetworkMenuIcon::BARS,
                 NetworkMenuIcon::NumImages(NetworkMenuIcon::BARS) - 1,
                 NetworkMenuIcon::COLOR_DARK),
-        rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_3G_DARK), NULL, NULL, NULL);
+            rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_3G_DARK),
+            NULL, NULL, NULL);
     // 3G connected, strength = 50%, roaming = BARS2 icon + roaming & 3G badges.
     cellular_roaming_50_image_ = NetworkMenuIcon::GenerateImageFromComponents(
         NetworkMenuIcon::GetImage(NetworkMenuIcon::BARS, 3,
                                   NetworkMenuIcon::COLOR_DARK),
-        rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_3G_DARK), NULL, NULL,
-        rb_.GetImageSkiaNamed(IDR_STATUSBAR_NETWORK_ROAMING_DARK));
-    // 3G connecting = IDR_STATUSBAR_NETWORK_BARS1 (faded).
+        rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_3G_DARK), NULL, NULL,
+        rb_.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_NETWORK_ROAMING_DARK));
+    // 3G connecting = IDR_AURA_UBER_TRAY_NETWORK_BARS1 (faded).
     cellular_connecting_image_ = NetworkMenuIcon::GenerateConnectingImage(
         NetworkMenuIcon::GetImage(NetworkMenuIcon::BARS, 1,
                                   NetworkMenuIcon::COLOR_DARK));
@@ -142,16 +144,20 @@ class NetworkMenuIconTest : public testing::Test {
   void SetConnected(Network* network) {
     Network::TestApi test_network(network);
     test_network.SetConnected();
+    test_network.SetUserConnectState(USER_CONNECT_CONNECTED);
   }
 
-  void SetConnecting(Network* network) {
+  void SetConnecting(Network* network, bool user_initiated) {
     Network::TestApi test_network(network);
     test_network.SetConnecting();
+    test_network.SetUserConnectState(
+        user_initiated ? USER_CONNECT_STARTED : USER_CONNECT_NONE);
   }
 
   void SetDisconnected(Network* network) {
     Network::TestApi test_network(network);
     test_network.SetDisconnected();
+    test_network.SetUserConnectState(USER_CONNECT_NONE);
   }
 
   void SetActive(Network* network, bool active) {
@@ -296,9 +302,9 @@ TEST_F(NetworkMenuIconTest, StatusIconMenuMode) {
   CellularNetwork* cellular1 = cros_->FindCellularNetworkByPath("cellular1");
   ASSERT_NE(static_cast<const Network*>(NULL), cellular1);
   SetRoamingState(cellular1, ROAMING_STATE_HOME);  // Clear romaing state
-  SetConnecting(cellular1);
+  SetConnecting(cellular1, true);
 
-  // For MENU_MODE, we always display the connecting icon (cellular1).
+  // For user initiated connect always display the connecting icon (cellular1).
   icon = menu_icon.GetIconAndText(NULL);
   EXPECT_TRUE(CompareImages(icon, cellular_connecting_image_));
 
@@ -335,9 +341,9 @@ TEST_F(NetworkMenuIconTest, StatusIconDropdownMode) {
   // Set wifi1 to connecting.
   WifiNetwork* wifi1 = cros_->FindWifiNetworkByPath("wifi1");
   ASSERT_NE(static_cast<const Network*>(NULL), wifi1);
-  SetConnecting(wifi1);
+  SetConnecting(wifi1, false);
 
-  // For DROPDOWN_MODE, we prioritize the connected network (ethernet).
+  // For non user-initiated connect, show the connected network (ethernet).
   icon = menu_icon.GetIconAndText(NULL);
   EXPECT_TRUE(CompareImages(icon, ethernet_connected_image_));
 

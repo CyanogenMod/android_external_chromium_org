@@ -12,8 +12,9 @@
 #include "base/gtest_prod_util.h"
 #include "base/string16.h"
 #include "chrome/browser/favicon/favicon_service.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "ui/base/models/menu_model.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class Browser;
 
@@ -77,6 +78,7 @@ class BackForwardMenuModel : public ui::MenuModel {
   // Set the delegate for triggering OnIconChanged.
   virtual void SetMenuModelDelegate(
       ui::MenuModelDelegate* menu_model_delegate) OVERRIDE;
+  virtual ui::MenuModelDelegate* GetMenuModelDelegate() const OVERRIDE;
 
  protected:
    ui::MenuModelDelegate* menu_model_delegate() { return menu_model_delegate_; }
@@ -95,8 +97,8 @@ class BackForwardMenuModel : public ui::MenuModel {
 
   // Callback from the favicon service.
   void OnFavIconDataAvailable(
-    FaviconService::Handle handle,
-    const history::FaviconImageResult& image_result);
+      int navigation_entry_unique_id,
+      const history::FaviconImageResult& image_result);
 
   // Allows the unit test to use its own dummy tab contents.
   void set_test_web_contents(content::WebContents* test_web_contents) {
@@ -197,8 +199,8 @@ class BackForwardMenuModel : public ui::MenuModel {
   // NavigationEntry->GetUniqueID().
   std::set<int> requested_favicons_;
 
-  // Used for loading favicons from history.
-  CancelableRequestConsumerTSimple<int> load_consumer_;
+  // Used for loading favicons.
+  CancelableTaskTracker cancelable_task_tracker_;
 
   // Used for receiving notifications when an icon is changed.
   ui::MenuModelDelegate* menu_model_delegate_;

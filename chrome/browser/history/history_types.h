@@ -44,6 +44,7 @@ typedef int64 DownloadID;   // Identifier for a download.
 typedef int64 FaviconID;  // For favicons.
 typedef int64 FaviconBitmapID; // Identifier for a bitmap in a favicon.
 typedef int64 SegmentID;  // URL segments for the most visited view.
+typedef int64 SegmentDurationID;  // Unique identifier for segment_duration.
 typedef int64 IconMappingID; // For page url and icon mapping.
 
 // URLRow ---------------------------------------------------------------------
@@ -355,6 +356,9 @@ class QueryResults {
   size_t size() const { return results_.size(); }
   bool empty() const { return results_.empty(); }
 
+  URLResult& back() { return *results_.back(); }
+  const URLResult& back() const { return *results_.back(); }
+
   URLResult& operator[](size_t i) { return *results_[i]; }
   const URLResult& operator[](size_t i) const { return *results_[i]; }
 
@@ -384,12 +388,6 @@ class QueryResults {
   // copying (there are a lot of strings and vectors). This means the parameter
   // object will be cleared after this call.
   void AppendURLBySwapping(URLResult* result);
-
-  // Appends a new result set to the other. The |other| results will be
-  // destroyed because the pointer ownership will just be transferred. When
-  // |remove_dupes| is set, each URL that appears in this array will be removed
-  // from the |other| array before appending.
-  void AppendResultsBySwapping(QueryResults* other, bool remove_dupes);
 
   // Removes all instances of the given URL from the result set.
   void DeleteURL(const GURL& url);
@@ -432,18 +430,14 @@ class QueryResults {
 struct QueryOptions {
   QueryOptions();
 
-  // The time range to search for matches in.
+  // The time range to search for matches in. The beginning is inclusive and
+  // the ending is exclusive. Either one (or both) may be null.
   //
-  // This will match only the one recent visit of a URL.  For text search
-  // queries, if the URL was visited in the given time period, but has also been
-  // visited more recently than that, it will not be returned. When the text
-  // query is empty, this will return the most recent visit within the time
-  // range.
-  //
-  // As a special case, if both times are is_null(), then the entire database
-  // will be searched. However, if you set one, you must set the other.
-  //
-  // The beginning is inclusive and the ending is exclusive.
+  // This will match only the one recent visit of a URL. For text search
+  // queries, if the URL was visited in the given time period, but has also
+  // been visited more recently than that, it will not be returned. When the
+  // text query is empty, this will return the most recent visit within the
+  // time range.
   base::Time begin_time;
   base::Time end_time;
 
@@ -458,6 +452,30 @@ struct QueryOptions {
   // Only search within the page body if true, otherwise search all columns
   // including url and time. Defaults to false.
   bool body_only;
+
+  enum DuplicateHandling {
+    // Omit visits for which there is a more recent visit to the same URL.
+    // Each URL in the results will appear only once.
+    REMOVE_ALL_DUPLICATES,
+
+    // Omit visits for which there is a more recent visit to the same URL on
+    // the same day. Each URL will appear no more than once per day, where the
+    // day is defined by the local timezone.
+    REMOVE_DUPLICATES_PER_DAY,
+
+    // Return all visits without deduping.
+    KEEP_ALL_DUPLICATES
+  };
+
+  // Allows the caller to specify how duplicate URLs in the result set should
+  // be handled. The default is REMOVE_DUPLICATES.
+  DuplicateHandling duplicate_policy;
+
+  // Helpers to get the effective parameters values, since a value of 0 means
+  // "unspecified".
+  int EffectiveMaxCount() const;
+  int64 EffectiveBeginTime() const;
+  int64 EffectiveEndTime() const;
 };
 
 // KeywordSearchTermVisit -----------------------------------------------------
@@ -741,9 +759,6 @@ typedef std::vector<gfx::Size> FaviconSizes;
 // are unknown.
 const FaviconSizes& GetDefaultFaviconSizes();
 
-// A map from an icon URL to the FaviconSizes for that URL.
-typedef std::map<GURL, FaviconSizes> IconURLSizesMap;
-
 // Defines a favicon bitmap and its associated pixel size.
 struct FaviconBitmapIDSize {
   FaviconBitmapIDSize();
@@ -804,6 +819,19 @@ class VisitDatabaseObserver {
  public:
   virtual ~VisitDatabaseObserver();
   virtual void OnAddVisit(const BriefVisitInfo& info) = 0;
+};
+
+struct ExpireHistoryArgs {
+  ExpireHistoryArgs();
+  ~ExpireHistoryArgs();
+
+  // Sets |begin_time| and |end_time| to the beginning and end of the day (in
+  // local time) on which |time| occurs.
+  void SetTimeRangeForOneDay(base::Time time);
+
+  std::set<GURL> urls;
+  base::Time begin_time;
+  base::Time end_time;
 };
 
 }  // namespace history

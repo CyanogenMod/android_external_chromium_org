@@ -35,10 +35,6 @@ namespace base {
 class WaitableEvent;
 }
 
-namespace skia {
-class PlatformCanvas;
-}
-
 namespace webkit {
 namespace npapi {
 class WebPlugin;
@@ -144,7 +140,7 @@ class WebPluginDelegateProxy
     ~SharedBitmap();
 
     scoped_ptr<TransportDIB> dib;
-    scoped_ptr<skia::PlatformCanvas> canvas;
+    scoped_ptr<SkCanvas> canvas;
   };
 
   // Message handlers for messages that proxy WebPlugin methods, which
@@ -177,22 +173,7 @@ class WebPluginDelegateProxy
 #if defined(OS_MACOSX)
   void OnFocusChanged(bool focused);
   void OnStartIme();
-  void OnBindFakePluginWindowHandle(bool opaque);
-  void OnAcceleratedSurfaceSetIOSurface(gfx::PluginWindowHandle window,
-                                        int32 width,
-                                        int32 height,
-                                        uint64 io_surface_identifier);
-  void OnAcceleratedSurfaceSetTransportDIB(gfx::PluginWindowHandle window,
-                                           int32 width,
-                                           int32 height,
-                                           TransportDIB::Handle transport_dib);
-  void OnAcceleratedSurfaceAllocTransportDIB(size_t size,
-                                             TransportDIB::Handle* dib_handle);
-  void OnAcceleratedSurfaceFreeTransportDIB(TransportDIB::Id dib_id);
-  void OnAcceleratedSurfaceBuffersSwapped(gfx::PluginWindowHandle window,
-                                          uint64 surface_id);
-
-  // New accelerated plugin implementation.
+  // Accelerated (Core Animation) plugin implementation.
   void OnAcceleratedPluginEnabledRendering();
   void OnAcceleratedPluginAllocatedIOSurface(int32 width,
                                              int32 height,
@@ -227,11 +208,11 @@ class WebPluginDelegateProxy
     return 1 - front_buffer_index_;
   }
 
-  skia::PlatformCanvas* front_buffer_canvas() const {
+  SkCanvas* front_buffer_canvas() const {
     return transport_stores_[front_buffer_index()].canvas.get();
   }
 
-  skia::PlatformCanvas* back_buffer_canvas() const {
+  SkCanvas* back_buffer_canvas() const {
     return transport_stores_[back_buffer_index()].canvas.get();
   }
 
@@ -247,26 +228,17 @@ class WebPluginDelegateProxy
   // Creates a process-local memory section and canvas. PlatformCanvas on
   // Windows only works with a DIB, not arbitrary memory.
   bool CreateLocalBitmap(std::vector<uint8>* memory,
-                         scoped_ptr<skia::PlatformCanvas>* canvas);
+                         scoped_ptr<SkCanvas>* canvas);
 #endif
 
   // Creates a shared memory section and canvas.
   bool CreateSharedBitmap(scoped_ptr<TransportDIB>* memory,
-                          scoped_ptr<skia::PlatformCanvas>* canvas);
+                          scoped_ptr<SkCanvas>* canvas);
 
   // Called for cleanup during plugin destruction. Normally right before the
   // plugin window gets destroyed, or when the plugin has crashed (at which
   // point the window has already been destroyed).
   void WillDestroyWindow();
-
-#if defined(OS_MACOSX)
-  // Synthesize a fake window handle for the plug-in to identify the instance
-  // to the browser, allowing mapping to a surface for hardware acceleration
-  // of plug-in content. The browser generates the handle which is then set on
-  // the plug-in. Returns true if it successfully sets the window handle on the
-  // plug-in.
-  bool BindFakePluginWindowHandle(bool opaque);
-#endif  // OS_MACOSX
 
 #if defined(OS_WIN)
   // Returns true if we should update the plugin geometry synchronously.
@@ -303,6 +275,9 @@ class WebPluginDelegateProxy
 
   // True if we got an invalidate from the plugin and are waiting for a paint.
   bool invalidate_pending_;
+
+  // If the plugin is transparent or not.
+  bool transparent_;
 
   // The index in the transport_stores_ array of the current front buffer
   // (i.e., the buffer to display).

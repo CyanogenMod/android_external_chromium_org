@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROME_BROWSER_EXTENSIONS_API_DECLARATIVE_DECLARATIVE_API_H__
-#define CHROME_BROWSER_EXTENSIONS_API_DECLARATIVE_DECLARATIVE_API_H__
+#ifndef CHROME_BROWSER_EXTENSIONS_API_DECLARATIVE_DECLARATIVE_API_H_
+#define CHROME_BROWSER_EXTENSIONS_API_DECLARATIVE_DECLARATIVE_API_H_
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
@@ -31,34 +31,34 @@ class RulesFunction : public AsyncExtensionFunction {
   scoped_refptr<RulesRegistry> rules_registry_;
 };
 
-class AddRulesFunction : public RulesFunction {
+class EventsEventAddRulesFunction : public RulesFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("events.addRules");
+  DECLARE_EXTENSION_FUNCTION("events.addRules", EVENTS_ADDRULES)
 
  protected:
-  virtual ~AddRulesFunction() {}
+  virtual ~EventsEventAddRulesFunction() {}
 
   // RulesFunction:
   virtual bool RunImplOnCorrectThread() OVERRIDE;
 };
 
-class RemoveRulesFunction : public RulesFunction {
+class EventsEventRemoveRulesFunction : public RulesFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("events.removeRules");
+  DECLARE_EXTENSION_FUNCTION("events.removeRules", EVENTS_REMOVERULES)
 
  protected:
-  virtual ~RemoveRulesFunction() {}
+  virtual ~EventsEventRemoveRulesFunction() {}
 
   // RulesFunction:
   virtual bool RunImplOnCorrectThread() OVERRIDE;
 };
 
-class GetRulesFunction : public RulesFunction {
+class EventsEventGetRulesFunction : public RulesFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("events.getRules");
+  DECLARE_EXTENSION_FUNCTION("events.getRules", EVENTS_GETRULES)
 
  protected:
-  virtual ~GetRulesFunction() {}
+  virtual ~EventsEventGetRulesFunction() {}
 
   // RulesFunction:
   virtual bool RunImplOnCorrectThread() OVERRIDE;
@@ -66,4 +66,4 @@ class GetRulesFunction : public RulesFunction {
 
 }  // namespace extensions
 
-#endif  // CHROME_BROWSER_EXTENSIONS_API_DECLARATIVE_DECLARATIVE_API_H__
+#endif  // CHROME_BROWSER_EXTENSIONS_API_DECLARATIVE_DECLARATIVE_API_H_

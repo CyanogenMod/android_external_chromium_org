@@ -3,46 +3,14 @@
 // found in the LICENSE file.
 
 #include "remoting/host/resizing_host_observer.h"
-#include "remoting/host/desktop_resizer.h"
 
-#include <set>
+#include <list>
 
 #include "base/logging.h"
+#include "remoting/host/desktop_resizer.h"
+#include "remoting/host/screen_resolution.h"
 
-namespace remoting {
-
-ResizingHostObserver::ResizingHostObserver(
-    DesktopResizer* desktop_resizer, ChromotingHost* host)
-    : desktop_resizer_(desktop_resizer),
-      host_(host),
-      original_size_(SkISize::Make(0, 0)),
-      previous_size_(SkISize::Make(0, 0)) {
-  if (host_ != NULL) {
-    host_->AddStatusObserver(this);
-  }
-}
-
-ResizingHostObserver::~ResizingHostObserver() {
-  if (host_ != NULL) {
-    host_->RemoveStatusObserver(this);
-  }
-}
-
-void ResizingHostObserver::OnClientAuthenticated(const std::string& jid) {
-  // This implementation assumes a single connected client, which is what the
-  // host currently supports
-  DCHECK(client_jid_.empty());
-  original_size_ = desktop_resizer_->GetCurrentSize();
-  previous_size_ = original_size_;
-}
-
-void ResizingHostObserver::OnClientDisconnected(const std::string& jid) {
-  if (!original_size_.isZero()) {
-    desktop_resizer_->RestoreSize(original_size_);
-    original_size_.set(0, 0);
-  }
-  client_jid_.clear();
-}
+namespace {
 
 class CandidateSize {
  public:
@@ -126,39 +94,44 @@ class CandidateSize {
   SkISize size_;
 };
 
-void ResizingHostObserver::OnClientDimensionsChanged(
-    const std::string& jid, const SkISize& preferred_size) {
-  if (previous_size_.isZero() || preferred_size.isEmpty()) {
-    return;
-  }
+}  // namespace
 
-  // If the host desktop size changes other than via the resize-to-client
-  // mechanism, then set |previous_size_| to zero and give up. This is an
-  // indication that the user doesn't want resize-to-client.
-  SkISize current_size = desktop_resizer_->GetCurrentSize();
-  if (current_size != previous_size_) {
-    previous_size_ = SkISize::Make(0, 0);
+namespace remoting {
+
+ResizingHostObserver::ResizingHostObserver(
+    scoped_ptr<DesktopResizer> desktop_resizer)
+    : desktop_resizer_(desktop_resizer.Pass()),
+      original_size_(desktop_resizer_->GetCurrentSize()) {
+}
+
+ResizingHostObserver::~ResizingHostObserver() {
+  if (!original_size_.isZero())
+    desktop_resizer_->RestoreSize(original_size_);
+}
+
+void ResizingHostObserver::SetScreenResolution(
+    const ScreenResolution& resolution) {
+  if (resolution.IsEmpty())
     return;
-  }
 
   // If the implementation returns any sizes, pick the best one according to
   // the algorithm described in CandidateSize::IsBetterThen.
   std::list<SkISize> sizes =
-      desktop_resizer_->GetSupportedSizes(preferred_size);
+      desktop_resizer_->GetSupportedSizes(resolution.dimensions_);
   if (sizes.empty()) {
     return;
   }
-  CandidateSize best_size(sizes.front(), preferred_size);
+  CandidateSize best_size(sizes.front(), resolution.dimensions_);
   for (std::list<SkISize>::const_iterator i = ++sizes.begin();
        i != sizes.end(); ++i) {
-    CandidateSize candidate_size(*i, preferred_size);
+    CandidateSize candidate_size(*i, resolution.dimensions_);
     if (candidate_size.IsBetterThan(best_size)) {
       best_size = candidate_size;
     }
   }
-  previous_size_ = best_size.size();
-  if (previous_size_ != current_size)
-    desktop_resizer_->SetSize(previous_size_);
+  SkISize current_size = desktop_resizer_->GetCurrentSize();
+  if (best_size.size() != current_size)
+    desktop_resizer_->SetSize(best_size.size());
 }
 
 }  // namespace remoting

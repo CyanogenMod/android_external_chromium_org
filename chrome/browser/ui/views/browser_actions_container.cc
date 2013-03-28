@@ -5,15 +5,15 @@
 #include "chrome/browser/ui/views/browser_actions_container.h"
 
 #include "base/compiler_specific.h"
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/browser_action_view.h"
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
@@ -46,12 +46,6 @@ const int kItemSpacing = ToolbarView::kStandardSpacing;
 // Horizontal spacing before the chevron (if visible).
 const int kChevronSpacing = kItemSpacing - 2;
 
-void RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterIntegerPref(prefs::kBrowserActionContainerWidth,
-                             0,
-                             PrefService::UNSYNCABLE_PREF);
-}
-
 }  // namespace
 
 // static
@@ -79,8 +73,10 @@ BrowserActionsContainer::BrowserActionsContainer(Browser* browser,
       ALLOW_THIS_IN_INITIALIZER_LIST(show_menu_task_factory_(this)) {
   set_id(VIEW_ID_BROWSER_ACTION_TOOLBAR);
 
-  if (profile_->GetExtensionService()) {
-    model_ = profile_->GetExtensionService()->toolbar_model();
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
+  if (service) {
+    model_ = service->toolbar_model();
     model_->AddObserver(this);
   }
 
@@ -115,10 +111,6 @@ BrowserActionsContainer::~BrowserActionsContainer() {
 
 void BrowserActionsContainer::Init() {
   LoadImages();
-
-  if (!profile_->GetPrefs()->FindPreference(
-          prefs::kBrowserActionContainerWidth))
-    RegisterUserPrefs(profile_->GetPrefs());
 
   // We wait to set the container width until now so that the chevron images
   // will be loaded.  The width calculation needs to know the chevron size.
@@ -452,7 +444,7 @@ void BrowserActionsContainer::NotifyMenuDeleted(
   overflow_menu_ = NULL;
 }
 
-void BrowserActionsContainer::OnWidgetClosing(views::Widget* widget) {
+void BrowserActionsContainer::OnWidgetDestroying(views::Widget* widget) {
   DCHECK_EQ(popup_->GetWidget(), widget);
   popup_->GetWidget()->RemoveObserver(this);
   popup_ = NULL;
@@ -469,7 +461,8 @@ void BrowserActionsContainer::InspectPopup(ExtensionAction* action) {
 }
 
 int BrowserActionsContainer::GetCurrentTabId() const {
-  content::WebContents* active_tab = chrome::GetActiveWebContents(browser_);
+  content::WebContents* active_tab =
+      browser_->tab_strip_model()->GetActiveWebContents();
   if (!active_tab)
     return -1;
 
@@ -493,7 +486,8 @@ gfx::Point BrowserActionsContainer::GetViewContentOffset() const {
 
 extensions::ActiveTabPermissionGranter*
     BrowserActionsContainer::GetActiveTabPermissionGranter() {
-  content::WebContents* web_contents = chrome::GetActiveWebContents(browser_);
+  content::WebContents* web_contents =
+      browser_->tab_strip_model()->GetActiveWebContents();
   if (!web_contents)
     return NULL;
   return extensions::TabHelper::FromWebContents(web_contents)->
@@ -502,7 +496,8 @@ extensions::ActiveTabPermissionGranter*
 
 void BrowserActionsContainer::MoveBrowserAction(const std::string& extension_id,
                                                 size_t new_index) {
-  ExtensionService* service = profile_->GetExtensionService();
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
   if (service) {
     const Extension* extension = service->GetExtensionById(extension_id, false);
     model_->MoveBrowserAction(extension, new_index);
@@ -512,7 +507,7 @@ void BrowserActionsContainer::MoveBrowserAction(const std::string& extension_id,
 
 void BrowserActionsContainer::HidePopup() {
   // Remove this as an observer and clear |popup_| and |popup_button_| here,
-  // since we might change them before OnWidgetClosing() gets called.
+  // since we might change them before OnWidgetDestroying() gets called.
   if (popup_) {
     popup_->GetWidget()->RemoveObserver(this);
     popup_->GetWidget()->Close();
@@ -627,7 +622,8 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
   // Enlarge the container if it was already at maximum size and we're not in
   // the middle of upgrading.
   if ((model_->GetVisibleIconCount() < 0) &&
-      !profile_->GetExtensionService()->IsBeingUpgraded(extension)) {
+      !extensions::ExtensionSystem::Get(profile_)->extension_service()->
+          IsBeingUpgraded(extension)) {
     suppress_chevron_ = true;
     SaveDesiredSizeAndAnimate(ui::Tween::LINEAR, visible_actions + 1);
   } else {
@@ -651,7 +647,8 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
 
       // If the extension is being upgraded we don't want the bar to shrink
       // because the icon is just going to get re-added to the same location.
-      if (profile_->GetExtensionService()->IsBeingUpgraded(extension))
+      if (extensions::ExtensionSystem::Get(profile_)->extension_service()->
+              IsBeingUpgraded(extension))
         return;
 
       if (browser_action_views_.size() > visible_actions) {
@@ -810,7 +807,8 @@ bool BrowserActionsContainer::ShouldDisplayBrowserAction(
   // Only display incognito-enabled extensions while in incognito mode.
   return
       (!profile_->IsOffTheRecord() ||
-       profile_->GetExtensionService()->IsIncognitoEnabled(extension->id()));
+       extensions::ExtensionSystem::Get(profile_)->extension_service()->
+           IsIncognitoEnabled(extension->id()));
 }
 
 void BrowserActionsContainer::ShowPopup(

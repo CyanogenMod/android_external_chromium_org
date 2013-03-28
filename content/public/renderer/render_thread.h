@@ -15,6 +15,7 @@
 #include <windows.h>
 #endif
 
+class GURL;
 class MessageLoop;
 
 namespace base {
@@ -82,9 +83,9 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   virtual void RecordUserMetrics(const std::string& action) = 0;
 
   // Asks the host to create a block of shared memory for the renderer.
-  // The shared memory handle allocated by the host is returned back.
-  virtual base::SharedMemoryHandle HostAllocateSharedMemoryBuffer(
-      uint32 buffer_size) = 0;
+  // The shared memory allocated by the host is returned back.
+  virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
+      size_t buffer_size) = 0;
 
   // Registers the given V8 extension with WebKit.
   virtual void RegisterExtension(v8::Extension* extension) = 0;
@@ -104,6 +105,11 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   virtual void ToggleWebKitSharedTimer(bool suspend) = 0;
 
   virtual void UpdateHistograms(int sequence_number) = 0;
+
+  // Resolve the proxy servers to use for a given url. On success true is
+  // returned and |proxy_list| is set to a PAC string containing a list of
+  // proxy servers.
+  virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) = 0;
 
 #if defined(OS_WIN)
   // Request that the given font be loaded by the browser so it's cached by the

@@ -58,10 +58,23 @@ select.exception-setting {
   padding: 7px 0;
 }
 
+#group-indicator {
+  margin-left: 5px;
+}
+
 div[role='listitem'][controlled-by] {
   color: #666;
   font-style: italic;
   position: relative;
+}
+
+.section-header {
+  -webkit-margin-start: -18px;
+  margin-bottom: 0.8em;
+}
+
+.section-header > h3 {
+  display: inline;
 }
 
 .settings-list div[role='listitem'][controlled-by='policy'],
@@ -73,4 +86,39 @@ div[role='listitem'][controlled-by] {
 
 .sublabel {
   -webkit-margin-start: 2em;
+}
+
+.media-device-control {
+  display: table-row;
+}
+
+.media-device-control > span {
+  display: table-cell;
+  min-width: 145px;
+}
+
+.media-device-control > select {
+  display: table-cell;
+  margin: 5px 0;
+  width: 12em;
+}
+
+.exception-setting.media-audio-setting {
+  width: 6em;
+}
+
+.exception-setting.media-video-setting {
+  width: 6.5em;
+}
+
+#media-column-header {
+  display: -webkit-box;
+}
+
+#media-audio-column {
+  width: 6em;
+}
+
+#media-video-column {
+  width: 8.5em;
 }

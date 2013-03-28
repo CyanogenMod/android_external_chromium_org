@@ -10,13 +10,13 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/files/file_path_watcher.h"
-#include "base/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/thread_restrictions.h"
@@ -262,10 +262,10 @@ HostsParseWinResult AddLocalhostEntries(DnsHosts* hosts) {
                             address->Address.iSockaddrLength)) {
         return HOSTS_PARSE_WIN_BAD_ADDRESS;
       }
-      if (!have_ipv4 && (ipe.GetFamily() == AF_INET)) {
+      if (!have_ipv4 && (ipe.GetFamily() == ADDRESS_FAMILY_IPV4)) {
         have_ipv4 = true;
         (*hosts)[DnsHostsKey(localname, ADDRESS_FAMILY_IPV4)] = ipe.address();
-      } else if (!have_ipv6 && (ipe.GetFamily() == AF_INET6)) {
+      } else if (!have_ipv6 && (ipe.GetFamily() == ADDRESS_FAMILY_IPV6)) {
         have_ipv6 = true;
         (*hosts)[DnsHostsKey(localname, ADDRESS_FAMILY_IPV6)] = ipe.address();
       }
@@ -316,13 +316,28 @@ class RegistryWatcher : public base::win::ObjectWatcher::Delegate,
   DISALLOW_COPY_AND_ASSIGN(RegistryWatcher);
 };
 
+// Returns true iff |address| is DNS address from IPv6 stateless discovery,
+// i.e., matches fec0:0:0:ffff::{1,2,3}.
+// http://tools.ietf.org/html/draft-ietf-ipngwg-dns-discovery
+bool IsStatelessDiscoveryAddress(const IPAddressNumber& address) {
+  if (address.size() != kIPv6AddressSize)
+    return false;
+  const uint8 kPrefix[] = {
+      0xfe, 0xc0, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+  return std::equal(kPrefix, kPrefix + arraysize(kPrefix),
+                    address.begin()) && (address.back() < 4);
+}
+
 }  // namespace
 
-FilePath GetHostsPath() {
+base::FilePath GetHostsPath() {
   TCHAR buffer[MAX_PATH];
   UINT rc = GetSystemDirectory(buffer, MAX_PATH);
   DCHECK(0 < rc && rc < MAX_PATH);
-  return FilePath(buffer).Append(FILE_PATH_LITERAL("drivers\\etc\\hosts"));
+  return base::FilePath(buffer).Append(
+      FILE_PATH_LITERAL("drivers\\etc\\hosts"));
 }
 
 bool ParseSearchList(const string16& value, std::vector<std::string>* output) {
@@ -374,6 +389,8 @@ ConfigParseWinResult ConvertSettingsToDnsConfig(
       IPEndPoint ipe;
       if (ipe.FromSockAddr(address->Address.lpSockaddr,
                            address->Address.iSockaddrLength)) {
+        if (IsStatelessDiscoveryAddress(ipe.address()))
+          continue;
         // Override unset port.
         if (!ipe.port())
           ipe = IPEndPoint(ipe.address(), dns_protocol::kDefaultPort);
@@ -515,6 +532,9 @@ class DnsConfigServiceWin::Watcher
     if (!tcpip_watcher_.Watch(kTcpipPath, callback)) {
       LOG(ERROR) << "DNS registry watch failed to start.";
       success = false;
+      UMA_HISTOGRAM_ENUMERATION("AsyncDNS.WatchStatus",
+                                DNS_CONFIG_WATCH_FAILED_TO_START_CONFIG,
+                                DNS_CONFIG_WATCH_MAX);
     }
 
     // Watch for IPv6 nameservers.
@@ -529,9 +549,12 @@ class DnsConfigServiceWin::Watcher
     dnscache_watcher_.Watch(kDnscachePath, callback);
     policy_watcher_.Watch(kPolicyPath, callback);
 
-    if (!hosts_watcher_.Watch(GetHostsPath(),
+    if (!hosts_watcher_.Watch(GetHostsPath(), false,
                               base::Bind(&Watcher::OnHostsChanged,
                                          base::Unretained(this)))) {
+      UMA_HISTOGRAM_ENUMERATION("AsyncDNS.WatchStatus",
+                                DNS_CONFIG_WATCH_FAILED_TO_START_HOSTS,
+                                DNS_CONFIG_WATCH_MAX);
       LOG(ERROR) << "DNS hosts watch failed to start.";
       success = false;
     } else {
@@ -542,7 +565,7 @@ class DnsConfigServiceWin::Watcher
   }
 
  private:
-  void OnHostsChanged(const FilePath& path, bool error) {
+  void OnHostsChanged(const base::FilePath& path, bool error) {
     if (error)
       NetworkChangeNotifier::RemoveIPAddressObserver(this);
     service_->OnHostsChanged(!error);
@@ -560,7 +583,7 @@ class DnsConfigServiceWin::Watcher
   RegistryWatcher tcpip6_watcher_;
   RegistryWatcher dnscache_watcher_;
   RegistryWatcher policy_watcher_;
-  base::files::FilePathWatcher hosts_watcher_;
+  base::FilePathWatcher hosts_watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(Watcher);
 };
@@ -646,7 +669,7 @@ class DnsConfigServiceWin::HostsReader : public SerialWorker {
     }
   }
 
-  const FilePath path_;
+  const base::FilePath path_;
   DnsConfigServiceWin* service_;
   // Written in DoWork, read in OnWorkFinished, no locking necessary.
   DnsHosts hosts_;
@@ -672,6 +695,8 @@ void DnsConfigServiceWin::ReadNow() {
 bool DnsConfigServiceWin::StartWatching() {
   // TODO(szym): re-start watcher if that makes sense. http://crbug.com/116139
   watcher_.reset(new Watcher(this));
+  UMA_HISTOGRAM_ENUMERATION("AsyncDNS.WatchStatus", DNS_CONFIG_WATCH_STARTED,
+                            DNS_CONFIG_WATCH_MAX);
   return watcher_->Watch();
 }
 
@@ -682,6 +707,9 @@ void DnsConfigServiceWin::OnConfigChanged(bool succeeded) {
   } else {
     LOG(ERROR) << "DNS config watch failed.";
     set_watch_failed(true);
+    UMA_HISTOGRAM_ENUMERATION("AsyncDNS.WatchStatus",
+                              DNS_CONFIG_WATCH_FAILED_CONFIG,
+                              DNS_CONFIG_WATCH_MAX);
   }
 }
 
@@ -692,6 +720,9 @@ void DnsConfigServiceWin::OnHostsChanged(bool succeeded) {
   } else {
     LOG(ERROR) << "DNS hosts watch failed.";
     set_watch_failed(true);
+    UMA_HISTOGRAM_ENUMERATION("AsyncDNS.WatchStatus",
+                              DNS_CONFIG_WATCH_FAILED_HOSTS,
+                              DNS_CONFIG_WATCH_MAX);
   }
 }
 
@@ -703,4 +734,3 @@ scoped_ptr<DnsConfigService> DnsConfigService::CreateSystemService() {
 }
 
 }  // namespace net
-

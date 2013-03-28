@@ -2,41 +2,48 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef WebAnimationImpl_h
-#define WebAnimationImpl_h
+#ifndef WEBKIT_COMPOSITOR_BINDINGS_WEB_ANIMATION_IMPL_H_
+#define WEBKIT_COMPOSITOR_BINDINGS_WEB_ANIMATION_IMPL_H_
 
 #include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebAnimation.h"
+#include "webkit/compositor_bindings/webkit_compositor_bindings_export.h"
 
-namespace cc {
-class ActiveAnimation;
-}
+namespace cc { class Animation; }
 
-namespace WebKit {
+namespace WebKit { class WebAnimationCurve; }
 
-class WebAnimationImpl : public WebAnimation {
-public:
-    WebAnimationImpl(const WebAnimationCurve&, TargetProperty, int animationId, int groupId = 0);
-    virtual ~WebAnimationImpl();
+namespace webkit {
 
-    // WebAnimation implementation
-    virtual int id() OVERRIDE;
-    virtual TargetProperty targetProperty() const OVERRIDE;
-    virtual int iterations() const OVERRIDE;
-    virtual void setIterations(int) OVERRIDE;
-    virtual double startTime() const OVERRIDE;
-    virtual void setStartTime(double monotonicTime) OVERRIDE;
-    virtual double timeOffset() const OVERRIDE;
-    virtual void setTimeOffset(double monotonicTime) OVERRIDE;
-    virtual bool alternatesDirection() const OVERRIDE;
-    virtual void setAlternatesDirection(bool) OVERRIDE;
+class WebAnimationImpl : public WebKit::WebAnimation {
+ public:
+  WEBKIT_COMPOSITOR_BINDINGS_EXPORT WebAnimationImpl(
+      const WebKit::WebAnimationCurve& curve,
+      TargetProperty target,
+      int animation_id,
+      int group_id);
+  virtual ~WebAnimationImpl();
 
-    scoped_ptr<cc::ActiveAnimation> cloneToAnimation();
+  // WebKit::WebAnimation implementation
+  virtual int id();
+  virtual TargetProperty targetProperty() const;
+  virtual int iterations() const;
+  virtual void setIterations(int iterations);
+  virtual double startTime() const;
+  virtual void setStartTime(double monotonic_time);
+  virtual double timeOffset() const;
+  virtual void setTimeOffset(double monotonic_time);
+  virtual bool alternatesDirection() const;
+  virtual void setAlternatesDirection(bool alternates);
 
-private:
-    scoped_ptr<cc::ActiveAnimation> m_animation;
+  scoped_ptr<cc::Animation> CloneToAnimation();
+
+ private:
+  scoped_ptr<cc::Animation> animation_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebAnimationImpl);
 };
 
-}
+}  // namespace webkit
 
-#endif // WebAnimationImpl_h
+#endif  // WEBKIT_COMPOSITOR_BINDINGS_WEB_ANIMATION_IMPL_H_

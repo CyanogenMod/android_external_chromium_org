@@ -4,8 +4,11 @@
 
 #include "chrome/common/extensions/permissions/api_permission.h"
 
+#include "chrome/common/extensions/permissions/bluetooth_device_permission.h"
+#include "chrome/common/extensions/permissions/media_galleries_permission.h"
 #include "chrome/common/extensions/permissions/permissions_info.h"
 #include "chrome/common/extensions/permissions/socket_permission.h"
+#include "chrome/common/extensions/permissions/usb_device_permission.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -60,8 +63,8 @@ class SimpleAPIPermission : public APIPermission {
     return true;
   }
 
-  virtual void ToValue(base::Value** value) const OVERRIDE {
-    *value = NULL;
+  virtual scoped_ptr<base::Value> ToValue() const OVERRIDE {
+    return scoped_ptr<base::Value>(NULL);
   }
 
   virtual APIPermission* Clone() const OVERRIDE {
@@ -114,6 +117,10 @@ APIPermission::ID APIPermission::id() const {
 
 const char* APIPermission::name() const {
   return info()->name();
+}
+
+bool APIPermission::ManifestEntryForbidden() const {
+  return false;
 }
 
 PermissionMessage APIPermission::GetMessage_() const {
@@ -169,6 +176,7 @@ void APIPermissionInfo::RegisterAllPermissions(
       IDS_EXTENSION_PROMPT_WARNING_CLIPBOARD,
       PermissionMessage::kClipboard },
     { APIPermission::kClipboardWrite, "clipboardWrite" },
+    { APIPermission::kDeclarativeContent, "declarativeContent" },
     { APIPermission::kDeclarativeWebRequest, "declarativeWebRequest" },
     { APIPermission::kDownloads, "downloads", kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_DOWNLOADS,
@@ -178,14 +186,13 @@ void APIPermissionInfo::RegisterAllPermissions(
       IDS_EXTENSION_PROMPT_WARNING_GEOLOCATION,
       PermissionMessage::kGeolocation },
     { APIPermission::kNotification, "notifications" },
+    { APIPermission::kScreensaver, "screensaver" },
     { APIPermission::kUnlimitedStorage, "unlimitedStorage",
       kFlagCannotBeOptional },
 
-    // Register hosted and packaged app permissions.
-    { APIPermission::kAppNotifications, "appNotifications" },
-
     // Register extension permissions.
     { APIPermission::kActiveTab, "activeTab" },
+    { APIPermission::kAdView, "adview" },
     { APIPermission::kAlarms, "alarms" },
     { APIPermission::kBookmark, "bookmarks", kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_BOOKMARKS,
@@ -209,13 +216,16 @@ void APIPermissionInfo::RegisterAllPermissions(
     { APIPermission::kManagement, "management", kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_MANAGEMENT,
       PermissionMessage::kManagement },
+    { APIPermission::kNativeMessaging, "nativeMessaging" },
+    { APIPermission::kPower, "power", },
     { APIPermission::kPrivacy, "privacy", kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_PRIVACY,
       PermissionMessage::kPrivacy },
+    { APIPermission::kSessionRestore, "sessionRestore" },
     { APIPermission::kStorage, "storage" },
-    // TODO(kinuko): syncFileSystem permission should take the service name
-    // parameter.
-    { APIPermission::kSyncFileSystem, "syncFileSystem" },
+    { APIPermission::kSyncFileSystem, "syncFileSystem", kFlagNone,
+      IDS_EXTENSION_PROMPT_WARNING_SYNCFILESYSTEM,
+      PermissionMessage::kSyncFileSystem },
     { APIPermission::kTab, "tabs", kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_TABS,
       PermissionMessage::kTabs },
@@ -233,13 +243,21 @@ void APIPermissionInfo::RegisterAllPermissions(
     { APIPermission::kWebView, "webview", kFlagCannotBeOptional },
 
     // Register private permissions.
+    { APIPermission::kAutoTestPrivate, "autotestPrivate",
+      kFlagCannotBeOptional },
     { APIPermission::kBookmarkManagerPrivate, "bookmarkManagerPrivate",
       kFlagCannotBeOptional },
     { APIPermission::kChromeosInfoPrivate, "chromeosInfoPrivate",
       kFlagCannotBeOptional },
+    { APIPermission::kDeveloperPrivate, "developerPrivate",
+      kFlagCannotBeOptional },
+    { APIPermission::kDial, "dial", kFlagCannotBeOptional },
+    { APIPermission::kDownloadsInternal, "downloadsInternal" },
     { APIPermission::kFileBrowserHandlerInternal, "fileBrowserHandlerInternal",
       kFlagCannotBeOptional },
     { APIPermission::kFileBrowserPrivate, "fileBrowserPrivate",
+      kFlagCannotBeOptional },
+    { APIPermission::kNetworkingPrivate, "networkingPrivate",
       kFlagCannotBeOptional },
     { APIPermission::kManagedModePrivate, "managedModePrivate",
       kFlagCannotBeOptional },
@@ -266,6 +284,7 @@ void APIPermissionInfo::RegisterAllPermissions(
       kFlagCannotBeOptional },
     { APIPermission::kMediaGalleriesPrivate, "mediaGalleriesPrivate",
       kFlagCannotBeOptional },
+    { APIPermission::kStreamsPrivate, "streamsPrivate", kFlagCannotBeOptional },
 
     // Full url access permissions.
     { APIPermission::kDebugger, "debugger",
@@ -313,19 +332,33 @@ void APIPermissionInfo::RegisterAllPermissions(
     { APIPermission::kFileSystemWrite, "fileSystem.write", kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_WRITE,
       PermissionMessage::kFileSystemWrite },
-    { APIPermission::kMediaGalleries, "mediaGalleries" },
-    { APIPermission::kMediaGalleriesRead, "mediaGalleries.read" },
-    { APIPermission::kMediaGalleriesAllAutoDetected,
-      "mediaGalleries.allAutoDetected", kFlagNone,
-      IDS_EXTENSION_PROMPT_WARNING_MEDIA_GALLERIES_ALL_GALLERIES,
-      PermissionMessage::kMediaGalleriesAllGalleries },
+    // Because warning messages for the "mediaGalleries" permission vary based
+    // on the permissions parameters, no message ID or message text is
+    // specified here.
+    // The message ID and text used will be determined at run-time in the
+    // |MediaGalleriesPermission| class.
+    { APIPermission::kMediaGalleries, "mediaGalleries", kFlagNone, 0,
+      PermissionMessage::kNone,
+      &::CreateAPIPermission<MediaGalleriesPermission> },
     { APIPermission::kPushMessaging, "pushMessaging", kFlagCannotBeOptional },
     { APIPermission::kBluetooth, "bluetooth", kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_BLUETOOTH,
       PermissionMessage::kBluetooth },
+    { APIPermission::kBluetoothDevice, "bluetoothDevices",
+      kFlagNone, 0, PermissionMessage::kNone,
+      &::CreateAPIPermission<BluetoothDevicePermission> },
     { APIPermission::kUsb, "usb", kFlagNone,
       IDS_EXTENSION_PROMPT_WARNING_USB,
       PermissionMessage::kUsb },
+    { APIPermission::kUsbDevice, "usbDevices",
+      kFlagMustBeOptional, 0, PermissionMessage::kNone,
+      &::CreateAPIPermission<UsbDevicePermission> },
+    { APIPermission::kSystemIndicator, "systemIndicator", kFlagNone,
+      IDS_EXTENSION_PROMPT_WARNING_SYSTEM_INDICATOR,
+      PermissionMessage::kSystemIndicator },
+    { APIPermission::kSystemInfoDisplay, "systemInfo.display" },
+    { APIPermission::kPointerLock, "pointerLock" },
+    { APIPermission::kFullscreen, "fullscreen" },
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(PermissionsToRegister); ++i) {

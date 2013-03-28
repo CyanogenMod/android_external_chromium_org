@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/command_line.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
@@ -20,18 +19,18 @@
 #include "chrome/browser/chromeos/login/mock_update_screen.h"
 #include "chrome/browser/chromeos/login/network_screen.h"
 #include "chrome/browser/chromeos/login/reset_screen.h"
+#include "chrome/browser/chromeos/login/test_login_utils.h"
 #include "chrome/browser/chromeos/login/user_image_screen.h"
-#include "chrome/browser/chromeos/login/view_screen.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/login/wizard_in_process_browser_test.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/chromeos/login/wrong_hwid_screen.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/icu/public/common/unicode/locid.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "unicode/locid.h"
 
 namespace chromeos {
 
@@ -48,6 +47,9 @@ class MockOutShowHide : public T {
   template <class P> explicit  MockOutShowHide(P p) : T(p) {}
   template <class P> MockOutShowHide(P p, H* actor)
       : T(p, actor), actor_(actor) {}
+
+  H* actor() const { return actor_.get(); }
+
   MOCK_METHOD0(Show, void());
   MOCK_METHOD0(Hide, void());
 
@@ -141,7 +143,7 @@ class WizardControllerFlowTest : public WizardControllerTest {
   MockOutShowHide<MockUpdateScreen, MockUpdateScreenActor>* mock_update_screen_;
   MockOutShowHide<MockEulaScreen, MockEulaScreenActor>* mock_eula_screen_;
   MockOutShowHide<MockEnterpriseEnrollmentScreen,
-    MockEnterpriseEnrollmentScreenActor>* mock_enterprise_enrollment_screen_;
+      MockEnterpriseEnrollmentScreenActor>* mock_enterprise_enrollment_screen_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WizardControllerFlowTest);
@@ -218,6 +220,9 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest, ControlFlowSkipUpdateEnroll) {
   EXPECT_CALL(*mock_update_screen_, StartUpdate()).Times(0);
   EXPECT_CALL(*mock_update_screen_, Show()).Times(0);
   WizardController::default_controller()->SkipUpdateEnrollAfterEula();
+  EXPECT_CALL(*mock_enterprise_enrollment_screen_->actor(),
+              SetParameters(mock_enterprise_enrollment_screen_, false, ""))
+      .Times(1);
   EXPECT_CALL(*mock_enterprise_enrollment_screen_, Show()).Times(1);
   EXPECT_CALL(*mock_enterprise_enrollment_screen_, Hide()).Times(0);
   OnExit(ScreenObserver::EULA_ACCEPTED);
@@ -254,6 +259,9 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
   EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
             WizardController::default_controller()->current_screen());
   EXPECT_CALL(*mock_update_screen_, StartUpdate()).Times(0);
+  EXPECT_CALL(*mock_enterprise_enrollment_screen_->actor(),
+              SetParameters(mock_enterprise_enrollment_screen_, false, ""))
+      .Times(1);
   EXPECT_CALL(*mock_enterprise_enrollment_screen_, Show()).Times(1);
   EXPECT_CALL(*mock_network_screen_, Hide()).Times(1);
 
@@ -269,10 +277,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
 
 IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
                        ControlFlowEnterpriseAutoEnrollmentCompleted) {
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kLoginScreen,
-      WizardController::kLoginScreenName);
-
+  WizardController::default_controller()->SkipPostLoginScreensForTesting();
   EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
             WizardController::default_controller()->current_screen());
   EXPECT_CALL(*mock_update_screen_, StartUpdate()).Times(0);
@@ -288,18 +293,21 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
       &mock_consumer);
   // This calls StartWizard, destroying the current controller() and its mocks;
   // don't set expectations on those objects.
-  ExistingUserController::current_controller()->CompleteLogin(kUsername,
-                                                              kPassword);
+  ExistingUserController::current_controller()->CompleteLogin(
+      UserCredentials(kUsername, kPassword, ""));
+  // Run the tasks posted to complete the login:
+  MessageLoop::current()->RunUntilIdle();
+
   EnterpriseEnrollmentScreen* screen =
       WizardController::default_controller()->GetEnterpriseEnrollmentScreen();
   EXPECT_EQ(screen, WizardController::default_controller()->current_screen());
   // This is the main expectation: after auto-enrollment, login is resumed.
-  EXPECT_CALL(mock_consumer, OnLoginSuccess(_, _, _, _)).Times(1);
+  EXPECT_CALL(mock_consumer, OnLoginSuccess(_, _, _)).Times(1);
   OnExit(ScreenObserver::ENTERPRISE_AUTO_MAGIC_ENROLLMENT_COMPLETED);
   // Prevent browser launch when the profile is prepared:
   browser_shutdown::SetTryingToQuit(true);
   // Run the tasks posted to complete the login:
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 }
 
 IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest, ControlFlowResetScreen) {
@@ -320,9 +328,30 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest, ControlFlowResetScreen) {
   EXPECT_FALSE(ExistingUserController::current_controller() == NULL);
 }
 
+IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
+                       ControlFlowWrongHWIDScreenFromLogin) {
+  EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
+            WizardController::default_controller()->current_screen());
+
+  BaseLoginDisplayHost::default_host()->StartSignInScreen();
+  EXPECT_FALSE(ExistingUserController::current_controller() == NULL);
+  ExistingUserController::current_controller()->ShowWrongHWIDScreen();
+
+  WrongHWIDScreen* screen =
+      WizardController::default_controller()->GetWrongHWIDScreen();
+  EXPECT_EQ(screen, WizardController::default_controller()->current_screen());
+
+  // After warning is skipped, user returns to sign-in screen.
+  // And this destroys WizardController.
+  OnExit(ScreenObserver::WRONG_HWID_WARNING_SKIPPED);
+  EXPECT_FALSE(ExistingUserController::current_controller() == NULL);
+}
+
+// TODO(dzhioev): Add test emaulating device with wrong HWID.
+
 // TODO(nkostylev): Add test for WebUI accelerators http://crosbug.com/22571
 
-COMPILE_ASSERT(ScreenObserver::EXIT_CODES_COUNT == 14,
+COMPILE_ASSERT(ScreenObserver::EXIT_CODES_COUNT == 15,
                add_tests_for_new_control_flow_you_just_introduced);
 
 }  // namespace chromeos

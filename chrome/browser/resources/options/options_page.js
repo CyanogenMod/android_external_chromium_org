@@ -18,15 +18,13 @@ cr.define('options', function() {
     this.title = title;
     this.pageDivName = pageDivName;
     this.pageDiv = $(this.pageDivName);
+    // |pageDiv.page| is set to the page object (this) when the page is visible
+    // to track which page is being shown when multiple pages can share the same
+    // underlying div.
+    this.pageDiv.page = null;
     this.tab = null;
     this.lastFocusedElement = null;
-
-    // Offset of page container in pixels, to allow room for side menu.
-    // Simplified settings pages can override this if they don't use the menu.
-    this.horizontalOffset = DEFAULT_HORIZONTAL_OFFSET;
   }
-
-  /** @const */ var DEFAULT_HORIZONTAL_OFFSET = 155;
 
   /**
    * This is the absolute difference maintained between standard and
@@ -34,6 +32,14 @@ cr.define('options', function() {
    * @const
    */
   OptionsPage.SIZE_DIFFERENCE_FIXED_STANDARD = 3;
+
+  /**
+   * Offset of page container in pixels, to allow room for side menu.
+   * Simplified settings pages can override this if they don't use the menu.
+   * The default (155) comes from -webkit-margin-start in uber_shared.css
+   * @private
+   */
+  OptionsPage.horizontalOffset = 155;
 
   /**
    * Main level option pages. Maps lower-case page names to the respective page
@@ -177,7 +183,7 @@ cr.define('options', function() {
   /**
    * Sets the title of the page. This is accomplished by calling into the
    * parent page API.
-   * @param {String} title The title string.
+   * @param {string} title The title string.
    * @private
    */
   OptionsPage.setTitle_ = function(title) {
@@ -402,7 +408,7 @@ cr.define('options', function() {
 
   /**
    * Returns the currently visible bubble, or null if no bubble is visible.
-   * @return {OptionsBubble} The bubble currently being shown.
+   * @return {AutoCloseBubble} The bubble currently being shown.
    */
   OptionsPage.getVisibleBubble = function() {
     var bubble = OptionsPage.bubble_;
@@ -411,17 +417,21 @@ cr.define('options', function() {
 
   /**
    * Shows an informational bubble displaying |content| and pointing at the
-   * |anchor| element. If |content| has focusable elements, they join the
-   * current page's tab order as siblings of |anchor|.
+   * |target| element. If |content| has focusable elements, they join the
+   * current page's tab order as siblings of |domSibling|.
    * @param {HTMLDivElement} content The content of the bubble.
-   * @param {HTMLElement} anchor The element at which the bubble points.
+   * @param {HTMLElement} target The element at which the bubble points.
+   * @param {HTMLElement} domSibling The element after which the bubble is added
+   *                      to the DOM.
+   * @param {cr.ui.ArrowLocation} location The arrow location.
    */
-  OptionsPage.showBubble = function(content, anchor) {
+  OptionsPage.showBubble = function(content, target, domSibling, location) {
     OptionsPage.hideBubble();
 
-    var bubble = new options.OptionsBubble;
-    bubble.anchorNode = anchor;
-    bubble.arrowLocation = cr.ui.ArrowLocation.TOP_END;
+    var bubble = new cr.ui.AutoCloseBubble;
+    bubble.anchorNode = target;
+    bubble.domSibling = domSibling;
+    bubble.arrowLocation = location;
     bubble.content = content;
     bubble.show();
     OptionsPage.bubble_ = bubble;
@@ -517,9 +527,9 @@ cr.define('options', function() {
     }
 
     // Reverse the button strip for views. See the documentation of
-    // reverseButtonStrip_() for an explanation of why this is necessary.
+    // reverseButtonStripIfNecessary_() for an explanation of why this is done.
     if (cr.isViews)
-      this.reverseButtonStrip_(overlay);
+      this.reverseButtonStripIfNecessary_(overlay);
 
     overlay.tab = undefined;
     overlay.isOverlay = true;
@@ -527,16 +537,17 @@ cr.define('options', function() {
   };
 
   /**
-   * Reverses the child elements of a button strip. This is necessary because
-   * WebKit does not alter the tab order for elements that are visually reversed
-   * using -webkit-box-direction: reverse, and the button order is reversed for
-   * views.  See https://bugs.webkit.org/show_bug.cgi?id=62664 for more
-   * information.
+   * Reverses the child elements of a button strip if it hasn't already been
+   * reversed. This is necessary because WebKit does not alter the tab order for
+   * elements that are visually reversed using -webkit-box-direction: reverse,
+   * and the button order is reversed for views. See http://webk.it/62664 for
+   * more information.
    * @param {Object} overlay The overlay containing the button strip to reverse.
    * @private
    */
-  OptionsPage.reverseButtonStrip_ = function(overlay) {
-    var buttonStrips = overlay.pageDiv.querySelectorAll('.button-strip');
+  OptionsPage.reverseButtonStripIfNecessary_ = function(overlay) {
+    var buttonStrips =
+        overlay.pageDiv.querySelectorAll('.button-strip:not([reversed])');
 
     // Reverse all button-strips in the overlay.
     for (var j = 0; j < buttonStrips.length; j++) {
@@ -545,6 +556,8 @@ cr.define('options', function() {
       var childNodes = buttonStrip.childNodes;
       for (var i = childNodes.length - 1; i >= 0; i--)
         buttonStrip.appendChild(childNodes[i]);
+
+      buttonStrip.setAttribute('reversed', '');
     }
   };
 
@@ -669,15 +682,21 @@ cr.define('options', function() {
    * @private
    */
   OptionsPage.updateFrozenElementHorizontalPosition_ = function(e) {
-    if (isRTL())
-      e.style.right = this.horizontalOffset + 'px';
-    else
-      e.style.left = this.horizontalOffset - document.body.scrollLeft + 'px';
+    if (isRTL()) {
+      e.style.right = OptionsPage.horizontalOffset + 'px';
+    } else {
+      e.style.left = OptionsPage.horizontalOffset -
+          document.body.scrollLeft + 'px';
+    }
   };
 
+  /**
+   * Change the horizontal offset used to reposition elements while showing an
+   * overlay from the default.
+   */
   OptionsPage.setHorizontalOffset = function(value) {
-    this.horizontalOffset = value;
-  }
+    OptionsPage.horizontalOffset = value;
+  };
 
   OptionsPage.setClearPluginLSODataEnabled = function(enabled) {
     if (enabled) {
@@ -697,6 +716,14 @@ cr.define('options', function() {
       document.documentElement.removeAttribute(
           'enablePepperFlashSettings');
     }
+  };
+
+  OptionsPage.setIsSettingsApp = function() {
+    document.documentElement.classList.add('settings-app');
+  };
+
+  OptionsPage.isSettingsApp = function() {
+    return document.documentElement.classList.contains('settings-app');
   };
 
   OptionsPage.prototype = {
@@ -732,6 +759,10 @@ cr.define('options', function() {
      * strategy.
      */
     focus: function() {
+      // Do not change focus if any control on this page is already focused.
+      if (this.pageDiv.contains(document.activeElement))
+        return;
+
       var elements = this.pageDiv.querySelectorAll(
           'input, list, select, textarea, button');
       for (var i = 0; i < elements.length; i++) {
@@ -763,7 +794,9 @@ cr.define('options', function() {
           this.container.classList.contains('transparent')) {
         return false;
       }
-      return !this.pageDiv.hidden;
+      if (this.pageDiv.hidden)
+        return false;
+      return this.pageDiv.page == this;
     },
 
     /**
@@ -780,6 +813,7 @@ cr.define('options', function() {
       if (this.isOverlay) {
         this.setOverlayVisible_(visible);
       } else {
+        this.pageDiv.page = this;
         this.pageDiv.hidden = !visible;
         this.onVisibilityChanged_();
       }
@@ -821,6 +855,7 @@ cr.define('options', function() {
             pages[i].hidden = true;
           // Show the new dialog.
           pageDiv.hidden = false;
+          pageDiv.page = this;
         }
         return;
       }
@@ -828,6 +863,7 @@ cr.define('options', function() {
       if (visible) {
         container.hidden = false;
         pageDiv.hidden = false;
+        pageDiv.page = this;
         // NOTE: This is a hacky way to force the container to layout which
         // will allow us to trigger the webkit transition.
         container.scrollTop;

@@ -5,6 +5,7 @@
 #include "net/quic/congestion_control/receive_algorithm_interface.h"
 
 #include "net/quic/congestion_control/fix_rate_receiver.h"
+#include "net/quic/congestion_control/tcp_receiver.h"
 
 namespace net {
 
@@ -13,11 +14,8 @@ ReceiveAlgorithmInterface* ReceiveAlgorithmInterface::Create(
     const QuicClock* clock,
     CongestionFeedbackType type) {
   switch (type) {
-    case kNone:
-      LOG(DFATAL) << "Attempted to create a ReceiveAlgorithm with kNone.";
-      break;
     case kTCP:
-      //return new TcpReceiver(clock);
+      return new TcpReceiver();
     case kInterArrival:
       break;  // TODO(pwestin) Implement.
     case kFixRate:

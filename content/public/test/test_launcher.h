@@ -11,9 +11,9 @@
 #include "base/compiler_specific.h"
 
 class CommandLine;
-class FilePath;
 
 namespace base {
+class FilePath;
 class RunLoop;
 }
 
@@ -27,11 +27,10 @@ extern const char kGTestListTestsFlag[];
 extern const char kGTestRepeatFlag[];
 extern const char kGTestRunDisabledTestsFlag[];
 extern const char kGTestOutputFlag[];
-extern const char kLaunchAsBrowser[];
-extern const char kSingleProcessTestsFlag[];
-extern const char kSingleProcessTestsAndChromeFlag[];
-extern const char kRunManualTestsFlag[];
 extern const char kHelpFlag[];
+extern const char kLaunchAsBrowser[];
+extern const char kRunManualTestsFlag[];
+extern const char kSingleProcessTestsFlag[];
 
 // Flag that causes only the kEmptyTestName test to be run.
 extern const char kWarmupFlag[];
@@ -40,8 +39,9 @@ class TestLauncherDelegate {
  public:
   virtual std::string GetEmptyTestName() = 0;
   virtual int RunTestSuite(int argc, char** argv) = 0;
-  virtual bool AdjustChildProcessCommandLine(CommandLine* command_line,
-                                             const FilePath& temp_data_dir) = 0;
+  virtual bool AdjustChildProcessCommandLine(
+      CommandLine* command_line,
+      const base::FilePath& temp_data_dir) = 0;
   virtual void PreRunMessageLoop(base::RunLoop* run_loop) {}
   virtual void PostRunMessageLoop() {}
   virtual ContentMainDelegate* CreateContentMainDelegate() = 0;

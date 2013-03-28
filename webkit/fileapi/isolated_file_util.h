@@ -19,10 +19,10 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE IsolatedFileUtil : public LocalFileUtil {
   virtual ~IsolatedFileUtil() {}
 
   // LocalFileUtil overrides.
-  virtual PlatformFileError GetLocalFilePath(
+  virtual base::PlatformFileError GetLocalFilePath(
       FileSystemOperationContext* context,
       const FileSystemURL& file_system_url,
-      FilePath* local_file_path) OVERRIDE;
+      base::FilePath* local_file_path) OVERRIDE;
 };
 
 // Dragged file system is a specialized IsolatedFileUtil where read access to
@@ -38,14 +38,11 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE DraggedFileUtil : public IsolatedFileUtil {
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       base::PlatformFileInfo* file_info,
-      FilePath* platform_path) OVERRIDE;
+      base::FilePath* platform_path) OVERRIDE;
   virtual scoped_ptr<AbstractFileEnumerator> CreateFileEnumerator(
       FileSystemOperationContext* context,
       const FileSystemURL& root_url,
       bool recursive) OVERRIDE;
-  virtual bool IsDirectoryEmpty(
-      FileSystemOperationContext* context,
-      const FileSystemURL& url) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DraggedFileUtil);

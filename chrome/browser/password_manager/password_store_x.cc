@@ -10,11 +10,12 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "chrome/browser/password_manager/password_store_change.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 
@@ -115,22 +116,25 @@ void PasswordStoreX::SortLoginsByOrigin(NativeBackend::PasswordFormList* list) {
   std::sort(list->begin(), list->end(), LoginLessThan());
 }
 
-void PasswordStoreX::GetLoginsImpl(GetLoginsRequest* request,
-                                   const PasswordForm& form) {
+void PasswordStoreX::GetLoginsImpl(
+    const content::PasswordForm& form,
+    const ConsumerCallbackRunner& callback_runner) {
   CheckMigration();
-  if (use_native_backend() && backend_->GetLogins(form, &request->value)) {
-    SortLoginsByOrigin(&request->value);
-    ForwardLoginsResult(request);
+  std::vector<content::PasswordForm*> matched_forms;
+  if (use_native_backend() && backend_->GetLogins(form, &matched_forms)) {
+    SortLoginsByOrigin(&matched_forms);
+    callback_runner.Run(matched_forms);
     // The native backend may succeed and return no data even while locked, if
     // the query did not match anything stored. So we continue to allow fallback
     // until we perform a write operation, or until a read returns actual data.
-    if (request->value.size() > 0)
+    if (matched_forms.size() > 0)
       allow_fallback_ = false;
   } else if (allow_default_store()) {
-    PasswordStoreDefault::GetLoginsImpl(request, form);
+    DCHECK(matched_forms.empty());
+    PasswordStoreDefault::GetLoginsImpl(form, callback_runner);
   } else {
     // The consumer will be left hanging unless we reply.
-    ForwardLoginsResult(request);
+    callback_runner.Run(matched_forms);
   }
 }
 
@@ -267,11 +271,12 @@ ssize_t PasswordStoreX::MigrateLogins() {
 
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
 // static
-void PasswordStoreX::RegisterUserPrefs(PrefService* prefs) {
+void PasswordStoreX::RegisterUserPrefs(PrefRegistrySyncable* registry) {
   // Normally we should be on the UI thread here, but in tests we might not.
-  prefs->RegisterBooleanPref(prefs::kPasswordsUseLocalProfileId,
-                             false,  // default: passwords don't use local ids
-                             PrefService::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kPasswordsUseLocalProfileId,
+                                // default: passwords don't use local ids
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // static

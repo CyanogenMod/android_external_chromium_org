@@ -10,10 +10,10 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/callback_forward.h"
 #include "base/string16.h"
+#include "chrome/browser/ui/toolbar/toolbar_model.h"
 
 class GURL;
 class SkBitmap;
-class TabContents;
 
 namespace browser_sync {
 class SyncedTabDelegate;
@@ -34,15 +34,12 @@ class TabAndroid {
 
   static TabAndroid* GetNativeTab(JNIEnv* env, jobject obj);
 
-  // TODO(nileshagrawal): This should go away when all helpers
-  // have moved out of TabContents. crbug.com/153587
-  static TabContents* GetOrCreateTabContents(
-      content::WebContents* web_contents);
-
-  static TabContents* InitTabContentsFromView(JNIEnv* env,
-                                              jobject content_view);
+  // TODO(tedchoc): Make pure virtual once all derived classes can be updated.
+  virtual content::WebContents* GetWebContents();
 
   virtual browser_sync::SyncedTabDelegate* GetSyncedTabDelegate() = 0;
+
+  virtual ToolbarModel::SecurityLevel GetSecurityLevel();
 
   int id() const {
     return tab_id_;
@@ -66,6 +63,9 @@ class TabAndroid {
       const GURL& url, const string16& title, const SkBitmap& skbitmap,
       int r_value, int g_value, int b_value) = 0;
 
+  // Called when a bookmark node should be edited.
+  virtual void EditBookmark(int64 node_id, bool is_folder) = 0;
+
   // Called when the common ExternalProtocolHandler wants to
   // run the external protocol dialog.
   // TODO(jknotten): Remove this method. Making it non-abstract, so that
@@ -76,6 +76,9 @@ class TabAndroid {
   virtual ~TabAndroid();
 
   static void InitTabHelpers(content::WebContents* web_contents);
+
+  static content::WebContents* InitWebContentsFromView(JNIEnv* env,
+                                                       jobject content_view);
 
   int tab_id_;
 };

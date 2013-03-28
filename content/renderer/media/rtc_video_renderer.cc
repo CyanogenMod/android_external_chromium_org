@@ -5,6 +5,7 @@
 #include "content/renderer/media/rtc_video_renderer.h"
 
 #include "base/bind.h"
+#include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop_proxy.h"
@@ -37,9 +38,12 @@ void RTCVideoRenderer::Start() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kStopped);
 
-  if (video_track_)
+  if (video_track_) {
     video_track_->AddRenderer(this);
+    video_track_->RegisterObserver(this);
+  }
   state_ = kStarted;
+  MaybeRenderSignalingFrame();
 }
 
 void RTCVideoRenderer::Stop() {
@@ -47,6 +51,7 @@ void RTCVideoRenderer::Stop() {
   if (video_track_) {
     state_ = kStopped;
     video_track_->RemoveRenderer(this);
+    video_track_->UnregisterObserver(this);
     video_track_ = NULL;
   }
 }
@@ -94,6 +99,24 @@ void RTCVideoRenderer::RenderFrame(const cricket::VideoFrame* frame) {
                             this, video_frame));
 }
 
+void RTCVideoRenderer::OnChanged() {
+  DCHECK(message_loop_proxy_->BelongsToCurrentThread());
+  MaybeRenderSignalingFrame();
+}
+
+void RTCVideoRenderer::MaybeRenderSignalingFrame() {
+  // Render a small black frame if the track transition to ended.
+  // This is necessary to make sure audio can play if the video tag src is
+  // a MediaStream video track that has been rejected or ended.
+  if (video_track_->state() == webrtc::MediaStreamTrackInterface::kEnded) {
+    const int kMinFrameSize = 2;
+    const gfx::Size size(kMinFrameSize, kMinFrameSize);
+    scoped_refptr<media::VideoFrame> video_frame =
+        media::VideoFrame::CreateBlackFrame(size);
+    DoRenderFrameOnMainThread(video_frame);
+  }
+}
+
 void RTCVideoRenderer::DoRenderFrameOnMainThread(
     scoped_refptr<media::VideoFrame> video_frame) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
@@ -102,6 +125,7 @@ void RTCVideoRenderer::DoRenderFrameOnMainThread(
     return;
   }
 
+  TRACE_EVENT0("video", "DoRenderFrameOnMainThread");
   repaint_cb_.Run(video_frame);
 }
 

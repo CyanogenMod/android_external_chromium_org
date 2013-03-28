@@ -38,7 +38,10 @@
 //   additional properties will be validated.
 //==============================================================================
 
+// TODO(cduvall): Make this file not depend on chromeHidden.
 var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+var loadTypeSchema = require('utils').loadTypeSchema;
+var CHECK = requireNative('logging').CHECK;
 
 function isInstanceOfClass(instance, className) {
   if (!instance)
@@ -90,6 +93,8 @@ chromeHidden.JSONSchemaValidator.messages = {
   numberIntValue: "Value must fit in a 32-bit signed integer.",
   numberMaxDecimal: "Value must not have more than * decimal places.",
   invalidType: "Expected '*' but got '*'.",
+  invalidTypeIntegerNumber:
+      "Expected 'integer' but got 'number', consider using Math.round().",
   invalidChoice: "Value does not match any valid type choices.",
   invalidPropertyType: "Missing property type.",
   schemaRequired: "Schema value required.",
@@ -172,11 +177,19 @@ chromeHidden.JSONSchemaValidator.prototype.getAllTypesForSchema =
       schemaTypes = schemaTypes.concat(choiceTypes);
     }
   }
-  if (schema['$ref']) {
-    var refTypes = this.getAllTypesForSchema(this.types[schema['$ref']]);
-    schemaTypes = schemaTypes.concat(refTypes);
+  var ref = schema['$ref'];
+  if (ref) {
+    var type = this.getOrAddType(ref);
+    CHECK(type, 'Could not find type ' + ref);
+    schemaTypes = schemaTypes.concat(this.getAllTypesForSchema(type));
   }
   return schemaTypes;
+};
+
+chromeHidden.JSONSchemaValidator.prototype.getOrAddType = function(typeName) {
+  if (!this.types[typeName])
+    this.types[typeName] = loadTypeSchema(typeName);
+  return this.types[typeName];
 };
 
 /**
@@ -191,7 +204,7 @@ chromeHidden.JSONSchemaValidator.prototype.isValidSchemaType =
   if (schema.optional && (type == "null" || type == "undefined"))
     return true;
 
-  schemaTypes = this.getAllTypesForSchema(schema);
+  var schemaTypes = this.getAllTypesForSchema(schema);
   for (var i = 0; i < schemaTypes.length; i++) {
     if (schemaTypes[i] == "any" || type == schemaTypes[i])
       return true;
@@ -239,11 +252,12 @@ chromeHidden.JSONSchemaValidator.prototype.validate =
 
   // If the schema has a $ref property, the instance must validate against
   // that schema too. It must be present in this.types to be referenced.
-  if (schema["$ref"]) {
-    if (!this.types[schema["$ref"]])
-      this.addError(path, "unknownSchemaReference", [ schema["$ref"] ]);
+  var ref = schema["$ref"];
+  if (ref) {
+    if (!this.getOrAddType(ref))
+      this.addError(path, "unknownSchemaReference", [ ref ]);
     else
-      this.validate(instance, this.types[schema["$ref"]], path)
+      this.validate(instance, this.getOrAddType(ref), path)
   }
 
   // If the schema has a choices property, the instance must validate against at
@@ -480,13 +494,16 @@ chromeHidden.JSONSchemaValidator.prototype.validateNumber =
 chromeHidden.JSONSchemaValidator.prototype.validateType =
     function(instance, schema, path) {
   var actualType = chromeHidden.JSONSchemaValidator.getType(instance);
-  if (schema.type != actualType && !(schema.type == "number" &&
-      actualType == "integer")) {
+  if (schema.type == actualType ||
+      (schema.type == "number" && actualType == "integer")) {
+    return true;
+  } else if (schema.type == "integer" && actualType == "number") {
+    this.addError(path, "invalidTypeIntegerNumber");
+    return false;
+  } else {
     this.addError(path, "invalidType", [schema.type, actualType]);
     return false;
   }
-
-  return true;
 };
 
 /**

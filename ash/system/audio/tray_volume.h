@@ -18,7 +18,7 @@ class VolumeView;
 class TrayVolume : public TrayImageItem,
                    public AudioObserver {
  public:
-  TrayVolume();
+  explicit TrayVolume(SystemTray* system_tray);
   virtual ~TrayVolume();
 
  private:
@@ -30,6 +30,7 @@ class TrayVolume : public TrayImageItem,
   virtual views::View* CreateDetailedView(user::LoginStatus status) OVERRIDE;
   virtual void DestroyDefaultView() OVERRIDE;
   virtual void DestroyDetailedView() OVERRIDE;
+  virtual bool ShouldHideArrow() const OVERRIDE;
   virtual bool ShouldShowLauncher() const OVERRIDE;
 
   // Overridden from AudioObserver.

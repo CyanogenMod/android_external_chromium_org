@@ -17,9 +17,10 @@ class MockCryptohomeClient : public CryptohomeClient {
   MockCryptohomeClient();
   virtual ~MockCryptohomeClient();
 
-  MOCK_METHOD1(SetAsyncCallStatusHandler,
-               void(const AsyncCallStatusHandler& handler));
-  MOCK_METHOD0(ResetAsyncCallStatusHandler, void());
+  MOCK_METHOD2(SetAsyncCallStatusHandlers,
+               void(const AsyncCallStatusHandler& handler,
+                    const AsyncCallStatusWithDataHandler& data_handler));
+  MOCK_METHOD0(ResetAsyncCallStatusHandlers, void());
   MOCK_METHOD1(IsMounted, void(const BoolDBusMethodCallback& callback));
   MOCK_METHOD1(Unmount, bool(bool* success));
   MOCK_METHOD3(AsyncCheckKey,
@@ -34,9 +35,12 @@ class MockCryptohomeClient : public CryptohomeClient {
   MOCK_METHOD2(AsyncRemove, void(const std::string& username,
                                  const AsyncMethodCallback& callback));
   MOCK_METHOD1(GetSystemSalt, bool(std::vector<uint8>* salt));
+  MOCK_METHOD2(GetSanitizedUsername,
+               void(const std::string& username,
+                    const StringDBusMethodCallback& callback));
   MOCK_METHOD4(AsyncMount, void(const std::string& username,
                                 const std::string& key,
-                                const bool create_if_missing,
+                                int flags,
                                 const AsyncMethodCallback& callback));
   MOCK_METHOD1(AsyncMountGuest,
                void(const AsyncMethodCallback& callback));
@@ -44,11 +48,15 @@ class MockCryptohomeClient : public CryptohomeClient {
   MOCK_METHOD1(TpmIsEnabled, void(const BoolDBusMethodCallback& callback));
   MOCK_METHOD1(CallTpmIsEnabledAndBlock, bool(bool* enabled));
   MOCK_METHOD1(TpmGetPassword, void(const StringDBusMethodCallback& callback));
-  MOCK_METHOD1(TpmIsOwned, bool(bool* owned));
-  MOCK_METHOD1(TpmIsBeingOwned, bool(bool* owning));
+  MOCK_METHOD1(TpmIsOwned, void(const BoolDBusMethodCallback& callback));
+  MOCK_METHOD1(CallTpmIsOwnedAndBlock, bool(bool* owned));
+  MOCK_METHOD1(TpmIsBeingOwned, void(const BoolDBusMethodCallback& callback));
+  MOCK_METHOD1(CallTpmIsBeingOwnedAndBlock, bool(bool* owning));
   MOCK_METHOD1(TpmCanAttemptOwnership,
                void(const VoidDBusMethodCallback& callback));
-  MOCK_METHOD0(TpmClearStoredPassword, bool());
+  MOCK_METHOD1(TpmClearStoredPassword,
+               void(const VoidDBusMethodCallback& callback));
+  MOCK_METHOD0(CallTpmClearStoredPasswordAndBlock, bool());
   MOCK_METHOD1(Pkcs11IsTpmTokenReady,
                void(const BoolDBusMethodCallback& callback));
   MOCK_METHOD1(Pkcs11GetTpmTokenInfo,
@@ -65,6 +73,21 @@ class MockCryptohomeClient : public CryptohomeClient {
   MOCK_METHOD1(InstallAttributesIsReady, bool(bool* is_ready));
   MOCK_METHOD1(InstallAttributesIsInvalid, bool(bool* is_invalid));
   MOCK_METHOD1(InstallAttributesIsFirstInstall, bool(bool* is_first_install));
+  MOCK_METHOD1(TpmAttestationIsPrepared,
+               void(const BoolDBusMethodCallback& callback));
+  MOCK_METHOD1(TpmAttestationIsEnrolled,
+               void(const BoolDBusMethodCallback& callback));
+  MOCK_METHOD1(AsyncTpmAttestationCreateEnrollRequest,
+               void(const AsyncMethodCallback& callback));
+  MOCK_METHOD2(AsyncTpmAttestationEnroll,
+               void(const std::string& pca_response,
+                    const AsyncMethodCallback& callback));
+  MOCK_METHOD2(AsyncTpmAttestationCreateCertRequest,
+               void(bool is_cert_for_owner,
+                    const AsyncMethodCallback& callback));
+  MOCK_METHOD2(AsyncTpmAttestationFinishCertRequest,
+               void(const std::string& pca_response,
+                    const AsyncMethodCallback& callback));
 };
 
 }  // namespace chromeos

@@ -39,7 +39,14 @@ cr.define('options.browser_options', function() {
       return this.profileInfo_.filePath;
     },
 
-    /** @inheritDoc */
+    /**
+     * @type {boolean} whether this profile is managed.
+     */
+    get isManaged() {
+      return this.profileInfo_.isManaged;
+    },
+
+    /** @override */
     decorate: function() {
       DeletableItem.prototype.decorate.call(this);
 
@@ -51,6 +58,7 @@ cr.define('options.browser_options', function() {
       this.contentElement.appendChild(iconEl);
 
       var nameEl = this.ownerDocument.createElement('div');
+      nameEl.className = 'profile-name';
       if (profileInfo.isCurrentProfile)
         nameEl.classList.add('profile-item-current');
       this.contentElement.appendChild(nameEl);
@@ -72,30 +80,46 @@ cr.define('options.browser_options', function() {
   ProfileList.prototype = {
     __proto__: DeletableItemList.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       DeletableItemList.prototype.decorate.call(this);
       this.selectionModel = new ListSingleSelectionModel();
     },
 
-    /** @inheritDoc */
+    /** @override */
     createItem: function(pageInfo) {
       var item = new ProfileListItem(pageInfo);
+      item.deletable = this.canDeleteItems_;
       return item;
     },
 
-    /** @inheritDoc */
+    /** @override */
     deleteItemAtIndex: function(index) {
+      if (loadTimeData.getBoolean('profileIsManaged'))
+        return;
       ManageProfileOverlay.showDeleteDialog(this.dataModel.item(index));
     },
 
-    /** @inheritDoc */
+    /** @override */
     activateItemAtIndex: function(index) {
       // Don't allow the user to edit a profile that is not current.
       var profileInfo = this.dataModel.item(index);
       if (profileInfo.isCurrentProfile)
         ManageProfileOverlay.showManageDialog(profileInfo);
     },
+
+    /**
+     * Sets whether items in this list are deletable.
+     */
+    set canDeleteItems(value) {
+      this.canDeleteItems_ = value;
+    },
+
+    /**
+     * If false, items in this list will not be deltable.
+     * @private
+     */
+    canDeleteItems_: true,
   };
 
   return {

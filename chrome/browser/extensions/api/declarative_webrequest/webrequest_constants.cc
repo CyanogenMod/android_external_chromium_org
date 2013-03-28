@@ -9,24 +9,26 @@ namespace declarative_webrequest_constants {
 
 // Signals to which WebRequestRulesRegistries are registered.
 const char kOnRequest[] = "declarativeWebRequest.onRequest";
+const char kOnMessage[] = "declarativeWebRequest.onMessage";
 
 // Keys of dictionaries.
 const char kAgeLowerBoundKey[] = "ageLowerBound";
 const char kAgeUpperBoundKey[] = "ageUpperBound";
 const char kCookieKey[] = "cookie";
 const char kContentTypeKey[] = "contentType";
-const char kDirectionKey[] = "direction";
 const char kDomainKey[] = "domain";
 const char kExcludeContentTypeKey[] = "excludeContentType";
 const char kExcludeRequestHeadersKey[] = "excludeRequestHeaders";
 const char kExcludeResponseHeadersKey[] = "excludeResponseHeaders";
 const char kExpiresKey[] = "expires";
 const char kFilterKey[] ="filter";
+const char kFirstPartyForCookiesUrlKey[] = "firstPartyForCookiesUrl";
 const char kFromKey[] = "from";
 const char kHttpOnlyKey[] = "httpOnly";
 const char kInstanceTypeKey[] = "instanceType";
 const char kLowerPriorityThanKey[] = "lowerPriorityThan";
 const char kMaxAgeKey[] = "maxAge";
+const char kMessageKey[] = "message";
 const char kModificationKey[] = "modification";
 const char kNameContainsKey[] = "nameContains";
 const char kNameEqualsKey[] = "nameEquals";
@@ -81,6 +83,8 @@ const char kRemoveResponseCookieType[] =
 const char kRemoveResponseHeaderType[] =
     "declarativeWebRequest.RemoveResponseHeader";
 const char kRequestMatcherType[] = "declarativeWebRequest.RequestMatcher";
+const char kSendMessageToExtensionType[] =
+    "declarativeWebRequest.SendMessageToExtension";
 const char kSetRequestHeaderType[] = "declarativeWebRequest.SetRequestHeader";
 
 }  // namespace declarative_webrequest_constants

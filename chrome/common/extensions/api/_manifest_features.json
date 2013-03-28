@@ -20,7 +20,8 @@
       "nckgahadagoaajjgafhacjanaoiihapd",  // Google Talk prod
       "eggnbpckecmjlblplehfpjjdhhidfdoj",  // Google Talk beta
       "ppleadejekpmccmnpjdimmlfljlkdfej",  // Google Talk alpha
-      "ljclpkphhpbpinifbeabbhlfddcpfdde"   // Google Talk debug
+      "ljclpkphhpbpinifbeabbhlfddcpfdde",   // Google Talk debug
+      "lphgohfeebnhcpiohjndkgbhhkoapkjc" // Apps Debugger
     ]
   },
   "app.background": {
@@ -72,9 +73,13 @@
     "extension_types": ["extension", "packaged_app"]
   },
   "commands": {
-    "channel": "beta",
+    "channel": "stable",
     "extension_types": ["extension", "packaged_app", "platform_app"],
     "min_manifest_version": 2
+  },
+  "content_pack": {
+    "channel": "dev",
+    "extension_types": ["extension"]
   },
   "content_security_policy": {
     "channel": "stable",
@@ -110,19 +115,41 @@
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]
   },
-  "display_in_launcher": {
-    "channel": "stable",
-    "extension_types": ["packaged_app", "platform_app"],
-    "location": "component"
-  },
-  "display_in_new_tab_page": {
-    "channel": "stable",
-    "extension_types": ["packaged_app", "platform_app"],
-    "location": "component"
-  },
+  "display_in_launcher": [
+    {
+      "channel": "stable",
+      "extension_types": ["packaged_app", "platform_app"],
+      "location": "component"
+    },
+    {
+      "channel": "stable",
+      "extension_types": ["packaged_app", "platform_app"],
+      "whitelist": [
+        "nmmhkkegccagdldgiimedpiccmgmieda"
+      ]
+    }
+  ],
+  "display_in_new_tab_page": [
+    {
+      "channel": "stable",
+      "extension_types": ["packaged_app", "platform_app"],
+      "location": "component"
+    },
+    {
+      "channel": "stable",
+      "extension_types": ["packaged_app", "platform_app"],
+      "whitelist": [
+        "nmmhkkegccagdldgiimedpiccmgmieda"
+      ]
+    }
+  ],
   "file_browser_handlers": {
     "channel": "stable",
     "extension_types": ["extension", "packaged_app"]
+  },
+  "media_galleries_handlers": {
+    "channel": "stable",
+    "extension_types": ["packaged_app", "platform_app"]
   },
   "file_handlers": {
     "channel": "stable",
@@ -138,7 +165,7 @@
   },
   "incognito": {
     "channel": "stable",
-    "extension_types": ["extension", "packaged_app", "platform_app"]
+    "extension_types": ["extension", "packaged_app"]
   },
   "input_components": {
     "channel": "stable",
@@ -158,6 +185,17 @@
     "channel": "stable",
     "extension_types": "all"
   },
+  "mime_types": {
+    "channel": "stable",
+    "extension_types": [ "extension", "packaged_app", "platform_app" ],
+    "whitelist": [
+      "oickdpebdnfbgkcaoklfcdhjniefkcji",  // browser_tests
+      "gbkeegbaiigmenfmjfclcdgdpimamgkj",  // QuickOffice
+      "ionpfmkccalenbmnddpbmocokhaknphg",  // QuickOffice Dev
+      "bpmcpldpdmajfigpchkicefoigmkfalc",  // Quickoffice component extension
+      "ehibbfinohgbchlgdbfpikodjaojhccn"   // Editor
+    ]
+  },
   "minimum_chrome_version": {
     "channel": "stable",
     "extension_types": [
@@ -173,6 +211,12 @@
   "name": {
     "channel": "stable",
     "extension_types": "all"
+  },
+  "kiosk_enabled": {
+    "channel": "stable",
+    "extension_types": [
+      "platform_app"
+    ]
   },
   "offline_enabled": {
     "channel": "stable",
@@ -211,6 +255,10 @@
     "extension_types": ["extension"],
     "max_manifest_version": 1
   },
+  "page_launcher": {
+    "channel": "dev",
+    "extension_types": ["platform_app"]
+  },
   "permissions": {
     "channel": "stable",
     "extension_types": [
@@ -241,6 +289,10 @@
   "signature": {
     "channel": "stable",
     "extension_types": "all"
+  },
+  "system_indicator": {
+    "channel": "dev",
+    "extension_types": ["extension", "packaged_app", "platform_app"]
   },
   "theme": {
     "channel": "stable",

@@ -9,26 +9,28 @@
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
+#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
-#include "net/base/ssl_cert_request_info.h"
 #include "net/base/x509_certificate.h"
+#include "net/ssl/ssl_cert_request_info.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/table_model.h"
 #include "ui/base/models/table_model_observer.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/table/table_view.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
+#include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_client_view.h"
 
 using content::BrowserThread;
+using content::WebContents;
 
 namespace {
 
@@ -89,17 +91,16 @@ void CertificateSelectorTableModel::SetObserver(
 // SSLClientCertificateSelector:
 
 SSLClientCertificateSelector::SSLClientCertificateSelector(
-    TabContents* tab_contents,
+    WebContents* web_contents,
     const net::HttpNetworkSession* network_session,
     net::SSLCertRequestInfo* cert_request_info,
-    const base::Callback<void(net::X509Certificate*)>& callback)
+    const chrome::SelectCertificateCallback& callback)
     : SSLClientAuthObserver(network_session, cert_request_info, callback),
       model_(new CertificateSelectorTableModel(cert_request_info)),
-      tab_contents_(tab_contents),
+      web_contents_(web_contents),
       window_(NULL),
       table_(NULL),
-      view_cert_button_(NULL),
-      view_cert_button_container_(NULL) {
+      view_cert_button_(NULL) {
   DVLOG(1) << __FUNCTION__;
 }
 
@@ -137,13 +138,14 @@ void SSLClientCertificateSelector::Init() {
 
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
-  CreateViewCertButton();
-
   StartObserving();
 
-  window_ = new ConstrainedWindowViews(
-      tab_contents_->web_contents(), this, false,
-      ConstrainedWindowViews::DEFAULT_INSETS);
+  window_ = CreateWebContentsModalDialogViews(
+      this,
+      web_contents_->GetView()->GetNativeView());
+  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+      WebContentsModalDialogManager::FromWebContents(web_contents_);
+  web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
 
   // Select the first row automatically.  This must be done after the dialog has
   // been created.
@@ -165,7 +167,7 @@ net::X509Certificate* SSLClientCertificateSelector::GetSelectedCert() const {
 void SSLClientCertificateSelector::OnCertSelectedByNotification() {
   DVLOG(1) << __FUNCTION__;
   DCHECK(window_);
-  window_->CloseConstrainedWindow();
+  window_->Close();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -211,16 +213,34 @@ bool SSLClientCertificateSelector::Accept() {
   return false;
 }
 
+// TODO(wittman): Remove this override once we move to the new style frame view
+// on all dialogs.
+views::NonClientFrameView*
+    SSLClientCertificateSelector::CreateNonClientFrameView(
+        views::Widget* widget) {
+  return CreateConstrainedStyleNonClientFrameView(
+      widget,
+      web_contents_->GetBrowserContext());
+}
+
 views::View* SSLClientCertificateSelector::GetInitiallyFocusedView() {
   return table_;
 }
 
-views::View* SSLClientCertificateSelector::GetContentsView() {
-  return this;
+views::View* SSLClientCertificateSelector::CreateExtraView() {
+  DCHECK(!view_cert_button_);
+  view_cert_button_ = new views::LabelButton(this,
+      l10n_util::GetStringUTF16(IDS_PAGEINFO_CERT_INFO_BUTTON));
+  view_cert_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
+  return view_cert_button_;
 }
 
-views::View* SSLClientCertificateSelector::GetExtraView() {
-  return view_cert_button_container_;
+ui::ModalType SSLClientCertificateSelector::GetModalType() const {
+#if defined(USE_ASH)
+  return ui::MODAL_TYPE_CHILD;
+#else
+  return views::WidgetDelegate::GetModalType();
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -231,10 +251,9 @@ void SSLClientCertificateSelector::ButtonPressed(
   if (sender == view_cert_button_) {
     net::X509Certificate* cert = GetSelectedCert();
     if (cert)
-      ShowCertificateViewer(
-          tab_contents_->web_contents(),
-          tab_contents_->web_contents()->GetView()->GetTopLevelNativeWindow(),
-          cert);
+      ShowCertificateViewer(web_contents_,
+                            web_contents_->GetView()->GetTopLevelNativeWindow(),
+                            cert);
   }
 }
 
@@ -246,7 +265,7 @@ void SSLClientCertificateSelector::OnSelectionChanged() {
 
 void SSLClientCertificateSelector::OnDoubleClick() {
   if (Accept())
-    window_->CloseConstrainedWindow();
+    window_->Close();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -264,36 +283,17 @@ void SSLClientCertificateSelector::CreateCertTable() {
   table_->SetObserver(this);
 }
 
-void SSLClientCertificateSelector::CreateViewCertButton() {
-  view_cert_button_ = new views::NativeTextButton(this,
-      l10n_util::GetStringUTF16(IDS_PAGEINFO_CERT_INFO_BUTTON));
-
-  // Wrap the view cert button in a grid layout in order to left-align it.
-  view_cert_button_container_ = new views::View();
-  views::GridLayout* layout = new views::GridLayout(
-      view_cert_button_container_);
-  view_cert_button_container_->SetLayoutManager(layout);
-
-  int column_set_id = 0;
-  views::ColumnSet* column_set = layout->AddColumnSet(column_set_id);
-  column_set->AddColumn(views::GridLayout::LEADING, views::GridLayout::LEADING,
-                        0, views::GridLayout::USE_PREF, 0, 0);
-  layout->StartRow(0, column_set_id);
-  layout->AddView(view_cert_button_);
-}
-
 namespace chrome {
 
 void ShowSSLClientCertificateSelector(
     content::WebContents* contents,
     const net::HttpNetworkSession* network_session,
     net::SSLCertRequestInfo* cert_request_info,
-    const base::Callback<void(net::X509Certificate*)>& callback) {
+    const chrome::SelectCertificateCallback& callback) {
   DVLOG(1) << __FUNCTION__ << " " << contents;
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  TabContents* tab_contents = TabContents::FromWebContents(contents);
   (new SSLClientCertificateSelector(
-       tab_contents, network_session, cert_request_info, callback))->Init();
+       contents, network_session, cert_request_info, callback))->Init();
 }
 
 }  // namespace chrome

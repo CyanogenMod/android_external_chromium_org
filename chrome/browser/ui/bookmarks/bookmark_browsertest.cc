@@ -57,12 +57,7 @@ class BookmarkBrowsertest : public InProcessBrowserTest {
   BookmarkModel* WaitForBookmarkModel(Profile* profile) {
     BookmarkModel* bookmark_model =
         BookmarkModelFactory::GetForProfile(profile);
-    if (!bookmark_model->IsLoaded()) {
-      content::WindowedNotificationObserver observer(
-          chrome::NOTIFICATION_BOOKMARK_MODEL_LOADED,
-          content::NotificationService::AllSources());
-      observer.Wait();
-    }
+    ui_test_utils::WaitForBookmarkModelToLoad(bookmark_model);
     return bookmark_model;
   }
 };
@@ -105,7 +100,7 @@ IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, Persist) {
 // Sanity check that bookmarks from different profiles are separate.
 // DISABLED_ because it regularly times out: http://crbug.com/159002.
 IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, DISABLED_MultiProfile) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   BookmarkModel* bookmark_model1 = WaitForBookmarkModel(browser()->profile());
@@ -113,7 +108,7 @@ IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, DISABLED_MultiProfile) {
   ui_test_utils::BrowserAddedObserver observer;
   g_browser_process->profile_manager()->CreateMultiProfileAsync(
       string16(), string16(), ProfileManager::CreateCallback(),
-      chrome::HOST_DESKTOP_TYPE_NATIVE);
+      chrome::HOST_DESKTOP_TYPE_NATIVE, false);
   Browser* browser2 = observer.WaitForSingleNewBrowser();
   BookmarkModel* bookmark_model2 = WaitForBookmarkModel(browser2->profile());
 

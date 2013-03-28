@@ -27,9 +27,9 @@ section.
 <p>
 If you only need to send a single message to another part of your extension
 (and optionally get a response back), you should use the simplified
-<a href="extension.html#method-sendMessage">chrome.extension.sendMessage()</a>
+$ref:runtime.sendMessage
 or
-<a href="tabs.html#method-sendMessage">chrome.tabs.sendMessage()</a>
+$ref:tabs.sendMessage
 methods. This lets you send a one-time JSON-serializable message from a
 content script to extension, or vice versa, respectively. An optional
 callback parameter allows you handle the response from the other side, if
@@ -40,7 +40,7 @@ Sending a request from a content script looks like this:
 <pre>
 contentscript.js
 ================
-chrome.extension.sendMessage({greeting: "hello"}, function(response) {
+chrome.runtime.sendMessage({greeting: "hello"}, function(response) {
   console.log(response.farewell);
 });
 </pre>
@@ -61,11 +61,11 @@ chrome.tabs.getSelected(null, function(tab) {
 
 <p>
 On the receiving end, you need to set up an
-<a href="extension.html#event-onMessage">chrome.extension.onMessage</a>
+$ref:runtime.onMessage
 event listener to handle the message. This looks the same from a content
 script or extension page.
 <pre>
-chrome.extension.onMessage.addListener(
+chrome.runtime.onMessage.addListener(
   function(request, sender, sendResponse) {
     console.log(sender.tab ?
                 "from a content script:" + sender.tab.url :
@@ -87,9 +87,9 @@ response. All other responses to that event will be ignored.
 Sometimes it's useful to have a conversation that lasts longer than a single
 request and response. In this case, you can open a long-lived channel from
 your content script to an extension page, or vice versa, using
-<a href="extension.html#method-connect">chrome.extension.connect()</a>
+$ref:runtime.connect
 or
-<a href="tabs.html#method-connect">chrome.tabs.connect()</a> respectively. The
+$ref:tabs.connect respectively. The
 channel can optionally have a name, allowing you to distinguish between
 different types of connections.
 
@@ -102,7 +102,7 @@ shared state linking the several messages coming from the content script.
 
 <p>
 When establishing a connection, each end is given a
-<a href="extension.html#type-Port">Port</a>
+$ref:runtime.Port
 object which is used for sending and receiving messages through that
 connection.
 
@@ -112,7 +112,7 @@ messages:
 <pre>
 contentscript.js
 ================
-var port = chrome.extension.connect({name: "knockknock"});
+var port = chrome.runtime.connect({name: "knockknock"});
 port.postMessage({joke: "Knock knock"});
 port.onMessage.addListener(function(msg) {
   if (msg.question == "Who's there?")
@@ -126,20 +126,19 @@ port.onMessage.addListener(function(msg) {
 Sending a request from the extension to a content script looks very similar,
 except that you need to specify which tab to connect to. Simply replace the
 call to connect in the above example with
-<a href="tabs.html#method-connect">chrome.tabs.connect(tabId, {name:
-"knockknock"})</a>.
+$ref:tabs.connect.
 
 <p>
 In order to handle incoming connections, you need to set up a
-<a href="extension.html#event-onConnect">chrome.extension.onConnect</a>
+$ref:runtime.onConnect
 event listener. This looks the same from a content script or an extension
 page. When another part of your extension calls "connect()", this event is
 fired, along with the
-<a href="extension.html#type-Port">Port</a>
+$ref:runtime.Port
 object you can use to send and receive messages through the connection. Here's
 what it looks like to respond to incoming connections:
 <pre>
-chrome.extension.onConnect.addListener(function(port) {
+chrome.runtime.onConnect.addListener(function(port) {
   console.assert(port.name == "knockknock");
   port.onMessage.addListener(function(msg) {
     if (msg.joke == "Knock knock")
@@ -155,10 +154,10 @@ chrome.extension.onConnect.addListener(function(port) {
 <p>
 You may want to find out when a connection is closed, for example if you are
 maintaining separate state for each open port. For this you can listen to the
-<a href="extension.html#type-Port">Port.onDisconnect</a>
+$ref:runtime.Port.onDisconnect
 event. This event is fired either when the other side of the channel manually
 calls
-<a href="extension.html#type-Port">Port.disconnect()</a>, or when the page
+$ref:runtime.Port.disconnect, or when the page
 containing the port is unloaded (for example if the tab is navigated).
 onDisconnect is guaranteed to be fired only once for any given port.
 
@@ -172,13 +171,13 @@ This lets you expose a public API that other extensions can take advantage of.
 <p>
 Listening for incoming requests and connections is similar to the internal
 case, except you use the
-<a href="extension.html#event-onMessageExternal">chrome.extension.onMessageExternal</a>
+$ref:runtime.onMessageExternal
 or
-<a href="extension.html#event-onConnectExternal">chrome.extension.onConnectExternal</a>
+$ref:runtime.onConnectExternal
 methods. Here's an example of each:
 <pre>
 // For simple requests:
-chrome.extension.onMessageExternal.addListener(
+chrome.runtime.onMessageExternal.addListener(
   function(request, sender, sendResponse) {
     if (sender.id == blacklistedExtension)
       return;  // don't allow this extension access
@@ -191,7 +190,7 @@ chrome.extension.onMessageExternal.addListener(
   });
 
 // For long-lived connections:
-chrome.extension.onConnectExternal.addListener(function(port) {
+chrome.runtime.onConnectExternal.addListener(function(port) {
   port.onMessage.addListener(function(msg) {
     // See other examples for sample onMessage handlers.
   });
@@ -207,14 +206,14 @@ extension you want to communicate with. For example:
 var laserExtensionId = "abcdefghijklmnoabcdefhijklmnoabc";
 
 // Make a simple request:
-chrome.extension.sendMessage(laserExtensionId, {getTargetData: true},
+chrome.runtime.sendMessage(laserExtensionId, {getTargetData: true},
   function(response) {
     if (targetInRange(response.targetData))
-      chrome.extension.sendMessage(laserExtensionId, {activateLasers: true});
+      chrome.runtime.sendMessage(laserExtensionId, {activateLasers: true});
   });
 
 // Start a long-running conversation:
-var port = chrome.extension.connect(laserExtensionId);
+var port = chrome.runtime.connect(laserExtensionId);
 port.postMessage(...);
 </pre>
 

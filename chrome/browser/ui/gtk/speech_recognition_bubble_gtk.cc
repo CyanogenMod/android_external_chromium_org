@@ -18,6 +18,7 @@
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/speech_recognition_manager.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
@@ -47,7 +48,7 @@ class SpeechRecognitionBubbleGtk : public SpeechRecognitionBubbleBase,
   SpeechRecognitionBubbleGtk(WebContents* web_contents,
                              Delegate* delegate,
                              const gfx::Rect& element_rect);
-  ~SpeechRecognitionBubbleGtk();
+  virtual ~SpeechRecognitionBubbleGtk();
 
  private:
   // SpeechRecognitionBubbleBase:
@@ -176,9 +177,9 @@ void SpeechRecognitionBubbleGtk::Show() {
   gtk_container_add(GTK_CONTAINER(content), vbox);
 
   GtkThemeService* theme_provider = GtkThemeService::GetFrom(profile);
-  GtkWidget* reference_widget = GetWebContents()->GetNativeView();
+  GtkWidget* reference_widget = GetWebContents()->GetView()->GetNativeView();
   gfx::Rect container_rect;
-  GetWebContents()->GetContainerBounds(&container_rect);
+  GetWebContents()->GetView()->GetContainerBounds(&container_rect);
   gfx::Rect target_rect(element_rect_.right() - kBubbleTargetOffsetX,
       element_rect_.bottom(), 1, 1);
 
@@ -186,7 +187,7 @@ void SpeechRecognitionBubbleGtk::Show() {
       target_rect.x() > container_rect.width() ||
       target_rect.y() > container_rect.height()) {
     // Target is not in screen view, so point to wrench.
-    Browser* browser = browser::FindBrowserWithWebContents(GetWebContents());
+    Browser* browser = chrome::FindBrowserWithWebContents(GetWebContents());
     BrowserWindowGtk* browser_window =
         BrowserWindowGtk::GetBrowserWindowForNativeWindow(
             browser->window()->GetNativeWindow());
@@ -197,7 +198,7 @@ void SpeechRecognitionBubbleGtk::Show() {
   bubble_ = BubbleGtk::Show(reference_widget,
                             &target_rect,
                             content,
-                            BubbleGtk::ARROW_LOCATION_TOP_LEFT,
+                            BubbleGtk::ANCHOR_TOP_LEFT,
                             BubbleGtk::POPUP_WINDOW | BubbleGtk::GRAB_INPUT,
                             theme_provider,
                             this);

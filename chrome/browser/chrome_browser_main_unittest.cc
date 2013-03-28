@@ -7,10 +7,10 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/prefs/testing_pref_service.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/test/base/testing_pref_service.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/main_function_params.h"
 #include "net/socket/client_socket_pool_base.h"
@@ -24,7 +24,6 @@ class BrowserMainTest : public testing::Test {
   }
 
  protected:
-  TestingPrefService pref_service_;
   CommandLine command_line_;
 };
 

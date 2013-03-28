@@ -22,8 +22,10 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
+#include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/view_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -48,6 +50,15 @@ using content::WebContents;
 #define GET_OPPOSITE_PORT_ID(source_port_id) ((source_port_id) ^ 1)
 
 namespace extensions {
+
+namespace {
+const char kReceivingEndDoesntExistError[] =
+    "Could not establish connection. Receiving end does not exist.";
+const char kMissingPermissionError[] =
+    "Access to native messaging requires nativeMessaging permission.";
+const char kNativeMessagingNotSupportedError[] =
+    "Native Messaging is not supported on this platform.";
+}
 
 struct MessageService::MessageChannel {
   scoped_ptr<MessagePort> opener;
@@ -162,7 +173,7 @@ void MessageService::OpenChannelToExtension(
   std::string tab_json = "null";
   if (source_contents) {
     scoped_ptr<DictionaryValue> tab_value(ExtensionTabUtil::CreateTabValue(
-        source_contents, ExtensionTabUtil::INCLUDE_PRIVACY_SENSITIVE_FIELDS));
+        source_contents));
     base::JSONWriter::Write(tab_value.get(), &tab_json);
   }
 
@@ -187,13 +198,30 @@ void MessageService::OpenChannelToNativeApp(
     int source_routing_id,
     int receiver_port_id,
     const std::string& source_extension_id,
-    const std::string& native_app_name,
-    const std::string& channel_name,
-    const std::string& connect_message) {
+    const std::string& native_app_name) {
   content::RenderProcessHost* source =
       content::RenderProcessHost::FromID(source_process_id);
   if (!source)
     return;
+
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
+  Profile* profile = Profile::FromBrowserContext(source->GetBrowserContext());
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
+  bool has_permission = false;
+  if (extension_service) {
+    const Extension* extension =
+        extension_service->GetExtensionById(source_extension_id, false);
+    has_permission = extension && extension->HasAPIPermission(
+        APIPermission::kNativeMessaging);
+  }
+
+  if (!has_permission) {
+    ExtensionMessagePort port(source, MSG_ROUTING_CONTROL, "");
+    port.DispatchOnDisconnect(GET_OPPOSITE_PORT_ID(receiver_port_id),
+                              kMissingPermissionError);
+    return;
+  }
 
   WebContents* source_contents = tab_util::GetWebContentsByID(
       source_process_id, source_routing_id);
@@ -202,7 +230,7 @@ void MessageService::OpenChannelToNativeApp(
   std::string tab_json = "null";
   if (source_contents) {
     scoped_ptr<DictionaryValue> tab_value(ExtensionTabUtil::CreateTabValue(
-        source_contents, ExtensionTabUtil::INCLUDE_PRIVACY_SENSITIVE_FIELDS));
+        source_contents));
     base::JSONWriter::Write(tab_value.get(), &tab_json);
   }
 
@@ -210,38 +238,19 @@ void MessageService::OpenChannelToNativeApp(
   channel->opener.reset(new ExtensionMessagePort(source, MSG_ROUTING_CONTROL,
                                                  source_extension_id));
 
-  NativeMessageProcessHost::MessageType type =
-      channel_name == "chrome.extension.sendNativeMessage" ?
-      NativeMessageProcessHost::TYPE_SEND_MESSAGE_REQUEST :
-      NativeMessageProcessHost::TYPE_CONNECT;
+  scoped_ptr<NativeMessageProcessHost> native_process =
+      NativeMessageProcessHost::Create(
+          base::WeakPtr<NativeMessageProcessHost::Client>(
+              weak_factory_.GetWeakPtr()),
+          source_extension_id, native_app_name, receiver_port_id);
 
-  content::BrowserThread::PostTask(
-      content::BrowserThread::FILE,
-      FROM_HERE,
-      base::Bind(&NativeMessageProcessHost::Create,
-                 base::WeakPtr<NativeMessageProcessHost::Client>(
-                    weak_factory_.GetWeakPtr()),
-                 native_app_name, connect_message, receiver_port_id,
-                 type,
-                 base::Bind(&MessageService::FinalizeOpenChannelToNativeApp,
-                            weak_factory_.GetWeakPtr(),
-                            receiver_port_id,
-                            channel_name,
-                            base::Passed(&channel),
-                            tab_json)));
-}
-
-void MessageService::FinalizeOpenChannelToNativeApp(
-    int receiver_port_id,
-    const std::string& channel_name,
-    scoped_ptr<MessageChannel> channel,
-    const std::string& tab_json,
-    NativeMessageProcessHost::ScopedHost native_process) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  // Abandon the channel
+  // Abandon the channel.
   if (!native_process.get()) {
     LOG(ERROR) << "Failed to create native process.";
+    // Treat it as a disconnect.
+    ExtensionMessagePort port(source, MSG_ROUTING_CONTROL, "");
+    port.DispatchOnDisconnect(GET_OPPOSITE_PORT_ID(receiver_port_id),
+                              kReceivingEndDoesntExistError);
     return;
   }
   channel->receiver.reset(new NativeMessagePort(native_process.release()));
@@ -250,6 +259,11 @@ void MessageService::FinalizeOpenChannelToNativeApp(
   channel->opener->IncrementLazyKeepaliveCount();
 
   AddChannel(channel.release(), receiver_port_id);
+#else  // !(defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX))
+  ExtensionMessagePort port(source, MSG_ROUTING_CONTROL, "");
+  port.DispatchOnDisconnect(GET_OPPOSITE_PORT_ID(receiver_port_id),
+                            kNativeMessagingNotSupportedError);
+#endif  // !(defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX))
 }
 
 void MessageService::OpenChannelToTab(
@@ -276,7 +290,8 @@ void MessageService::OpenChannelToTab(
     // The tab isn't loaded yet. Don't attempt to connect. Treat this as a
     // disconnect.
     ExtensionMessagePort port(source, MSG_ROUTING_CONTROL, extension_id);
-    port.DispatchOnDisconnect(GET_OPPOSITE_PORT_ID(receiver_port_id), true);
+    port.DispatchOnDisconnect(GET_OPPOSITE_PORT_ID(receiver_port_id),
+                              kReceivingEndDoesntExistError);
     return;
   }
 
@@ -287,7 +302,7 @@ void MessageService::OpenChannelToTab(
   std::string tab_json = "null";
   if (source_contents) {
     scoped_ptr<DictionaryValue> tab_value(ExtensionTabUtil::CreateTabValue(
-        source_contents, ExtensionTabUtil::INCLUDE_PRIVACY_SENSITIVE_FIELDS));
+        source_contents));
     base::JSONWriter::Write(tab_value.get(), &tab_json);
   }
 
@@ -308,7 +323,7 @@ bool MessageService::OpenChannelImpl(scoped_ptr<OpenChannelParams> params) {
     // Treat it as a disconnect.
     ExtensionMessagePort port(params->source, MSG_ROUTING_CONTROL, "");
     port.DispatchOnDisconnect(GET_OPPOSITE_PORT_ID(params->receiver_port_id),
-                              true);
+                              kReceivingEndDoesntExistError);
     return false;
   }
 
@@ -348,7 +363,8 @@ void MessageService::AddChannel(MessageChannel* channel, int receiver_port_id) {
   pending_channels_.erase(channel_id);
 }
 
-void MessageService::CloseChannel(int port_id, bool connection_error) {
+void MessageService::CloseChannel(int port_id,
+                                  const std::string& error_message) {
   // Note: The channel might be gone already, if the other side closed first.
   int channel_id = GET_CHANNEL_ID(port_id);
   MessageChannelMap::iterator it = channels_.find(channel_id);
@@ -358,16 +374,18 @@ void MessageService::CloseChannel(int port_id, bool connection_error) {
       lazy_background_task_queue_->AddPendingTask(
           pending->second.first, pending->second.second,
           base::Bind(&MessageService::PendingCloseChannel,
-                     weak_factory_.GetWeakPtr(), port_id, connection_error));
+                     weak_factory_.GetWeakPtr(), port_id, error_message));
     }
     return;
   }
-  CloseChannelImpl(it, port_id, connection_error, true);
+  CloseChannelImpl(it, port_id, error_message, true);
 }
 
 void MessageService::CloseChannelImpl(
-    MessageChannelMap::iterator channel_iter, int closing_port_id,
-    bool connection_error, bool notify_other_port) {
+    MessageChannelMap::iterator channel_iter,
+    int closing_port_id,
+    const std::string& error_message,
+    bool notify_other_port) {
   MessageChannel* channel = channel_iter->second;
 
   // Notify the other side.
@@ -375,7 +393,7 @@ void MessageService::CloseChannelImpl(
     MessagePort* port = IS_OPENER_PORT_ID(closing_port_id) ?
         channel->receiver.get() : channel->opener.get();
     port->DispatchOnDisconnect(GET_OPPOSITE_PORT_ID(closing_port_id),
-                               connection_error);
+                               error_message);
   }
 
   // Balance the IncrementLazyKeepaliveCount() in OpenChannelImpl.
@@ -451,10 +469,10 @@ void MessageService::OnProcessClosed(content::RenderProcessHost* process) {
 
     if (opener_process == process) {
       CloseChannelImpl(current, GET_CHANNEL_OPENER_ID(current->first),
-                       false, notify_other_port);
+                       std::string(), notify_other_port);
     } else if (receiver_process == process) {
       CloseChannelImpl(current, GET_CHANNEL_RECEIVERS_ID(current->first),
-                       false, notify_other_port);
+                       std::string(), notify_other_port);
     }
   }
 }
@@ -465,11 +483,11 @@ bool MessageService::MaybeAddPendingOpenChannelTask(
   ExtensionService* service = profile->GetExtensionService();
   const std::string& extension_id = params->target_extension_id;
   const Extension* extension = service->extensions()->GetByID(extension_id);
-  if (extension && extension->has_lazy_background_page()) {
+  if (extension && BackgroundInfo::HasLazyBackgroundPage(extension)) {
     // If the extension uses spanning incognito mode, make sure we're always
     // using the original profile since that is what the extension process
     // will use.
-    if (!extension->incognito_split_mode())
+    if (!IncognitoInfo::IsSplitMode(extension))
       profile = profile->GetOriginalProfile();
 
     if (lazy_background_task_queue_->ShouldEnqueueTask(profile, extension)) {

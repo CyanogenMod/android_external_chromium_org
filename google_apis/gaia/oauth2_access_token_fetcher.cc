@@ -69,6 +69,11 @@ static URLFetcher* CreateFetcher(URLRequestContextGetter* getter,
   result->SetRequestContext(getter);
   result->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
                        net::LOAD_DO_NOT_SAVE_COOKIES);
+  // Fetchers are sometimes cancelled because a network change was detected,
+  // especially at startup and after sign-in on ChromeOS. Retrying once should
+  // be enough in those cases; let the fetcher retry up to 3 times just in case.
+  // http://crbug.com/163710
+  result->SetAutomaticallyRetryOnNetworkChanges(3);
 
   if (!empty_body)
     result->SetUploadData("application/x-www-form-urlencoded", body);
@@ -124,6 +129,15 @@ void OAuth2AccessTokenFetcher::EndGetAccessToken(
     return;
   }
 
+  // HTTP_FORBIDDEN (403) is treated as temporary error, because it may be
+  // '403 Rate Limit Exeeded.'
+  if (source->GetResponseCode() == net::HTTP_FORBIDDEN) {
+    OnGetTokenFailure(GoogleServiceAuthError(
+        GoogleServiceAuthError::SERVICE_UNAVAILABLE));
+    return;
+  }
+
+  // The other errors are treated as permanent error.
   if (source->GetResponseCode() != net::HTTP_OK) {
     OnGetTokenFailure(GoogleServiceAuthError(
         GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
@@ -183,14 +197,14 @@ std::string OAuth2AccessTokenFetcher::MakeGetAccessTokenBody(
   std::string enc_refresh_token =
       net::EscapeUrlEncodedData(refresh_token, true);
   if (scopes.empty()) {
-    return StringPrintf(
+    return base::StringPrintf(
         kGetAccessTokenBodyFormat,
         enc_client_id.c_str(),
         enc_client_secret.c_str(),
         enc_refresh_token.c_str());
   } else {
     std::string scopes_string = JoinString(scopes, ' ');
-    return StringPrintf(
+    return base::StringPrintf(
         kGetAccessTokenBodyWithScopeFormat,
         enc_client_id.c_str(),
         enc_client_secret.c_str(),

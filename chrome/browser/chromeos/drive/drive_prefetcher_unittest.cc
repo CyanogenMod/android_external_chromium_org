@@ -12,11 +12,13 @@
 #include "base/run_loop.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/drive_test_util.h"
+#include "chrome/browser/chromeos/drive/event_logger.h"
 #include "chrome/browser/chromeos/drive/mock_drive_file_system.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using ::testing::AtMost;
 using ::testing::StrictMock;
 using ::testing::_;
 
@@ -33,7 +35,7 @@ enum TestEntryType {
 
 // TestEntry represents a dummy entry for mocking a filesystem.
 struct TestEntry {
-  const FilePath::CharType* path;
+  const base::FilePath::CharType* path;
   TestEntryType entry_type;
   int64 last_accessed;
   int64 last_modified;
@@ -41,15 +43,15 @@ struct TestEntry {
   int64 file_size;
 
   // Checks whether this TestEntry is the direct content of the |directory|.
-  bool IsDirectChildOf(const FilePath& directory) const {
-    return FilePath(path).DirName() == directory;
+  bool IsDirectChildOf(const base::FilePath& directory) const {
+    return base::FilePath(path).DirName() == directory;
   }
 
   // Converts this TestEntry to DriveEntryProto, which is the real data
   // structure used in DriveFileSystem.
   DriveEntryProto ToDriveEntryProto() const {
     DriveEntryProto entry;
-    entry.set_base_name(FilePath(path).BaseName().value());
+    entry.set_base_name(base::FilePath(path).BaseName().value());
     entry.mutable_file_info()->set_is_directory(entry_type == TYPE_DIRECTORY);
     if (entry_type != TYPE_DIRECTORY) {
       entry.mutable_file_specific_info()->set_is_hosted_document(
@@ -67,14 +69,14 @@ struct TestEntry {
 // resource_id (arg0) to |fetched_list|, and calls back a successful completion.
 ACTION_P(MockGetFile, fetched_list) {
   fetched_list->push_back(arg0);
-  arg1.Run(DRIVE_FILE_OK, FilePath(), std::string(), REGULAR_FILE);
+  arg2.Run(DRIVE_FILE_OK, base::FilePath(), std::string(), REGULAR_FILE);
 }
 
 // Mocks DriveFileSystem::ReadDirectory. It holds the flat list of all entries
 // in the mock filesystem in |test_entries|, and when it is called to read a
 // |directory|, it selects only the direct children of the directory.
 ACTION_P(MockReadDirectory, test_entries) {
-  const FilePath& directory = arg0;
+  const base::FilePath& directory = arg0;
   const ReadDirectoryWithSettingCallback& callback = arg1;
 
   scoped_ptr<DriveEntryProtoVector> entries(new DriveEntryProtoVector);
@@ -130,14 +132,15 @@ const char* kAllRegularFiles[] = {
 class DrivePrefetcherTest : public testing::Test {
  public:
   DrivePrefetcherTest()
-      : ui_thread_(content::BrowserThread::UI, &message_loop_) {}
+      : dummy_event_logger_(0),
+        ui_thread_(content::BrowserThread::UI, &message_loop_) {}
 
   virtual void SetUp() OVERRIDE {
     mock_file_system_.reset(new StrictMock<MockDriveFileSystem>);
   }
 
   virtual void TearDown() OVERRIDE {
-    EXPECT_CALL(*mock_file_system_, RemoveObserver(_));
+    EXPECT_CALL(*mock_file_system_, RemoveObserver(_)).Times(AtMost(1));
     prefetcher_.reset();
     mock_file_system_.reset();
   }
@@ -145,12 +148,14 @@ class DrivePrefetcherTest : public testing::Test {
  protected:
   // Sets a new prefetcher that fetches at most |prefetch_count| latest files.
   void InitPrefetcher(int prefetch_count, int64 size_limit) {
-    EXPECT_CALL(*mock_file_system_, AddObserver(_));
+    EXPECT_CALL(*mock_file_system_, AddObserver(_)).Times(AtMost(1));
 
     DrivePrefetcherOptions options;
     options.initial_prefetch_count = prefetch_count;
     options.prefetch_file_size_limit = size_limit;
-    prefetcher_.reset(new DrivePrefetcher(mock_file_system_.get(), options));
+    prefetcher_.reset(new DrivePrefetcher(mock_file_system_.get(),
+                                          &dummy_event_logger_,
+                                          options));
   }
 
   // Flushes all the pending tasks on the current thread.
@@ -163,21 +168,18 @@ class DrivePrefetcherTest : public testing::Test {
   // correctly fetches the |expected| files, in the given order.
   void VerifyFullScan(const std::vector<TestEntry>& test_entries,
                       const std::vector<std::string>& expected) {
+    std::vector<std::string> fetched_list;
     EXPECT_CALL(*mock_file_system_, ReadDirectoryByPath(_, _))
         .WillRepeatedly(MockReadDirectory(test_entries));
-    EXPECT_CALL(*mock_file_system_, GetFileByResourceId(_, _, _)).Times(0);
-    prefetcher_->OnInitialLoadFinished(DRIVE_FILE_OK);
-    RunMessageLoop();
-
-    std::vector<std::string> fetched_list;
-    EXPECT_CALL(*mock_file_system_, GetFileByResourceId(_, _, _))
+    EXPECT_CALL(*mock_file_system_, GetFileByResourceId(_, _, _, _)).Times(0);
+    EXPECT_CALL(*mock_file_system_, GetFileByResourceId(_, _, _, _))
         .WillRepeatedly(MockGetFile(&fetched_list));
-    prefetcher_->OnSyncClientIdle();
+    prefetcher_->OnInitialLoadFinished();
     RunMessageLoop();
-
     EXPECT_EQ(expected, fetched_list);
   }
 
+  EventLogger dummy_event_logger_;
   scoped_ptr<StrictMock<MockDriveFileSystem> > mock_file_system_;
   scoped_ptr<DrivePrefetcher> prefetcher_;
   MessageLoopForUI message_loop_;

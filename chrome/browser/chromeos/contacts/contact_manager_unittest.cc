@@ -38,7 +38,7 @@ class TestContactManagerObserver : public ContactManagerObserver {
         num_updates_(0) {
     contact_manager_->AddObserver(this, profile_);
   }
-  ~TestContactManagerObserver() {
+  virtual ~TestContactManagerObserver() {
     contact_manager_->RemoveObserver(this, profile_);
   }
 
@@ -46,7 +46,7 @@ class TestContactManagerObserver : public ContactManagerObserver {
   void reset_stats() { num_updates_ = 0; }
 
   // ContactManagerObserver overrides:
-  void OnContactsUpdated(Profile* profile) OVERRIDE {
+  virtual void OnContactsUpdated(Profile* profile) OVERRIDE {
     CHECK(profile == profile_);
     num_updates_++;
   }
@@ -70,8 +70,7 @@ class ContactManagerTest : public testing::Test {
   // testing::Test implementation.
   virtual void SetUp() OVERRIDE {
     profile_manager_.reset(
-        new TestingProfileManager(
-            static_cast<TestingBrowserProcess*>(g_browser_process)));
+        new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
     ASSERT_TRUE(profile_manager_->SetUp());
 
     contact_manager_.reset(new ContactManager);

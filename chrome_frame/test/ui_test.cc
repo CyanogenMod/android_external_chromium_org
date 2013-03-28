@@ -5,6 +5,7 @@
 #include <mshtmcid.h>
 #include <string>
 
+#include "base/file_util.h"
 #include "base/test/test_file_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_bstr.h"
@@ -114,7 +115,7 @@ TEST_P(FullTabUITest, DISABLED_KeyboardBackForward) {
 
 // Tests new window behavior with ctrl+N.
 // Flaky due to DelaySendChar; see http://crbug.com/124244.
-TEST_P(FullTabUITest, FLAKY_CtrlN) {
+TEST_P(FullTabUITest, DISABLED_CtrlN) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -156,7 +157,7 @@ TEST_P(FullTabUITest, FLAKY_CtrlN) {
 
 // Test that Ctrl+F opens the Find dialog.
 // Flaky due to DelaySendChar; see http://crbug.com/124244.
-TEST_P(FullTabUITest, FLAKY_CtrlF) {
+TEST_P(FullTabUITest, DISABLED_CtrlF) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -190,7 +191,7 @@ TEST_P(FullTabUITest, FLAKY_CtrlF) {
 
 // Test that ctrl+r does cause a refresh.
 // Flaky due to DelaySendChar; see http://crbug.com/124244.
-TEST_P(FullTabUITest, FLAKY_CtrlR) {
+TEST_P(FullTabUITest, DISABLED_CtrlR) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -219,7 +220,7 @@ TEST_P(FullTabUITest, FLAKY_CtrlR) {
 
 // Test window close with ctrl+w.
 // Flaky due to DelaySendChar; see http://crbug.com/124244.
-TEST_P(FullTabUITest, FLAKY_CtrlW) {
+TEST_P(FullTabUITest, DISABLED_CtrlW) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -240,7 +241,7 @@ TEST_P(FullTabUITest, FLAKY_CtrlW) {
 
 // Test address bar navigation with Alt+d and URL.
 // Flaky due to TypeUrlInAddressBar; see http://crbug.com/124244.
-TEST_P(FullTabUITest, FLAKY_AltD) {
+TEST_P(FullTabUITest, DISABLED_AltD) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -471,7 +472,7 @@ class ContextMenuTest : public MockIEEventSinkTest, public testing::Test {
         .WillOnce(AccLeftClick(AccObjectMatcher(menu_item_name)));
 
     // Get safe download name using temporary file.
-    FilePath temp_file_path;
+    base::FilePath temp_file_path;
     ASSERT_TRUE(file_util::CreateTemporaryFile(&temp_file_path));
     ASSERT_TRUE(file_util::DieFileDie(temp_file_path, false));
     temp_file_path = temp_file_path.ReplaceExtension(file_ext);
@@ -809,7 +810,7 @@ TEST_F(ContextMenuTest, CFCopyLinkAddress) {
 
 // Test CF text field context menu - cut.
 // Times out sporadically http://crbug.com/119660.
-TEST_F(ContextMenuTest, FLAKY_CFTxtFieldCut) {
+TEST_F(ContextMenuTest, DISABLED_CFTxtFieldCut) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 
@@ -833,7 +834,7 @@ TEST_F(ContextMenuTest, FLAKY_CFTxtFieldCut) {
 
 // Test CF text field context menu - copy.
 // Times out sporadically http://crbug.com/119660.
-TEST_F(ContextMenuTest, FLAKY_CFTxtFieldCopy) {
+TEST_F(ContextMenuTest, DISABLED_CFTxtFieldCopy) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 
@@ -859,7 +860,7 @@ TEST_F(ContextMenuTest, FLAKY_CFTxtFieldCopy) {
 
 // Test CF text field context menu - paste.
 // Times out sporadically http://crbug.com/119660.
-TEST_F(ContextMenuTest, FLAKY_CFTxtFieldPaste) {
+TEST_F(ContextMenuTest, DISABLED_CFTxtFieldPaste) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 
@@ -883,7 +884,7 @@ TEST_F(ContextMenuTest, FLAKY_CFTxtFieldPaste) {
 
 // Test CF text field context menu - delete.
 // Times out sporadically http://crbug.com/119660.
-TEST_F(ContextMenuTest, FLAKY_CFTxtFieldDelete) {
+TEST_F(ContextMenuTest, DISABLED_CFTxtFieldDelete) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 
@@ -903,7 +904,8 @@ TEST_F(ContextMenuTest, FLAKY_CFTxtFieldDelete) {
 }
 
 // Test CF text field context menu - select all.
-TEST_F(ContextMenuTest, CFTxtFieldSelectAll) {
+// Flaky: http://crbug.com/144664
+TEST_F(ContextMenuTest, DISABLED_CFTxtFieldSelectAll) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
 
   // Invoke 'Select all' context menu item of text field.
@@ -924,7 +926,7 @@ TEST_F(ContextMenuTest, CFTxtFieldSelectAll) {
 
 // Test CF text field context menu - undo.
 // Times out sporadically http://crbug.com/119660.
-TEST_F(ContextMenuTest, FLAKY_CFTxtFieldUndo) {
+TEST_F(ContextMenuTest, DISABLED_CFTxtFieldUndo) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 
@@ -952,7 +954,7 @@ TEST_F(ContextMenuTest, FLAKY_CFTxtFieldUndo) {
 
 // Test CF text field context menu - redo.
 // Times out sporadically http://crbug.com/119660.
-TEST_F(ContextMenuTest, FLAKY_CFTxtFieldRedo) {
+TEST_F(ContextMenuTest, DISABLED_CFTxtFieldRedo) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
   InSequence expect_in_sequence_for_scope;

@@ -14,8 +14,8 @@
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebArrayBuffer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
@@ -271,7 +271,7 @@ int32_t PepperWebSocketHost::OnHostMsgSendText(
 int32_t PepperWebSocketHost::OnHostMsgSendBinary(
     ppapi::host::HostMessageContext* context,
     const std::vector<uint8_t>& message) {
-  if (websocket_.get()) {
+  if (websocket_.get() && !message.empty()) {
     WebArrayBuffer web_message = WebArrayBuffer::create(message.size(), 1);
     memcpy(web_message.data(), &message.front(), message.size());
     websocket_->sendArrayBuffer(web_message);

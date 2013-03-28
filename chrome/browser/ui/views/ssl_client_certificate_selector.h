@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
 #include "chrome/browser/ssl/ssl_client_auth_observer.h"
+#include "chrome/browser/ssl/ssl_client_certificate_selector.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/table/table_view_observer.h"
 #include "ui/views/view.h"
@@ -27,13 +28,12 @@ class X509Certificate;
 }
 
 namespace views {
+class LabelButton;
 class TableView;
-class TextButton;
+class Widget;
 }
 
 class CertificateSelectorTableModel;
-class ConstrainedWindow;
-class TabContents;
 
 class SSLClientCertificateSelector : public SSLClientAuthObserver,
                                      public views::DialogDelegateView,
@@ -41,10 +41,10 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
                                      public views::TableViewObserver {
  public:
   SSLClientCertificateSelector(
-      TabContents* tab_contents,
+      content::WebContents* web_contents,
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
-      const base::Callback<void(net::X509Certificate*)>& callback);
+      const chrome::SelectCertificateCallback& callback);
   virtual ~SSLClientCertificateSelector();
 
   void Init();
@@ -61,9 +61,11 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
+  virtual views::NonClientFrameView* CreateNonClientFrameView(
+      views::Widget* widget) OVERRIDE;
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-  virtual views::View* GetContentsView() OVERRIDE;
-  virtual views::View* GetExtraView() OVERRIDE;
+  virtual views::View* CreateExtraView() OVERRIDE;
+  virtual ui::ModalType GetModalType() const OVERRIDE;
 
   // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
@@ -75,16 +77,14 @@ class SSLClientCertificateSelector : public SSLClientAuthObserver,
 
  private:
   void CreateCertTable();
-  void CreateViewCertButton();
 
   scoped_ptr<CertificateSelectorTableModel> model_;
 
-  TabContents* tab_contents_;
+  content::WebContents* web_contents_;
 
-  ConstrainedWindow* window_;
+  views::Widget* window_;
   views::TableView* table_;
-  views::TextButton* view_cert_button_;
-  views::View* view_cert_button_container_;
+  views::LabelButton* view_cert_button_;
 
   DISALLOW_COPY_AND_ASSIGN(SSLClientCertificateSelector);
 };

@@ -10,9 +10,10 @@
 
 #include "base/callback.h"
 #include "base/string16.h"
-#include "net/base/ssl_info.h"
+#include "base/time.h"
 #include "content/public/browser/interstitial_page_delegate.h"
 #include "googleurl/src/gurl.h"
+#include "net/ssl/ssl_info.h"
 
 namespace base {
 class DictionaryValue;
@@ -63,6 +64,7 @@ class SSLBlockingPage : public content::InterstitialPageDelegate {
 
   content::WebContents* web_contents_;
   int cert_error_;
+  base::TimeTicks display_start_time_;
   net::SSLInfo ssl_info_;
   GURL request_url_;
   // Could the user successfully override the error?

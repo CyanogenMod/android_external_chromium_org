@@ -7,18 +7,22 @@
 #include <map>
 #include <string>
 
+#include "ash/ash_switches.h"
 #include "ash/launcher/launcher_model.h"
+#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/launcher_item_controller.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/client/activation_delegate.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/root_window.h"
@@ -28,19 +32,14 @@
 #include "ui/aura/window_delegate.h"
 #include "ui/base/events/event.h"
 
-// TODO(avi): Kill this when TabContents goes away.
-class BrowserLauncherItemControllerContentsCreator {
- public:
-  static TabContents* CreateTabContents(content::WebContents* contents) {
-    return TabContents::Factory::CreateTabContents(contents);
-  }
-};
+// TODO(skuhne): Remove this module together with the
+// browser_launcher_item_controller.* when the old launcher goes away.
 
 namespace {
 
 const int kExpectedAppIndex = 1;
 
-// Test implementation of AppTabHelper
+// Test implementation of AppTabHelper.
 class AppTabHelperImpl : public ChromeLauncherController::AppTabHelper {
  public:
   AppTabHelperImpl() {}
@@ -48,17 +47,17 @@ class AppTabHelperImpl : public ChromeLauncherController::AppTabHelper {
 
   // Sets the id for the specified tab. The id is removed if Remove() is
   // invoked.
-  void SetAppID(TabContents* tab, const std::string& id) {
+  void SetAppID(content::WebContents* tab, const std::string& id) {
     tab_id_map_[tab] = id;
   }
 
   // Returns true if there is an id registered for |tab|.
-  bool HasAppID(TabContents* tab) const {
+  bool HasAppID(content::WebContents* tab) const {
     return tab_id_map_.find(tab) != tab_id_map_.end();
   }
 
   // AppTabHelper implementation:
-  virtual std::string GetAppID(TabContents* tab) OVERRIDE {
+  virtual std::string GetAppID(content::WebContents* tab) OVERRIDE {
     return tab_id_map_.find(tab) != tab_id_map_.end() ? tab_id_map_[tab] :
         std::string();
   }
@@ -73,7 +72,7 @@ class AppTabHelperImpl : public ChromeLauncherController::AppTabHelper {
   }
 
  private:
-  typedef std::map<TabContents*, std::string> TabToStringMap;
+  typedef std::map<content::WebContents*, std::string> TabToStringMap;
 
   TabToStringMap tab_id_map_;
 
@@ -81,7 +80,7 @@ class AppTabHelperImpl : public ChromeLauncherController::AppTabHelper {
 };
 
 // Test implementation of AppIconLoader.
-class AppIconLoaderImpl : public ChromeLauncherController::AppIconLoader {
+class AppIconLoaderImpl : public extensions::AppIconLoader {
  public:
   AppIconLoaderImpl() : fetch_count_(0) {}
   virtual ~AppIconLoaderImpl() {}
@@ -100,11 +99,31 @@ class AppIconLoaderImpl : public ChromeLauncherController::AppIconLoader {
   }
   virtual void ClearImage(const std::string& id) OVERRIDE {
   }
+  virtual void UpdateImage(const std::string& id) OVERRIDE {
+  }
 
  private:
   int fetch_count_;
 
   DISALLOW_COPY_AND_ASSIGN(AppIconLoaderImpl);
+};
+
+// Test implementation of TabStripModelDelegate.
+class TabHelperTabStripModelDelegate : public TestTabStripModelDelegate {
+ public:
+  TabHelperTabStripModelDelegate() {}
+  virtual ~TabHelperTabStripModelDelegate() {}
+
+  virtual void WillAddWebContents(content::WebContents* contents) OVERRIDE {
+    // BrowserLauncherItemController assumes that all WebContents passed to it
+    // have attached an extensions::TabHelper and a FaviconTabHelper. The
+    // TestTabStripModelDelegate adds an extensions::TabHelper.
+    TestTabStripModelDelegate::WillAddWebContents(contents);
+    FaviconTabHelper::CreateForWebContents(contents);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TabHelperTabStripModelDelegate);
 };
 
 }  // namespace
@@ -117,13 +136,17 @@ class BrowserLauncherItemControllerTest
   }
 
   virtual void SetUp() OVERRIDE {
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        ash::switches::kAshDisablePerAppLauncher);
+
     ChromeRenderViewHostTestHarness::SetUp();
 
     activation_client_.reset(
         new aura::test::TestActivationClient(root_window()));
     launcher_model_.reset(new ash::LauncherModel);
     launcher_delegate_.reset(
-        new ChromeLauncherController(profile(), launcher_model_.get()));
+        ChromeLauncherController::CreateInstance(profile(),
+                                                 launcher_model_.get()));
     app_tab_helper_ = new AppTabHelperImpl;
     app_icon_loader_ = new AppIconLoaderImpl;
     launcher_delegate_->SetAppTabHelperForTest(app_tab_helper_);
@@ -138,7 +161,8 @@ class BrowserLauncherItemControllerTest
 
  protected:
   // Contains all the objects needed to create a BrowserLauncherItemController.
-  struct State : public aura::client::ActivationDelegate {
+  struct State : public aura::client::ActivationDelegate,
+                 public aura::client::ActivationChangeObserver {
    public:
     State(BrowserLauncherItemControllerTest* test,
           const std::string& app_id,
@@ -155,6 +179,7 @@ class BrowserLauncherItemControllerTest
       launcher_test->root_window()->AddChild(&window);
       launcher_test->activation_client_->ActivateWindow(&window);
       aura::client::SetActivationDelegate(&window, this);
+      aura::client::SetActivationChangeObserver(&window, this);
       updater.Init();
     }
 
@@ -166,19 +191,20 @@ class BrowserLauncherItemControllerTest
     }
 
     // aura::client::ActivationDelegate overrides.
-    virtual bool ShouldActivate(const ui::Event* event) OVERRIDE {
+    virtual bool ShouldActivate() const OVERRIDE {
       return true;
     }
-    virtual void OnActivated() OVERRIDE {
-      updater.BrowserActivationStateChanged();
-    }
-    virtual void OnLostActive() OVERRIDE {
+
+    // aura::client::ActivationChangeObserver overrides:
+    virtual void OnWindowActivated(aura::Window* gained_active,
+                                   aura::Window* lost_active) OVERRIDE {
+      DCHECK(&window == gained_active || &window == lost_active);
       updater.BrowserActivationStateChanged();
     }
 
     BrowserLauncherItemControllerTest* launcher_test;
     aura::Window window;
-    TestTabStripModelDelegate tab_strip_delegate;
+    TabHelperTabStripModelDelegate tab_strip_delegate;
     TabStripModel tab_strip;
     BrowserLauncherItemController updater;
 
@@ -187,7 +213,7 @@ class BrowserLauncherItemControllerTest
   };
 
   const std::string& GetAppID(ash::LauncherID id) const {
-    return launcher_delegate_->id_to_item_controller_map_[id]->app_id();
+    return launcher_delegate_->GetAppIdFromLauncherIdForTest(id);
   }
 
   void ResetAppTabHelper() {
@@ -227,9 +253,7 @@ class BrowserLauncherItemControllerTest
 TEST_F(BrowserLauncherItemControllerTest, TabbedSetup) {
   size_t initial_size = launcher_model_->items().size();
   {
-    scoped_ptr<TabContents> tab_contents(
-        BrowserLauncherItemControllerContentsCreator::CreateTabContents(
-            CreateTestWebContents()));
+    scoped_ptr<content::WebContents> web_contents(CreateTestWebContents());
     State state(this, std::string(),
                 BrowserLauncherItemController::TYPE_TABBED);
 
@@ -244,14 +268,12 @@ TEST_F(BrowserLauncherItemControllerTest, TabbedSetup) {
 
   // Do the same, but this time add the tab first.
   {
-    scoped_ptr<TabContents> tab_contents(
-        BrowserLauncherItemControllerContentsCreator::CreateTabContents(
-            CreateTestWebContents()));
+    scoped_ptr<content::WebContents> web_contents(CreateTestWebContents());
 
-    TestTabStripModelDelegate tab_strip_delegate;
+    TabHelperTabStripModelDelegate tab_strip_delegate;
     TabStripModel tab_strip(&tab_strip_delegate, profile());
-    tab_strip.InsertTabContentsAt(0,
-                                  tab_contents.get(),
+    tab_strip.InsertWebContentsAt(0,
+                                  web_contents.get(),
                                   TabStripModel::ADD_ACTIVE);
     aura::Window window(NULL);
     window.Init(ui::LAYER_NOT_DRAWN);
@@ -276,13 +298,11 @@ TEST_F(BrowserLauncherItemControllerTest, PanelItem) {
   // Add an App panel.
   {
     aura::Window window(NULL);
-    TestTabStripModelDelegate tab_strip_delegate;
+    TabHelperTabStripModelDelegate tab_strip_delegate;
     TabStripModel tab_strip(&tab_strip_delegate, profile());
-    scoped_ptr<TabContents> panel_tab(
-        BrowserLauncherItemControllerContentsCreator::CreateTabContents(
-            CreateTestWebContents()));
+    scoped_ptr<content::WebContents> panel_tab(CreateTestWebContents());
     app_tab_helper_->SetAppID(panel_tab.get(), "1");  // Panels are apps.
-    tab_strip.InsertTabContentsAt(0,
+    tab_strip.InsertWebContentsAt(0,
                                   panel_tab.get(),
                                   TabStripModel::ADD_ACTIVE);
     BrowserLauncherItemController updater(
@@ -298,13 +318,11 @@ TEST_F(BrowserLauncherItemControllerTest, PanelItem) {
   // Add an Extension panel.
   {
     aura::Window window(NULL);
-    TestTabStripModelDelegate tab_strip_delegate;
+    TabHelperTabStripModelDelegate tab_strip_delegate;
     TabStripModel tab_strip(&tab_strip_delegate, profile());
-    scoped_ptr<TabContents> panel_tab(
-        BrowserLauncherItemControllerContentsCreator::CreateTabContents(
-            CreateTestWebContents()));
+    scoped_ptr<content::WebContents> panel_tab(CreateTestWebContents());
     app_tab_helper_->SetAppID(panel_tab.get(), "1");  // Panels are apps.
-    tab_strip.InsertTabContentsAt(0,
+    tab_strip.InsertWebContentsAt(0,
                                   panel_tab.get(),
                                   TabStripModel::ADD_ACTIVE);
     BrowserLauncherItemController updater(
@@ -313,7 +331,7 @@ TEST_F(BrowserLauncherItemControllerTest, PanelItem) {
         std::string());
     updater.Init();
     ASSERT_EQ(initial_size + 1, launcher_model_->items().size());
-    EXPECT_EQ(ash::TYPE_APP_PANEL, GetItem(&updater).type);
+    EXPECT_EQ(ash::TYPE_PLATFORM_APP, GetItem(&updater).type);
     EXPECT_NE(static_cast<void*>(NULL), updater.favicon_loader_.get());
   }
 }
@@ -321,9 +339,7 @@ TEST_F(BrowserLauncherItemControllerTest, PanelItem) {
 // Verifies pinned apps are persisted and restored.
 TEST_F(BrowserLauncherItemControllerTest, PersistPinned) {
   size_t initial_size = launcher_model_->items().size();
-    scoped_ptr<TabContents> tab1(
-        BrowserLauncherItemControllerContentsCreator::CreateTabContents(
-            CreateTestWebContents()));
+    scoped_ptr<content::WebContents> tab1(CreateTestWebContents());
 
   app_tab_helper_->SetAppID(tab1.get(), "1");
 
@@ -337,7 +353,8 @@ TEST_F(BrowserLauncherItemControllerTest, PersistPinned) {
   EXPECT_EQ(initial_size + 1, launcher_model_->items().size());
 
   launcher_delegate_.reset(
-      new ChromeLauncherController(profile(), launcher_model_.get()));
+      ChromeLauncherController::CreateInstance(profile(),
+                                               launcher_model_.get()));
   app_tab_helper_ = new AppTabHelperImpl;
   app_tab_helper_->SetAppID(tab1.get(), "1");
   ResetAppTabHelper();

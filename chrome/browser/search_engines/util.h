@@ -23,6 +23,11 @@ class WebDataService;
 // none is set. |profile| may be NULL.
 string16 GetDefaultSearchEngineName(Profile* profile);
 
+// Modifies |prepopulated_url| so that it contains user-modified fields from
+// |original_turl|. Both URLs must have the same prepopulate_id.
+void MergeIntoPrepopulatedEngineData(TemplateURLData* prepopulated_url,
+                                     const TemplateURL* original_turl);
+
 // Processes the results of WebDataService::GetKeywords, combining it with
 // prepopulated search providers to result in:
 //  * a set of template_urls (search providers). The caller owns the
@@ -49,15 +54,6 @@ void GetSearchProvidersUsingKeywordResult(
 // contained duplicate entries.  This removes those entries and returns whether
 // any were found.
 bool DeDupeEncodings(std::vector<std::string>* encodings);
-
-// Returns true if the default search provider setting has been changed or
-// corrupted. Returns the backup setting in |backup_default_search_provider|.
-// |*backup_default_search_provider| can be NULL if the original setting is
-// lost.
-bool DidDefaultSearchProviderChange(
-    const WDTypedResult& result,
-    Profile* profile,
-    scoped_ptr<TemplateURL>* backup_default_search_provider);
 
 // Removes (and deletes) TemplateURLs from |template_urls| and |service| if they
 // have duplicate prepopulate ids. If |removed_keyword_guids| is not NULL, the

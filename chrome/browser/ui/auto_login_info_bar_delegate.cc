@@ -8,15 +8,14 @@
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/ubertoken_fetcher.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
@@ -166,22 +165,11 @@ void AutoLoginRedirector::RedirectToMergeSession(const std::string& token) {
 AutoLoginInfoBarDelegate::Params::Params() {}
 AutoLoginInfoBarDelegate::Params::~Params() {}
 
-AutoLoginInfoBarDelegate::AutoLoginInfoBarDelegate(
-    InfoBarTabHelper* owner,
-    const Params& params)
-    : ConfirmInfoBarDelegate(owner),
-      params_(params),
-      button_pressed_(false) {
-  RecordHistogramAction(HISTOGRAM_SHOWN);
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
-                 content::Source<Profile>(Profile::FromBrowserContext(
-                     owner->GetWebContents()->GetBrowserContext())));
-}
-
-AutoLoginInfoBarDelegate::~AutoLoginInfoBarDelegate() {
-  if (!button_pressed_)
-    RecordHistogramAction(HISTOGRAM_IGNORED);
+// static
+void AutoLoginInfoBarDelegate::Create(InfoBarService* infobar_service,
+                                      const Params& params) {
+  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
+      new AutoLoginInfoBarDelegate(infobar_service, params)));
 }
 
 AutoLoginInfoBarDelegate*
@@ -216,15 +204,16 @@ string16 AutoLoginInfoBarDelegate::GetButtonLabel(
 bool AutoLoginInfoBarDelegate::Accept() {
   // AutoLoginRedirector deletes itself.
   new AutoLoginRedirector(&owner()->GetWebContents()->GetController(),
-                          params_.args);
+                          params_.header.args);
   RecordHistogramAction(HISTOGRAM_ACCEPTED);
   button_pressed_ = true;
   return true;
 }
 
 bool AutoLoginInfoBarDelegate::Cancel() {
-  PrefService* pref_service = TabContents::FromWebContents(
-      owner()->GetWebContents())->profile()->GetPrefs();
+  Profile* profile = Profile::FromBrowserContext(
+      owner()->GetWebContents()->GetBrowserContext());
+  PrefService* pref_service = profile->GetPrefs();
   pref_service->SetBoolean(prefs::kAutologinEnabled, false);
   RecordHistogramAction(HISTOGRAM_REJECTED);
   button_pressed_ = true;
@@ -237,6 +226,24 @@ string16 AutoLoginInfoBarDelegate::GetMessageText(
                                     UTF8ToUTF16(username));
 }
 
+AutoLoginInfoBarDelegate::AutoLoginInfoBarDelegate(
+    InfoBarService* owner,
+    const Params& params)
+    : ConfirmInfoBarDelegate(owner),
+      params_(params),
+      button_pressed_(false) {
+  RecordHistogramAction(HISTOGRAM_SHOWN);
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
+                 content::Source<Profile>(Profile::FromBrowserContext(
+                     owner->GetWebContents()->GetBrowserContext())));
+}
+
+AutoLoginInfoBarDelegate::~AutoLoginInfoBarDelegate() {
+  if (!button_pressed_)
+    RecordHistogramAction(HISTOGRAM_IGNORED);
+}
+
 void AutoLoginInfoBarDelegate::RecordHistogramAction(int action) {
   UMA_HISTOGRAM_ENUMERATION("AutoLogin.Regular", action, HISTOGRAM_MAX);
 }
@@ -245,7 +252,7 @@ void AutoLoginInfoBarDelegate::Observe(int type,
                                        const NotificationSource& source,
                                        const NotificationDetails& details) {
   DCHECK_EQ(chrome::NOTIFICATION_GOOGLE_SIGNED_OUT, type);
-  // owner() can be NULL when InfoBarTabHelper removes us. See
+  // owner() can be NULL when InfoBarService removes us. See
   // |InfoBarDelegate::clear_owner|.
   if (owner())
     owner()->RemoveInfoBar(this);

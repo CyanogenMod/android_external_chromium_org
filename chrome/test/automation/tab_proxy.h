@@ -23,16 +23,18 @@
 #include "content/public/common/page_type.h"
 #include "content/public/common/security_style.h"
 #include "net/base/cert_status_flags.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/base/window_open_disposition.h"
 
 class BrowserProxy;
-class FilePath;
 class GURL;
+
 namespace IPC {
 class Message;
 }
 
 namespace base {
+class FilePath;
 class Value;
 }
 
@@ -202,7 +204,7 @@ class TabProxy : public AutomationResourceProxy {
 
   // Captures the entire page and saves as a PNG at the given path. Returns
   // true on success.
-  bool CaptureEntirePageAsPNG(const FilePath& path) WARN_UNUSED_RESULT;
+  bool CaptureEntirePageAsPNG(const base::FilePath& path) WARN_UNUSED_RESULT;
 
 #if defined(OS_WIN)
   // Resizes the tab window.
@@ -225,6 +227,9 @@ class TabProxy : public AutomationResourceProxy {
   void Cut();
   void Copy();
   void Paste();
+
+  // Simulates a key press. |key| is the virtual key code of the key pressed.
+  void SimulateKeyPress(ui::KeyboardCode key);
 
   // These handlers issue asynchronous Reload, Stop and SaveAs notifications to
   // the chrome instance.

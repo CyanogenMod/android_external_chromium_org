@@ -22,6 +22,7 @@
 #include "ipc/ipc_switches.h"
 #include "ipc/ipc_sync_message.h"
 #include "ipc/ipc_message_utils.h"
+#include "ipc/ipc_sender.h"
 
 #if defined(OS_POSIX)
 #include <unistd.h>
@@ -240,7 +241,7 @@ void Logging::Log(const LogData& data) {
   if (enabled_on_stderr_) {
     std::string message_name;
     if (data.message_name.empty()) {
-      message_name = StringPrintf("[unknown type %d]", data.type);
+      message_name = base::StringPrintf("[unknown type %d]", data.type);
     } else {
       message_name = data.message_name;
     }

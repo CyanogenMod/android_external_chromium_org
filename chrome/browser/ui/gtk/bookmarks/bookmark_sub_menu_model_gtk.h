@@ -9,12 +9,13 @@
 
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
 #include "ui/base/models/simple_menu_model.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class Browser;
 class BookmarkModel;
 class BookmarkNode;
 class MenuGtk;  // See below for why we need this.
+class Profile;
 
 namespace content {
 class PageNavigator;
@@ -27,7 +28,8 @@ class BookmarkNodeMenuModel : public ui::SimpleMenuModel {
   BookmarkNodeMenuModel(ui::SimpleMenuModel::Delegate* delegate,
                         BookmarkModel* model,
                         const BookmarkNode* node,
-                        content::PageNavigator* page_navigator);
+                        content::PageNavigator* page_navigator,
+                        Profile* profile);
   virtual ~BookmarkNodeMenuModel();
 
   // From SimpleMenuModel. Takes care of deleting submenus.
@@ -67,6 +69,8 @@ class BookmarkNodeMenuModel : public ui::SimpleMenuModel {
 
   // The page navigator used to open bookmarks in ActivatedAt().
   content::PageNavigator* page_navigator_;
+
+  Profile* profile_;
 
   // A list of the submenus we own and will need to delete.
   std::vector<BookmarkNodeMenuModel*> submenus_;

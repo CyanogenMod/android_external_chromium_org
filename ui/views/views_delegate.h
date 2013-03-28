@@ -32,6 +32,7 @@ namespace views {
 
 class NativeWidget;
 class NonClientFrameView;
+class ViewsTouchSelectionControllerFactory;
 class View;
 class Widget;
 namespace internal {
@@ -49,7 +50,9 @@ class VIEWS_EXPORT ViewsDelegate {
   // The active ViewsDelegate used by the views system.
   static ViewsDelegate* views_delegate;
 
-  virtual ~ViewsDelegate() {}
+  ViewsDelegate();
+
+  virtual ~ViewsDelegate();
 
   // Saves the position, size and "show" state for the window with the
   // specified name.
@@ -98,20 +101,17 @@ class VIEWS_EXPORT ViewsDelegate {
   virtual void AddRef() = 0;
   virtual void ReleaseRef() = 0;
 
-  // Converts ui::Event::flags to a WindowOpenDisposition.
-  virtual int GetDispositionForEvent(int event_flags) = 0;
-
   // Creates a web contents. This will return NULL unless overriden.
   virtual content::WebContents* CreateWebContents(
       content::BrowserContext* browser_context,
       content::SiteInstance* site_instance) = 0;
 
-  // Creates a NativeWidget implementation. Returning NULL means Widget will
-  // create a default implementation for the platform.
-  virtual NativeWidget* CreateNativeWidget(
-      Widget::InitParams::Type type,
-      internal::NativeWidgetDelegate* delegate,
-      gfx::NativeView parent) = 0;
+  // Gives the platform a chance to modify the properties of a Widget.
+  virtual void OnBeforeWidgetInit(Widget::InitParams* params,
+                            internal::NativeWidgetDelegate* delegate) = 0;
+
+ private:
+  scoped_ptr<ViewsTouchSelectionControllerFactory> views_tsc_factory_;
 };
 
 }  // namespace views

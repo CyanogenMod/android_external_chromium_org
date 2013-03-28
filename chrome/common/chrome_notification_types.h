@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,6 +76,12 @@ enum NotificationType {
   // Source<ThemeService>. There are no details.
   NOTIFICATION_BROWSER_THEME_CHANGED,
 
+#if defined(USE_AURA)
+  // The user has changed the fling curve configuration.
+  // Source<GesturePrefsObserver>. There are no details.
+  NOTIFICATION_BROWSER_FLING_CURVE_PARAMETERS_CHANGED,
+#endif  // defined(USE_AURA)
+
   // Sent when the renderer returns focus to the browser, as part of focus
   // traversal. The source is the browser, there are no details.
   NOTIFICATION_FOCUS_RETURNED_TO_BROWSER,
@@ -119,25 +125,24 @@ enum NotificationType {
   // is the dialog.
   NOTIFICATION_APP_MODAL_DIALOG_SHOWN,
 
-  // This message is sent when a new InfoBar has been added to a
-  // InfoBarTabHelper.  The source is a Source<InfoBarTabHelper> with a
-  // pointer to the InfoBarTabHelper the InfoBar was added to.  The details
-  // is a Details<InfoBarDelegate> with a pointer to the delegate that was
-  // added.
+  // This message is sent when a new InfoBar has been added to an
+  // InfoBarService.  The source is a Source<InfoBarService> with a pointer to
+  // the InfoBarService the InfoBar was added to.  The details is a
+  // Details<InfoBarDelegate> with a pointer to the delegate that was added.
   NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED,
 
-  // This message is sent when an InfoBar is about to be removed from a
-  // InfoBarTabHelper.  The source is a Source<InfoBarTabHelper> with a
-  // pointer to the InfoBarTabHelper the InfoBar was removed from.  The
-  // details is a Details<std::pair<InfoBarDelegate*, bool> > with a pointer
-  // to the removed delegate and whether the removal should be animated.
+  // This message is sent when an InfoBar is about to be removed from an
+  // InfoBarService.  The source is a Source<InfoBarService> with a pointer to
+  // the InfoBarService the InfoBar was removed from.  The details is a
+  // Details<std::pair<InfoBarDelegate*, bool> > with a pointer to the removed
+  // delegate and whether the removal should be animated.
   NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
 
-  // This message is sent when an InfoBar is replacing another infobar in a
-  // InfoBarTabHelper.  The source is a Source<InfoBarTabHelper> with a
-  // pointer to the InfoBarTabHelper the InfoBar was removed from.  The
-  // details is a Details<std::pair<InfoBarDelegate*, InfoBarDelegate*> > with
-  // pointers to the old and new delegates, respectively.
+  // This message is sent when an InfoBar is replacing another infobar in an
+  // InfoBarService.  The source is a Source<InfoBarService> with a pointer to
+  // the InfoBarService the InfoBar was removed from.  The details is a
+  // Details<std::pair<InfoBarDelegate*, InfoBarDelegate*> > with pointers to
+  // the old and new delegates, respectively.
   NOTIFICATION_TAB_CONTENTS_INFOBAR_REPLACED,
 
   // This is sent when an externally hosted tab is closed.  No details are
@@ -173,10 +178,10 @@ enum NotificationType {
   // invoked on.
   NOTIFICATION_TAB_CONTENTS_APPLICATION_EXTENSION_CHANGED,
 
-  // Notification posted when the element that is focused and currently accepts
-  // keyboard input inside the webpage has been touched.  The source is the
-  // RenderViewHost and the details are not used.
-  NOTIFICATION_FOCUSED_EDITABLE_NODE_TOUCHED,
+  // Notification posted when the element that is focused has been touched. A
+  // bool parameter is passed in this notification which indicates if this node
+  // accepts. The source is the RenderViewHost.
+  NOTIFICATION_FOCUSED_NODE_TOUCHED,
 
   // Tabs --------------------------------------------------------------------
 
@@ -198,10 +203,6 @@ enum NotificationType {
   NOTIFICATION_TAB_CLOSING,
 
   // Stuff inside the tabs ---------------------------------------------------
-
-  // Sent when the bookmark bubble hides. The source is the profile, the
-  // details unused.
-  NOTIFICATION_BOOKMARK_BUBBLE_HIDDEN,
 
   // This notification is sent when the result of a find-in-page search is
   // available with the browser process. The source is a Source<WebContents>.
@@ -313,7 +314,11 @@ enum NotificationType {
   NOTIFICATION_FAVICON_CHANGED,
 
   // Sent by FaviconTabHelper when a tab's favicon has been successfully
-  // updated.
+  // updated. The details are a bool indicating whether the
+  // NavigationEntry's favicon URL has changed since the previous
+  // NOTIFICATION_FAVICON_UPDATED notification. The details are true if
+  // there was no previous NOTIFICATION_FAVICON_UPDATED notification for the
+  // current NavigationEntry.
   NOTIFICATION_FAVICON_UPDATED,
 
   // Profiles -----------------------------------------------------------------
@@ -353,22 +358,6 @@ enum NotificationType {
   // one of the images changes. The source is the TopSites, the details not
   // used.
   NOTIFICATION_TOP_SITES_CHANGED,
-
-  // Bookmarks ---------------------------------------------------------------
-
-  // Sent when the starred state of a URL changes. A URL is starred if there
-  // is at least one bookmark for it. The source is a Profile and the details
-  // is history::URLsStarredDetails that contains the list of URLs and
-  // whether they were starred or unstarred.
-  NOTIFICATION_URLS_STARRED,
-
-  // Sent when the bookmark bar model finishes loading. This source is the
-  // Profile, and the details aren't used.
-  NOTIFICATION_BOOKMARK_MODEL_LOADED,
-
-  // Sent when the bookmark bubble is shown for a particular URL. The source
-  // is the profile, the details the URL.
-  NOTIFICATION_BOOKMARK_BUBBLE_SHOWN,
 
   // Task Manager ------------------------------------------------------------
 
@@ -589,6 +578,11 @@ enum NotificationType {
   // ExtensionAction* that changed. The details are a WebContents*.
   NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
 
+  // Sent when a system indicator action's state has changed. The source is the
+  // Profile* that the browser action belongs to. The details are the
+  // ExtensionAction* that changed.
+  NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED,
+
   // Sent when an extension command has been removed. The source is the profile
   // and the details is a std::pair of two std::string objects (an extension ID
   // and the name of the command being removed).
@@ -669,30 +663,11 @@ enum NotificationType {
   // extensions. The source is a Profile, and there are no details.
   NOTIFICATION_EXTENSION_UPDATING_STARTED,
 
-  // Sent when the extension updater is finished checking for updates to
-  // installed extensions. The source is a Profile, and there are no details.
-  // NOTE: It's possible that there are extension updates still being
-  // installed by the extension service at the time this notification fires.
-  NOTIFICATION_EXTENSION_UPDATING_FINISHED,
-
   // The extension updater found an update and will attempt to download and
-  // install it. The source is a Profile, and the details are an extension id
-  // (const std::string).
+  // install it. The source is a Profile, and the details are an
+  // extensions::UpdateDetails object with the extension id and version of the
+  // found update.
   NOTIFICATION_EXTENSION_UPDATE_FOUND,
-
-  // Sent when one or more extensions changed their warning status (like
-  // slowing down Chrome or conflicting with each other).
-  // The source is a Profile.
-  NOTIFICATION_EXTENSION_WARNING_CHANGED,
-
-  // An installed app changed notification state (added or removed
-  // notifications). The source is a Profile, and the details are a string
-  // with the extension id of the app.
-  NOTIFICATION_APP_NOTIFICATION_STATE_CHANGED,
-
-  // Finished loading app notification manager.
-  // The source is AppNotificationManager, and the details are NoDetails.
-  NOTIFICATION_APP_NOTIFICATION_MANAGER_LOADED,
 
   // Component Updater -------------------------------------------------------
 
@@ -743,10 +718,6 @@ enum NotificationType {
   // WebDatabase.  The detail is an AutofillProfileChange.
   NOTIFICATION_AUTOFILL_PROFILE_CHANGED,
 
-  // Sent when an Autofill CreditCard has been added/removed/updated in the
-  // WebDatabase.  The detail is an AutofillCreditCardChange.
-  NOTIFICATION_AUTOFILL_CREDIT_CARD_CHANGED,
-
   // Sent when multiple Autofill entries have been modified by Sync.
   // The source is the WebDataService in use by Sync.  No details are specified.
   NOTIFICATION_AUTOFILL_MULTIPLE_CHANGED,
@@ -765,6 +736,9 @@ enum NotificationType {
 
   // Sent when a critical update has been installed. No details are expected.
   NOTIFICATION_CRITICAL_UPGRADE_INSTALLED,
+
+  // Sent when the current install is outdated. No details are expected.
+  NOTIFICATION_OUTDATED_INSTALL,
 
   // Software incompatibility notifications ----------------------------------
 
@@ -895,12 +869,6 @@ enum NotificationType {
   // TokenRequestFailedDetails object.
   NOTIFICATION_TOKEN_REQUEST_FAILED,
 
-  // When the token service receives updated credentials with which to generate
-  // new tokens, one of these notifications is issued.
-  // The source is a TokenService on the Profile. The details are a
-  // CredentialsUpdatedDetails object.
-  NOTIFICATION_TOKEN_SERVICE_CREDENTIALS_UPDATED,
-
   // When a service has a new token they got from a frontend that the
   // TokenService should know about, fire this notification. The source is the
   // Profile. The details are a TokenAvailableDetails object.
@@ -925,16 +893,6 @@ enum NotificationType {
   // The source is the Profile. The details are a
   // GoogleServiceSignoutDetails object.
   NOTIFICATION_GOOGLE_SIGNED_OUT,
-
-  // Autofill Notifications --------------------------------------------------
-
-  // Sent when a popup with Autofill suggestions is shown in the renderer.
-  // The source is the corresponding RenderViewHost. There are not details.
-  NOTIFICATION_AUTOFILL_DID_SHOW_SUGGESTIONS,
-
-  // Sent when a form is previewed or filled with Autofill suggestions.
-  // The source is the corresponding RenderViewHost. There are not details.
-  NOTIFICATION_AUTOFILL_DID_FILL_FORM_DATA,
 
   // Download Notifications --------------------------------------------------
 
@@ -1053,8 +1011,8 @@ enum NotificationType {
   // Sent when proxy dialog is closed.
   NOTIFICATION_LOGIN_PROXY_CHANGED,
 
-  // Sent when the user list has changed due to a policy change.
-  NOTIFICATION_POLICY_USER_LIST_CHANGED,
+  // Sent when the user list has changed.
+  NOTIFICATION_USER_LIST_CHANGED,
 
   // Sent when a panel state changed.
   NOTIFICATION_PANEL_STATE_CHANGED,
@@ -1092,6 +1050,15 @@ enum NotificationType {
   // PIN or PUK.
   NOTIFICATION_ENTER_PIN_ENDED,
 
+  // Sent when high contrast mode is toggled.
+  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE,
+
+  // Sent when screen magnifier is toggled.
+  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER,
+
+  // Sent when spoken feedback is toggled.
+  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
+
 #endif
 
 #if defined(TOOLKIT_VIEWS)
@@ -1114,17 +1081,28 @@ enum NotificationType {
   // Sent each time the InstantController is updated.
   NOTIFICATION_INSTANT_CONTROLLER_UPDATED,
 
-  // Sent when an Instant preview is committed. The Source is the WebContents
-  // containing the committed preview.
+  // Sent when an Instant overlay is committed. The Source is the WebContents
+  // containing the committed overlay.
   NOTIFICATION_INSTANT_COMMITTED,
 
-  // Sent when the Instant loader determines whether the page supports the
-  // Instant API or not.
-  NOTIFICATION_INSTANT_SUPPORT_DETERMINED,
+  // Sent when the Instant Controller determines whether the overlay supports
+  // the Instant API or not.
+  NOTIFICATION_INSTANT_OVERLAY_SUPPORT_DETERMINED,
 
-  // Sent when the Browser Instant controller resets, this may result from
-  // a preference change.
-  NOTIFICATION_BROWSER_INSTANT_RESET,
+  // Sent when the Instant Controller determines whether an Instant tab supports
+  // the Instant API or not.
+  NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
+
+  // Sent when the Instant Controller determines whether the NTP supports the
+  // Instant API or not.
+  NOTIFICATION_INSTANT_NTP_SUPPORT_DETERMINED,
+
+  // Sent when the Instant Controller has sent the Most Visited Items to the
+  // renderer.
+  NOTIFICATION_INSTANT_SENT_MOST_VISITED_ITEMS,
+
+  // Sent when the Instant Controller sets an omnibox suggestion.
+  NOTIFICATION_INSTANT_SET_SUGGESTION,
 
   // Sent when the CaptivePortalService checks if we're behind a captive portal.
   // The Source is the Profile the CaptivePortalService belongs to, and the
@@ -1217,10 +1195,10 @@ enum NotificationType {
   // Used only in unit testing.
   NOTIFICATION_PANEL_APP_ICON_LOADED,
 
-  // Sent when panel strip get updated.
-  // The source is the PanelStrip, no details.
+  // Sent when panel collection get updated.
+  // The source is the PanelCollection, no details.
   // Used only in coordination with notification balloons.
-  NOTIFICATION_PANEL_STRIP_UPDATED,
+  NOTIFICATION_PANEL_COLLECTION_UPDATED,
 
   // Sent when panel is closed.
   // The source is the Panel, no details.
@@ -1254,11 +1232,11 @@ enum NotificationType {
   // if it is leaving.
   NOTIFICATION_CONTENT_BLOCKED_STATE_CHANGED,
 
-  // SearchViewController.
-  // Sent when animations initiated by search view controller complete.
-  // The source is the SearchViewController whose animation is finished.
-  // No details.
-  NOTIFICATION_SEARCH_VIEW_CONTROLLER_ANIMATION_FINISHED,
+  // Session Restore --------------------------------------------------------
+
+  // Sent when synchronous (startup) session restore completes. No details or
+  // source.
+  NOTIFICATION_SESSION_RESTORE_DONE,
 
   // Note:-
   // Currently only Content and Chrome define and use notifications.
@@ -1268,6 +1246,5 @@ enum NotificationType {
 };
 
 }  // namespace chrome
-
 
 #endif  // CHROME_COMMON_CHROME_NOTIFICATION_TYPES_H_

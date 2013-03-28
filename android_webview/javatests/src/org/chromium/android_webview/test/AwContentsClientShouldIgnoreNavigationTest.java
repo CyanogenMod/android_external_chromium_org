@@ -14,7 +14,6 @@ import android.util.Log;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.android_webview.test.util.JSUtils;
-import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.test.util.CallbackHelper;
@@ -33,14 +32,14 @@ import java.util.concurrent.Callable;
 /**
  * Tests for the WebViewClient.shouldOverrideUrlLoading() method.
  */
-public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTestBase {
+public class AwContentsClientShouldIgnoreNavigationTest extends AwTestBase {
     private final static String ABOUT_BLANK_URL = "about:blank";
     private final static String DATA_URL = "data:text/html,<div/>";
     private final static String REDIRECT_TARGET_PATH = "/redirect_target.html";
     private final static String TITLE = "TITLE";
 
     private static final long TEST_TIMEOUT = 20000L;
-    private static final int CHECK_INTERVAL = 100;
+    private static final long CHECK_INTERVAL = 100;
 
     private static class TestAwContentsClient
             extends org.chromium.android_webview.test.TestAwContentsClient {
@@ -190,7 +189,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationNotCalledOnLoadUrl() throws Throwable {
+    public void testNotCalledOnLoadUrl() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -204,9 +203,74 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
         assertEquals(0, shouldIgnoreNavigationHelper.getCallCount());
     }
 
+    private void waitForNavigationRunnableAndAssertTitleChanged(AwContents awContents,
+            CallbackHelper onPageFinishedHelper,
+            Runnable navigationRunnable) throws Exception {
+        final int callCount = onPageFinishedHelper.getCallCount();
+        final String oldTitle = getTitleOnUiThread(awContents);
+        getInstrumentation().runOnMainSync(navigationRunnable);
+        onPageFinishedHelper.waitForCallback(callCount);
+        assertFalse(oldTitle.equals(getTitleOnUiThread(awContents)));
+    }
+
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCantBlockLoads() throws Throwable {
+    public void testNotCalledOnBackForwardNavigation() throws Throwable {
+        final TestAwContentsClient contentsClient = new TestAwContentsClient();
+        final AwTestContainerView testContainerView =
+            createAwTestContainerViewOnMainSync(contentsClient);
+        final AwContents awContents = testContainerView.getAwContents();
+        TestAwContentsClient.ShouldIgnoreNavigationHelper shouldIgnoreNavigationHelper =
+            contentsClient.getShouldIgnoreNavigationHelper();
+        final String[] pageTitles = new String[] { "page1", "page2", "page3" };
+
+        for (String title: pageTitles) {
+            loadDataSync(awContents, contentsClient.getOnPageFinishedHelper(),
+                    CommonResources.makeHtmlPageFrom("<title>" + title + "</title>", ""),
+                    "text/html", false);
+        }
+        assertEquals(0, shouldIgnoreNavigationHelper.getCallCount());
+
+        waitForNavigationRunnableAndAssertTitleChanged(awContents,
+                contentsClient.getOnPageFinishedHelper(), new Runnable() {
+            @Override
+            public void run() {
+                awContents.goBack();
+            }
+        });
+        assertEquals(0, shouldIgnoreNavigationHelper.getCallCount());
+
+        waitForNavigationRunnableAndAssertTitleChanged(awContents,
+                contentsClient.getOnPageFinishedHelper(), new Runnable() {
+            @Override
+            public void run() {
+                awContents.goForward();
+            }
+        });
+        assertEquals(0, shouldIgnoreNavigationHelper.getCallCount());
+
+        waitForNavigationRunnableAndAssertTitleChanged(awContents,
+                contentsClient.getOnPageFinishedHelper(), new Runnable() {
+            @Override
+            public void run() {
+                awContents.goBackOrForward(-2);
+            }
+        });
+        assertEquals(0, shouldIgnoreNavigationHelper.getCallCount());
+
+        waitForNavigationRunnableAndAssertTitleChanged(awContents,
+                contentsClient.getOnPageFinishedHelper(), new Runnable() {
+            @Override
+            public void run() {
+                awContents.goBackOrForward(1);
+            }
+        });
+        assertEquals(0, shouldIgnoreNavigationHelper.getCallCount());
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView", "Navigation"})
+    public void testCantBlockLoads() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -222,13 +286,9 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
         assertEquals(TITLE, getTitleOnUiThread(awContents));
     }
 
-    /**
-     * @SmallTest
-     * @Feature({"AndroidWebView", "Navigation"})
-     * BUG=154292
-     */
-    @DisabledTest
-    public void testShouldIgnoreNavigationCalledBeforeOnPageStarted() throws Throwable {
+    @SmallTest
+    @Feature({"AndroidWebView", "Navigation"})
+    public void testCalledBeforeOnPageStarted() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -250,13 +310,9 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
     }
 
 
-    /**
-     * @SmallTest
-     * @Feature({"AndroidWebView", "Navigation"})
-     * BUG=154292
-     */
-    @DisabledTest
-    public void testShouldIgnoreNavigationDoesNotCauseOnReceivedError() throws Throwable {
+    @SmallTest
+    @Feature({"AndroidWebView", "Navigation"})
+    public void testDoesNotCauseOnReceivedError() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -288,7 +344,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationNotCalledForAnchorNavigations() throws Throwable {
+    public void testNotCalledForAnchorNavigations() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -318,7 +374,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledWhenLinkClicked() throws Throwable {
+    public void testCalledWhenLinkClicked() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -340,7 +396,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledWhenSelfLinkClicked() throws Throwable {
+    public void testCalledWhenSelfLinkClicked() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -367,7 +423,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledWhenNavigatingFromJavaScriptUsingAssign()
+    public void testCalledWhenNavigatingFromJavaScriptUsingAssign()
             throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
@@ -390,7 +446,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledWhenNavigatingFromJavaScriptUsingReplace()
+    public void testCalledWhenNavigatingFromJavaScriptUsingReplace()
             throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
@@ -411,7 +467,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationPassesCorrectUrl() throws Throwable {
+    public void testPassesCorrectUrl() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -432,7 +488,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCanIgnoreLoading() throws Throwable {
+    public void testCanIgnoreLoading() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -476,7 +532,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledForDataUrl() throws Throwable {
+    public void testCalledForDataUrl() throws Throwable {
         final String dataUrl =
                 "data:text/html;base64," +
                 "PGh0bWw+PGhlYWQ+PHRpdGxlPmRhdGFVcmxUZXN0QmFzZTY0PC90aXRsZT48" +
@@ -502,7 +558,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledForUnsupportedSchemes() throws Throwable {
+    public void testCalledForUnsupportedSchemes() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -523,7 +579,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationNotCalledForPostNavigations() throws Throwable {
+    public void testNotCalledForPostNavigations() throws Throwable {
         // The reason POST requests are excluded is BUG 155250.
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
@@ -541,6 +597,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
         final int shouldIgnoreNavigationCallCount =
             shouldIgnoreNavigationHelper.getCallCount();
 
+        assertEquals(0, mWebServer.getRequestCount(REDIRECT_TARGET_PATH));
         clickOnLinkUsingJs(awContents, contentsClient);
 
         // Wait for the target URL to be fetched from the server.
@@ -549,7 +606,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
             public boolean isSatisfied() {
                 return mWebServer.getRequestCount(REDIRECT_TARGET_PATH) == 1;
             }
-        }, WAIT_TIMEOUT_SECONDS * 1000, CHECK_INTERVAL));
+        }, WAIT_TIMEOUT_SECONDS * 1000L, CHECK_INTERVAL));
 
         // Since the targetURL was loaded from the test server it means all processing related
         // to dispatching a shouldIgnoreNavigation callback had finished and checking the call
@@ -560,7 +617,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationNotCalledForIframeNavigations() throws Throwable {
+    public void testNotCalledForIframeHttpNavigations() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(contentsClient);
@@ -578,15 +635,44 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
         final int shouldIgnoreNavigationCallCount =
             shouldIgnoreNavigationHelper.getCallCount();
 
+        assertEquals(0, mWebServer.getRequestCount(REDIRECT_TARGET_PATH));
         loadUrlSync(awContents, contentsClient.getOnPageFinishedHelper(), pageWithIframeUrl);
 
-        // After we load this URL we're certain that any in-flight callbacks for the previous
-        // navigation have been delivered.
-        loadUrlSync(awContents, contentsClient.getOnPageFinishedHelper(), ABOUT_BLANK_URL);
+        // Wait for the redirect target URL to be fetched from the server.
+        assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+            @Override
+            public boolean isSatisfied() {
+                return mWebServer.getRequestCount(REDIRECT_TARGET_PATH) == 1;
+            }
+        }, WAIT_TIMEOUT_SECONDS * 1000L, CHECK_INTERVAL));
 
         assertEquals(shouldIgnoreNavigationCallCount,
                 shouldIgnoreNavigationHelper.getCallCount());
-        assertEquals(1, mWebServer.getRequestCount(REDIRECT_TARGET_PATH));
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView", "Navigation"})
+    public void testCalledForIframeUnsupportedSchemeNavigations() throws Throwable {
+        final TestAwContentsClient contentsClient = new TestAwContentsClient();
+        final AwTestContainerView testContainerView =
+            createAwTestContainerViewOnMainSync(contentsClient);
+        final AwContents awContents = testContainerView.getAwContents();
+        final TestAwContentsClient.ShouldIgnoreNavigationHelper shouldIgnoreNavigationHelper =
+            contentsClient.getShouldIgnoreNavigationHelper();
+
+        final String unsupportedSchemeUrl = "foobar://resource/1";
+        final String pageWithIframeUrl =
+            addPageToTestServer(mWebServer, "/iframe_intercept.html",
+                makeHtmlPageFrom("", "<iframe src=\"" + unsupportedSchemeUrl + "\" />"));
+
+        final int shouldIgnoreNavigationCallCount =
+            shouldIgnoreNavigationHelper.getCallCount();
+
+        loadUrlSync(awContents, contentsClient.getOnPageFinishedHelper(), pageWithIframeUrl);
+
+        shouldIgnoreNavigationHelper.waitForCallback(shouldIgnoreNavigationCallCount);
+        assertEquals(unsupportedSchemeUrl,
+                shouldIgnoreNavigationHelper.getShouldIgnoreNavigationUrl());
     }
 
     /**
@@ -597,7 +683,7 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
      * The second part of the test loads a page that contains a link which points at the redirect
      * URL. We expect two callbacks - one for the redirect link and another for the destination.
      */
-    private void doTestShouldIgnoreNavigationCalledOnRedirect(TestWebServer webServer,
+    private void doTestCalledOnRedirect(TestWebServer webServer,
             String redirectUrl, String redirectTarget) throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
@@ -641,66 +727,60 @@ public class AwContentsClientShouldIgnoreNavigationTest extends AndroidWebViewTe
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledOn302Redirect() throws Throwable {
+    public void testCalledOn302Redirect() throws Throwable {
         final String redirectTargetUrl = createRedirectTargetPage(mWebServer);
         final String redirectUrl = mWebServer.setRedirect("/302.html", redirectTargetUrl);
 
-        doTestShouldIgnoreNavigationCalledOnRedirect(mWebServer, redirectUrl,
-                redirectTargetUrl);
+        doTestCalledOnRedirect(mWebServer, redirectUrl, redirectTargetUrl);
     }
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledOnMetaRefreshRedirect() throws Throwable {
+    public void testCalledOnMetaRefreshRedirect() throws Throwable {
         final String redirectTargetUrl = createRedirectTargetPage(mWebServer);
         final String redirectUrl = addPageToTestServer(mWebServer, "/meta_refresh.html",
                 getHtmlForPageWithMetaRefreshRedirectTo(redirectTargetUrl));
-        doTestShouldIgnoreNavigationCalledOnRedirect(mWebServer, redirectUrl,
-                redirectTargetUrl);
+        doTestCalledOnRedirect(mWebServer, redirectUrl, redirectTargetUrl);
     }
 
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledOnJavaScriptLocationImmediateAssignRedirect()
+    public void testCalledOnJavaScriptLocationImmediateAssignRedirect()
             throws Throwable {
         final String redirectTargetUrl = createRedirectTargetPage(mWebServer);
         final String redirectUrl = addPageToTestServer(mWebServer, "/js_immediate_assign.html",
                 getHtmlForPageWithJsRedirectTo(redirectTargetUrl, "Assign", 0));
-        doTestShouldIgnoreNavigationCalledOnRedirect(mWebServer, redirectUrl,
-                redirectTargetUrl);
+        doTestCalledOnRedirect(mWebServer, redirectUrl, redirectTargetUrl);
     }
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledOnJavaScriptLocationImmediateReplaceRedirect()
+    public void testCalledOnJavaScriptLocationImmediateReplaceRedirect()
             throws Throwable {
         final String redirectTargetUrl = createRedirectTargetPage(mWebServer);
         final String redirectUrl = addPageToTestServer(mWebServer, "/js_immediate_replace.html",
                 getHtmlForPageWithJsRedirectTo(redirectTargetUrl, "Replace", 0));
-        doTestShouldIgnoreNavigationCalledOnRedirect(mWebServer, redirectUrl,
-                redirectTargetUrl);
+        doTestCalledOnRedirect(mWebServer, redirectUrl, redirectTargetUrl);
     }
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledOnJavaScriptLocationDelayedAssignRedirect()
+    public void testCalledOnJavaScriptLocationDelayedAssignRedirect()
             throws Throwable {
         final String redirectTargetUrl = createRedirectTargetPage(mWebServer);
         final String redirectUrl = addPageToTestServer(mWebServer, "/js_delayed_assign.html",
                 getHtmlForPageWithJsRedirectTo(redirectTargetUrl, "Assign", 100));
-        doTestShouldIgnoreNavigationCalledOnRedirect(mWebServer, redirectUrl,
-                redirectTargetUrl);
+        doTestCalledOnRedirect(mWebServer, redirectUrl, redirectTargetUrl);
     }
 
     @SmallTest
     @Feature({"AndroidWebView", "Navigation"})
-    public void testShouldIgnoreNavigationCalledOnJavaScriptLocationDelayedReplaceRedirect()
+    public void testCalledOnJavaScriptLocationDelayedReplaceRedirect()
             throws Throwable {
         final String redirectTargetUrl = createRedirectTargetPage(mWebServer);
         final String redirectUrl = addPageToTestServer(mWebServer, "/js_delayed_replace.html",
                 getHtmlForPageWithJsRedirectTo(redirectTargetUrl, "Replace", 100));
-        doTestShouldIgnoreNavigationCalledOnRedirect(mWebServer, redirectUrl,
-                redirectTargetUrl);
+        doTestCalledOnRedirect(mWebServer, redirectUrl, redirectTargetUrl);
     }
 }

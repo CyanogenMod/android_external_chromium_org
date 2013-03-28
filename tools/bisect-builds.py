@@ -587,7 +587,19 @@ def GetChromiumRevision(url):
 
 def main():
   usage = ('%prog [options] [-- chromium-options]\n'
-           'Perform binary search on the snapshot builds.\n'
+           'Perform binary search on the snapshot builds to find a minimal\n'
+           'range of revisions where a behavior change happened. The\n'
+           'behaviors are described as "good" and "bad".\n'
+           'It is NOT assumed that the behavior of the later revision is\n'
+           'the bad one.\n'
+           '\n'
+           'Revision numbers should use\n'
+           '  Official versions (e.g. 1.0.1000.0) for official builds. (-o)\n'
+           '  SVN revisions (e.g. 123456) for chromium builds, from trunk.\n'
+           '    Use base_trunk_revision from http://omahaproxy.appspot.com/\n'
+           '    for earlier revs.\n'
+           '    Chrome\'s about: build number and omahaproxy branch_revision\n'
+           '    are incorrect, they are from branches.\n'
            '\n'
            'Tip: add "-- --no-first-run" to bypass the first run prompts.')
   parser = optparse.OptionParser(usage=usage)
@@ -603,9 +615,12 @@ def main():
                     'Chrome builds (internal only) instead of ' +
                     'Chromium archives.')
   parser.add_option('-b', '--bad', type = 'str',
-                    help = 'The bad revision to bisect to. Default is HEAD.')
+                    help = 'A bad revision to start bisection. ' +
+                    'May be earlier or later than the good revision. ' +
+                    'Default is HEAD.')
   parser.add_option('-g', '--good', type = 'str',
-                    help = 'The last known good revision to bisect from. ' +
+                    help = 'A good revision to start bisection. ' +
+                    'May be earlier or later than the bad revision. ' +
                     'Default is 0.')
   parser.add_option('-p', '--profile', '--user-data-dir', type = 'str',
                     help = 'Profile to use; this will not reset every run. ' +

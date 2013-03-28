@@ -13,7 +13,7 @@
 #include "chrome/browser/policy/policy_bundle.h"
 #include "chrome/browser/policy/policy_loader_mac.h"
 #include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/preferences_mock_mac.h"
+#include "chrome/browser/policy/preferences_mock_mac.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -261,7 +261,7 @@ TEST_F(PolicyLoaderMacTest, Invalid) {
 
   // Make the provider read the updated |prefs_|.
   provider_.RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   const PolicyBundle kEmptyBundle;
   EXPECT_TRUE(provider_.policies().Equals(kEmptyBundle));
 }
@@ -276,11 +276,13 @@ TEST_F(PolicyLoaderMacTest, TestNonForcedValue) {
 
   // Make the provider read the updated |prefs_|.
   provider_.RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   PolicyBundle expected_bundle;
-  expected_bundle.Get(POLICY_DOMAIN_CHROME, "")
-      .Set(test_policy_definitions::kKeyString, POLICY_LEVEL_RECOMMENDED,
-           POLICY_SCOPE_USER, base::Value::CreateStringValue("string value"));
+  expected_bundle.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
+      .Set(test_policy_definitions::kKeyString,
+           POLICY_LEVEL_RECOMMENDED,
+           POLICY_SCOPE_USER,
+           base::Value::CreateStringValue("string value"));
   EXPECT_TRUE(provider_.policies().Equals(expected_bundle));
 }
 

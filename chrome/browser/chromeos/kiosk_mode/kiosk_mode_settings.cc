@@ -16,7 +16,7 @@
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud_policy_constants.h"
+#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -103,7 +103,7 @@ bool KioskModeSettings::is_initialized() const {
 void KioskModeSettings::GetScreensaverPath(
     policy::AppPackUpdater::ScreenSaverUpdateCallback callback) const {
   if (!is_initialized_) {
-    callback.Run(FilePath());
+    callback.Run(base::FilePath());
     return;
   }
 
@@ -111,7 +111,7 @@ void KioskModeSettings::GetScreensaverPath(
   // for testing and dev workflows.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kKioskModeScreensaverPath)) {
-    callback.Run(FilePath(
+    callback.Run(base::FilePath(
         CommandLine::ForCurrentProcess()->
             GetSwitchValueASCII(switches::kKioskModeScreensaverPath)));
     return;
@@ -196,7 +196,7 @@ void KioskModeSettings::VerifyModeIsKnown(
             base::TimeDelta::FromMilliseconds(kDeviceModeFetchRetryDelayMs));
         break;
       case policy::DEVICE_MODE_KIOSK:
-        browser::ExitCleanly();
+        chrome::ExitCleanly();
         break;
       default:
         break;

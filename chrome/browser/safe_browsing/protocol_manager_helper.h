@@ -16,9 +16,14 @@
 #include "base/gtest_prod_util.h"
 
 struct SafeBrowsingProtocolConfig {
-  SafeBrowsingProtocolConfig() : disable_auto_update(false) {}
+  SafeBrowsingProtocolConfig();
+  ~SafeBrowsingProtocolConfig();
   std::string client_name;
   std::string url_prefix;
+  std::string backup_connect_error_url_prefix;
+  std::string backup_http_error_url_prefix;
+  std::string backup_network_error_url_prefix;
+  std::string version;
   bool disable_auto_update;
 };
 

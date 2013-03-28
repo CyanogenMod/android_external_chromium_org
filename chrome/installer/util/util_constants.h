@@ -130,7 +130,7 @@ COMPILE_ASSERT(DEFERRING_TO_HIGHER_VERSION == 18,
 namespace switches {
 extern const char kAutoLaunchChrome[];
 extern const char kChrome[];
-extern const char kChromeAppHost[];
+extern const char kChromeAppHostDeprecated[];  // TODO(huangs): Remove by M27.
 extern const char kChromeAppLauncher[];
 extern const char kChromeFrame[];
 extern const char kChromeFrameQuickEnable[];
@@ -158,6 +158,7 @@ extern const char kMsi[];
 extern const char kMultiInstall[];
 extern const char kNewSetupExe[];
 extern const char kOnOsUpgrade[];
+extern const char kQueryEULAAcceptance[];
 extern const char kRegisterChromeBrowser[];
 extern const char kRegisterChromeBrowserSuffix[];
 extern const char kRegisterDevChrome[];
@@ -165,6 +166,7 @@ extern const char kRegisterURLProtocol[];
 extern const char kRenameChromeExe[];
 extern const char kRemoveChromeRegistration[];
 extern const char kRunAsAdmin[];
+extern const char kSelfDestruct[];
 extern const char kSystemLevel[];
 extern const char kUninstall[];
 extern const char kUpdateSetupExe[];
@@ -177,6 +179,7 @@ extern const char kExperimentGroup[];
 extern const char kToastResultsKey[];
 }  // namespace switches
 
+extern const wchar_t kActiveSetupExe[];
 extern const wchar_t kChromeAppHostExe[];
 extern const wchar_t kChromeDll[];
 extern const wchar_t kChromeExe[];
@@ -188,7 +191,9 @@ extern const wchar_t kChromeLauncherExe[];
 extern const wchar_t kChromeOldExe[];
 extern const wchar_t kChromeNewExe[];
 extern const wchar_t kCmdInstallApp[];
+extern const wchar_t kCmdInstallExtension[];
 extern const wchar_t kCmdOnOsUpgrade[];
+extern const wchar_t kCmdQueryEULAAcceptance[];
 extern const wchar_t kCmdQuickEnableApplicationHost[];
 extern const wchar_t kCmdQuickEnableCf[];
 extern const wchar_t kDelegateExecuteExe[];
@@ -216,13 +221,9 @@ extern const wchar_t kInstallerResult[];
 extern const wchar_t kInstallerResultUIString[];
 extern const wchar_t kInstallerSuccessLaunchCmdLine[];
 
-// Google Update named environment variable that implies kSystemLevel.
-extern const char kGoogleUpdateIsMachineEnvVar[];
-
 // Product options.
 extern const wchar_t kOptionMultiInstall[];
 extern const wchar_t kOptionReadyMode[];
-extern const wchar_t kOptionAppHostIsLauncher[];
 
 // Chrome channel display names.
 // NOTE: Canary is not strictly a 'channel', but rather a separate product

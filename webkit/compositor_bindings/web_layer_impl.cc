@@ -2,471 +2,330 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "web_layer_impl.h"
+#include "webkit/compositor_bindings/web_layer_impl.h"
 
-#include "SkMatrix44.h"
-#ifdef LOG
-#undef LOG
-#endif
 #include "base/string_util.h"
-#include "cc/active_animation.h"
-#include "cc/layer.h"
-#include "cc/region.h"
+#include "cc/animation/animation.h"
+#include "cc/base/region.h"
+#include "cc/layers/layer.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFloatPoint.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebFloatRect.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebTransformationMatrix.h"
-#include "web_animation_impl.h"
+#include "third_party/skia/include/utils/SkMatrix44.h"
+#include "webkit/compositor_bindings/web_animation_impl.h"
 
-using cc::ActiveAnimation;
+using cc::Animation;
 using cc::Layer;
+using WebKit::WebLayer;
+using WebKit::WebFloatPoint;
+using WebKit::WebVector;
+using WebKit::WebRect;
+using WebKit::WebSize;
+using WebKit::WebColor;
+using WebKit::WebFilterOperations;
 
-namespace WebKit {
+namespace webkit {
 
-namespace {
+WebLayerImpl::WebLayerImpl() : layer_(Layer::Create()) {}
 
-WebTransformationMatrix transformationMatrixFromSkMatrix44(const SkMatrix44& matrix)
-{
-    double data[16];
-    matrix.asColMajord(data);
-    return WebTransformationMatrix(data[0], data[1], data[2], data[3],
-                                   data[4], data[5], data[6], data[7],
-                                   data[8], data[9], data[10], data[11],
-                                   data[12], data[13], data[14], data[15]);
-}
-
-SkMatrix44 skMatrix44FromTransformationMatrix(const WebTransformationMatrix& matrix)
-{
-    SkMatrix44 skMatrix;
-    skMatrix.set(0, 0, SkDoubleToMScalar(matrix.m11()));
-    skMatrix.set(1, 0, SkDoubleToMScalar(matrix.m12()));
-    skMatrix.set(2, 0, SkDoubleToMScalar(matrix.m13()));
-    skMatrix.set(3, 0, SkDoubleToMScalar(matrix.m14()));
-    skMatrix.set(0, 1, SkDoubleToMScalar(matrix.m21()));
-    skMatrix.set(1, 1, SkDoubleToMScalar(matrix.m22()));
-    skMatrix.set(2, 1, SkDoubleToMScalar(matrix.m23()));
-    skMatrix.set(3, 1, SkDoubleToMScalar(matrix.m24()));
-    skMatrix.set(0, 2, SkDoubleToMScalar(matrix.m31()));
-    skMatrix.set(1, 2, SkDoubleToMScalar(matrix.m32()));
-    skMatrix.set(2, 2, SkDoubleToMScalar(matrix.m33()));
-    skMatrix.set(3, 2, SkDoubleToMScalar(matrix.m34()));
-    skMatrix.set(0, 3, SkDoubleToMScalar(matrix.m41()));
-    skMatrix.set(1, 3, SkDoubleToMScalar(matrix.m42()));
-    skMatrix.set(2, 3, SkDoubleToMScalar(matrix.m43()));
-    skMatrix.set(3, 3, SkDoubleToMScalar(matrix.m44()));
-    return skMatrix;
-}
-
-}
-
-WebLayer* WebLayer::create()
-{
-    return new WebLayerImpl();
-}
-
-WebLayerImpl::WebLayerImpl()
-    : m_layer(Layer::create())
-{
-}
+WebLayerImpl::WebLayerImpl(scoped_refptr<Layer> layer) : layer_(layer) {}
 
-WebLayerImpl::WebLayerImpl(scoped_refptr<Layer> layer)
-    : m_layer(layer)
-{
+WebLayerImpl::~WebLayerImpl() {
+  layer_->ClearRenderSurface();
+  layer_->set_layer_animation_delegate(NULL);
 }
 
+int WebLayerImpl::id() const { return layer_->id(); }
 
-WebLayerImpl::~WebLayerImpl()
-{
-    m_layer->clearRenderSurface();
-    m_layer->setLayerAnimationDelegate(0);
+void WebLayerImpl::invalidateRect(const WebKit::WebFloatRect& rect) {
+  layer_->SetNeedsDisplayRect(rect);
 }
 
-int WebLayerImpl::id() const
-{
-    return m_layer->id();
-}
-
-void WebLayerImpl::invalidateRect(const WebFloatRect& rect)
-{
-    m_layer->setNeedsDisplayRect(rect);
-}
-
-void WebLayerImpl::invalidate()
-{
-    m_layer->setNeedsDisplay();
-}
-
-void WebLayerImpl::addChild(WebLayer* child)
-{
-    m_layer->addChild(static_cast<WebLayerImpl*>(child)->layer());
-}
+void WebLayerImpl::invalidate() { layer_->SetNeedsDisplay(); }
 
-void WebLayerImpl::insertChild(WebLayer* child, size_t index)
-{
-    m_layer->insertChild(static_cast<WebLayerImpl*>(child)->layer(), index);
+void WebLayerImpl::addChild(WebLayer* child) {
+  layer_->AddChild(static_cast<WebLayerImpl*>(child)->layer());
 }
 
-void WebLayerImpl::replaceChild(WebLayer* reference, WebLayer* newLayer)
-{
-    m_layer->replaceChild(static_cast<WebLayerImpl*>(reference)->layer(), static_cast<WebLayerImpl*>(newLayer)->layer());
+void WebLayerImpl::insertChild(WebLayer* child, size_t index) {
+  layer_->InsertChild(static_cast<WebLayerImpl*>(child)->layer(), index);
 }
 
-void WebLayerImpl::removeFromParent()
-{
-    m_layer->removeFromParent();
+void WebLayerImpl::replaceChild(WebLayer* reference, WebLayer* new_layer) {
+  layer_->ReplaceChild(static_cast<WebLayerImpl*>(reference)->layer(),
+                       static_cast<WebLayerImpl*>(new_layer)->layer());
 }
 
-void WebLayerImpl::removeAllChildren()
-{
-    m_layer->removeAllChildren();
-}
+void WebLayerImpl::removeFromParent() { layer_->RemoveFromParent(); }
 
-void WebLayerImpl::setAnchorPoint(const WebFloatPoint& anchorPoint)
-{
-    m_layer->setAnchorPoint(anchorPoint);
-}
+void WebLayerImpl::removeAllChildren() { layer_->RemoveAllChildren(); }
 
-WebFloatPoint WebLayerImpl::anchorPoint() const
-{
-    return m_layer->anchorPoint();
+void WebLayerImpl::setAnchorPoint(const WebFloatPoint& anchor_point) {
+  layer_->SetAnchorPoint(anchor_point);
 }
 
-void WebLayerImpl::setAnchorPointZ(float anchorPointZ)
-{
-    m_layer->setAnchorPointZ(anchorPointZ);
+WebFloatPoint WebLayerImpl::anchorPoint() const {
+  return layer_->anchor_point();
 }
 
-float WebLayerImpl::anchorPointZ() const
-{
-    return m_layer->anchorPointZ();
+void WebLayerImpl::setAnchorPointZ(float anchor_point_z) {
+  layer_->SetAnchorPointZ(anchor_point_z);
 }
 
-void WebLayerImpl::setBounds(const WebSize& size)
-{
-    m_layer->setBounds(size);
-}
+float WebLayerImpl::anchorPointZ() const { return layer_->anchor_point_z(); }
 
-WebSize WebLayerImpl::bounds() const
-{
-    return m_layer->bounds();
-}
+void WebLayerImpl::setBounds(const WebSize& size) { layer_->SetBounds(size); }
 
-void WebLayerImpl::setMasksToBounds(bool masksToBounds)
-{
-    m_layer->setMasksToBounds(masksToBounds);
-}
+WebSize WebLayerImpl::bounds() const { return layer_->bounds(); }
 
-bool WebLayerImpl::masksToBounds() const
-{
-    return m_layer->masksToBounds();
+void WebLayerImpl::setMasksToBounds(bool masks_to_bounds) {
+  layer_->SetMasksToBounds(masks_to_bounds);
 }
 
-void WebLayerImpl::setMaskLayer(WebLayer* maskLayer)
-{
-    m_layer->setMaskLayer(maskLayer ? static_cast<WebLayerImpl*>(maskLayer)->layer() : 0);
-}
+bool WebLayerImpl::masksToBounds() const { return layer_->masks_to_bounds(); }
 
-void WebLayerImpl::setReplicaLayer(WebLayer* replicaLayer)
-{
-    m_layer->setReplicaLayer(replicaLayer ? static_cast<WebLayerImpl*>(replicaLayer)->layer() : 0);
+void WebLayerImpl::setMaskLayer(WebLayer* maskLayer) {
+  layer_->SetMaskLayer(
+      maskLayer ? static_cast<WebLayerImpl*>(maskLayer)->layer() : 0);
 }
 
-void WebLayerImpl::setOpacity(float opacity)
-{
-    m_layer->setOpacity(opacity);
+void WebLayerImpl::setReplicaLayer(WebLayer* replica_layer) {
+  layer_->SetReplicaLayer(
+      replica_layer ? static_cast<WebLayerImpl*>(replica_layer)->layer() : 0);
 }
 
-float WebLayerImpl::opacity() const
-{
-    return m_layer->opacity();
-}
+void WebLayerImpl::setOpacity(float opacity) { layer_->SetOpacity(opacity); }
 
-void WebLayerImpl::setOpaque(bool opaque)
-{
-    m_layer->setContentsOpaque(opaque);
-}
+float WebLayerImpl::opacity() const { return layer_->opacity(); }
 
-bool WebLayerImpl::opaque() const
-{
-    return m_layer->contentsOpaque();
-}
+void WebLayerImpl::setOpaque(bool opaque) { layer_->SetContentsOpaque(opaque); }
 
-void WebLayerImpl::setPosition(const WebFloatPoint& position)
-{
-    m_layer->setPosition(position);
-}
+bool WebLayerImpl::opaque() const { return layer_->contents_opaque(); }
 
-WebFloatPoint WebLayerImpl::position() const
-{
-    return m_layer->position();
+void WebLayerImpl::setPosition(const WebFloatPoint& position) {
+  layer_->SetPosition(position);
 }
 
-void WebLayerImpl::setSublayerTransform(const SkMatrix44& matrix)
-{
-    m_layer->setSublayerTransform(transformationMatrixFromSkMatrix44(matrix));
-}
+WebFloatPoint WebLayerImpl::position() const { return layer_->position(); }
 
-void WebLayerImpl::setSublayerTransform(const WebTransformationMatrix& matrix)
-{
-    m_layer->setSublayerTransform(matrix);
+void WebLayerImpl::setSublayerTransform(const SkMatrix44& matrix) {
+  gfx::Transform sub_layer_transform;
+  sub_layer_transform.matrix() = matrix;
+  layer_->SetSublayerTransform(sub_layer_transform);
 }
 
-SkMatrix44 WebLayerImpl::sublayerTransform() const
-{
-    return skMatrix44FromTransformationMatrix(m_layer->sublayerTransform());
+SkMatrix44 WebLayerImpl::sublayerTransform() const {
+  return layer_->sublayer_transform().matrix();
 }
 
-void WebLayerImpl::setTransform(const SkMatrix44& matrix)
-{
-    m_layer->setTransform(transformationMatrixFromSkMatrix44(matrix));
+void WebLayerImpl::setTransform(const SkMatrix44& matrix) {
+  gfx::Transform transform;
+  transform.matrix() = matrix;
+  layer_->SetTransform(transform);
 }
 
-void WebLayerImpl::setTransform(const WebTransformationMatrix& matrix)
-{
-    m_layer->setTransform(matrix);
+SkMatrix44 WebLayerImpl::transform() const {
+  return layer_->transform().matrix();
 }
 
-SkMatrix44 WebLayerImpl::transform() const
-{
-    return skMatrix44FromTransformationMatrix(m_layer->transform());
+void WebLayerImpl::setDrawsContent(bool draws_content) {
+  layer_->SetIsDrawable(draws_content);
 }
 
-void WebLayerImpl::setDrawsContent(bool drawsContent)
-{
-    m_layer->setIsDrawable(drawsContent);
-}
+bool WebLayerImpl::drawsContent() const { return layer_->DrawsContent(); }
 
-bool WebLayerImpl::drawsContent() const
-{
-    return m_layer->drawsContent();
+void WebLayerImpl::setPreserves3D(bool preserve3D) {
+  layer_->SetPreserves3d(preserve3D);
 }
 
-void WebLayerImpl::setPreserves3D(bool preserve3D)
-{
-    m_layer->setPreserves3D(preserve3D);
+void WebLayerImpl::setUseParentBackfaceVisibility(
+    bool use_parent_backface_visibility) {
+  layer_->set_use_parent_backface_visibility(use_parent_backface_visibility);
 }
 
-void WebLayerImpl::setUseParentBackfaceVisibility(bool useParentBackfaceVisibility)
-{
-    m_layer->setUseParentBackfaceVisibility(useParentBackfaceVisibility);
+void WebLayerImpl::setBackgroundColor(WebColor color) {
+  layer_->SetBackgroundColor(color);
 }
 
-void WebLayerImpl::setBackgroundColor(WebColor color)
-{
-    m_layer->setBackgroundColor(color);
+WebColor WebLayerImpl::backgroundColor() const {
+  return layer_->background_color();
 }
 
-WebColor WebLayerImpl::backgroundColor() const
-{
-    return m_layer->backgroundColor();
+void WebLayerImpl::setFilters(const WebFilterOperations& filters) {
+  layer_->SetFilters(filters);
 }
 
-void WebLayerImpl::setFilters(const WebFilterOperations& filters)
-{
-    m_layer->setFilters(filters);
+void WebLayerImpl::setBackgroundFilters(const WebFilterOperations& filters) {
+  layer_->SetBackgroundFilters(filters);
 }
 
-void WebLayerImpl::setBackgroundFilters(const WebFilterOperations& filters)
-{
-    m_layer->setBackgroundFilters(filters);
+void WebLayerImpl::setFilter(SkImageFilter* filter) {
+  SkSafeRef(filter);  // Claim a reference for the compositor.
+  layer_->SetFilter(skia::AdoptRef(filter));
 }
 
-void WebLayerImpl::setFilter(SkImageFilter* filter)
-{
-    m_layer->setFilter(filter);
+void WebLayerImpl::setDebugName(WebKit::WebString name) {
+  layer_->SetDebugName(UTF16ToASCII(string16(name.data(), name.length())));
 }
 
-void WebLayerImpl::setDebugBorderColor(const WebColor& color)
-{
-    m_layer->setDebugBorderColor(color);
+void WebLayerImpl::setAnimationDelegate(
+      WebKit::WebAnimationDelegate* delegate) {
+  layer_->set_layer_animation_delegate(delegate);
 }
 
-void WebLayerImpl::setDebugBorderWidth(float width)
-{
-    m_layer->setDebugBorderWidth(width);
+bool WebLayerImpl::addAnimation(WebKit::WebAnimation* animation) {
+  return layer_->AddAnimation(
+      static_cast<WebAnimationImpl*>(animation)->CloneToAnimation());
 }
 
-void WebLayerImpl::setDebugName(WebString name)
-{
-    m_layer->setDebugName(UTF16ToASCII(string16(name.data(), name.length())));
+void WebLayerImpl::removeAnimation(int animation_id) {
+  layer_->RemoveAnimation(animation_id);
 }
 
-void WebLayerImpl::setAnimationDelegate(WebAnimationDelegate* delegate)
-{
-    m_layer->setLayerAnimationDelegate(delegate);
+void WebLayerImpl::removeAnimation(
+    int animation_id,
+    WebKit::WebAnimation::TargetProperty target_property) {
+  layer_->layer_animation_controller()->RemoveAnimation(
+      animation_id,
+      static_cast<Animation::TargetProperty>(target_property));
 }
 
-bool WebLayerImpl::addAnimation(WebAnimation* animation)
-{
-    return m_layer->addAnimation(static_cast<WebAnimationImpl*>(animation)->cloneToAnimation());
+void WebLayerImpl::pauseAnimation(int animation_id, double time_offset) {
+  layer_->PauseAnimation(animation_id, time_offset);
 }
 
-void WebLayerImpl::removeAnimation(int animationId)
-{
-    m_layer->removeAnimation(animationId);
+void WebLayerImpl::suspendAnimations(double monotonic_time) {
+  layer_->SuspendAnimations(monotonic_time);
 }
 
-void WebLayerImpl::removeAnimation(int animationId, WebAnimation::TargetProperty targetProperty)
-{
-    m_layer->layerAnimationController()->removeAnimation(animationId, static_cast<ActiveAnimation::TargetProperty>(targetProperty));
+void WebLayerImpl::resumeAnimations(double monotonic_time) {
+  layer_->ResumeAnimations(monotonic_time);
 }
 
-void WebLayerImpl::pauseAnimation(int animationId, double timeOffset)
-{
-    m_layer->pauseAnimation(animationId, timeOffset);
-}
+bool WebLayerImpl::hasActiveAnimation() { return layer_->HasActiveAnimation(); }
 
-void WebLayerImpl::suspendAnimations(double monotonicTime)
-{
-    m_layer->suspendAnimations(monotonicTime);
+void WebLayerImpl::transferAnimationsTo(WebLayer* other) {
+  DCHECK(other);
+  static_cast<WebLayerImpl*>(other)->layer_->SetLayerAnimationController(
+      layer_->ReleaseLayerAnimationController());
 }
 
-void WebLayerImpl::resumeAnimations(double monotonicTime)
-{
-    m_layer->resumeAnimations(monotonicTime);
+void WebLayerImpl::setForceRenderSurface(bool force_render_surface) {
+  layer_->SetForceRenderSurface(force_render_surface);
 }
 
-bool WebLayerImpl::hasActiveAnimation()
-{
-    return m_layer->hasActiveAnimation();
+void WebLayerImpl::setScrollPosition(WebKit::WebPoint position) {
+  layer_->SetScrollOffset(gfx::Point(position).OffsetFromOrigin());
 }
 
-void WebLayerImpl::transferAnimationsTo(WebLayer* other)
-{
-    DCHECK(other);
-    static_cast<WebLayerImpl*>(other)->m_layer->setLayerAnimationController(m_layer->releaseLayerAnimationController());
+WebKit::WebPoint WebLayerImpl::scrollPosition() const {
+  return gfx::PointAtOffsetFromOrigin(layer_->scroll_offset());
 }
 
-void WebLayerImpl::setForceRenderSurface(bool forceRenderSurface)
-{
-    m_layer->setForceRenderSurface(forceRenderSurface);
+void WebLayerImpl::setMaxScrollPosition(WebSize max_scroll_position) {
+  layer_->SetMaxScrollOffset(max_scroll_position);
 }
 
-void WebLayerImpl::setScrollPosition(WebPoint position)
-{
-    m_layer->setScrollOffset(gfx::Point(position).OffsetFromOrigin());
+WebSize WebLayerImpl::maxScrollPosition() const {
+  return layer_->max_scroll_offset();
 }
 
-WebPoint WebLayerImpl::scrollPosition() const
-{
-    return gfx::PointAtOffsetFromOrigin(m_layer->scrollOffset());
+void WebLayerImpl::setScrollable(bool scrollable) {
+  layer_->SetScrollable(scrollable);
 }
 
-void WebLayerImpl::setMaxScrollPosition(WebSize maxScrollPosition)
-{
-    m_layer->setMaxScrollOffset(maxScrollPosition);
-}
+bool WebLayerImpl::scrollable() const { return layer_->scrollable(); }
 
-WebSize WebLayerImpl::maxScrollPosition() const
-{
-    return m_layer->maxScrollOffset();
+void WebLayerImpl::setHaveWheelEventHandlers(bool have_wheel_event_handlers) {
+  layer_->SetHaveWheelEventHandlers(have_wheel_event_handlers);
 }
 
-void WebLayerImpl::setScrollable(bool scrollable)
-{
-    m_layer->setScrollable(scrollable);
+bool WebLayerImpl::haveWheelEventHandlers() const {
+  return layer_->have_wheel_event_handlers();
 }
 
-bool WebLayerImpl::scrollable() const
-{
-    return m_layer->scrollable();
+void WebLayerImpl::setShouldScrollOnMainThread(
+    bool should_scroll_on_main_thread) {
+  layer_->SetShouldScrollOnMainThread(should_scroll_on_main_thread);
 }
 
-void WebLayerImpl::setHaveWheelEventHandlers(bool haveWheelEventHandlers)
-{
-    m_layer->setHaveWheelEventHandlers(haveWheelEventHandlers);
+bool WebLayerImpl::shouldScrollOnMainThread() const {
+  return layer_->should_scroll_on_main_thread();
 }
 
-bool WebLayerImpl::haveWheelEventHandlers() const
-{
-    return m_layer->haveWheelEventHandlers();
+void WebLayerImpl::setNonFastScrollableRegion(const WebVector<WebRect>& rects) {
+  cc::Region region;
+  for (size_t i = 0; i < rects.size(); ++i)
+    region.Union(rects[i]);
+  layer_->SetNonFastScrollableRegion(region);
 }
 
-void WebLayerImpl::setShouldScrollOnMainThread(bool shouldScrollOnMainThread)
-{
-    m_layer->setShouldScrollOnMainThread(shouldScrollOnMainThread);
-}
+WebVector<WebRect> WebLayerImpl::nonFastScrollableRegion() const {
+  size_t num_rects = 0;
+  for (cc::Region::Iterator region_rects(layer_->non_fast_scrollable_region());
+       region_rects.has_rect();
+       region_rects.next())
+    ++num_rects;
 
-bool WebLayerImpl::shouldScrollOnMainThread() const
-{
-    return m_layer->shouldScrollOnMainThread();
+  WebVector<WebRect> result(num_rects);
+  size_t i = 0;
+  for (cc::Region::Iterator region_rects(layer_->non_fast_scrollable_region());
+       region_rects.has_rect();
+       region_rects.next()) {
+    result[i] = region_rects.rect();
+    ++i;
+  }
+  return result;
 }
 
-void WebLayerImpl::setNonFastScrollableRegion(const WebVector<WebRect>& rects)
-{
-    cc::Region region;
-    for (size_t i = 0; i < rects.size(); ++i)
-        region.Union(rects[i]);
-    m_layer->setNonFastScrollableRegion(region);
+void WebLayerImpl::setTouchEventHandlerRegion(const WebVector<WebRect>& rects) {
+  cc::Region region;
+  for (size_t i = 0; i < rects.size(); ++i)
+    region.Union(rects[i]);
+  layer_->SetTouchEventHandlerRegion(region);
 }
-
-WebVector<WebRect> WebLayerImpl::nonFastScrollableRegion() const
-{
-    size_t numRects = 0;
-    for (cc::Region::Iterator regionRects(m_layer->nonFastScrollableRegion()); regionRects.has_rect(); regionRects.next())
-        ++numRects;
 
-    WebVector<WebRect> result(numRects);
-    size_t i = 0;
-    for (cc::Region::Iterator regionRects(m_layer->nonFastScrollableRegion()); regionRects.has_rect(); regionRects.next()) {
-        result[i] = regionRects.rect();
-        ++i;
-    }
-    return result;
-}
+WebVector<WebRect> WebLayerImpl::touchEventHandlerRegion() const {
+  size_t num_rects = 0;
+  for (cc::Region::Iterator region_rects(layer_->touch_event_handler_region());
+       region_rects.has_rect();
+       region_rects.next())
+    ++num_rects;
 
-void WebLayerImpl::setTouchEventHandlerRegion(const WebVector<WebRect>& rects)
-{
-    cc::Region region;
-    for (size_t i = 0; i < rects.size(); ++i)
-        region.Union(rects[i]);
-    m_layer->setTouchEventHandlerRegion(region);
+  WebVector<WebRect> result(num_rects);
+  size_t i = 0;
+  for (cc::Region::Iterator region_rects(layer_->touch_event_handler_region());
+       region_rects.has_rect();
+       region_rects.next()) {
+    result[i] = region_rects.rect();
+    ++i;
+  }
+  return result;
 }
-
-WebVector<WebRect> WebLayerImpl::touchEventHandlerRegion() const
-{
-    size_t numRects = 0;
-    for (cc::Region::Iterator regionRects(m_layer->touchEventHandlerRegion()); regionRects.has_rect(); regionRects.next())
-        ++numRects;
 
-
-    WebVector<WebRect> result(numRects);
-    size_t i = 0;
-    for (cc::Region::Iterator regionRects(m_layer->touchEventHandlerRegion()); regionRects.has_rect(); regionRects.next()) {
-        result[i] = regionRects.rect();
-        ++i;
-    }
-    return result;
+void WebLayerImpl::setIsContainerForFixedPositionLayers(bool enable) {
+  layer_->SetIsContainerForFixedPositionLayers(enable);
 }
 
-void WebLayerImpl::setIsContainerForFixedPositionLayers(bool enable)
-{
-    m_layer->setIsContainerForFixedPositionLayers(enable);
+bool WebLayerImpl::isContainerForFixedPositionLayers() const {
+  return layer_->is_container_for_fixed_position_layers();
 }
 
-bool WebLayerImpl::isContainerForFixedPositionLayers() const
-{
-    return m_layer->isContainerForFixedPositionLayers();
+void WebLayerImpl::setFixedToContainerLayer(bool enable) {
+  layer_->SetFixedToContainerLayer(enable);
 }
 
-void WebLayerImpl::setFixedToContainerLayer(bool enable)
-{
-    m_layer->setFixedToContainerLayer(enable);
+bool WebLayerImpl::fixedToContainerLayer() const {
+  return layer_->fixed_to_container_layer();
 }
 
-bool WebLayerImpl::fixedToContainerLayer() const
-{
-    return m_layer->fixedToContainerLayer();
+void WebLayerImpl::setScrollClient(
+    WebKit::WebLayerScrollClient* scroll_client) {
+  layer_->set_layer_scroll_client(scroll_client);
 }
 
-void WebLayerImpl::setScrollClient(WebLayerScrollClient* scrollClient)
-{
-    m_layer->setLayerScrollClient(scrollClient);
-}
+bool WebLayerImpl::isOrphan() const { return !layer_->layer_tree_host(); }
 
-Layer* WebLayerImpl::layer() const
-{
-    return m_layer.get();
-}
+Layer* WebLayerImpl::layer() const { return layer_.get(); }
 
-} // namespace WebKit
+}  // namespace WebKit

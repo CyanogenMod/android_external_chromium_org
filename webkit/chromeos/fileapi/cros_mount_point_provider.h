@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
@@ -18,9 +18,11 @@
 #include "webkit/storage/webkit_storage_export.h"
 
 namespace fileapi {
+class AsyncFileUtilAdapter;
+class ExternalMountPoints;
 class FileSystemFileUtil;
+class FileSystemURL;
 class IsolatedContext;
-class LocalFileUtil;
 }
 
 namespace chromeos {
@@ -34,8 +36,13 @@ class WEBKIT_STORAGE_EXPORT CrosMountPointProvider
   using fileapi::FileSystemMountPointProvider::ValidateFileSystemCallback;
   using fileapi::FileSystemMountPointProvider::DeleteFileSystemCallback;
 
+  // CrosMountPointProvider will take an ownership of a |mount_points|
+  // reference. On the other hand, |system_mount_points| will be kept as a raw
+  // pointer and it should outlive CrosMountPointProvider instance.
   CrosMountPointProvider(
-      scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy);
+      scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy,
+      scoped_refptr<fileapi::ExternalMountPoints> mount_points,
+      fileapi::ExternalMountPoints* system_mount_points);
   virtual ~CrosMountPointProvider();
 
   // Returns true if CrosMountpointProvider can handle |url|, i.e. its
@@ -49,17 +56,16 @@ class WEBKIT_STORAGE_EXPORT CrosMountPointProvider
       fileapi::FileSystemType type,
       bool create,
       const ValidateFileSystemCallback& callback) OVERRIDE;
-  virtual FilePath GetFileSystemRootPathOnFileThread(
-      const GURL& origin_url,
-      fileapi::FileSystemType type,
-      const FilePath& virtual_path,
+  virtual base::FilePath GetFileSystemRootPathOnFileThread(
+      const fileapi::FileSystemURL& url,
       bool create) OVERRIDE;
-  virtual bool IsAccessAllowed(const fileapi::FileSystemURL& url) OVERRIDE;
-  virtual bool IsRestrictedFileName(const FilePath& filename) const OVERRIDE;
   virtual fileapi::FileSystemFileUtil* GetFileUtil(
       fileapi::FileSystemType type) OVERRIDE;
-  virtual FilePath GetPathForPermissionsCheck(const FilePath& virtual_path)
-      const OVERRIDE;
+  virtual fileapi::AsyncFileUtil* GetAsyncFileUtil(
+      fileapi::FileSystemType type) OVERRIDE;
+  virtual fileapi::FilePermissionPolicy GetPermissionPolicy(
+      const fileapi::FileSystemURL& url,
+      int permissions) const OVERRIDE;
   virtual fileapi::FileSystemOperation* CreateFileSystemOperation(
       const fileapi::FileSystemURL& url,
       fileapi::FileSystemContext* context,
@@ -81,41 +87,45 @@ class WEBKIT_STORAGE_EXPORT CrosMountPointProvider
       const DeleteFileSystemCallback& callback) OVERRIDE;
 
   // fileapi::ExternalFileSystemMountPointProvider overrides.
-  virtual std::vector<FilePath> GetRootDirectories() const OVERRIDE;
+  virtual bool IsAccessAllowed(const fileapi::FileSystemURL& url)
+      const OVERRIDE;
+  virtual std::vector<base::FilePath> GetRootDirectories() const OVERRIDE;
   virtual void GrantFullAccessToExtension(
       const std::string& extension_id) OVERRIDE;
   virtual void GrantFileAccessToExtension(
-      const std::string& extension_id, const FilePath& virtual_path) OVERRIDE;
+      const std::string& extension_id,
+      const base::FilePath& virtual_path) OVERRIDE;
   virtual void RevokeAccessForExtension(
       const std::string& extension_id) OVERRIDE;
-  virtual bool HasMountPoint(const FilePath& mount_point) OVERRIDE;
-  virtual void AddLocalMountPoint(const FilePath& mount_point) OVERRIDE;
-  virtual void AddRestrictedLocalMountPoint(
-      const FilePath& mount_point) OVERRIDE;
-  virtual void AddRemoteMountPoint(
-      const FilePath& mount_point,
-      fileapi::RemoteFileSystemProxyInterface* remote_proxy) OVERRIDE;
-  virtual void RemoveMountPoint(const FilePath& mount_point) OVERRIDE;
-  virtual bool GetVirtualPath(const FilePath& filesystem_path,
-                              FilePath* virtual_path) OVERRIDE;
+  virtual bool GetVirtualPath(const base::FilePath& filesystem_path,
+                              base::FilePath* virtual_path) OVERRIDE;
 
  private:
-  typedef scoped_refptr<fileapi::RemoteFileSystemProxyInterface> RemoteProxy;
-  typedef std::map<FilePath::StringType, RemoteProxy> RemoteProxyMap;
-
-  fileapi::IsolatedContext* isolated_context() const;
-
-  // Represents a map from mount point name to a remote proxy.
-  RemoteProxyMap remote_proxy_map_;
-
-  // Reverse map for GetVirtualPath.
-  std::map<FilePath, FilePath> local_to_virtual_map_;
-
-  mutable base::Lock mount_point_map_lock_;
+  fileapi::RemoteFileSystemProxyInterface* GetRemoteProxy(
+      const std::string& mount_name) const;
 
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
   scoped_ptr<FileAccessPermissions> file_access_permissions_;
-  scoped_ptr<fileapi::LocalFileUtil> local_file_util_;
+  scoped_ptr<fileapi::AsyncFileUtilAdapter> local_file_util_;
+
+  // Mount points specific to the owning context.
+  //
+  // Add/Remove MountPoints will affect only these mount points.
+  //
+  // It is legal to have mount points with the same name as in
+  // system_mount_points_. Also, mount point paths may overlap with mount point
+  // paths in system_mount_points_. In both cases mount points in
+  // |mount_points_| will have a priority.
+  // E.g. if |mount_points_| map 'foo1' to '/foo/foo1' and
+  // |file_system_mount_points_| map 'xxx' to '/foo/foo1/xxx', |GetVirtualPaths|
+  // will resolve '/foo/foo1/xxx/yyy' as 'foo1/xxx/yyy' (i.e. the mapping from
+  // |mount_points_| will be used).
+  scoped_refptr<fileapi::ExternalMountPoints> mount_points_;
+
+  // Globally visible mount points. System MountPonts instance should outlive
+  // all CrosMountPointProvider instances, so raw pointer is safe.
+  fileapi::ExternalMountPoints* system_mount_points_;
+
   DISALLOW_COPY_AND_ASSIGN(CrosMountPointProvider);
 };
 

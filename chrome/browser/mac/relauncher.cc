@@ -18,13 +18,13 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/eintr_wrapper.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/mac/mac_logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/path_service.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/process_util.h"
 #include "base/stringprintf.h"
 #include "base/sys_string_conversions.h"
@@ -90,7 +90,7 @@ bool RelaunchApp(const std::vector<std::string>& args) {
   // been applied. In fact, it's safer than using the updated version of the
   // helper process, because there's no guarantee that the updated version's
   // relauncher implementation will be compatible with the running version's.
-  FilePath child_path;
+  base::FilePath child_path;
   if (!PathService::Get(content::CHILD_PROCESS_EXE, &child_path)) {
     LOG(ERROR) << "No CHILD_PROCESS_EXE";
     return false;

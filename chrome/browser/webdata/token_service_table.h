@@ -11,13 +11,22 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/webdata/web_database_table.h"
 
+class WebDatabase;
+
 class TokenServiceTable : public WebDatabaseTable {
  public:
-  TokenServiceTable(sql::Connection* db, sql::MetaTable* meta_table)
-      : WebDatabaseTable(db, meta_table) {}
+  TokenServiceTable() {}
   virtual ~TokenServiceTable() {}
-  virtual bool Init() OVERRIDE;
+
+  // Retrieves the TokenServiceTable* owned by |database|.
+  static TokenServiceTable* FromWebDatabase(WebDatabase* db);
+
+  virtual WebDatabaseTable::TypeKey GetTypeKey() const OVERRIDE;
+  virtual bool Init(sql::Connection* db, sql::MetaTable* meta_table) OVERRIDE;
   virtual bool IsSyncable() OVERRIDE;
+  virtual bool MigrateToVersion(int version,
+                                const std::string& app_locale,
+                                bool* update_compatible_version) OVERRIDE;
 
   // Remove all tokens previously set with SetTokenForService.
   bool RemoveAllTokens();

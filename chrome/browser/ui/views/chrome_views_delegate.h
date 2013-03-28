@@ -41,14 +41,12 @@ class ChromeViewsDelegate : public views::ViewsDelegate {
   virtual bool UseTransparentWindows() const OVERRIDE;
   virtual void AddRef() OVERRIDE;
   virtual void ReleaseRef() OVERRIDE;
-  virtual int GetDispositionForEvent(int event_flags) OVERRIDE;
   virtual content::WebContents* CreateWebContents(
       content::BrowserContext* browser_context,
       content::SiteInstance* site_instance) OVERRIDE;
-  virtual views::NativeWidget* CreateNativeWidget(
-      views::Widget::InitParams::Type type,
-      views::internal::NativeWidgetDelegate* delegate,
-      gfx::NativeView parent) OVERRIDE;
+  virtual void OnBeforeWidgetInit(
+      views::Widget::InitParams* params,
+      views::internal::NativeWidgetDelegate* delegate) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ChromeViewsDelegate);

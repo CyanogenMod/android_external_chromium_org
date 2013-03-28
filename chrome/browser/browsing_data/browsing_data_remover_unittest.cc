@@ -9,40 +9,40 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/platform_file.h"
+#include "base/prefs/testing_pref_service.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autofill/autofill_common_test.h"
-#include "chrome/browser/autofill/autofill_profile.h"
-#include "chrome/browser/autofill/credit_card.h"
-#include "chrome/browser/autofill/personal_data_manager.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
-#include "chrome/browser/autofill/personal_data_manager_observer.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/extensions/mock_extension_special_storage_policy.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chrome/test/base/testing_pref_service.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/autofill/browser/autofill_common_test.h"
+#include "components/autofill/browser/autofill_profile.h"
+#include "components/autofill/browser/credit_card.h"
+#include "components/autofill/browser/personal_data_manager.h"
+#include "components/autofill/browser/personal_data_manager_observer.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_browser_thread.h"
-#include "net/base/server_bound_cert_service.h"
-#include "net/base/server_bound_cert_store.h"
-#include "net/base/ssl_client_cert_type.h"
 #include "net/cookies/cookie_monster.h"
+#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/server_bound_cert_store.h"
+#include "net/ssl/ssl_client_cert_type.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "webkit/dom_storage/dom_storage_types.h"
 #include "webkit/glue/webkit_glue.h"
@@ -66,16 +66,16 @@ const GURL kOrigin3(kTestOrigin3);
 const GURL kOriginExt(kTestOriginExt);
 const GURL kOriginDevTools(kTestOriginDevTools);
 
-const FilePath::CharType kDomStorageOrigin1[] =
+const base::FilePath::CharType kDomStorageOrigin1[] =
     FILE_PATH_LITERAL("http_host1_1.localstorage");
 
-const FilePath::CharType kDomStorageOrigin2[] =
+const base::FilePath::CharType kDomStorageOrigin2[] =
     FILE_PATH_LITERAL("http_host2_1.localstorage");
 
-const FilePath::CharType kDomStorageOrigin3[] =
+const base::FilePath::CharType kDomStorageOrigin3[] =
     FILE_PATH_LITERAL("http_host3_1.localstorage");
 
-const FilePath::CharType kDomStorageExt[] = FILE_PATH_LITERAL(
+const base::FilePath::CharType kDomStorageExt[] = FILE_PATH_LITERAL(
     "chrome-extension_abcdefghijklmnopqrstuvwxyz_0.localstorage");
 
 const quota::StorageType kTemporary = quota::kStorageTypeTemporary;
@@ -149,7 +149,7 @@ class AwaitCompletionHelper : public BrowsingDataRemover::Observer {
 
  protected:
   // BrowsingDataRemover::Observer implementation.
-  virtual void OnBrowsingDataRemoverDone() {
+  virtual void OnBrowsingDataRemoverDone() OVERRIDE {
     Notify();
   }
 
@@ -227,17 +227,16 @@ class RemoveProfileCookieTester : public RemoveCookieTester {
   }
 };
 
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
 class RemoveSafeBrowsingCookieTester : public RemoveCookieTester {
  public:
   RemoveSafeBrowsingCookieTester()
-      : browser_process_(
-          static_cast<TestingBrowserProcess*>(g_browser_process)) {
+      : browser_process_(TestingBrowserProcess::GetGlobal()) {
     scoped_refptr<SafeBrowsingService> sb_service =
         SafeBrowsingService::CreateSafeBrowsingService();
     browser_process_->SetSafeBrowsingService(sb_service);
     sb_service->Initialize();
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
 
     // Create a cookiemonster that does not have persistant storage, and replace
     // the SafeBrowsingService created one with it.
@@ -249,7 +248,7 @@ class RemoveSafeBrowsingCookieTester : public RemoveCookieTester {
 
   virtual ~RemoveSafeBrowsingCookieTester() {
     browser_process_->safe_browsing_service()->ShutDown();
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     browser_process_->SetSafeBrowsingService(NULL);
   }
 
@@ -260,12 +259,19 @@ class RemoveSafeBrowsingCookieTester : public RemoveCookieTester {
 };
 #endif
 
-class RemoveServerBoundCertTester {
+class RemoveServerBoundCertTester : public net::SSLConfigService::Observer {
  public:
-  explicit RemoveServerBoundCertTester(TestingProfile* profile) {
+  explicit RemoveServerBoundCertTester(TestingProfile* profile)
+      : ssl_config_changed_count_(0) {
     profile->CreateRequestContext();
     server_bound_cert_service_ = profile->GetRequestContext()->
         GetURLRequestContext()->server_bound_cert_service();
+    ssl_config_service_ = profile->GetSSLConfigService();
+    ssl_config_service_->AddObserver(this);
+  }
+
+  virtual ~RemoveServerBoundCertTester() {
+    ssl_config_service_->RemoveObserver(this);
   }
 
   int ServerBoundCertCount() {
@@ -291,16 +297,34 @@ class RemoveServerBoundCertTester {
                                 now + base::TimeDelta::FromDays(1));
   }
 
+  void GetCertList(net::ServerBoundCertStore::ServerBoundCertList* certs) {
+    GetCertStore()->GetAllServerBoundCerts(
+        base::Bind(&RemoveServerBoundCertTester::GetAllCertsCallback, certs));
+  }
+
   net::ServerBoundCertStore* GetCertStore() {
     return server_bound_cert_service_->GetCertStore();
   }
 
- private:
-  net::ServerBoundCertService* server_bound_cert_service_;
+  int ssl_config_changed_count() const {
+    return ssl_config_changed_count_;
+  }
 
-  net::SSLClientCertType type_;
-  std::string key_;
-  std::string cert_;
+  // net::SSLConfigService::Observer implementation:
+  virtual void OnSSLConfigChanged() OVERRIDE {
+    ssl_config_changed_count_++;
+  }
+
+ private:
+  static void GetAllCertsCallback(
+      net::ServerBoundCertStore::ServerBoundCertList* dest,
+      const net::ServerBoundCertStore::ServerBoundCertList& result) {
+    *dest = result;
+  }
+
+  net::ServerBoundCertService* server_bound_cert_service_;
+  scoped_refptr<net::SSLConfigService> ssl_config_service_;
+  int ssl_config_changed_count_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoveServerBoundCertTester);
 };
@@ -360,7 +384,7 @@ class RemoveAutofillTester : public PersonalDataManagerObserver {
       : personal_data_manager_(
             PersonalDataManagerFactory::GetForProfile(profile)) {
     autofill_test::DisableSystemServices(profile);
-    personal_data_manager_->SetObserver(this);
+    personal_data_manager_->AddObserver(this);
   }
 
   virtual ~RemoveAutofillTester() {
@@ -369,7 +393,7 @@ class RemoveAutofillTester : public PersonalDataManagerObserver {
 
   // Returns true if there are autofill profiles.
   bool HasProfile() {
-    return !personal_data_manager_->profiles().empty() &&
+    return !personal_data_manager_->GetProfiles().empty() &&
            !personal_data_manager_->credit_cards().empty();
   }
 
@@ -427,7 +451,8 @@ class RemoveLocalStorageTester {
   void AddDOMStorageTestData() {
     // Note: This test depends on details of how the dom_storage library
     // stores data in the host file system.
-    FilePath storage_path = profile_->GetPath().AppendASCII("Local Storage");
+    base::FilePath storage_path =
+        profile_->GetPath().AppendASCII("Local Storage");
     file_util::CreateDirectory(storage_path);
 
     // Write some files.
@@ -491,14 +516,14 @@ class BrowsingDataRemoverTest : public testing::Test,
   virtual ~BrowsingDataRemoverTest() {
   }
 
-  void TearDown() {
+  virtual void TearDown() {
     // TestingProfile contains a DOMStorageContext.  BrowserContext's destructor
     // posts a message to the WEBKIT thread to delete some of its member
     // variables. We need to ensure that the profile is destroyed, and that
     // the message loop is cleared out, before destroying the threads and loop.
     // Otherwise we leak memory.
     profile_.reset();
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   void BlockUntilBrowsingDataRemoved(BrowsingDataRemover::TimePeriod period,
@@ -631,7 +656,7 @@ TEST_F(BrowsingDataRemoverTest, RemoveCookieLastHour) {
   EXPECT_FALSE(tester.ContainsCookie());
 }
 
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
 TEST_F(BrowsingDataRemoverTest, RemoveSafeBrowsingCookieForever) {
   RemoveSafeBrowsingCookieTester tester;
 
@@ -667,6 +692,7 @@ TEST_F(BrowsingDataRemoverTest, RemoveServerBoundCertForever) {
   RemoveServerBoundCertTester tester(GetProfile());
 
   tester.AddServerBoundCert(kTestOrigin1);
+  EXPECT_EQ(0, tester.ssl_config_changed_count());
   EXPECT_EQ(1, tester.ServerBoundCertCount());
 
   BlockUntilBrowsingDataRemoved(BrowsingDataRemover::EVERYTHING,
@@ -674,6 +700,7 @@ TEST_F(BrowsingDataRemoverTest, RemoveServerBoundCertForever) {
 
   EXPECT_EQ(BrowsingDataRemover::REMOVE_SERVER_BOUND_CERTS, GetRemovalMask());
   EXPECT_EQ(BrowsingDataHelper::UNPROTECTED_WEB, GetOriginSetMask());
+  EXPECT_EQ(1, tester.ssl_config_changed_count());
   EXPECT_EQ(0, tester.ServerBoundCertCount());
 }
 
@@ -685,6 +712,7 @@ TEST_F(BrowsingDataRemoverTest, RemoveServerBoundCertLastHour) {
   tester.AddServerBoundCertWithTimes(kTestOrigin2,
                                      now - base::TimeDelta::FromHours(2),
                                      now);
+  EXPECT_EQ(0, tester.ssl_config_changed_count());
   EXPECT_EQ(2, tester.ServerBoundCertCount());
 
   BlockUntilBrowsingDataRemoved(BrowsingDataRemover::LAST_HOUR,
@@ -692,9 +720,11 @@ TEST_F(BrowsingDataRemoverTest, RemoveServerBoundCertLastHour) {
 
   EXPECT_EQ(BrowsingDataRemover::REMOVE_SERVER_BOUND_CERTS, GetRemovalMask());
   EXPECT_EQ(BrowsingDataHelper::UNPROTECTED_WEB, GetOriginSetMask());
-  EXPECT_EQ(1, tester.ServerBoundCertCount());
+  EXPECT_EQ(1, tester.ssl_config_changed_count());
+  ASSERT_EQ(1, tester.ServerBoundCertCount());
   net::ServerBoundCertStore::ServerBoundCertList certs;
-  tester.GetCertStore()->GetAllServerBoundCerts(&certs);
+  tester.GetCertList(&certs);
+  ASSERT_EQ(1U, certs.size());
   EXPECT_EQ(kTestOrigin2, certs.front().server_identifier());
 }
 
@@ -802,6 +832,86 @@ TEST_F(BrowsingDataRemoverTest, RemoveHistoryForLastHour) {
   EXPECT_FALSE(tester.HistoryContainsURL(kOrigin1));
   EXPECT_TRUE(tester.HistoryContainsURL(kOrigin2));
 }
+
+// This should crash (DCHECK) in Debug, but death tests don't work properly
+// here.
+#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
+TEST_F(BrowsingDataRemoverTest, RemoveHistoryProhibited) {
+  RemoveHistoryTester tester(GetProfile());
+  PrefService* prefs = GetProfile()->GetPrefs();
+  prefs->SetBoolean(prefs::kAllowDeletingBrowserHistory, false);
+
+  base::Time two_hours_ago = base::Time::Now() - base::TimeDelta::FromHours(2);
+
+  tester.AddHistory(kOrigin1, base::Time::Now());
+  tester.AddHistory(kOrigin2, two_hours_ago);
+  ASSERT_TRUE(tester.HistoryContainsURL(kOrigin1));
+  ASSERT_TRUE(tester.HistoryContainsURL(kOrigin2));
+
+  BlockUntilBrowsingDataRemoved(BrowsingDataRemover::LAST_HOUR,
+      BrowsingDataRemover::REMOVE_HISTORY, false);
+  EXPECT_EQ(BrowsingDataRemover::REMOVE_HISTORY, GetRemovalMask());
+  EXPECT_EQ(BrowsingDataHelper::UNPROTECTED_WEB, GetOriginSetMask());
+
+  // Nothing should have been deleted.
+  EXPECT_TRUE(tester.HistoryContainsURL(kOrigin1));
+  EXPECT_TRUE(tester.HistoryContainsURL(kOrigin2));
+}
+#endif
+
+TEST_F(BrowsingDataRemoverTest, RemoveMultipleTypes) {
+  // Add some history.
+  RemoveHistoryTester history_tester(GetProfile());
+  history_tester.AddHistory(kOrigin1, base::Time::Now());
+  ASSERT_TRUE(history_tester.HistoryContainsURL(kOrigin1));
+
+  // Add some cookies.
+  RemoveProfileCookieTester cookie_tester(GetProfile());
+  cookie_tester.AddCookie();
+  ASSERT_TRUE(cookie_tester.ContainsCookie());
+
+  int removal_mask = BrowsingDataRemover::REMOVE_HISTORY |
+                     BrowsingDataRemover::REMOVE_COOKIES;
+
+  BlockUntilBrowsingDataRemoved(BrowsingDataRemover::EVERYTHING,
+      removal_mask, false);
+
+  EXPECT_EQ(removal_mask, GetRemovalMask());
+  EXPECT_EQ(BrowsingDataHelper::UNPROTECTED_WEB, GetOriginSetMask());
+  EXPECT_FALSE(history_tester.HistoryContainsURL(kOrigin1));
+  EXPECT_FALSE(cookie_tester.ContainsCookie());
+}
+
+// This should crash (DCHECK) in Debug, but death tests don't work properly
+// here.
+#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
+TEST_F(BrowsingDataRemoverTest, RemoveMultipleTypesHistoryProhibited) {
+  PrefService* prefs = GetProfile()->GetPrefs();
+  prefs->SetBoolean(prefs::kAllowDeletingBrowserHistory, false);
+
+  // Add some history.
+  RemoveHistoryTester history_tester(GetProfile());
+  history_tester.AddHistory(kOrigin1, base::Time::Now());
+  ASSERT_TRUE(history_tester.HistoryContainsURL(kOrigin1));
+
+  // Add some cookies.
+  RemoveProfileCookieTester cookie_tester(GetProfile());
+  cookie_tester.AddCookie();
+  ASSERT_TRUE(cookie_tester.ContainsCookie());
+
+  int removal_mask = BrowsingDataRemover::REMOVE_HISTORY |
+                     BrowsingDataRemover::REMOVE_COOKIES;
+
+  BlockUntilBrowsingDataRemoved(BrowsingDataRemover::LAST_HOUR,
+                                removal_mask, false);
+  EXPECT_EQ(removal_mask, GetRemovalMask());
+  EXPECT_EQ(BrowsingDataHelper::UNPROTECTED_WEB, GetOriginSetMask());
+
+  // Cookie should be gone; history should remain.
+  EXPECT_FALSE(cookie_tester.ContainsCookie());
+  EXPECT_TRUE(history_tester.HistoryContainsURL(kOrigin1));
+}
+#endif
 
 TEST_F(BrowsingDataRemoverTest, QuotaClientMaskGeneration) {
   EXPECT_EQ(quota::QuotaClient::kFileSystem,
@@ -1167,6 +1277,8 @@ TEST_F(BrowsingDataRemoverTest, OriginBasedHistoryRemoval) {
 
   EXPECT_EQ(BrowsingDataRemover::REMOVE_HISTORY, GetRemovalMask());
   EXPECT_EQ(BrowsingDataHelper::UNPROTECTED_WEB, GetOriginSetMask());
+
+  // Nothing should have been deleted.
   EXPECT_TRUE(tester.HistoryContainsURL(kOrigin1));
   EXPECT_FALSE(tester.HistoryContainsURL(kOrigin2));
 }

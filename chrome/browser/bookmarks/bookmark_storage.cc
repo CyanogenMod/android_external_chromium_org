@@ -6,15 +6,17 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/metrics/histogram.h"
 #include "base/time.h"
 #include "chrome/browser/bookmarks/bookmark_codec.h"
+#include "chrome/browser/bookmarks/bookmark_index.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/startup_metric_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -24,13 +26,13 @@ using content::BrowserThread;
 namespace {
 
 // Extension used for backup files (copy of main file created during startup).
-const FilePath::CharType kBackupExtension[] = FILE_PATH_LITERAL("bak");
+const base::FilePath::CharType kBackupExtension[] = FILE_PATH_LITERAL("bak");
 
 // How often we save.
 const int kSaveDelayMS = 2500;
 
-void BackupCallback(const FilePath& path) {
-  FilePath backup_path = path.ReplaceExtension(kBackupExtension);
+void BackupCallback(const base::FilePath& path) {
+  base::FilePath backup_path = path.ReplaceExtension(kBackupExtension);
   file_util::CopyFile(path, backup_path);
 }
 
@@ -46,9 +48,11 @@ void AddBookmarksToIndex(BookmarkLoadDetails* details,
   }
 }
 
-void LoadCallback(const FilePath& path,
+void LoadCallback(const base::FilePath& path,
                   BookmarkStorage* storage,
                   BookmarkLoadDetails* details) {
+  startup_metric_utils::ScopedSlowStartupUMA
+      scoped_timer("Startup.SlowStartupBookmarksLoad");
   bool bookmark_file_exists = file_util::PathExists(path);
   if (bookmark_file_exists) {
     JSONFileValueSerializer serializer(path);

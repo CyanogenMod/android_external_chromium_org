@@ -6,21 +6,22 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/field_trial.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/bookmarks/bookmark_prompt_prefs.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
-#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/test_browser_window.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 
 class BookmarkPromptControllerTest : public BrowserWithTestWindowTest {
  public:
   BookmarkPromptControllerTest() : field_trial_list_(NULL), page_id_(0) {
-    base::FieldTrialList::CreateFieldTrial("BookmarkPrompt", "V1");
+    base::FieldTrialList::CreateFieldTrial("BookmarkPrompt", "Experiment");
   }
 
  protected:
@@ -35,7 +36,7 @@ class BookmarkPromptControllerTest : public BrowserWithTestWindowTest {
     // Simulate page loaded.
     ++page_id_;
     content::WebContents* web_contents =
-        chrome::GetActiveWebContents(browser());
+        browser()->tab_strip_model()->GetActiveWebContents();
     content::NotificationService::current()->Notify(
         content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
         content::Source<content::WebContents>(web_contents),
@@ -62,7 +63,7 @@ class BookmarkPromptControllerTest : public BrowserWithTestWindowTest {
 
   virtual void SetUp() OVERRIDE {
     set_window(new MyTestBrowserWindow);
-    static_cast<TestingBrowserProcess*>(g_browser_process)->
+    TestingBrowserProcess::GetGlobal()->
         SetBookmarkPromptController(new BookmarkPromptController);
     BrowserWithTestWindowTest::SetUp();
     static_cast<TestingProfile*>(browser()->profile())->
@@ -74,7 +75,7 @@ class BookmarkPromptControllerTest : public BrowserWithTestWindowTest {
   }
 
   virtual void TearDown() OVERRIDE {
-    static_cast<TestingBrowserProcess*>(g_browser_process)->
+    TestingBrowserProcess::GetGlobal()->
         SetBookmarkPromptController(NULL);
     static_cast<TestingProfile*>(browser()->profile())->
         DestroyHistoryService();

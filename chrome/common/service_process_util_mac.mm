@@ -9,9 +9,10 @@
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
@@ -19,8 +20,8 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/stringprintf.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/sys_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/version.h"
@@ -29,7 +30,7 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/mac/launchd.h"
 
-using ::base::files::FilePathWatcher;
+using ::base::FilePathWatcher;
 
 namespace {
 
@@ -46,7 +47,7 @@ NSString* GetServiceProcessLaunchDLabel() {
   scoped_nsobject<NSString> name(
       base::mac::CFToNSCast(CopyServiceProcessLaunchDName()));
   NSString *label = [name stringByAppendingString:@".service_process"];
-  FilePath user_data_dir;
+  base::FilePath user_data_dir;
   PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
   std::string user_data_dir_path = user_data_dir.value();
   NSString *ns_path = base::SysUTF8ToNSString(user_data_dir_path);
@@ -73,16 +74,15 @@ bool RemoveFromLaunchd() {
                                              name);
 }
 
-class ExecFilePathWatcherDelegate : public FilePathWatcher::Delegate {
+class ExecFilePathWatcherCallback {
  public:
-  ExecFilePathWatcherDelegate() {}
+  ExecFilePathWatcherCallback() {}
+  ~ExecFilePathWatcherCallback() {}
 
-  bool Init(const FilePath& path);
-  virtual void OnFilePathChanged(const FilePath& path) OVERRIDE;
+  bool Init(const base::FilePath& path);
+  void NotifyPathChanged(const base::FilePath& path, bool error);
 
  private:
-  virtual ~ExecFilePathWatcherDelegate() {}
-
   FSRef executable_fsref_;
 };
 
@@ -318,25 +318,36 @@ bool ServiceProcessState::StateData::WatchExecutable() {
     return false;
   }
 
-  FilePath executable_path = FilePath([exe_path fileSystemRepresentation]);
-  scoped_refptr<ExecFilePathWatcherDelegate> delegate(
-      new ExecFilePathWatcherDelegate);
-  if (!delegate->Init(executable_path)) {
+  base::FilePath executable_path =
+      base::FilePath([exe_path fileSystemRepresentation]);
+  scoped_ptr<ExecFilePathWatcherCallback> callback(
+      new ExecFilePathWatcherCallback);
+  if (!callback->Init(executable_path)) {
     DLOG(ERROR) << "executable_watcher_.Init " << executable_path.value();
     return false;
   }
-  if (!executable_watcher_.Watch(executable_path, delegate)) {
+  if (!executable_watcher_.Watch(
+          executable_path,
+          false,
+          base::Bind(&ExecFilePathWatcherCallback::NotifyPathChanged,
+                     base::Owned(callback.release())))) {
     DLOG(ERROR) << "executable_watcher_.watch " << executable_path.value();
     return false;
   }
   return true;
 }
 
-bool ExecFilePathWatcherDelegate::Init(const FilePath& path) {
+bool ExecFilePathWatcherCallback::Init(const base::FilePath& path) {
   return base::mac::FSRefFromPath(path.value(), &executable_fsref_);
 }
 
-void ExecFilePathWatcherDelegate::OnFilePathChanged(const FilePath& path) {
+void ExecFilePathWatcherCallback::NotifyPathChanged(const base::FilePath& path,
+                                                    bool error) {
+  if (error) {
+    NOTREACHED();  // TODO(darin): Do something smarter?
+    return;
+  }
+
   base::mac::ScopedNSAutoreleasePool pool;
   bool needs_shutdown = false;
   bool needs_restart = false;

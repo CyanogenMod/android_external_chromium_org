@@ -60,6 +60,8 @@
           'export_dependent_settings': [
             '../zlib/zlib.gyp:zlib',
           ],
+          # TODO(jschuh): http://crbug.com/167187
+          'msvs_disabled_warnings': [ 4267 ],
           'conditions': [
             ['OS!="win"', {'product_name': 'png'}],
             ['OS=="win"', {
@@ -109,9 +111,6 @@
             'cflags': [
               '<!@(<(pkg-config) --cflags libpng)',
             ],
-            'defines': [
-              'USE_SYSTEM_LIBPNG',
-            ],
           },
           'link_settings': {
             'ldflags': [
@@ -121,6 +120,16 @@
               '<!@(<(pkg-config) --libs-only-l libpng)',
             ],
           },
+          'variables': {
+            'headers_root_path': '.',
+            'header_filenames': [
+              'png.h',
+              'pngconf.h',
+            ],
+          },
+          'includes': [
+            '../../build/shim_headers.gypi',
+          ],
         },
       ],
     }],

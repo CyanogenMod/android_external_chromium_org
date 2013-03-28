@@ -11,12 +11,10 @@
 #include "base/string_util.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_http_handler.h"
-#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -33,30 +31,37 @@ std::string PathWithoutParams(const std::string& path) {
 
 }  // namespace
 
-class DevToolsDataSource : public ChromeURLDataManager::DataSource {
+class DevToolsDataSource : public content::URLDataSource {
  public:
   DevToolsDataSource();
 
-  virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
-                                int request_id);
-  virtual std::string GetMimeType(const std::string& path) const;
+  // content::URLDataSource implementation.
+  virtual std::string GetSource() OVERRIDE;
+  virtual void StartDataRequest(
+      const std::string& path,
+      bool is_incognito,
+      const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
+  virtual std::string GetMimeType(const std::string& path) const OVERRIDE;
+  virtual bool ShouldAddContentSecurityPolicy() const OVERRIDE;
 
  private:
-  ~DevToolsDataSource() {}
+  virtual ~DevToolsDataSource() {}
   DISALLOW_COPY_AND_ASSIGN(DevToolsDataSource);
 };
 
 
-DevToolsDataSource::DevToolsDataSource()
-    : DataSource(chrome::kChromeUIDevToolsHost, NULL) {
+DevToolsDataSource::DevToolsDataSource() {
 }
 
-void DevToolsDataSource::StartDataRequest(const std::string& path,
-                                          bool is_incognito,
-                                          int request_id) {
-  std::string filename = PathWithoutParams(path);
+std::string DevToolsDataSource::GetSource() {
+  return chrome::kChromeUIDevToolsHost;
+}
 
+void DevToolsDataSource::StartDataRequest(
+    const std::string& path,
+    bool is_incognito,
+    const content::URLDataSource::GotDataCallback& callback) {
+  std::string filename = PathWithoutParams(path);
 
   int resource_id =
       content::DevToolsHttpHandler::GetFrontendResourceId(filename);
@@ -67,7 +72,7 @@ void DevToolsDataSource::StartDataRequest(const std::string& path,
   const ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   scoped_refptr<base::RefCountedStaticMemory> bytes(rb.LoadDataResourceBytes(
       resource_id));
-  SendResponse(request_id, bytes);
+  callback.Run(bytes);
 }
 
 std::string DevToolsDataSource::GetMimeType(const std::string& path) const {
@@ -87,24 +92,22 @@ std::string DevToolsDataSource::GetMimeType(const std::string& path) const {
   return "text/plain";
 }
 
+bool DevToolsDataSource::ShouldAddContentSecurityPolicy() const {
+  return false;
+}
+
 // static
 void DevToolsUI::RegisterDevToolsDataSource(Profile* profile) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   static bool registered = false;
   if (!registered) {
-    DevToolsDataSource* data_source = new DevToolsDataSource();
-    ChromeURLDataManager::AddDataSource(profile, data_source);
+    content::URLDataSource::Add(profile, new DevToolsDataSource);
     registered = true;
   }
 }
 
 DevToolsUI::DevToolsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
-  DevToolsDataSource* data_source = new DevToolsDataSource();
-  Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, data_source);
-}
-
-void DevToolsUI::RenderViewCreated(
-    content::RenderViewHost* render_view_host) {
-  content::DevToolsClientHost::SetupDevToolsFrontendClient(render_view_host);
+  web_ui->SetBindings(0);
+  content::URLDataSource::Add(Profile::FromWebUI(web_ui),
+                              new DevToolsDataSource);
 }

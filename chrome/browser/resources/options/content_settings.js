@@ -39,7 +39,7 @@ cr.define('options', function() {
 
           // Add on the proper hash for the content type, and store that in the
           // history so back/forward and tab restore works.
-          var hash = event.target.getAttribute('contentType');
+          var hash = event.currentTarget.getAttribute('contentType');
           var url = page.name + '#' + hash;
           window.history.replaceState({pageName: page.name},
                                       page.title,
@@ -75,15 +75,16 @@ cr.define('options', function() {
         OptionsPage.navigateToPage('cookies');
       };
 
-      var intentsSection = $('intents-section');
-      if (!loadTimeData.getBoolean('enable_web_intents') && intentsSection)
-        intentsSection.parentNode.removeChild(intentsSection);
-
       $('content-settings-overlay-confirm').onclick =
           OptionsPage.closeOverlay.bind(OptionsPage);
 
-      $('pepper-flash-cameramic-section').style.display = 'none';
-      $('pepper-flash-cameramic-exceptions-div').style.display = 'none';
+      $('media-pepper-flash-default').hidden = true;
+      $('media-pepper-flash-exceptions').hidden = true;
+
+      $('media-select-mic').addEventListener('change',
+          ContentSettings.setDefaultMicrophone_);
+      $('media-select-camera').addEventListener('change',
+          ContentSettings.setDefaultCamera_);
     },
   };
 
@@ -125,6 +126,46 @@ cr.define('options', function() {
       for (var i = 0; i < indicators.length; i++)
         indicators[i].handlePrefChange(event);
     }
+  };
+
+  /**
+   * Updates the labels and indicators for the Media settings. Those require
+   * special handling because they are backed by multiple prefs and can change
+   * their scope based on the managed state of the backing prefs.
+   * @param {Object} mediaSettings A dictionary containing the following fields:
+   *     {String} askText The label for the ask radio button.
+   *     {String} blockText The label for the block radio button.
+   *     {Boolean} cameraDisabled Whether to disable the camera dropdown.
+   *     {Boolean} micDisabled Whether to disable the microphone dropdown.
+   *     {Boolean} showBubble Wether to show the managed icon and bubble for the
+   *         media label.
+   *     {String} bubbleText The text to use inside the bubble if it is shown.
+   */
+  ContentSettings.updateMediaUI = function(mediaSettings) {
+    $('media-stream-ask-label').innerHTML =
+        loadTimeData.getString(mediaSettings.askText);
+    $('media-stream-block-label').innerHTML =
+        loadTimeData.getString(mediaSettings.blockText);
+
+    if (mediaSettings.micDisabled)
+      $('media-select-mic').disabled = true;
+    if (mediaSettings.cameraDisabled)
+      $('media-select-camera').disabled = true;
+
+    OptionsPage.hideBubble();
+    // Create a synthetic pref change event decorated as
+    // CoreOptionsHandler::CreateValueForPref() does.
+    var event = new cr.Event();
+    event.value = {};
+
+    if (mediaSettings.showBubble) {
+      event.value = { controlledBy: 'policy' };
+      $('media-indicator').setAttribute(
+          'textpolicy', loadTimeData.getString(mediaSettings.bubbleText));
+      $('media-indicator').location = cr.ui.ArrowLocation.TOP_START;
+    }
+
+    $('media-indicator').handlePrefChange(event);
   };
 
   /**
@@ -175,14 +216,75 @@ cr.define('options', function() {
   };
 
   /**
-   * Enables the Pepper Flash camera and microphone settings.
-   * Please note that whether the settings are actually showed or not is also
+   * Shows/hides the link to the Pepper Flash camera and microphone default
+   * settings.
+   * Please note that whether the link is actually showed or not is also
    * affected by the style class pepper-flash-settings.
    */
-  ContentSettings.enablePepperFlashCameraMicSettings = function() {
-    $('pepper-flash-cameramic-section').style.display = '';
-    $('pepper-flash-cameramic-exceptions-div').style.display = '';
+  ContentSettings.showMediaPepperFlashDefaultLink = function(show) {
+    $('media-pepper-flash-default').hidden = !show;
   }
+
+  /**
+   * Shows/hides the link to the Pepper Flash camera and microphone
+   * site-specific settings.
+   * Please note that whether the link is actually showed or not is also
+   * affected by the style class pepper-flash-settings.
+   */
+  ContentSettings.showMediaPepperFlashExceptionsLink = function(show) {
+    $('media-pepper-flash-exceptions').hidden = !show;
+  }
+
+  /**
+   * Updates the microphone/camera devices menu with the given entries.
+   * @param {string} type The device type.
+   * @param {Array} devices List of available devices.
+   * @param {string} defaultdevice The unique id of the current default device.
+   */
+  ContentSettings.updateDevicesMenu = function(type, devices, defaultdevice) {
+    var deviceSelect = '';
+    if (type == 'mic') {
+      deviceSelect = $('media-select-mic');
+    } else if (type == 'camera') {
+      deviceSelect = $('media-select-camera');
+    } else {
+      console.error('Unknown device type for <device select> UI element: ' +
+                    type);
+      return;
+    }
+
+    deviceSelect.textContent = '';
+
+    var deviceCount = devices.length;
+    var defaultIndex = -1;
+    for (var i = 0; i < deviceCount; i++) {
+      var device = devices[i];
+      var option = new Option(device.name, device.id);
+      if (option.value == defaultdevice)
+        defaultIndex = i;
+      deviceSelect.appendChild(option);
+    }
+    if (defaultIndex >= 0)
+      deviceSelect.selectedIndex = defaultIndex;
+  };
+
+  /**
+   * Set the default microphone device based on the popup selection.
+   * @private
+   */
+  ContentSettings.setDefaultMicrophone_ = function() {
+    var deviceSelect = $('media-select-mic');
+    chrome.send('setDefaultCaptureDevice', ['mic', deviceSelect.value]);
+  };
+
+  /**
+   * Set the default camera device based on the popup selection.
+   * @private
+   */
+  ContentSettings.setDefaultCamera_ = function() {
+    var deviceSelect = $('media-select-camera');
+    chrome.send('setDefaultCaptureDevice', ['camera', deviceSelect.value]);
+  };
 
   // Export
   return {

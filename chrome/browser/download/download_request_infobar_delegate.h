@@ -6,8 +6,9 @@
 #define CHROME_BROWSER_DOWNLOAD_DOWNLOAD_REQUEST_INFOBAR_DELEGATE_H_
 
 #include "base/basictypes.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/download/download_request_limiter.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 
 class InfoBarService;
 
@@ -17,16 +18,34 @@ class InfoBarService;
 // on an unsuspecting user.
 class DownloadRequestInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  DownloadRequestInfoBarDelegate(
+  typedef base::Callback<void(
       InfoBarService* infobar_service,
-      DownloadRequestLimiter::TabDownloadState* host);
+      base::WeakPtr<DownloadRequestLimiter::TabDownloadState> host)>
+    FakeCreateCallback;
 
-  void set_host(DownloadRequestLimiter::TabDownloadState* host) {
-    host_ = host;
+  // Creates a download request delegate and adds it to |infobar_service|.
+  static void Create(
+      InfoBarService* infobar_service,
+      base::WeakPtr<DownloadRequestLimiter::TabDownloadState> host);
+
+  static void SetCallbackForTesting(FakeCreateCallback* callback);
+
+  virtual ~DownloadRequestInfoBarDelegate();
+
+#if defined(UNIT_TEST)
+  static scoped_ptr<DownloadRequestInfoBarDelegate> Create(
+      base::WeakPtr<DownloadRequestLimiter::TabDownloadState> host) {
+    return scoped_ptr<DownloadRequestInfoBarDelegate>(
+        new DownloadRequestInfoBarDelegate(NULL, host));
   }
+#endif
 
  private:
-  virtual ~DownloadRequestInfoBarDelegate();
+  static FakeCreateCallback* callback_;
+
+  DownloadRequestInfoBarDelegate(
+      InfoBarService* infobar_service,
+      base::WeakPtr<DownloadRequestLimiter::TabDownloadState> host);
 
   // ConfirmInfoBarDelegate:
   virtual gfx::Image* GetIcon() const OVERRIDE;
@@ -34,7 +53,7 @@ class DownloadRequestInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
-  DownloadRequestLimiter::TabDownloadState* host_;
+  base::WeakPtr<DownloadRequestLimiter::TabDownloadState> host_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadRequestInfoBarDelegate);
 };

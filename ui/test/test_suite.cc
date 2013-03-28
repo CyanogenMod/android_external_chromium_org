@@ -4,13 +4,18 @@
 
 #include "ui/test/test_suite.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "build/build_config.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/resource/resource_handle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/gfx/gfx_paths.h"
+
+#if defined(OS_ANDROID)
+#include "base/android/jni_android.h"
+#include "ui/android/ui_jni_registrar.h"
+#endif
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 #include "base/mac/bundle_locations.h"
@@ -24,6 +29,11 @@ UITestSuite::UITestSuite(int argc, char** argv) : base::TestSuite(argc, argv) {}
 void UITestSuite::Initialize() {
   base::TestSuite::Initialize();
 
+#if defined(OS_ANDROID)
+  // Register JNI bindings for android.
+  ui::android::RegisterJni(base::android::AttachCurrentThread());
+#endif
+
   ui::RegisterPathProvider();
   gfx::RegisterPathProvider();
 
@@ -32,7 +42,7 @@ void UITestSuite::Initialize() {
   // TODO(port): make a resource bundle for non-app exes.  What's done here
   // isn't really right because this code needs to depend on chrome_dll
   // being built.  This is inappropriate in app.
-  FilePath path;
+  base::FilePath path;
   PathService::Get(base::DIR_EXE, &path);
 #if defined(GOOGLE_CHROME_BUILD)
   path = path.AppendASCII("Google Chrome Framework.framework");
@@ -43,7 +53,7 @@ void UITestSuite::Initialize() {
 #endif
   base::mac::SetOverrideFrameworkBundlePath(path);
 #elif defined(OS_POSIX)
-  FilePath pak_dir;
+  base::FilePath pak_dir;
 #if defined(OS_ANDROID)
   PathService::Get(ui::DIR_RESOURCE_PAKS_ANDROID, &pak_dir);
 #else

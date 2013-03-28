@@ -46,7 +46,7 @@ base::internal::PassedWrapper<scoped_array<T> > TrampolineForward(
 
 template <typename T, typename R>
 base::internal::PassedWrapper<scoped_ptr_malloc<T, R> > TrampolineForward(
-    scoped_ptr_malloc<T, R>& p) { base::Passed(&p); }
+    scoped_ptr_malloc<T, R>& p) { return base::Passed(&p); }
 
 template <typename T>
 base::internal::PassedWrapper<ScopedVector<T> > TrampolineForward(
@@ -159,6 +159,12 @@ static base::Callback<T> BindToLoop(
     const scoped_refptr<base::MessageLoopProxy>& loop,
     const base::Callback<T>& cb) {
   return base::Bind(&internal::TrampolineHelper<T>::Run, loop, cb);
+}
+
+template<typename T>
+static base::Callback<T> BindToCurrentLoop(
+    const base::Callback<T>& cb) {
+  return BindToLoop(base::MessageLoopProxy::current(), cb);
 }
 
 }  // namespace media

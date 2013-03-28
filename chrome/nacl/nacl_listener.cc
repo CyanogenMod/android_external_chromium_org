@@ -110,7 +110,7 @@ class BrowserValidationDBProxy : public NaClValidationDB {
       : listener_(listener) {
   }
 
-  bool QueryKnownToValidate(const std::string& signature) {
+  virtual bool QueryKnownToValidate(const std::string& signature) OVERRIDE {
     // Initialize to false so that if the Send fails to write to the return
     // value we're safe.  For example if the message is (for some reason)
     // dispatched as an async message the return parameter will not be written.
@@ -123,7 +123,7 @@ class BrowserValidationDBProxy : public NaClValidationDB {
     return result;
   }
 
-  void SetKnownToValidate(const std::string& signature) {
+  virtual void SetKnownToValidate(const std::string& signature) OVERRIDE {
     // Caching is optional: NaCl will still work correctly if the IPC fails.
     if (!listener_->Send(new NaClProcessMsg_SetKnownToValidate(signature))) {
       LOG(ERROR) << "Failed to update NaCl validation cache.";
@@ -184,13 +184,13 @@ void NaClListener::Listen() {
 bool NaClListener::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(NaClListener, msg)
-      IPC_MESSAGE_HANDLER(NaClProcessMsg_Start, OnMsgStart)
+      IPC_MESSAGE_HANDLER(NaClProcessMsg_Start, OnStart)
       IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
-void NaClListener::OnMsgStart(const nacl::NaClStartParams& params) {
+void NaClListener::OnStart(const nacl::NaClStartParams& params) {
   struct NaClChromeMainArgs *args = NaClChromeMainArgsCreate();
   if (args == NULL) {
     LOG(ERROR) << "NaClChromeMainArgsCreate() failed";
@@ -234,20 +234,25 @@ void NaClListener::OnMsgStart(const nacl::NaClStartParams& params) {
 # endif
 #endif
 
-  CHECK(handles.size() >= 1);
-  NaClHandle irt_handle = nacl::ToNativeHandle(handles[handles.size() - 1]);
-  handles.pop_back();
+  if (params.uses_irt) {
+    CHECK(handles.size() >= 1);
+    NaClHandle irt_handle = nacl::ToNativeHandle(handles[handles.size() - 1]);
+    handles.pop_back();
 
 #if defined(OS_WIN)
-  args->irt_fd = _open_osfhandle(reinterpret_cast<intptr_t>(irt_handle),
-                                 _O_RDONLY | _O_BINARY);
-  if (args->irt_fd < 0) {
-    LOG(ERROR) << "_open_osfhandle() failed";
-    return;
-  }
+    args->irt_fd = _open_osfhandle(reinterpret_cast<intptr_t>(irt_handle),
+                                   _O_RDONLY | _O_BINARY);
+    if (args->irt_fd < 0) {
+      LOG(ERROR) << "_open_osfhandle() failed";
+      return;
+    }
 #else
-  args->irt_fd = irt_handle;
+    args->irt_fd = irt_handle;
 #endif
+  } else {
+    // Otherwise, the IRT handle is not even sent.
+    args->irt_fd = -1;
+  }
 
   if (params.validation_cache_enabled) {
     // SHA256 block size.

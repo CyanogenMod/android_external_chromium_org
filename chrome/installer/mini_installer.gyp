@@ -57,7 +57,6 @@
             'RandomizedBaseAddress': '1',
             'DataExecutionPrevention': '0',
             'AdditionalLibraryDirectories': [
-              '<(DEPTH)/third_party/platformsdk_win7/files/Lib',
               '<(PRODUCT_DIR)/lib'
             ],
             'DelayLoadDLLs': [],
@@ -176,6 +175,9 @@
           'msvs_precompiled_header': '',
           'msvs_precompiled_source': '',
 
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
+          
           'sources': [
             'mini_installer/chrome.release',
             'mini_installer/chrome_appid.cc',
@@ -225,9 +227,20 @@
                     '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.dll',
                     '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
                     '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
-                    '<(PRODUCT_DIR)/nacl_ipc_irt_x86_32.nexe',
-                    '<(PRODUCT_DIR)/nacl_ipc_irt_x86_64.nexe',
                   ],
+                }],
+                ['target_arch=="x64"', {
+                  'inputs!': [
+                    '<(PRODUCT_DIR)/nacl64.exe',
+                    '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
+                  ],
+                  'variables': {
+                    'target_arch_flag': '--target_arch=x64',
+                  },
+                }, {
+                  'variables': {
+                    'target_arch_flag': '--target_arch=x86',
+                  },
                 }],
               ],
               'inputs': [
@@ -239,8 +252,6 @@
                 '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.dll',
                 '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
                 '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
-                '<(PRODUCT_DIR)/nacl_ipc_irt_x86_32.nexe',
-                '<(PRODUCT_DIR)/nacl_ipc_irt_x86_64.nexe',
                 '<(PRODUCT_DIR)/locales/en-US.pak',
                 '<(PRODUCT_DIR)/icudt.dll',
               ],
@@ -262,6 +273,7 @@
                 '<(enable_hidpi_flag)',
                 '<(enable_touch_ui_flag)',
                 '<(component_build_flag)',
+                '<(target_arch_flag)',
                 # TODO(sgk):  may just use environment variables
                 #'--distribution=$(CHROMIUM_BUILD)',
                 '--distribution=_google_chrome',
@@ -270,7 +282,8 @@
                 #'--setup_exe_format=DIFF',
                 #'--diff_algorithm=COURGETTE',
               ],
-              'message': 'Create installer archive'
+              'message': 'Create installer archive',
+              'msvs_cygwin_shell': 1,
             },
           ],
         },

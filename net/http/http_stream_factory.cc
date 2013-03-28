@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/host_port_pair.h"
@@ -169,6 +169,17 @@ void HttpStreamFactory::EnableNpnSpdy3() {
 }
 
 // static
+void HttpStreamFactory::EnableNpnSpdy31() {
+  set_use_alternate_protocols(true);
+  std::vector<std::string> next_protos;
+  next_protos.push_back("http/1.1");
+  next_protos.push_back("spdy/2");
+  next_protos.push_back("spdy/3");
+  next_protos.push_back("spdy/3.1");
+  SetNextProtos(next_protos);
+}
+
+// static
 void HttpStreamFactory::SetNextProtos(const std::vector<std::string>& value) {
   if (!next_protos_)
     next_protos_ = new std::vector<std::string>;
@@ -187,8 +198,13 @@ void HttpStreamFactory::SetNextProtos(const std::vector<std::string>& value) {
       enabled_protocols_[NPN_SPDY_2] = true;
     } else if (value[i] == "spdy/3") {
       enabled_protocols_[NPN_SPDY_3] = true;
+    } else if (value[i] == "spdy/3.1") {
+      enabled_protocols_[NPN_SPDY_3_1] = true;
+    } else if (value[i] == "quic/1") {
+      enabled_protocols_[QUIC_1] = true;
     }
   }
+  // TODO(rch): Remove all support for spdy/1.
   enabled_protocols_[NPN_SPDY_1] = false;
 }
 

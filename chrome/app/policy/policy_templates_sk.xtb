@@ -1,6 +1,7 @@
 <?xml version="1.0" ?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="sk">
+<translation id="5324685310432603046">Percento predĺženia oneskorenia režimu nečinnosti v režime prezentácie</translation>
 <translation id="1503959756075098984">ID rozšírení a adresy URL aktualizácií, ktoré sa majú nainštalovať na pozadí</translation>
 <translation id="2463365186486772703">Miestne nastavenie aplikácie</translation>
 <translation id="1397855852561539316">Adresa URL návrhu predvoleného poskytovateľa vyhľadávania</translation>
@@ -21,6 +22,7 @@
       Ak toto pravidlo ponecháte nenastavené, povolí sa a používateľ bude môcť režim Inkognito použiť.</translation>
 <translation id="7614663184588396421">Zoznam zakázaných schém protokolu</translation>
 <translation id="2309390639296060546">Predvolené nastavenie geolokácie</translation>
+<translation id="7261507082507286116">Zakáže službu Disk Google počas používania mobilného pripojenia</translation>
 <translation id="7443616896860707393">Požiadavky typu cross-origin štandardu HTTP Basic Auth</translation>
 <translation id="2337466621458842053">Umožňuje nastaviť zoznam vzorov adries URL určujúcich webové stránky, na ktorých sa môžu zobrazovať obrázky.
 
@@ -28,6 +30,7 @@
 <translation id="4680961954980851756">Povoliť automatické dopĺňanie</translation>
 <translation id="5183383917553127163">Umožňuje určiť rozšírenia, ktorých sa netýka zoznam zakázaných rozšírení. Ak je v zozname uvedená hodnota *, znamená to, že sa v ňom nachádzajú všetky rozšírenia a používatelia môžu inštalovať len tie, ktoré sú uvedené v zozname povolených rozšírení. V predvolenom nastavení sú všetky rozšírenia povolené. Ak však boli všetky rozšírenia pridané do zoznamu zakázaných rozšírení pomocou pravidla, je možné toto pravidlo nahradiť pomocou zoznamu povolených rozšírení.</translation>
 <translation id="3185009703220253572">od verzie <ph name="SINCE_VERSION"/></translation>
+<translation id="2204753382813641270">Ovládať automatické skrývanie poličky</translation>
 <translation id="3214164532079860003">Ak je toto pravidlo povolené, domovská stránka bude importovaná z aktuálneho predvoleného prehliadača.
 
       Ak je zakázané, domovská stránka sa neimportuje.
@@ -35,14 +38,38 @@
 <translation id="5330684698007383292">Povoliť doplnku <ph name="PRODUCT_FRAME_NAME"/> spracovávať nasledujúce typy obsahu</translation>
 <translation id="5469825884154817306">Blokovať obrázky na týchto stránkach</translation>
 <translation id="8412312801707973447">Či sa majú vykonávať kontroly OCSP/CRL online</translation>
+<translation id="3213821784736959823">Ovláda, či sa v prehliadači <ph name="PRODUCT_NAME"/> používa vstavaný klient DNS.
+
+      Ak je toto pravidlo nastavené na hodnotu True, vstavaný klient DNS sa použije (pokiaľ je k dispozícii).
+
+      Ak je toto pravidlo nastavené na hodnotu False, vstavaný klient DNS sa nepoužije nikdy.
+
+      Ak je toto pravidlo ponechané nenastavené, používatelia budú môcť ovládať používanie vstavaného klienta DNS pomocou úprav na adrese chrome://flags alebo určením príznaku v príkazovom riadku.</translation>
 <translation id="2908277604670530363">Maximálny počet súčasných pripojení k serveru proxy</translation>
+<translation id="556941986578702361">Ovláda nastavenie automatického skrývania poličky systému <ph name="PRODUCT_OS_NAME"/>.
+
+      Ak je toto pravidlo nastavené na hodnotu AlwaysAutoHideShelf, polička sa bude skrývať automaticky.
+
+      Ak je toto pravidlo nastavené na hodnotu NeverAutoHideShelf, polička sa nebude nikdy skrývať automaticky.
+
+      Ak toto pravidlo nastavíte, používatelia ho nemôžu zmeniť ani nahradiť.
+
+      Ak toto pravidlo ponecháte nenastavené, používatelia si môžu sami zvoliť, či sa bude polička skrývať automaticky.</translation>
 <translation id="4838572175671839397">Obsahuje regulárny výraz, ktorý sa používa na určenie toho, ktorí používatelia sa môžu prihlásiť do prehliadača <ph name="PRODUCT_NAME"/>.
 
 Ak sa používateľ pokúsi prihlásiť pomocou používateľského mena, ktoré sa nezhoduje s týmto vzorom, zobrazí sa príslušná chyba.
 
 Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ sa môže prihlásiť do prehliadača <ph name="PRODUCT_NAME"/>.</translation>
-<translation id="7298195798382681320">Odporúčané</translation>
 <translation id="1438955478865681012">Slúži na konfiguráciu pravidiel súvisiacich s rozšíreniami. Používateľ nie je oprávnený inštalovať rozšírenia uvedené v zozname zakázaných rozšírení, ak sa nenachádzajú v zozname povolených rozšírení. V aplikácii <ph name="PRODUCT_NAME"/> môžete tiež vynútiť automatickú inštaláciu rozšírení, a to tak, že rozšírenia zadáte do zoznamu <ph name="EXTENSIONINSTALLFORCELIST_POLICY_NAME"/>. Zoznam zakázaných rozšírení má pred týmto zoznamom prioritu.</translation>
+<translation id="3516856976222674451">Obmedzuje maximálnu dĺžku relácie používateľa.
+
+      Keď je toto pravidlo nastavené, stanovuje maximálny čas, po uplynutí ktorého bude používateľ automaticky odhlásený a relácia sa ukončí. Používateľa o zostávajúcom čase informuje časovač na systémovom paneli.
+
+      Ak toto pravidlo nastavené nie je, dĺžka relácie nie je obmedzená.
+
+      Ak toto pravidlo nastavíte, používatelia ho nemôžu zmeniť ani nahradiť.
+
+      Hodnota pravidla by mala byť uvedená v milisekundách. Hodnoty musia byť v rozsahu od 30 sekúnd do 24 hodín.</translation>
 <translation id="2769952903507981510">Konfigurácia povinného názvu domény pre hostiteľov vzdialeného prístupu</translation>
 <translation id="3478024346823118645">Vymazať údaje používateľa po odhlásení</translation>
 <translation id="8668394701842594241">Určuje zoznam povolených doplnkov prehliadača <ph name="PRODUCT_NAME"/> a bráni používateľom toto nastavenie zmeniť.
@@ -54,6 +81,17 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
       Toto pravidlo nahrádza pravidlá DisabledPlugins a DisabledPluginsExceptions. 
 
       Ak toto pravidlo ponecháte nenastavené, používateľ môže zakázať ľubovoľný doplnok nainštalovaný v systéme.</translation>
+<translation id="653608967792832033">Určuje dobu nečinnosti používateľa, po ktorej sa obrazovka pri napájaní z batérie uzamkne.
+
+          Ak je toto pravidlo nastavené na hodnotu väčšiu ako nula, určuje dobu nečinnosti používateľa, po ktorej systém <ph name="PRODUCT_OS_NAME"/> obrazovku uzamkne.
+
+          Ak je toto pravidlo nastavené na hodnotu nula, systém <ph name="PRODUCT_OS_NAME"/> neuzamkne obrazovku ani počas nečinnosti používateľa.
+
+          Ak toto pravidlo nastavené nie je, použije sa predvolená doba.
+
+          Odporúčaným spôsobom uzamknutia obrazovky pri nečinnosti je uzamknutie obrazovky v režime spánku a nastavenie doby, po uplynutí ktorej systém <ph name="PRODUCT_OS_NAME"/> prejde do režimu spánku. Toto pravidlo by sa malo používať len v prípade, ak chcete obrazovku uzamknúť oveľa skôr, než dôjde k prechodu do režimu spánku alebo ak nechcete režim spánku používať vôbec.
+
+          Hodnota pravidla by mala byť uvedená v milisekundách. Hodnoty musia byť nižšie ako oneskorenie režimu nečinnosti.</translation>
 <translation id="4157003184375321727">Hlásiť verziu operačného systému a firmvéru</translation>
 <translation id="4752214355598028025">Keď používateľ prejde na stránky, ktoré sú nahlásené ako potenciálne škodlivé, služba Bezpečné prehliadanie zobrazí stránku s upozornením. Povolenie tohto nastavenia zabráni používateľom pokračovať zo stránky s upozornením na škodlivé stránky.
 
@@ -74,6 +112,7 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 
       Ak toto pravidlo ponecháte nenastavené, systém <ph name="PRODUCT_OS_NAME"/> použije predvolenú hodnotu 3 hodiny.</translation>
 <translation id="3765260570442823273">Doba zobrazenia správy s upozornením na odhlásenie  z dôvodu nečinnosti</translation>
+<translation id="7302043767260300182">Oneskorenie uzamknutia obrazovky pri používaní napájacieho zdroja</translation>
 <translation id="7331962793961469250">Ak je nastavená možnosť True, na stránke Nová karta sa nezobrazia propagácie aplikácií v Internetovom obchode Chrome.
 
       Ak ju nastavíte na možnosť False alebo ju ponecháte nenastavenú, propagácie aplikácií v Internetovom obchode Chrome sa na stránke Nová karta budú zobrazovať</translation>
@@ -87,11 +126,7 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
           Ak je v zozname uvedená hodnota „*“, znamená to, že sú zakázané všetky rozšírenia, ktoré nie sú explicitne uvedené v zozname povolených rozšírení.
 
           Ak toto pravidlo ponecháte nenastavené, používateľ bude môcť do prehliadača <ph name="PRODUCT_NAME"/> inštalovať ľubovoľné rozšírenia.</translation>
-<translation id="2129233336491582973">Povoľuje prehliadaču <ph name="PRODUCT_NAME"/> fungovať ako server proxy medzi službou <ph name="CLOUD_PRINT_NAME"/> a staršími tlačiarňami pripojenými k počítaču.
-
-      Ak je toto nastavenie povolené alebo nenakonfigurované, používatelia môžu povoliť server proxy pre tlač z cloudu prostredníctvom overenia totožnosti pomocou účtu Google.
-      Ak je toto nastavenie zakázané, používatelia nemôžu povoliť server proxy a počítač nebude môcť zdieľať pripojené tlačiarne so službou <ph name="CLOUD_PRINT_NAME"/>.
-      Ak toto pravidlo ponecháte nenastavené, povolí sa, no používateľ to bude môcť zmeniť.</translation>
+<translation id="5809728392451418079">Nastaviť zobrazovaný názov pre miestne účty na zariadení</translation>
 <translation id="1427655258943162134">Adresa alebo adresa URL servera proxy</translation>
 <translation id="1827523283178827583">Použiť fixné servery proxy</translation>
 <translation id="3021409116652377124">Zakázať nástroj na hľadanie doplnkov</translation>
@@ -101,6 +136,7 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 
       Ak nie je nastavené, môže sa používateľovi zobraziť výzva, či chce vyhľadávací nástroj importovať, alebo môže import prebehnúť automaticky.</translation>
 <translation id="3288595667065905535">Kanál verzie</translation>
+<translation id="8369602308428138533">Oneskorenie vypnutia obrazovky pri používaní napájacieho zdroja</translation>
 <translation id="6513756852541213407">Umožňuje určiť server proxy, ktorý bude prehliadač <ph name="PRODUCT_NAME"/> používať, a bráni používateľom zmeniť nastavenia servera proxy.
 
           Ak sa rozhodnete server proxy vôbec nepoužívať a vždy sa pripájať priamo, všetky ostatné možnosti budú ignorované.
@@ -123,6 +159,11 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="5630352020869108293">Obnoviť poslednú reláciu</translation>
 <translation id="4980635395568992380">Typ údajov:</translation>
 <translation id="3096595567015595053">Zoznam povolených doplnkov</translation>
+<translation id="3048744057455266684">Ak je toto pravidlo nastavené a adresa URL vyhľadávania navrhnutá vo všeobecnom poli obsahuje tento parameter v reťazci dopytu alebo v identifikátore fragmentu, potom odporúčanie zobrazí hľadané výrazy a poskytovateľa vyhľadávania namiesto nespracovanej adresy URL vyhľadávania.
+
+          Toto pravidlo je voliteľné. Ak nie je nastavené, nedôjde k žiadnej výmene hľadaných výrazov.
+
+          Toto pravidlo sa rešpektuje len vtedy, ak je povolené pravidlo DefaultSearchProviderEnabled.</translation>
 <translation id="5912364507361265851">Umožňuje používateľom zobraziť heslá v Správcovi hesiel</translation>
 <translation id="510186355068252378">Zakazuje v prehliadači <ph name="PRODUCT_NAME"/> synchronizáciu údajov pomocou služieb synchronizácie hostených spoločnosťou Google a bráni používateľom toto nastavenie zmeniť.
 
@@ -139,8 +180,9 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="1353966721814789986">Stránky pri spustení</translation>
 <translation id="5564962323737505851">Konfiguruje správcu hesiel. Ak je správca hesiel povolený, môžete povoliť alebo zakázať, či môže používateľ uchovávať heslá formou čitateľného textu.</translation>
 <translation id="4668325077104657568">Predvolené nastavenie obrázkov</translation>
-<translation id="7161193985878519056">Režim Inkognito je zakázaný.</translation>
-<translation id="2524379983318108884">Povoliť zaznamenávanie zvuku</translation>
+<translation id="7978961945071764766">Ak toto pravidlo nastavíte na hodnotu True, zakáže synchronizáciu so službou Disk Google počas používania mobilného pripojenia. V takom prípade dôjde k synchronizácii údajov so službou Disk Google iba vtedy, keď bude k dispozícii pripojenie prostredníctvom siete Wi-Fi alebo ethernet.
+
+          Ak toto pravidlo nenastavíte alebo ho nastavíte na hodnotu False, používatelia budú môcť prenášať súbory do služby Disk Google prostredníctvom mobilného pripojenia.</translation>
 <translation id="4492287494009043413">Zákaz zaznamenávania snímok obrazovky</translation>
 <translation id="6368403635025849609">Povoliť jazyk JavaScript na týchto stránkach</translation>
 <translation id="6074963268421707432">Nepovoliť žiadnym stránkam zobrazovať upozornenia na pracovnej ploche</translation>
@@ -150,11 +192,23 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="2906874737073861391">Zoznam rozšírení AppPack</translation>
 <translation id="3758249152301468420">Zakázať Nástroje pre vývojárov</translation>
 <translation id="8665076741187546529">Konfigurovať zoznam vynútene nainštalovaných rozšírení</translation>
-<translation id="2505112041294615513">Nastaví adresár, ktorý bude aplikácia <ph name="PRODUCT_FRAME_NAME"/> používať na ukladanie svojich údajov.
+<translation id="410478022164847452">Určuje dobu nečinnosti používateľa, po ktorej systém vykoná príslušnú akciu nečinnosti pri používaní napájacieho zdroja.
 
-      Ak nastavíte toto pravidlo, aplikácia <ph name="PRODUCT_FRAME_NAME"/> bude používať zadaný adresár.
+          Ak je toto pravidlo nastavené, určuje dobu nečinnosti používateľa, po ktorej systém <ph name="PRODUCT_OS_NAME"/> vykoná príslušnú akciu, ktorú je možné nakonfigurovať samostatne.
 
-      Ak toto nastavenie ponecháte nenastavené, použije sa adresár uvedený v predvolenom profile.</translation>
+          Ak toto pravidlo nastavené nie je, použije sa predvolená doba.
+
+          Hodnota pravidla by mala byť uvedená v milisekundách.</translation>
+<translation id="1675391920437889033">Kontroluje, inštalácia ktorých typov aplikácií/rozšírení je povolená.
+
+          Toto nastavenie pridáva na zoznam povolených položiek typy aplikácií/rozšírení, ktorých inštalácia je v prehliadači <ph name="PRODUCT_NAME"/> povolená. Hodnota predstavuje zoznam reťazcov, pričom by malo ísť o niektoré z týchto reťazcov: &quot;extension&quot;, &quot;theme&quot;, &quot;user_script&quot;, &quot;hosted_app&quot;, &quot;legacy_packaged_app&quot;, &quot;platform_app&quot;. Viac informácií o týchto typoch nájdete v dokumentácii k rozšíreniam prehliadača Chrome.
+
+          Upozorňujeme, že toto pravidlo má vplyv aj na rozšírenia a aplikácie, ktorých inštalácia bude vynútená prostredníctvom príkazu ExtensionInstallForcelist.
+
+          Ak je toto nastavenie nakonfigurované, typy rozšírení / aplikácií, ktoré nie sú na zozname, sa nenainštalujú.
+
+          Ak je toto nastavenie ponechané nenakonfigurované, nebudú sa vynucovať žiadne obmedzenia týkajúce sa prijateľných typov rozšírení/aplikácií.</translation>
+<translation id="6378076389057087301">Určuje, či prehrávanie zvuku ovplyvňuje správu napájania</translation>
 <translation id="8818173863808665831">Nahlási geografickú polohu zariadenia.
 
       Ak toto pravidlo nie je nastavené alebo je nastavené na hodnotu false, poloha sa nahlasovať nebude.</translation>
@@ -178,9 +232,31 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
       Ak toto nastavenie povolíte alebo zakážete, používatelia ho v prehliadači <ph name="PRODUCT_NAME"/> nebudú môcť zmeniť ani prepísať.
 
       Ak toto pravidlo ponecháte nenastavené, nastaví sa to, čo používateľ zvolí počas inštalácie alebo pri prvom spustení.</translation>
+<translation id="2516600974234263142">Umožňuje tlač v službe <ph name="PRODUCT_NAME"/> a zabraňuje používateľom zmeniť toto nastavenie.
+
+      Ak je toto nastavenie povolené alebo nie je nakonfigurované, používatelia môžu tlačiť.
+
+      Ak je toto nastavenie zakázané, používatelia v službe <ph name="PRODUCT_NAME"/> tlačiť nemôžu. Tlač je zakázaná v ponuke nástrojov, rozšíreniach, aplikáciách jazyka JavaScript a pod. Tlačiť môžete z doplnkov, ktoré pri tlači službu <ph name="PRODUCT_NAME"/> obchádzajú. Niektoré aplikácie Flash majú napríklad možnosť tlače v kontextovej ponuke, na ktoré sa tieto pravidlá nevzťahujú.</translation>
 <translation id="9135033364005346124">Povoliť server proxy <ph name="CLOUD_PRINT_NAME"/></translation>
+<translation id="4519046672992331730">Vo všeobecnom poli prehliadača <ph name="PRODUCT_NAME"/> povolí funkciu návrhov pre vyhľadávanie a bráni používateľom toto nastavenie zmeniť.
+
+      Ak toto nastavenie povolíte, budú sa zobrazovať návrhy pre vyhľadávanie.
+
+      Ak toto nastavenie zakážete, návrhy pre vyhľadávanie sa nikdy nezobrazia.
+
+      Ak toto nastavenie povolíte alebo zakážete, používatelia ho v prehliadači <ph name="PRODUCT_NAME"/> nebudú môcť zmeniť ani prepísať.
+
+      Ak toto pravidlo ponecháte nenastavené, povolí sa, no používateľ ho bude môcť zmeniť.</translation>
 <translation id="6943577887654905793">Názov predvoľby v systéme Mac/Linux:</translation>
+<translation id="6925212669267783763">Umožňuje nakonfigurovať adresár, ktorý prehliadač <ph name="PRODUCT_FRAME_NAME"/> použije na ukladanie údajov používateľa.
+
+      Ak toto pravidlo nastavíte, prehliadač <ph name="PRODUCT_FRAME_NAME"/> bude používať zadaný adresár.
+
+      Zoznam premenných, ktoré sa dajú použiť, nájdete na stránke http://www.chromium.org/administrators/policy-list-3/user-data-directory-variables (iba v angličtine).
+
+      Ak toto nastavenie ponecháte nenastavené, použije sa predvolený adresár profilu.</translation>
 <translation id="8906768759089290519">Povoliť režim hosťa</translation>
+<translation id="2168397434410358693">Oneskorenie režimu nečinnosti pri používaní napájacieho zdroja</translation>
 <translation id="838870586332499308">Povoliť roaming pre dátové prenosy</translation>
 <translation id="2292084646366244343"><ph name="PRODUCT_NAME"/> môže na opravu pravopisných chýb používať webovú službu spoločnosti Google. Ak je toto nastavenie povolené, služba sa používa neustále. Ak je nastavenie zakázané, služba sa nepoužíva nikdy.
 
@@ -193,7 +269,17 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
           Ak toto nastavenie povolíte, vyhľadávanie záznamov CNAME sa preskočí a použije sa zadaný názov servera.
 
           Ak toto nastavenie zakážete alebo ho ponecháte nenastavené, kanonický názov servera sa určí prostredníctvom vyhľadávania záznamov CNAME.</translation>
+<translation id="5711323964690760562">Umožňuje určiť adresu URL pre webový obchod podniku. Ak je toto nastavenie povolené, na stránke Nová karta sa zobrazí aplikácia, ktorá po kliknutí používateľovi zobrazí zadanú adresu URL. Ak chcete, aby bolo z nakonfigurovaných webových stránok skutočne možné inštalovať rozšírenia, musíte nakonfigurovať pravidlo ExtensionInstallSources tak, aby povoľovalo inštaláciu z príslušných adries URL na preberanie rozšírení. Ak je toto pravidlo nastavené, malo by byť nastavené aj EnterpriseWebStoreName.
+
+      Ak toto nastavenie zakážete, na novej karte sa nezobrazí žiadna aplikácia webového obchodu podniku.</translation>
 <translation id="4377599627073874279">Povoliť všetkým stránkam zobrazovať obrázky</translation>
+<translation id="7195064223823777550">Určuje, aká akcia sa má vykonať, keď používateľ zavrie veko.
+
+          Ak je toto pravidlo nastavené, určuje akciu, ktorú systém <ph name="PRODUCT_OS_NAME"/> vykoná, keď používateľ zavrie veko.
+
+          Ak toto pravidlo nastavené nie je, vykoná sa predvolená akcia, ktorou je režim spánku.
+
+          Ak zvolíte prechod do režimu spánku, môžete nastaviť, či má systém <ph name="PRODUCT_OS_NAME"/> pred prechodom do režimu spánku obrazovku uzamknúť alebo nie.</translation>
 <translation id="3915395663995367577">Adresa URL súboru PAC servera proxy</translation>
 <translation id="1022361784792428773">ID rozšírení, ktorých inštalácia by mala byť používateľovi zakázaná (alebo hodnota * pre všetky)</translation>
 <translation id="5499375345075963939">Toto pravidlo je aktívne iba v režime predaja.
@@ -210,6 +296,13 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 
           Príklady vzorov nájdete na stránke http://www.chromium.org/developers/how-tos/chrome-frame-getting-started.</translation>
 <translation id="8044493735196713914">Hlásiť režim spustenia zariadenia</translation>
+<translation id="2746016768603629042">Podpora tohto pravidla je ukončená. Použite namiesto neho pravidlo DefaultJavaScriptSetting.
+
+      Umožňuje zakázať jazyk JavaScript v prehliadači <ph name="PRODUCT_NAME"/>.
+
+      Ak je toto nastavenie zakázané, webové stránky nebudú môcť používať jazyk JavaScript a používateľ toto nastavenie nebude môcť zmeniť.
+
+      Ak toto pravidlo ponecháte nenastavené, webové stránky budú môcť používať jazyk JavaScript, ale používateľ bude môcť toto nastavenie zmeniť.</translation>
 <translation id="1942957375738056236">Tu môžete zadať adresu URL servera proxy.
 
           Toto pravidlo sa prejaví len v prípade, ak ste v časti „Zvoľte spôsob konfigurácie nastavení servera proxy“ zvolili ručné nastavenia servera proxy.
@@ -248,11 +341,13 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
           Ak je toto nastavenie povolené, fyzické zariadenia vstupu a výstupu hostiteľa budú počas prebiehajúceho vzdialeného spojenia zakázané.
 
           Ak je toto nastavenie zakázané alebo nenastavené, miestni aj vzdialení používatelia môžu počas zdieľania komunikovať s hostiteľom.</translation>
-<translation id="2312509925391670075">Vždy sa opýtať, keď sa stránky snažia získať prístup k mojej kamere alebo mikrofónu</translation>
 <translation id="1426410128494586442">Áno</translation>
 <translation id="4962195944157514011">Určuje adresu URL vyhľadávacieho nástroja používaného pri predvolenom vyhľadávaní. Adresa URL by mala obsahovať reťazec <ph name="SEARCH_TERM_MARKER"/>, ktorý bude počas posielania dopytu nahradený používateľom hľadanými výrazmi.
 
           Táto možnosť musí byť nastavená v prípade, že je povolené pravidlo „DefaultSearchProviderEnabled“ a bude dodržané len v takom prípade.</translation>
+<translation id="3343454696188645600">Ak je toto pravidlo nastavené na hodnotu True, zakáže synchronizáciu so službou Disk Google. V takom prípade sa do služby Disk Google nebudú odovzdávať žiadne údaje.
+
+          Ak toto pravidlo nenastavíte alebo ho nastavíte na hodnotu False, používatelia budú môcť prenášať súbory do služby Disk Google.</translation>
 <translation id="6009903244351574348">Umožňuje doplnku <ph name="PRODUCT_FRAME_NAME"/> spracovávať uvedené typy obsahu.
 
           Ak toto pravidlo nie je nastavené, použije sa pre všetky webové stránky predvolený vykresľovací modul (ako je určené pravidlom „ChromeFrameRendererSettings“).</translation>
@@ -286,6 +381,9 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
           Ak toto pravidlo ponecháte nenastavené, použijú sa všetky štyri schémy.</translation>
 <translation id="6114416803310251055">zamietnuté</translation>
 <translation id="8493645415242333585">Zakázať ukladanie histórie prehliadača</translation>
+<translation id="5319306267766543020">Konfiguruje správu napájania v systéme <ph name="PRODUCT_OS_NAME"/>.
+
+      Tieto pravidlá vám umožňujú nakonfigurovať, ako sa systém <ph name="PRODUCT_OS_NAME"/> správa po určitej dobe nečinnosti používateľa.</translation>
 <translation id="2747783890942882652">Konfiguruje povinný názov domény hostiteľa, ktorý bude uvedený pri hostiteľoch vzdialeného prístupu, a bráni používateľom, aby ho zmenili.
 
           Ak je toto nastavenie povolené, hostitelia môžu byť zdieľaní iba prostredníctvom účtov zaregistrovaných v danom názve domény.
@@ -307,6 +405,17 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="6786747875388722282">Rozšírenia</translation>
 <translation id="8947415621777543415">Nahlasovať polohu zariadenia</translation>
 <translation id="1655229863189977773">Nastaviť veľkosť vyrovnávacej pamäte disku v bajtoch</translation>
+<translation id="6376842084200599664">Umožňuje zadať zoznam rozšírení, ktoré sa nainštalujú na pozadí bez interakcie používateľa.
+
+          Jednotlivé položky zoznamu predstavujú reťazec, ktorý obsahuje ID rozšírenia a adresu URL aktualizácie oddelené dvojbodkou (<ph name="SEMICOLON"/>). ID rozšírenia je reťazec 32 písmen, ktorý môžete nájsť napríklad na stránke <ph name="CHROME_EXTENSIONS_LINK"/> v režime vývojára. Adresa URL aktualizácie by mala smerovať na dokument XML s manifestom aktualizácie v súlade s návodom na stránke <ph name="LINK_TO_EXTENSION_DOC1"/>. Upozorňujeme, že adresa URL aktualizácie uvedená v tomto pravidle sa použije iba pri počiatočnej inštalácii a pri následných aktualizáciách rozšírenia sa použije aktualizovaná adresa URL uvedená v manifeste rozšírenia.
+
+          Prehliadač <ph name="PRODUCT_NAME"/> prijme v prípade každej položky rozšírenie určené ID rozšírenia z aktualizačnej služby umiestnenej na zadanej adrese URL aktualizácie a nainštaluje ho na pozadí.
+
+          Položka <ph name="EXTENSION_POLICY_EXAMPLE"/> napríklad nainštaluje rozšírenie <ph name="EXTENSION_POLICY_EXAMPLE_EXTENSION_NAME"/> z bežnej adresy URL aktualizácie pre Internetový obchod Chrome. Viac informácií o rozšíreniach nájdete na adrese: <ph name="LINK_TO_EXTENSION_DOC2"/>.
+
+          Používatelia nebudú môcť odinštalovať rozšírenia, ktoré sú určené v tomto pravidle. Ak z tohto zoznamu odstránite niektoré z rozšírení, prehliadač <ph name="PRODUCT_NAME"/> ho automaticky odinštaluje. Rozšírenia uvedené v tomto zozname sa tiež automaticky pridajú na bielu listinu pre inštaláciu a nastavenie ExtensionsInstallBlacklist na ne nebude mať vplyv.
+
+          Ak toto pravidlo ponecháte nenastavené, bude môcť používateľ v prehliadači <ph name="PRODUCT_NAME"/> nainštalovať ktorékoľvek rozšírenie.</translation>
 <translation id="6899705656741990703">Automaticky zisťovať nastavenia servera proxy</translation>
 <translation id="7003334574344702284">Ak je toto pravidlo povolené, uložené heslá sú importované z predchádzajúceho predvoleného prehliadača. Povolenie tohto pravidla má vplyv aj na dialógové okno importu.
 
@@ -319,19 +428,37 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 
           Ak toto nastavenie zakážete alebo ho ponecháte nenastavené, port sa do vygenerovaného hlavného názvu služby protokolu Kerberos v žiadnom prípade nezahrnie.</translation>
 <translation id="3236046242843493070">Vzory adries URL na povolenie zdrojov inštalácie rozšírenia, aplikácie a skriptov používateľa</translation>
-<translation id="3442095178490656861">Určuje, ktoré časové pásmo sa má v zariadení použiť. Používatelia môžu prepísať stanovené časové pásmo pre aktuálnu reláciu. Po odhlásení sa však nastaví späť na pôvodne určené časové pásmo. V prípade zadania nesprávnej hodnoty je pravidlo namiesto toho stále aktivované pomocou možnosti GMT.
-
-      Ak sa toto pravidlo nepoužíva, aktuálne aktívne časové pásmo zostane platné aj naďalej. Používatelia ho však môžu zmeniť a zmena bude trvalá. Zmena jedným používateľom preto ovplyvní prihlasovaciu obrazovku aj všetkých ostatných používateľov.
-
-      Pôvodné časové pásmo v nových zariadeniach je nastavené na hodnotu US/Pacific (americký/tichomorský čas).
-
-      Formát hodnoty je stanovený podľa názvov časových pásiem v databáze IANA Time Zone Database (pozrite si stránku http://en.wikipedia.org/wiki/List_of_tz_database_time). Väčšina časových pásiem sa konkrétne udáva ako continent/large_city (kontinent / veľké mesto) alebo ocean/large_city (oceán / veľké mesto).</translation>
+<translation id="2498238926436517902">Poličku vždy skrývať automaticky</translation>
+<translation id="152657506688053119">Zoznam alternatívnych adries URL pre predvoleného poskytovateľa vyhľadávania</translation>
 <translation id="8992176907758534924">Zakázať všetkým stránkam zobrazovať obrázky</translation>
 <translation id="262740370354162807">Povolí odoslanie dokumentov do služby <ph name="CLOUD_PRINT_NAME"/></translation>
+<translation id="5182055907976889880">Konfigurácia služby Disk Google v systéme <ph name="PRODUCT_OS_NAME"/>.</translation>
 <translation id="8704831857353097849">Zoznam zakázaných doplnkov</translation>
 <translation id="8391419598427733574">Hlásiť verziu operačného systému a firmvéru registrovaných zariadení. Ak je toto nastavenie nastavené na hodnotu True, registrované zariadenia budú pravidelne hlásiť verziu operačného systému a firmvéru. Ak nastavené nie je, alebo je nastavené na hodnotu False, informácie o verzii nebudú nahlásené.</translation>
 <translation id="467449052039111439">Otvoriť zoznam adries URL</translation>
 <translation id="5883015257301027298">Predvolené nastavenie súborov cookie</translation>
+<translation id="5017500084427291117">Umožňuje zablokovať prístup k adresám URL uvedeným v zozname.
+
+      Toto pravidlo bráni používateľom načítať webové stránky zo zoznamu zakázaných adries URL.
+
+      Adresa URL má formát „schéma://hostiteľ:port/cesta“.
+      Ako schému je možné zvoliť http, https alebo ftp. Blokovaný bude len zvolený typ schémy. Ak schému neuvediete, budú blokované všetky schémy.
+      Hostiteľom môže byť názov hostiteľa alebo adresa IP. Blokovaná bude aj subdoména názvu hostiteľa. Ak chcete zabrániť blokovaniu subdomén, zadajte pred názov hostiteľa bodku „.“.  Špeciálny názov hostiteľa „*“ zablokuje všetky domény.
+      Ako port je možné zvoliť platné číslo portu v rozpätí od 1 do 65 535. Ak port neuvediete, budú blokované všetky porty.
+      Ak je určená voliteľná cesta, budú blokované iba cesty s príslušnou predponou.
+
+      Výnimky môžu byť definované v pravidle zoznamu povolených adries URL. Počet záznamov v tomto pravidle je obmedzený na 1 000. Všetky ďalšie záznamy budú ignorované.
+
+      Ak toto pravidlo nie je nastavené, do zoznamu zakázaných adries URL sa nebudú v prehliadači pridávať žiadne adresy URL.</translation>
+<translation id="9074735209675488877">Povolí alebo odmietne zaznamenávanie zvuku.
+
+      Ak je toto pravidlo zakázané, zaznamenávanie zvuku nebude k dispozícii. Ak je povolené, zaznamenávanie zvuku bude k dispozícii.
+      Ak toto pravidlo nie je nakonfigurované (predvolené nastavenie), systém vyzve používateľa, aby povolil prístup zariadenia k zaznamenávaniu zvuku.
+
+      Toto pravidlo má vplyv na všetky typy zvukových vstupov, a nielen na vstavaný mikrofón.</translation>
+<translation id="2762164719979766599">Určuje zoznam miestnych účtov na zariadení, ktoré sa majú zobrazovať na obrazovke prihlásenia.
+
+      Každá položka v zozname určuje identifikátor, ktorý sa používa interne na rozpoznanie odlišných miestnych účtov na zariadení.</translation>
 <translation id="8955719471735800169">Späť na začiatok</translation>
 <translation id="2534584045044686957">Konfiguruje veľkosť vyrovnávacej pamäte, ktorú bude aplikácia <ph name="PRODUCT_NAME"/> používať na ukladanie súborov do vyrovnávacej pamäte na disku.
 
@@ -349,20 +476,8 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
       Toto pravidlo má umožniť prísne zaraďovanie doplnkov na zoznam zakázaných doplnkov v prípade, že zoznam pravidla DisabledPlugins obsahuje položky so zástupnými znakmi (napríklad znak „*“ slúžiaci na zakázanie všetkých doplnkov alebo znak „*Java*“ slúžiaci na zakázanie všetkých doplnkov Java), avšak správca chce niektoré konkrétne verzie povoliť (napr. „IcedTea Java 2.3“).
 
       Ak pravidlo nenastavíte, všetky doplnky, ktoré zodpovedajú vzoru v pravidle DisabledPlugins, budú uzamknuté ako zakázané a používatelia ich nebudú môcť povoliť.</translation>
-<translation id="8170882486743832400">Konfigurovať možnosti rozhraní GData</translation>
-<translation id="2322733497952278056">Umožňujú prístup k uvedeným adresám URL, ktoré sa nenachádzajú na zozname zakázaných adries URL.
-
-      Ak chcete vedieť, aký je formát záznamov v tomto zozname, pozrite si popis pravidiel pre zoznam zakázaných adries URL.
-
-      Toto pravidlo môže byť použité na otvorenie výnimiek pre obmedzujúce zoznamy zakázaných adries. Napríklad symbol „*“ môže byť zakázaný a blokovať všetky žiadosti.
-
-      Toto pravidlo sa môže použiť s cieľom umožniť prístup k obmedzenému zoznamu adries URL. Môže sa tiež použiť aj na otváranie výnimiek pre určité schémy, subdomény iných domén, porty alebo konkrétne cesty.
-
-      Najkonkrétnejší filter určí, či je adresa URL blokovaná alebo povolená. Zoznam povolených adries URL má prednosť pred zoznamom zakázaných adries.
-
-      Pravidlo je obmedzené na 100 záznamov. Ďalšie záznamy budú ignorované.
-
-      Ak nie je toto pravidlo nastavené, neuplatnia sa v zozname zakázaných adries URL žiadne výnimky z pravidla „URLBlacklist“.</translation>
+<translation id="546726650689747237">Oneskorenie zníženia jasu obrazovky pri používaní napájacieho zdroja</translation>
+<translation id="4988291787868618635">Akcia po určitej dobe nečinnosti</translation>
 <translation id="5316405756476735914">Umožňuje nastaviť, či môžu webové stránky nastavovať miestne údaje. Nastavenie miestnych údajov sa dá buď pre všetky webové stránky umožniť, alebo ho pre všetky webové stránky zamietnuť.
 
           Ak toto pravidlo ponecháte nenastavené, použije sa pravidlo „AllowCookies“ a používateľ to bude môcť zmeniť.</translation>
@@ -404,27 +519,12 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
       Ak toto pravidlo nastavené nie je, používateľ zoznam aplikácií v spúšťači zmeniť môže.</translation>
 <translation id="7625444193696794922">Určuje, aký kanál verzie by mal byť v zariadení uzamknutý.</translation>
 <translation id="2552966063069741410">Časové pásmo</translation>
-<translation id="3088288048720661397">Ak je pravidlo nastavené na hodnotu True, zakáže počas mobilného pripojenia synchronizáciu služby Dokumenty Google. Údaje teda budú so službou Dokumenty Google synchronizované iba počas pripojenia prostredníctvom siete Wi-Fi alebo Ethernet.
-
-          Ak nie je nastavené alebo ak je nastavené na hodnotu False, používatelia môžu prenášať súbory do služby Dokumenty Google aj pomocou mobilného pripojenia.</translation>
 <translation id="2240879329269430151">Umožňuje nastaviť, či môžu webové stránky zobrazovať kontextové okná. Zobrazovanie kontextových okien je možné pre všetky webové stránky buď umožniť, alebo zamietnuť.
 
           Ak toto pravidlo ponecháte nenastavené, použije sa pravidlo „BlockPopups“ a používateľ ho bude môcť zmeniť.</translation>
 <translation id="2529700525201305165">Obmedzenie používateľov, ktorí sa môžu prihlásiť do prehliadača <ph name="PRODUCT_NAME"/></translation>
-<translation id="5289914968905023866">Blokujú prístup k adresám URL uvedeným v zozname.
-
-      Toto pravidlo bráni používateľom načítať webové stránky zo zoznamu zakázaných adries URL.
-
-      Adresa URL má formát „schéma://hostiteľ:port/cesta“.
-      Ako schému je možné zvoliť http, https alebo ftp. Blokovaný bude len zvolený typ schémy. Ak to nie je bližšie určené, blokované sú všetky schémy.
-      Hostiteľom môže byť názov hostiteľa alebo adresa IP. Blokovaná bude aj subdoména názvu hostiteľa. Ak chcete zabrániť blokovaniu subdomén, zadajte pred názov hostiteľa bodku „.“.  Špeciálny názov hostiteľa „*“ zablokuje všetky domény.
-      Ako port je možné zvoliť platné číslo portu v rozpätí od 1 do 65 535. Ak to nie je bližšie určené, blokované budú všetky porty.
-      Ak je určená voliteľná cesta, budú blokované iba cesty s príslušnou predponou.
-
-      Výnimky môžu byť definované v pravidle zoznamu povolených adries URL. Počet záznamov v tomto pravidle je obmedzený na 100. Všetky ďalšie záznamy budú ignorované.
-
-      Ak toto pravidlo nie je nastavené, do zoznamu zakázaných adries URL nebudú v prehliadači pridávané žiadne adresy URL.</translation>
 <translation id="3864818549971490907">Predvolené nastavenie doplnkov</translation>
+<translation id="1910566775788829857">Odhlásiť používateľa</translation>
 <translation id="7151201297958662315">Určuje, či sa má proces prehliadača <ph name="PRODUCT_NAME"/> spustiť po prihlásení do operačného systému a či má ostať spustený aj po zatvorení posledného okna prehliadača. Aplikácie na pozadí tak môžu ostať aktívne. Proces na pozadí zobrazí na systémovom paneli ikonu, pomocou ktorej ho môžete kedykoľvek ukončiť.
 
       Ak je toto pravidlo nastavené na hodnotu true, režim na pozadí je povolený a používateľ ho nemôže ovládať pomocou nastavení prehliadača.
@@ -439,10 +539,29 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="2646290749315461919">Umožňuje nastaviť, či môžu webové stránky sledovať fyzickú polohu používateľa. Sledovanie fyzickej polohy používateľa sa dá nakonfigurovať tak, že bude v predvolenom nastavení umožnené alebo zamietnuté. Tiež je možné nastaviť, aby sa pri pokuse webových stránok o sledovanie fyzickej polohy používateľovi zobrazila výzva.
 
           Ak toto pravidlo ponecháte nenastavené, použije sa pravidlo „AskGeolocation“ a používateľ ho bude môcť zmeniť.</translation>
+<translation id="3309789488678647282">Zakáže službu Disk</translation>
 <translation id="5770738360657678870">Verzia pre vývojárov (môže byť nestabilná)</translation>
 <translation id="2959898425599642200">Pravidlá vynechania servera proxy</translation>
 <translation id="1098794473340446990">Hlásiť časy aktivity zariadenia. Ak je toto nastavenie nastavené na hodnotu True, registrované zariadenia budú hlásiť časové obdobia, kedy používateľ zariadenie aktívne používa. Ak nastavené nie je, alebo je nastavené na hodnotu False, časy aktivity zariadenia sa nebudú zaznamenávať ani hlásiť.</translation>
-<translation id="896575211736907134">Vynútený režim Inkognito.</translation>
+<translation id="7937766917976512374">Povoliť alebo zakázať zaznamenávanie videa</translation>
+<translation id="489803897780524242">Parameter kontrolujúci umiestnenie vyhľadávacích výrazov pre predvoleného poskytovateľa vyhľadávania</translation>
+<translation id="7912255076272890813">Nakonfigurovať povolené typy aplikácií/rozšírení</translation>
+<translation id="817455428376641507">Umožňuje pristupovať k adresám URL uvedeným v zozname, ktoré predstavujú výnimky pre zoznam zakázaných adries URL.
+
+      Informácie o formáte položiek v zozname nájdete v popise pravidla na zablokovanie adries URL.
+
+      Toto pravidlo umožňuje otvárať výnimky pre zoznamy zakázaných adries URL. Na zoznam zakázaných položiek môžete napríklad pridať položku „*“, ktorá zablokuje všetky žiadosti, a pomocou tohto pravidla následne môžete povoliť prístup k obmedzenému zoznamu adries URL. Môže sa použiť na otváranie určitých schém, subdomén a ďalších domén, portov alebo konkrétnych ciest.
+
+      O povolení alebo zablokovaní adresy URL rozhodne najkonkrétnejší filter. Biela listina má prednosť pred zoznamom zakázaných položiek.
+
+      Toto pravidlo je obmedzené na 1 000 položiek. Ostatné položky sa budú ignorovať.
+
+      Ak toto pravidlo ponecháte nenastavené, nebudú k dispozícii žiadne výnimky pre zoznam zakázaných adries uvedený v rámci pravidla URLBlacklist.</translation>
+<translation id="4163644371169597382">Správcovia IT spravujúci podnikové zariadenia môžu pomocou tohto pravidla povoliť alebo zakázať používateľom uplatniť ponuky pri registrácii systému Chrome OS.
+
+      Ak je toto pravidlo nastavené na hodnotu True alebo je ponechané bez nastavenia, používatelia si pri registrácii systému Chrome OS budú môcť uplatniť ponuky.
+
+      Ak je toto pravidlo nastavené na hodnotu False, používatelia si nebudú môcť uplatniť ponuky.</translation>
 <translation id="6177482277304066047">Nastavuje cieľovú verziu automatických aktualizácií.
 
       Určuje predponu cieľovej verzie, na ktorú sa má systém <ph name="PRODUCT_OS_NAME"/> aktualizovať. Ak zariadenie obsahuje staršiu verziu, ako určuje predpona, bude systém aktualizovaný na poslednú verziu s danou predponou. Ak už zariadenie obsahuje novšiu verziu, nestane sa nič (t.j. nedôjde k prechodu na nižšiu verziu) a zariadenie zostane pri existujúcej verzii. Formát predpony funguje na základe komponentu, ako ukazuje nasledujúci príklad:
@@ -457,16 +576,8 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="7929480864713075819">Povoliť nahlasovanie informácií o pamäti (veľkosť hromady kódu JavaScript) stránke</translation>
 <translation id="7003746348783715221">Predvoľby prehliadača <ph name="PRODUCT_NAME"/></translation>
 <translation id="4723829699367336876">Povoliť prechod cez bránu firewall v smere od klienta vzdialeného prístupu</translation>
-<translation id="726580293849003996">Konfiguruje adresu URL predvolenej domovskej stránky v aplikácii <ph name="PRODUCT_NAME"/> a bráni používateľom, aby ju zmenili.
-
-          Domovská stránka je stránka, ktorá sa otvorí po kliknutí na tlačidlo Domovská stránka. Stránky, ktoré sa otvoria pri spustení, sú ovládané pravidlami RestoreOnStartup.
-
-          Domovskou stránkou môže byť adresa URL, ktorú tu zadáte, alebo stránka Nová karta. Ak vyberiete stránku Nová karta, bude toto pravidlo ignorované.
-
-          Ak povolíte toto nastavenie, používatelia nebudú môcť zmeniť adresu URL domovskej stránky aplikácie <ph name="PRODUCT_NAME"/>, avšak budú môcť ako domovskú stránku zvoliť stránku Nová karta.
-
-          Ak toto pravidlo nenastavíte, používatelia budú môcť zvoliť domovskú stránku sami v prípade, že nebude nastavené ani pravidlo HomepageIsNewTabPage.</translation>
 <translation id="6367755442345892511">Či má byť kanál na vydávanie nových verzií konfigurovateľný používateľom</translation>
+<translation id="4035570660718398959">Povoliť používateľom uplatniť ponuky pri registrácii systému Chrome OS.</translation>
 <translation id="3868347814555911633">Toto pravidlo je aktívne iba v režime predaja.
 
       Zoznam rozšírení, ktoré sa automaticky nainštalujú pre používateľa ukážky v zariadeniach v režime predaja. Tieto rozšírenia sa uložia v zariadení a po inštalácii môžu byť nainštalované v režime offline.
@@ -479,6 +590,16 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
           Ak toto nastavenie zakážete, v okne správcu hesiel nebude možné zobraziť uložené heslá formou čitateľného textu.
 
           Ak toto nastavenie povolíte alebo ho nenastavíte, používatelia budú môcť v správcovi hesiel zobraziť uložené heslá formou čitateľného textu.</translation>
+<translation id="5936622343001856595">Vynucuje vyhľadávanie dopytov vo Vyhľadávaní Google na webe pomocou aktívneho Bezpečného vyhľadávania a zabraňuje používateľom toto nastavenie zmeniť.
+
+      Ak toto nastavenie povolíte, Bezpečné vyhľadávanie bude vo Vyhľadávaní Google vždy aktívne.
+
+      Ak toto nastavenie zakážete alebo nenastavíte žiadnu hodnotu, Bezpečné vyhľadávanie vo Vyhľadávaní Google vynucované nebude.</translation>
+<translation id="6017568866726630990">Zobrazí systémové dialógové okno tlače namiesto ukážky tlače.
+
+      Ak je toto nastavenie povolené a používateľ chce stránku vytlačiť, prehliadač <ph name="PRODUCT_NAME"/> otvorí systémové dialógové okno tlače namiesto vstavanej ukážky tlače.
+
+      Ak toto pravidlo nastavené nie je alebo je nastavené na hodnotu False, príkazy na tlač spustia obrazovku ukážky tlače.</translation>
 <translation id="3120725863988702582">Toto pravidlo nahrádza možnosť nastavenia obsahu „Pri zavretí prehliadača vymazať súbory cookie a ďalšie údaje stránok“, ktorú aplikácia <ph name="PRODUCT_NAME"/> podporovala pred verziou 21.
 
       Toto pravidlo sa používa iba na spätnú kompatibilitu a v budúcnosti bude zrušené. Odporúčaný spôsob vymazania údajov stránok pri zavretí prehliadača vo verzii 21 a novších verziách je nastaviť používanie pravidla DefaultCookiesSetting na jednotlivé relácie.
@@ -487,6 +608,14 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 
       Ak toto pravidlo zakážete alebo nenastavíte, bude pravidlo pre ukladanie údajov stránok vychádzať z pravidla DefaultCookiesSetting.</translation>
 <translation id="2824715612115726353">Povoliť režim inkognito</translation>
+<translation id="1057535219415338480">Povolí predvídanie siete v prehliadači <ph name="PRODUCT_NAME"/> a zabráni používateľom toto nastavenie zmeniť.
+
+      Toto pravidlo ovláda spoločne s predbežným načítaním servera DNS aj predbežné pripojenie pomocou protokolu TCP a technológie SSL a predbežné vykreslenie webových stránok. Názov pravidla je založený na predbežnom načítaní servera DNS z historických dôvodov.
+
+      Ak toto nastavenie povolíte alebo zakážete, používatelia ho v prehliadači <ph name="PRODUCT_NAME"/> nebudú môcť prepísať.
+
+      Ak toto pravidlo ponecháte nenastavené, nastavenie bude povolené, ale používateľ ho bude môcť zmeniť.</translation>
+<translation id="4541530620466526913">Miestne účty na zariadení</translation>
 <translation id="1757688868319862958">Povolí produktu <ph name="PRODUCT_NAME"/> spustiť doplnky, ktoré vyžadujú autorizáciu. Ak toto nastavenie povolíte, budú doplnky, ktoré nie sú zastarané, nepretržite spustené. Ak je toto nastavenie zakázané alebo nie je nastavené, používatelia budú požiadaní, aby povolili spustenie doplnkov, ktoré vyžadujú autorizáciu. Ide o doplnky, ktoré môžu ohroziť bezpečnosť.</translation>
 <translation id="6392973646875039351">Povoľuje v prehliadači <ph name="PRODUCT_NAME"/> funkciu Automatické dopĺňanie a umožňuje používateľom automaticky dopĺňať polia webových formulárov pomocou uložených údajov (napr. adresa alebo číslo kreditnej karty).
 
@@ -494,23 +623,20 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 
       Ak toto nastavenie povolíte alebo nenastavíte žiadnu hodnotu, funkcia Automatické dopĺňanie zostane pod kontrolou používateľa. Vďaka tomu si budú môcť používatelia nakonfigurovať profily tejto funkcie a podľa vlastného úsudku ich vypínať alebo zapínať.</translation>
 <translation id="6157537876488211233">Zoznam pravidiel vynechania servera proxy oddelených čiarkami</translation>
+<translation id="7788511847830146438">Podľa profilu</translation>
 <translation id="3965339130942650562">Časový limit pred odhlásením nečinného používateľa</translation>
-<translation id="5293547923319914979">Povoliť zakrývanie hostiteľov vzdialeného prístupu.</translation>
+<translation id="9084985621503260744">Určuje, či prehrávanie videa ovplyvňuje správu napájania</translation>
 <translation id="7091198954851103976">Vždy spustí doplnky, ktoré vyžadujú autorizáciu</translation>
-<translation id="2021307518684405078">Nepovoliť žiadnym stránkam používať moju kameru a mikrofón</translation>
 <translation id="8870318296973696995">Domovská stránka</translation>
 <translation id="1240643596769627465">Určuje adresu URL vyhľadávacieho nástroja, ktorý poskytuje výsledky dynamického vyhľadávania. Adresa URL by mala obsahovať reťazec <ph name="SEARCH_TERM_MARKER"/>, ktorý bude počas posielania dopytu nahradený textom zadávaným používateľom.
 
           Toto pravidlo je voliteľné. Ak ho nenastavíte, nebudú sa vám zobrazovať žiadne výsledky dynamického vyhľadávania.
 
           Toto pravidlo bude dodržané len v prípade, ak je povolené pravidlo „DefaultSearchProviderEnabled“.</translation>
-<translation id="4126767310980686012">Ak je pravidlo nastavené na hodnotu True, zakáže synchronizáciu služby Dokumenty Google. Znamená to, že sa do služby Dokumenty Google nebudú odovzdávať žiadne údaje.
-
-          Ak nie je nastavené alebo ak je nastavené na hodnotu False, používatelia môžu prenášať súbory do služby Dokumenty Google.</translation>
 <translation id="6693751878507293182">Ak tu nastavíte na hodnotu povolené, automatické vyhľadávanie a inštalovanie chýbajúcich doplnkov bude v prehliadači <ph name="PRODUCT_NAME"/> zakázané.
 
       Ak túto možnosť nastavíte ako zakázanú alebo ju ponecháte nenastavenú, nástroj na vyhľadávanie doplnkov bude aktívny.</translation>
-<translation id="8238143662496081361">Uchovanie súborov cookie po dobu trvania relácie.</translation>
+<translation id="2650049181907741121">Akcia pri zavretí veka</translation>
 <translation id="7880891067740158163">Umožňuje uviesť zoznam vzorov adries URL webových stránok, pre ktoré by mal prehliadač <ph name="PRODUCT_NAME"/> automaticky vybrať certifikáty klienta (ak webová stránka certifikát vyžaduje).
 
           Ak toto pravidlo ponecháte nenastavené, automatický výber sa nevykoná pre žiadnu webovú stránku.</translation>
@@ -531,6 +657,7 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
       Adresy URL, ktoré používajú schémy uvedené v tomto zozname, sa nenačítajú a nebude na ne možné prejsť.
 
       Ak toto pravidlo ponecháte nenastavené alebo bude zoznam prázdny, v prehliadači <ph name="PRODUCT_NAME"/> budú prístupné všetky schémy.</translation>
+<translation id="5586942249556966598">Nevykonať žiadnu akciu</translation>
 <translation id="131353325527891113">Zobraziť používateľské mená na prihlasovacej obrazovke</translation>
 <translation id="5317965872570843334">Povoľuje použitie serverov typu STUN a relay, keď sa vzdialení klienti pokúšajú nadviazať spojenie s týmto počítačom.
 
@@ -539,10 +666,16 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
           Ak je toto nastavenie zakázané a brána firewall filtruje odchádzajúce pripojenia cez protokol UDP, povolí tento počítač iba pripojenia z klientskych počítačov v rámci miestnej siete.
 
           Ak toto pravidlo ponecháte nenastavené, nastavenie sa povolí.</translation>
+<translation id="6523554768023503406">Určuje, o koľko percent sa predĺži oneskorenie režimu nečinnosti, pokiaľ je zariadenie v režime prezentácie.
+
+          Ak je toto pravidlo nastavené, určuje, o koľko percent sa predĺži oneskorenie režimu nečinnosti, pokiaľ je zariadenie v režime prezentácie. Pri predĺžení oneskorenia sa upravia aj oneskorenia zníženia jasu, vypnutia a uzamknutia obrazovky, aby nastavenie zodpovedalo pôvodne nakonfigurovaným oneskoreniam režimu nečinnosti.
+
+          Ak toto pravidlo nastavené nie je, použije sa predvolená hodnota predĺženia.
+
+          Hodnota predĺženia musí byť 100 % alebo viac. Hodnoty, ktoré by oneskorenie režimu nečinnosti v režime prezentácie v porovnaní s bežnou hodnotou skrátili, nie sú povolené.</translation>
 <translation id="5365946944967967336">Zobraziť tlačidlo Domov na paneli s nástrojmi</translation>
 <translation id="3709266154059827597">Konfigurovať zoznam rozšírení, ktorých inštalácia je zakázaná</translation>
 <translation id="8451988835943702790">Použiť stránku Nová karta ako domovskú stránku</translation>
-<translation id="8853920132856176349">Toto nastavenie sa používa na vynútenie používania systémového dialógového okna tlače namiesto ukážky pred tlačou.</translation>
 <translation id="8469342921412620373">Povoľuje použiť predvoleného poskytovateľa vyhľadávania.
 
           Ak toto nastavenie povolíte, pri zadaní textu (ktorý nie je adresou) do všeobecného poľa sa vykoná predvolené vyhľadávanie.
@@ -556,19 +689,23 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
           Ak toto pravidlo ponecháte nenastavené, povolí sa predvolený poskytovateľ vyhľadávania a používateľ bude môcť nastaviť zoznam poskytovateľov vyhľadávania.</translation>
 <translation id="8731693562790917685">Nastavenia obsahu umožňujú určiť, akým spôsobom bude spracovávaný obsah určitého typu (napríklad súbory cookie, obrázky alebo kód JavaScript).</translation>
 <translation id="2411919772666155530">Blokovať upozornenia na týchto webových stránkach</translation>
-<translation id="5281259077246025371">Povoliť zaznamenávanie zvuku.
-
-      Ak je toto pravidlo nastavené na hodnotu false (neplatí), zaznamenávanie zvuku nebude pri prihlásení používateľa v tomto zariadení k dispozícii.
-
-      Toto pravidlo ovplyvňuje všetky typy vstupov zvuku (nielen vstavaný mikrofón).
-
-      Ak je toto pravidlo nastavené na hodnotu true (platí) alebo nie je nakonfigurované, používatelia môžu  vo svojom zariadení používať všetky podporované vstupy zvuku.</translation>
 <translation id="6923366716660828830">Určuje názov predvoleného poskytovateľa vyhľadávania. Ak sa pole nevyplní alebo bude pravidlo ponechané nenastavené, použije sa názov hostiteľa určený adresou URL vyhľadávania.
 
           Toto pravidlo sa vezme do úvahy len v prípade, ak je povolené pravidlo „DefaultSearchProviderEnabled“.</translation>
 <translation id="467236746355332046">Podporované funkcie:</translation>
 <translation id="7632724434767231364">Názov knižnice GSSAPI</translation>
 <translation id="3038323923255997294">Po uzavretí prehliadača <ph name="PRODUCT_NAME"/> ponechať aplikácie na pozadí spustené</translation>
+<translation id="8909280293285028130">Určuje dobu nečinnosti používateľa, po ktorej sa obrazovka pri používaní napájacieho zdroja uzamkne.
+
+          Ak je toto pravidlo nastavené na hodnotu väčšiu ako nula, určuje dobu nečinnosti používateľa, po ktorej systém <ph name="PRODUCT_OS_NAME"/> obrazovku uzamkne.
+
+          Ak je toto pravidlo nastavené na hodnotu nula, systém <ph name="PRODUCT_OS_NAME"/> obrazovku pri nečinnosti používateľa neuzamkne.
+
+          Ak toto pravidlo nastavené nie je, použije sa predvolená doba.
+
+          Odporúčaným spôsobom uzamknutia obrazovky pri nečinnosti je uzamknutie obrazovky v režime spánku a nastavenie doby, po ktorej systém <ph name="PRODUCT_OS_NAME"/> prejde do režimu spánku. Toto pravidlo by sa malo používať len v prípade, ak chcete obrazovku uzamknúť oveľa skôr, než dôjde k prechodu do režimu spánku alebo ak nechcete režim spánku používať vôbec.
+
+          Hodnota pravidla by mala byť uvedená v milisekundách. Hodnoty musia byť nižšie ako oneskorenie režimu nečinnosti.</translation>
 <translation id="7651739109954974365">Určuje, či bude v zariadení povolený roaming pre dátové prenosy. Ak je pravidlo nastavené na hodnotu true, roaming pre dátové prenosy bude povolený. Ak ho ponecháte nenakonfigurované alebo ho nastavíte na hodnotu false, roaming pre dátové prenosy nebude k dispozícii.</translation>
 <translation id="6244210204546589761">Adresy URL otvárané pri spustení</translation>
 <translation id="7468416082528382842">Umiestnenie v registri systému Windows:</translation>
@@ -577,26 +714,24 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="4928632305180102854">Určuje, či v systéme <ph name="PRODUCT_OS_NAME"/> bude možné vytvárať nové používateľské účty. Ak toto pravidlo nastavíte na hodnotu false, do zariadenia sa nebudú môcť prihlásiť používatelia, ktorí ešte nemajú účet.
 
       Ak je toto pravidlo nastavené na hodnotu true, alebo je nenakonfigurované, bude možné vytvárať nové používateľské účty (za predpokladu, že daný používateľ nie je zablokovaný pravidlom <ph name="DEVICEUSERWHITELISTPROTO_POLICY_NAME"/>).</translation>
+<translation id="8256688113167012935">Ovláda názov účtu, ktorý systém <ph name="PRODUCT_OS_NAME"/> zobrazí na obrazovke prihlásenia pre zodpovedajúci miestny účet na zariadení.
+
+      Ak je toto pravidlo nastavené, obrazovka prihlásenia použije stanovený reťazec pri prihlásení založenom na obrázku pre zodpovedajúci miestny účet na zariadení.
+
+      Ak je toto pravidlo ponechané nenastavené, systém <ph name="PRODUCT_OS_NAME"/> použije ID e-mailového účtu pre miestny účet na zariadení ako meno, ktoré zobrazí na obrazovke prihlásenia.
+
+      Toto pravidlo sa v prípade bežných používateľských účtov ignoruje.</translation>
 <translation id="267596348720209223">Určuje kódovanie znakov podporovaných poskytovateľom vyhľadávania. Kódovania sú kódové stránky, napríklad UTF-8, GB2312 alebo ISO-8859-1. Budú vyskúšané v uvedenom poradí.
 
           Toto pravidlo je voliteľné. Ak nebude nastavené, použije sa predvolené kódovanie (UTF-8).
 
           Toto pravidlo bude dodržané len v prípade, ak je povolené pravidlo „DefaultSearchProviderEnabled“.</translation>
+<translation id="1964634611280150550">Režim inkognito je zakázaný</translation>
 <translation id="1454846751303307294">Umožňuje nastaviť zoznam vzorov adries URL určujúcich webové stránky, ktoré nemôžu spúšťať kód JavaScript.
 
           Ak toto pravidlo ponecháte nenastavené, použije sa v prípade všetkých webových stránok globálna predvolená hodnota buď z pravidla „DefaultJavaScriptSetting“ (ak je nastavené), alebo z osobnej konfigurácie používateľa.</translation>
 <translation id="538108065117008131">Povoliť doplnku <ph name="PRODUCT_FRAME_NAME"/> spracovávať tieto typy obsahu.</translation>
-<translation id="717221064259627503">Slúži na konfiguráciu adresára, do ktorého bude prehliadač <ph name="PRODUCT_NAME"/> ukladať súbory vo vyrovnávacej pamäti na disk.
-
-      Ak toto pravidlo nastavíte, použije prehliadač <ph name="PRODUCT_NAME"/> zadaný adresár bez ohľadu na to, či používateľ zadal alebo nezadal príznak „--disk-cache-dir“.
-
-      Ak toto pravidlo ponecháte nenastavené, použije sa predvolený adresár vyrovnávacej pamäte a používateľ ho bude môcť prepísať pomocou zadania príznaku „--disk-cache-dir“ do príkazového riadka.</translation>
 <translation id="2312134445771258233">Umožňuje konfigurovať stránky, ktoré sa načítavajú pri spustení. Ak ste v časti „Akcie pri spustení“ nezvolili možnosť „Otvoriť zoznam adries URL“, položky v zozname „Adresy URL otvárané pri spustení“ sa ignorujú.</translation>
-<translation id="2538628396238281971">Slúži na konfiguráciu adresára, ktorý prehliadač <ph name="PRODUCT_NAME"/> použije na prevzatie súborov.
-
-      Ak toto pravidlo nastavíte, prehliadač <ph name="PRODUCT_NAME"/> použije určený adresár aj v prípade, že používateľ určil iný adresár alebo povolil príznak, vďaka ktorému sa vždy zobrazí výzva na zadanie umiestnenia preberaného súboru.
-
-      Ak toto nastavenie ponecháte nenastavené, použije sa predvolený adresár na preberanie a používateľ ho bude môcť zmeniť.</translation>
 <translation id="7750991880413385988">Otvoriť stránku Nová karta</translation>
 <translation id="741903087521737762">Umožňuje určiť správanie pri spustení.
 
@@ -633,23 +768,14 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="6699880231565102694">Povolenie dvojfázového overenia totožnosti pre hostiteľov vzdialeného prístupu</translation>
 <translation id="2030905906517501646">Kľúčové slovo predvoleného poskytovateľa vyhľadávania</translation>
 <translation id="3072045631333522102">Šetrič obrazovky, ktorý sa má použiť na prihlasovacej obrazovke v režime určenom pre predaj</translation>
-<translation id="7393895128271703858">Toto pravidlo je zastarané. Použite namiesto neho pravidlo DefaultJavaScriptSetting.
-
-      Povoľuje v prehliadači <ph name="PRODUCT_NAME"/> kód JavaScript a bráni používateľom toto nastavenie zmeniť.
-
-      Ak je toto nastavenie povolené alebo nie je nakonfigurované, webové stránky môžu kód JavaScript používať.
-
-      Ak je toto nastavenie zakázané, webové stránky kód JavaScript používať nemôžu.
-
-      Ak toto pravidlo ponecháte nenastavené, použije sa predvolená hodnota (povolené) a používateľ to bude môcť zmeniť.
-
-      Ak toto pravidlo ponecháte nenastavené, povolí sa, no používateľ ho bude môcť zmeniť.</translation>
 <translation id="8079569179819932120">Určuje, ktoré servery majú byť umiestnené do zoznamu povolených serverov na integrované overenie totožnosti. Integrované overenie totožnosti je povolené len v prípade, ak prehliadač <ph name="PRODUCT_NAME"/> dostane výzvu na overenie totožnosti zo servera proxy alebo servera, ktorý sa nachádza v tomto zozname povolených serverov.
 
           Ak chcete zadať viacero názvov serverov, oddeľte ich čiarkami. Zástupné znaky „*“ sú povolené.
 
           Ak toto pravidlo ponecháte nenastavené, na integrované overenie totožnosti bude prijatý ľubovoľný server.</translation>
+<translation id="7712109699186360774">Vždy sa opýtať, keď sa stránky snažia získať prístup ku kamere alebo mikrofónu</translation>
 <translation id="350797926066071931">Povoliť službu Translate</translation>
+<translation id="3711895659073496551">Režim spánku</translation>
 <translation id="4010738624545340900">Povolenie vyvolania dialógových okien na výber súborov</translation>
 <translation id="4518251772179446575">Opýtať sa vždy, keď chcú stránky sledovať fyzickú polohu používateľa</translation>
 <translation id="402759845255257575">Nepovoliť žiadnym stránkam spúšťať kód JavaScript</translation>
@@ -666,8 +792,16 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
       Ak toto nastavenie povolíte alebo zakážete, používatelia ho v prehliadači <ph name="PRODUCT_NAME"/> nebudú môcť zmeniť ani prepísať.
 
       Ak je toto nastavenie ponechané nenastavené, používateľ sa môže rozhodnúť, či túto funkciu použiť chce alebo nechce.</translation>
+<translation id="7546291275204811722">Určuje akciu, ktorá sa vykoná po určitej dobe nečinnosti.
+
+          Ak je toto pravidlo nastavené, určuje akciu, ktorú systém <ph name="PRODUCT_OS_NAME"/> vykoná po určitej dobe nečinnosti. Túto dobu nečinnosti je možné nakonfigurovať samostatne.
+
+          Ak toto pravidlo nastavené nie je, vykoná sa predvolená akcia, ktorou je prechod do režimu spánku.
+
+          Ak nastavíte prechod do režimu spánku, môžete samostatne nakonfigurovať, či má systém <ph name="PRODUCT_OS_NAME"/> pred prechodom do režimu spánku obrazovku uzamknúť alebo nie.</translation>
 <translation id="5475361623548884387">Povoliť tlač</translation>
 <translation id="3653237928288822292">Ikona predvoleného poskytovateľa vyhľadávania</translation>
+<translation id="2872961005593481000">Vypnúť</translation>
 <translation id="4445684791305970001">Zakáže Nástroje pre vývojárov a konzolu JavaScript.
 
       Ak toto nastavenie povolíte, nebude možné pristupovať k nástrojom pre vývojárov ani kontrolovať prvky webových stránok. Zakázané budú tiež všetky klávesové skratky a položky klasických či kontextových ponúk, pomocou ktorých je možné nástroje pre vývojárov alebo konzolu kódu JavaScript otvoriť.
@@ -710,6 +844,11 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
           Ak toto pravidlo ponecháte nenastavené, použije sa v prípade všetkých webových stránok globálna predvolená hodnota buď z pravidla „DefaultPopupsSetting“ (ak je nastavené), alebo z osobnej konfigurácie používateľa.</translation>
 <translation id="1530812829012954197">Vždy vykresliť nasledujúce vzory adries URL v hostiteľskom prehliadači</translation>
 <translation id="913195841488580904">Blokovať prístup k zoznamu adries URL</translation>
+<translation id="3292147213643666827">Umožňuje prehliadaču <ph name="PRODUCT_NAME"/> fungovať ako server proxy medzi službou <ph name="CLOUD_PRINT_NAME"/> a staršími tlačiarňami pripojenými k počítaču.
+
+      Ak je toto nastavenie povolené alebo nebolo nakonfigurované, používatelia môžu povoliť server proxy pre tlač z cloudu prostredníctvom overenia totožnosti pomocou účtu Google.
+
+      Ak je toto nastavenie zakázané, používatelia nebudú môcť povoliť server proxy a počítač nebude môcť zdieľať pripojené tlačiarne so službou <ph name="CLOUD_PRINT_NAME"/>.</translation>
 <translation id="6373222873250380826">Ak je pravidlo nastavené na hodnotu true, zakáže automatické aktualizácie.
 
       Ak je toto nastavenie nenakonfigurované, alebo je nastavené na hodnotu false, budú zariadenia so systémom <ph name="PRODUCT_OS_NAME"/> automaticky kontrolovať aktualizácie.</translation>
@@ -723,6 +862,7 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="1727394138581151779">Blokovať všetky doplnky</translation>
 <translation id="8118665053362250806">Nastaví veľkosť vyrovnávacej pamäte disku média</translation>
 <translation id="7079519252486108041">Blokovať kontextové okná na týchto webových stránkach</translation>
+<translation id="1859633270756049523">Obmedziť dĺžku relácie</translation>
 <translation id="7433714841194914373">Povoliť Dynamické vyhľadávanie</translation>
 <translation id="4983201894483989687">Povoliť spúšťanie zastaraných doplnkov</translation>
 <translation id="443665821428652897">Po vypnutí prehliadača vymazať údaje stránok (zastarané)</translation>
@@ -731,27 +871,28 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
       Ak je toto nastavenie povolené, história prehliadania sa nebude ukladať.
 
       Ak je toto nastavenie zakázané alebo nenastavené, história prehliadania sa ukladať bude.</translation>
-<translation id="7202926611616207807">Povoliť všetkým webovým stránkam nastavovať miestne údaje.</translation>
+<translation id="3844092002200215574">Umožňuje nakonfigurovať adresár, ktorý bude prehliadač <ph name="PRODUCT_NAME"/> používať na ukladanie súborov vo vyrovnávacej pamäti na disku.
+
+      Ak nastavíte toto pravidlo, prehliadač <ph name="PRODUCT_NAME"/> bude používať zadaný adresár bez ohľadu na to, či používateľ uviedol príznak '--disk-cache-dir'.
+
+      Zoznam premenných, ktoré sa dajú použiť, nájdete na stránke http://www.chromium.org/administrators/policy-list-3/user-data-directory-variables (iba v angličtine).
+
+      Ak toto pravidlo ponecháte nenastavené, použije sa predvolený adresár pre vyrovnávaciu pamäť a používateľ ho bude môcť prepísať pomocou príznaku príkazového riadku „--disk-cache-dir“.</translation>
 <translation id="3034580675120919256">Umožní nastaviť, či môžu webové stránky spúšťať kód JavaScript. Spúšťanie kódu JavaScript sa dá pre všetky webové stránky buď umožniť, alebo naopak zamietnuť.
 
           Ak toto pravidlo ponecháte nenastavené, použije sa pravidlo „AllowJavaScript“ a používateľ to bude môcť zmeniť.</translation>
-<translation id="7459381849362539054">Konfigurovať rozhrania GData v systéme <ph name="PRODUCT_OS_NAME"/>.</translation>
+<translation id="193900697589383153">Pridá na systémový panel tlačidlo odhlásenia.
+
+      Ak je toto nastavenie povolené, na systémovom paneli sa počas aktívnej relácie zobrazuje veľké červené tlačidlo odhlásenia (pokiaľ nie je obrazovka uzamknutá).
+
+      Ak je toto nastavenie zakázané alebo nie je nastavené, na systémovom paneli sa nezobrazuje žiadne veľké červené tlačidlo odhlásenia.</translation>
 <translation id="3195451902035818945">Toto pravidlo určuje, či by malo byť delenie záznamov protokolu SSL zakázané. Delenie záznamov je náhradné riešenie pre slabé stránky protokolov SSL 3.0 a TLS 1.0. U niektorých serverov HTTPS a serverov proxy však môže spôsobiť problémy s kompatibilitou. Ak toto pravidlo nie je nastavené, alebo je nastavené na hodnotu False, delenie záznamov sa použije u pripojení SSL / TLS, ktoré používajú šifrovacie nástroje CBC.</translation>
 <translation id="6903814433019432303">Toto pravidlo je aktívne iba v režime určenom pre predaj.
 
       Určuje súbor adries URL, ktoré sa majú načítať po spustení ukážkovej relácie. Toto pravidlo prepíše akékoľvek ďalšie mechanizmy, ktoré slúžia na nastavenie počiatočných adries URL, a tak sa môže použiť iba v reláciách, ktoré nie sú spojené s konkrétnym používateľom.</translation>
 <translation id="5868414965372171132">Konfigurácia siete na úrovni používateľa</translation>
+<translation id="4480694116501920047">Vynútenie Bezpečného vyhľadávania</translation>
 <translation id="1221359380862872747">Po prihlásení v režime ukážky načítať zadané adresy URL</translation>
-<translation id="6771644447620682565">Zakáže rozhrania GData</translation>
-<translation id="5493552890659553833">Vo všeobecnom poli prehliadača <ph name="PRODUCT_NAME"/> povolí funkciu návrhov pre vyhľadávanie a bráni používateľom toto nastavenie zmeniť.
-
-      Ak toto nastavenie povolíte, budú sa zobrazovať návrhy pre vyhľadávanie.
-
-      Ak toto nastavenie zakážete, návrhy pre vyhľadávanie sa nikdy nezobrazia.
-
-      Ak toto nastavenie povolíte alebo zakážete, používatelia ho v prehliadači <ph name="PRODUCT_NAME"/> nebudú môcť zmeniť ani prepísať.
-
-      Ak toto pravidlo ponecháte nenastavené, povolí sa, no používateľ ho bude môcť zmeniť.</translation>
 <translation id="2431811512983100641">Určuje, či má byť povolené rozšírenie certifikátov TLS typu domain-bound.
 
       Toto nastavenie slúži na povolenie rozšírenia certifikátov TLS typu domain-bound na testovacie účely.  Toto experimentálne nastavenie bude v budúcnosti odstránené.</translation>
@@ -762,8 +903,15 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
           Toto pravidlo sa vezme do úvahy len v prípade, ak je povolené pravidlo „DefaultSearchProviderEnabled“.</translation>
 <translation id="5774856474228476867">Adresa URL vyhľadávania predvoleného poskytovateľa vyhľadávania</translation>
 <translation id="4650759511838826572">Zakázať schémy protokolu adresy URL</translation>
+<translation id="8099880303030573137">Oneskorenie režimu nečinnosti pri napájaní z batérie</translation>
 <translation id="602728333950205286">Adresa URL dynamického vyhľadávania predvoleného poskytovateľa vyhľadávania</translation>
 <translation id="3030000825273123558">Povoliť hlásenia o metrikách</translation>
+<translation id="9142321226029580122">Určuje, či prehrávanie videa ovplyvňuje správu napájania.
+
+          Ak je toto pravidlo nastavené na hodnotu True alebo nie je nastavené, prehrávanie videa sa nepovažuje za nečinnosť používateľa. Zabráni to oneskoreniu režimu nečinnosti a zníženia jasu, vypnutiu a uzamknutiu obrazovky a nevykonajú sa príslušné akcie.
+
+          Ak je toto pravidlo nastavené na hodnotu False, prehrávanie videa sa považuje za nečinnosť používateľa.</translation>
+<translation id="6559057113164934677">Nepovoliť žiadnym stránkam používať kameru a mikrofón</translation>
 <translation id="1675002386741412210">Podporované na:</translation>
 <translation id="3547954654003013442">Nastavenia servera proxy</translation>
 <translation id="4482640907922304445">Zobrazí tlačidlo Domovská stránka na paneli s nástrojmi prehliadača <ph name="PRODUCT_NAME"/>.
@@ -776,6 +924,11 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 
       Ak toto nastavenie ponecháte nenastavené, umožní to používateľovi zvoliť, či chce tlačidlo Domovská stránka zobraziť.</translation>
 <translation id="2518231489509538392">Povoliť prehrávanie zvuku</translation>
+<translation id="7301543427086558500">Určuje zoznam alternatívnych adries URL, ktoré sa môžu použiť na extrahovanie hľadaných výrazov z vyhľadávacích nástrojov. Adresy URL by mali obsahovať značku <ph name="SEARCH_TERM_MARKER"/>, ktorá sa použije na extrahovanie hľadaných výrazov.
+
+          Toto pravidlo je nepovinné. Ak ho nenastavíte, nepoužijú sa na extrahovanie hľadaných výrazov žiadne alternatívne adresy URL.
+
+          Toto pravidlo sa použije iba v prípade, že je povolené pravidlo DefaultSearchProviderEnabled.</translation>
 <translation id="7547044444554936129">Povoľuje v prehliadači <ph name="PRODUCT_NAME"/> funkciu Dynamické vyhľadávanie a bráni používateľom toto nastavenie zmeniť.
 
       Ak toto nastavenie povolíte, funkcia Dynamické vyhľadávanie prehliadača <ph name="PRODUCT_NAME"/> bude povolená.
@@ -785,6 +938,7 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
       Ak toto nastavenie povolíte alebo zakážete, používatelia ho nebudú môcť zmeniť ani prekonať.
 
       Ak bude toto nastavenie ponechané nenastavené, používateľ sa bude môcť rozhodnúť, či túto funkciu používať chce alebo nechce.</translation>
+<translation id="6282799760374509080">Povoliť alebo zakázať zaznamenávanie zvuku</translation>
 <translation id="3264793472749429012">Kódovania predvoleného poskytovateľa vyhľadávania</translation>
 <translation id="8101760444435022591">Vzhľadom na skutočnosť, že kontroly zrušenia typu soft-fail neposkytujú z hľadiska bezpečnosti žiadne efektívne výhody, sú v predvolenom nastavení prehliadača <ph name="PRODUCT_NAME"/> verzie 19 a novších zakázané. Ak toto pravidlo nastavíte na hodnotu true, obnoví sa predchádzajúca konfigurácia a začnú sa vykonávať kontroly OCSP/CLR online.
 
@@ -792,7 +946,6 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="5469484020713359236">Umožňuje nastaviť zoznam vzorov adries URL určujúcich webové stránky, ktoré môžu nastavovať súbory cookie.
 
           Ak toto pravidlo ponecháte nenastavené, použije sa v prípade všetkých webových stránok globálna predvolená hodnota buď z pravidla „DefaultCookiesSetting“ (ak je nastavené), alebo z osobnej konfigurácie používateľa.</translation>
-<translation id="3664573135939978914">Zakáže rozhrania GData pri mobilnom pripojení</translation>
 <translation id="930930237275114205">Nastaviť adresár na údaje používateľov pre aplikáciu <ph name="PRODUCT_FRAME_NAME"/></translation>
 <translation id="5208240613060747912">Umožňuje nastaviť zoznam vzorov adries URL určujúcich webové stránky, ktoré nemôžu zobrazovať upozornenia.
 
@@ -825,6 +978,8 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
       Ak toto nastavenie povolíte, zabránite webovým stránkam v prístupe ku grafickému procesoru (GPU). Webové stránky nebudú môcť pristupovať k rozhraniu API WebGL a doplnky nebudú môcť využiť rozhranie API Pepper 3D.
 
       Ak toto nastavenie zakážete alebo ho ponecháte nenastavené, umožníte webovým stránkam používať rozhranie API WebGL a doplnkom umožníte používať rozhranie API Pepper 3D. Predvolené nastavenia prehliadača však aj naďalej môžu vyžadovať postúpenie argumentov príkazového riadka. V opačnom prípade môžu použitie rozhraní API znemožniť.</translation>
+<translation id="2077273864382355561">Oneskorenie vypnutia obrazovky pri napájaní z batérie</translation>
+<translation id="909184783177222836">Správa napájania</translation>
 <translation id="3417418267404583991">Ak je toto pravidlo nastavené na hodnotu true alebo je nenakonfigurované, systém <ph name="PRODUCT_OS_NAME"/> povolí prihlásenie hostí. Prihlásenia hostí predstavujú relácie anonymných používateľov a nevyžadujú heslo.
 
       Ak je toto pravidlo nastavené na hodnotu false, systém <ph name="PRODUCT_OS_NAME"/> nepovolí spustenie relácií hosťa.</translation>
@@ -836,6 +991,7 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="237494535617297575">Umožňuje nastaviť zoznam vzorov adries URL určujúcich webové stránky, na ktorých sa môžu zobrazovať upozornenia.
 
           Ak toto pravidlo ponecháte nenastavené, použije sa v prípade všetkých webových stránok globálna predvolená hodnota buď z pravidla „DefaultNotificationsSetting“ (ak je nastavené), alebo z osobnej konfigurácie používateľa.</translation>
+<translation id="7258823566580374486">Povoliť blokovanie hostiteľov so vzdialeným prístupom</translation>
 <translation id="944817693306670849">Nastaviť veľkosť vyrovnávacej pamäte disku</translation>
 <translation id="8544375438507658205">Predvolený vykresľovací modul HTML pre doplnok <ph name="PRODUCT_FRAME_NAME"/></translation>
 <translation id="2371309782685318247">Určuje interval v milisekundách, v ktorom budú službe správy zariadenia odosielané žiadosti o informácie o pravidlách pre používateľov.
@@ -848,29 +1004,31 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="8908294717014659003">Umožňuje nastaviť, či webové stránky budú môcť používať zariadenia na zaznamenávanie médií. Prístup k zariadeniam na zaznamenávanie médií môže byť povolený v predvolenom nastavení alebo sa používateľovi môže zobraziť dopyt zakaždým, keď nejaké webové stránky budú chcieť použiť zariadenie na zaznamenávanie médií.
 
           Ak toto pravidlo nenastavíte, použije sa pravidlo PromptOnAccess a používateľ ho bude môcť zmeniť.</translation>
-<translation id="9191982992032190929">Určuje adresu URL Internetového obchodu pre podniky. Ak je toto nastavenie povolené, na stránke Nová karta sa zobrazí aplikácia, ktorá používateľa po kliknutí presmeruje na zadanú adresu URL. Z tejto stránky je možné inštalovať rozšírenia a aplikácie bez toho, aby sa používateľovi zobrazili dodatočné upozornenia. Ak toto pravidlo nastavíte, mali by ste nastaviť aj nastavenie „EnterpriseWebStoreName“.
-
-      Ak toto nastavenie zakážete, na stránke Nová karta sa nezobrazí žiadny Internetový obchod pre podniky.</translation>
 <translation id="8889026535261486875">Servery, ktoré môže prehliadač <ph name="PRODUCT_NAME"/> poveriť zastupovaním.
 
           Ak chcete zadať viacero názvov serverov, oddeľte ich čiarkami. Zástupné znaky (*) sú povolené.
 
           Ak ponecháte toto pravidlo nenastavené, na integrované overenie totožnosti bude prijatý ľubovoľný server.</translation>
 <translation id="2299220924812062390">Určiť zoznam povolených doplnkov</translation>
+<translation id="4325690621216251241">Pridať na systémový panel tlačidlo odhlásenia</translation>
 <translation id="924557436754151212">Import uložených hesiel z predvoleného prehliadača pri prvom spustení</translation>
 <translation id="1465619815762735808">Kliknutím prehrať</translation>
 <translation id="7227967227357489766">Definuje zoznam používateľov, ktorí majú povolenie prihlásiť sa do zariadenia. Položky majú formát <ph name="USER_WHITELIST_ENTRY_FORMAT"/>, napríklad <ph name="USER_WHITELIST_ENTRY_EXAMPLE"/>. Ak chcete povoliť všetkých používateľov z niektorej domény, použite položky vo formáte <ph name="USER_WHITELIST_ENTRY_WILDCARD"/>.
 
       Ak toto pravidlo nenakonfigurujete, budú sa môcť do zariadenia prihlásiť všetci používatelia. Upozorňujeme, že pri vytvorení nového používateľa je potrebné náležite nakonfigurovať aj pravidlo <ph name="DEVICEALLOWNEWUSERS_POLICY_NAME"/>.</translation>
+<translation id="8135937294926049787">Určuje dobu nečinnosti používateľa, po ktorej sa obrazovka pri používaní napájacieho zdroja uzamkne.
+
+          Ak je toto pravidlo nastavené na hodnotu väčšiu ako nula, určuje dobu nečinnosti používateľa, po ktorej systém <ph name="PRODUCT_OS_NAME"/> obrazovku vypne.
+
+          Ak je toto pravidlo nastavené na hodnotu nula, systém <ph name="PRODUCT_OS_NAME"/> obrazovku pri nečinnosti používateľa nevypne.
+
+          Ak toto pravidlo nastavené nie je, použije sa predvolená doba.
+
+          Hodnota pravidla by mala byť uvedená v milisekundách. Hodnoty musia byť nižšie alebo rovnaké ako oneskorenie režimu nečinnosti.</translation>
 <translation id="1897365952389968758">Povoliť všetkým webovým stránkam spúšťať jazyk JavaScript</translation>
 <translation id="922540222991413931">Konfigurácia zdrojov inštalácie rozšírenia, aplikácie a skriptov používateľa</translation>
 <translation id="7323896582714668701">Dodatočné parametre príkazového riadka pre <ph name="PRODUCT_NAME"/></translation>
 <translation id="6931242315485576290">Zakázať synchronizáciu údajov so servermi Google</translation>
-<translation id="36674322972891584">Povoľuje v prehliadači <ph name="PRODUCT_NAME"/> predpovedanie akcií siete a bráni používateľom toto nastavenie zmeniť.
-
-      Ak toto nastavenie povolíte alebo zakážete, používatelia ho v prehliadači <ph name="PRODUCT_NAME"/> nebudú môcť zmeniť ani prepísať.
-
-      Ak toto pravidlo ponecháte nenastavené, povolí sa, no používateľ ho bude môcť zmeniť.</translation>
 <translation id="7006788746334555276">Nastavenia obsahu</translation>
 <translation id="5142301680741828703">Vždy vykreslovať nasledujúce vzory adries URL v doplnku <ph name="PRODUCT_FRAME_NAME"/></translation>
 <translation id="4625915093043961294">Konfigurovať zoznam rozšírení, ktorých inštalácia je povolená</translation>
@@ -897,13 +1055,20 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="6145799962557135888">Umožňuje nastaviť zoznam vzorov adries URL určujúcich webové stránky, ktoré môžu spúšťať kód JavaScript.
 
           Ak toto pravidlo ponecháte nenastavené, použije sa v prípade všetkých webových stránok globálna predvolená hodnota buď z pravidla „DefaultJavaScriptSetting“ (ak je nastavené), alebo z osobnej konfigurácie používateľa.</translation>
+<translation id="2757054304033424106">Typy rozšírení/aplikácií, ktorých inštalácia je povolená</translation>
 <translation id="7053678646221257043">Ak je toto pravidlo povolené, záložky budú importované z aktuálneho predvoleného prehliadača. Povolenie tohto pravidla má vplyv aj na dialógové okno importu.
 
       Ak je zakázané, nebudú importované žiadne záložky.
 
       Ak nie je nastavené, môže sa používateľovi zobraziť výzva, či chce domovskú stránku importovať alebo či má import prebehnúť automaticky.</translation>
+<translation id="5757829681942414015">Umožňuje nakonfigurovať adresár, ktorý bude prehliadač <ph name="PRODUCT_NAME"/> používať na ukladanie údajov používateľa.
+
+      Ak nastavíte toto pravidlo, prehliadač <ph name="PRODUCT_NAME"/> bude používať zadaný adresár bez ohľadu na to, či používateľ uviedol príznak „--user-data-dir“.
+
+      Zoznam premenných, ktoré sa dajú použiť, nájdete na stránke http://www.chromium.org/administrators/policy-list-3/user-data-directory-variables (iba v angličtine).
+
+      Ak toto pravidlo ponecháte nenastavené, použije sa predvolená cesta profilu a používateľ ju bude môcť prepísať pomocou príznaku príkazového riadku „--user-data-dir“.</translation>
 <translation id="5067143124345820993">Zoznam používateľov s povolením na prihlásenie</translation>
-<translation id="3612784419634427880">Režim Inkognito je dostupný.</translation>
 <translation id="2514328368635166290">Určuje adresu URL ikony predvoleného poskytovateľa vyhľadávania.
 
           Toto pravidlo je voliteľné. Ak nebude nastavené, pri poskytovateľovi vyhľadávania sa nezobrazí žiadna ikona.
@@ -919,10 +1084,29 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 <translation id="4525521128313814366">Umožňuje nastaviť zoznam vzorov adries URL určujúcich webové stránky, ktoré nemôžu zobrazovať obrázky.
 
           Ak toto pravidlo ponecháte nenastavené, použije sa v prípade všetkých webových stránok globálna predvolená hodnota buď z pravidla „DefaultImagesSetting“ (ak je nastavené), alebo z osobnej konfigurácie používateľa.</translation>
+<translation id="8499172469244085141">Predvolené nastavenia (používatelia ich môžu nahradiť)</translation>
+<translation id="8693243869659262736">Použiť vstavaného klienta DNS</translation>
+<translation id="3072847235228302527">Nastaviť Zmluvné podmienky pre miestny účet v zariadení</translation>
 <translation id="3866530186104388232">Ak je toto pravidlo nastavené na hodnotu pravda alebo je nenakonfigurované, systém <ph name="PRODUCT_OS_NAME"/> na prihlasovacej obrazovke zobrazí existujúcich používateľov a umožní vybrať jedného z nich. Ak je pravidlo nastavené na hodnotu false, systém <ph name="PRODUCT_OS_NAME"/> použije pri prihlásení výzvu na zadanie používateľského mena a hesla.</translation>
 <translation id="2098658257603918882">Povoliť hlásenie údajov týkajúcich sa používania a zlyhaní</translation>
+<translation id="172374442286684480">Povoliť všetkým webovým stránkam nastavovať miestne údaje</translation>
+<translation id="6922569848241326941">Povolí alebo odmietne zaznamenávanie videa.
+
+      Ak je toto pravidlo zakázané, zaznamenávanie videa nebude k dispozícii. Ak je povolené, zaznamenanie videa bude k dispozícii.
+      Ak toto pravidlo nie je nakonfigurované (predvolené nastavenie), systém vyzve používateľa, aby povolil prístup zariadenia k zaznamenávaniu videa.
+
+      Toto pravidlo má vplyv na všetky typy vstupov videa, a nielen na vstavanú kameru.</translation>
 <translation id="1151353063931113432">Povoliť obrázky na týchto webových stránkach</translation>
 <translation id="1297182715641689552">Použiť skript servera proxy vo formáte PAC</translation>
+<translation id="2976002782221275500">Určuje dobu nečinnosti používateľa, po ktorej sa pri napájaní z batérie zníži jas obrazovky.
+
+          Ak je toto pravidlo nastavené na hodnotu väčšiu ako nula, určuje dobu nečinnosti používateľa, po ktorej systém <ph name="PRODUCT_OS_NAME"/> zníži jas obrazovky.
+
+          Ak je toto pravidlo nastavené na hodnotu nula, systém <ph name="PRODUCT_OS_NAME"/> jas obrazovky pri nečinnosti používateľa nezníži.
+
+          Ak toto pravidlo nastavené nie je, použije sa predvolená doba.
+
+          Hodnota pravidla by mala byť uvedená v milisekundách. Hodnoty musia byť nižšie alebo rovnaké ako oneskorenie vypnutia obrazovky (pokiaľ je nastavené) a oneskorenie režimu nečinnosti.</translation>
 <translation id="8631434304112909927">po verziu <ph name="UNTIL_VERSION"/></translation>
 <translation id="7469554574977894907">Povoliť návrhy pre vyhľadávanie</translation>
 <translation id="4906194810004762807">Frekvencia obnovenia pravidiel pre zariadenie</translation>
@@ -939,6 +1123,7 @@ Ak toto pravidlo nie je nastavené alebo je prázdne, akýkoľvek používateľ 
 
           Ak je toto nastavenie zakázané a brána firewall filtruje odchádzajúce pripojenia cez protokol UDP, môže sa tento počítač pripojiť len k počítačom hostiteľa v rámci miestnej siete.</translation>
 <translation id="5511702823008968136">Povoliť panel so záložkami</translation>
+<translation id="5105313908130842249">Oneskorenie uzamknutia obrazovky pri napájaní z batérie</translation>
 <translation id="7882585827992171421">Toto pravidlo je aktívne iba v režime určenom pre predaj.
 
       Určuje identifikátor rozšírenia, ktoré sa má použiť ako šetrič obrazovky na prihlasovacej obrazovke. Rozšírenie musí byť súčasťou balíka AppPack, ktorý bol pre túto doménu nakonfigurovaný v rámci pravidla DeviceAppPack.</translation>
@@ -951,25 +1136,26 @@ Každá položka v tomto zozname predstavuje vzor spárovaný s rozšírením (p
 
 Zoznam nepovolených položiek ExtensionInstallBlacklist je tomuto pravidlu nadradený. Rozšírenie na zozname nepovolených položiek nebude nainštalované ani vtedy, ak bude zo stránok, ktoré sú uvedené v tomto zozname.</translation>
 <translation id="7848840259379156480">Umožňuje konfigurovať vykresľovací modul HTML počas inštalácie doplnku <ph name="PRODUCT_FRAME_NAME"/>. V predvolenom nastavení môže vykresľovanie vykonávať hostiteľský prehliadač, toto nastavenie však môžete prekonať a namiesto toho vykresľovať stránky HTML pomocou doplnku <ph name="PRODUCT_FRAME_NAME"/>.</translation>
-<translation id="9142678351429467783">Povolí v prehliadači <ph name="PRODUCT_NAME"/> funkciu tlače a bráni používateľom toto nastavenie zmeniť.
-
-      Ak je toto nastavenie povolené alebo nebolo nakonfigurované, používatelia budú môcť tlačiť.
-
-      Ak je toto nastavenie zakázané, používatelia nebudú môcť v prehliadači <ph name="PRODUCT_NAME"/> využívať tlač. Tlač je zakázaná v ponuke nástrojov, v rozšíreniach, aplikáciách JavaScript a pod. Tlačiť bude aj naďalej možné v doplnkoch, ktoré pri tlači prehliadač <ph name="PRODUCT_NAME"/> vynechávajú. Možnosť tlače sa môže vyskytovať napríklad v kontextovej ponuke niektorých aplikácií vo formáte Flash. Táto možnosť zakázaná nebude.
-
-      Ak toto pravidlo ponecháte nenastavené, povolí sa, no používateľ ho bude môcť zmeniť.</translation>
 <translation id="4121350739760194865">Zabraňuje tomu, aby sa propagácie aplikácií zobrazovali na stránke Nová karta</translation>
 <translation id="2127599828444728326">Povoliť upozornenia na týchto webových stránkach</translation>
+<translation id="3973371701361892765">Poličku nikdy neskrývať automaticky</translation>
 <translation id="7635471475589566552">Slúži na konfiguráciu miestneho nastavenia aplikácie v prehliadači <ph name="PRODUCT_NAME"/> a bráni používateľom miestne nastavenie zmeniť.
 
       Ak toto nastavenie povolíte, prehliadač <ph name="PRODUCT_NAME"/> bude používať zvolené miestne nastavenie. Ak nebude nakonfigurované miestne nastavenie podporované, prehliadač namiesto toho použije nastavenie en-US.
 
       Ak je toto nastavenie zakázané alebo nenastavené, prehliadač <ph name="PRODUCT_NAME"/> použije preferované miestne nastavenie určené používateľom (ak je nakonfigurované) alebo miestne nastavenie systému alebo záložné nastavenie en-US.</translation>
+<translation id="2948087343485265211">Určuje, či prehrávanie zvuku ovplyvňuje správu napájania.
+
+          Ak je toto pravidlo nastavené na hodnotu True alebo nie je nastavené, prehrávanie zvuku sa nepovažuje za nečinnosť používateľa. Zabráni to dosiahnutiu oneskorenia režimu nečinnosti a nevykoná sa príslušná akcia. Bez ohľadu na prehrávanie zvuku však po stanovenej dobe dôjde ku zníženiu jasu, vypnutiu a uzamknutiu obrazovky.
+
+          Ak je toto pravidlo nastavené na hodnotu False, prehrávanie zvuku sa považuje za nečinnosť používateľa.</translation>
+<translation id="7842869978353666042">Konfigurácia možností služby Disk Google</translation>
 <translation id="718956142899066210">Typy pripojenia, pre ktoré sú povolené aktualizácie</translation>
 <translation id="6985168562472482191">Názov Internetového obchodu pre podniky, ktorý sa zobrazí pod ikonou aplikácie na stránke Nová karta. Toto nastavenie sa neprejaví v prípade, ak nie je nastavené pravidlo EnterpriseWebStoreURL.
 
       Ak je toto nastavenie zakázané, Internetový obchod pre podniky (ak existuje) bude označený jeho adresou URL.</translation>
 <translation id="1734716591049455502">Konfigurovať možnosti vzdialeného prístupu</translation>
+<translation id="7336878834592315572">Uchovať súbory cookie počas trvania relácie</translation>
 <translation id="8777120694819070607">Umožňuje prehliadaču <ph name="PRODUCT_NAME"/> spúšťať zastarané doplnky. Ak toto nastavenie povolíte, zastarané doplnky budú použité ako normálne. Ak toto nastavenie zakážete, zastarané doplnky nebude možné použiť a používateľom sa ani nezobrazí žiadosť o povolenie spustenia doplnku. Ak toto nastavenie nie je nakonfigurované, používateľom sa pri spustení zastaraného doplnku zobrazí žiadosť o povolenie tejto akcie.</translation>
 <translation id="2629448496147630947">Konfigurácia možností vzdialeného prístupu v aplikácii <ph name="PRODUCT_NAME"/>. Ak nie je nainštalovaná webová aplikácia Remote Access (Vzdialený prístup), budú tieto funkcie ignorované.</translation>
 <translation id="1310699457130669094">Tu môžete zadať adresu URL súboru PAC servera proxy.
@@ -981,11 +1167,14 @@ Zoznam nepovolených položiek ExtensionInstallBlacklist je tomuto pravidlu nadr
           Podrobné príklady nájdete na adrese:
           <ph name="PROXY_HELP_URL"/></translation>
 <translation id="3406810703404235731">Adresa URL Internetového obchodu pre podniky</translation>
-<translation id="7782879802219764346">Slúži na konfiguráciu adresára, ktorý prehliadač <ph name="PRODUCT_NAME"/> použije na uchovávanie údajov používateľa.
+<translation id="3219421230122020860">Režim inkognito je dostupný</translation>
+<translation id="7690740696284155549">Umožňuje nakonfigurovať adresár, ktorý bude prehliadač <ph name="PRODUCT_NAME"/> používať na ukladanie prevzatých súborov.
 
-      Ak toto pravidlo nastavíte, prehliadač <ph name="PRODUCT_NAME"/> bude využívať uvedený adresár bez ohľadu na to, či používateľ príznak „--user-data-dir“ zadal alebo nezadal.
+      Ak nastavíte toto pravidlo, prehliadač <ph name="PRODUCT_NAME"/> bude používať zadaný adresár bez ohľadu na to, či používateľ určil takýto adresár alebo povolil príznak na zobrazenie výzvy na zadanie umiestnenia pre prevzaté položky pri každom preberaní.
 
-      Ak toto pravidlo ponecháte nenastavené, použije sa predvolená cesta profilu a používateľ ju bude môcť prepísať zadaním príznaku „--user-data-dir“ do príkazového riadka.</translation>
+      Zoznam premenných, ktoré sa dajú použiť, nájdete na stránke http://www.chromium.org/administrators/policy-list-3/user-data-directory-variables (iba v angličtine).
+
+      Ak toto pravidlo ponecháte nenastavené, použije sa predvolený adresár pre prevzaté súbory a používateľ ho bude môcť zmeniť.</translation>
 <translation id="7381326101471547614">Zakáže v prehliadači <ph name="PRODUCT_NAME"/> použitie protokolu SPDY. Ak je toto pravidlo povolené, protokol SPDY nebude v prehliadači <ph name="PRODUCT_NAME"/> k dispozícii. Zakázaním tohto pravidla použitie protokolu SPDY umožníte. Ak toto pravidlo ponecháte nenastavené, protokol SPDY bude k dispozícii.</translation>
 <translation id="1583248206450240930">Používať v predvolenom nastavení doplnok <ph name="PRODUCT_FRAME_NAME"/></translation>
 <translation id="1047128214168693844">Nepovoliť žiadnym stránkam sledovať fyzickú polohu používateľov</translation>
@@ -1024,8 +1213,23 @@ Zoznam nepovolených položiek ExtensionInstallBlacklist je tomuto pravidlu nadr
 
           Ak ponecháte toto pravidlo nenastavené, umožní to používateľovi zmeniť nastavenia proxy samostatne.</translation>
 <translation id="3780152581321609624">Do hlavného názvu služby protokolu Kerberos zahrnúť neštandardný port</translation>
+<translation id="1749815929501097806">Nastavuje Zmluvné podmienky, ktoré musí používateľ prijať pred začatím relácie prostredníctvom miestneho účtu v zariadení.
+
+      Ak je toto pravidlo nastavené, systém <ph name="PRODUCT_OS_NAME"/> prevezme pri začatí relácie prostredníctvom miestneho účtu v zariadení Zmluvné podmienky a zobrazí ich používateľovi.
+
+      Ak toto pravidlo nastavené nie je, Zmluvné podmienky sa nezobrazia.
+
+      Toto pravidlo byť malo byť nastavené ako adresa URL, z ktorej systém <ph name="PRODUCT_OS_NAME"/> môže Zmluvné podmienky prevziať. Zmluvné podmienky musia byť uložené vo formáte čistého textu, zobrazované ako typ MIME „text/plain“. Nie sú povolené žiadne značky.</translation>
 <translation id="2660846099862559570">Nikdy nepoužívať server proxy</translation>
 <translation id="1435659902881071157">Konfigurácia siete na úrovni zariadenia</translation>
+<translation id="2131902621292742709">Oneskorenie zníženia jasu obrazovky pri napájaní z batérie</translation>
+<translation id="5781806558783210276">Určuje dobu nečinnosti používateľa, po ktorej systém pri napájaní z batérie vykoná príslušnú akciu.
+
+          Ak je toto pravidlo nastavené, určuje dobu nečinnosti používateľa, po ktorej systém <ph name="PRODUCT_OS_NAME"/> vykoná príslušnú akciu. Túto akciu je možné nakonfigurovať samostatne.
+
+          Ak toto pravidlo nastavené nie je, použije sa predvolená doba.
+
+          Hodnota pravidla by mala byť uvedená v milisekundách.</translation>
 <translation id="5512418063782665071">Adresa URL domovskej stránky</translation>
 <translation id="2948381198510798695">Pri hostiteľoch v uvedenom zozname prehliadač <ph name="PRODUCT_NAME"/> vynechá všetky servery proxy.
 
@@ -1038,17 +1242,6 @@ Zoznam nepovolených položiek ExtensionInstallBlacklist je tomuto pravidlu nadr
 <translation id="6658245400435704251">Určí počet sekúnd, o koľko môže zariadenie náhodne zdržať preberanie aktualizácie odvtedy, čo bola aktualizácia odoslaná na server. Zariadenie môže čakať určitý čas a sa pokúsiť o určitý počet kontrol aktualizácií. Oneskorenie je obmedzené nemenným maximálnym časovým intervalom tak, aby zariadenie nečakalo na prevzatie aktualizácie donekonečna.</translation>
 <translation id="1948757837129151165">Pravidlá pre overenie pomocou protokolu HTTP</translation>
 <translation id="5946082169633555022">Verzia beta</translation>
-<translation id="145467868108778033">Umožňuje určiť zoznam rozšírení, ktoré sa nainštalujú v tichom režime bez zásahu používateľa.
-
-          Každá položka zo zoznamu predstavuje reťazec obsahujúci ID rozšírenia a adresu URL aktualizácie oddelenú bodkočiarkou (<ph name="SEMICOLON"/>). ID rozšírenia je 32-znakový reťazec, ktorý nájdete napríklad na stránke <ph name="CHROME_EXTENSIONS_LINK"/> v režime vývojára. Adresa URL aktualizácie by mala smerovať na dokument XML manifestu aktualizácií, ako je uvedené na stránke <ph name="LINK_TO_EXTENSION_DOC1"/>. Upozorňujeme, že adresa URL nastavená v tomto pravidle sa používa iba pri úvodnej inštalácii. Ďalšie aktualizácie rozšírenia použijú adresu URL aktualizácie, ktorá je označená v manifeste rozšírenia.
-
-          Pri každej položke načíta <ph name="PRODUCT_NAME"/> rozšírenie určené číslom ID rozšírenia z aktualizačnej služby na uvedenej adrese URL aktualizácie a nainštaluje ho v tichom režime.
-
-          <ph name="EXTENSION_POLICY_EXAMPLE"/> napríklad nainštaluje rozšírenie <ph name="EXTENSION_POLICY_EXAMPLE_EXTENSION_NAME"/> zo štandardnej adresy URL aktualizácie Internetového obchodu Chrome. Viac informácií o hostení rozšírení nájdete tu: <ph name="LINK_TO_EXTENSION_DOC2"/>.
-
-          Používatelia nebudú môcť rozšírenia určené týmto pravidlom odinštalovať. Ak odstránite rozšírenie zo zoznamu, <ph name="PRODUCT_NAME"/> ho následne automaticky odinštaluje.
-
-          Ak toto pravidlo nenastavíte, používateľ môže v prehliadači <ph name="PRODUCT_NAME"/> odinštalovať všetky rozšírenia.</translation>
 <translation id="8303314579975657113">Určuje, ktorá knižnica GSSAPI sa má použiť na overenie totožnosti protokolu HTTP. Môžete nastaviť buď len názov knižnice, alebo úplnú cestu.
 
           Ak nenastavíte žiadnu možnosť, prehliadač <ph name="PRODUCT_NAME"/> použije predvolený názov knižnice.</translation>
@@ -1057,15 +1250,43 @@ Zoznam nepovolených položiek ExtensionInstallBlacklist je tomuto pravidlu nadr
           Ak je toto nastavenie povolené, používatelia musia pri pristupovaní k hostiteľovi zadať platný dvojfázový kód.
 
           Ak je toto nastavenie zakázané alebo nie je nastavené, dvojfázové overenie totožnosti nebude povolené a namiesto neho bude použitá predvolená možnosť – používateľom zadaný kód PIN.</translation>
+<translation id="7329842439428490522">Určuje dobu nečinnosti používateľa, po ktorej sa obrazovka pri napájaní z batérie vypne.
+
+          Ak je toto pravidlo nastavené na hodnotu väčšiu ako nula, určuje dobu nečinnosti používateľa, po ktorej systém <ph name="PRODUCT_OS_NAME"/> obrazovku vypne.
+
+          Ak je toto pravidlo nastavené na hodnotu nula, systém <ph name="PRODUCT_OS_NAME"/> obrazovku pri nečinnosti používateľa nevypne.
+
+          Ak toto pravidlo nastavené nie je, použije sa predvolená doba.
+
+          Hodnota pravidla by mala byť uvedená v milisekundách. Hodnoty musia byť nižšie alebo rovnaké ako oneskorenie režimu nečinnosti.</translation>
 <translation id="384743459174066962">Umožňuje nastaviť zoznam vzorov adries URL určujúcich webové stránky, ktoré nemôžu otvárať kontextové okná.
 
           Ak toto pravidlo ponecháte nenastavené, použije sa v prípade všetkých webových stránok globálna predvolená hodnota buď z pravidla „DefaultPopupsSetting“ (ak je nastavené), alebo z osobnej konfigurácie používateľa.</translation>
 <translation id="5645779841392247734">Povoliť súbory cookie na týchto webových stránkach</translation>
 <translation id="4043912146394966243"> Typy pripojení, ktoré je možné používať na aktualizáciu operačného systému. Aktualizácie operačného systému môžu vzhľadom na objem dát významne zaťažovať pripojenie a môžu sa účtovať ďalšie poplatky.
       Podporované identifikátory typu pripojenia sú „ethernet“, „wifi“, „wimax“, „bluetooth“ a „cellular“.</translation>
+<translation id="3243309373265599239">Určuje dobu nečinnosti používateľa, po ktorej sa pri používaní napájacieho zdroja zníži jas obrazovky.
+
+          Ak je toto pravidlo nastavené na hodnotu väčšiu ako nula, určuje dobu nečinnosti používateľa, po ktorej systém <ph name="PRODUCT_OS_NAME"/> zníži jas obrazovky.
+
+          Ak je toto pravidlo nastavené na hodnotu nula, systém <ph name="PRODUCT_OS_NAME"/> jas obrazovky pri nečinnosti používateľ nezníži.
+
+          Ak toto pravidlo nastavené nie je, použije sa predvolenú dobu.
+
+          Hodnota pravidla by mala byť uvedená v milisekundách. Hodnoty musia byť nižšie alebo rovnaké ako oneskorenie vypnutia obrazovky (pokiaľ je nastavené) a oneskorenie režimu nečinnosti.</translation>
 <translation id="7049373494483449255">Povoľuje prehliadaču <ph name="PRODUCT_NAME"/> odosielať dokumenty na tlač do služby <ph name="CLOUD_PRINT_NAME"/>. Poznámka: Toto pravidlo sa týka len podpory služby <ph name="CLOUD_PRINT_NAME"/> v prehliadači <ph name="PRODUCT_NAME"/>. To však používateľom nebráni v tom, aby odosielali tlačové úlohy na webových stránkach.
 
       Ak je toto nastavenie povolené alebo nie je nakonfigurované, môžu používatelia tlačiť zo služby <ph name="CLOUD_PRINT_NAME"/> pomocou dialógového okna tlače prehliadača <ph name="PRODUCT_NAME"/>.
 
       Ak je toto nastavenie zakázané, tlač zo služby <ph name="CLOUD_PRINT_NAME"/> pomocou dialógového okna tlače prehliadača <ph name="PRODUCT_NAME"/> nie je pre používateľov možná</translation>
+<translation id="4088589230932595924">Vynútený režim inkognito</translation>
+<translation id="7649638372654023172">Konfiguruje adresu URL predvolenej domovskej stránky v prehliadači <ph name="PRODUCT_NAME"/> a bráni používateľom, aby ju zmenili.
+
+          Domovská stránka je stránka, ktorá sa otvorí po kliknutí na tlačidlo Domovská stránka. Stránky, ktoré sa otvoria pri spustení, ovládajú pravidlá RestoreOnStartup.
+
+          Domovskou stránkou môže byť adresa URL, ktorú tu zadáte, alebo stránka Nová karta. Ak vyberiete stránku Nová karta, bude sa toto pravidlo ignorovať.
+
+          Ak povolíte toto nastavenie, používatelia nebudú môcť zmeniť adresu URL domovskej stránky prehliadača <ph name="PRODUCT_NAME"/>, avšak budú môcť ako domovskú stránku zvoliť stránku Nová karta.
+
+          Ak toto pravidlo nenastavíte, používatelia budú môcť zvoliť domovskú stránku sami v prípade, že nebude nastavené ani pravidlo HomepageIsNewTabPage.</translation>
 </translationbundle>

@@ -7,7 +7,7 @@
 #include "chrome/browser/speech/speech_recognition_bubble_controller.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
@@ -63,10 +63,10 @@ class MockSpeechRecognitionBubble : public SpeechRecognitionBubbleBase {
     return type_;
   }
 
-  virtual void Show() {}
-  virtual void Hide() {}
-  virtual void UpdateLayout() {}
-  virtual void UpdateImage() {}
+  virtual void Show() OVERRIDE {}
+  virtual void Hide() OVERRIDE {}
+  virtual void UpdateLayout() OVERRIDE {}
+  virtual void UpdateImage() OVERRIDE {}
 
  private:
   static BubbleType type_;
@@ -89,13 +89,14 @@ class SpeechRecognitionBubbleControllerTest
     test_fixture_ = this;
   }
 
-  ~SpeechRecognitionBubbleControllerTest() {
+  virtual ~SpeechRecognitionBubbleControllerTest() {
     test_fixture_ = NULL;
   }
 
   // SpeechRecognitionBubbleControllerDelegate methods.
-  virtual void InfoBubbleButtonClicked(int session_id,
-                                       SpeechRecognitionBubble::Button button) {
+  virtual void InfoBubbleButtonClicked(
+      int session_id,
+      SpeechRecognitionBubble::Button button) OVERRIDE {
     VLOG(1) << "Received InfoBubbleButtonClicked for button " << button;
     EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
     if (button == SpeechRecognitionBubble::BUTTON_CANCEL) {
@@ -106,7 +107,7 @@ class SpeechRecognitionBubbleControllerTest
     message_loop()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
 
-  virtual void InfoBubbleFocusChanged(int session_id) {
+  virtual void InfoBubbleFocusChanged(int session_id) OVERRIDE {
     VLOG(1) << "Received InfoBubbleFocusChanged";
     EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
     focus_changed_ = true;
@@ -145,15 +146,13 @@ class SpeechRecognitionBubbleControllerTest
     MessageLoop::current()->PostTask(FROM_HERE,
                                      base::Bind(&ActivateBubble));
 
-    // The |tab_contents| parameter would be NULL since the dummy session id
+    // The |web_contents| parameter would be NULL since the dummy session id
     // passed to CreateBubble would not have matched any active tab. So get a
     // real WebContents pointer from the test fixture and pass that, because
     // the bubble controller registers for tab close notifications which need
     // a valid WebContents.
-    TabContents* tab_contents =
-        chrome::GetActiveTabContents(test_fixture_->browser());
-    if (tab_contents)
-      web_contents = tab_contents->web_contents();
+    web_contents =
+        test_fixture_->browser()->tab_strip_model()->GetActiveWebContents();
     return new MockSpeechRecognitionBubble(web_contents, delegate,
                                            element_rect);
   }

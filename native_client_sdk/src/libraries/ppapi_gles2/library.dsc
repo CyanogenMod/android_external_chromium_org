@@ -1,6 +1,9 @@
 {
-  'TOOLS': ['win', 'linux'],
-  'SEARCH' : ['../../../../ppapi/lib/gl/gles2'],
+  'TOOLS': ['newlib', 'glibc', 'pnacl', 'linux', 'win'],
+  'SEARCH' : [
+    '.',
+    '../../../../ppapi/lib/gl/gles2'
+  ],
   'TARGETS': [
     {
       'NAME' : 'ppapi_gles2',

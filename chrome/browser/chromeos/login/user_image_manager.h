@@ -9,8 +9,11 @@
 
 #include "chrome/browser/chromeos/login/user.h"
 
+class PrefRegistrySimple;
+
+namespace base {
 class FilePath;
-class PrefService;
+}
 
 namespace gfx {
 class ImageSkia;
@@ -24,15 +27,17 @@ class UserImage;
 class UserImageManager {
  public:
   // Registers user image manager preferences.
-  static void RegisterPrefs(PrefService* local_state);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   virtual ~UserImageManager();
 
   // Loads user image data from Local State.
   virtual void LoadUserImages(const UserList& users) = 0;
 
-  // Indicates that a user with the given email has just logged in.
-  virtual void UserLoggedIn(const std::string& email, bool user_is_new) = 0;
+  // Indicates that a user with the given |email| has just logged in.
+  virtual void UserLoggedIn(const std::string& email,
+                            bool user_is_new,
+                            bool user_is_local) = 0;
 
   // Sets user image to the default image with index |image_index|, sends
   // LOGIN_USER_IMAGE_CHANGED notification and updates Local State.
@@ -47,7 +52,7 @@ class UserImageManager {
   // Tries to load user image from disk; if successful, sets it for the user,
   // sends LOGIN_USER_IMAGE_CHANGED notification and updates Local State.
   virtual void SaveUserImageFromFile(const std::string& username,
-                                     const FilePath& path) = 0;
+                                     const base::FilePath& path) = 0;
 
   // Sets profile image as user image for |username|, sends
   // LOGIN_USER_IMAGE_CHANGED notification and updates Local State. If the user

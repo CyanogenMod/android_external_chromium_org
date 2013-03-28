@@ -15,6 +15,7 @@
 class Balloon;
 class GURL;
 class Notification;
+class Profile;
 
 // This class provides support for implementing a BalloonCollection
 // including the parts common between Chrome UI and ChromeOS UI.
@@ -32,6 +33,9 @@ class BalloonCollectionBase {
   // the pointer after removal.
   virtual void Remove(Balloon* balloon);
 
+  // Returns true if any balloon matches the given notification id.
+  virtual bool DoesIdExist(const std::string& id);
+
   // Finds any balloon matching the given notification id, and
   // calls CloseByScript on it.  Returns true if anything was
   // found.
@@ -41,6 +45,10 @@ class BalloonCollectionBase {
   // and calls CloseByScript on them.  Returns true if anything
   // was found.
   virtual bool CloseAllBySourceOrigin(const GURL& source_origin);
+
+  // Finds all balloons matching the given profile and calls CloseByScript
+  // on them.  Returns true if anything was found.
+  virtual bool CloseAllByProfile(Profile* profile);
 
   // Calls CloseByScript on all balloons.
   virtual void CloseAll();

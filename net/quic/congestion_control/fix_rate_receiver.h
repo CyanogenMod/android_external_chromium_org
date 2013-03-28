@@ -11,28 +11,34 @@
 #include "base/compiler_specific.h"
 #include "net/base/net_export.h"
 #include "net/quic/congestion_control/receive_algorithm_interface.h"
+#include "net/quic/quic_bandwidth.h"
 
 namespace net {
+
+namespace test {
+class FixRateReceiverPeer;
+}  // namespace test
 
 class NET_EXPORT_PRIVATE FixRateReceiver : public ReceiveAlgorithmInterface {
  public:
   FixRateReceiver();
 
   // Implements ReceiveAlgorithmInterface.
-  virtual bool GenerateCongestionInfo(CongestionInfo* congestion_info) OVERRIDE;
+  virtual bool GenerateCongestionFeedback(
+      QuicCongestionFeedbackFrame* feedback) OVERRIDE;
 
   // Implements ReceiveAlgorithmInterface.
-  virtual void RecordIncomingPacket(size_t bytes,
+  virtual void RecordIncomingPacket(QuicByteCount bytes,
                                     QuicPacketSequenceNumber sequence_number,
                                     QuicTime timestamp,
                                     bool recovered) OVERRIDE;
-
-  void SetBitrate(int bytes_per_second);  // Used for testing only.
-
  private:
-  int bitrate_in_bytes_per_second_;
+  friend class test::FixRateReceiverPeer;
+
+  QuicBandwidth configured_rate_;
+
+  DISALLOW_COPY_AND_ASSIGN(FixRateReceiver);
 };
 
 }  // namespace net
-
 #endif  // NET_QUIC_CONGESTION_CONTROL_FIX_RATE_RECEIVER_H_

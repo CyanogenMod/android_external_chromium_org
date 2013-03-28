@@ -61,8 +61,8 @@ static void FromInterleavedInternal(const void* src, int start_frame,
 // |Format| is the destination type, |Fixed| is a type larger than |Format|
 // such that operations can be made without overflowing.
 template<class Format, class Fixed>
-static void ToInterleavedInternal(const AudioBus* source, int frames,
-                                  void* dst) {
+static void ToInterleavedInternal(const AudioBus* source, int start_frame,
+                                  int frames, void* dst) {
   Format* dest = static_cast<Format*>(dst);
 
   static const Format kBias = std::numeric_limits<Format>::is_signed ? 0 :
@@ -75,7 +75,8 @@ static void ToInterleavedInternal(const AudioBus* source, int frames,
   int channels = source->channels();
   for (int ch = 0; ch < channels; ++ch) {
     const float* channel_data = source->channel(ch);
-    for (int i = 0, offset = ch; i < frames; ++i, offset += channels) {
+    for (int i = start_frame, offset = ch; i < start_frame + frames;
+         ++i, offset += channels) {
       float v = channel_data[i];
       Fixed sample = v * (v < 0 ? -kMinValue : kMaxValue);
 
@@ -89,10 +90,9 @@ static void ToInterleavedInternal(const AudioBus* source, int frames,
   }
 }
 
-static void ValidateConfig(int channels, int frames) {
+static void ValidateConfig(size_t channels, int frames) {
   CHECK_GT(frames, 0);
-  CHECK_GT(channels, 0);
-  CHECK_LE(channels, limits::kMaxChannels);
+  CHECK_LE(channels, static_cast<size_t>(limits::kMaxChannels));
 }
 
 static void CheckOverflow(int start_frame, int frames, int total_frames) {
@@ -121,6 +121,8 @@ AudioBus::AudioBus(int channels, int frames)
 AudioBus::AudioBus(int channels, int frames, float* data)
     : frames_(frames),
       can_set_channel_data_(false) {
+  // Since |data| may have come from an external source, ensure it's valid.
+  CHECK(data);
   ValidateConfig(channels, frames_);
 
   int aligned_frames = 0;
@@ -187,6 +189,7 @@ scoped_ptr<AudioBus> AudioBus::WrapMemory(const AudioParameters& params,
 
 void AudioBus::SetChannelData(int channel, float* data) {
   CHECK(can_set_channel_data_);
+  CHECK(data);
   CHECK_GE(channel, 0);
   CHECK_LT(static_cast<size_t>(channel), channel_data_.size());
   DCHECK(IsAligned(data));
@@ -268,19 +271,24 @@ void AudioBus::FromInterleaved(const void* source, int frames,
   FromInterleavedPartial(source, 0, frames, bytes_per_sample);
 }
 
-// TODO(dalecurtis): See if intrinsic optimizations help any here.
 void AudioBus::ToInterleaved(int frames, int bytes_per_sample,
                              void* dest) const {
-  CheckOverflow(0, frames, frames_);
+  ToInterleavedPartial(0, frames, bytes_per_sample, dest);
+}
+
+// TODO(dalecurtis): See if intrinsic optimizations help any here.
+void AudioBus::ToInterleavedPartial(int start_frame, int frames,
+                                    int bytes_per_sample, void* dest) const {
+  CheckOverflow(start_frame, frames, frames_);
   switch (bytes_per_sample) {
     case 1:
-      ToInterleavedInternal<uint8, int16>(this, frames, dest);
+      ToInterleavedInternal<uint8, int16>(this, start_frame, frames, dest);
       break;
     case 2:
-      ToInterleavedInternal<int16, int32>(this, frames, dest);
+      ToInterleavedInternal<int16, int32>(this, start_frame, frames, dest);
       break;
     case 4:
-      ToInterleavedInternal<int32, int64>(this, frames, dest);
+      ToInterleavedInternal<int32, int64>(this, start_frame, frames, dest);
       break;
     default:
       NOTREACHED() << "Unsupported bytes per sample encountered.";

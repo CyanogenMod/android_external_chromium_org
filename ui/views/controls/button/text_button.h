@@ -8,20 +8,49 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/border.h"
-#include "ui/views/controls/button/border_images.h"
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/native_theme_delegate.h"
+#include "ui/views/painter.h"
 
 namespace views {
 
 ////////////////////////////////////////////////////////////////////////////////
 //
 // TextButtonBorder
+//
+//  An abstract Border subclass for TextButtons that allows configurable insets
+//  for the button.
+//
+////////////////////////////////////////////////////////////////////////////////
+class VIEWS_EXPORT TextButtonBorder : public Border {
+ public:
+  TextButtonBorder();
+  virtual ~TextButtonBorder();
+
+  void SetInsets(const gfx::Insets& insets);
+
+  // Border:
+  virtual gfx::Insets GetInsets() const OVERRIDE;
+
+private:
+  // Border:
+  virtual TextButtonBorder* AsTextButtonBorder() OVERRIDE;
+  virtual const TextButtonBorder* AsTextButtonBorder() const OVERRIDE;
+
+  gfx::Insets insets_;
+
+  DISALLOW_COPY_AND_ASSIGN(TextButtonBorder);
+};
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// TextButtonDefaultBorder
 //
 //  A Border subclass that paints a TextButton's background layer -
 //  basically the button frame in the hot/pushed states.
@@ -31,38 +60,28 @@ namespace views {
 // focus chain.
 //
 ////////////////////////////////////////////////////////////////////////////////
-class VIEWS_EXPORT TextButtonBorder : public Border {
+class VIEWS_EXPORT TextButtonDefaultBorder : public TextButtonBorder {
  public:
-  TextButtonBorder();
-  virtual ~TextButtonBorder();
-
-  // By default BS_NORMAL is drawn with no border.  Call this to instead draw it
-  // with the same border as the "hot" state.
-  // TODO(pkasting): You should also call set_animate_on_state_change(false) on
-  // the button in this case... we should fix this.
-  void copy_normal_set_to_hot_set() { set_normal_set(hot_set_); }
+  TextButtonDefaultBorder();
+  virtual ~TextButtonDefaultBorder();
 
  protected:
-  void set_normal_set(const BorderImages& set) { normal_set_ = set; }
-  void set_hot_set(const BorderImages& set) { hot_set_ = set; }
-  void set_pushed_set(const BorderImages& set) { pushed_set_ = set; }
-
-  void set_vertical_padding(int vertical_padding) {
-    vertical_padding_ = vertical_padding;
-  }
+  // TextButtonDefaultBorder takes and retains ownership of these |painter|s.
+  void set_normal_painter(Painter* painter) { normal_painter_.reset(painter); }
+  void set_hot_painter(Painter* painter) { hot_painter_.reset(painter); }
+  void set_pushed_painter(Painter* painter) { pushed_painter_.reset(painter); }
 
  private:
-  // Border:
+  // Implementation of Border:
   virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE;
-  virtual void GetInsets(gfx::Insets* insets) const OVERRIDE;
 
-  BorderImages normal_set_;
-  BorderImages hot_set_;
-  BorderImages pushed_set_;
+  scoped_ptr<Painter> normal_painter_;
+  scoped_ptr<Painter> hot_painter_;
+  scoped_ptr<Painter> pushed_painter_;
 
   int vertical_padding_;
 
-  DISALLOW_COPY_AND_ASSIGN(TextButtonBorder);
+  DISALLOW_COPY_AND_ASSIGN(TextButtonDefaultBorder);
 };
 
 
@@ -75,14 +94,13 @@ class VIEWS_EXPORT TextButtonBorder : public Border {
 //  states, with possible animation between states.
 //
 ////////////////////////////////////////////////////////////////////////////////
-class VIEWS_EXPORT TextButtonNativeThemeBorder : public Border {
+class VIEWS_EXPORT TextButtonNativeThemeBorder : public TextButtonBorder {
  public:
   explicit TextButtonNativeThemeBorder(NativeThemeDelegate* delegate);
   virtual ~TextButtonNativeThemeBorder();
 
   // Implementation of Border:
   virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE;
-  virtual void GetInsets(gfx::Insets* insets) const OVERRIDE;
 
  private:
   // The delegate the controls the appearance of this border.
@@ -108,19 +126,6 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   // The menu button's class name.
   static const char kViewClassName[];
 
-  // Enumeration of how the prefix ('&') character is processed. The default
-  // is |PREFIX_NONE|.
-  enum PrefixType {
-    // No special processing is done.
-    PREFIX_NONE,
-
-    // The character following the prefix character is not rendered specially.
-    PREFIX_HIDE,
-
-    // The character following the prefix character is underlined.
-    PREFIX_SHOW
-  };
-
   virtual ~TextButtonBase();
 
   // Call SetText once per string in your set of possible values at button
@@ -136,8 +141,6 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   };
 
   void set_alignment(TextAlignment alignment) { alignment_ = alignment; }
-
-  void set_prefix_type(PrefixType type) { prefix_type_ = type; }
 
   const ui::Animation* GetAnimation() const;
 
@@ -241,8 +244,7 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
 
   virtual gfx::Rect GetTextBounds() const;
 
-  // Compute the flags to use for rendering text strings.
-  virtual int ComputeCanvasStringFlags() const;
+  int ComputeCanvasStringFlags() const;
 
   // Calculate the bounds of the content of this button, including any extra
   // width needed on top of the text width.
@@ -289,8 +291,6 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
 
   // Whether the text button should handle its text string as multi-line.
   bool multi_line_;
-
-  PrefixType prefix_type_;
 
  private:
   // Text color.

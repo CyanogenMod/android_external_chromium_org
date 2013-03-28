@@ -7,7 +7,6 @@
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "grit/ui_resources.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/mac/nsimage_cache.h"
 
 namespace {
 
@@ -18,9 +17,9 @@ class BookmarkBarFolderButtonCellTest : public CocoaTest {
 TEST_F(BookmarkBarFolderButtonCellTest, Create) {
   scoped_nsobject<BookmarkBarFolderButtonCell> cell;
   cell.reset([[BookmarkBarFolderButtonCell buttonCellForNode:nil
-                                                 contextMenu:nil
-                                                    cellText:nil
-                                                   cellImage:nil] retain]);
+                                                        text:nil
+                                                       image:nil
+                                              menuController:nil] retain]);
   EXPECT_TRUE(cell);
 }
 
@@ -42,9 +41,9 @@ TEST_F(BookmarkBarFolderButtonCellTest, FaviconPositioning) {
       [[BookmarkButtonCell alloc] initTextCell:@"Testing"]);
   scoped_nsobject<BookmarkBarFolderButtonCell> folder_cell(
       [[BookmarkBarFolderButtonCell buttonCellForNode:nil
-                                          contextMenu:nil
-                                             cellText:@"Testing"
-                                            cellImage:image] retain]);
+                                                 text:@"Testing"
+                                                image:image
+                                       menuController:nil] retain]);
 
   ASSERT_TRUE(cell.get());
   ASSERT_TRUE(folder_cell.get());

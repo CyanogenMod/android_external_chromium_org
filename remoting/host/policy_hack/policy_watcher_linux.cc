@@ -16,8 +16,8 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/file_path_watcher.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
@@ -32,7 +32,7 @@ namespace policy_hack {
 
 namespace {
 
-const FilePath::CharType kPolicyDir[] =
+const base::FilePath::CharType kPolicyDir[] =
   // Always read the Chrome policies (even on Chromium) so that policy
   // enforcement can't be bypassed by running Chromium.
   FILE_PATH_LITERAL("/etc/opt/chrome/policies/managed");
@@ -47,7 +47,7 @@ const int kSettleIntervalSeconds = 5;
 class PolicyWatcherLinux : public PolicyWatcher {
  public:
   PolicyWatcherLinux(scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-                     const FilePath& config_dir)
+                     const base::FilePath& config_dir)
       : PolicyWatcher(task_runner),
         config_dir_(config_dir),
         ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
@@ -64,13 +64,14 @@ class PolicyWatcherLinux : public PolicyWatcher {
  protected:
   virtual void StartWatchingInternal() OVERRIDE {
     DCHECK(OnPolicyWatcherThread());
-    watcher_.reset(new base::files::FilePathWatcher());
+    watcher_.reset(new base::FilePathWatcher());
 
     if (!config_dir_.empty() &&
         !watcher_->Watch(
-            config_dir_,
-            new FilePathWatcherDelegate(weak_factory_.GetWeakPtr()))) {
-      OnFilePathError(config_dir_);
+            config_dir_, false,
+            base::Bind(&PolicyWatcherLinux::OnFilePathChanged,
+                       weak_factory_.GetWeakPtr()))) {
+      OnFilePathChanged(config_dir_, true);
     }
 
     // There might have been changes to the directory in the time between
@@ -87,46 +88,15 @@ class PolicyWatcherLinux : public PolicyWatcher {
     watcher_.reset();
   }
 
-  // Called by FilePathWatcherDelegate.
-  virtual void OnFilePathError(const FilePath& path) {
-    LOG(ERROR) << "PolicyWatcherLinux on " << path.value()
-               << " failed.";
-  }
-
-  // Called by FilePathWatcherDelegate.
-  virtual void OnFilePathChanged(const FilePath& path) {
+ private:
+  void OnFilePathChanged(const base::FilePath& path, bool error) {
     DCHECK(OnPolicyWatcherThread());
 
-    Reload();
+    if (!error)
+      Reload();
+    else
+      LOG(ERROR) << "PolicyWatcherLinux on " << path.value() << " failed.";
   }
-
- private:
-  // Needed to avoid refcounting PolicyWatcherLinux.
-  class FilePathWatcherDelegate :
-    public base::files::FilePathWatcher::Delegate {
-   public:
-    FilePathWatcherDelegate(base::WeakPtr<PolicyWatcherLinux> policy_watcher)
-        : policy_watcher_(policy_watcher) {
-    }
-
-    virtual void OnFilePathError(const FilePath& path) {
-      if (policy_watcher_) {
-        policy_watcher_->OnFilePathError(path);
-      }
-    }
-
-    virtual void OnFilePathChanged(const FilePath& path) {
-      if (policy_watcher_) {
-        policy_watcher_->OnFilePathChanged(path);
-      }
-    }
-
-   protected:
-    virtual ~FilePathWatcherDelegate() {}
-
-   private:
-    base::WeakPtr<PolicyWatcherLinux> policy_watcher_;
-  };
 
   base::Time GetLastModification() {
     DCHECK(OnPolicyWatcherThread());
@@ -143,7 +113,7 @@ class PolicyWatcherLinux : public PolicyWatcher {
     file_util::FileEnumerator file_enumerator(config_dir_,
                                               false,
                                               file_util::FileEnumerator::FILES);
-    for (FilePath config_file = file_enumerator.Next();
+    for (base::FilePath config_file = file_enumerator.Next();
          !config_file.empty();
          config_file = file_enumerator.Next()) {
       if (file_util::GetFileInfo(config_file, &file_info) &&
@@ -160,16 +130,16 @@ class PolicyWatcherLinux : public PolicyWatcher {
   scoped_ptr<DictionaryValue> Load() {
     DCHECK(OnPolicyWatcherThread());
     // Enumerate the files and sort them lexicographically.
-    std::set<FilePath> files;
+    std::set<base::FilePath> files;
     file_util::FileEnumerator file_enumerator(config_dir_, false,
                                               file_util::FileEnumerator::FILES);
-    for (FilePath config_file_path = file_enumerator.Next();
+    for (base::FilePath config_file_path = file_enumerator.Next();
          !config_file_path.empty(); config_file_path = file_enumerator.Next())
       files.insert(config_file_path);
 
     // Start with an empty dictionary and merge the files' contents.
     scoped_ptr<DictionaryValue> policy(new DictionaryValue());
-    for (std::set<FilePath>::iterator config_file_iter = files.begin();
+    for (std::set<base::FilePath>::iterator config_file_iter = files.begin();
          config_file_iter != files.end(); ++config_file_iter) {
       JSONFileValueSerializer deserializer(*config_file_iter);
       deserializer.set_allow_trailing_comma(true);
@@ -193,7 +163,7 @@ class PolicyWatcherLinux : public PolicyWatcher {
     return policy.Pass();
   }
 
-  void Reload() {
+  virtual void Reload() OVERRIDE {
     DCHECK(OnPolicyWatcherThread());
     // Check the directory time in order to see whether a reload is required.
     base::TimeDelta delay;
@@ -258,7 +228,7 @@ class PolicyWatcherLinux : public PolicyWatcher {
   // decoupling makes it possible to destroy the watcher before the loader's
   // destructor is called (e.g. during Stop), since |watcher_| internally holds
   // a reference to the loader and keeps it alive.
-  scoped_ptr<base::files::FilePathWatcher> watcher_;
+  scoped_ptr<base::FilePathWatcher> watcher_;
 
   // Records last known modification timestamp of |config_dir_|.
   base::Time last_modification_file_;
@@ -269,7 +239,7 @@ class PolicyWatcherLinux : public PolicyWatcher {
   // non-local filesystem involved.
   base::Time last_modification_clock_;
 
-  const FilePath config_dir_;
+  const base::FilePath config_dir_;
 
   // Allows us to cancel any inflight FileWatcher events or scheduled reloads.
   base::WeakPtrFactory<PolicyWatcherLinux> weak_factory_;
@@ -277,7 +247,7 @@ class PolicyWatcherLinux : public PolicyWatcher {
 
 PolicyWatcher* PolicyWatcher::Create(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
-  FilePath policy_dir(kPolicyDir);
+  base::FilePath policy_dir(kPolicyDir);
   return new PolicyWatcherLinux(task_runner, policy_dir);
 }
 

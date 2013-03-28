@@ -54,7 +54,7 @@
       {
         "id": "DriveWebApp",
         "type": "object",
-        "description": "GData WebApp properties.",
+        "description": "Drive WebApp properties.",
         "properties": {
           "appId": {
             "type": "string",
@@ -67,12 +67,12 @@
           "appIcon": {
             "type": "string",
             "optional": true,
-            "description": "URL to the GData application icon for this application."
+            "description": "URL to the Drive application icon for this application."
           },
           "docIcon": {
             "type": "string",
             "optional": true,
-            "description": "URL to the GData document icon for documents associated with this application."
+            "description": "URL to the Drive document icon for documents associated with this application."
           },
           "objectType": {
             "type": "string",
@@ -85,9 +85,9 @@
         }
       },
       {
-        "id": "GDataFileProperties",
+        "id": "DriveFileProperties",
         "type": "object",
-        "description": "GData file properties.",
+        "description": "Drive file properties.",
         "properties": {
           "fileUrl": {
             "type": "string",
@@ -97,42 +97,42 @@
           "thumbnailUrl": {
             "type": "string",
             "optional": true,
-            "description": "URL to the GData thumbnail image for this file."
+            "description": "URL to the Drive thumbnail image for this file."
           },
           "contentUrl": {
             "type": "string",
             "optional": true,
-            "description": "GData URL to the content for this file."
+            "description": "Drive URL to the content for this file."
           },
           "editUrl": {
             "type": "string",
             "optional": true,
-            "description": "GData edit URL for this file."
+            "description": "Drive edit URL for this file."
           },
           "shareUrl": {
             "type": "string",
             "optional": true,
-            "description": "GData share URL for this file."
+            "description": "Drive share URL for this file."
           },
           "isPinned": {
             "type": "boolean",
             "optional": true,
-            "description": "True if the file is pinned in GData cache."
+            "description": "True if the file is pinned in Drive cache."
           },
           "isPresent": {
             "type": "boolean",
             "optional": true,
-            "description": "True if the file is present in GData cache."
+            "description": "True if the file is present in Drive cache."
           },
           "isDirty": {
             "type": "boolean",
             "optional": true,
-            "description": "True if the file is awaiting upload in GData cache."
+            "description": "True if the file is awaiting upload in Drive cache."
           },
           "isHosted": {
             "type": "boolean",
             "optional": true,
-            "description": "True if the file is hosted on a GData server instead of local."
+            "description": "True if the file is hosted on a Drive server instead of local."
           },
           "errorCode": {
             "type": "integer",
@@ -148,7 +148,7 @@
           "contentMimeType": {
             "type": "string",
             "optional": true,
-            "description": "GData MIME type for this file."
+            "description": "Drive MIME type for this file."
           }
         }
       },
@@ -277,9 +277,17 @@
           "status": {
             "type": "string",
             "enum": ["success", "error_unknown", "error_internal",
+                     "error_invalid_argument", "error_invalid_path",
+                     "error_path_already_mounted", "error_path_not_mounted",
+                     "error_directory_creation_failed",
+                     "error_invalid_mount_options",
+                     "error_invalid_unmount_options",
+                     "error_insufficient_permissions",
+                     "error_mount_program_not_found",
+                     "error_mount_program_failed", "error_invalid_device_path",
                      "error_unknown_filesystem", "error_unsuported_filesystem",
                      "error_invalid_archive", "error_authentication",
-                     "error_network", "error_path_unmounted"],
+                     "error_path_unmounted"],
             "description": "Event type that tells listeners if mount was successful or an error occurred. It also specifies the error."
           },
           "sourcePath": {
@@ -293,7 +301,7 @@
           },
           "mountType": {
             "type": "string",
-            "enum": ["device", "file", "network", "gdata"],
+            "enum": ["device", "file", "network", "drive"],
             "description": "Type of the mount."
           }
         }
@@ -369,17 +377,25 @@
         "type": "object",
         "description": "Information about changed file or directory",
         "properties": {
-          "type": "string",
-          "enum": ["added", "deleted", "updated"],
-          "description": "Specifies type of the change."
-        },
-        "fileUrl": {
-          "type": "string",
-          "description": "URL of the changed file."
+          "changeType": {
+            "type": "string",
+            "enum": ["added", "deleted", "updated"],
+            "description": "Specifies type of the change."
+          },
+          "fileUrl": {
+            "type": "string",
+            "description": "URL of the changed file."
+          }
         }
       }
     ],
     "functions": [
+      {
+        "name": "logoutUser",
+        "type": "function",
+        "description": "Logout the current user.",
+        "parameters": []
+      },
       {
         "name": "cancelDialog",
         "type": "function",
@@ -568,6 +584,16 @@
             "type": "array",
             "description": "Array of selected paths",
             "items": {"type": "string"}
+          },
+          {
+            "name": "shouldReturnLocalPath",
+            "type": "boolean",
+            "description": "true if paths need to be resolved to local paths."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": []
           }
         ]
       },
@@ -585,6 +611,21 @@
             "name": "index",
             "type": "integer",
             "description": "Index of Filter"
+          },
+          {
+            "name": "forOpening",
+            "type": "boolean",
+            "description": "true if paths are selected for opening. false if for saving."
+          },
+          {
+            "name": "shouldReturnLocalPath",
+            "type": "boolean",
+            "description": "true if paths need to be resolved to local paths."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": []
           }
         ]
       },
@@ -618,8 +659,8 @@
         ]
       },
       {
-        "name": "getGDataFileProperties",
-        "description": "Requests GData file properties for a list of files",
+        "name": "getDriveFileProperties",
+        "description": "Requests Drive file properties for a list of files",
         "parameters": [
           {
             "name": "fileUrls",
@@ -633,7 +674,7 @@
               {
                 "name" : "fileProperties",
                 "type": "array",
-                "items": {"$ref": "GDataFileProperties"},
+                "items": {"$ref": "DriveFileProperties"},
                 "description": "An array of the requested file properties, one entry for each file in fileUrls."
               }
             ]
@@ -641,8 +682,8 @@
         ]
       },
       {
-        "name": "pinGDataFile",
-        "description": "Pins/unpins a GData file in the cache",
+        "name": "pinDriveFile",
+        "description": "Pins/unpins a Drive file in the cache",
         "parameters": [
           {
             "name": "fileUrls",
@@ -661,7 +702,7 @@
               {
                 "name" : "fileProperties",
                 "type": "array",
-                "items": {"$ref": "GDataFileProperties"},
+                "items": {"$ref": "DriveFileProperties"},
                 "description": "An array of the pinned properties after pinning/unpinning the requested files, one entry for each file in fileUrls."
               }
             ]
@@ -693,13 +734,13 @@
         ]
       },
       {
-        "name": "getGDataFiles",
-        "description": "Get GData files",
+        "name": "getDriveFiles",
+        "description": "Get Drive files",
         "parameters": [
           {
             "name": "fileUrls",
             "type": "array",
-            "description": "Array of gdata file URLs to get.",
+            "description": "Array of Drive file URLs to get.",
             "items": { "type": "string" }
           },
           {
@@ -751,7 +792,7 @@
           {
             "name": "mountType",
             "type": "string",
-            "enum": ["device", "file", "network", "gdata"],
+            "enum": ["device", "file", "network", "drive"],
             "description": "Mount point type. 'file' for compressed files"
           },
           {
@@ -837,7 +878,7 @@
             "name": "callback",
             "type": "function",
             "optional": true,
-            "description": "Completion callback. chrome.extension.lastError will be set if there was an error.",
+            "description": "Completion callback. chrome.runtime.lastError will be set if there was an error.",
             "parameters": []
           }
         ]
@@ -884,7 +925,7 @@
             "name": "callback",
             "type": "function",
             "optional": true,
-            "description": "Completion callback. chrome.extension.lastError will be set if there was an error.",
+            "description": "Completion callback. chrome.runtime.lastError will be set if there was an error.",
             "parameters": []
           }
         ]
@@ -960,7 +1001,8 @@
                   "driveEnabled": {"type":"boolean"},
                   "cellularDisabled": {"type":"boolean"},
                   "hostedFilesDisabled": {"type":"boolean"},
-                  "use24hourClock": {"type":"boolean"}
+                  "use24hourClock": {"type":"boolean"},
+                  "allowRedeemOffers": {"type":"boolean"}
                 }
               }
             ]
@@ -982,37 +1024,94 @@
         ]
       },
       {
-        "name": "searchGData",
+        "name": "searchDrive",
         "type": "function",
         "description": "Performs drive content search.",
         "parameters": [
           {
-            "name": "query",
-            "description": "Search query.",
-            "type": "string"
-          },
-          {
-            "name": "nextFeed",
-            "type": "string",
-            "description": "ID of the search feed that should be fetched next. Value passed here should be gotten from previous searchGData call. It can be empty for the initial search request."
+            "name": "searchParams",
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "optional": true,
+                "description": "Search query."
+              },
+              "sharedWithMe": {
+                "type": "boolean",
+                "optional": true,
+                "description": "If this is a request for files shared with me or not."
+              },
+              "nextFeed": {
+                "type": "string",
+                "optional": true,
+                "description": "ID of the search feed that should be fetched next. Value passed here should be gotten from previous searchDrive call. It can be empty for the initial search request."
+              }
+            }
           },
           {
             "name": "callback",
             "type": "function",
             "parameters": [
               {
-                "name": "entries",
+                "name": "results",
                 "type": "array",
                 "items": {
                   "type": "object",
-                  "isInstanceOf": "Entry",
-                  "description": "Entry representing a search result."
+                  "properties": {
+                    "entry": {
+                      "type": "object",
+                      "isInstanceOf": "Entry",
+                      "description": "A dictionary object which represents a Drive file. This will be converted into a kind of FileEntry object. See file_browser_handler_custom_bindings.cc for details. For filesystem API's Entry interface, see <a href='http://www.w3.org/TR/file-system-api/#the-entry-interface'>The Entry interface</a>."
+                    },
+                    "properties": {
+                      "$ref": "DriveFileProperties"
+                    }
+                  },
+                  "description": "Entry and Drive-related properties representing a search result."
                 }
               },
               {
                 "name": "nextFeed",
                 "type": "string",
-                "description": "ID of the feed that contains next chunk of the search result. Should be sent to the next searchGData request to perform incremental search."
+                "description": "ID of the feed that contains next chunk of the search result. Should be sent to the next searchDrive request to perform incremental search."
+              }
+            ]
+          }
+        ]
+      },
+{
+        "name": "searchDriveMetadata",
+        "type": "function",
+        "description": "Performs drive metadata search.",
+        "parameters": [
+          {
+            "name": "searchQuery",
+            "type": "string",
+            "description": "Search query."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "results",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "entry": {
+                      "type": "object",
+                      "isInstanceOf": "Entry",
+                      "description": "A dictionary object which represents a Drive file. This will be converted into a kind of FileEntry object. See file_browser_handler_custom_bindings.cc for details. For filesystem API's Entry interface, see <a href='http://www.w3.org/TR/file-system-api/#the-entry-interface'>The Entry interface</a>."
+                    },
+                    "highlightedBaseName": {
+                      "type": "string",
+                      "description": "The base name of a Drive file that matched the search query. The matched sub strings are highlighted with <b> element. Meta characters are escaped like &lt;."
+                    }
+                  },
+                  "description": "Entry and Drive-related properties representing a search result."
+                }
               }
             ]
           }
@@ -1020,7 +1119,7 @@
       },
       {
         "name": "clearDriveCache",
-        "description": "Clear all GData local caches.",
+        "description": "Clear all Drive local caches.",
         "parameters": []
       },
       {
@@ -1029,8 +1128,42 @@
         "parameters": []
       },
       {
-        "name": "getNetworkConnectionState",
-        "description": "Retrieves the state of the currently active network connection.",
+        "name": "zipSelection",
+        "description": "Create a zip file for the selected files.",
+        "parameters": [
+          {
+            "name": "dirURL",
+            "type": "string",
+            "description": "URL of the directory containing the selected files."
+          },
+          {
+            "name": "selectionURLs",
+            "type": "array",
+            "description": "URLs of the selected files. The files must be under the directory specified by dirURL.",
+            "items": { "type": "string" }
+          },
+          {
+            "name": "destName",
+            "type": "string",
+            "description": "Name of the destination zip file. The zip file will be created under the directory specified by dirURL."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": true,
+            "parameters": [
+              {
+                "name" : "success",
+                "type" : "boolean",
+                "optional": true
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "getDriveConnectionState",
+        "description": "Retrieves the state of the current drive connection.",
         "parameters": [
           {
             "name": "callback",
@@ -1041,7 +1174,11 @@
                 "type": "object",
                 "properties": {
                   "type": {"type": "string"},
-                  "online": {"type": "boolean"}
+                  "reasons": {
+                    "type": "array",
+                    "description": "Reasons of offline.",
+                    "items": { "type": "string" }
+                  }
                 }
               }
             ]
@@ -1058,21 +1195,48 @@
             "description": "URL of the target directory"
           }
         ]
-      }
-    ],
-    "events": [
+      },
       {
-        "name": "onDiskChanged",
-        "type": "function",
-        "description": "Fired when disk mount/unmount event is detected.",
+        "name": "validatePathNameLength",
+        "description": "Checks whether the path name length fits in the limit of the filesystem.",
         "parameters": [
           {
-            "$ref": "MountEvent",
-            "name": "event",
-            "description": "Mount event information."
+            "name": "parent_directory_url",
+            "type": "string",
+            "description": "The URL of the parent directory entry."
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "description": "The name of the file."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "description": "Called back when the check is finished.", 
+            "parameters": [
+              {
+                "name": "result",
+                "type": "boolean",
+                "description": "true if the length is in the valid range, false otherwise."
+              }
+            ]
           }
         ]
       },
+      {
+        "name": "openNewWindow",
+        "description": "Opens a new window of the Files.app.",
+        "parameters": [
+          {
+            "name": "url",
+            "type": "string",
+            "description": "Internal url to be opened."
+          }
+        ]
+      }
+    ],
+    "events": [
       {
         "name": "onMountCompleted",
         "type": "function",
@@ -1129,9 +1293,9 @@
         "parameters": []
       },
       {
-        "name": "onNetworkConnectionChanged",
+        "name": "onDriveConnectionStatusChanged",
         "type": "function",
-        "description": "Fired when the active network connection state changes. The network connection state can be retrieved via 'getNetworkConnectionState'.",
+        "description": "Fired when the active network connection state changes. The network connection state can be retrieved via 'getDriveConnectionState'.",
         "parameters": []
       }
     ]

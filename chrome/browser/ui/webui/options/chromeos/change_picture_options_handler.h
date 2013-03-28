@@ -6,13 +6,12 @@
 #define CHROME_BROWSER_UI_WEBUI_OPTIONS_CHROMEOS_CHANGE_PICTURE_OPTIONS_HANDLER_H_
 
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/options/take_photo_dialog.h"
 #include "chrome/browser/image_decoder.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #include "content/public/browser/notification_registrar.h"
-#include "ui/base/dialogs/select_file_dialog.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 namespace base {
 class DictionaryValue;
@@ -25,7 +24,6 @@ namespace options {
 // ChromeOS user image options page UI handler.
 class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
                                     public ui::SelectFileDialog::Listener,
-                                    public TakePhotoDialog::Delegate,
                                     public ImageDecoder::Delegate {
  public:
   ChangePictureOptionsHandler();
@@ -53,6 +51,9 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
   // if any, on the page. Shouldn't be called before |SendProfileImage|.
   void UpdateProfileImage();
 
+  // Sends previous user image to the page.
+  void SendOldImage(const std::string& image_url);
+
   // Starts camera presence check.
   void CheckCameraPresence();
 
@@ -62,11 +63,11 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
   // Opens a file selection dialog to choose user image from file.
   void HandleChooseFile(const base::ListValue* args);
 
-  // Opens the camera capture dialog.
-  void HandleTakePhoto(const base::ListValue* args);
-
   // Handles photo taken with WebRTC UI.
   void HandlePhotoTaken(const base::ListValue* args);
+
+  // Handles camera presence check request.
+  void HandleCheckCameraPresence(const base::ListValue* args);
 
   // Gets the list of available user images and sends it to the page.
   void HandleGetAvailableImages(const base::ListValue* args);
@@ -82,11 +83,8 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
 
   // SelectFileDialog::Delegate implementation.
   virtual void FileSelected(
-      const FilePath& path,
+      const base::FilePath& path,
       int index, void* params) OVERRIDE;
-
-  // TakePhotoDialog::Delegate implementation.
-  virtual void OnPhotoAccepted(const gfx::ImageSkia& photo) OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -95,6 +93,9 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
 
   // Called when the camera presence check has been completed.
   void OnCameraPresenceCheckDone();
+
+  // Sets user image to photo taken from camera.
+  void SetImageFromCamera(const gfx::ImageSkia& photo);
 
   // Returns handle to browser window or NULL if it can't be found.
   gfx::NativeWindow GetBrowserWindow() const;
@@ -108,7 +109,7 @@ class ChangePictureOptionsHandler : public ::options::OptionsPageUIHandler,
 
   // Previous user image from camera/file and its data URL.
   gfx::ImageSkia previous_image_;
-  std::string previous_image_data_url_;
+  std::string previous_image_url_;
 
   // Index of the previous user image.
   int previous_image_index_;

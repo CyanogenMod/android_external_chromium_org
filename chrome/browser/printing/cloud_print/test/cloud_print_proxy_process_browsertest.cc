@@ -27,7 +27,7 @@
 #include "chrome/service/service_process.h"
 #include "chrome/test/base/test_launcher_utils.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -80,7 +80,9 @@ void ShutdownTask() {
 
 class TestStartupClientChannelListener : public IPC::Listener {
  public:
-  virtual bool OnMessageReceived(const IPC::Message& message) { return false; }
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+    return false;
+  }
 };
 
 }  // namespace
@@ -207,7 +209,7 @@ int CloudPrintMockService_Main(SetExpectationsCallback set_expectations) {
   CommandLine* cl = CommandLine::ForCurrentProcess();
   if (!cl->HasSwitch(kTestExecutablePath))
     return kMissingSwitch;
-  FilePath executable_path = cl->GetSwitchValuePath(kTestExecutablePath);
+  base::FilePath executable_path = cl->GetSwitchValuePath(kTestExecutablePath);
   EXPECT_FALSE(executable_path.empty());
   MockLaunchd mock_launchd(executable_path, &main_message_loop, true, true);
   Launchd::ScopedInstance use_mock(&mock_launchd);
@@ -283,7 +285,7 @@ class CloudPrintProxyPolicyStartupTest : public base::MultiProcessTest,
                                          public IPC::Listener {
  public:
   CloudPrintProxyPolicyStartupTest();
-  ~CloudPrintProxyPolicyStartupTest();
+  virtual ~CloudPrintProxyPolicyStartupTest();
 
   virtual void SetUp();
   base::MessageLoopProxy* IOMessageLoopProxy() {
@@ -295,8 +297,10 @@ class CloudPrintProxyPolicyStartupTest : public base::MultiProcessTest,
   void ShutdownAndWaitForExitWithTimeout(base::ProcessHandle handle);
 
   // IPC::Listener implementation
-  virtual bool OnMessageReceived(const IPC::Message& message) { return false; }
-  virtual void OnChannelConnected(int32 peer_pid);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+    return false;
+  }
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
 
   // MultiProcessTest implementation.
   virtual CommandLine MakeCmdLine(const std::string& procname,
@@ -306,7 +310,7 @@ class CloudPrintProxyPolicyStartupTest : public base::MultiProcessTest,
     int return_code = 0;
     StartupBrowserCreator browser_creator;
     return StartupBrowserCreator::ProcessCmdLineImpl(
-        command_line, FilePath(), false, profile,
+        command_line, base::FilePath(), false, profile,
         StartupBrowserCreator::Profiles(), &return_code, &browser_creator);
   }
 
@@ -319,8 +323,8 @@ class CloudPrintProxyPolicyStartupTest : public base::MultiProcessTest,
   scoped_ptr<IPC::ChannelProxy> startup_channel_;
 
 #if defined(OS_MACOSX)
-  ScopedTempDir temp_dir_;
-  FilePath executable_path_, bundle_path_;
+  base::ScopedTempDir temp_dir_;
+  base::FilePath executable_path_, bundle_path_;
   scoped_ptr<MockLaunchd> mock_launchd_;
   scoped_ptr<Launchd::ScopedInstance> scoped_launchd_instance_;
 #endif
@@ -463,7 +467,7 @@ TEST_F(CloudPrintProxyPolicyStartupTest, StartBrowserWithoutPolicy) {
       Launch("CloudPrintMockService_StartEnabledWaitForQuit");
 
   TestingBrowserProcess* browser_process =
-      static_cast<TestingBrowserProcess*>(g_browser_process);
+      TestingBrowserProcess::GetGlobal();
   TestingProfileManager profile_manager(browser_process);
   ASSERT_TRUE(profile_manager.SetUp());
 
@@ -472,7 +476,7 @@ TEST_F(CloudPrintProxyPolicyStartupTest, StartBrowserWithoutPolicy) {
   CloudPrintProxyServiceFactory::GetInstance()->
       SetTestingFactory(profile, CloudPrintProxyServiceFactoryForPolicyTest);
 
-  TestingPrefService* prefs = profile->GetTestingPrefService();
+  TestingPrefServiceSyncable* prefs = profile->GetTestingPrefService();
   prefs->SetUserPref(prefs::kCloudPrintEmail,
                      Value::CreateStringValue(
                          MockServiceIPCServer::EnabledUserId()));
@@ -503,7 +507,7 @@ TEST_F(CloudPrintProxyPolicyStartupTest, StartBrowserWithPolicy) {
       Launch("CloudPrintMockService_StartEnabledExpectDisabled");
 
   TestingBrowserProcess* browser_process =
-      static_cast<TestingBrowserProcess*>(g_browser_process);
+      TestingBrowserProcess::GetGlobal();
   TestingProfileManager profile_manager(browser_process);
   ASSERT_TRUE(profile_manager.SetUp());
 
@@ -512,7 +516,7 @@ TEST_F(CloudPrintProxyPolicyStartupTest, StartBrowserWithPolicy) {
   CloudPrintProxyServiceFactory::GetInstance()->
       SetTestingFactory(profile, CloudPrintProxyServiceFactoryForPolicyTest);
 
-  TestingPrefService* prefs = profile->GetTestingPrefService();
+  TestingPrefServiceSyncable* prefs = profile->GetTestingPrefService();
   prefs->SetUserPref(prefs::kCloudPrintEmail,
                      Value::CreateStringValue(
                          MockServiceIPCServer::EnabledUserId()));

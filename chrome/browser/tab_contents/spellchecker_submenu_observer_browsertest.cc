@@ -4,9 +4,9 @@
 
 #include "chrome/browser/tab_contents/spellchecker_submenu_observer.h"
 
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/browser/tab_contents/render_view_context_menu_observer.h"
 #include "chrome/common/pref_names.h"
@@ -48,10 +48,9 @@ class MockRenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
     return observer_->IsCommandIdEnabled(command_id);
   }
-  virtual void ExecuteCommand(int command_id) OVERRIDE {
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
     observer_->ExecuteCommand(command_id);
   }
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {}
   virtual void MenuWillShow(ui::SimpleMenuModel* source) OVERRIDE {}
   virtual void MenuClosed(ui::SimpleMenuModel* source) OVERRIDE {}
   virtual bool GetAcceleratorForCommandId(
@@ -137,7 +136,7 @@ IN_PROC_BROWSER_TEST_F(SpellCheckerSubMenuObserverTest, ToggleSpelling) {
   menu->SetObserver(observer.get());
   menu->GetPrefs()->SetString(prefs::kAcceptLanguages, "en-US");
   menu->GetPrefs()->SetString(prefs::kSpellCheckDictionary, "en-US");
-  menu->GetPrefs()->SetBoolean(prefs::kEnableSpellCheck, true);
+  menu->GetPrefs()->SetBoolean(prefs::kEnableContinuousSpellcheck, true);
   content::ContextMenuParams params;
   observer->InitMenu(params);
 
@@ -149,7 +148,8 @@ IN_PROC_BROWSER_TEST_F(SpellCheckerSubMenuObserverTest, ToggleSpelling) {
   // Select this item and verify that the "Check Spelling While Typing" item is
   // not checked. Also, verify that the value of "browser.enable_spellchecking"
   // is now false.
-  menu->ExecuteCommand(IDC_CHECK_SPELLING_WHILE_TYPING);
-  EXPECT_FALSE(menu->GetPrefs()->GetBoolean(prefs::kEnableSpellCheck));
+  menu->ExecuteCommand(IDC_CHECK_SPELLING_WHILE_TYPING, 0);
+  EXPECT_FALSE(
+      menu->GetPrefs()->GetBoolean(prefs::kEnableContinuousSpellcheck));
   EXPECT_FALSE(menu->IsCommandIdChecked(IDC_CHECK_SPELLING_WHILE_TYPING));
 }

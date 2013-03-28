@@ -14,7 +14,6 @@
 
 namespace content {
 
-class CaptureMachine;  // Defined in web_contents_video_capture_device.cc.
 class RenderWidgetHost;
 
 // A virtualized VideoCaptureDevice that mirrors the displayed contents of a
@@ -27,21 +26,20 @@ class RenderWidgetHost;
 // WebContentsVideoCaptureDevice will capture from whatever render view is
 // currently associated with that WebContents instance.  This allows the
 // underlying render view to be swapped out (e.g., due to navigation or
-// crashes/reloads), without any interrpution in capturing.
+// crashes/reloads), without any interruption in capturing.
 class CONTENT_EXPORT WebContentsVideoCaptureDevice
     : public media::VideoCaptureDevice {
  public:
-  // Construct from the a |device_id| string of the form:
-  //   "render_process_id:render_view_id"
-  static media::VideoCaptureDevice* Create(const std::string& device_id);
-
-  // Construct an instance with the following |test_source| injected for testing
-  // purposes.  |destroy_cb| is invoked once all outstanding objects are
-  // completely destroyed.
+  // Construct from a |device_id| string of the form:
+  //   "virtual-media-stream://render_process_id:render_view_id", where
+  // |render_process_id| and |render_view_id| are decimal integers.
+  // |destroy_cb| is invoked on an outside thread once all outstanding objects
+  // are completely destroyed -- this will be some time after the
+  // WebContentsVideoCaptureDevice is itself deleted.
   // TODO(miu): Passing a destroy callback suggests needing to revisit the
   // design philosophy of an asynchronous DeAllocate().  http://crbug.com/158641
-  static media::VideoCaptureDevice* CreateForTesting(
-      RenderWidgetHost* test_source, const base::Closure& destroy_cb);
+  static media::VideoCaptureDevice* Create(const std::string& device_id,
+                                           const base::Closure& destroy_cb);
 
   virtual ~WebContentsVideoCaptureDevice();
 
@@ -61,16 +59,46 @@ class CONTENT_EXPORT WebContentsVideoCaptureDevice
   virtual const Name& device_name() OVERRIDE;
 
  private:
-  // Constructors.  The latter is used for testing.
-  WebContentsVideoCaptureDevice(
-      const Name& name, int render_process_id, int render_view_id);
-  WebContentsVideoCaptureDevice(RenderWidgetHost* test_source,
+  class Impl;
+  WebContentsVideoCaptureDevice(const Name& name,
+                                int render_process_id,
+                                int render_view_id,
                                 const base::Closure& destroy_cb);
 
   Name device_name_;
-  scoped_refptr<CaptureMachine> capturer_;
+  scoped_refptr<Impl> capturer_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsVideoCaptureDevice);
+};
+
+// Filters a sequence of events to achieve a target frequency.
+class CONTENT_EXPORT SmoothEventSampler {
+ public:
+  explicit SmoothEventSampler(base::TimeDelta capture_period,
+                              bool events_are_reliable);
+
+  // Add a new event to the event history, and return whether it ought to be
+  // sampled per to the sampling frequency limit. Even if this method returns
+  // true, the event is not recorded as a sample until RecordSample() is called.
+  bool AddEventAndConsiderSampling(base::Time now);
+
+  // Operates on the last event added by AddEventAndConsiderSampling(), marking
+  // it as sampled. After this point we are current in the stream of events, as
+  // we have sampled the most recent event.
+  void RecordSample();
+
+  // Returns true if, at time |now|, sampling should occur because too much time
+  // will have passed relative to the last event and/or sample.
+  bool IsOverdueForSamplingAt(base::Time now) const;
+
+  base::Time GetLastSampledEvent();
+
+ private:
+  const bool events_are_reliable_;
+  const base::TimeDelta capture_period_;
+  base::Time current_event_;
+  base::Time last_sample_;
+  DISALLOW_COPY_AND_ASSIGN(SmoothEventSampler);
 };
 
 }  // namespace content

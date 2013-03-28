@@ -6,7 +6,7 @@
 
 #include "base/metrics/histogram.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/common/url_constants.h"
@@ -85,18 +85,6 @@ bool OptionsMenuModel::IsCommandIdEnabled(int command_id) const {
       return (!translate_infobar_delegate_->IsLanguageBlacklisted() &&
           !translate_infobar_delegate_->IsSiteBlacklisted());
 
-    case IDC_TRANSLATE_REPORT_BAD_LANGUAGE_DETECTION : {
-      // Until we have a secure URL for reporting language detection errors,
-      // we don't report errors that happened on secure URLs.
-      DCHECK(translate_infobar_delegate_ != NULL);
-      DCHECK(translate_infobar_delegate_->owner() != NULL);
-      DCHECK(translate_infobar_delegate_->owner()->GetWebContents() != NULL);
-      NavigationEntry* entry = translate_infobar_delegate_->owner()->
-          GetWebContents()->GetController().GetActiveEntry();
-      // Delegate and tab contents should never be NULL, but active entry
-      // can be NULL when running tests. We want to return false if NULL.
-      return (entry != NULL) && !entry->GetURL().SchemeIsSecure();
-    }
     default:
       break;
   }
@@ -108,7 +96,7 @@ bool OptionsMenuModel::GetAcceleratorForCommandId(
   return false;
 }
 
-void OptionsMenuModel::ExecuteCommand(int command_id) {
+void OptionsMenuModel::ExecuteCommand(int command_id, int event_flags) {
   switch (command_id) {
     case IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_LANG:
       UMA_HISTOGRAM_COUNTS("Translate.NeverTranslateLang", 1);

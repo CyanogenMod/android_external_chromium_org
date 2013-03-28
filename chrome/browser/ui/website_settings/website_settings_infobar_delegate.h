@@ -5,9 +5,9 @@
 #ifndef CHROME_BROWSER_UI_WEBSITE_SETTINGS_WEBSITE_SETTINGS_INFOBAR_DELEGATE_H_
 #define CHROME_BROWSER_UI_WEBSITE_SETTINGS_WEBSITE_SETTINGS_INFOBAR_DELEGATE_H_
 
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 
-class InfoBarTabHelper;
+class InfoBarService;
 
 // This class configures an infobar that is shown when the website settings UI
 // is closed and the settings for one or more site permissions have been
@@ -16,9 +16,12 @@ class InfoBarTabHelper;
 // the reload right from the infobar.
 class WebsiteSettingsInfobarDelegate : public ConfirmInfoBarDelegate {
  public:
-  explicit WebsiteSettingsInfobarDelegate(InfoBarTabHelper* infobar_helper);
+  // Creates a website settings delegate and adds it to |infobar_service|.
+  static void Create(InfoBarService* infobar_service);
 
  private:
+  explicit WebsiteSettingsInfobarDelegate(InfoBarService* infobar_service);
+
   // Overwridden from ConfirmInfoBarDelegate:
   virtual gfx::Image* GetIcon() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;

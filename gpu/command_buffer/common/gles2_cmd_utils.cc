@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#include <GLES2/gl2extchromium.h>
 
 #include "../common/gles2_cmd_utils.h"
 #include "../common/gles2_cmd_format.h"
@@ -198,6 +199,8 @@ int GLES2Util::GLGetNumValuesReturned(int id) const {
     case GL_TEXTURE_BINDING_EXTERNAL_OES:
       return 1;
     case GL_TEXTURE_BINDING_RECTANGLE_ARB:
+      return 1;
+    case GL_TEXTURE_IMMUTABLE_FORMAT_EXT:
       return 1;
     case GL_UNPACK_ALIGNMENT:
       return 1;
@@ -619,15 +622,19 @@ uint32 GLES2Util::GetChannelsForFormat(int format) {
   }
 }
 
-uint32 GLES2Util::GetChannelsNeededForAttachmentType(int type) {
+uint32 GLES2Util::GetChannelsNeededForAttachmentType(
+    int type, uint32 max_color_attachments) {
   switch (type) {
-    case GL_COLOR_ATTACHMENT0:
-      return kRGBA;
     case GL_DEPTH_ATTACHMENT:
       return kDepth;
     case GL_STENCIL_ATTACHMENT:
       return kStencil;
     default:
+      if (type >= GL_COLOR_ATTACHMENT0 &&
+          type < static_cast<int>(
+              GL_COLOR_ATTACHMENT0 + max_color_attachments)) {
+        return kRGBA;
+      }
       return 0x0000;
   }
 }

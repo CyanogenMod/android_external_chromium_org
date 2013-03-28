@@ -56,7 +56,7 @@ namespace {
 base::Value* CreateServerHostValue(
     const ProxyConfigServiceImpl::ProxyConfig::ManualProxy& proxy) {
   return proxy.server.is_valid() ?
-         base::Value::CreateStringValue(proxy.server.host_port_pair().host()) :
+         new base::StringValue(proxy.server.host_port_pair().host()) :
          NULL;
 }
 
@@ -82,10 +82,7 @@ net::ProxyServer CreateProxyServer(std::string host,
     host_port_pair = net::HostPortPair::FromString(host);
   if (host_port_pair.host().empty())  // Host is not URL or <server>::<port>.
     host_port_pair = net::HostPortPair(host, port);
-  // Formal parameter port overrides what may have been specified in host.
-  if (port != 0 && port != default_port)
-    host_port_pair.set_port(port);
-  else if (host_port_pair.port() == 0)  // No port in host, use default.
+  if (host_port_pair.port() == 0)  // No port in host, use default.
     host_port_pair.set_port(default_port);
   return net::ProxyServer(scheme, host_port_pair);
 }
@@ -298,8 +295,7 @@ bool GetProxyPrefValue(Profile* profile,
     if (config.mode ==
             chromeos::ProxyConfigServiceImpl::ProxyConfig::MODE_PAC_SCRIPT &&
         config.automatic_proxy.pac_url.is_valid()) {
-      data =
-          base::Value::CreateStringValue(config.automatic_proxy.pac_url.spec());
+      data = new base::StringValue(config.automatic_proxy.pac_url.spec());
     }
   } else if (path == kProxySingleHttp) {
     data = CreateServerHostValue(config.single_proxy);
@@ -357,7 +353,7 @@ bool GetProxyPrefValue(Profile* profile,
     ListValue* list =  new ListValue();
     net::ProxyBypassRules::RuleList bypass_rules = config.bypass_rules.rules();
     for (size_t x = 0; x < bypass_rules.size(); x++) {
-      list->Append(base::Value::CreateStringValue(bypass_rules[x]->ToString()));
+      list->Append(new base::StringValue(bypass_rules[x]->ToString()));
     }
     data = list;
   } else {
@@ -368,7 +364,7 @@ bool GetProxyPrefValue(Profile* profile,
   // Decorate pref value as CoreOptionsHandler::CreateValueForPref() does.
   DictionaryValue* dict = new DictionaryValue;
   if (!data)
-    data = base::Value::CreateStringValue("");
+    data = new base::StringValue("");
   dict->Set("value", data);
   if (path == kProxyType) {
     dict->SetString("controlledBy", controlled_by);

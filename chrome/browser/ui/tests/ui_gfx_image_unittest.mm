@@ -4,6 +4,7 @@
 
 #import <AppKit/AppKit.h>
 
+#import "base/mac/mac_util.h"
 #include "base/memory/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -17,7 +18,12 @@ class UiGfxImageTest : public CocoaTest {
 };
 
 TEST_F(UiGfxImageTest, CheckColor) {
-  gfx::Image image(gfx::test::CreateBitmap(25, 25));
+  // TODO(kbr): re-enable: http://crbug.com/222296
+  if (base::mac::IsOSMountainLionOrLater())
+    return;
+
+  gfx::Image image = gfx::Image::CreateFrom1xBitmap(
+      gfx::test::CreateBitmap(25, 25));
   NSImage* ns_image = image.ToNSImage();
   [ns_image lockFocus];
   NSColor* color = NSReadPixel(NSMakePoint(10, 10));
@@ -43,7 +49,8 @@ TEST_F(UiGfxImageTest, ImageView) {
   [[test_window() contentView] addSubview:image_view];
   [test_window() orderFront:nil];
 
-  gfx::Image image(gfx::test::CreateBitmap(25, 25));
+  gfx::Image image = gfx::Image::CreateFrom1xBitmap(
+      gfx::test::CreateBitmap(25, 25));
   [image_view setImage:image.ToNSImage()];
 }
 

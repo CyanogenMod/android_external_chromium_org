@@ -5,8 +5,9 @@
 #ifndef ASH_TOUCH_TOUCH_OBSERVER_HUD_H_
 #define ASH_TOUCH_TOUCH_OBSERVER_HUD_H_
 
+#include "ash/ash_export.h"
 #include "ash/shell.h"
-#include "ui/aura/event_filter.h"
+#include "ui/base/events/event_handler.h"
 #include "ui/gfx/point.h"
 #include "ui/views/widget/widget_observer.h"
 
@@ -16,6 +17,7 @@ class Window;
 
 namespace views {
 class Label;
+class View;
 class Widget;
 }
 
@@ -25,36 +27,39 @@ namespace internal {
 class TouchHudCanvas;
 
 // An event filter which handles system level gesture events.
-class TouchObserverHUD : public aura::EventFilter,
-                         public views::WidgetObserver {
+class ASH_EXPORT TouchObserverHUD : public ui::EventHandler,
+                                    public views::WidgetObserver {
  public:
   TouchObserverHUD();
   virtual ~TouchObserverHUD();
 
+  // Changes the display mode (e.g. scale, visibility). Calling this repeatedly
+  // cycles between a fixed number of display modes.
+  void ChangeToNextMode();
+
+  // Removes all existing touch points from the screen (only if the HUD is
+  // visible).
+  void Clear();
+
+  std::string GetLogAsString() const;
+
  private:
   void UpdateTouchPointLabel(int index);
 
-  // Overriden from aura::EventFilter:
-  virtual bool PreHandleKeyEvent(aura::Window* target,
-                                 ui::KeyEvent* event) OVERRIDE;
-  virtual bool PreHandleMouseEvent(aura::Window* target,
-                                   ui::MouseEvent* event) OVERRIDE;
-  virtual ui::EventResult PreHandleTouchEvent(
-      aura::Window* target,
-      ui::TouchEvent* event) OVERRIDE;
-  virtual ui::EventResult PreHandleGestureEvent(
-      aura::Window* target,
-      ui::GestureEvent* event) OVERRIDE;
+  // Overriden from ui::EventHandler:
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
   // Overridden from views::WidgetObserver:
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
   static const int kMaxTouchPoints = 32;
 
   views::Widget* widget_;
   TouchHudCanvas* canvas_;
+  views::View* label_container_;
   views::Label* touch_labels_[kMaxTouchPoints];
   gfx::Point touch_positions_[kMaxTouchPoints];
+  float touch_radius_[kMaxTouchPoints];
   ui::EventType touch_status_[kMaxTouchPoints];
 
   DISALLOW_COPY_AND_ASSIGN(TouchObserverHUD);

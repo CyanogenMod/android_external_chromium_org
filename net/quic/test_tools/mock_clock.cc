@@ -6,7 +6,7 @@
 
 namespace net {
 
-MockClock::MockClock() {
+MockClock::MockClock() : now_(QuicTime::Zero()) {
 }
 
 MockClock::~MockClock() {
@@ -21,10 +21,18 @@ QuicTime MockClock::Now() const {
   return now_;
 }
 
+QuicTime MockClock::ApproximateNow() const {
+  return now_;
+}
+
+QuicTime::Delta MockClock::NowAsDeltaSinceUnixEpoch() const {
+  return now_.Subtract(QuicTime::Zero());
+}
+
 base::TimeTicks MockClock::NowInTicks() const {
   base::TimeTicks ticks;
   return ticks + base::TimeDelta::FromMicroseconds(
-      now_.Subtract(QuicTime()).ToMicroseconds());
+      now_.Subtract(QuicTime::Zero()).ToMicroseconds());
 }
 
 }  // namespace net

@@ -32,10 +32,9 @@ class PanelCocoa : public NativePanel {
   virtual void DeactivatePanel() OVERRIDE;
   virtual bool IsPanelActive() const OVERRIDE;
   virtual void PreventActivationByOS(bool prevent_activation) OVERRIDE;
-  virtual gfx::NativeWindow GetNativePanelHandle() OVERRIDE;
+  virtual gfx::NativeWindow GetNativePanelWindow() OVERRIDE;
   virtual void UpdatePanelTitleBar() OVERRIDE;
   virtual void UpdatePanelLoadingAnimations(bool should_animate) OVERRIDE;
-  virtual void NotifyPanelOnUserChangedTheme() OVERRIDE;
   virtual void PanelWebContentsFocused(content::WebContents* contents) OVERRIDE;
   virtual void PanelCut() OVERRIDE;
   virtual void PanelCopy() OVERRIDE;
@@ -49,6 +48,7 @@ class PanelCocoa : public NativePanel {
   virtual void SetPanelAlwaysOnTop(bool on_top) OVERRIDE;
   virtual void EnableResizeByMouse(bool enable) OVERRIDE;
   virtual void UpdatePanelMinimizeRestoreButtonVisibility() OVERRIDE;
+  virtual void SetWindowCornerStyle(panel::CornerStyle corner_style) OVERRIDE;
   virtual void PanelExpansionStateChanging(
       Panel::ExpansionState old_state,
       Panel::ExpansionState new_state) OVERRIDE;
@@ -62,6 +62,8 @@ class PanelCocoa : public NativePanel {
       const gfx::Size& window_size) const OVERRIDE;
   virtual int TitleOnlyHeight() const OVERRIDE;
 
+  virtual void MinimizePanelBySystem() OVERRIDE;
+  virtual bool IsPanelMinimizedBySystem() const OVERRIDE;
   virtual NativePanelTesting* CreateNativePanelTesting() OVERRIDE;
 
   Panel* panel() const;
@@ -97,6 +99,9 @@ class PanelCocoa : public NativePanel {
 
   bool is_shown_;  // Panel is hidden on creation, Show() changes that forever.
   NSInteger attention_request_id_;  // identifier from requestUserAttention.
+
+  // Indicates how the window corner should be rendered, rounded or not.
+  panel::CornerStyle corner_style_;
 
   DISALLOW_COPY_AND_ASSIGN(PanelCocoa);
 };

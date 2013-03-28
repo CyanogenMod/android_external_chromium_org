@@ -52,7 +52,7 @@ TestShellWebKitInit::TestShellWebKitInit(bool layout_test_mode)
   WebKit::WebRuntimeFeatures::enableJavaScriptI18NAPI(true);
 
   // Load libraries for media and enable the media player.
-  FilePath module_path;
+  base::FilePath module_path;
   WebKit::WebRuntimeFeatures::enableMediaPlayer(
       PathService::Get(base::DIR_MODULE, &module_path) &&
       media::InitializeMediaLibrary(module_path));
@@ -132,7 +132,7 @@ bool TestShellWebKitInit::sandboxEnabled() {
   return true;
 }
 
-WebKit::WebKitPlatformSupport::FileHandle
+WebKit::Platform::FileHandle
 TestShellWebKitInit::databaseOpenFile(
     const WebKit::WebString& vfs_file_name, int desired_flags) {
   return SimpleDatabaseSystem::GetInstance()->OpenFile(
@@ -263,11 +263,6 @@ WebKit::WebIDBFactory* TestShellWebKitInit::idbFactory() {
   return WebKit::WebIDBFactory::create();
 }
 
-WebKit::WebSharedWorkerRepository*
-TestShellWebKitInit::sharedWorkerRepository() {
-  return NULL;
-}
-
 WebKit::WebGraphicsContext3D*
 TestShellWebKitInit::createOffscreenGraphicsContext3D(
     const WebKit::WebGraphicsContext3D::Attributes& attributes) {
@@ -280,21 +275,6 @@ void TestShellWebKitInit::GetPlugins(
   if (refresh)
     webkit::npapi::PluginList::Singleton()->RefreshPlugins();
   webkit::npapi::PluginList::Singleton()->GetPlugins(plugins);
-  // Don't load the forked TestNetscapePlugIn in the chromium code, use
-  // the copy in webkit.org's repository instead.
-  const FilePath::StringType kPluginBlackList[] = {
-    FILE_PATH_LITERAL("npapi_layout_test_plugin.dll"),
-    FILE_PATH_LITERAL("WebKitTestNetscapePlugIn.plugin"),
-    FILE_PATH_LITERAL("libnpapi_layout_test_plugin.so"),
-  };
-  for (int i = plugins->size() - 1; i >= 0; --i) {
-    webkit::WebPluginInfo plugin_info = plugins->at(i);
-    for (size_t j = 0; j < arraysize(kPluginBlackList); ++j) {
-      if (plugin_info.path.BaseName() == FilePath(kPluginBlackList[j])) {
-        plugins->erase(plugins->begin() + i);
-      }
-    }
-  }
 }
 
 webkit_glue::ResourceLoaderBridge*

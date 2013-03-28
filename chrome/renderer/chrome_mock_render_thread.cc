@@ -40,7 +40,7 @@ bool ChromeMockRenderThread::OnMessageReceived(const IPC::Message& msg) {
   bool msg_is_ok = true;
   IPC_BEGIN_MESSAGE_MAP_EX(ChromeMockRenderThread, msg, msg_is_ok)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_OpenChannelToExtension,
-                        OnMsgOpenChannelToExtension)
+                        OnOpenChannelToExtension)
     IPC_MESSAGE_HANDLER(PrintHostMsg_GetDefaultPrintSettings,
                         OnGetDefaultPrintSettings)
     IPC_MESSAGE_HANDLER(PrintHostMsg_ScriptedPrint, OnScriptedPrint)
@@ -66,7 +66,7 @@ bool ChromeMockRenderThread::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-void ChromeMockRenderThread::OnMsgOpenChannelToExtension(
+void ChromeMockRenderThread::OnOpenChannelToExtension(
     int routing_id,
     const std::string& source_extension_id,
     const std::string& target_extension_id,
@@ -82,7 +82,7 @@ void ChromeMockRenderThread::OnAllocateTempFileForPrinting(
   renderer_fd->fd = *browser_fd = -1;
   renderer_fd->auto_close = false;
 
-  FilePath path;
+  base::FilePath path;
   if (file_util::CreateTemporaryFile(&path)) {
     int fd = open(path.value().c_str(), O_WRONLY);
     DCHECK_GE(fd, 0);
@@ -184,6 +184,11 @@ void ChromeMockRenderThread::OnUpdatePrintSettings(
   }
   std::vector<int> pages(printing::PageRange::GetPages(new_ranges));
   printer_->UpdateSettings(document_cookie, params, pages, margins_type);
+
+  job_settings.GetBoolean(printing::kSettingShouldPrintSelectionOnly,
+                          &params->params.selection_only);
+  job_settings.GetBoolean(printing::kSettingShouldPrintBackgrounds,
+                          &params->params.should_print_backgrounds);
 }
 
 MockPrinter* ChromeMockRenderThread::printer() {

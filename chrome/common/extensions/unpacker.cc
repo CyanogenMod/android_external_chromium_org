@@ -7,21 +7,24 @@
 #include <set>
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_handle.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/common/extensions/api/i18n/default_locale_handler.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/extensions/manifest.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/zip.h"
 #include "content/public/common/common_param_traits.h"
+#include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "ipc/ipc_message_utils.h"
 #include "net/base/file_stream.h"
@@ -38,7 +41,7 @@ namespace {
 // A limit to stop us passing dangerously large canvases to the browser.
 const int kMaxImageCanvas = 4096 * 4096;
 
-SkBitmap DecodeImage(const FilePath& path) {
+SkBitmap DecodeImage(const base::FilePath& path) {
   // Read the file from disk.
   std::string file_contents;
   if (!file_util::PathExists(path) ||
@@ -57,11 +60,12 @@ SkBitmap DecodeImage(const FilePath& path) {
   return bitmap;
 }
 
-bool PathContainsParentDirectory(const FilePath& path) {
-  const FilePath::StringType kSeparators(FilePath::kSeparators);
-  const FilePath::StringType kParentDirectory(FilePath::kParentDirectory);
-  const size_t npos = FilePath::StringType::npos;
-  const FilePath::StringType& value = path.value();
+bool PathContainsParentDirectory(const base::FilePath& path) {
+  const base::FilePath::StringType kSeparators(base::FilePath::kSeparators);
+  const base::FilePath::StringType kParentDirectory(
+      base::FilePath::kParentDirectory);
+  const size_t npos = base::FilePath::StringType::npos;
+  const base::FilePath::StringType& value = path.value();
 
   for (size_t i = 0; i < value.length(); ) {
     i = value.find(kParentDirectory, i);
@@ -81,9 +85,9 @@ bool PathContainsParentDirectory(const FilePath& path) {
 
 namespace extensions {
 
-Unpacker::Unpacker(const FilePath& extension_path,
+Unpacker::Unpacker(const base::FilePath& extension_path,
                    const std::string& extension_id,
-                   Extension::Location location,
+                   Manifest::Location location,
                    int creation_flags)
     : extension_path_(extension_path),
       extension_id_(extension_id),
@@ -95,8 +99,8 @@ Unpacker::~Unpacker() {
 }
 
 DictionaryValue* Unpacker::ReadManifest() {
-  FilePath manifest_path =
-      temp_install_dir_.Append(Extension::kManifestFilename);
+  base::FilePath manifest_path =
+      temp_install_dir_.Append(kManifestFilename);
   if (!file_util::PathExists(manifest_path)) {
     SetError(errors::kInvalidManifest);
     return NULL;
@@ -119,8 +123,8 @@ DictionaryValue* Unpacker::ReadManifest() {
 }
 
 bool Unpacker::ReadAllMessageCatalogs(const std::string& default_locale) {
-  FilePath locales_path =
-    temp_install_dir_.Append(Extension::kLocaleFolder);
+  base::FilePath locales_path =
+    temp_install_dir_.Append(kLocaleFolder);
 
   // Not all folders under _locales have to be valid locales.
   file_util::FileEnumerator locales(locales_path,
@@ -129,14 +133,13 @@ bool Unpacker::ReadAllMessageCatalogs(const std::string& default_locale) {
 
   std::set<std::string> all_locales;
   extension_l10n_util::GetAllLocales(&all_locales);
-  FilePath locale_path;
+  base::FilePath locale_path;
   while (!(locale_path = locales.Next()).empty()) {
     if (extension_l10n_util::ShouldSkipValidation(locales_path, locale_path,
                                                   all_locales))
       continue;
 
-    FilePath messages_path =
-      locale_path.Append(Extension::kMessagesFilename);
+    base::FilePath messages_path = locale_path.Append(kMessagesFilename);
 
     if (!ReadMessageCatalog(messages_path))
       return false;
@@ -184,7 +187,7 @@ bool Unpacker::Run() {
     return false;
   }
 
-  Extension::InstallWarningVector warnings;
+  std::vector<InstallWarning> warnings;
   if (!extension_file_util::ValidateExtension(extension.get(),
                                               &error, &warnings)) {
     SetError(error);
@@ -193,8 +196,8 @@ bool Unpacker::Run() {
   extension->AddInstallWarnings(warnings);
 
   // Decode any images that the browser needs to display.
-  std::set<FilePath> image_paths = extension->GetBrowserImages();
-  for (std::set<FilePath>::iterator it = image_paths.begin();
+  std::set<base::FilePath> image_paths = extension->GetBrowserImages();
+  for (std::set<base::FilePath>::iterator it = image_paths.begin();
        it != image_paths.end(); ++it) {
     if (!AddDecodedImage(*it))
       return false;  // Error was already reported.
@@ -202,8 +205,8 @@ bool Unpacker::Run() {
 
   // Parse all message catalogs (if any).
   parsed_catalogs_.reset(new DictionaryValue);
-  if (!extension->default_locale().empty()) {
-    if (!ReadAllMessageCatalogs(extension->default_locale()))
+  if (!LocaleInfo::GetDefaultLocale(extension).empty()) {
+    if (!ReadAllMessageCatalogs(LocaleInfo::GetDefaultLocale(extension)))
       return false;  // Error was already reported.
   }
 
@@ -214,7 +217,7 @@ bool Unpacker::DumpImagesToFile() {
   IPC::Message pickle;  // We use a Message so we can use WriteParam.
   IPC::WriteParam(&pickle, decoded_images_);
 
-  FilePath path = extension_path_.DirName().AppendASCII(
+  base::FilePath path = extension_path_.DirName().AppendASCII(
       filenames::kDecodedImagesFilename);
   if (!file_util::WriteFile(path, static_cast<const char*>(pickle.data()),
                             pickle.size())) {
@@ -229,7 +232,7 @@ bool Unpacker::DumpMessageCatalogsToFile() {
   IPC::Message pickle;
   IPC::WriteParam(&pickle, *parsed_catalogs_.get());
 
-  FilePath path = extension_path_.DirName().AppendASCII(
+  base::FilePath path = extension_path_.DirName().AppendASCII(
       filenames::kDecodedMessageCatalogsFilename);
   if (!file_util::WriteFile(path, static_cast<const char*>(pickle.data()),
                             pickle.size())) {
@@ -241,9 +244,10 @@ bool Unpacker::DumpMessageCatalogsToFile() {
 }
 
 // static
-bool Unpacker::ReadImagesFromFile(const FilePath& extension_path,
+bool Unpacker::ReadImagesFromFile(const base::FilePath& extension_path,
                                   DecodedImages* images) {
-  FilePath path = extension_path.AppendASCII(filenames::kDecodedImagesFilename);
+  base::FilePath path =
+      extension_path.AppendASCII(filenames::kDecodedImagesFilename);
   std::string file_str;
   if (!file_util::ReadFileToString(path, &file_str))
     return false;
@@ -254,9 +258,9 @@ bool Unpacker::ReadImagesFromFile(const FilePath& extension_path,
 }
 
 // static
-bool Unpacker::ReadMessageCatalogsFromFile(const FilePath& extension_path,
+bool Unpacker::ReadMessageCatalogsFromFile(const base::FilePath& extension_path,
                                            DictionaryValue* catalogs) {
-  FilePath path = extension_path.AppendASCII(
+  base::FilePath path = extension_path.AppendASCII(
       filenames::kDecodedMessageCatalogsFilename);
   std::string file_str;
   if (!file_util::ReadFileToString(path, &file_str))
@@ -267,7 +271,7 @@ bool Unpacker::ReadMessageCatalogsFromFile(const FilePath& extension_path,
   return IPC::ReadParam(&pickle, &iter, catalogs);
 }
 
-bool Unpacker::AddDecodedImage(const FilePath& path) {
+bool Unpacker::AddDecodedImage(const base::FilePath& path) {
   // Make sure it's not referencing a file outside the extension's subdir.
   if (path.IsAbsolute() || PathContainsParentDirectory(path)) {
     SetUTF16Error(
@@ -292,7 +296,7 @@ bool Unpacker::AddDecodedImage(const FilePath& path) {
   return true;
 }
 
-bool Unpacker::ReadMessageCatalog(const FilePath& message_path) {
+bool Unpacker::ReadMessageCatalog(const base::FilePath& message_path) {
   std::string error;
   JSONFileValueSerializer serializer(message_path);
   scoped_ptr<DictionaryValue> root(
@@ -311,7 +315,7 @@ bool Unpacker::ReadMessageCatalog(const FilePath& message_path) {
     return false;
   }
 
-  FilePath relative_path;
+  base::FilePath relative_path;
   // message_path was created from temp_install_dir. This should never fail.
   if (!temp_install_dir_.AppendRelativePath(message_path, &relative_path)) {
     NOTREACHED();

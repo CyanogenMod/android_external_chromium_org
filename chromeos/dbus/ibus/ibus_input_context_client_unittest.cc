@@ -22,7 +22,7 @@ using ::testing::_;
 namespace chromeos {
 
 // TODO(nona): Remove after complete libibus removal.
-using chromeos::ibus::IBusText;
+using chromeos::IBusText;
 
 namespace {
 const char kObjectPath[] = "/org/freedesktop/IBus/InputContext_1010";
@@ -36,6 +36,10 @@ const int32 kCursorHeight = 33;
 const uint32 kKeyval = 34;
 const uint32 kKeycode = 35;
 const uint32 kState = 36;
+const int32 kCompositionX = 37;
+const int32 kCompositionY = 38;
+const int32 kCompositionWidth = 39;
+const int32 kCompositionHeight = 40;
 const bool kIsKeyHandled = false;
 const char kSurroundingText[] = "Surrounding Text";
 const uint32 kCursorPos = 2;
@@ -44,30 +48,15 @@ const char kPropertyKey[] = "Property Key";
 const ibus::IBusPropertyState kPropertyState =
     ibus::IBUS_PROPERTY_STATE_CHECKED;
 
-class MockCommitTextHandler {
+class MockInputContextHandler : public IBusInputContextHandlerInterface {
  public:
-  MOCK_METHOD1(Run, void(const IBusText& text));
-};
-
-class MockForwardKeyEventHandler {
- public:
-  MOCK_METHOD3(Run, void(uint32 keyval, uint32 keycode, uint32 state));
-};
-
-class MockHidePreeditTextHandler {
- public:
-  MOCK_METHOD0(Run, void());
-};
-
-class MockShowPreeditTextHandler {
- public:
-  MOCK_METHOD0(Run, void());
-};
-
-class MockUpdatePreeditTextHandler {
- public:
-  MOCK_METHOD3(Run, void(const IBusText& text, uint32 cursor_pos,
-                         bool visible));
+  MOCK_METHOD1(CommitText, void(const IBusText& text));
+  MOCK_METHOD3(ForwardKeyEvent,
+               void(uint32 keyval, uint32 keycode, uint32 state));
+  MOCK_METHOD0(ShowPreeditText, void());
+  MOCK_METHOD0(HidePreeditText, void());
+  MOCK_METHOD3(UpdatePreeditText,
+               void(const IBusText& text, uint32 cursor_pos, bool visible));
 };
 
 class MockProcessKeyEventHandler {
@@ -89,7 +78,9 @@ MATCHER_P(IBusTextEq, expected_text, "The expected IBusText does not match") {
 
 class IBusInputContextClientTest : public testing::Test {
  public:
-  IBusInputContextClientTest() : response_(NULL) {}
+  IBusInputContextClientTest()
+      : response_(NULL),
+        on_set_cursor_location_call_count_(0) {}
 
   virtual void SetUp() OVERRIDE {
     // Create a mock bus.
@@ -195,24 +186,9 @@ class IBusInputContextClientTest : public testing::Test {
   }
 
   // Handles SetCursorLocation method call.
-  void OnSetCursorLocation(
-      dbus::MethodCall* method_call,
-      int timeout_ms,
-      const dbus::ObjectProxy::ResponseCallback& callback,
-      const dbus::ObjectProxy::ErrorCallback& error_callback) {
-    EXPECT_EQ(ibus::input_context::kServiceInterface,
-              method_call->GetInterface());
-    EXPECT_EQ(ibus::input_context::kSetCursorLocationMethod,
-              method_call->GetMember());
-    dbus::MessageReader reader(method_call);
-    int32 x, y, width, height;
-    EXPECT_TRUE(reader.PopInt32(&x));
-    EXPECT_TRUE(reader.PopInt32(&y));
-    EXPECT_TRUE(reader.PopInt32(&width));
-    EXPECT_TRUE(reader.PopInt32(&height));
-    EXPECT_FALSE(reader.HasMoreData());
-
-    message_loop_.PostTask(FROM_HERE, base::Bind(callback, response_));
+  void OnSetCursorLocation(const ibus::Rect& cursor_location,
+                           const ibus::Rect& composition_head) {
+    ++on_set_cursor_location_call_count_;
   }
 
   // Handles SetCapabilities method call.
@@ -289,7 +265,7 @@ class IBusInputContextClientTest : public testing::Test {
     uint32 cursor_pos = 0;
     uint32 anchor_pos = 0;
 
-    EXPECT_TRUE(ibus::PopStringFromIBusText(&reader, &text));
+    EXPECT_TRUE(PopStringFromIBusText(&reader, &text));
     EXPECT_TRUE(reader.PopUint32(&cursor_pos));
     EXPECT_TRUE(reader.PopUint32(&anchor_pos));
     EXPECT_FALSE(reader.HasMoreData());
@@ -339,6 +315,8 @@ class IBusInputContextClientTest : public testing::Test {
   MessageLoop message_loop_;
   // The map from signal to signal handler.
   std::map<std::string, dbus::ObjectProxy::SignalCallback> signal_callback_map_;
+  // Call count of OnSetCursorLocation.
+  int on_set_cursor_location_call_count_;
 
  private:
   // Used to implement the mock proxy.
@@ -362,10 +340,9 @@ TEST_F(IBusInputContextClientTest, CommitTextHandler) {
   ibus_text.set_text(kSampleText);
 
   // Set handler expectations.
-  MockCommitTextHandler handler;
-  EXPECT_CALL(handler, Run(IBusTextEq(&ibus_text)));
-  client_->SetCommitTextHandler(base::Bind(&MockCommitTextHandler::Run,
-                                           base::Unretained(&handler)));
+  MockInputContextHandler mock_handler;
+  EXPECT_CALL(mock_handler, CommitText(IBusTextEq(&ibus_text)));
+  client_->SetInputContextHandler(&mock_handler);
   message_loop_.RunUntilIdle();
 
   // Emit signal.
@@ -378,17 +355,15 @@ TEST_F(IBusInputContextClientTest, CommitTextHandler) {
   signal_callback_map_[ibus::input_context::kCommitTextSignal].Run(&signal);
 
   // Unset the handler so expect not calling handler.
-  client_->UnsetCommitTextHandler();
+  client_->SetInputContextHandler(NULL);
   signal_callback_map_[ibus::input_context::kCommitTextSignal].Run(&signal);
 }
 
 TEST_F(IBusInputContextClientTest, ForwardKeyEventHandlerTest) {
   // Set handler expectations.
-  MockForwardKeyEventHandler handler;
-  EXPECT_CALL(handler, Run(kKeyval, kKeycode, kState));
-  client_->SetForwardKeyEventHandler(
-      base::Bind(&MockForwardKeyEventHandler::Run,
-                 base::Unretained(&handler)));
+  MockInputContextHandler mock_handler;
+  EXPECT_CALL(mock_handler, ForwardKeyEvent(kKeyval, kKeycode, kState));
+  client_->SetInputContextHandler(&mock_handler);
   message_loop_.RunUntilIdle();
 
   // Emit signal.
@@ -405,18 +380,16 @@ TEST_F(IBusInputContextClientTest, ForwardKeyEventHandlerTest) {
       &signal);
 
   // Unset the handler so expect not calling handler.
-  client_->UnsetForwardKeyEventHandler();
+  client_->SetInputContextHandler(NULL);
   signal_callback_map_[ibus::input_context::kForwardKeyEventSignal].Run(
       &signal);
 }
 
 TEST_F(IBusInputContextClientTest, HidePreeditTextHandlerTest) {
   // Set handler expectations.
-  MockHidePreeditTextHandler handler;
-  EXPECT_CALL(handler, Run());
-  client_->SetHidePreeditTextHandler(
-      base::Bind(&MockHidePreeditTextHandler::Run,
-                 base::Unretained(&handler)));
+  MockInputContextHandler mock_handler;
+  EXPECT_CALL(mock_handler, HidePreeditText());
+  client_->SetInputContextHandler(&mock_handler);
   message_loop_.RunUntilIdle();
 
   // Emit signal.
@@ -429,18 +402,16 @@ TEST_F(IBusInputContextClientTest, HidePreeditTextHandlerTest) {
       &signal);
 
   // Unset the handler so expect not calling handler.
-  client_->UnsetHidePreeditTextHandler();
+  client_->SetInputContextHandler(NULL);
   signal_callback_map_[ibus::input_context::kHidePreeditTextSignal].Run(
       &signal);
 }
 
 TEST_F(IBusInputContextClientTest, ShowPreeditTextHandlerTest) {
   // Set handler expectations.
-  MockShowPreeditTextHandler handler;
-  EXPECT_CALL(handler, Run());
-  client_->SetShowPreeditTextHandler(
-      base::Bind(&MockShowPreeditTextHandler::Run,
-                 base::Unretained(&handler)));
+  MockInputContextHandler mock_handler;
+  EXPECT_CALL(mock_handler, ShowPreeditText());
+  client_->SetInputContextHandler(&mock_handler);
   message_loop_.RunUntilIdle();
 
   // Emit signal.
@@ -453,7 +424,7 @@ TEST_F(IBusInputContextClientTest, ShowPreeditTextHandlerTest) {
       &signal);
 
   // Unset the handler so expect not calling handler.
-  client_->UnsetShowPreeditTextHandler();
+  client_->SetInputContextHandler(NULL);
   signal_callback_map_[ibus::input_context::kShowPreeditTextSignal].Run(
       &signal);
 }
@@ -466,11 +437,10 @@ TEST_F(IBusInputContextClientTest, UpdatePreeditTextHandlerTest) {
   ibus_text.set_text(kSampleText);
 
   // Set handler expectations.
-  MockUpdatePreeditTextHandler handler;
-  EXPECT_CALL(handler, Run(IBusTextEq(&ibus_text), kCursorPos, kVisible));
-  client_->SetUpdatePreeditTextHandler(
-      base::Bind(&MockUpdatePreeditTextHandler::Run,
-                 base::Unretained(&handler)));
+  MockInputContextHandler mock_handler;
+  EXPECT_CALL(mock_handler,
+              UpdatePreeditText(IBusTextEq(&ibus_text), kCursorPos, kVisible));
+  client_->SetInputContextHandler(&mock_handler);
   message_loop_.RunUntilIdle();
 
   // Emit signal.
@@ -487,7 +457,7 @@ TEST_F(IBusInputContextClientTest, UpdatePreeditTextHandlerTest) {
       &signal);
 
   // Unset the handler so expect not calling handler.
-  client_->UnsetUpdatePreeditTextHandler();
+  client_->SetInputContextHandler(NULL);
   signal_callback_map_[ibus::input_context::kUpdatePreeditTextSignal].Run(
       &signal);
 }
@@ -549,18 +519,23 @@ TEST_F(IBusInputContextClientTest, SetCapabilitiesTest) {
 }
 
 TEST_F(IBusInputContextClientTest, SetCursorLocationTest) {
-  // Set expectations.
-  EXPECT_CALL(*mock_proxy_, CallMethodWithErrorCallback(_, _, _, _))
-      .WillOnce(Invoke(this,
-                       &IBusInputContextClientTest::OnSetCursorLocation));
-  // Create response.
-  scoped_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
-  response_ = response.get();
-
+  on_set_cursor_location_call_count_ = 0;
+  client_->SetSetCursorLocationHandler(
+      base::Bind(&IBusInputContextClientTest::OnSetCursorLocation,
+                 base::Unretained(this)));
+  const ibus::Rect cursor_location(kCursorX,
+                                   kCursorY,
+                                   kCursorWidth,
+                                   kCursorHeight);
+  const ibus::Rect composition_location(kCompositionX,
+                                        kCompositionY,
+                                        kCompositionWidth,
+                                        kCompositionHeight);
   // Call SetCursorLocation.
-  client_->SetCursorLocation(kCursorX, kCursorY, kCursorWidth, kCursorHeight);
-  // Run the message loop.
-  message_loop_.RunUntilIdle();
+  client_->SetCursorLocation(cursor_location, composition_location);
+
+  EXPECT_EQ(1, on_set_cursor_location_call_count_);
+  client_->UnsetSetCursorLocationHandler();
 }
 
 TEST_F(IBusInputContextClientTest, OnProcessKeyEvent) {

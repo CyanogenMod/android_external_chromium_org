@@ -12,14 +12,16 @@
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
+#include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/pepper/pepper_platform_context_3d_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebCanvas.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCanvas.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebLayer.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gl/gpu_preference.h"
@@ -64,6 +66,56 @@ class FullscreenMouseLockDispatcher : public MouseLockDispatcher {
 
   DISALLOW_COPY_AND_ASSIGN(FullscreenMouseLockDispatcher);
 };
+
+WebMouseEvent WebMouseEventFromGestureEvent(const WebGestureEvent& gesture) {
+  WebMouseEvent mouse;
+
+  switch (gesture.type) {
+    case WebInputEvent::GestureScrollBegin:
+      mouse.type = WebInputEvent::MouseDown;
+      break;
+
+    case WebInputEvent::GestureScrollUpdate:
+      mouse.type = WebInputEvent::MouseMove;
+      break;
+
+    case WebInputEvent::GestureFlingStart:
+      if (gesture.sourceDevice == WebGestureEvent::Touchscreen) {
+        // A scroll gesture on the touchscreen may end with a GestureScrollEnd
+        // when there is no velocity, or a GestureFlingStart when it has a
+        // velocity. In both cases, it should end the drag that was initiated by
+        // the GestureScrollBegin (and subsequent GestureScrollUpdate) events.
+        mouse.type = WebInputEvent::MouseUp;
+        break;
+      } else {
+        return mouse;
+      }
+    case WebInputEvent::GestureScrollEnd:
+      mouse.type = WebInputEvent::MouseUp;
+      break;
+
+    default:
+      break;
+  }
+
+  if (mouse.type == WebInputEvent::Undefined)
+    return mouse;
+
+  mouse.timeStampSeconds = gesture.timeStampSeconds;
+  mouse.modifiers = gesture.modifiers | WebInputEvent::LeftButtonDown;
+  mouse.button = WebMouseEvent::ButtonLeft;
+  mouse.clickCount = (mouse.type == WebInputEvent::MouseDown ||
+                      mouse.type == WebInputEvent::MouseUp);
+
+  mouse.x = gesture.x;
+  mouse.y = gesture.y;
+  mouse.windowX = gesture.globalX;
+  mouse.windowY = gesture.globalY;
+  mouse.globalX = gesture.globalX;
+  mouse.globalY = gesture.globalY;
+
+  return mouse;
+}
 
 FullscreenMouseLockDispatcher::FullscreenMouseLockDispatcher(
     RenderWidgetFullscreenPepper* widget) : widget_(widget) {
@@ -123,11 +175,7 @@ class PepperWidget : public WebWidget {
   virtual void layout() {
   }
 
-#if WEBWIDGET_HAS_PAINT_OPTIONS
   virtual void paint(WebCanvas* canvas, const WebRect& rect, PaintOptions) {
-#else
-  virtual void paint(WebCanvas* canvas, const WebRect& rect) {
-#endif
     if (!widget_->plugin())
       return;
 
@@ -139,21 +187,10 @@ class PepperWidget : public WebWidget {
     widget_->plugin()->Paint(canvas, plugin_rect, rect);
   }
 
-#if WEBWIDGET_HAS_SETCOMPOSITORSURFACEREADY
   virtual void setCompositorSurfaceReady() {
   }
-#endif
 
   virtual void composite(bool finish) {
-    if (!widget_->plugin())
-      return;
-
-    WebGraphicsContext3DCommandBufferImpl* context = widget_->context();
-    DCHECK(context);
-    unsigned int texture = widget_->plugin()->GetBackingTextureId();
-    context->bindTexture(GL_TEXTURE_2D, texture);
-    context->drawArrays(GL_TRIANGLES, 0, 3);
-    widget_->SwapBuffers();
   }
 
   virtual void themeChanged() {
@@ -167,75 +204,53 @@ class PepperWidget : public WebWidget {
     // This cursor info is ignored, we always set the cursor directly from
     // RenderWidgetFullscreenPepper::DidChangeCursor.
     WebCursorInfo cursor;
-    bool result = widget_->plugin()->HandleInputEvent(event, &cursor);
 
-    // For normal web pages, WebCore::EventHandler converts selected
-    // gesture events into mouse and wheel events. We don't have a WebView
-    // so do this translation here.
-    if (!result && WebInputEvent::isGestureEventType(event.type)) {
+    // Pepper plugins do not accept gesture events. So do not send the gesture
+    // events directly to the plugin. Instead, try to convert them to equivalent
+    // mouse events, and then send to the plugin.
+    if (WebInputEvent::isGestureEventType(event.type)) {
+      bool result = false;
+      const WebGestureEvent* gesture_event =
+          static_cast<const WebGestureEvent*>(&event);
       switch (event.type) {
-        case WebInputEvent::GestureScrollUpdate: {
-          const WebGestureEvent* gesture_event =
-              static_cast<const WebGestureEvent*>(&event);
-          WebMouseWheelEvent wheel_event;
-          wheel_event.timeStampSeconds = gesture_event->timeStampSeconds;
-          wheel_event.type = WebInputEvent::MouseWheel;
-          wheel_event.modifiers = gesture_event->modifiers;
-
-          wheel_event.x = gesture_event->x;
-          wheel_event.y = gesture_event->y;
-          wheel_event.windowX = gesture_event->globalX;
-          wheel_event.windowY = gesture_event->globalX;
-          wheel_event.globalX = gesture_event->globalX;
-          wheel_event.globalY = gesture_event->globalY;
-          wheel_event.movementX = 0;
-          wheel_event.movementY = 0;
-
-          wheel_event.deltaX = gesture_event->data.scrollUpdate.deltaX;
-          wheel_event.deltaY = gesture_event->data.scrollUpdate.deltaY;
-          wheel_event.wheelTicksX =
-              gesture_event->data.scrollUpdate.deltaX / kTickDivisor;
-          wheel_event.wheelTicksY =
-              gesture_event->data.scrollUpdate.deltaY / kTickDivisor;
-          wheel_event.hasPreciseScrollingDeltas = 1;
-          wheel_event.phase = WebMouseWheelEvent::PhaseNone;
-          wheel_event.momentumPhase = WebMouseWheelEvent::PhaseNone;
-
-          result |= widget_->plugin()->HandleInputEvent(wheel_event, &cursor);
-          break;
-        }
         case WebInputEvent::GestureTap: {
-          const WebGestureEvent* gesture_event =
-              static_cast<const WebGestureEvent*>(&event);
-          WebMouseEvent mouseEvent;
+          WebMouseEvent mouse;
 
-          mouseEvent.timeStampSeconds = gesture_event->timeStampSeconds;
-          mouseEvent.type = WebInputEvent::MouseMove;
-          mouseEvent.modifiers = gesture_event->modifiers;
+          mouse.timeStampSeconds = gesture_event->timeStampSeconds;
+          mouse.type = WebInputEvent::MouseMove;
+          mouse.modifiers = gesture_event->modifiers;
 
-          mouseEvent.x = gesture_event->x;
-          mouseEvent.y = gesture_event->y;
-          mouseEvent.windowX = gesture_event->globalX;
-          mouseEvent.windowY = gesture_event->globalX;
-          mouseEvent.globalX = gesture_event->globalX;
-          mouseEvent.globalY = gesture_event->globalY;
-          mouseEvent.movementX = 0;
-          mouseEvent.movementY = 0;
-          result |= widget_->plugin()->HandleInputEvent(mouseEvent, &cursor);
+          mouse.x = gesture_event->x;
+          mouse.y = gesture_event->y;
+          mouse.windowX = gesture_event->globalX;
+          mouse.windowY = gesture_event->globalY;
+          mouse.globalX = gesture_event->globalX;
+          mouse.globalY = gesture_event->globalY;
+          mouse.movementX = 0;
+          mouse.movementY = 0;
+          result |= widget_->plugin()->HandleInputEvent(mouse, &cursor);
 
-          mouseEvent.type = WebInputEvent::MouseDown;
-          mouseEvent.button = WebMouseEvent::ButtonLeft;
-          mouseEvent.clickCount = gesture_event->data.tap.tapCount;
-          result |= widget_->plugin()->HandleInputEvent(mouseEvent, &cursor);
+          mouse.type = WebInputEvent::MouseDown;
+          mouse.button = WebMouseEvent::ButtonLeft;
+          mouse.clickCount = gesture_event->data.tap.tapCount;
+          result |= widget_->plugin()->HandleInputEvent(mouse, &cursor);
 
-          mouseEvent.type = WebInputEvent::MouseUp;
-          result |= widget_->plugin()->HandleInputEvent(mouseEvent, &cursor);
+          mouse.type = WebInputEvent::MouseUp;
+          result |= widget_->plugin()->HandleInputEvent(mouse, &cursor);
           break;
         }
-        default:
+
+        default: {
+          WebMouseEvent mouse = WebMouseEventFromGestureEvent(*gesture_event);
+          if (mouse.type != WebInputEvent::Undefined)
+            result |= widget_->plugin()->HandleInputEvent(mouse, &cursor);
           break;
+        }
       }
+      return result;
     }
+
+    bool result = widget_->plugin()->HandleInputEvent(event, &cursor);
 
     // For normal web pages, WebViewImpl does input event translations and
     // generates context menu events. Since we don't have a WebView, we need to
@@ -319,8 +334,7 @@ class PepperWidget : public WebWidget {
   }
 
   virtual bool isAcceleratedCompositingActive() const {
-    return widget_->context() && widget_->plugin() &&
-        (widget_->plugin()->GetBackingTextureId() != 0);
+    return widget_->plugin() && widget_->is_compositing();
   }
 
  private:
@@ -329,17 +343,6 @@ class PepperWidget : public WebWidget {
 
   DISALLOW_COPY_AND_ASSIGN(PepperWidget);
 };
-
-void DestroyContext(WebGraphicsContext3DCommandBufferImpl* context,
-                    GLuint program,
-                    GLuint buffer) {
-  DCHECK(context);
-  if (program)
-    context->deleteProgram(program);
-  if (buffer)
-    context->deleteBuffer(buffer);
-  delete context;
-}
 
 }  // anonymous namespace
 
@@ -352,7 +355,8 @@ RenderWidgetFullscreenPepper* RenderWidgetFullscreenPepper::Create(
   scoped_refptr<RenderWidgetFullscreenPepper> widget(
       new RenderWidgetFullscreenPepper(plugin, active_url, screen_info));
   widget->Init(opener_id);
-  return widget.release();
+  widget->AddRef();
+  return widget.get();
 }
 
 RenderWidgetFullscreenPepper::RenderWidgetFullscreenPepper(
@@ -362,63 +366,25 @@ RenderWidgetFullscreenPepper::RenderWidgetFullscreenPepper(
     : RenderWidgetFullscreen(screen_info),
       active_url_(active_url),
       plugin_(plugin),
-      context_(NULL),
-      buffer_(0),
-      program_(0),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      layer_(NULL),
       mouse_lock_dispatcher_(new FullscreenMouseLockDispatcher(
           ALLOW_THIS_IN_INITIALIZER_LIST(this))) {
 }
 
 RenderWidgetFullscreenPepper::~RenderWidgetFullscreenPepper() {
-  if (context_)
-    DestroyContext(context_, program_, buffer_);
 }
-
-void RenderWidgetFullscreenPepper::OnViewContextSwapBuffersPosted() {
-  OnSwapBuffersPosted();
-}
-
-void RenderWidgetFullscreenPepper::OnViewContextSwapBuffersComplete() {
-  OnSwapBuffersComplete();
-}
-
-void RenderWidgetFullscreenPepper::OnViewContextSwapBuffersAborted() {
-  if (!context_)
-    return;
-  // Destroy the context later, in case we got called from InitContext for
-  // example. We still need to reset context_ now so that a new context gets
-  // created when the plugin recreates its own.
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&DestroyContext, context_, program_, buffer_));
-  context_ = NULL;
-  program_ = 0;
-  buffer_ = 0;
-  OnSwapBuffersAborted();
-  CheckCompositing();
-}
-
 
 void RenderWidgetFullscreenPepper::Invalidate() {
   InvalidateRect(gfx::Rect(size_.width(), size_.height()));
 }
 
 void RenderWidgetFullscreenPepper::InvalidateRect(const WebKit::WebRect& rect) {
-  if (CheckCompositing()) {
-    scheduleComposite();
-  } else {
-    didInvalidateRect(rect);
-  }
+  didInvalidateRect(rect);
 }
 
 void RenderWidgetFullscreenPepper::ScrollRect(
     int dx, int dy, const WebKit::WebRect& rect) {
-  if (CheckCompositing()) {
-    scheduleComposite();
-  } else {
-    didScrollRect(dx, dy, rect);
-  }
+  didScrollRect(dx, dy, rect);
 }
 
 void RenderWidgetFullscreenPepper::Destroy() {
@@ -436,16 +402,41 @@ void RenderWidgetFullscreenPepper::DidChangeCursor(
 
 webkit::ppapi::PluginDelegate::PlatformContext3D*
 RenderWidgetFullscreenPepper::CreateContext3D() {
-#ifdef ENABLE_GPU
-  return new PlatformContext3DImpl(this);
-#else
-  return NULL;
-#endif
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableFlashFullscreen3d))
+    return NULL;
+  return new PlatformContext3DImpl;
 }
 
 void RenderWidgetFullscreenPepper::ReparentContext(
     webkit::ppapi::PluginDelegate::PlatformContext3D* context) {
-  static_cast<PlatformContext3DImpl*>(context)->SetParentContext(this);
+  PlatformContext3DImpl* context_impl =
+      static_cast<PlatformContext3DImpl*>(context);
+
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableFlashFullscreen3d))
+    context_impl->DestroyParentContextProviderAndBackingTexture();
+  else
+    context_impl->SetParentAndCreateBackingTextureIfNeeded();
+}
+
+void RenderWidgetFullscreenPepper::SetLayer(WebKit::WebLayer* layer) {
+  layer_ = layer;
+  bool compositing = !!layer_;
+  if (compositing != is_accelerated_compositing_active_) {
+    if (compositing) {
+      initializeLayerTreeView();
+      if (!layerTreeView())
+        return;
+      layer_->setBounds(WebKit::WebSize(size()));
+      layer_->setDrawsContent(true);
+      compositor_->setDeviceScaleFactor(device_scale_factor_);
+      compositor_->setRootLayer(*layer_);
+      didActivateCompositor(-1);
+    } else {
+      didDeactivateCompositor();
+    }
+  }
 }
 
 bool RenderWidgetFullscreenPepper::OnMessageReceived(const IPC::Message& msg) {
@@ -505,181 +496,29 @@ RenderWidgetFullscreenPepper::GetBitmapForOptimizedPluginPaint(
 }
 
 void RenderWidgetFullscreenPepper::OnResize(const gfx::Size& size,
-                                            const gfx::Rect& resizer_rect,
-                                            bool is_fullscreen) {
-  if (context_) {
-    gfx::Size pixel_size = gfx::ToFlooredSize(
-        gfx::ScaleSize(size, deviceScaleFactor()));
-    context_->reshape(pixel_size.width(), pixel_size.height());
-    context_->viewport(0, 0, pixel_size.width(), pixel_size.height());
-  }
-  RenderWidget::OnResize(size, resizer_rect, is_fullscreen);
+    const gfx::Size& physical_backing_size,
+    float overdraw_bottom_height,
+    const gfx::Rect& resizer_rect,
+    bool is_fullscreen) {
+  if (layer_)
+    layer_->setBounds(WebKit::WebSize(size));
+  RenderWidget::OnResize(size, physical_backing_size, overdraw_bottom_height,
+                         resizer_rect, is_fullscreen);
 }
 
 WebWidget* RenderWidgetFullscreenPepper::CreateWebWidget() {
   return new PepperWidget(this);
 }
 
-bool RenderWidgetFullscreenPepper::SupportsAsynchronousSwapBuffers() {
-  return context_ != NULL;
+GURL RenderWidgetFullscreenPepper::GetURLForGraphicsContext3D() {
+  return active_url_;
 }
 
-void RenderWidgetFullscreenPepper::CreateContext() {
-  DCHECK(!context_);
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableFlashFullscreen3d))
-    return;
-  WebKit::WebGraphicsContext3D::Attributes attributes;
-  attributes.depth = false;
-  attributes.stencil = false;
-  attributes.antialias = false;
-  attributes.shareResources = false;
-  attributes.preferDiscreteGPU = true;
-  context_ = WebGraphicsContext3DCommandBufferImpl::CreateViewContext(
-      RenderThreadImpl::current(),
-      surface_id(),
-      NULL,
-      attributes,
-      true /* bind generates resources */,
-      active_url_,
-      CAUSE_FOR_GPU_LAUNCH_RENDERWIDGETFULLSCREENPEPPER_CREATECONTEXT);
-  if (!context_)
-    return;
-
-  if (!InitContext()) {
-    DestroyContext(context_, program_, buffer_);
-    context_ = NULL;
-    return;
-  }
-}
-
-namespace {
-
-const char kVertexShader[] =
-    "attribute vec2 in_tex_coord;\n"
-    "varying vec2 tex_coord;\n"
-    "void main() {\n"
-    "  gl_Position = vec4(in_tex_coord.x * 2. - 1.,\n"
-    "                     in_tex_coord.y * 2. - 1.,\n"
-    "                     0.,\n"
-    "                     1.);\n"
-    "  tex_coord = vec2(in_tex_coord.x, in_tex_coord.y);\n"
-    "}\n";
-
-const char kFragmentShader[] =
-    "precision mediump float;\n"
-    "varying vec2 tex_coord;\n"
-    "uniform sampler2D in_texture;\n"
-    "void main() {\n"
-    "  gl_FragColor = texture2D(in_texture, tex_coord);\n"
-    "}\n";
-
-GLuint CreateShaderFromSource(WebGraphicsContext3DCommandBufferImpl* context,
-                              GLenum type,
-                              const char* source) {
-    GLuint shader = context->createShader(type);
-    context->shaderSource(shader, source);
-    context->compileShader(shader);
-    int status = GL_FALSE;
-    context->getShaderiv(shader, GL_COMPILE_STATUS, &status);
-    if (!status) {
-        int size = 0;
-        context->getShaderiv(shader, GL_INFO_LOG_LENGTH, &size);
-        std::string log = context->getShaderInfoLog(shader).utf8();
-        DLOG(ERROR) << "Compilation failed: " << log;
-        context->deleteShader(shader);
-        shader = 0;
-    }
-    return shader;
-}
-
-const float kTexCoords[] = {
-    0.f, 0.f,
-    0.f, 2.f,
-    2.f, 0.f,
-};
-
-}  // anonymous namespace
-
-bool RenderWidgetFullscreenPepper::InitContext() {
-  gfx::Size pixel_size = gfx::ToFlooredSize(
-      gfx::ScaleSize(size(), deviceScaleFactor()));
-  context_->reshape(pixel_size.width(), pixel_size.height());
-  context_->viewport(0, 0, pixel_size.width(), pixel_size.height());
-
-  program_ = context_->createProgram();
-
-  GLuint vertex_shader =
-      CreateShaderFromSource(context_, GL_VERTEX_SHADER, kVertexShader);
-  if (!vertex_shader)
-    return false;
-  context_->attachShader(program_, vertex_shader);
-  context_->deleteShader(vertex_shader);
-
-  GLuint fragment_shader =
-      CreateShaderFromSource(context_, GL_FRAGMENT_SHADER, kFragmentShader);
-  if (!fragment_shader)
-    return false;
-  context_->attachShader(program_, fragment_shader);
-  context_->deleteShader(fragment_shader);
-
-  context_->bindAttribLocation(program_, 0, "in_tex_coord");
-  context_->linkProgram(program_);
-  int status = GL_FALSE;
-  context_->getProgramiv(program_, GL_LINK_STATUS, &status);
-  if (!status) {
-    int size = 0;
-    context_->getProgramiv(program_, GL_INFO_LOG_LENGTH, &size);
-    std::string log = context_->getProgramInfoLog(program_).utf8();
-    DLOG(ERROR) << "Link failed: " << log;
-    return false;
-  }
-  context_->useProgram(program_);
-  int texture_location = context_->getUniformLocation(program_, "in_texture");
-  context_->uniform1i(texture_location, 0);
-
-  buffer_ = context_->createBuffer();
-  context_->bindBuffer(GL_ARRAY_BUFFER, buffer_);
-  context_->bufferData(GL_ARRAY_BUFFER,
-                 sizeof(kTexCoords),
-                 kTexCoords,
-                 GL_STATIC_DRAW);
-  context_->vertexAttribPointer(0, 2,
-                                GL_FLOAT, GL_FALSE,
-                                0, static_cast<WGC3Dintptr>(NULL));
-  context_->enableVertexAttribArray(0);
-  return true;
-}
-
-bool RenderWidgetFullscreenPepper::CheckCompositing() {
-  bool compositing =
-      webwidget_ && webwidget_->isAcceleratedCompositingActive();
-  if (compositing != is_accelerated_compositing_active_) {
-    if (compositing)
-      didActivateCompositor(-1);
-    else
-      didDeactivateCompositor();
-  }
-  return compositing;
-}
-
-void RenderWidgetFullscreenPepper::SwapBuffers() {
-  DCHECK(context_);
-  context_->prepareTexture();
-
-  // The compositor isn't actually active in this path, but pretend it is for
-  // scheduling purposes.
-  didCommitAndDrawCompositorFrame();
-}
-
-WebGraphicsContext3DCommandBufferImpl*
-RenderWidgetFullscreenPepper::GetParentContextForPlatformContext3D() {
-  if (!context_) {
-    CreateContext();
-  }
-  if (!context_)
-    return NULL;
-  return context_;
+void RenderWidgetFullscreenPepper::SetDeviceScaleFactor(
+    float device_scale_factor) {
+  RenderWidget::SetDeviceScaleFactor(device_scale_factor);
+  if (compositor_)
+    compositor_->setDeviceScaleFactor(device_scale_factor);
 }
 
 }  // namespace content

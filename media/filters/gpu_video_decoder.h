@@ -55,15 +55,15 @@ class MEDIA_EXPORT GpuVideoDecoder
     // Close()ing the returned pointer.
     virtual base::SharedMemory* CreateSharedMemory(size_t size) = 0;
 
+    // Returns the message loop the VideoDecodeAccelerator runs on.
+    virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() = 0;
+
    protected:
     friend class base::RefCountedThreadSafe<Factories>;
     virtual ~Factories();
   };
 
-  typedef base::Callback<
-      scoped_refptr<base::MessageLoopProxy>()> MessageLoopFactoryCB;
-  GpuVideoDecoder(const MessageLoopFactoryCB& message_loop_factory_cb,
-                  const scoped_refptr<base::MessageLoopProxy>& vda_loop_proxy,
+  GpuVideoDecoder(const scoped_refptr<base::MessageLoopProxy>& message_loop,
                   const scoped_refptr<Factories>& factories);
 
   // VideoDecoder implementation.
@@ -74,6 +74,7 @@ class MEDIA_EXPORT GpuVideoDecoder
   virtual void Reset(const base::Closure& closure) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
   virtual bool HasAlpha() const OVERRIDE;
+  virtual bool HasOutputFrameAvailable() const OVERRIDE;
 
   // VideoDecodeAccelerator::Client implementation.
   virtual void NotifyInitializeDone() OVERRIDE;
@@ -125,7 +126,7 @@ class MEDIA_EXPORT GpuVideoDecoder
   void ReusePictureBuffer(int64 picture_buffer_id);
 
   void RecordBufferData(
-      const BitstreamBuffer& bitstream_buffer, const Buffer& buffer);
+      const BitstreamBuffer& bitstream_buffer, const DecoderBuffer& buffer);
   void GetBufferData(int32 id, base::TimeDelta* timetamp,
                      gfx::Rect* visible_rect, gfx::Size* natural_size);
 
@@ -158,9 +159,6 @@ class MEDIA_EXPORT GpuVideoDecoder
 
   // Pointer to the demuxer stream that will feed us compressed buffers.
   scoped_refptr<DemuxerStream> demuxer_stream_;
-
-  // This is !is_null() iff Initialize() hasn't been called.
-  MessageLoopFactoryCB message_loop_factory_cb_;
 
   // MessageLoop on which to fire callbacks and trampoline calls to this class
   // if they arrive on other loops.
@@ -221,11 +219,15 @@ class MEDIA_EXPORT GpuVideoDecoder
   // picture_buffer_id and the frame wrapping the corresponding Picture, for
   // frames that have been decoded but haven't been requested by a Read() yet.
   std::list<scoped_refptr<VideoFrame> > ready_video_frames_;
-  int64 next_picture_buffer_id_;
-  int64 next_bitstream_buffer_id_;
+  int32 next_picture_buffer_id_;
+  int32 next_bitstream_buffer_id_;
 
   // Indicates decoding error occurred.
   bool error_occured_;
+
+  // Set during ProvidePictureBuffers(), used for checking and implementing
+  // HasAvailableOutputFrames().
+  int available_pictures_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuVideoDecoder);
 };

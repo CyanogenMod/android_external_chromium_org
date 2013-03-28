@@ -4,29 +4,231 @@
 
 #include "net/socket/ssl_client_socket.h"
 
+#include "base/callback_helpers.h"
+#include "base/memory/ref_counted.h"
 #include "net/base/address_list.h"
 #include "net/base/cert_test_util.h"
-#include "net/base/host_resolver.h"
 #include "net/base/io_buffer.h"
 #include "net/base/mock_cert_verifier.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/net_log_unittest.h"
-#include "net/base/ssl_config_service.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/test_data_directory.h"
 #include "net/base/test_root_certs.h"
+#include "net/dns/host_resolver.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/tcp_client_socket.h"
+#include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_config_service.h"
 #include "net/test/test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
 //-----------------------------------------------------------------------------
 
+namespace {
+
 const net::SSLConfig kDefaultSSLConfig;
+
+// ReadBufferingStreamSocket is a wrapper for an existing StreamSocket that
+// will ensure a certain amount of data is internally buffered before
+// satisfying a Read() request. It exists to mimic OS-level internal
+// buffering, but in a way to guarantee that X number of bytes will be
+// returned to callers of Read(), regardless of how quickly the OS receives
+// them from the TestServer.
+class ReadBufferingStreamSocket : public net::StreamSocket {
+ public:
+  explicit ReadBufferingStreamSocket(scoped_ptr<net::StreamSocket> transport);
+  virtual ~ReadBufferingStreamSocket() {}
+
+  // Sets the internal buffer to |size|. This must not be greater than
+  // the largest value supplied to Read() - that is, it does not handle
+  // having "leftovers" at the end of Read().
+  // Each call to Read() will be prevented from completion until at least
+  // |size| data has been read.
+  // Set to 0 to turn off buffering, causing Read() to transparently
+  // read via the underlying transport.
+  void SetBufferSize(int size);
+
+  // StreamSocket implementation:
+  virtual int Connect(const net::CompletionCallback& callback) OVERRIDE {
+    return transport_->Connect(callback);
+  }
+  virtual void Disconnect() OVERRIDE {
+    transport_->Disconnect();
+  }
+  virtual bool IsConnected() const OVERRIDE {
+    return transport_->IsConnected();
+  }
+  virtual bool IsConnectedAndIdle() const OVERRIDE {
+    return transport_->IsConnectedAndIdle();
+  }
+  virtual int GetPeerAddress(net::IPEndPoint* address) const OVERRIDE {
+    return transport_->GetPeerAddress(address);
+  }
+  virtual int GetLocalAddress(net::IPEndPoint* address) const OVERRIDE {
+    return transport_->GetLocalAddress(address);
+  }
+  virtual const net::BoundNetLog& NetLog() const OVERRIDE {
+    return transport_->NetLog();
+  }
+  virtual void SetSubresourceSpeculation() OVERRIDE {
+    transport_->SetSubresourceSpeculation();
+  }
+  virtual void SetOmniboxSpeculation() OVERRIDE {
+    transport_->SetOmniboxSpeculation();
+  }
+  virtual bool WasEverUsed() const OVERRIDE {
+    return transport_->WasEverUsed();
+  }
+  virtual bool UsingTCPFastOpen() const OVERRIDE {
+    return transport_->UsingTCPFastOpen();
+  }
+  virtual int64 NumBytesRead() const OVERRIDE {
+    return transport_->NumBytesRead();
+  }
+  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE {
+    return transport_->GetConnectTimeMicros();
+  }
+  virtual bool WasNpnNegotiated() const OVERRIDE {
+    return transport_->WasNpnNegotiated();
+  }
+  virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE {
+    return transport_->GetNegotiatedProtocol();
+  }
+  virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE {
+    return transport_->GetSSLInfo(ssl_info);
+  }
+
+  // Socket implementation:
+  virtual int Read(net::IOBuffer* buf, int buf_len,
+                   const net::CompletionCallback& callback) OVERRIDE;
+  virtual int Write(net::IOBuffer* buf, int buf_len,
+                    const net::CompletionCallback& callback) OVERRIDE {
+    return transport_->Write(buf, buf_len, callback);
+  }
+  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE {
+    return transport_->SetReceiveBufferSize(size);
+  }
+  virtual bool SetSendBufferSize(int32 size) OVERRIDE {
+    return transport_->SetSendBufferSize(size);
+  }
+
+ private:
+  enum State {
+    STATE_NONE,
+    STATE_READ,
+    STATE_READ_COMPLETE,
+  };
+
+  int DoLoop(int result);
+  int DoRead();
+  int DoReadComplete(int result);
+  void OnReadCompleted(int result);
+
+  State state_;
+  scoped_ptr<net::StreamSocket> transport_;
+  scoped_refptr<net::GrowableIOBuffer> read_buffer_;
+  int buffer_size_;
+
+  scoped_refptr<net::IOBuffer> user_read_buf_;
+  net::CompletionCallback user_read_callback_;
+};
+
+ReadBufferingStreamSocket::ReadBufferingStreamSocket(
+    scoped_ptr<net::StreamSocket> transport)
+    : transport_(transport.Pass()),
+      read_buffer_(new net::GrowableIOBuffer()),
+      buffer_size_(0) {
+}
+
+void ReadBufferingStreamSocket::SetBufferSize(int size) {
+  DCHECK(!user_read_buf_);
+  buffer_size_ = size;
+  read_buffer_->SetCapacity(size);
+}
+
+int ReadBufferingStreamSocket::Read(net::IOBuffer* buf,
+                                    int buf_len,
+                                    const net::CompletionCallback& callback) {
+  if (buffer_size_ == 0)
+    return transport_->Read(buf, buf_len, callback);
+
+  if (buf_len < buffer_size_)
+    return net::ERR_UNEXPECTED;
+
+  state_ = STATE_READ;
+  user_read_buf_ = buf;
+  int result = DoLoop(net::OK);
+  if (result == net::ERR_IO_PENDING)
+    user_read_callback_ = callback;
+  else
+    user_read_buf_ = NULL;
+  return result;
+}
+
+int ReadBufferingStreamSocket::DoLoop(int result) {
+  int rv = result;
+  do {
+    State current_state = state_;
+    state_ = STATE_NONE;
+    switch (current_state) {
+      case STATE_READ:
+        rv = DoRead();
+        break;
+      case STATE_READ_COMPLETE:
+        rv = DoReadComplete(rv);
+        break;
+      case STATE_NONE:
+      default:
+        NOTREACHED() << "Unexpected state: " << current_state;
+        rv = net::ERR_UNEXPECTED;
+        break;
+    }
+  } while (rv != net::ERR_IO_PENDING && state_ != STATE_NONE);
+  return rv;
+}
+
+int ReadBufferingStreamSocket::DoRead() {
+  state_ = STATE_READ_COMPLETE;
+  int rv = transport_->Read(
+      read_buffer_,
+      read_buffer_->RemainingCapacity(),
+      base::Bind(&ReadBufferingStreamSocket::OnReadCompleted,
+                 base::Unretained(this)));
+  return rv;
+}
+
+int ReadBufferingStreamSocket::DoReadComplete(int result) {
+  state_ = STATE_NONE;
+  if (result <= 0)
+    return result;
+
+  read_buffer_->set_offset(read_buffer_->offset() + result);
+  if (read_buffer_->RemainingCapacity() > 0) {
+    state_ = STATE_READ;
+    return net::OK;
+  }
+
+  memcpy(user_read_buf_->data(), read_buffer_->StartOfBuffer(),
+         read_buffer_->capacity());
+  read_buffer_->set_offset(0);
+  return read_buffer_->capacity();
+}
+
+void ReadBufferingStreamSocket::OnReadCompleted(int result) {
+  result = DoLoop(result);
+  if (result == net::ERR_IO_PENDING)
+    return;
+
+  user_read_buf_ = NULL;
+  base::ResetAndReturn(&user_read_callback_).Run(result);
+}
+
+}  // namespace
 
 class SSLClientSocketTest : public PlatformTest {
  public:
@@ -72,7 +274,7 @@ static bool LogContainsSSLConnectEndEvent(
 TEST_F(SSLClientSocketTest, Connect) {
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               net::TestServer::kLocalhost,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -115,7 +317,7 @@ TEST_F(SSLClientSocketTest, ConnectExpired) {
       net::TestServer::SSLOptions::CERT_EXPIRED);
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               ssl_options,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   cert_verifier_->set_default_result(net::ERR_CERT_DATE_INVALID);
@@ -162,7 +364,7 @@ TEST_F(SSLClientSocketTest, ConnectMismatched) {
       net::TestServer::SSLOptions::CERT_MISMATCHED_NAME);
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               ssl_options,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   cert_verifier_->set_default_result(net::ERR_CERT_COMMON_NAME_INVALID);
@@ -211,7 +413,7 @@ TEST_F(SSLClientSocketTest, ConnectClientAuthCertRequested) {
   ssl_options.request_client_certificate = true;
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               ssl_options,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -273,7 +475,7 @@ TEST_F(SSLClientSocketTest, ConnectClientAuthSendNullCert) {
   ssl_options.request_client_certificate = true;
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               ssl_options,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -333,7 +535,7 @@ TEST_F(SSLClientSocketTest, ConnectClientAuthSendNullCert) {
 TEST_F(SSLClientSocketTest, Read) {
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               net::TestServer::kLocalhost,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -389,7 +591,7 @@ TEST_F(SSLClientSocketTest, Read) {
 TEST_F(SSLClientSocketTest, Read_FullDuplex) {
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               net::TestServer::kLocalhost,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -447,7 +649,7 @@ TEST_F(SSLClientSocketTest, Read_FullDuplex) {
 TEST_F(SSLClientSocketTest, Read_SmallChunks) {
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               net::TestServer::kLocalhost,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -497,10 +699,62 @@ TEST_F(SSLClientSocketTest, Read_SmallChunks) {
   }
 }
 
+TEST_F(SSLClientSocketTest, Read_ManySmallRecords) {
+  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
+                              net::TestServer::kLocalhost,
+                              base::FilePath());
+  ASSERT_TRUE(test_server.Start());
+
+  net::AddressList addr;
+  ASSERT_TRUE(test_server.GetAddressList(&addr));
+
+  net::TestCompletionCallback callback;
+
+  scoped_ptr<net::StreamSocket> real_transport(new net::TCPClientSocket(
+      addr, NULL, net::NetLog::Source()));
+  ReadBufferingStreamSocket* transport = new ReadBufferingStreamSocket(
+      real_transport.Pass());
+  int rv = callback.GetResult(transport->Connect(callback.callback()));
+  ASSERT_EQ(net::OK, rv);
+
+  scoped_ptr<net::SSLClientSocket> sock(
+      CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                            kDefaultSSLConfig));
+
+  rv = callback.GetResult(sock->Connect(callback.callback()));
+  ASSERT_EQ(net::OK, rv);
+  ASSERT_TRUE(sock->IsConnected());
+
+  const char request_text[] = "GET /ssl-many-small-records HTTP/1.0\r\n\r\n";
+  scoped_refptr<net::IOBuffer> request_buffer(
+      new net::IOBuffer(arraysize(request_text) - 1));
+  memcpy(request_buffer->data(), request_text, arraysize(request_text) - 1);
+
+  rv = callback.GetResult(sock->Write(
+      request_buffer, arraysize(request_text) - 1, callback.callback()));
+  ASSERT_GT(rv, 0);
+  ASSERT_EQ(static_cast<int>(arraysize(request_text) - 1), rv);
+
+  // Note: This relies on SSLClientSocketNSS attempting to read up to 17K of
+  // data (the max SSL record size) at a time. Ensure that at least 15K worth
+  // of SSL data is buffered first. The 15K of buffered data is made up of
+  // many smaller SSL records (the TestServer writes along 1350 byte
+  // plaintext boundaries), although there may also be a few records that are
+  // smaller or larger, due to timing and SSL False Start.
+  // 15K was chosen because 15K is smaller than the 17K (max) read issued by
+  // the SSLClientSocket implementation, and larger than the minimum amount
+  // of ciphertext necessary to contain the 8K of plaintext requested below.
+  transport->SetBufferSize(15000);
+
+  scoped_refptr<net::IOBuffer> buffer(new net::IOBuffer(8192));
+  rv = callback.GetResult(sock->Read(buffer, 8192, callback.callback()));
+  ASSERT_EQ(rv, 8192);
+}
+
 TEST_F(SSLClientSocketTest, Read_Interrupted) {
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               net::TestServer::kLocalhost,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -550,7 +804,7 @@ TEST_F(SSLClientSocketTest, Read_Interrupted) {
 TEST_F(SSLClientSocketTest, Read_FullLogging) {
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               net::TestServer::kLocalhost,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -618,7 +872,7 @@ TEST_F(SSLClientSocketTest, Read_FullLogging) {
 TEST_F(SSLClientSocketTest, PrematureApplicationData) {
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               net::TestServer::kLocalhost,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -665,8 +919,6 @@ TEST_F(SSLClientSocketTest, PrematureApplicationData) {
   EXPECT_EQ(net::ERR_SSL_PROTOCOL_ERROR, rv);
 }
 
-// TODO(rsleevi): Not implemented for Schannel. As Schannel is only used when
-// performing client authentication, it will not be tested here.
 TEST_F(SSLClientSocketTest, CipherSuiteDisables) {
   // Rather than exhaustively disabling every RC4 ciphersuite defined at
   // http://www.iana.org/assignments/tls-parameters/tls-parameters.xml,
@@ -682,7 +934,7 @@ TEST_F(SSLClientSocketTest, CipherSuiteDisables) {
       net::TestServer::SSLOptions::BULK_CIPHER_RC4;
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               ssl_options,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -753,7 +1005,7 @@ TEST_F(SSLClientSocketTest, CipherSuiteDisables) {
 TEST_F(SSLClientSocketTest, ClientSocketHandleNotFromPool) {
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               net::TestServer::kLocalhost,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -787,7 +1039,7 @@ TEST_F(SSLClientSocketTest, ClientSocketHandleNotFromPool) {
 TEST_F(SSLClientSocketTest, ExportKeyingMaterial) {
   net::TestServer test_server(net::TestServer::TYPE_HTTPS,
                               net::TestServer::kLocalhost,
-                              FilePath());
+                              base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -882,9 +1134,9 @@ TEST_F(SSLClientSocketTest, VerifyReturnChainProperlyOrdered) {
   // Set up a test server with CERT_CHAIN_WRONG_ROOT.
   net::TestServer::SSLOptions ssl_options(
       net::TestServer::SSLOptions::CERT_CHAIN_WRONG_ROOT);
-  net::TestServer test_server(net::TestServer::TYPE_HTTPS,
-                              ssl_options,
-                              FilePath(FILE_PATH_LITERAL("net/data/ssl")));
+  net::TestServer test_server(
+      net::TestServer::TYPE_HTTPS, ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
   ASSERT_TRUE(test_server.Start());
 
   net::AddressList addr;
@@ -936,3 +1188,101 @@ TEST_F(SSLClientSocketTest, VerifyReturnChainProperlyOrdered) {
   EXPECT_FALSE(sock->IsConnected());
 }
 
+// Verifies the correctness of GetSSLCertRequestInfo.
+class SSLClientSocketCertRequestInfoTest : public SSLClientSocketTest {
+ protected:
+  // Creates a test server with the given SSLOptions, connects to it and returns
+  // the SSLCertRequestInfo reported by the socket.
+  scoped_refptr<net::SSLCertRequestInfo> GetCertRequest(
+      net::TestServer::SSLOptions ssl_options) {
+    net::TestServer test_server(net::TestServer::TYPE_HTTPS,
+                                ssl_options,
+                                base::FilePath());
+    if (!test_server.Start())
+      return NULL;
+
+    net::AddressList addr;
+    if (!test_server.GetAddressList(&addr))
+      return NULL;
+
+    net::TestCompletionCallback callback;
+    net::CapturingNetLog log;
+    net::StreamSocket* transport = new net::TCPClientSocket(
+        addr, &log, net::NetLog::Source());
+    int rv = transport->Connect(callback.callback());
+    if (rv == net::ERR_IO_PENDING)
+      rv = callback.WaitForResult();
+    EXPECT_EQ(net::OK, rv);
+
+    scoped_ptr<net::SSLClientSocket> sock(
+        CreateSSLClientSocket(transport, test_server.host_port_pair(),
+                              kDefaultSSLConfig));
+    EXPECT_FALSE(sock->IsConnected());
+
+    rv = sock->Connect(callback.callback());
+    if (rv == net::ERR_IO_PENDING)
+      rv = callback.WaitForResult();
+    scoped_refptr<net::SSLCertRequestInfo> request_info =
+        new net::SSLCertRequestInfo();
+    sock->GetSSLCertRequestInfo(request_info.get());
+    sock->Disconnect();
+    EXPECT_FALSE(sock->IsConnected());
+
+    return request_info;
+  }
+};
+
+TEST_F(SSLClientSocketCertRequestInfoTest, NoAuthorities) {
+  net::TestServer::SSLOptions ssl_options;
+  ssl_options.request_client_certificate = true;
+  scoped_refptr<net::SSLCertRequestInfo> request_info =
+      GetCertRequest(ssl_options);
+  ASSERT_TRUE(request_info);
+  EXPECT_EQ(0u, request_info->cert_authorities.size());
+}
+
+TEST_F(SSLClientSocketCertRequestInfoTest, TwoAuthorities) {
+  const base::FilePath::CharType kThawteFile[] =
+      FILE_PATH_LITERAL("thawte.single.pem");
+  const unsigned char kThawteDN[] = {
+    0x30, 0x4c, 0x31, 0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13,
+    0x02, 0x5a, 0x41, 0x31, 0x25, 0x30, 0x23, 0x06, 0x03, 0x55, 0x04, 0x0a,
+    0x13, 0x1c, 0x54, 0x68, 0x61, 0x77, 0x74, 0x65, 0x20, 0x43, 0x6f, 0x6e,
+    0x73, 0x75, 0x6c, 0x74, 0x69, 0x6e, 0x67, 0x20, 0x28, 0x50, 0x74, 0x79,
+    0x29, 0x20, 0x4c, 0x74, 0x64, 0x2e, 0x31, 0x16, 0x30, 0x14, 0x06, 0x03,
+    0x55, 0x04, 0x03, 0x13, 0x0d, 0x54, 0x68, 0x61, 0x77, 0x74, 0x65, 0x20,
+    0x53, 0x47, 0x43, 0x20, 0x43, 0x41
+  };
+  const size_t kThawteLen = sizeof(kThawteDN);
+
+  const base::FilePath::CharType kDiginotarFile[] =
+      FILE_PATH_LITERAL("diginotar_root_ca.pem");
+  const unsigned char kDiginotarDN[] = {
+    0x30, 0x5f, 0x31, 0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13,
+    0x02, 0x4e, 0x4c, 0x31, 0x12, 0x30, 0x10, 0x06, 0x03, 0x55, 0x04, 0x0a,
+    0x13, 0x09, 0x44, 0x69, 0x67, 0x69, 0x4e, 0x6f, 0x74, 0x61, 0x72, 0x31,
+    0x1a, 0x30, 0x18, 0x06, 0x03, 0x55, 0x04, 0x03, 0x13, 0x11, 0x44, 0x69,
+    0x67, 0x69, 0x4e, 0x6f, 0x74, 0x61, 0x72, 0x20, 0x52, 0x6f, 0x6f, 0x74,
+    0x20, 0x43, 0x41, 0x31, 0x20, 0x30, 0x1e, 0x06, 0x09, 0x2a, 0x86, 0x48,
+    0x86, 0xf7, 0x0d, 0x01, 0x09, 0x01, 0x16, 0x11, 0x69, 0x6e, 0x66, 0x6f,
+    0x40, 0x64, 0x69, 0x67, 0x69, 0x6e, 0x6f, 0x74, 0x61, 0x72, 0x2e, 0x6e,
+    0x6c
+  };
+  const size_t kDiginotarLen = sizeof(kDiginotarDN);
+
+  net::TestServer::SSLOptions ssl_options;
+  ssl_options.request_client_certificate = true;
+  ssl_options.client_authorities.push_back(
+      net::GetTestClientCertsDirectory().Append(kThawteFile));
+  ssl_options.client_authorities.push_back(
+      net::GetTestClientCertsDirectory().Append(kDiginotarFile));
+  scoped_refptr<net::SSLCertRequestInfo> request_info =
+      GetCertRequest(ssl_options);
+  ASSERT_TRUE(request_info);
+  ASSERT_EQ(2u, request_info->cert_authorities.size());
+  EXPECT_EQ(std::string(reinterpret_cast<const char*>(kThawteDN), kThawteLen),
+            request_info->cert_authorities[0]);
+  EXPECT_EQ(
+      std::string(reinterpret_cast<const char*>(kDiginotarDN), kDiginotarLen),
+      request_info->cert_authorities[1]);
+}

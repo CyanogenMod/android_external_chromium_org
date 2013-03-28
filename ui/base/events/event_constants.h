@@ -26,7 +26,6 @@ enum EventType {
   ET_TOUCH_STATIONARY,
   ET_TOUCH_CANCELLED,
   ET_DROP_TARGET_EVENT,
-  ET_FOCUS_CHANGE,
   ET_TRANSLATED_KEY_PRESS,
   ET_TRANSLATED_KEY_RELEASE,
 
@@ -39,7 +38,6 @@ enum EventType {
   ET_GESTURE_TAP_CANCEL,
   ET_GESTURE_BEGIN,  // Sent before any other gesture types.
   ET_GESTURE_END,    // Sent after any other gestures.
-  ET_GESTURE_DOUBLE_TAP,
   ET_GESTURE_TWO_FINGER_TAP,
   ET_GESTURE_PINCH_BEGIN,
   ET_GESTURE_PINCH_END,
@@ -55,6 +53,14 @@ enum EventType {
   ET_SCROLL,
   ET_SCROLL_FLING_START,
   ET_SCROLL_FLING_CANCEL,
+
+  // Sent by the system to indicate any modal type operations, such as drag and
+  // drop or menus, should stop.
+  ET_CANCEL_MODE,
+
+  // Must always be last. User namespace starts above this value.
+  // See ui::RegisterCustomEventType().
+  ET_LAST
 };
 
 // Event flags currently supported

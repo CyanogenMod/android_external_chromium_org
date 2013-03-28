@@ -8,7 +8,7 @@
 
 #import "content/browser/accessibility/browser_accessibility_cocoa.h"
 #import "content/browser/accessibility/browser_accessibility_delegate_mac.h"
-#include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/accessibility/browser_accessibility_manager_mac.h"
 
 namespace content {
 
@@ -28,10 +28,12 @@ void BrowserAccessibilityMac::PreInitialize() {
     return;
 
   // We take ownership of the cocoa obj here.
+  BrowserAccessibilityManagerMac* manager =
+      static_cast<BrowserAccessibilityManagerMac*>(manager_);
   browser_accessibility_cocoa_ = [[BrowserAccessibilityCocoa alloc]
       initWithObject:this
       delegate:
-          (id<BrowserAccessibilityDelegateCocoa>)manager_->GetParentView()];
+          (id<BrowserAccessibilityDelegateCocoa>)manager->parent_view()];
 }
 
 void BrowserAccessibilityMac::NativeReleaseReference() {
@@ -56,6 +58,12 @@ void BrowserAccessibilityMac::DetachTree(
     std::vector<BrowserAccessibility*>* nodes) {
   [browser_accessibility_cocoa_ childrenChanged];
   BrowserAccessibility::DetachTree(nodes);
+}
+
+void BrowserAccessibilityMac::SwapChildren(
+    std::vector<BrowserAccessibility*>& children) {
+  [browser_accessibility_cocoa_ childrenChanged];
+  BrowserAccessibility::SwapChildren(children);
 }
 
 BrowserAccessibilityCocoa* BrowserAccessibility::ToBrowserAccessibilityCocoa() {

@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 #include "base/json/json_writer.h"
 #include "base/stringprintf.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/automation_events.h"
@@ -19,8 +19,8 @@
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_message.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
@@ -67,9 +67,10 @@ bool AutomationRendererHelper::SnapshotEntirePage(
   view->layout();
   frame->setScrollOffset(WebSize(0, 0));
 
-  skia::PlatformCanvas canvas(
-      new_size.width, new_size.height, true /* is_opaque */);
-  view->paint(webkit_glue::ToWebCanvas(&canvas),
+  skia::RefPtr<SkCanvas> canvas = skia::AdoptRef(
+      skia::CreatePlatformCanvas(new_size.width, new_size.height, true));
+
+  view->paint(webkit_glue::ToWebCanvas(canvas.get()),
               gfx::Rect(0, 0, new_size.width, new_size.height));
 
   frame->setCanHaveScrollbars(true);
@@ -80,7 +81,7 @@ bool AutomationRendererHelper::SnapshotEntirePage(
   frame->setScrollOffset(WebSize(old_scroll.width - min_scroll.width,
                                  old_scroll.height - min_scroll.height));
 
-  const SkBitmap& bmp = skia::GetTopDevice(canvas)->accessBitmap(false);
+  const SkBitmap& bmp = skia::GetTopDevice(*canvas)->accessBitmap(false);
   SkAutoLockPixels lock_pixels(bmp);
   // EncodeBGRA uses FORMAT_SkBitmap, which doesn't work on windows for some
   // cases dealing with transparency. See crbug.com/96317. Use FORMAT_BGRA.

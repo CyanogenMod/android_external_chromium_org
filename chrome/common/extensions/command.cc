@@ -5,19 +5,21 @@
 #include "chrome/common/extensions/command.h"
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
+#include "extensions/common/error_utils.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace errors = extension_manifest_errors;
 namespace keys = extension_manifest_keys;
 namespace values = extension_manifest_values;
+
+using extensions::ErrorUtils;
 
 namespace {
 
@@ -36,7 +38,7 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
       platform_key != values::kKeybindingPlatformChromeOs &&
       platform_key != values::kKeybindingPlatformLinux &&
       platform_key != values::kKeybindingPlatformDefault) {
-    *error = ExtensionErrorUtils::FormatErrorMessageUTF16(
+    *error = ErrorUtils::FormatErrorMessageUTF16(
         errors::kInvalidKeyBindingUnknownPlatform,
         base::IntToString(index),
         platform_key);
@@ -46,7 +48,7 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
   std::vector<std::string> tokens;
   base::SplitString(accelerator, '+', &tokens);
   if (tokens.size() < 2 || tokens.size() > 3) {
-    *error = ExtensionErrorUtils::FormatErrorMessageUTF16(
+    *error = ErrorUtils::FormatErrorMessageUTF16(
         errors::kInvalidKeyBinding,
         base::IntToString(index),
         platform_key,
@@ -99,7 +101,7 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
         break;
       }
     } else {
-      *error = ExtensionErrorUtils::FormatErrorMessageUTF16(
+      *error = ErrorUtils::FormatErrorMessageUTF16(
           errors::kInvalidKeyBinding,
           base::IntToString(index),
           platform_key,
@@ -120,7 +122,7 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
   // as a modifier.
   if (key == ui::VKEY_UNKNOWN || (ctrl && alt) || (command && alt) ||
       (shift && !ctrl && !alt && !command)) {
-    *error = ExtensionErrorUtils::FormatErrorMessageUTF16(
+    *error = ErrorUtils::FormatErrorMessageUTF16(
         errors::kInvalidKeyBinding,
         base::IntToString(index),
         platform_key,
@@ -200,7 +202,7 @@ ui::Accelerator Command::StringToAccelerator(const std::string& accelerator) {
   return parsed;
 }
 
-bool Command::Parse(DictionaryValue* command,
+bool Command::Parse(const DictionaryValue* command,
                     const std::string& command_name,
                     int index,
                     string16* error) {
@@ -211,18 +213,18 @@ bool Command::Parse(DictionaryValue* command,
   SuggestionMap suggestions;
 
   // First try to parse the |suggested_key| as a dictionary.
-  DictionaryValue* suggested_key_dict;
+  const DictionaryValue* suggested_key_dict;
   if (command->GetDictionary(keys::kSuggestedKey, &suggested_key_dict)) {
-    DictionaryValue::key_iterator iter = suggested_key_dict->begin_keys();
-    for ( ; iter != suggested_key_dict->end_keys(); ++iter) {
+    for (DictionaryValue::Iterator iter(*suggested_key_dict); !iter.IsAtEnd();
+         iter.Advance()) {
       // For each item in the dictionary, extract the platforms specified.
       std::string suggested_key_string;
-      if (suggested_key_dict->GetString(*iter, &suggested_key_string) &&
+      if (iter.value().GetAsString(&suggested_key_string) &&
           !suggested_key_string.empty()) {
         // Found a platform, add it to the suggestions list.
-        suggestions[*iter] = suggested_key_string;
+        suggestions[iter.key()] = suggested_key_string;
       } else {
-        *error = ExtensionErrorUtils::FormatErrorMessageUTF16(
+        *error = ErrorUtils::FormatErrorMessageUTF16(
             errors::kInvalidKeyBinding,
             base::IntToString(index),
             keys::kSuggestedKey,
@@ -240,7 +242,7 @@ bool Command::Parse(DictionaryValue* command,
       // If only a single string is provided, it must be default for all.
       suggestions["default"] = suggested_key_string;
     } else {
-      *error = ExtensionErrorUtils::FormatErrorMessageUTF16(
+      *error = ErrorUtils::FormatErrorMessageUTF16(
           errors::kInvalidKeyBinding,
           base::IntToString(index),
           keys::kSuggestedKey,
@@ -258,7 +260,7 @@ bool Command::Parse(DictionaryValue* command,
     // other platforms, which is not what we want.
     if (iter->first == "default" &&
         iter->second.find("Command+") != std::string::npos) {
-      *error = ExtensionErrorUtils::FormatErrorMessageUTF16(
+      *error = ErrorUtils::FormatErrorMessageUTF16(
           errors::kInvalidKeyBinding,
           base::IntToString(index),
           keys::kSuggestedKey,
@@ -275,7 +277,7 @@ bool Command::Parse(DictionaryValue* command,
   if (suggestions.find(key) == suggestions.end())
     key = values::kKeybindingPlatformDefault;
   if (suggestions.find(key) == suggestions.end()) {
-    *error = ExtensionErrorUtils::FormatErrorMessageUTF16(
+    *error = ErrorUtils::FormatErrorMessageUTF16(
         errors::kInvalidKeyBindingMissingPlatform,
         base::IntToString(index),
         keys::kSuggestedKey,
@@ -293,7 +295,7 @@ bool Command::Parse(DictionaryValue* command,
     ui::Accelerator accelerator =
         ParseImpl(iter->second, iter->first, index, error);
     if (accelerator.key_code() == ui::VKEY_UNKNOWN) {
-      *error = ExtensionErrorUtils::FormatErrorMessageUTF16(
+      *error = ErrorUtils::FormatErrorMessageUTF16(
           errors::kInvalidKeyBinding,
           base::IntToString(index),
           iter->first,
@@ -314,7 +316,7 @@ bool Command::Parse(DictionaryValue* command,
               extension_manifest_values::kScriptBadgeCommandEvent) {
         if (!command->GetString(keys::kDescription, &description_) ||
             description_.empty()) {
-          *error = ExtensionErrorUtils::FormatErrorMessageUTF16(
+          *error = ErrorUtils::FormatErrorMessageUTF16(
               errors::kInvalidKeyBindingDescription,
               base::IntToString(index));
           return false;

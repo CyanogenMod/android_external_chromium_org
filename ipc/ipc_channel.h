@@ -17,10 +17,6 @@
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sender.h"
 
-// TODO(brettw) remove this and update files that depend on this being included
-// from here.
-#include "ipc/ipc_listener.h"
-
 namespace IPC {
 
 class Listener;
@@ -94,7 +90,7 @@ class IPC_EXPORT Channel : public Sender {
   // size or bigger results in a channel error.
   static const size_t kMaximumMessageSize = 128 * 1024 * 1024;
 
-  // Ammount of data to read at once from the pipe.
+  // Amount of data to read at once from the pipe.
   static const size_t kReadBufferSize = 4 * 1024;
 
   // Initialize a Channel.
@@ -129,11 +125,15 @@ class IPC_EXPORT Channel : public Sender {
   // connection and listen for new ones, use ResetToAcceptingConnectionState.
   void Close();
 
-  // Modify the Channel's listener.
-  void set_listener(Listener* listener);
-
   // Get the process ID for the connected peer.
-  // Returns base::kNullProcessId if the peer is not connected yet.
+  //
+  // Returns base::kNullProcessId if the peer is not connected yet. Watch out
+  // for race conditions. You can easily get a channel to another process, but
+  // if your process has not yet processed the "hello" message from the remote
+  // side, this will fail. You should either make sure calling this is either
+  // in response to a message from the remote side (which guarantees that it's
+  // been connected), or you wait for the "connected" notification on the
+  // listener.
   base::ProcessId peer_pid() const;
 
   // Send a message over the Channel to the listener on the other end.
@@ -167,8 +167,8 @@ class IPC_EXPORT Channel : public Sender {
   bool HasAcceptedConnection() const;
 
   // Returns true if the peer process' effective user id can be determined, in
-  // which case the supplied client_euid is updated with it.
-  bool GetClientEuid(uid_t* client_euid) const;
+  // which case the supplied peer_euid is updated with it.
+  bool GetPeerEuid(uid_t* peer_euid) const;
 
   // Closes any currently connected socket, and returns to a listening state
   // for more connections.

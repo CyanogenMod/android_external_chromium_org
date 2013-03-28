@@ -5,8 +5,8 @@
 #ifndef WEBKIT_FILEAPI_NATIVE_FILE_UTIL_H_
 #define WEBKIT_FILEAPI_NATIVE_FILE_UTIL_H_
 
-#include "base/file_path.h"
-#include "base/file_util_proxy.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util_proxy.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "webkit/fileapi/file_system_file_util.h"
@@ -18,41 +18,44 @@ class Time;
 
 namespace fileapi {
 
-using base::PlatformFile;
-using base::PlatformFileError;
-
-// TODO(dmikurube): Add unit tests for NativeFileUtil.
-// This class handles accessing the OS native filesystem.
+// A thin wrapper class for accessing the OS native filesystem.
+// This performs common error checks necessary to implement FileUtil family
+// in addition to perform native filesystem operations.
+//
+// For the error checks it performs please see the comment for
+// FileSystemFileUtil interface (webkit/fileapi/file_system_file_util.h).
+//
+// Note that all the methods of this class are static and this does NOT
+// inherit from FileSystemFileUtil.
 class WEBKIT_STORAGE_EXPORT_PRIVATE NativeFileUtil {
  public:
-  static PlatformFileError CreateOrOpen(
-      const FilePath& path,
+  static base::PlatformFileError CreateOrOpen(
+      const base::FilePath& path,
       int file_flags,
-      PlatformFile* file_handle,
+      base::PlatformFile* file_handle,
       bool* created);
-  static PlatformFileError Close(PlatformFile file);
-  static PlatformFileError EnsureFileExists(const FilePath& path,
-                                            bool* created);
-  static PlatformFileError CreateDirectory(const FilePath& path,
-                                           bool exclusive,
-                                           bool recursive);
-  static PlatformFileError GetFileInfo(const FilePath& path,
-                                       base::PlatformFileInfo* file_info);
+  static base::PlatformFileError Close(base::PlatformFile file);
+  static base::PlatformFileError EnsureFileExists(const base::FilePath& path,
+                                                  bool* created);
+  static base::PlatformFileError CreateDirectory(const base::FilePath& path,
+                                                 bool exclusive,
+                                                 bool recursive);
+  static base::PlatformFileError GetFileInfo(const base::FilePath& path,
+                                             base::PlatformFileInfo* file_info);
   static scoped_ptr<FileSystemFileUtil::AbstractFileEnumerator>
-      CreateFileEnumerator(const FilePath& root_path,
+      CreateFileEnumerator(const base::FilePath& root_path,
                            bool recursive);
-  static PlatformFileError Touch(const FilePath& path,
-                                 const base::Time& last_access_time,
-                                 const base::Time& last_modified_time);
-  static PlatformFileError Truncate(const FilePath& path, int64 length);
-  static bool PathExists(const FilePath& path);
-  static bool DirectoryExists(const FilePath& path);
-  static bool IsDirectoryEmpty(const FilePath& path);
-  static PlatformFileError CopyOrMoveFile(const FilePath& src_path,
-                                   const FilePath& dest_path,
-                                   bool copy);
-  static PlatformFileError DeleteFile(const FilePath& path);
-  static PlatformFileError DeleteSingleDirectory(const FilePath& path);
+  static base::PlatformFileError Touch(const base::FilePath& path,
+                                       const base::Time& last_access_time,
+                                       const base::Time& last_modified_time);
+  static base::PlatformFileError Truncate(const base::FilePath& path, int64 length);
+  static bool PathExists(const base::FilePath& path);
+  static bool DirectoryExists(const base::FilePath& path);
+  static base::PlatformFileError CopyOrMoveFile(const base::FilePath& src_path,
+                                                const base::FilePath& dest_path,
+                                                bool copy);
+  static base::PlatformFileError DeleteFile(const base::FilePath& path);
+  static base::PlatformFileError DeleteDirectory(const base::FilePath& path);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(NativeFileUtil);

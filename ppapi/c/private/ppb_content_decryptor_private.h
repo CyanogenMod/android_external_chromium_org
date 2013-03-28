@@ -4,7 +4,7 @@
  */
 
 /* From private/ppb_content_decryptor_private.idl,
- *   modified Fri Oct 26 14:47:38 2012.
+ *   modified Mon Dec 10 21:43:51 2012.
  */
 
 #ifndef PPAPI_C_PRIVATE_PPB_CONTENT_DECRYPTOR_PRIVATE_H_
@@ -63,7 +63,7 @@ struct PPB_ContentDecryptor_Private_0_6 {
    * <code>PP_VARTYPE_STRING</code> containing the session ID.
    *
    * @param[in] init_data A <code>PP_Var</code> of type
-   * <code>PP_VARTYPE_ARRAYBUFFER</code> containing container-specific
+   * <code>PP_VARTYPE_ARRAY_BUFFER</code> containing container-specific
    * initialization data.
    */
   void (*NeedKey)(PP_Instance instance,
@@ -112,8 +112,8 @@ struct PPB_ContentDecryptor_Private_0_6 {
    * @param[in] session_id A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the session ID.
    *
-   * @param[in] resource A <code>PP_Resource</code> corresponding to a
-   * <code>PPB_Buffer_Dev</code> resource that contains the message.
+   * @param[in] message A <code>PP_Var</code> of type
+   * <code>PP_VARTYPE_ARRAY_BUFFER</code> that contains the message.
    *
    * @param[in] default_url A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the default URL for the message.
@@ -121,7 +121,7 @@ struct PPB_ContentDecryptor_Private_0_6 {
   void (*KeyMessage)(PP_Instance instance,
                      struct PP_Var key_system,
                      struct PP_Var session_id,
-                     PP_Resource message,
+                     struct PP_Var message,
                      struct PP_Var default_url);
   /**
    * An error occurred in a <code>PPP_ContentDecryptor_Private</code> method,
@@ -146,6 +146,10 @@ struct PPB_ContentDecryptor_Private_0_6 {
    * Called after the <code>Decrypt()</code> method on the
    * <code>PPP_ContentDecryptor_Private</code> interface completes to
    * deliver decrypted_block to the browser for decoding and rendering.
+   *
+   * The plugin must not hold a reference to the encrypted buffer resource
+   * provided to <code>Decrypt()</code> when it calls this method. The browser
+   * will reuse the buffer in a subsequent <code>Decrypt()</code> call.
    *
    * @param[in] decrypted_block A <code>PP_Resource</code> corresponding to a
    * <code>PPB_Buffer_Dev</code> resource that contains a decrypted data
@@ -214,6 +218,11 @@ struct PPB_ContentDecryptor_Private_0_6 {
    * <code>PPP_ContentDecryptor_Private</code> interface completes to deliver
    * a decrypted and decoded video frame to the browser for rendering.
    *
+   * The plugin must not hold a reference to the encrypted buffer resource
+   * provided to <code>DecryptAndDecode()</code> when it calls this method. The
+   * browser will reuse the buffer in a subsequent
+   * <code>DecryptAndDecode()</code> call.
+   *
    * @param[in] decrypted_frame A <code>PP_Resource</code> corresponding to a
    * <code>PPB_Buffer_Dev</code> resource that contains a video frame.
    *
@@ -227,9 +236,14 @@ struct PPB_ContentDecryptor_Private_0_6 {
       const struct PP_DecryptedFrameInfo* decrypted_frame_info);
   /**
    * Called after the <code>DecryptAndDecode()</code> method on the
-   * <code>PPP_ContentDecryptor_Private</code> interface completes to
-   * deliver a buffer of decrypted and decoded audio samples to the browser for
+   * <code>PPP_ContentDecryptor_Private</code> interface completes to deliver
+   * a buffer of decrypted and decoded audio samples to the browser for
    * rendering.
+   *
+   * The plugin must not hold a reference to the encrypted buffer resource
+   * provided to <code>DecryptAndDecode()</code> when it calls this method. The
+   * browser will reuse the buffer in a subsequent
+   * <code>DecryptAndDecode()</code> call.
    *
    * <code>audio_frames</code> can contain multiple audio output buffers. Each
    * buffer is serialized in this format:

@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/important_file_writer.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
@@ -14,7 +15,7 @@
 
 namespace remoting {
 
-JsonHostConfig::JsonHostConfig(const FilePath& filename)
+JsonHostConfig::JsonHostConfig(const base::FilePath& filename)
     : filename_(filename) {
 }
 
@@ -36,11 +37,8 @@ bool JsonHostConfig::Read() {
 bool JsonHostConfig::Save() {
   DCHECK(CalledOnValidThread());
 
-  std::string file_content = GetSerializedData();
-  // TODO(sergeyu): Move ImportantFileWriter to base and use it here.
-  int result = file_util::WriteFile(filename_, file_content.data(),
-                                    file_content.size());
-  return result == static_cast<int>(file_content.size());
+  return base::ImportantFileWriter::WriteFileAtomically(filename_,
+                                                        GetSerializedData());
 }
 
 std::string JsonHostConfig::GetSerializedData() {

@@ -29,7 +29,51 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__),
+                                '..', 'python', 'google'))
+import path_utils
+
+
 ELLIPSIS = '...'
+
+
+def GetSuppressions():
+  suppressions_root = path_utils.ScriptDir()
+  JOIN = os.path.join
+
+  result = {}
+
+  supp_filename = JOIN(suppressions_root, "memcheck", "suppressions.txt")
+  vg_common = ReadSuppressionsFromFile(supp_filename)
+  supp_filename = JOIN(suppressions_root, "tsan", "suppressions.txt")
+  tsan_common = ReadSuppressionsFromFile(supp_filename)
+  result['common_suppressions'] = vg_common + tsan_common
+
+  supp_filename = JOIN(suppressions_root, "memcheck", "suppressions_linux.txt")
+  vg_linux = ReadSuppressionsFromFile(supp_filename)
+  supp_filename = JOIN(suppressions_root, "tsan", "suppressions_linux.txt")
+  tsan_linux = ReadSuppressionsFromFile(supp_filename)
+  result['linux_suppressions'] = vg_linux + tsan_linux
+
+  supp_filename = JOIN(suppressions_root, "memcheck", "suppressions_mac.txt")
+  vg_mac = ReadSuppressionsFromFile(supp_filename)
+  supp_filename = JOIN(suppressions_root, "tsan", "suppressions_mac.txt")
+  tsan_mac = ReadSuppressionsFromFile(supp_filename)
+  result['mac_suppressions'] = vg_mac + tsan_mac
+
+  supp_filename = JOIN(suppressions_root, "tsan", "suppressions_win32.txt")
+  tsan_win = ReadSuppressionsFromFile(supp_filename)
+  result['win_suppressions'] = tsan_win
+
+  supp_filename = JOIN(suppressions_root, "..", "heapcheck", "suppressions.txt")
+  result['heapcheck_suppressions'] = ReadSuppressionsFromFile(supp_filename)
+
+  supp_filename = JOIN(suppressions_root, "drmemory", "suppressions.txt")
+  result['drmem_suppressions'] = ReadSuppressionsFromFile(supp_filename)
+  supp_filename = JOIN(suppressions_root, "drmemory", "suppressions_full.txt")
+  result['drmem_full_suppressions'] = ReadSuppressionsFromFile(supp_filename)
+
+  return result
 
 
 def GlobToRegex(glob_pattern, ignore_case=False):
@@ -133,6 +177,10 @@ def ReadSuppressionsFromFile(filename):
   assert tool in tool_to_parser, (
       "unknown tool %s for filename %s" % (tool, filename))
   parse_func = tool_to_parser[tool]
+
+  # Consider non-existent files to be empty.
+  if not os.path.exists(filename):
+    return []
 
   input_file = file(filename, 'r')
   try:

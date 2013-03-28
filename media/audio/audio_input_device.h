@@ -27,18 +27,10 @@
 //
 // State sequences:
 //
-// Sequence where session_id has not been set using SetDevice():
-// ('<-' signifies callbacks, -> signifies calls made by AudioInputDevice)
 // Start -> InitializeOnIOThread -> CreateStream ->
 //       <- OnStreamCreated <-
 //       -> StartOnIOThread -> PlayStream ->
 //
-// Sequence where session_id has been set using SetDevice():
-// Start -> InitializeOnIOThread -> StartDevice ->
-//       <- OnDeviceReady <-
-//       -> CreateStream ->
-//       <- OnStreamCreated <-
-//       -> StartOnIOThread -> PlayStream ->
 //
 // AudioInputDevice::Capture => low latency audio transport on audio thread =>
 //                               |
@@ -72,6 +64,7 @@
 #include "media/audio/audio_input_ipc.h"
 #include "media/audio/audio_parameters.h"
 #include "media/audio/scoped_loop_observer.h"
+#include "media/base/audio_capturer_source.h"
 #include "media/base/media_export.h"
 
 namespace media {
@@ -82,74 +75,32 @@ namespace media {
 // OnCaptureStopped etc.) and ensure that we can deliver these notifications
 // to any clients using this class.
 class MEDIA_EXPORT AudioInputDevice
-    : NON_EXPORTED_BASE(public AudioInputIPCDelegate),
-      NON_EXPORTED_BASE(public ScopedLoopObserver),
-      public base::RefCountedThreadSafe<AudioInputDevice> {
+    : NON_EXPORTED_BASE(public AudioCapturerSource),
+      NON_EXPORTED_BASE(public AudioInputIPCDelegate),
+      NON_EXPORTED_BASE(public ScopedLoopObserver) {
  public:
-  class MEDIA_EXPORT CaptureCallback {
-   public:
-    virtual void Capture(AudioBus* audio_bus,
-                         int audio_delay_milliseconds,
-                         double volume) = 0;
-    virtual void OnCaptureError() = 0;
-   protected:
-    virtual ~CaptureCallback();
-  };
-
-  class MEDIA_EXPORT CaptureEventHandler {
-   public:
-    // Notification to the client that the device with the specific |device_id|
-    // has been started.
-    // This callback is triggered as a result of StartDevice().
-    virtual void OnDeviceStarted(const std::string& device_id) = 0;
-
-    // Notification to the client that the device has been stopped.
-    virtual void OnDeviceStopped() = 0;
-
-   protected:
-    virtual ~CaptureEventHandler();
-  };
-
   AudioInputDevice(AudioInputIPC* ipc,
                    const scoped_refptr<base::MessageLoopProxy>& io_loop);
 
-  // Initializes the AudioInputDevice.  This method must be called before
-  // any other methods can be used.
-  void Initialize(const AudioParameters& params,
-                  CaptureCallback* callback,
-                  CaptureEventHandler* event_handler);
-
-  // Specify the |session_id| to query which device to use.
-  // Start() will use the second sequence if this method is called before.
-  void SetDevice(int session_id);
-
-  // Starts audio capturing.
-  // TODO(henrika): add support for notification when recording has started.
-  void Start();
-
-  // Stops audio capturing.
-  // TODO(henrika): add support for notification when recording has stopped.
-  void Stop();
-
-  // Sets the capture volume scaling, with range [0.0, 1.0] inclusive.
-  // Returns |true| on success.
-  void SetVolume(double volume);
-
-  // Sets the Automatic Gain Control state to on or off.
-  // This method must be called before Start(). It will not have any effect
-  // if it is called while capturing has already started.
-  void SetAutomaticGainControl(bool enabled);
+  // AudioCapturerSource implementation.
+  virtual void Initialize(const AudioParameters& params,
+                          CaptureCallback* callback,
+                          int session_id) OVERRIDE;
+  virtual void Start() OVERRIDE;
+  virtual void Stop() OVERRIDE;
+  virtual void SetVolume(double volume) OVERRIDE;
+  virtual void SetAutomaticGainControl(bool enabled) OVERRIDE;
 
  protected:
   // Methods called on IO thread ----------------------------------------------
   // AudioInputIPCDelegate implementation.
   virtual void OnStreamCreated(base::SharedMemoryHandle handle,
                                base::SyncSocket::Handle socket_handle,
-                               int length) OVERRIDE;
+                               int length,
+                               int total_segments) OVERRIDE;
   virtual void OnVolume(double volume) OVERRIDE;
   virtual void OnStateChanged(
       AudioInputIPCDelegate::State state) OVERRIDE;
-  virtual void OnDeviceReady(const std::string& device_id) OVERRIDE;
   virtual void OnIPCClosed() OVERRIDE;
 
   friend class base::RefCountedThreadSafe<AudioInputDevice>;
@@ -161,7 +112,6 @@ class MEDIA_EXPORT AudioInputDevice
   // be executed on that thread. They interact with AudioInputMessageFilter and
   // sends IPC messages on that thread.
   void InitializeOnIOThread();
-  void SetSessionIdOnIOThread(int session_id);
   void StartOnIOThread();
   void ShutDownOnIOThread();
   void SetVolumeOnIOThread(double volume);
@@ -174,7 +124,6 @@ class MEDIA_EXPORT AudioInputDevice
   AudioParameters audio_parameters_;
 
   CaptureCallback* callback_;
-  CaptureEventHandler* event_handler_;
 
   AudioInputIPC* ipc_;
 
@@ -182,12 +131,8 @@ class MEDIA_EXPORT AudioInputDevice
   int stream_id_;
 
   // The media session ID used to identify which input device to be started.
-  // Only modified on the IO thread.
+  // Only modified in Initialize() and ShutDownOnIOThread().
   int session_id_;
-
-  // State variable used to indicate it is waiting for a OnDeviceReady()
-  // callback. Only modified on the IO thread.
-  bool pending_device_ready_;
 
   // Stores the Automatic Gain Control state. Default is false.
   // Only modified on the IO thread.

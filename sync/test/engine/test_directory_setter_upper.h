@@ -39,11 +39,13 @@
 #include "sync/util/test_unrecoverable_error_handler.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
-namespace syncable {
-  class Directory;
-}
-
 namespace syncer {
+
+namespace syncable {
+class Directory;
+class DirectoryBackingStore;
+class TestTransactionObserver;
+}
 
 class TestDirectorySetterUpper {
  public:
@@ -52,6 +54,11 @@ class TestDirectorySetterUpper {
 
   // Create a Directory instance open it.
   virtual void SetUp();
+
+  // Create a Directory instance using |directory_store| as backend storage.
+  // Takes ownership of |directory_store|.
+  virtual void SetUpWith(
+      syncer::syncable::DirectoryBackingStore* directory_store);
 
   // Undo everything done by SetUp(): close the directory and delete the
   // backing files. Before closing the directory, this will run the directory
@@ -62,8 +69,13 @@ class TestDirectorySetterUpper {
 
   SyncEncryptionHandler* encryption_handler() { return &encryption_handler_; }
 
+  syncable::TestTransactionObserver* transaction_observer() {
+    return test_transaction_observer_.get();
+  }
+
  private:
   syncable::NullDirectoryChangeDelegate delegate_;
+  scoped_ptr<syncable::TestTransactionObserver> test_transaction_observer_;
   TestUnrecoverableErrorHandler handler_;
 
   void RunInvariantCheck();

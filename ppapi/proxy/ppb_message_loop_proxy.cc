@@ -10,8 +10,8 @@
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
-#include "ppapi/c/dev/ppb_message_loop_dev.h"
 #include "ppapi/c/pp_errors.h"
+#include "ppapi/c/ppb_message_loop.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/shared_impl/proxy_lock.h"
@@ -45,14 +45,12 @@ MessageLoopResource::MessageLoopResource(ForMainThread for_main_thread)
 
   // This must be called only once, so the slot must be empty.
   CHECK(!PluginGlobals::Get()->msg_loop_slot());
-  base::ThreadLocalStorage::Slot* slot =
-      new base::ThreadLocalStorage::Slot(&ReleaseMessageLoop);
+  // We don't add a reference for TLS here, so we don't release it. Instead,
+  // this loop is owned by PluginGlobals. Contrast with AttachToCurrentThread
+  // where we register ReleaseMessageLoop with TLS and call AddRef.
+  base::ThreadLocalStorage::Slot* slot = new base::ThreadLocalStorage::Slot();
   PluginGlobals::Get()->set_msg_loop_slot(slot);
 
-  // Take a ref to the MessageLoop on behalf of the TLS. Note that this is an
-  // internal ref and not a plugin ref so the plugin can't accidentally
-  // release it. This is released by ReleaseMessageLoop().
-  AddRef();
   slot->Set(this);
 
   loop_proxy_ = base::MessageLoopProxy::current();
@@ -200,6 +198,7 @@ void MessageLoopResource::ReleaseMessageLoop(void* value) {
 // -----------------------------------------------------------------------------
 
 PP_Resource Create(PP_Instance instance) {
+  ProxyAutoLock lock;
   // Validate the instance.
   PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance);
   if (!dispatcher)
@@ -208,10 +207,12 @@ PP_Resource Create(PP_Instance instance) {
 }
 
 PP_Resource GetForMainThread() {
+  ProxyAutoLock lock;
   return PluginGlobals::Get()->loop_for_main_thread()->GetReference();
 }
 
 PP_Resource GetCurrent() {
+  ProxyAutoLock lock;
   Resource* resource = MessageLoopResource::GetCurrent();
   if (resource)
     return resource->GetReference();
@@ -248,7 +249,7 @@ int32_t PostQuit(PP_Resource message_loop, PP_Bool should_destroy) {
   return PP_ERROR_BADRESOURCE;
 }
 
-const PPB_MessageLoop_Dev_0_1 ppb_message_loop_interface = {
+const PPB_MessageLoop_1_0 ppb_message_loop_interface = {
   &Create,
   &GetForMainThread,
   &GetCurrent,
@@ -266,7 +267,7 @@ PPB_MessageLoop_Proxy::~PPB_MessageLoop_Proxy() {
 }
 
 // static
-const PPB_MessageLoop_Dev_0_1* PPB_MessageLoop_Proxy::GetInterface() {
+const PPB_MessageLoop_1_0* PPB_MessageLoop_Proxy::GetInterface() {
   return &ppb_message_loop_interface;
 }
 

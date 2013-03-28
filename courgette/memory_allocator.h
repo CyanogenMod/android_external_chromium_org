@@ -8,7 +8,7 @@
 #include <memory>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/platform_file.h"
 
@@ -55,7 +55,7 @@ typedef bool CheckBool;
 
 namespace courgette {
 
-#ifdef OS_WIN
+#if defined(OS_WIN)
 
 // Manages a temporary file.  The file is created in the %TEMP% folder and
 // is deleted when the file handle is closed.

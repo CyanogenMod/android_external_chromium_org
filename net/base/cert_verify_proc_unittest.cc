@@ -6,9 +6,10 @@
 
 #include <vector>
 
-#include "base/file_path.h"
-#include "base/string_number_conversions.h"
+#include "base/files/file_path.h"
+#include "base/logging.h"
 #include "base/sha1.h"
+#include "base/string_number_conversions.h"
 #include "net/base/asn1_util.h"
 #include "net/base/cert_status_flags.h"
 #include "net/base/cert_test_util.h"
@@ -51,14 +52,21 @@ class CertVerifyProcTest : public testing::Test {
   virtual ~CertVerifyProcTest() {}
 
  protected:
+  bool SupportsAdditionalTrustAnchors() {
+    return verify_proc_->SupportsAdditionalTrustAnchors();
+  }
+
   int Verify(X509Certificate* cert,
              const std::string& hostname,
              int flags,
              CRLSet* crl_set,
+             const CertificateList& additional_trust_anchors,
              CertVerifyResult* verify_result) {
     return verify_proc_->Verify(cert, hostname, flags, crl_set,
-                                verify_result);
+                                additional_trust_anchors, verify_result);
   }
+
+  const CertificateList empty_cert_list_;
 
  private:
   scoped_refptr<CertVerifyProc> verify_proc_;
@@ -80,7 +88,7 @@ TEST_F(CertVerifyProcTest, WithoutRevocationChecking) {
 
   CertVerifyResult verify_result;
   EXPECT_EQ(OK, Verify(google_full_chain, "www.google.com", 0 /* flags */,
-                       NULL, &verify_result));
+                       NULL, empty_cert_list_, &verify_result));
 }
 
 #if defined(OS_ANDROID) || defined(USE_OPENSSL)
@@ -109,7 +117,7 @@ TEST_F(CertVerifyProcTest, MAYBE_EVVerification) {
   CertVerifyResult verify_result;
   int flags = CertVerifier::VERIFY_EV_CERT;
   int error = Verify(comodo_chain, "comodo.com", flags, crl_set.get(),
-                     &verify_result);
+                     empty_cert_list_, &verify_result);
   EXPECT_EQ(OK, error);
   EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_IS_EV);
 }
@@ -130,8 +138,8 @@ TEST_F(CertVerifyProcTest, PaypalNullCertParsing) {
   int flags = 0;
   CertVerifyResult verify_result;
   int error = Verify(paypal_null_cert, "www.paypal.com", flags, NULL,
-                     &verify_result);
-#if defined(USE_NSS) || defined(OS_IOS)
+                     empty_cert_list_, &verify_result);
+#if defined(USE_NSS) || defined(OS_IOS) || defined(OS_ANDROID)
   EXPECT_EQ(ERR_CERT_COMMON_NAME_INVALID, error);
 #else
   // TOOD(bulach): investigate why macosx and win aren't returning
@@ -152,7 +160,7 @@ TEST_F(CertVerifyProcTest, PaypalNullCertParsing) {
 // pass if error == ERR_CERT_DATE_INVALID.  TODO(wtc): generate test
 // certificates for this unit test. http://crbug.com/111742
 TEST_F(CertVerifyProcTest, IntermediateCARequireExplicitPolicy) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> server_cert =
       ImportCertFromFile(certs_dir, "www_us_army_mil_cert.der");
@@ -177,7 +185,7 @@ TEST_F(CertVerifyProcTest, IntermediateCARequireExplicitPolicy) {
   int flags = 0;
   CertVerifyResult verify_result;
   int error = Verify(cert_chain, "www.us.army.mil", flags, NULL,
-                     &verify_result);
+                     empty_cert_list_, &verify_result);
   if (error == OK) {
     EXPECT_EQ(0U, verify_result.cert_status);
   } else {
@@ -197,7 +205,7 @@ TEST_F(CertVerifyProcTest, IntermediateCARequireExplicitPolicy) {
 // SEC_ERROR_REVOKED_CERTIFICATE. This indicates a lack of revocation
 // status, i.e. that the revocation check is failing for some reason.
 TEST_F(CertVerifyProcTest, DISABLED_GlobalSignR3EVTest) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> server_cert =
       ImportCertFromFile(certs_dir, "2029_globalsign_com_cert.pem");
@@ -217,7 +225,7 @@ TEST_F(CertVerifyProcTest, DISABLED_GlobalSignR3EVTest) {
   int flags = CertVerifier::VERIFY_REV_CHECKING_ENABLED |
               CertVerifier::VERIFY_EV_CERT;
   int error = Verify(cert_chain, "2029.globalsign.com", flags, NULL,
-                     &verify_result);
+                     empty_cert_list_, &verify_result);
   if (error == OK)
     EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_IS_EV);
   else
@@ -227,14 +235,14 @@ TEST_F(CertVerifyProcTest, DISABLED_GlobalSignR3EVTest) {
 // Test that verifying an ECDSA certificate doesn't crash on XP. (See
 // crbug.com/144466).
 TEST_F(CertVerifyProcTest, ECDSA_RSA) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> cert =
       ImportCertFromFile(certs_dir,
                          "prime256v1-ecdsa-ee-by-1024-rsa-intermediate.pem");
 
   CertVerifyResult verify_result;
-  Verify(cert, "127.0.0.1", 0, NULL, &verify_result);
+  Verify(cert, "127.0.0.1", 0, NULL, empty_cert_list_, &verify_result);
 
   // We don't check verify_result because the certificate is signed by an
   // unknown CA and will be considered invalid on XP because of the ECDSA
@@ -258,7 +266,7 @@ static bool IsWeakKeyType(const std::string& key_type) {
 }
 
 TEST_F(CertVerifyProcTest, RejectWeakKeys) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
   typedef std::vector<std::string> Strings;
   Strings key_types;
 
@@ -308,7 +316,8 @@ TEST_F(CertVerifyProcTest, RejectWeakKeys) {
                                             intermediates);
 
       CertVerifyResult verify_result;
-      int error = Verify(cert_chain, "127.0.0.1", 0, NULL, &verify_result);
+      int error = Verify(cert_chain, "127.0.0.1", 0, NULL,
+                         empty_cert_list_, &verify_result);
 
       if (IsWeakKeyType(*ee_type) || IsWeakKeyType(*signer_type)) {
         EXPECT_NE(OK, error);
@@ -329,7 +338,7 @@ TEST_F(CertVerifyProcTest, RejectWeakKeys) {
 // pass if error == ERR_CERT_DATE_INVALID.  TODO(rsleevi): generate test
 // certificates for this unit test.  http://crbug.com/111730
 TEST_F(CertVerifyProcTest, ExtraneousMD5RootCert) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> server_cert =
       ImportCertFromFile(certs_dir, "images_etrade_wallst_com.pem");
@@ -353,7 +362,7 @@ TEST_F(CertVerifyProcTest, ExtraneousMD5RootCert) {
   CertVerifyResult verify_result;
   int flags = 0;
   int error = Verify(cert_chain, "images.etrade.wallst.com", flags, NULL,
-                     &verify_result);
+                     empty_cert_list_, &verify_result);
   if (error != OK)
     EXPECT_EQ(ERR_CERT_DATE_INVALID, error);
 
@@ -363,7 +372,7 @@ TEST_F(CertVerifyProcTest, ExtraneousMD5RootCert) {
 
 // Test for bug 94673.
 TEST_F(CertVerifyProcTest, GoogleDigiNotarTest) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> server_cert =
       ImportCertFromFile(certs_dir, "google_diginotar.pem");
@@ -382,13 +391,14 @@ TEST_F(CertVerifyProcTest, GoogleDigiNotarTest) {
   CertVerifyResult verify_result;
   int flags = CertVerifier::VERIFY_REV_CHECKING_ENABLED;
   int error = Verify(cert_chain, "mail.google.com", flags, NULL,
-                     &verify_result);
+                     empty_cert_list_, &verify_result);
   EXPECT_NE(OK, error);
 
   // Now turn off revocation checking.  Certificate verification should still
   // fail.
   flags = 0;
-  error = Verify(cert_chain, "mail.google.com", flags, NULL, &verify_result);
+  error = Verify(cert_chain, "mail.google.com", flags, NULL,
+                 empty_cert_list_, &verify_result);
   EXPECT_NE(OK, error);
 }
 
@@ -402,7 +412,7 @@ TEST_F(CertVerifyProcTest, DigiNotarCerts) {
     NULL,
   };
 
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   for (size_t i = 0; kDigiNotarFilenames[i]; i++) {
     scoped_refptr<X509Certificate> diginotar_cert =
@@ -428,7 +438,7 @@ TEST_F(CertVerifyProcTest, DigiNotarCerts) {
 }
 
 TEST_F(CertVerifyProcTest, TestKnownRoot) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
   CertificateList certs = CreateCertificateListFromFile(
       certs_dir, "certse.pem", X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(3U, certs.size());
@@ -445,14 +455,15 @@ TEST_F(CertVerifyProcTest, TestKnownRoot) {
   CertVerifyResult verify_result;
   // This will blow up, June 8th, 2014. Sorry! Please disable and file a bug
   // against agl. See also PublicKeyHashes.
-  int error = Verify(cert_chain, "cert.se", flags, NULL, &verify_result);
+  int error = Verify(cert_chain, "cert.se", flags, NULL,
+                     empty_cert_list_, &verify_result);
   EXPECT_EQ(OK, error);
   EXPECT_EQ(0U, verify_result.cert_status);
   EXPECT_TRUE(verify_result.is_issued_by_known_root);
 }
 
 TEST_F(CertVerifyProcTest, PublicKeyHashes) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
   CertificateList certs = CreateCertificateListFromFile(
       certs_dir, "certse.pem", X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(3U, certs.size());
@@ -469,7 +480,8 @@ TEST_F(CertVerifyProcTest, PublicKeyHashes) {
 
   // This will blow up, June 8th, 2014. Sorry! Please disable and file a bug
   // against agl. See also TestKnownRoot.
-  int error = Verify(cert_chain, "cert.se", flags, NULL, &verify_result);
+  int error = Verify(cert_chain, "cert.se", flags, NULL,
+                     empty_cert_list_, &verify_result);
   EXPECT_EQ(OK, error);
   EXPECT_EQ(0U, verify_result.cert_status);
   ASSERT_LE(3u, verify_result.public_key_hashes.size());
@@ -492,7 +504,7 @@ TEST_F(CertVerifyProcTest, PublicKeyHashes) {
 // The Key Usage extension in this RSA SSL server certificate does not have
 // the keyEncipherment bit.
 TEST_F(CertVerifyProcTest, InvalidKeyUsage) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> server_cert =
       ImportCertFromFile(certs_dir, "invalid_key_usage_cert.der");
@@ -501,7 +513,7 @@ TEST_F(CertVerifyProcTest, InvalidKeyUsage) {
   int flags = 0;
   CertVerifyResult verify_result;
   int error = Verify(server_cert, "jira.aquameta.com", flags, NULL,
-                     &verify_result);
+                     empty_cert_list_, &verify_result);
 #if defined(USE_OPENSSL)
   // This certificate has two errors: "invalid key usage" and "untrusted CA".
   // However, OpenSSL returns only one (the latter), and we can't detect
@@ -526,7 +538,7 @@ TEST_F(CertVerifyProcTest, InvalidKeyUsage) {
 // used to ensure that the actual, verified chain is being returned by
 // Verify().
 TEST_F(CertVerifyProcTest, VerifyReturnChainBasic) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
   CertificateList certs = CreateCertificateListFromFile(
       certs_dir, "x509_verify_results.chain.pem",
       X509Certificate::FORMAT_AUTO);
@@ -546,7 +558,8 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainBasic) {
 
   CertVerifyResult verify_result;
   EXPECT_EQ(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
-  int error = Verify(google_full_chain, "127.0.0.1", 0, NULL, &verify_result);
+  int error = Verify(google_full_chain, "127.0.0.1", 0, NULL,
+                     empty_cert_list_, &verify_result);
   EXPECT_EQ(OK, error);
   ASSERT_NE(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
 
@@ -569,7 +582,7 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainBasic) {
 // of intermediate certificates are combined, it's possible that order may
 // not be maintained.
 TEST_F(CertVerifyProcTest, VerifyReturnChainProperlyOrdered) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
   CertificateList certs = CreateCertificateListFromFile(
       certs_dir, "x509_verify_results.chain.pem",
       X509Certificate::FORMAT_AUTO);
@@ -590,7 +603,8 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainProperlyOrdered) {
 
   CertVerifyResult verify_result;
   EXPECT_EQ(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
-  int error = Verify(google_full_chain, "127.0.0.1", 0, NULL, &verify_result);
+  int error = Verify(google_full_chain, "127.0.0.1", 0, NULL,
+                     empty_cert_list_, &verify_result);
   EXPECT_EQ(OK, error);
   ASSERT_NE(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
 
@@ -610,7 +624,7 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainProperlyOrdered) {
 // Test that Verify() filters out certificates which are not related to
 // or part of the certificate chain being verified.
 TEST_F(CertVerifyProcTest, VerifyReturnChainFiltersUnrelatedCerts) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
   CertificateList certs = CreateCertificateListFromFile(
       certs_dir, "x509_verify_results.chain.pem",
       X509Certificate::FORMAT_AUTO);
@@ -639,7 +653,8 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainFiltersUnrelatedCerts) {
 
   CertVerifyResult verify_result;
   EXPECT_EQ(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
-  int error = Verify(google_full_chain, "127.0.0.1", 0, NULL, &verify_result);
+  int error = Verify(google_full_chain, "127.0.0.1", 0, NULL,
+                     empty_cert_list_, &verify_result);
   EXPECT_EQ(OK, error);
   ASSERT_NE(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
 
@@ -654,6 +669,52 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainFiltersUnrelatedCerts) {
                                             certs[1]->os_cert_handle()));
   EXPECT_TRUE(X509Certificate::IsSameOSCert(return_intermediates[1],
                                             certs[2]->os_cert_handle()));
+}
+
+TEST_F(CertVerifyProcTest, AdditionalTrustAnchors) {
+  if (!SupportsAdditionalTrustAnchors()) {
+    LOG(INFO) << "Skipping this test in this platform.";
+    return;
+  }
+
+  // |ca_cert| is the issuer of |cert|.
+  CertificateList ca_cert_list = CreateCertificateListFromFile(
+      GetTestCertsDirectory(), "root_ca_cert.crt",
+      X509Certificate::FORMAT_AUTO);
+  ASSERT_EQ(1U, ca_cert_list.size());
+  scoped_refptr<X509Certificate> ca_cert(ca_cert_list[0]);
+
+  CertificateList cert_list = CreateCertificateListFromFile(
+      GetTestCertsDirectory(), "ok_cert.pem",
+      X509Certificate::FORMAT_AUTO);
+  ASSERT_EQ(1U, cert_list.size());
+  scoped_refptr<X509Certificate> cert(cert_list[0]);
+
+  // Verification of |cert| fails when |ca_cert| is not in the trust anchors
+  // list.
+  int flags = 0;
+  CertVerifyResult verify_result;
+  int error = Verify(cert, "127.0.0.1", flags, NULL,
+                     empty_cert_list_, &verify_result);
+  EXPECT_EQ(ERR_CERT_AUTHORITY_INVALID, error);
+  EXPECT_EQ(CERT_STATUS_AUTHORITY_INVALID, verify_result.cert_status);
+  EXPECT_FALSE(verify_result.is_issued_by_additional_trust_anchor);
+
+  // Now add the |ca_cert| to the |trust_anchors|, and verification should pass.
+  CertificateList trust_anchors;
+  trust_anchors.push_back(ca_cert);
+  error = Verify(cert, "127.0.0.1", flags, NULL, trust_anchors, &verify_result);
+  EXPECT_EQ(OK, error);
+  EXPECT_EQ(0U, verify_result.cert_status);
+  EXPECT_TRUE(verify_result.is_issued_by_additional_trust_anchor);
+
+  // Clearing the |trust_anchors| makes verification fail again (the cache
+  // should be skipped).
+  error = Verify(cert, "127.0.0.1", flags, NULL,
+                 empty_cert_list_, &verify_result);
+  EXPECT_EQ(ERR_CERT_AUTHORITY_INVALID, error);
+  EXPECT_EQ(CERT_STATUS_AUTHORITY_INVALID, verify_result.cert_status);
+  EXPECT_FALSE(verify_result.is_issued_by_additional_trust_anchor);
 }
 
 #if defined(USE_NSS) || defined(OS_IOS) || defined(OS_WIN) || defined(OS_MACOSX)
@@ -722,7 +783,7 @@ TEST_F(CertVerifyProcTest, CRLSet) {
 
   CertVerifyResult verify_result;
   int error = Verify(google_full_chain, "www.google.com", 0, NULL,
-                     &verify_result);
+                     empty_cert_list_, &verify_result);
   EXPECT_EQ(OK, error);
 
   // First test blocking by SPKI.
@@ -733,7 +794,7 @@ TEST_F(CertVerifyProcTest, CRLSet) {
   ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(google_full_chain, "www.google.com", 0, crl_set.get(),
-                 &verify_result);
+                 empty_cert_list_, &verify_result);
   EXPECT_EQ(ERR_CERT_REVOKED, error);
 
   // Second, test revocation by serial number of a cert directly under the
@@ -744,7 +805,7 @@ TEST_F(CertVerifyProcTest, CRLSet) {
   ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(google_full_chain, "www.google.com", 0, crl_set.get(),
-                 &verify_result);
+                 empty_cert_list_, &verify_result);
   EXPECT_EQ(ERR_CERT_REVOKED, error);
 
   // Lastly, test revocation by serial number of a certificate not under the
@@ -755,7 +816,7 @@ TEST_F(CertVerifyProcTest, CRLSet) {
   ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(google_full_chain, "www.google.com", 0, crl_set.get(),
-                 &verify_result);
+                 empty_cert_list_, &verify_result);
   EXPECT_EQ(ERR_CERT_REVOKED, error);
 }
 #endif
@@ -792,7 +853,7 @@ class CertVerifyProcWeakDigestTest
 
 TEST_P(CertVerifyProcWeakDigestTest, Verify) {
   WeakDigestTestData data = GetParam();
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   ScopedTestRoot test_root;
   if (data.root_cert_filename) {
@@ -819,12 +880,14 @@ TEST_P(CertVerifyProcWeakDigestTest, Verify) {
 
   int flags = 0;
   CertVerifyResult verify_result;
-  int rv = Verify(ee_chain, "127.0.0.1", flags, NULL, &verify_result);
+  int rv = Verify(ee_chain, "127.0.0.1", flags, NULL,
+                  empty_cert_list_, &verify_result);
   EXPECT_EQ(data.expected_has_md5, verify_result.has_md5);
   EXPECT_EQ(data.expected_has_md4, verify_result.has_md4);
   EXPECT_EQ(data.expected_has_md2, verify_result.has_md2);
   EXPECT_EQ(data.expected_has_md5_ca, verify_result.has_md5_ca);
   EXPECT_EQ(data.expected_has_md2_ca, verify_result.has_md2_ca);
+  EXPECT_FALSE(verify_result.is_issued_by_additional_trust_anchor);
 
   // Ensure that MD4 and MD2 are tagged as invalid.
   if (data.expected_has_md4 || data.expected_has_md2) {
@@ -890,13 +953,19 @@ const WeakDigestTestData kVerifyIntermediateCATestData[] = {
   { "weak_digest_sha1_root.pem", "weak_digest_md4_intermediate.pem",
     "weak_digest_sha1_ee.pem", false, true, false, false, false },
 #endif
-#if !defined(USE_NSS) && !defined(OS_IOS)  // MD2 is disabled by default.
   { "weak_digest_sha1_root.pem", "weak_digest_md2_intermediate.pem",
     "weak_digest_sha1_ee.pem", false, false, true, false, true },
-#endif
 };
-INSTANTIATE_TEST_CASE_P(VerifyIntermediate, CertVerifyProcWeakDigestTest,
-                        testing::ValuesIn(kVerifyIntermediateCATestData));
+// Disabled on NSS - MD4 is not supported, and MD2 and MD5 are disabled.
+#if defined(USE_NSS) || defined(OS_IOS)
+#define MAYBE_VerifyIntermediate DISABLED_VerifyIntermediate
+#else
+#define MAYBE_VerifyIntermediate VerifyIntermediate
+#endif
+WRAPPED_INSTANTIATE_TEST_CASE_P(
+    MAYBE_VerifyIntermediate,
+    CertVerifyProcWeakDigestTest,
+    testing::ValuesIn(kVerifyIntermediateCATestData));
 
 // The signature algorithm of end-entity should be properly detected.
 const WeakDigestTestData kVerifyEndEntityTestData[] = {
@@ -907,10 +976,8 @@ const WeakDigestTestData kVerifyEndEntityTestData[] = {
   { "weak_digest_sha1_root.pem", "weak_digest_sha1_intermediate.pem",
     "weak_digest_md4_ee.pem", false, true, false, false, false },
 #endif
-#if !defined(USE_NSS) && !defined(OS_IOS)  // MD2 is disabled by default.
   { "weak_digest_sha1_root.pem", "weak_digest_sha1_intermediate.pem",
     "weak_digest_md2_ee.pem", false, false, true, false, false },
-#endif
 };
 // Disabled on NSS - NSS caches chains/signatures in such a way that cannot
 // be cleared until NSS is cleanly shutdown, which is not presently supported

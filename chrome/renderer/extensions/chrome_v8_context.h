@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "chrome/common/extensions/features/feature.h"
 #include "chrome/renderer/extensions/module_system.h"
+#include "chrome/renderer/extensions/scoped_persistent.h"
 #include "v8/include/v8.h"
 
 namespace WebKit {
@@ -36,8 +37,12 @@ class ChromeV8Context {
                   Feature::Context context_type);
   ~ChromeV8Context();
 
+  // Clears the WebFrame for this contexts and invalidates the associated
+  // ModuleSystem.
+  void Invalidate();
+
   v8::Handle<v8::Context> v8_context() const {
-    return v8_context_;
+    return v8_context_.get();
   }
 
   const Extension* extension() const {
@@ -46,9 +51,6 @@ class ChromeV8Context {
 
   WebKit::WebFrame* web_frame() const {
     return web_frame_;
-  }
-  void clear_web_frame() {
-    web_frame_ = NULL;
   }
 
   Feature::Context context_type() const {
@@ -96,22 +98,15 @@ class ChromeV8Context {
       v8::Handle<v8::Value>* argv,
       v8::Handle<v8::Value>* result) const;
 
-  // Returns the set of extension APIs that are available to this context. If no
-  // APIs are available, returns an empty set.
-  const std::set<std::string>& GetAvailableExtensionAPIs();
+  // Returns the availability of the API |api_name|.
+  Feature::Availability GetAvailability(const std::string& api_name);
 
   // Returns a string description of the type of context this is.
   std::string GetContextTypeDescription();
 
  private:
-  // The v8 context the bindings are accessible to. We keep a strong reference
-  // to it for simplicity. In the case of content scripts, this is necessary
-  // because we want all scripts from the same extension for the same frame to
-  // run in the same context, so we can't have the contexts being GC'd if
-  // nothing is happening. In the case of page contexts, this isn't necessary
-  // since the DOM keeps the context alive, but it makes things simpler to not
-  // distinguish the two cases.
-  v8::Persistent<v8::Context> v8_context_;
+  // The v8 context the bindings are accessible to.
+  ScopedPersistent<v8::Context> v8_context_;
 
   // The WebFrame associated with this context. This can be NULL because this
   // object can outlive is destroyed asynchronously.
@@ -126,9 +121,6 @@ class ChromeV8Context {
 
   // Owns and structures the JS that is injected to set up extension bindings.
   scoped_ptr<ModuleSystem> module_system_;
-
-  // The extension APIs available to this context.
-  scoped_ptr<std::set<std::string> > available_extension_apis_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeV8Context);
 };

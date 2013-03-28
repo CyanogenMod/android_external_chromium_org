@@ -4,9 +4,11 @@
 
 #include "ash/launcher/launcher_alignment_menu.h"
 
+#include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_types.h"
 #include "ash/shell.h"
-#include "ash/wm/shelf_types.h"
 #include "grit/ash_strings.h"
+#include "ui/aura/root_window.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace ash {
@@ -33,19 +35,12 @@ LauncherAlignmentMenu::~LauncherAlignmentMenu() {
 }
 
 bool LauncherAlignmentMenu::IsCommandIdChecked(int command_id) const {
-  switch (command_id) {
-    case MENU_ALIGN_LEFT:
-      return Shell::GetInstance()->GetShelfAlignment(root_window_) ==
-          SHELF_ALIGNMENT_LEFT;
-    case MENU_ALIGN_BOTTOM:
-      return Shell::GetInstance()->GetShelfAlignment(root_window_) ==
-          SHELF_ALIGNMENT_BOTTOM;
-    case MENU_ALIGN_RIGHT:
-      return Shell::GetInstance()->GetShelfAlignment(root_window_) ==
-          SHELF_ALIGNMENT_RIGHT;
-    default:
-      return false;
-  }
+  return internal::ShelfLayoutManager::ForLauncher(root_window_)->
+      SelectValueForShelfAlignment(
+          MENU_ALIGN_BOTTOM == command_id,
+          MENU_ALIGN_LEFT == command_id,
+          MENU_ALIGN_RIGHT == command_id,
+          false);
 }
 
 bool LauncherAlignmentMenu::IsCommandIdEnabled(int command_id) const {
@@ -58,7 +53,7 @@ bool LauncherAlignmentMenu::GetAcceleratorForCommandId(
   return false;
 }
 
-void LauncherAlignmentMenu::ExecuteCommand(int command_id) {
+void LauncherAlignmentMenu::ExecuteCommand(int command_id, int event_flags) {
   switch (static_cast<MenuItem>(command_id)) {
     case MENU_ALIGN_LEFT:
       Shell::GetInstance()->SetShelfAlignment(SHELF_ALIGNMENT_LEFT,

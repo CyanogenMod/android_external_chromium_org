@@ -8,15 +8,19 @@
 #include "base/logging.h"
 #include "base/stringprintf.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/url_constants.h"
+#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
+#include "chrome/common/extensions/manifest_url_handler.h"
+#include "chrome/common/extensions/web_accessible_resources_handler.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/common/page_transition_types.h"
+#include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 
 namespace extensions {
 
@@ -26,7 +30,7 @@ bool ResourceRequestPolicy::CanRequestResource(
     WebKit::WebFrame* frame,
     content::PageTransition transition_type,
     const ExtensionSet* loaded_extensions) {
-  CHECK(resource_url.SchemeIs(chrome::kExtensionScheme));
+  CHECK(resource_url.SchemeIs(extensions::kExtensionScheme));
 
   const Extension* extension =
       loaded_extensions->GetExtensionOrAppByURL(ExtensionURLInfo(resource_url));
@@ -43,15 +47,17 @@ bool ResourceRequestPolicy::CanRequestResource(
   std::string resource_root_relative_path =
       resource_url.path().empty() ? "" : resource_url.path().substr(1);
   if (extension->is_hosted_app() &&
-      !extension->icons().ContainsPath(resource_root_relative_path)) {
+      !IconsInfo::GetIcons(extension)
+          .ContainsPath(resource_root_relative_path)) {
     LOG(ERROR) << "Denying load of " << resource_url.spec() << " from "
                << "hosted app.";
     return false;
   }
 
-  // Disallow loading of extension resources which are not explicitely listed
+  // Disallow loading of extension resources which are not explicitly listed
   // as web accessible if the manifest version is 2 or greater.
-  if (!extension->IsResourceWebAccessible(resource_url.path()) &&
+  if (!WebAccessibleResourcesInfo::IsResourceWebAccessible(
+          extension, resource_url.path()) &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableExtensionsResourceWhitelist)) {
     GURL frame_url = frame->document().url();
@@ -67,7 +73,7 @@ bool ResourceRequestPolicy::CanRequestResource(
     // - devtools (chrome-extension:// URLs are loaded into frames of devtools
     //     to support the devtools extension APIs)
     bool is_dev_tools = page_url.SchemeIs(chrome::kChromeDevToolsScheme) &&
-        !extension->devtools_url().is_empty();
+                        !ManifestURL::GetDevToolsPage(extension).is_empty();
     bool transition_allowed =
         !content::PageTransitionIsWebTriggerable(transition_type);
     // - unreachable web page error page (to allow showing the icon of the
@@ -99,7 +105,7 @@ bool ResourceRequestPolicy::CanRequestExtensionResourceScheme(
 
   GURL frame_url = frame->document().url();
   if (!frame_url.is_empty() &&
-      !frame_url.SchemeIs(chrome::kExtensionScheme)) {
+      !frame_url.SchemeIs(extensions::kExtensionScheme)) {
     std::string message = base::StringPrintf(
         "Denying load of %s. chrome-extension-resources:// can only be "
         "loaded from extensions.",

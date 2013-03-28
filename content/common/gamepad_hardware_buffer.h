@@ -6,7 +6,7 @@
 #define CONTENT_COMMON_GAMEPAD_HARDWARE_BUFFER_H_
 
 #include "content/common/gamepad_seqlock.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
 
 namespace content {
 
@@ -30,4 +30,4 @@ struct GamepadHardwareBuffer {
 
 }  // namespace content
 
-#endif // CONTENT_COMMON_GAMEPAD_HARDWARE_BUFFER_H_
+#endif  // CONTENT_COMMON_GAMEPAD_HARDWARE_BUFFER_H_

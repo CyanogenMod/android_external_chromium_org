@@ -11,23 +11,16 @@ namespace content {
 
 class MockBrowserPlugin : public BrowserPlugin {
  public:
-  MockBrowserPlugin(
-      int id,
-      RenderViewImpl* render_view,
-      WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params);
+  MockBrowserPlugin(RenderViewImpl* render_view,
+                    WebKit::WebFrame* frame,
+                    const WebKit::WebPluginParams& params);
 
   virtual ~MockBrowserPlugin();
 
-  virtual TransportDIB* CreateTransportDIB(const size_t size) OVERRIDE;
-  virtual void FreeDamageBuffer() OVERRIDE;
-
   // Allow poking at a few private members.
   using BrowserPlugin::guest_crashed_;
-  using BrowserPlugin::resize_pending_;
-
- private:
-  int transport_dib_next_sequence_number_;
+  using BrowserPlugin::pending_damage_buffer_;
+  using BrowserPlugin::damage_buffer_sequence_id_;
 };
 
 }  // namespace content

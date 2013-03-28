@@ -13,6 +13,9 @@ usage() {
   echo "Options:"
   echo "--[no-]syms: enable or disable installation of debugging symbols"
   echo "--[no-]lib32: enable or disable installation of 32 bit libraries"
+  echo "--[no-]arm: enable or disable installation of arm cross toolchain"
+  echo "--[no-]chromeos-fonts: enable or disable installation of Chrome OS"\
+       "fonts"
   echo "--no-prompt: silently select standard options/defaults"
   echo "Script will prompt interactively if options not given."
   exit 1
@@ -25,25 +28,38 @@ do
   --no-syms)                do_inst_syms=0;;
   --lib32)                  do_inst_lib32=1;;
   --no-lib32)               do_inst_lib32=0;;
+  --arm)                    do_inst_arm=1;;
+  --no-arm)                 do_inst_arm=0;;
+  --chromeos-fonts)         do_inst_chromeos_fonts=1;;
+  --no-chromeos-fonts)      do_inst_chromeos_fonts=0;;
   --no-prompt)              do_default=1
                             do_quietly="-qq --assume-yes"
     ;;
+  --unsupported)            do_unsupported=1;;
   *) usage;;
   esac
   shift
 done
 
-if ! egrep -q \
-    'Ubuntu (10\.04|10\.10|11\.04|11\.10|12\.04|lucid|maverick|natty|oneiric|precise)' \
-    /etc/issue; then
-  echo "Only Ubuntu 10.04 (lucid) through 12.04 (precise) are currently" \
-      "supported" >&2
-  exit 1
-fi
+ubuntu_versions="10\.04|10\.10|11\.04|11\.10|12\.04|12\.10"
+ubuntu_codenames="lucid|maverick|natty|oneiric|precise|quantal"
+ubuntu_issue="Ubuntu ($ubuntu_versions|$ubuntu_codenames)"
+# GCEL is an Ubuntu-derived VM image used on Google Compute Engine; /etc/issue
+# doesn't contain a version number so just trust that the user knows what
+# they're doing.
+gcel_issue="^GCEL"
 
-if ! uname -m | egrep -q "i686|x86_64"; then
-  echo "Only x86 architectures are currently supported" >&2
-  exit
+if [ 0 -eq "${do_unsupported-0}" ] ; then
+  if ! egrep -q "($ubuntu_issue|$gcel_issue)" /etc/issue; then
+    echo "ERROR: Only Ubuntu 10.04 (lucid) through 12.10 (quantal) are"\
+        "currently supported" >&2
+    exit 1
+  fi
+
+  if ! uname -m | egrep -q "i686|x86_64"; then
+    echo "Only x86 architectures are currently supported" >&2
+    exit
+  fi
 fi
 
 if [ "x$(id -u)" != x0 ]; then
@@ -53,20 +69,22 @@ if [ "x$(id -u)" != x0 ]; then
 fi
 
 # Packages needed for chromeos only
-chromeos_dev_list="libbluetooth-dev libpulse-dev"
+chromeos_dev_list="libbluetooth-dev"
 
 # Packages need for development
 dev_list="apache2.2-bin bison curl elfutils fakeroot flex g++ gperf
           language-pack-fr libapache2-mod-php5 libasound2-dev libbz2-dev
           libcairo2-dev libcups2-dev libcurl4-gnutls-dev libelf-dev
           libgconf2-dev libgl1-mesa-dev libglib2.0-dev libglu1-mesa-dev
-          libgnome-keyring-dev libgtk2.0-dev libwebkit-dev libkrb5-dev
-          libnspr4-dev libnss3-dev libpam0g-dev libpci-dev libsctp-dev
-          libsqlite3-dev libssl-dev libudev-dev libwww-perl libxslt1-dev
-          libxss-dev libxt-dev libxtst-dev mesa-common-dev patch perl php5-cgi
-          pkg-config python python-cherrypy3 python-dev python-psutil rpm ruby
-          subversion ttf-dejavu-core ttf-indic-fonts ttf-kochi-gothic
-          ttf-kochi-mincho ttf-thai-tlwg wdiff git-core $chromeos_dev_list"
+          libgnome-keyring-dev libgtk2.0-dev libkrb5-dev libnspr4-dev
+          libnss3-dev libpam0g-dev libpci-dev libpulse-dev libsctp-dev
+          libspeechd-dev libsqlite3-dev libssl-dev libudev-dev libwww-perl
+          libxslt1-dev libxss-dev libxt-dev libxtst-dev mesa-common-dev
+          metacity patch perl php5-cgi pkg-config python python-cherrypy3
+          python-dev python-psutil rpm ruby subversion ttf-dejavu-core
+          ttf-indic-fonts ttf-kochi-gothic ttf-kochi-mincho ttf-thai-tlwg
+          wdiff git-core
+          $chromeos_dev_list"
 
 # 64-bit systems need a minimum set of 32-bit compat packages for the pre-built
 # NaCl binaries. These are always needed, regardless of whether or not we want
@@ -82,10 +100,10 @@ chromeos_lib_list="libpulse0 libbz2-1.0 libcurl4-gnutls-dev"
 lib_list="libatk1.0-0 libc6 libasound2 libcairo2 libcups2 libexpat1
           libfontconfig1 libfreetype6 libglib2.0-0 libgnome-keyring0
           libgtk2.0-0 libpam0g libpango1.0-0 libpci3 libpcre3 libpixman-1-0
-          libpng12-0 libstdc++6 libsqlite3-0 libudev0 libx11-6 libxau6 libxcb1
-          libxcomposite1 libxcursor1 libxdamage1 libxdmcp6 libxext6 libxfixes3
-          libxi6 libxinerama1 libxrandr2 libxrender1 libxtst6 zlib1g
-          $chromeos_lib_list"
+          libpng12-0 libspeechd2 libstdc++6 libsqlite3-0 libudev0 libx11-6
+          libxau6 libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxdmcp6
+          libxext6 libxfixes3 libxi6 libxinerama1 libxrandr2 libxrender1
+          libxtst6 zlib1g $chromeos_lib_list"
 
 # Debugging symbols for all of the run-time libraries
 dbg_list="libatk1.0-dbg libc6-dbg libcairo2-dbg libfontconfig1-dbg
@@ -95,8 +113,14 @@ dbg_list="libatk1.0-dbg libc6-dbg libcairo2-dbg libfontconfig1-dbg
           libxdmcp6-dbg libxext6-dbg libxfixes3-dbg libxi6-dbg libxinerama1-dbg
           libxrandr2-dbg libxrender1-dbg libxtst6-dbg zlib1g-dbg"
 
-# Plugin lists needed for tests.
-plugin_list="flashplugin-installer"
+# arm cross toolchain packages needed to build chrome on arm
+arm_list="libc6-armel-cross libc6-dev-armel-cross libgcc1-armel-cross
+          libgomp1-armel-cross linux-libc-dev-armel-cross
+          libgcc1-dbg-armel-cross libgomp1-dbg-armel-cross
+          binutils-arm-linux-gnueabi cpp-arm-linux-gnueabi
+          gcc-arm-linux-gnueabi g++-arm-linux-gnueabi
+          libmudflap0-dbg-armel-cross"
+
 
 # Some package names have changed over time
 if apt-cache show ttf-mscorefonts-installer >/dev/null 2>&1; then
@@ -180,6 +204,35 @@ else
   dbg_list=
 fi
 
+# Install the Chrome OS default fonts.
+if test "$do_inst_chromeos_fonts" != "0"; then
+  echo "Installing Chrome OS fonts."
+  dir=`echo $0 | sed -r -e 's/\/[^/]+$//'`
+  sudo $dir/linux/install-chromeos-fonts.py
+else
+  echo "Skipping installation of Chrome OS fonts."
+fi
+
+# When cross building for arm on 64-bit systems the host binaries
+# that are part of v8 need to be compiled with -m32 which means
+# that basic multilib support is needed.
+if [ "$(uname -m)" = "x86_64" ]; then
+  arm_list="$arm_list g++-multilib"
+fi
+
+if test "$do_inst_arm" = "1"; then
+  . /etc/lsb-release
+  if test "$DISTRIB_CODENAME" != "precise"; then
+    echo "ERROR: Installing the ARM cross toolchain is only available on" \
+         "Ubuntu precise." >&2
+    exit 1
+  fi
+  echo "Installing ARM cross toolchain."
+else
+  echo "Skipping installation of ARM cross toolchain."
+  arm_list=
+fi
+
 sudo apt-get update
 
 # We initially run "apt-get" with the --reinstall option and parse its output.
@@ -187,7 +240,7 @@ sudo apt-get update
 # without accidentally promoting any packages from "auto" to "manual".
 # We then re-run "apt-get" with just the list of missing packages.
 echo "Finding missing packages..."
-packages="${dev_list} ${lib_list} ${dbg_list} ${plugin_list}"
+packages="${dev_list} ${lib_list} ${dbg_list} ${arm_list}"
 # Intentionally leaving $packages unquoted so it's more readable.
 echo "Packages required: " $packages
 echo
@@ -302,7 +355,7 @@ EOF
       mkdir -p "'"${tmp}"'/staging/dpkg/DEBIAN"
       cd "'"${tmp}"'/staging"
       ar x "'${orig}'"
-      tar zCfx dpkg data.tar.gz
+      tar Cfx dpkg data.tar*
       tar zCfx dpkg/DEBIAN control.tar.gz
 
       # Create a posix extended regular expression fragment that will

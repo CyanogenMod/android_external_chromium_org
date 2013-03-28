@@ -8,10 +8,12 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_instructions_delegate.h"
 #include "grit/generated_resources.h"
+#include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/theme_provider.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 
@@ -40,6 +42,7 @@ BookmarkBarInstructionsView::BookmarkBarInstructionsView(
     // We don't want the link to alter tab navigation.
     import_link_->set_focusable(false);
     import_link_->set_listener(this);
+    import_link_->set_context_menu_controller(this);
     import_link_->SetAutoColorReadabilityEnabled(false);
     AddChildView(import_link_);
   }
@@ -105,6 +108,13 @@ void BookmarkBarInstructionsView::LinkClicked(views::Link* source,
   delegate_->ShowImportDialog();
 }
 
+void BookmarkBarInstructionsView::ShowContextMenuForView(
+    views::View* source,
+    const gfx::Point& point) {
+  // Do nothing here, we don't want to show the Bookmarks context menu when
+  // the user right clicks on the "Import bookmarks now" link.
+}
+
 void BookmarkBarInstructionsView::UpdateColors() {
   // We don't always have a theme provider (ui tests, for example).
   const ui::ThemeProvider* theme_provider = GetThemeProvider();
@@ -112,7 +122,7 @@ void BookmarkBarInstructionsView::UpdateColors() {
     return;
   updated_colors_ = true;
   SkColor text_color =
-      theme_provider->GetColor(ThemeService::COLOR_BOOKMARK_TEXT);
+      theme_provider->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT);
   instructions_->SetEnabledColor(text_color);
   if (import_link_)
     import_link_->SetEnabledColor(text_color);

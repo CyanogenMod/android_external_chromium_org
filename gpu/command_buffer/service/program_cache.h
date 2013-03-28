@@ -11,10 +11,13 @@
 #include "base/hash_tables.h"
 #include "base/sha1.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
+#include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/shader_manager.h"
 
 namespace gpu {
 namespace gles2 {
+
+class Shader;
 
 // Program cache base class for caching linked gpu programs
 class GPU_EXPORT ProgramCache {
@@ -44,6 +47,7 @@ class GPU_EXPORT ProgramCache {
   CompiledShaderStatus GetShaderCompilationStatus(
       const std::string& shader_src) const;
   void ShaderCompilationSucceeded(const std::string& shader_src);
+  void ShaderCompilationSucceededSha(const std::string& sha_string);
 
   LinkedProgramStatus GetLinkedProgramStatus(
       const std::string& untranslated_a,
@@ -54,17 +58,20 @@ class GPU_EXPORT ProgramCache {
   // there was an error, PROGRAM_LOAD_FAILURE should be returned.
   virtual ProgramLoadResult LoadLinkedProgram(
       GLuint program,
-      ShaderManager::ShaderInfo* shader_a,
-      ShaderManager::ShaderInfo* shader_b,
+      Shader* shader_a,
+      Shader* shader_b,
       const LocationMap* bind_attrib_location_map) const = 0;
 
   // Saves the program into the cache.  If successful, the implementation should
   // call LinkedProgramCacheSuccess.
   virtual void SaveLinkedProgram(
       GLuint program,
-      const ShaderManager::ShaderInfo* shader_a,
-      const ShaderManager::ShaderInfo* shader_b,
-      const LocationMap* bind_attrib_location_map) = 0;
+      const Shader* shader_a,
+      const Shader* shader_b,
+      const LocationMap* bind_attrib_location_map,
+      const ShaderCacheCallback& shader_callback) = 0;
+
+  virtual void LoadProgram(const std::string& program) = 0;
 
   // clears the cache
   void Clear();

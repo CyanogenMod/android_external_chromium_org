@@ -13,7 +13,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest.h"
 
 class Profile;
 class SyncTest;
@@ -27,9 +27,6 @@ class SyncExtensionHelper {
   // Singleton implementation.
   static SyncExtensionHelper* GetInstance();
 
-  // Returns a generated extension ID for the given name.
-  static std::string NameToId(const std::string& name);
-
   // Initializes the profiles in |test| and registers them with
   // internal data structures.
   void SetupIfNecessary(SyncTest* test);
@@ -38,7 +35,7 @@ class SyncExtensionHelper {
   // extension ID of the new extension.
   std::string InstallExtension(Profile* profile,
                                const std::string& name,
-                               extensions::Extension::Type type);
+                               extensions::Manifest::Type type);
 
   // Uninstalls the extension with the given name from |profile|.
   void UninstallExtension(Profile* profile, const std::string& name);
@@ -72,8 +69,7 @@ class SyncExtensionHelper {
 
   // Installs all extensions pending sync in |profile| of the given
   // type.
-  void InstallExtensionsPendingForSync(Profile* profile,
-                                       extensions::Extension::Type type);
+  void InstallExtensionsPendingForSync(Profile* profile);
 
   // Returns true iff |profile1| and |profile2| have the same extensions and
   // they are all in the same state.
@@ -96,6 +92,7 @@ class SyncExtensionHelper {
       ExtensionNameMap;
   typedef std::map<Profile*, ExtensionNameMap> ProfileExtensionNameMap;
   typedef std::map<std::string, std::string> StringMap;
+  typedef std::map<std::string, extensions::Manifest::Type> TypeMap;
 
   friend struct DefaultSingletonTraits<SyncExtensionHelper>;
 
@@ -114,10 +111,11 @@ class SyncExtensionHelper {
   // have the same id.
   scoped_refptr<extensions::Extension> GetExtension(
       Profile* profile, const std::string& name,
-      extensions::Extension::Type type) WARN_UNUSED_RESULT;
+      extensions::Manifest::Type type) WARN_UNUSED_RESULT;
 
   ProfileExtensionNameMap profile_extensions_;
   StringMap id_to_name_;
+  TypeMap id_to_type_;
   bool setup_completed_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncExtensionHelper);

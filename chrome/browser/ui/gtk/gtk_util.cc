@@ -14,7 +14,7 @@
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/nix/xdg_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
@@ -23,12 +23,16 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "googleurl/src/gurl.h"
+#include "grit/chrome_unscaled_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
@@ -411,8 +415,7 @@ void MakeAppModalWindowGroup() {
   // we need to add current non-browser modal dialogs to the list. If
   // we have 2.14+ we can do things the correct way.
   GtkWindowGroup* window_group = gtk_window_group_new();
-  for (BrowserList::const_iterator it = BrowserList::begin();
-       it != BrowserList::end(); ++it) {
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
     // List all windows in this current group
     GtkWindowGroup* old_group =
         gtk_window_get_group((*it)->window()->GetNativeWindow());
@@ -427,12 +430,15 @@ void MakeAppModalWindowGroup() {
 }
 
 void AppModalDismissedUngroupWindows() {
-  if (BrowserList::begin() != BrowserList::end()) {
+  // GTK only has the native desktop.
+  const BrowserList* native_browser_list =
+      BrowserList::GetInstance(chrome::HOST_DESKTOP_TYPE_NATIVE);
+  if (!native_browser_list->empty()) {
     std::vector<GtkWindow*> transient_windows;
 
     // All windows should be part of one big modal group right now.
     GtkWindowGroup* window_group = gtk_window_get_group(
-        (*BrowserList::begin())->window()->GetNativeWindow());
+        native_browser_list->get(0)->window()->GetNativeWindow());
     GList* windows = gtk_window_group_list_windows(window_group);
 
     for (GList* item = windows; item; item = item->next) {
@@ -720,7 +726,7 @@ void DrawThemedToolbarBackground(GtkWidget* widget,
                                  GtkThemeService* theme_service) {
   // Fill the entire region with the toolbar color.
   GdkColor color = theme_service->GetGdkColor(
-      ThemeService::COLOR_TOOLBAR);
+      ThemeProperties::COLOR_TOOLBAR);
   gdk_cairo_set_source_color(cr, &color);
   cairo_fill(cr);
 
@@ -853,7 +859,7 @@ bool URLFromPrimarySelection(Profile* profile, GURL* url) {
   // a search query if necessary.
   AutocompleteMatch match;
   AutocompleteClassifierFactory::GetForProfile(profile)->Classify(
-      UTF8ToUTF16(selection_text), string16(), false, false, &match, NULL);
+      UTF8ToUTF16(selection_text), false, false, &match, NULL);
   g_free(selection_text);
   if (!match.destination_url.is_valid())
     return false;

@@ -41,7 +41,6 @@
         '../third_party/skia/src/images/bmpdecoderhelper.cpp',
         '../third_party/skia/src/images/bmpdecoderhelper.h',
         #'../third_party/skia/src/images/SkFDStream.cpp',
-        #'../third_party/skia/src/images/SkFlipPixelRef.cpp',
         '../third_party/skia/src/images/SkImageDecoder.cpp',
         '../third_party/skia/src/images/SkImageDecoder_Factory.cpp',
         #'../third_party/skia/src/images/SkImageDecoder_fpdfemb.cpp',
@@ -88,20 +87,20 @@
         '../third_party/skia/src/pdf/SkPDFUtils.cpp',
         '../third_party/skia/src/pdf/SkPDFUtils.h',
 
+        #'../third_party/skia/src/ports/SkPurgeableMemoryBlock_android.cpp',
+        #'../third_party/skia/src/ports/SkPurgeableMemoryBlock_mac.cpp',
+        '../third_party/skia/src/ports/SkPurgeableMemoryBlock_none.cpp',
+
         '../third_party/skia/src/ports/FontHostConfiguration_android.cpp',
-        '../third_party/skia/src/ports/SkFontDescriptor.cpp',
-        '../third_party/skia/src/ports/SkFontDescriptor.h',
         #'../third_party/skia/src/ports/SkFontHost_FONTPATH.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType_common.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType_common.h',
         '../third_party/skia/src/ports/SkFontHost_android.cpp',
         #'../third_party/skia/src/ports/SkFontHost_ascender.cpp',
-        '../third_party/skia/src/ports/SkFontHost_tables.cpp',
         #'../third_party/skia/src/ports/SkFontHost_linux.cpp',
         '../third_party/skia/src/ports/SkFontHost_mac.cpp',
         #'../third_party/skia/src/ports/SkFontHost_none.cpp',
-        '../third_party/skia/src/ports/SkFontHost_sandbox_none.cpp',
         '../third_party/skia/src/ports/SkFontHost_win.cpp',
         '../third_party/skia/src/ports/SkGlobalInitialization_chromium.cpp',
         #'../third_party/skia/src/ports/SkImageDecoder_CG.cpp',
@@ -136,13 +135,14 @@
         '../third_party/skia/src/utils/SkNullCanvas.cpp',
         '../third_party/skia/include/utils/SkNWayCanvas.h',
         '../third_party/skia/src/utils/SkNWayCanvas.cpp',
-
+        '../third_party/skia/src/utils/SkPictureUtils.cpp',
+        '../third_party/skia/src/utils/SkRTConf.cpp',
+        '../third_party/skia/include/utils/SkRTConf.h',
         '../third_party/skia/include/pdf/SkPDFDevice.h',
         '../third_party/skia/include/pdf/SkPDFDocument.h',
 
         '../third_party/skia/include/ports/SkTypeface_win.h',
 
-        '../third_party/skia/include/images/SkFlipPixelRef.h',
         '../third_party/skia/include/images/SkImageDecoder.h',
         '../third_party/skia/include/images/SkImageEncoder.h',
         '../third_party/skia/include/images/SkImageRef.h',
@@ -151,7 +151,9 @@
         '../third_party/skia/include/images/SkPageFlipper.h',
 
         '../third_party/skia/include/utils/SkNullCanvas.h',
-
+        '../third_party/skia/include/utils/SkPictureUtils.h',
+        'ext/analysis_canvas.cc',
+        'ext/analysis_canvas.h',
         'ext/bitmap_platform_device.h',
         'ext/bitmap_platform_device_android.cc',
         'ext/bitmap_platform_device_android.h',
@@ -167,22 +169,23 @@
         'ext/google_logging.cc',
         'ext/image_operations.cc',
         'ext/image_operations.h',
+        'ext/lazy_pixel_ref.cc',
+        'ext/lazy_pixel_ref.h',
         'ext/SkThread_chrome.cc',
+        'ext/paint_simplifier.cc',
+        'ext/paint_simplifier.h',
         'ext/platform_canvas.cc',
         'ext/platform_canvas.h',
-        'ext/platform_canvas_linux.cc',
-        'ext/platform_canvas_mac.cc',
-        'ext/platform_canvas_skia.cc',
-        'ext/platform_canvas_win.cc',
         'ext/platform_device.cc',
         'ext/platform_device.h',
         'ext/platform_device_linux.cc',
         'ext/platform_device_mac.cc',
         'ext/platform_device_win.cc',
+        'ext/refptr.h',
         'ext/SkMemory_new_handler.cpp',
-        'ext/skia_sandbox_support_win.h',
-        'ext/skia_sandbox_support_win.cc',
         'ext/skia_trace_shim.h',
+        'ext/skia_utils_base.cc',
+        'ext/skia_utils_base.h',
         'ext/skia_utils_ios.mm',
         'ext/skia_utils_ios.h',
         'ext/skia_utils_mac.mm',
@@ -203,6 +206,7 @@
         '../third_party/skia/include/core',
         '../third_party/skia/include/effects',
         '../third_party/skia/include/images',
+        '../third_party/skia/include/lazy',
         '../third_party/skia/include/pdf',
         '../third_party/skia/include/pipe',
         '../third_party/skia/include/ports',
@@ -211,6 +215,7 @@
         '../third_party/skia/src/image',
         '../third_party/skia/src/sfnt',
         '../third_party/skia/src/utils',
+        '../third_party/skia/src/lazy',
       ],
       'msvs_disabled_warnings': [4244, 4267, 4341, 4345, 4390, 4554, 4748, 4800],
       'defines': [
@@ -220,8 +225,8 @@
         'GR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"',
         'GR_STATIC_RECT_VB=1',
         'GR_AGGRESSIVE_SHADER_OPTS=1',
-        'SK_DISABLE_FAST_AA_STROKE_RECT',
         'SK_DEFERRED_CANVAS_USES_GPIPE=1',
+        'SK_ENABLE_INST_COUNT=0',
 
         # this flag can be removed entirely once this has baked for a while
         'SK_ALLOW_OVER_32K_BITMAPS',
@@ -232,9 +237,9 @@
         # SkGraphics::Init().
         'SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0',
 
-        # Temporarily keep old int-srcrect behavior, until we determine if
-        # the few failures are a bug or not.
-        'SK_SUPPORT_INT_SRCRECT_DRAWBITMAPRECT',
+        # Disable this check because it is too strict for some Chromium-specific
+        # subclasses of SkPixelRef. See bug: crbug.com/171776.
+        'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
       ],
       'sources!': [
         '../third_party/skia/include/core/SkTypes.h',
@@ -275,7 +280,14 @@
             'SK_GAMMA_CONTRAST=0.2',
           ],
         }],
-        ['OS == "android" or OS == "win"', {
+        ['OS == "android"', {
+          'defines': [
+            'SK_GAMMA_APPLY_TO_A8',
+            'SK_GAMMA_EXPONENT=1.4',
+            'SK_GAMMA_CONTRAST=0.0',
+          ],
+        }],
+        ['OS == "win"', {
           'defines': [
             'SK_GAMMA_SRGB',
             'SK_GAMMA_CONTRAST=0.5',
@@ -328,14 +340,6 @@
         [ 'OS != "win"', {
           'sources/': [ ['exclude', '_win\\.(cc|cpp)$'] ],
         }],
-        [ 'chromeos == 1', {
-          'defines': [
-            # Temporarily use SkPaint to keep a scale factor needed for correct
-            # font rendering in high DPI mode.
-            # See https://codereview.appspot.com/6495089/
-            'SK_SUPPORT_HINTING_SCALE_FACTOR',
-          ],
-        }],
         [ 'armv7 == 1', {
           'defines': [
             '__ARM_ARCH__=7',
@@ -356,7 +360,6 @@
             '../build/linux/system.gyp:fontconfig',
             '../build/linux/system.gyp:freetype2',
             '../build/linux/system.gyp:pangocairo',
-            '../third_party/harfbuzz/harfbuzz.gyp:harfbuzz',
             '../third_party/icu/icu.gyp:icuuc',
           ],
           'cflags': [
@@ -364,8 +367,8 @@
             '-Wno-unused-function',
           ],
           'sources': [
-            'ext/SkFontHost_fontconfig.cpp',
-            'ext/SkFontHost_fontconfig_direct.cpp',
+            '../third_party/skia/src/ports/SkFontHost_fontconfig.cpp',
+            '../third_party/skia/src/ports/SkFontConfigInterface_direct.cpp',
           ],
           'defines': [
 #            'SK_USE_COLOR_LUMINANCE',
@@ -377,15 +380,6 @@
             '../third_party/skia/src/ports/SkFontHost_FreeType.cpp',
             '../third_party/skia/src/ports/SkFontHost_FreeType_common.cpp',
           ],
-        }],
-        [ 'use_aura == 1 and use_canvas_skia == 1', {
-          'sources/': [
-            ['exclude', 'ext/platform_canvas_mac\\.cc$'],
-            ['exclude', 'ext/platform_canvas_linux\\.cc$'],
-            ['exclude', 'ext/platform_canvas_win\\.cc$'],
-          ],
-        }, { # use_aura == 0 and use_canvas_skia == 1
-          'sources/': [ ['exclude', 'ext/platform_canvas_skia\\.cc$'] ],
         }],
         [ 'toolkit_uses_gtk == 1', {
           'dependencies': [
@@ -412,7 +406,6 @@
               'dependencies': [
                 '../third_party/expat/expat.gyp:expat',
                 '../third_party/freetype/freetype.gyp:ft2',
-                '../third_party/harfbuzz/harfbuzz.gyp:harfbuzz',
                 'skia_opts'
               ],
               'dependencies!': [
@@ -428,17 +421,13 @@
               ],
               'sources/': [
                 ['include', 'ext/platform_device_linux\\.cc$'],
-                ['include', 'ext/platform_canvas_linux\\.cc$'],
                 ['exclude', '../third_party/skia/src/pdf/'],
               ],
               'sources!': [
                 'ext/vector_platform_device_skia.cc',
               ],
-              'export_dependent_settings': [
-                '../third_party/harfbuzz/harfbuzz.gyp:harfbuzz',
-              ],
             }],
-            [ '_toolset == "target" and android_build_type == 0', {
+            [ '_toolset == "target" and android_webview_build == 0', {
               'defines': [
                 'HAVE_ENDIAN_H',
               ],
@@ -446,7 +435,6 @@
             [ '_toolset=="host" and host_os=="linux"', {
               'sources': [
                 'ext/platform_device_linux.cc',
-                'ext/platform_canvas_linux.cc',
               ],
             }],
           ],
@@ -460,6 +448,11 @@
             '../third_party/skia/include/utils/ios',
             '../third_party/skia/include/utils/mac',
           ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/ImageIO.framework',
+            ],
+          },
           'dependencies': [
             'skia_opts_ios',
           ],
@@ -477,12 +470,13 @@
             ['exclude', '/pdf/'],
             ['exclude', '^ext/vector_platform_device_skia\\.'],
             ['exclude', 'opts_check_SSE2\\.cpp$'],
-            ['exclude', 'SkFontHost_tables\\.cpp$',],
           ],
         }],
         [ 'OS == "mac"', {
           'defines': [
             'SK_BUILD_FOR_MAC',
+            'SK_USE_MAC_CORE_TEXT',
+#           'SK_USE_COLOR_LUMINANCE',
           ],
           'include_dirs': [
             '../third_party/skia/include/utils/mac',
@@ -495,30 +489,10 @@
           'sources': [
             '../third_party/skia/src/utils/mac/SkStream_mac.cpp',
           ],
-          'sources!': [
-            # The mac's fonthost implements the table methods natively,
-            # so no need for these generic versions.
-            '../third_party/skia/src/ports/SkFontHost_tables.cpp',
-          ],
-          'conditions': [
-             [ 'use_skia == 0', {
-               'sources/': [
-                 ['exclude', '/pdf/'],
-                 ['exclude', 'ext/vector_platform_device_skia\\.(cc|h)'],
-               ],
-            },
-            { # use_skia
-              'defines': [
-                'SK_USE_MAC_CORE_TEXT',
-#                'SK_USE_COLOR_LUMINANCE',
-              ],
-            }],
-          ],
         }],
         [ 'OS == "win"', {
           'sources!': [
             '../third_party/skia/src/core/SkMMapStream.cpp',
-            '../third_party/skia/src/ports/SkFontHost_sandbox_none.cpp',
             '../third_party/skia/src/ports/SkThread_pthread.cpp',
             '../third_party/skia/src/ports/SkTime_Unix.cpp',
             'ext/SkThread_chrome.cc',
@@ -548,6 +522,18 @@
               'SKIA_DLL',
             ],
           },
+        }],
+        # TODO(scottmg): http://crbug.com/177306
+        ['clang==1', {
+          'xcode_settings': {
+            'WARNING_CFLAGS!': [
+              # Don't warn about string->bool used in asserts.
+              '-Wstring-conversion',
+            ],
+          },
+          'cflags!': [
+            '-Wstring-conversion',
+          ],
         }],
       ],
       'dependencies': [
@@ -579,13 +565,9 @@
           'SK_DEFERRED_CANVAS_USES_GPIPE=1',
           'GR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"',
           'GR_AGGRESSIVE_SHADER_OPTS=1',
+          'SK_ENABLE_INST_COUNT=0',
         ],
         'conditions': [
-          [ 'chromeos == 1', {
-            'defines': [
-            'SK_SUPPORT_HINTING_SCALE_FACTOR',
-          ],
-          }],
           ['OS=="android"', {
             'dependencies!': [
               'skia_opts',
@@ -596,7 +578,7 @@
               'SK_BUILD_FOR_ANDROID_NDK',
             ],
             'conditions': [
-              [ '_toolset == "target" and android_build_type == 0', {
+              [ '_toolset == "target" and android_webview_build == 0', {
                 'defines': [
                   'HAVE_ENDIAN_H',
                 ],
@@ -654,6 +636,7 @@
         '../third_party/skia/include/core',
         '../third_party/skia/include/effects',
         '../third_party/skia/include/images',
+        '../third_party/skia/include/lazy',
         '../third_party/skia/include/utils',
         '../third_party/skia/src/core',
       ],
@@ -711,6 +694,8 @@
           # targets via common.gypi.
           'cflags!': [
             '-fno-omit-frame-pointer',
+            '-marm',
+            '-mapcs-frame',
           ],
           'cflags': [
             '-fomit-frame-pointer',
@@ -838,6 +823,7 @@
             '../third_party/skia/include/core',
             '../third_party/skia/include/effects',
             '../third_party/skia/include/images',
+            '../third_party/skia/include/lazy',
             '../third_party/skia/include/utils',
             '../third_party/skia/src/core',
           ],

@@ -13,10 +13,10 @@
 #include "third_party/skia/include/core/SkTypes.h"
 
 #if defined(ARCH_CPU_X86_FAMILY)
-#if defined(__x86_64__) || defined(_M_X64) || defined(__SSE2__) || _M_IX86_FP==2
-// This is where we had compiler support for SSE2 instructions.
-// FIXME: Known buggy, so disabling for M22.
-// #define SIMD_SSE2 1
+// TODO(hclam): SSE2 is disabled on Linux 32-bits because GCC requires -msse2.
+//              We should refactor the code in .cc and enable this.
+#if defined(ARCH_CPU_X86_64) || defined(OS_MACOSX) || defined(COMPILER_MSVC)
+#define SIMD_SSE2 1
 #endif
 #endif
 

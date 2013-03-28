@@ -46,10 +46,12 @@ class CHROMEOS_EXPORT ShillDeviceClient {
    public:
     virtual void AddDevice(const std::string& device_path,
                            const std::string& type,
-                           const std::string& object_path,
-                           const std::string& connection_path) = 0;
+                           const std::string& object_path) = 0;
     virtual void RemoveDevice(const std::string& device_path) = 0;
     virtual void ClearDevices() = 0;
+    virtual void SetDeviceProperty(const std::string& device_path,
+                                   const std::string& name,
+                                   const base::Value& value) = 0;
 
    protected:
     ~TestInterface() {}
@@ -111,16 +113,6 @@ class CHROMEOS_EXPORT ShillDeviceClient {
                            const std::string& method,
                            const ObjectPathDBusMethodCallback& callback) = 0;
 
-  // DEPRECATED DO NOT USE: Calls AddIPConfig method and blocks until the method
-  // call finishes.
-  // This method returns an empty path when method call fails.
-  //
-  // TODO(hashimoto): Refactor CrosAddIPConfig and remove this method.
-  // crosbug.com/29902
-  virtual dbus::ObjectPath CallAddIPConfigAndBlock(
-      const dbus::ObjectPath& device_path,
-      const std::string& method) = 0;
-
   // Calls the RequirePin method.
   // |callback| is called after the method call finishes.
   virtual void RequirePin(const dbus::ObjectPath& device_path,
@@ -163,6 +155,12 @@ class CHROMEOS_EXPORT ShillDeviceClient {
   // |callback| is called after the method call finishes.
   virtual void SetCarrier(const dbus::ObjectPath& device_path,
                           const std::string& carrier,
+                          const base::Closure& callback,
+                          const ErrorCallback& error_callback) = 0;
+
+  // Calls the Reset method.
+  // |callback| is called after the method call finishes.
+  virtual void Reset(const dbus::ObjectPath& device_path,
                           const base::Closure& callback,
                           const ErrorCallback& error_callback) = 0;
 

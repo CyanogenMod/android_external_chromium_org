@@ -7,7 +7,7 @@
 
 #include "base/format_macros.h"
 #include "base/stringprintf.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/renderer/spellchecker/spellcheck_worditerator.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -226,5 +226,24 @@ TEST(SpellcheckWordIteratorTest, TreatNumbersAsWordCharacters) {
       EXPECT_EQ(input_word, actual_word);
     else
       EXPECT_NE(input_word, actual_word);
+  }
+}
+
+TEST(SpellcheckWordIteratorTest, Initialization) {
+  // Test initialization works when a default language is set.
+  {
+    SpellcheckCharAttribute attributes;
+    attributes.SetDefaultLanguage("en-US");
+
+    SpellcheckWordIterator iterator;
+    EXPECT_TRUE(iterator.Initialize(&attributes, true));
+  }
+
+  // Test initialization fails when no default language is set.
+  {
+    SpellcheckCharAttribute attributes;
+
+    SpellcheckWordIterator iterator;
+    EXPECT_FALSE(iterator.Initialize(&attributes, true));
   }
 }

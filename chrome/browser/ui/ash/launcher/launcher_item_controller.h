@@ -8,9 +8,13 @@
 #include "ash/launcher/launcher_types.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_vector.h"
 #include "base/string16.h"
 
 class ChromeLauncherController;
+class ChromeLauncherAppMenuItem;
+
+typedef ScopedVector<ChromeLauncherAppMenuItem> ChromeLauncherAppMenuItems;
 
 namespace aura {
 class Window;
@@ -29,7 +33,8 @@ class LauncherItemController {
     TYPE_APP_PANEL,
     TYPE_EXTENSION_PANEL,
     TYPE_SHORTCUT,
-    TYPE_TABBED
+    TYPE_TABBED,
+    TYPE_WINDOWED_APP
   };
 
   LauncherItemController(Type type,
@@ -40,9 +45,22 @@ class LauncherItemController {
   Type type() const { return type_; }
   ash::LauncherID launcher_id() const { return launcher_id_; }
   void set_launcher_id(ash::LauncherID id) { launcher_id_ = id; }
-  const std::string& app_id() const { return app_id_; }
+  virtual const std::string& app_id() const;
   ChromeLauncherController* launcher_controller() {
     return launcher_controller_;
+  }
+
+  // Lock this item to the launcher without being pinned (windowed v1 apps).
+  void lock() { locked_++; }
+  void unlock() {
+    DCHECK(locked_);
+    locked_--;
+  }
+  bool locked() { return locked_ > 0; }
+
+  bool image_set_by_controller() const { return image_set_by_controller_; }
+  void set_image_set_by_controller(bool image_set_by_controller) {
+    image_set_by_controller_ = image_set_by_controller;
   }
 
   // Returns the title for this item.
@@ -53,6 +71,9 @@ class LauncherItemController {
 
   // Returns true if this item is open.
   virtual bool IsOpen() const = 0;
+
+  // Returns true if this item is visible (e.g. not minimized).
+  virtual bool IsVisible() const = 0;
 
   // Launches a new instance of the app associated with this item.
   virtual void Launch(int event_flags) = 0;
@@ -72,10 +93,15 @@ class LauncherItemController {
   // windows associated with the item:
   // * One window: toggles the minimize state.
   // * Multiple windows: cycles the active window.
-  virtual void Clicked() = 0;
+  // The |event| is dispatched by a view, therefore the type of the
+  // event's target is |views::View|.
+  virtual void Clicked(const ui::Event& event) = 0;
 
   // Called when the controlled item is removed from the launcher.
   virtual void OnRemoved() = 0;
+
+  // Called to retrieve the list of running applications.
+  virtual ChromeLauncherAppMenuItems GetApplicationList() = 0;
 
   // Helper function to get the ash::LauncherItemType for the item type.
   ash::LauncherItemType GetLauncherItemType() const;
@@ -91,6 +117,14 @@ class LauncherItemController {
   const std::string app_id_;
   ash::LauncherID launcher_id_;
   ChromeLauncherController* launcher_controller_;
+
+  // The lock counter which tells the launcher if the item can be removed from
+  // the launcher (0) or not (>0). It is being used for windowed V1
+  // applications.
+  int locked_;
+
+  // Set to true if the launcher item image has been set by the controller.
+  bool image_set_by_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(LauncherItemController);
 };

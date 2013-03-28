@@ -10,14 +10,15 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "chrome/browser/chromeos/input_method/browser_state_monitor.h"
 #include "chrome/browser/chromeos/input_method/candidate_window_controller.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine_ibus.h"
-#include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/input_method/xkeyboard.h"
 #include "chrome/browser/chromeos/language_preferences.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/ibus/ibus_input_context_client.h"
+#include "chromeos/ime/input_method_delegate.h"
+#include "third_party/icu/public/common/unicode/uloc.h"
 #include "ui/base/accelerators/accelerator.h"
-#include "unicode/uloc.h"
 
 namespace chromeos {
 namespace input_method {
@@ -32,16 +33,22 @@ bool Contains(const std::vector<std::string>& container,
 
 }  // namespace
 
-InputMethodManagerImpl::InputMethodManagerImpl()
-    : state_(STATE_LOGIN_SCREEN),
-      util_(GetSupportedInputMethods()) {
+InputMethodManagerImpl::InputMethodManagerImpl(
+    scoped_ptr<InputMethodDelegate> delegate)
+    : delegate_(delegate.Pass()),
+      state_(STATE_LOGIN_SCREEN),
+      util_(delegate_.get(), GetSupportedInputMethods()) {
+  IBusDaemonController::GetInstance()->AddObserver(this);
 }
 
 InputMethodManagerImpl::~InputMethodManagerImpl() {
   if (ibus_controller_.get())
     ibus_controller_->RemoveObserver(this);
-  if (candidate_window_controller_.get())
+  IBusDaemonController::GetInstance()->RemoveObserver(this);
+  if (candidate_window_controller_.get()) {
     candidate_window_controller_->RemoveObserver(this);
+    candidate_window_controller_->Shutdown(ibus_controller_.get());
+  }
 }
 
 void InputMethodManagerImpl::AddObserver(
@@ -77,21 +84,24 @@ void InputMethodManagerImpl::SetState(State new_state) {
     case STATE_LOCK_SCREEN:
       OnScreenLocked();
       break;
-    case STATE_TERMINATING:
-      ibus_controller_->Stop();
-      browser_state_monitor_.reset();  // For crbug.com/120183.
-      candidate_window_controller_.reset();
+    case STATE_TERMINATING: {
+      if (candidate_window_controller_.get()) {
+        candidate_window_controller_->Shutdown(ibus_controller_.get());
+        candidate_window_controller_.reset();
+      }
       break;
+    }
   }
 }
 
-InputMethodDescriptors*
+scoped_ptr<InputMethodDescriptors>
 InputMethodManagerImpl::GetSupportedInputMethods() const {
   return whitelist_.GetSupportedInputMethods();
 }
 
-InputMethodDescriptors* InputMethodManagerImpl::GetActiveInputMethods() const {
-  InputMethodDescriptors* result = new InputMethodDescriptors;
+scoped_ptr<InputMethodDescriptors>
+InputMethodManagerImpl::GetActiveInputMethods() const {
+  scoped_ptr<InputMethodDescriptors> result(new InputMethodDescriptors);
   // Build the active input method descriptors from the active input
   // methods cache |active_input_method_ids_|.
   for (size_t i = 0; i < active_input_method_ids_.size(); ++i) {
@@ -115,7 +125,7 @@ InputMethodDescriptors* InputMethodManagerImpl::GetActiveInputMethods() const {
     result->push_back(
         InputMethodDescriptor::GetFallbackInputMethodDescriptor());
   }
-  return result;
+  return result.Pass();
 }
 
 size_t InputMethodManagerImpl::GetNumActiveInputMethods() const {
@@ -198,7 +208,7 @@ bool InputMethodManagerImpl::EnableInputMethods(
     // is implemented.
   } else {
     MaybeInitializeCandidateWindowController();
-    ibus_controller_->Start();
+    IBusDaemonController::GetInstance()->Start();
   }
 
   // If |current_input_method| is no longer in |active_input_method_ids_|,
@@ -244,6 +254,8 @@ void InputMethodManagerImpl::ChangeInputMethodInternal(
     }
   }
 
+  IBusInputContextClient* input_context =
+      chromeos::DBusThreadManager::Get()->GetIBusInputContextClient();
   if (InputMethodUtil::IsKeyboardLayout(input_method_id_to_switch)) {
     FOR_EACH_OBSERVER(InputMethodManager::Observer,
                       observers_,
@@ -255,12 +267,18 @@ void InputMethodManagerImpl::ChangeInputMethodInternal(
     const std::string current_input_method_id = current_input_method_.id();
     if (current_input_method_id.empty() ||
         InputMethodUtil::IsKeyboardLayout(current_input_method_id)) {
-      ibus_controller_->Reset();
+      if (DBusThreadManager::Get() &&
+          DBusThreadManager::Get()->GetIBusInputContextClient())
+        DBusThreadManager::Get()->GetIBusInputContextClient()->Reset();
     } else {
       ibus_controller_->ChangeInputMethod(current_input_method_id);
     }
+    if (input_context)
+      input_context->SetIsXKBLayout(true);
   } else {
     ibus_controller_->ChangeInputMethod(input_method_id_to_switch);
+    if (input_context)
+      input_context->SetIsXKBLayout(false);
   }
 
   if (current_input_method_.id() != input_method_id_to_switch) {
@@ -327,7 +345,7 @@ void InputMethodManagerImpl::AddInputMethodExtension(
 
     // Ensure that the input method daemon is running.
     MaybeInitializeCandidateWindowController();
-    ibus_controller_->Start();
+    IBusDaemonController::GetInstance()->Start();
   }
 
   extra_input_method_instances_[id] =
@@ -408,7 +426,7 @@ void InputMethodManagerImpl::SetFilteredExtensionImes(
 
   if (active_imes_changed) {
     MaybeInitializeCandidateWindowController();
-    ibus_controller_->Start();
+    IBusDaemonController::GetInstance()->Start();
 
     // If |current_input_method| is no longer in |active_input_method_ids_|,
     // switch to the first one in |active_input_method_ids_|.
@@ -557,6 +575,13 @@ void InputMethodManagerImpl::OnConnected() {
     if (!Contains(filtered_extension_imes_, ite->first))
       ite->second->OnConnected();
   }
+
+  const bool is_xkb_layout =
+      InputMethodUtil::IsKeyboardLayout(current_input_method_.id());
+  IBusInputContextClient* input_context =
+      chromeos::DBusThreadManager::Get()->GetIBusInputContextClient();
+  DCHECK(input_context);
+  input_context->SetIsXKBLayout(is_xkb_layout);
 }
 
 void InputMethodManagerImpl::OnDisconnected() {
@@ -572,7 +597,6 @@ void InputMethodManagerImpl::OnDisconnected() {
 void InputMethodManagerImpl::Init() {
   DCHECK(!ibus_controller_.get());
 
-  browser_state_monitor_.reset(new BrowserStateMonitor(this));
   ibus_controller_.reset(IBusController::Create());
   xkeyboard_.reset(XKeyboard::Create(util_));
   ibus_controller_->AddObserver(this);
@@ -587,7 +611,7 @@ void InputMethodManagerImpl::SetIBusControllerForTesting(
 void InputMethodManagerImpl::SetCandidateWindowControllerForTesting(
     CandidateWindowController* candidate_window_controller) {
   candidate_window_controller_.reset(candidate_window_controller);
-  candidate_window_controller_->Init();
+  candidate_window_controller_->Init(ibus_controller_.get());
   candidate_window_controller_->AddObserver(this);
 }
 
@@ -669,15 +693,10 @@ void InputMethodManagerImpl::MaybeInitializeCandidateWindowController() {
 
   candidate_window_controller_.reset(
       CandidateWindowController::CreateCandidateWindowController());
-  if (candidate_window_controller_->Init())
+  if (candidate_window_controller_->Init(ibus_controller_.get()))
     candidate_window_controller_->AddObserver(this);
   else
     DVLOG(1) << "Failed to initialize the candidate window controller";
-}
-
-// static
-InputMethodManagerImpl* InputMethodManagerImpl::GetInstanceForTesting() {
-  return new InputMethodManagerImpl;
 }
 
 }  // namespace input_method

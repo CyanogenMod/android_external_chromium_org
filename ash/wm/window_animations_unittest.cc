@@ -13,6 +13,7 @@
 #include "ui/base/animation/animation_container_element.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 
 using aura::Window;
 using ui::Layer;
@@ -25,7 +26,6 @@ class WindowAnimationsTest : public ash::test::AshTestBase {
   WindowAnimationsTest() {}
 
   virtual void TearDown() OVERRIDE {
-    ui::LayerAnimator::set_disable_animations_for_test(true);
     AshTestBase::TearDown();
   }
 
@@ -34,27 +34,24 @@ class WindowAnimationsTest : public ash::test::AshTestBase {
 };
 
 TEST_F(WindowAnimationsTest, HideShowBrightnessGrayscaleAnimation) {
-  scoped_ptr<aura::Window> window(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<aura::Window> window(CreateTestWindowInShellWithId(0));
   window->Show();
   EXPECT_TRUE(window->layer()->visible());
 
   // Hiding.
-  SetWindowVisibilityAnimationType(
+  views::corewm::SetWindowVisibilityAnimationType(
       window.get(),
       WINDOW_VISIBILITY_ANIMATION_TYPE_BRIGHTNESS_GRAYSCALE);
-  ash::internal::AnimateOnChildWindowVisibilityChanged(
-      window.get(), false);
+  AnimateOnChildWindowVisibilityChanged(window.get(), false);
   EXPECT_EQ(0.0f, window->layer()->GetTargetOpacity());
   EXPECT_FALSE(window->layer()->GetTargetVisibility());
   EXPECT_FALSE(window->layer()->visible());
 
   // Showing.
-  SetWindowVisibilityAnimationType(
+  views::corewm::SetWindowVisibilityAnimationType(
       window.get(),
       WINDOW_VISIBILITY_ANIMATION_TYPE_BRIGHTNESS_GRAYSCALE);
-  ash::internal::AnimateOnChildWindowVisibilityChanged(
-      window.get(), true);
+  AnimateOnChildWindowVisibilityChanged(window.get(), true);
   EXPECT_EQ(0.0f, window->layer()->GetTargetBrightness());
   EXPECT_EQ(0.0f, window->layer()->GetTargetGrayscale());
   EXPECT_TRUE(window->layer()->visible());
@@ -71,8 +68,7 @@ TEST_F(WindowAnimationsTest, HideShowBrightnessGrayscaleAnimation) {
 }
 
 TEST_F(WindowAnimationsTest, LayerTargetVisibility) {
-  scoped_ptr<aura::Window> window(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<aura::Window> window(CreateTestWindowInShellWithId(0));
 
   // Layer target visibility changes according to Show/Hide.
   window->Show();
@@ -84,10 +80,10 @@ TEST_F(WindowAnimationsTest, LayerTargetVisibility) {
 }
 
 TEST_F(WindowAnimationsTest, CrossFadeToBounds) {
-  ui::LayerAnimator::set_disable_animations_for_test(false);
+  ui::ScopedAnimationDurationScaleMode normal_duration_mode(
+      ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
 
-  scoped_ptr<Window> window(
-      aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<Window> window(CreateTestWindowInShellWithId(0));
   window->SetBounds(gfx::Rect(5, 10, 320, 240));
   window->Show();
 
@@ -102,8 +98,8 @@ TEST_F(WindowAnimationsTest, CrossFadeToBounds) {
   EXPECT_EQ(1.0f, old_layer->GetTargetOpacity());
   EXPECT_EQ("5,10 320x240", old_layer->bounds().ToString());
   gfx::Transform grow_transform;
-  grow_transform.ConcatScale(640.f / 320.f, 480.f / 240.f);
-  grow_transform.ConcatTranslate(-5.f, -10.f);
+  grow_transform.Translate(-5.f, -10.f);
+  grow_transform.Scale(640.f / 320.f, 480.f / 240.f);
   EXPECT_EQ(grow_transform, old_layer->GetTargetTransform());
   // New layer animates in to the identity transform.
   EXPECT_EQ(1.0f, window->layer()->GetTargetOpacity());
@@ -124,8 +120,8 @@ TEST_F(WindowAnimationsTest, CrossFadeToBounds) {
   EXPECT_EQ(0.0f, old_layer->GetTargetOpacity());
   EXPECT_EQ("0,0 640x480", old_layer->bounds().ToString());
   gfx::Transform shrink_transform;
-  shrink_transform.ConcatScale(320.f / 640.f, 240.f / 480.f);
-  shrink_transform.ConcatTranslate(5.f, 10.f);
+  shrink_transform.Translate(5.f, 10.f);
+  shrink_transform.Scale(320.f / 640.f, 240.f / 480.f);
   EXPECT_EQ(shrink_transform, old_layer->GetTargetTransform());
   // New layer animates in to the identity transform.
   EXPECT_EQ(1.0f, window->layer()->GetTargetOpacity());

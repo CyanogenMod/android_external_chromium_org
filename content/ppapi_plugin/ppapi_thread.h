@@ -15,18 +15,23 @@
 #include "base/scoped_native_library.h"
 #include "build/build_config.h"
 #include "content/common/child_thread.h"
+#include "ipc/ipc_listener.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/trusted/ppp_broker.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/plugin_proxy_delegate.h"
+#include "webkit/plugins/ppapi/plugin_module.h"
 
 #if defined(OS_WIN)
 #include "base/win/scoped_handle.h"
 #endif
 
 class CommandLine;
+
+namespace base {
 class FilePath;
+}
 
 namespace IPC {
 struct ChannelHandle;
@@ -44,8 +49,25 @@ class PpapiThread : public ChildThread,
   virtual ~PpapiThread();
 
  private:
+  // This class finds the target PluginDispatcher for each message it receives
+  // and forwards the message.
+  class DispatcherMessageListener : public IPC::Listener {
+   public:
+    explicit DispatcherMessageListener(PpapiThread* owner);
+    virtual ~DispatcherMessageListener();
+
+    // IPC::Listener implementation.
+    virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+
+   private:
+    PpapiThread* owner_;
+
+    DISALLOW_COPY_AND_ASSIGN(DispatcherMessageListener);
+  };
+
   // ChildThread overrides.
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
 
   // PluginDispatcher::PluginDelegate implementation.
@@ -54,7 +76,7 @@ class PpapiThread : public ChildThread,
   virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
   virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
       base::PlatformFile handle,
-      const IPC::SyncChannel& channel,
+      base::ProcessId peer_pid,
       bool should_close_source) OVERRIDE;
   virtual uint32 Register(
       ppapi::proxy::PluginDispatcher* plugin_dispatcher) OVERRIDE;
@@ -63,31 +85,33 @@ class PpapiThread : public ChildThread,
   // PluginProxyDelegate.
   // SendToBrowser() is intended to be safe to use on another thread so
   // long as the main PpapiThread outlives it.
-  virtual bool SendToBrowser(IPC::Message* msg) OVERRIDE;
   virtual IPC::Sender* GetBrowserSender() OVERRIDE;
   virtual std::string GetUILanguage() OVERRIDE;
   virtual void PreCacheFont(const void* logfontw) OVERRIDE;
   virtual void SetActiveURL(const std::string& url) OVERRIDE;
 
   // Message handlers.
-  void OnMsgLoadPlugin(const FilePath& path,
-                       const ppapi::PpapiPermissions& permissions);
-  void OnMsgCreateChannel(int renderer_id,
-                          bool incognito);
-  void OnMsgResourceReply(
+  void OnLoadPlugin(const base::FilePath& path,
+                    const ppapi::PpapiPermissions& permissions);
+  void OnCreateChannel(base::ProcessId renderer_pid,
+                       int renderer_child_id,
+                       bool incognito);
+  void OnResourceReply(
       const ppapi::proxy::ResourceMessageReplyParams& reply_params,
       const IPC::Message& nested_msg);
-  void OnMsgSetNetworkState(bool online);
-  void OnPluginDispatcherMessageReceived(const IPC::Message& msg);
+  void OnSetNetworkState(bool online);
+  void OnCrash();
+  void OnHang();
 
   // Sets up the channel to the given renderer. On success, returns true and
   // fills the given ChannelHandle with the information from the new channel.
-  bool SetupRendererChannel(int renderer_id,
+  bool SetupRendererChannel(base::ProcessId renderer_pid,
+                            int renderer_child_id,
                             bool incognito,
                             IPC::ChannelHandle* handle);
 
   // Sets up the name of the plugin for logging using the given path.
-  void SavePluginName(const FilePath& path);
+  void SavePluginName(const base::FilePath& path);
 
   // True if running in a broker process rather than a normal plugin process.
   bool is_broker_;
@@ -99,7 +123,8 @@ class PpapiThread : public ChildThread,
   // Global state tracking for the proxy.
   ppapi::proxy::PluginGlobals plugin_globals_;
 
-  PP_GetInterface_Func get_plugin_interface_;
+  // Storage for plugin entry points.
+  webkit::ppapi::PluginModule::EntryPoints plugin_entry_points_;
 
   // Callback to call when a new instance connects to the broker.
   // Used only when is_broker_.
@@ -127,6 +152,8 @@ class PpapiThread : public ChildThread,
   // Caches the handle to the peer process if this is a broker.
   base::win::ScopedHandle peer_handle_;
 #endif
+
+  DispatcherMessageListener dispatcher_message_listener_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(PpapiThread);
 };

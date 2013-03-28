@@ -46,10 +46,10 @@ class FrontendDataTypeControllerFake : public FrontendDataTypeController {
                                    profile,
                                    sync_service),
         mock_(mock) {}
-  virtual syncer::ModelType type() const { return syncer::BOOKMARKS; }
+  virtual syncer::ModelType type() const OVERRIDE { return syncer::BOOKMARKS; }
 
  private:
-  virtual void CreateSyncComponents() {
+  virtual void CreateSyncComponents() OVERRIDE {
     ProfileSyncComponentsFactory::SyncComponents sync_components =
         profile_sync_factory_->
             CreateBookmarkSyncComponents(sync_service_, this);
@@ -59,21 +59,22 @@ class FrontendDataTypeControllerFake : public FrontendDataTypeController {
 
   // We mock the following methods because their default implementations do
   // nothing, but we still want to make sure they're called appropriately.
-  virtual bool StartModels() {
+  virtual bool StartModels() OVERRIDE {
     return mock_->StartModels();
   }
-  virtual void CleanUpState() {
+  virtual void CleanUpState() OVERRIDE {
     mock_->CleanUpState();
   }
   virtual void RecordUnrecoverableError(
       const tracked_objects::Location& from_here,
-      const std::string& message) {
+      const std::string& message) OVERRIDE {
     mock_->RecordUnrecoverableError(from_here, message);
   }
-  virtual void RecordAssociationTime(base::TimeDelta time) {
+  virtual void RecordAssociationTime(base::TimeDelta time) OVERRIDE {
     mock_->RecordAssociationTime(time);
   }
-  virtual void RecordStartFailure(DataTypeController::StartResult result) {
+  virtual void RecordStartFailure(
+      DataTypeController::StartResult result) OVERRIDE {
     mock_->RecordStartFailure(result);
   }
  private:
@@ -112,14 +113,14 @@ class SyncFrontendDataTypeControllerTest : public testing::Test {
         WillOnce(Return(true));
     EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
         WillOnce(DoAll(SetArgumentPointee<0>(true), Return(true)));
-    EXPECT_CALL(*model_associator_, AssociateModels()).
+    EXPECT_CALL(*model_associator_, AssociateModels(_, _)).
         WillOnce(Return(syncer::SyncError()));
     EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
   }
 
   void SetActivateExpectations(DataTypeController::StartResult result) {
     EXPECT_CALL(service_, ActivateDataType(_, _, _));
-    EXPECT_CALL(start_callback_, Run(result,_));
+    EXPECT_CALL(start_callback_, Run(result, _, _));
   }
 
   void SetStopExpectations() {
@@ -134,7 +135,7 @@ class SyncFrontendDataTypeControllerTest : public testing::Test {
       EXPECT_CALL(*dtc_mock_, RecordUnrecoverableError(_, _));
     EXPECT_CALL(*dtc_mock_, CleanUpState());
     EXPECT_CALL(*dtc_mock_, RecordStartFailure(result));
-    EXPECT_CALL(start_callback_, Run(result,_));
+    EXPECT_CALL(start_callback_, Run(result, _, _));
   }
 
   void Start() {
@@ -147,7 +148,7 @@ class SyncFrontendDataTypeControllerTest : public testing::Test {
   }
 
   void PumpLoop() {
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   MessageLoopForUI message_loop_;
@@ -178,7 +179,7 @@ TEST_F(SyncFrontendDataTypeControllerTest, StartFirstRun) {
       WillOnce(Return(true));
   EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
       WillOnce(DoAll(SetArgumentPointee<0>(false), Return(true)));
-  EXPECT_CALL(*model_associator_, AssociateModels()).
+  EXPECT_CALL(*model_associator_, AssociateModels(_, _)).
       WillOnce(Return(syncer::SyncError()));
   EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
   SetActivateExpectations(DataTypeController::OK_FIRST_RUN);
@@ -206,10 +207,10 @@ TEST_F(SyncFrontendDataTypeControllerTest, StartAssociationFailed) {
       WillOnce(Return(true));
   EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
       WillOnce(DoAll(SetArgumentPointee<0>(true), Return(true)));
-  EXPECT_CALL(*model_associator_, AssociateModels()).
+  EXPECT_CALL(*model_associator_, AssociateModels(_, _)).
       WillOnce(Return(syncer::SyncError(FROM_HERE,
                                 "error",
-                                syncer::PREFERENCES)));
+                                syncer::BOOKMARKS)));
 
   EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
   SetStartFailExpectations(DataTypeController::ASSOCIATION_FAILED);

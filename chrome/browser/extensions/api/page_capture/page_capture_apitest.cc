@@ -4,22 +4,22 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
-#include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/api/page_capture/page_capture_api.h"
+#include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
 
 using extensions::PageCaptureSaveAsMHTMLFunction;
 
 class ExtensionPageCaptureApiTest : public ExtensionApiTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII(switches::kJavaScriptFlags, "--expose-gc");
   }
 
-  virtual void SetUpInProcessBrowserTestFixture() {
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
 
     host_resolver()->AddRule("www.a.com", "127.0.0.1");
@@ -46,11 +46,12 @@ class PageCaptureSaveAsMHTMLDelegate
     PageCaptureSaveAsMHTMLFunction::SetTestDelegate(NULL);
   }
 
-  virtual void OnTemporaryFileCreated(const FilePath& temp_file) OVERRIDE {
+  virtual void OnTemporaryFileCreated(
+      const base::FilePath& temp_file) OVERRIDE {
     temp_file_ = temp_file;
   }
 
-  FilePath temp_file_;
+  base::FilePath temp_file_;
 };
 
 IN_PROC_BROWSER_TEST_F(ExtensionPageCaptureApiTest, MAYBE_SaveAsMHTML) {

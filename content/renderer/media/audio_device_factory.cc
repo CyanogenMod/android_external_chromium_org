@@ -5,11 +5,10 @@
 #include "content/renderer/media/audio_device_factory.h"
 
 #include "base/logging.h"
-#include "content/common/child_process.h"
 #include "content/renderer/media/audio_input_message_filter.h"
 #include "content/renderer/media/audio_message_filter.h"
+#include "content/renderer/media/renderer_audio_output_device.h"
 #include "media/audio/audio_input_device.h"
-#include "media/audio/audio_output_device.h"
 
 namespace content {
 
@@ -17,25 +16,24 @@ namespace content {
 AudioDeviceFactory* AudioDeviceFactory::factory_ = NULL;
 
 // static
-media::AudioRendererSink* AudioDeviceFactory::NewOutputDevice() {
-  media::AudioRendererSink* device = NULL;
+scoped_refptr<RendererAudioOutputDevice> AudioDeviceFactory::NewOutputDevice() {
+  RendererAudioOutputDevice* device = NULL;
   if (factory_)
     device = factory_->CreateOutputDevice();
 
-  return device ? device : new media::AudioOutputDevice(
-      AudioMessageFilter::Get(),
-      ChildProcess::current()->io_message_loop()->message_loop_proxy());
+  return device ? device : new RendererAudioOutputDevice(
+      AudioMessageFilter::Get(), AudioMessageFilter::Get()->io_message_loop());
 }
 
 // static
-media::AudioInputDevice* AudioDeviceFactory::NewInputDevice() {
+scoped_refptr<media::AudioInputDevice> AudioDeviceFactory::NewInputDevice() {
   media::AudioInputDevice* device = NULL;
   if (factory_)
     device = factory_->CreateInputDevice();
 
   return device ? device : new media::AudioInputDevice(
       AudioInputMessageFilter::Get(),
-      ChildProcess::current()->io_message_loop()->message_loop_proxy());
+      AudioInputMessageFilter::Get()->io_message_loop());
 }
 
 AudioDeviceFactory::AudioDeviceFactory() {

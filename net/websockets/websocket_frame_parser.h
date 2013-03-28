@@ -22,7 +22,7 @@ namespace net {
 // Specification of WebSocket frame format is available at
 // <http://tools.ietf.org/html/rfc6455#section-5>.
 
-class NET_EXPORT_PRIVATE WebSocketFrameParser {
+class NET_EXPORT WebSocketFrameParser {
  public:
   WebSocketFrameParser();
   ~WebSocketFrameParser();
@@ -72,7 +72,7 @@ class NET_EXPORT_PRIVATE WebSocketFrameParser {
   // Frame header and masking key of the current frame.
   // |masking_key_| is filled with zeros if the current frame is not masked.
   scoped_ptr<WebSocketFrameHeader> current_frame_header_;
-  char masking_key_[WebSocketFrameHeader::kMaskingKeyLength];
+  WebSocketMaskingKey masking_key_;
 
   // Amount of payload data read so far for the current frame.
   uint64 frame_offset_;

@@ -6,11 +6,13 @@
 #define GPU_COMMAND_BUFFER_SERVICE_CONTEXT_GROUP_H_
 
 #include <string>
+#include <vector>
 #include "base/basictypes.h"
 #include "base/hash_tables.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/service/gles2_cmd_validation.h"
 #include "gpu/command_buffer/service/feature_info.h"
@@ -40,8 +42,6 @@ struct DisallowedFeatures;
 // resources.
 class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
  public:
-  typedef scoped_refptr<ContextGroup> Ref;
-
   ContextGroup(
       MailboxManager* mailbox_manager,
       ImageManager* image_manager,
@@ -50,12 +50,14 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
 
   // This should only be called by GLES2Decoder. This must be paired with a
   // call to destroy if it succeeds.
-  bool Initialize(const DisallowedFeatures& disallowed_features,
-                  const char* allowed_features);
+  bool Initialize(
+      GLES2Decoder* decoder,
+      const DisallowedFeatures& disallowed_features,
+      const char* allowed_features);
 
   // Destroys all the resources when called for the last context in the group.
   // It should only be called by GLES2Decoder.
-  void Destroy(bool have_context);
+  void Destroy(GLES2Decoder* decoder, bool have_context);
 
   MailboxManager* mailbox_manager() const {
     return mailbox_manager_.get();
@@ -99,6 +101,14 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
 
   uint32 max_vertex_uniform_vectors() const {
     return max_vertex_uniform_vectors_;
+  }
+
+  uint32 max_color_attachments() const {
+    return max_color_attachments_;
+  }
+
+  uint32 max_draw_buffers() const {
+    return max_draw_buffers_;
   }
 
   FeatureInfo* feature_info() {
@@ -145,6 +155,17 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
 
   uint32 GetMemRepresented() const;
 
+  // Loses all the context associated with this group.
+  void LoseContexts(GLenum reset_status);
+
+  // EXT_draw_buffer related states for backbuffer.
+  GLenum draw_buffer() const {
+    return draw_buffer_;
+  }
+  void set_draw_buffer(GLenum buf) {
+    draw_buffer_ = buf;
+  }
+
  private:
   friend class base::RefCounted<ContextGroup>;
   ~ContextGroup();
@@ -153,14 +174,13 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   bool CheckGLFeatureU(GLint min_required, uint32* v);
   bool QueryGLFeature(GLenum pname, GLint min_required, GLint* v);
   bool QueryGLFeatureU(GLenum pname, GLint min_required, uint32* v);
+  bool HaveContexts();
 
   scoped_refptr<MailboxManager> mailbox_manager_;
   scoped_refptr<ImageManager> image_manager_;
   scoped_refptr<MemoryTracker> memory_tracker_;
   scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
 
-  // Whether or not this context is initialized.
-  int num_contexts_;
   bool enforce_gl_minimums_;
   bool bind_generates_resource_;
 
@@ -171,6 +191,8 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   uint32 max_fragment_uniform_vectors_;
   uint32 max_varying_vectors_;
   uint32 max_vertex_uniform_vectors_;
+  uint32 max_color_attachments_;
+  uint32 max_draw_buffers_;
 
   ProgramCache* program_cache_;
 
@@ -189,7 +211,11 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   linked_ptr<IdAllocatorInterface>
       id_namespaces_[id_namespaces::kNumIdNamespaces];
 
-  FeatureInfo::Ref feature_info_;
+  scoped_refptr<FeatureInfo> feature_info_;
+
+  std::vector<base::WeakPtr<gles2::GLES2Decoder> > decoders_;
+
+  GLenum draw_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(ContextGroup);
 };

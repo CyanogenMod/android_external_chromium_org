@@ -27,10 +27,12 @@ class Size;
 
 namespace content {
 class GpuMessageFilter;
+class PeerConnectionTrackerHost;
 class RendererMainThread;
 class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
+class RenderWidgetHostViewFrameSubscriber;
 class StoragePartition;
 class StoragePartitionImpl;
 
@@ -59,6 +61,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
  public:
   RenderProcessHostImpl(BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
+                        bool supports_browser_plugin,
                         bool is_guest);
   virtual ~RenderProcessHostImpl();
 
@@ -66,7 +69,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void EnableSendQueue() OVERRIDE;
   virtual bool Init() OVERRIDE;
   virtual int GetNextRoutingID() OVERRIDE;
-  virtual void CancelResourceRequests(int render_widget_id) OVERRIDE;
   virtual void SimulateSwapOutACK(const ViewMsg_SwapOut_Params& params)
       OVERRIDE;
   virtual bool WaitForBackingStoreMsg(int render_widget_id,
@@ -80,7 +82,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual StoragePartition* GetStoragePartition() const OVERRIDE;
   virtual bool FastShutdownIfPossible() OVERRIDE;
   virtual void DumpHandles() OVERRIDE;
-  virtual base::ProcessHandle GetHandle() OVERRIDE;
+  virtual base::ProcessHandle GetHandle() const OVERRIDE;
   virtual TransportDIB* GetTransportDIB(TransportDIB::Id dib_id) OVERRIDE;
   virtual BrowserContext* GetBrowserContext() const OVERRIDE;
   virtual bool InSameStoragePartition(
@@ -127,6 +129,13 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Returns the current number of active views in this process.  Excludes
   // any RenderViewHosts that are swapped out.
   int GetActiveViewCount();
+
+  // Start and end frame subscription for a specific renderer.
+  // This API only supports subscription to accelerated composited frames.
+  void BeginFrameSubscription(
+      int route_id,
+      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
+  void EndFrameSubscription(int route_id);
 
   // Register/unregister the host identified by the host id in the global host
   // list.
@@ -219,7 +228,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SetBackgrounded(bool backgrounded);
 
   // Handle termination of our process.
-  void ProcessDied();
+  void ProcessDied(bool already_dead);
 
   // The count of currently visible widgets.  Since the host can be a container
   // for multiple widgets, it uses this count to determine when it should be
@@ -304,9 +313,17 @@ class CONTENT_EXPORT RenderProcessHostImpl
   base::WaitableEvent dummy_shutdown_event_;
 #endif
 
+  // Indicates whether this is a RenderProcessHost that has permission to embed
+  // Browser Plugins.
+  bool supports_browser_plugin_;
+
   // Indicates whether this is a RenderProcessHost of a Browser Plugin guest
   // renderer.
   bool is_guest_;
+
+  // Forwards messages between WebRTCInternals in the browser process
+  // and PeerConnectionTracker in the renderer process.
+  scoped_refptr<PeerConnectionTrackerHost> peer_connection_tracker_host_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

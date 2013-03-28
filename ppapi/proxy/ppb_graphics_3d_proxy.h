@@ -13,7 +13,6 @@
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/proxy_completion_callback_factory.h"
-#include "ppapi/proxy/serialized_structs.h"
 #include "ppapi/shared_impl/ppb_graphics_3d_shared.h"
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/utility/completion_callback_factory.h"
@@ -23,6 +22,8 @@ namespace ppapi {
 class HostResource;
 
 namespace proxy {
+
+class SerializedHandle;
 
 class Graphics3D : public PPB_Graphics3D_Shared {
  public:
@@ -45,6 +46,7 @@ class Graphics3D : public PPB_Graphics3D_Shared {
   virtual PP_Graphics3DTrustedState FlushSyncFast(
       int32_t put_offset,
       int32_t last_known_get) OVERRIDE;
+  virtual uint32_t InsertSyncPoint() OVERRIDE;
 
  private:
   class LockingCommandBuffer;
@@ -96,7 +98,7 @@ class PPB_Graphics3D_Proxy : public InterfaceProxy {
   void OnMsgAsyncFlush(const HostResource& context,
                        int32 put_offset);
   void OnMsgCreateTransferBuffer(const HostResource& context,
-                                 int32 size,
+                                 uint32 size,
                                  int32* id);
   void OnMsgDestroyTransferBuffer(const HostResource& context,
                                   int32 id);
@@ -104,6 +106,7 @@ class PPB_Graphics3D_Proxy : public InterfaceProxy {
                               int32 id,
                               ppapi::proxy::SerializedHandle* transfer_buffer);
   void OnMsgSwapBuffers(const HostResource& context);
+  void OnMsgInsertSyncPoint(const HostResource& context, uint32* sync_point);
   // Renderer->plugin message handlers.
   void OnMsgSwapBuffersACK(const HostResource& context,
                            int32_t pp_error);

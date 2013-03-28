@@ -6,17 +6,17 @@
 
 #include <algorithm>
 
-#include "unicode/ubidi.h"
-
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
+#include "third_party/icu/public/common/unicode/ubidi.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -198,7 +198,7 @@ gfx::Image OmniboxPopupModel::GetIconIfExtensionMatch(
   Profile* profile = edit_model_->profile();
   const TemplateURL* template_url = match.GetTemplateURL(profile, false);
   if (template_url && template_url->IsExtensionKeyword()) {
-    return profile->GetExtensionService()->GetOmniboxPopupIcon(
+    return extensions::OmniboxAPI::Get(profile)->GetOmniboxPopupIcon(
         template_url->GetExtensionId());
   }
   return gfx::Image();

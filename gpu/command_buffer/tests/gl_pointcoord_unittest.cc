@@ -20,7 +20,9 @@ class PointCoordTest : public testing::Test {
 
  protected:
   virtual void SetUp() {
-    gl_.Initialize(gfx::Size(kResolution, kResolution));
+    GLManager::Options options;
+    options.size = gfx::Size(kResolution, kResolution);
+    gl_.Initialize(options);
   }
 
   virtual void TearDown() {
@@ -38,10 +40,10 @@ GLuint PointCoordTest::SetupQuad(
   glGenBuffers(1, &vbo);
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
   float vertices[] = {
-    -0.5 + pixel_offset, -0.5 + pixel_offset,
-     0.5 + pixel_offset, -0.5 + pixel_offset,
-    -0.5 + pixel_offset,  0.5 + pixel_offset,
-     0.5 + pixel_offset,  0.5 + pixel_offset,
+    -0.5f + pixel_offset, -0.5f + pixel_offset,
+     0.5f + pixel_offset, -0.5f + pixel_offset,
+    -0.5f + pixel_offset,  0.5f + pixel_offset,
+     0.5f + pixel_offset,  0.5f + pixel_offset,
   };
   glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
   glEnableVertexAttribArray(position_location);
@@ -63,7 +65,15 @@ GLfloat s2p(GLfloat s) {
 
 }  // anonymous namespace
 
-TEST_F(PointCoordTest, RenderTo) {
+// crbug.com/162976
+// Flaky on Linux ATI bot.
+#if (defined(OS_LINUX) && defined(NDEBUG))
+#define MAYBE_RenderTo DISABLED_RenderTo
+#else
+#define MAYBE_RenderTo RenderTo
+#endif
+
+TEST_F(PointCoordTest, MAYBE_RenderTo) {
   static const char* v_shader_str = SHADER(
       attribute vec4 a_position;
       uniform float u_pointsize;
@@ -126,8 +136,8 @@ TEST_F(PointCoordTest, RenderTo) {
           GLfloat s = 0.5 + (xf + 0.5 - xw) / max_point_size;
           GLfloat t = 0.5 + (yf + 0.5 - yw) / max_point_size;
           uint8 color[4] = {
-            s * 255,
-            (1 - t) * 255,
+            static_cast<uint8>(s * 255),
+            static_cast<uint8>((1 - t) * 255),
             0,
             255,
           };

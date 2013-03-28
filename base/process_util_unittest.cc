@@ -9,28 +9,29 @@
 #include "base/command_line.h"
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
-#include "base/eintr_wrapper.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/process_util.h"
 #include "base/test/multiprocess_test.h"
 #include "base/test/test_timeouts.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/platform_thread.h"
+#include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/multiprocess_func_list.h"
 
 #if defined(OS_LINUX)
-#include <malloc.h>
 #include <glib.h>
+#include <malloc.h>
 #include <sched.h>
 #endif
 #if defined(OS_POSIX)
-#include <errno.h>
 #include <dlfcn.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/resource.h>
@@ -45,6 +46,8 @@
 #include <malloc/malloc.h>
 #include "base/process_util_unittest_mac.h"
 #endif
+
+using base::FilePath;
 
 namespace {
 
@@ -71,6 +74,12 @@ const int kExpectedStillRunningExitCode = 0x102;
 const int kExpectedKilledExitCode = 1;
 #else
 const int kExpectedStillRunningExitCode = 0;
+#endif
+
+#if defined(OS_WIN)
+// HeapQueryInformation function pointer.
+typedef BOOL (WINAPI* HeapQueryFn)  \
+    (HANDLE, HEAP_INFORMATION_CLASS, PVOID, SIZE_T, PSIZE_T);
 #endif
 
 // Sleeps until file filename is created.
@@ -250,7 +259,8 @@ MULTIPROCESS_TEST_MAIN(CrashingChildProcess) {
 
 // This test intentionally crashes, so we don't need to run it under
 // AddressSanitizer.
-#if defined(ADDRESS_SANITIZER)
+// TODO(jschuh): crbug.com/175753 Fix this in Win64 bots.
+#if defined(ADDRESS_SANITIZER) || (defined(OS_WIN) && defined(ARCH_CPU_X86_64))
 #define MAYBE_GetTerminationStatusCrash DISABLED_GetTerminationStatusCrash
 #else
 #define MAYBE_GetTerminationStatusCrash GetTerminationStatusCrash
@@ -372,6 +382,40 @@ TEST_F(ProcessUtilTest, SetProcessBackgroundedSelf) {
   EXPECT_EQ(old_priority, new_priority);
 }
 
+#if defined(OS_LINUX) || defined(OS_ANDROID)
+TEST_F(ProcessUtilTest, GetSystemMemoryInfo) {
+  base::SystemMemoryInfoKB info;
+  EXPECT_TRUE(base::GetSystemMemoryInfo(&info));
+
+  // Ensure each field received a value.
+  EXPECT_GT(info.total, 0);
+  EXPECT_GT(info.free, 0);
+  EXPECT_GT(info.buffers, 0);
+  EXPECT_GT(info.cached, 0);
+  EXPECT_GT(info.active_anon, 0);
+  EXPECT_GT(info.inactive_anon, 0);
+  EXPECT_GT(info.active_file, 0);
+  EXPECT_GT(info.inactive_file, 0);
+
+  // All the values should be less than the total amount of memory.
+  EXPECT_LT(info.free, info.total);
+  EXPECT_LT(info.buffers, info.total);
+  EXPECT_LT(info.cached, info.total);
+  EXPECT_LT(info.active_anon, info.total);
+  EXPECT_LT(info.inactive_anon, info.total);
+  EXPECT_LT(info.active_file, info.total);
+  EXPECT_LT(info.inactive_file, info.total);
+
+#if defined(OS_CHROMEOS)
+  // Chrome OS exposes shmem.
+  EXPECT_GT(info.shmem, 0);
+  EXPECT_LT(info.shmem, info.total);
+  // Chrome unit tests are not run on actual Chrome OS hardware, so gem_objects
+  // and gem_size cannot be tested here.
+#endif
+}
+#endif  // defined(OS_LINUX) || defined(OS_ANDROID)
+
 // TODO(estade): if possible, port these 2 tests.
 #if defined(OS_WIN)
 TEST_F(ProcessUtilTest, EnableLFH) {
@@ -383,17 +427,29 @@ TEST_F(ProcessUtilTest, EnableLFH) {
     if (!no_debug_env || strcmp(no_debug_env, "1"))
       return;
   }
+  HMODULE kernel32 = GetModuleHandle(L"kernel32.dll");
+  ASSERT_TRUE(kernel32 != NULL);
+  HeapQueryFn heap_query = reinterpret_cast<HeapQueryFn>(GetProcAddress(
+      kernel32,
+      "HeapQueryInformation"));
+
+  // On Windows 2000, the function is not exported. This is not a reason to
+  // fail but we won't be able to retrieves information about the heap, so we
+  // should stop here.
+  if (heap_query == NULL)
+    return;
+
   HANDLE heaps[1024] = { 0 };
   unsigned number_heaps = GetProcessHeaps(1024, heaps);
   EXPECT_GT(number_heaps, 0u);
   for (unsigned i = 0; i < number_heaps; ++i) {
     ULONG flag = 0;
     SIZE_T length;
-    ASSERT_NE(0, HeapQueryInformation(heaps[i],
-                                      HeapCompatibilityInformation,
-                                      &flag,
-                                      sizeof(flag),
-                                      &length));
+    ASSERT_NE(0, heap_query(heaps[i],
+                            HeapCompatibilityInformation,
+                            &flag,
+                            sizeof(flag),
+                            &length));
     // If flag is 0, the heap is a standard heap that does not support
     // look-asides. If flag is 1, the heap supports look-asides. If flag is 2,
     // the heap is a low-fragmentation heap (LFH). Note that look-asides are not
@@ -423,7 +479,7 @@ TEST_F(ProcessUtilTest, CalcFreeMemory) {
 
   // Allocate 20M and check again. It should have gone down.
   const int kAllocMB = 20;
-  scoped_array<char> alloc(new char[kAllocMB * 1024 * 1024]);
+  scoped_ptr<char[]> alloc(new char[kAllocMB * 1024 * 1024]);
   size_t expected_total = free_mem1.total - kAllocMB;
   size_t expected_largest = free_mem1.largest;
 
@@ -595,7 +651,7 @@ int ProcessUtilTest::CountOpenFDsInChild() {
       HANDLE_EINTR(read(fds[0], &num_open_files, sizeof(num_open_files)));
   CHECK_EQ(bytes_read, static_cast<ssize_t>(sizeof(num_open_files)));
 
-#if defined(THREAD_SANITIZER)
+#if defined(THREAD_SANITIZER) || defined(USE_HEAPCHECKER)
   // Compiler-based ThreadSanitizer makes this test slow.
   CHECK(base::WaitForSingleProcess(handle, base::TimeDelta::FromSeconds(3)));
 #else
@@ -926,6 +982,28 @@ TEST_F(ProcessUtilTest, ParseProcStatCPU) {
 
   EXPECT_EQ(0, base::ParseProcStatCPU(kSelfStat));
 }
+
+// Disable on Android because base_unittests runs inside a Dalvik VM that
+// starts and stop threads (crbug.com/175563).
+#if !defined(OS_ANDROID)
+TEST_F(ProcessUtilTest, GetNumberOfThreads) {
+  const base::ProcessHandle current = base::GetCurrentProcessHandle();
+  const int initial_threads = base::GetNumberOfThreads(current);
+  ASSERT_GT(initial_threads, 0);
+  const int kNumAdditionalThreads = 10;
+  {
+    scoped_ptr<base::Thread> my_threads[kNumAdditionalThreads];
+    for (int i = 0; i < kNumAdditionalThreads; ++i) {
+      my_threads[i].reset(new base::Thread("GetNumberOfThreadsTest"));
+      my_threads[i]->Start();
+      ASSERT_EQ(base::GetNumberOfThreads(current), initial_threads + 1 + i);
+    }
+  }
+  // The Thread destructor will stop them.
+  ASSERT_EQ(initial_threads, base::GetNumberOfThreads(current));
+}
+#endif  // !defined(OS_ANDROID)
+
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
 
 // TODO(port): port those unit tests.

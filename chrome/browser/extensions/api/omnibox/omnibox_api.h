@@ -5,18 +5,33 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_OMNIBOX_OMNIBOX_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_OMNIBOX_OMNIBOX_API_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/extension_icon_manager.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
-class TabContents;
+class Profile;
 class TemplateURL;
+class TemplateURLService;
+
 namespace base {
 class ListValue;
+}
+
+namespace content {
+class WebContents;
+}
+
+namespace gfx {
+class Image;
 }
 
 namespace extensions {
@@ -39,7 +54,7 @@ class ExtensionOmniboxEventRouter {
 
   // The user has accepted the omnibox input.
   static void OnInputEntered(
-      TabContents* tab_contents,
+      content::WebContents* web_contents,
       const std::string& extension_id,
       const std::string& input);
 
@@ -54,7 +69,7 @@ class ExtensionOmniboxEventRouter {
 
 class OmniboxSendSuggestionsFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("omnibox.sendSuggestions");
+  DECLARE_EXTENSION_FUNCTION("omnibox.sendSuggestions", OMNIBOX_SENDSUGGESTIONS)
 
  protected:
   virtual ~OmniboxSendSuggestionsFunction() {}
@@ -63,9 +78,65 @@ class OmniboxSendSuggestionsFunction : public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
+class OmniboxAPI : public ProfileKeyedAPI,
+                   public content::NotificationObserver {
+ public:
+  explicit OmniboxAPI(Profile* profile);
+  virtual ~OmniboxAPI();
+
+  // ProfileKeyedAPI implementation.
+  static ProfileKeyedAPIFactory<OmniboxAPI>* GetFactoryInstance();
+
+  // Convenience method to get the OmniboxAPI for a profile.
+  static OmniboxAPI* Get(Profile* profile);
+
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+  // Returns the icon to display in the omnibox for the given extension.
+  gfx::Image GetOmniboxIcon(const std::string& extension_id);
+
+  // Returns the icon to display in the omnibox popup window for the given
+  // extension.
+  gfx::Image GetOmniboxPopupIcon(const std::string& extension_id);
+
+ private:
+  friend class ProfileKeyedAPIFactory<OmniboxAPI>;
+
+  typedef std::set<const Extension*> PendingExtensions;
+
+  // ProfileKeyedAPI implementation.
+  static const char* service_name() {
+    return "OmniboxAPI";
+  }
+  static const bool kServiceRedirectedInIncognito = true;
+
+  Profile* profile_;
+
+  TemplateURLService* url_service_;
+
+  // List of extensions waiting for the TemplateURLService to Load to
+  // have keywords registered.
+  PendingExtensions pending_extensions_;
+
+  content::NotificationRegistrar registrar_;
+
+  // Keeps track of favicon-sized omnibox icons for extensions.
+  ExtensionIconManager omnibox_icon_manager_;
+  ExtensionIconManager omnibox_popup_icon_manager_;
+
+  DISALLOW_COPY_AND_ASSIGN(OmniboxAPI);
+};
+
+template <>
+void ProfileKeyedAPIFactory<OmniboxAPI>::DeclareFactoryDependencies();
+
 class OmniboxSetDefaultSuggestionFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("omnibox.setDefaultSuggestion");
+  DECLARE_EXTENSION_FUNCTION("omnibox.setDefaultSuggestion",
+                             OMNIBOX_SETDEFAULTSUGGESTION)
 
  protected:
   virtual ~OmniboxSetDefaultSuggestionFunction() {}

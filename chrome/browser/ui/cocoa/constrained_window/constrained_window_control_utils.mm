@@ -5,7 +5,6 @@
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_control_utils.h"
 
 #include "base/memory/scoped_nsobject.h"
-#include "chrome/browser/ui/constrained_window.h"
 #include "skia/ext/skia_utils_mac.h"
 
 namespace constrained_window {
@@ -30,8 +29,6 @@ NSAttributedString* GetAttributedLabelString(
 
   const gfx::Font& font =
       ui::ResourceBundle::GetSharedInstance().GetFont(fontStyle);
-  NSColor* color =
-      gfx::SkColorToCalibratedNSColor(ConstrainedWindow::GetTextColor());
   scoped_nsobject<NSMutableParagraphStyle> paragraphStyle(
       [[NSMutableParagraphStyle alloc] init]);
   [paragraphStyle setAlignment:alignment];
@@ -39,7 +36,6 @@ NSAttributedString* GetAttributedLabelString(
 
   NSDictionary* attributes = @{
       NSFontAttributeName:            font.GetNativeFont(),
-      NSForegroundColorAttributeName: color,
       NSParagraphStyleAttributeName:  paragraphStyle.get()
   };
   return [[[NSAttributedString alloc] initWithString:string

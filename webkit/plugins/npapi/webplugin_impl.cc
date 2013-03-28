@@ -8,27 +8,26 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop.h"
-#include "base/metrics/histogram.h"
-#include "base/stringprintf.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
+#include "cc/layers/io_surface_layer.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_util.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCookieJar.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebHTTPBody.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebHTTPHeaderVisitor.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoader.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebCookieJar.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPBody.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPHeaderVisitor.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoader.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoaderClient.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
@@ -41,6 +40,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gfx/rect.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
+#include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/glue/multipart_response_delegate.h"
 #include "webkit/plugins/npapi/plugin_host.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
@@ -81,22 +81,6 @@ namespace webkit {
 namespace npapi {
 
 namespace {
-
-const char kOctetStreamMimeType[] = "application/octet-stream";
-const char kHTMLMimeType[] = "text/html";
-const char kPlainTextMimeType[] = "text/plain";
-const char kPluginFlashMimeType[] = "Plugin.FlashMIMEType";
-const char kPluginFlashVersion[] = "Plugin.FlashVersion";
-
-enum {
-  MIME_TYPE_OK = 0,
-  MIME_TYPE_EMPTY,
-  MIME_TYPE_OCTETSTREAM,
-  MIME_TYPE_HTML,
-  MIME_TYPE_PLAINTEXT,
-  MIME_TYPE_OTHER,
-  MIME_TYPE_NUM_EVENTS
-};
 
 // This class handles individual multipart responses. It is instantiated when
 // we receive HTTP status code 206 in the HTTP response. This indicates
@@ -245,7 +229,6 @@ struct WebPluginImpl::ClientInfo {
   linked_ptr<WebKit::WebURLLoader> loader;
   bool notify_redirects;
   bool is_plugin_src_load;
-  bool check_flash_version;
 };
 
 bool WebPluginImpl::initialize(WebPluginContainer* container) {
@@ -481,7 +464,7 @@ bool WebPluginImpl::isPlaceholder() {
 WebPluginImpl::WebPluginImpl(
     WebFrame* webframe,
     const WebPluginParams& params,
-    const FilePath& file_path,
+    const base::FilePath& file_path,
     const base::WeakPtr<WebPluginPageDelegate>& page_delegate)
     : windowless_(false),
       window_(gfx::kNullPluginWindow),
@@ -787,21 +770,34 @@ void WebPluginImpl::AcceleratedPluginAllocatedIOSurface(int32 width,
 }
 
 void WebPluginImpl::AcceleratedPluginSwappedIOSurface() {
-  if (container_) {
-    // Deferring the call to setBackingIOSurfaceId is an attempt to
-    // work around garbage occasionally showing up in the plugin's
-    // area during live resizing of Core Animation plugins. The
-    // assumption was that by the time this was called, the plugin
-    // process would have populated the newly allocated IOSurface. It
-    // is not 100% clear at this point why any garbage is getting
-    // through. More investigation is needed. http://crbug.com/105346
-    if (next_io_surface_allocated_) {
-      container_->setBackingIOSurfaceId(next_io_surface_width_,
-                                        next_io_surface_height_,
-                                        next_io_surface_id_);
-      next_io_surface_allocated_ = false;
+  if (!container_)
+    return;
+  // Deferring the call to setBackingIOSurfaceId is an attempt to
+  // work around garbage occasionally showing up in the plugin's
+  // area during live resizing of Core Animation plugins. The
+  // assumption was that by the time this was called, the plugin
+  // process would have populated the newly allocated IOSurface. It
+  // is not 100% clear at this point why any garbage is getting
+  // through. More investigation is needed. http://crbug.com/105346
+  if (next_io_surface_allocated_) {
+    if (next_io_surface_id_) {
+      if (!io_surface_layer_.get()) {
+        io_surface_layer_ = cc::IOSurfaceLayer::Create();
+        web_layer_.reset(new webkit::WebLayerImpl(io_surface_layer_));
+        container_->setWebLayer(web_layer_.get());
+      }
+      io_surface_layer_->SetIOSurfaceProperties(
+          next_io_surface_id_,
+          gfx::Size(next_io_surface_width_, next_io_surface_height_));
+    } else {
+      container_->setWebLayer(NULL);
+      web_layer_.reset();
+      io_surface_layer_ = NULL;
     }
-    container_->commitBackingTexture();
+    next_io_surface_allocated_ = false;
+  } else {
+    if (io_surface_layer_)
+      io_surface_layer_->SetNeedsDisplay();
   }
 }
 #endif
@@ -899,55 +895,6 @@ void WebPluginImpl::didReceiveResponse(WebURLLoader* loader,
   ResponseInfo response_info;
   GetResponseInfo(response, &response_info);
 
-  ClientInfo* client_info = GetClientInfoFromLoader(loader);
-  if (!client_info)
-    return;
-
-  // Defend against content confusion by the Flash plug-in.
-  if (client_info->is_plugin_src_load &&
-      mime_type_ == kFlashPluginSwfMimeType) {
-    client_info->check_flash_version = true;
-    std::string sniff =
-        response.httpHeaderField("X-Content-Type-Options").utf8();
-    std::string content_type =
-        response.httpHeaderField("Content-Type").utf8();
-    StringToLowerASCII(&sniff);
-    StringToLowerASCII(&content_type);
-    // TODO(cevans): remove when we no longer need these.
-    if (content_type.find(kFlashPluginSwfMimeType) != std::string::npos) {
-      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
-                                MIME_TYPE_OK,
-                                MIME_TYPE_NUM_EVENTS);
-    } else if (content_type.empty()) {
-      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
-                                MIME_TYPE_EMPTY,
-                                MIME_TYPE_NUM_EVENTS);
-    } else if (content_type.find(kOctetStreamMimeType) != std::string::npos) {
-      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
-                                MIME_TYPE_OCTETSTREAM,
-                                MIME_TYPE_NUM_EVENTS);
-    } else if (content_type.find(kHTMLMimeType) != std::string::npos) {
-      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
-                                MIME_TYPE_HTML,
-                                MIME_TYPE_NUM_EVENTS);
-    } else if (content_type.find(kPlainTextMimeType) != std::string::npos) {
-      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
-                                MIME_TYPE_PLAINTEXT,
-                                MIME_TYPE_NUM_EVENTS);
-    } else {
-      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
-                                MIME_TYPE_OTHER,
-                                MIME_TYPE_NUM_EVENTS);
-    }
-    if (sniff.find("nosniff") != std::string::npos &&
-        !content_type.empty() &&
-        content_type.find(kFlashPluginSwfMimeType) == std::string::npos) {
-      loader->cancel();
-      client_info->client->DidFail();
-      return;
-    }
-  }
-
   bool request_is_seekable = true;
   if (client->IsMultiByteResponseExpected()) {
     if (response.httpStatusCode() == kHttpPartialResponseStatusCode) {
@@ -1029,21 +976,6 @@ void WebPluginImpl::didReceiveData(WebURLLoader* loader,
   WebPluginResourceClient* client = GetClientFromLoader(loader);
   if (!client)
     return;
-
-  ClientInfo* client_info = GetClientInfoFromLoader(loader);
-  if (client_info && client_info->check_flash_version) {
-    client_info->check_flash_version = false;
-    if (data_length >= 4 &&
-        (buffer[0] == 'C' || buffer[1] == 'F') &&
-        buffer[1] == 'W' &&
-        buffer[2] == 'S') {
-      unsigned char version = static_cast<unsigned char>(buffer[3]);
-      // TODO(cevans): remove when we no longer need this.
-      UMA_HISTOGRAM_ENUMERATION(kPluginFlashVersion,
-                                version,
-                                256);
-    }
-  }
 
   MultiPartResponseHandlerMap::iterator index =
       multi_part_response_map_.find(client);
@@ -1235,7 +1167,6 @@ bool WebPluginImpl::InitiateHTTPRequest(unsigned long resource_id,
   info.pending_failure_notification = false;
   info.notify_redirects = notify_redirects;
   info.is_plugin_src_load = is_plugin_src_load;
-  info.check_flash_version = false;
 
   if (range_info) {
     info.request.addHTTPHeaderField(WebString::fromUTF8("Range"),
@@ -1391,8 +1322,10 @@ void WebPluginImpl::TearDownPluginInstance(
   // The container maintains a list of JSObjects which are related to this
   // plugin.  Tell the frame we're gone so that it can invalidate all of
   // those sub JSObjects.
-  if (container_)
+  if (container_) {
     container_->clearScriptObjects();
+    container_->setWebLayer(NULL);
+  }
 
   if (delegate_) {
     // Call PluginDestroyed() first to prevent the plugin from calling us back

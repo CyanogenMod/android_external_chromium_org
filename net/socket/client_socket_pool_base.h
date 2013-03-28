@@ -38,6 +38,7 @@
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
@@ -104,6 +105,10 @@ class NET_EXPORT_PRIVATE ConnectJob {
   // additional error state to the ClientSocketHandle (post late-binding).
   virtual void GetAdditionalErrorState(ClientSocketHandle* handle) {}
 
+  const LoadTimingInfo::ConnectTiming& connect_timing() const {
+    return connect_timing_;
+  }
+
   const BoundNetLog& net_log() const { return net_log_; }
 
  protected:
@@ -111,6 +116,9 @@ class NET_EXPORT_PRIVATE ConnectJob {
   StreamSocket* socket() { return socket_.get(); }
   void NotifyDelegateOfCompletion(int rv);
   void ResetTimer(base::TimeDelta remainingTime);
+
+  // Connection establishment timing information.
+  LoadTimingInfo::ConnectTiming connect_timing_;
 
  private:
   virtual int ConnectInternal() = 0;
@@ -242,8 +250,8 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
                      StreamSocket* socket,
                      int id);
 
-  // See ClientSocketPool::Flush for documentation on this function.
-  void Flush();
+  // See ClientSocketPool::FlushWithError for documentation on this function.
+  void FlushWithError(int error);
 
   // See ClientSocketPool::IsStalled for documentation on this function.
   bool IsStalled() const;
@@ -493,6 +501,7 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
   // Assigns |socket| to |handle| and updates |group|'s counters appropriately.
   void HandOutSocket(StreamSocket* socket,
                      bool reused,
+                     const LoadTimingInfo::ConnectTiming& connect_timing,
                      ClientSocketHandle* handle,
                      base::TimeDelta time_idle,
                      Group* group,
@@ -505,9 +514,9 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
   // groups if they are no longer needed.
   void CancelAllConnectJobs();
 
-  // Iterates through |group_map_|, posting ERR_ABORTED callbacks for all
+  // Iterates through |group_map_|, posting |error| callbacks for all
   // requests, and then deleting groups if they are no longer needed.
-  void AbortAllRequests();
+  void CancelAllRequestsWithError(int error);
 
   // Returns true if we can't create any more sockets due to the total limit.
   bool ReachedMaxSocketsLimit() const;
@@ -584,9 +593,9 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
   // TODO(vandebo) Remove when backup jobs move to TransportClientSocketPool
   bool connect_backup_jobs_enabled_;
 
-  // A unique id for the pool.  It gets incremented every time we Flush() the
-  // pool.  This is so that when sockets get released back to the pool, we can
-  // make sure that they are discarded rather than reused.
+  // A unique id for the pool.  It gets incremented every time we
+  // FlushWithError() the pool.  This is so that when sockets get released back
+  // to the pool, we can make sure that they are discarded rather than reused.
   int pool_generation_number_;
 
   std::set<LayeredPool*> higher_layer_pools_;
@@ -683,14 +692,14 @@ class ClientSocketPoolBase {
 
   // RequestSockets bundles up the parameters into a Request and then forwards
   // to ClientSocketPoolBaseHelper::RequestSockets().  Note that it assigns the
-  // priority to LOWEST and specifies the NO_IDLE_SOCKETS flag.
+  // priority to DEFAULT_PRIORITY and specifies the NO_IDLE_SOCKETS flag.
   void RequestSockets(const std::string& group_name,
                       const scoped_refptr<SocketParams>& params,
                       int num_sockets,
                       const BoundNetLog& net_log) {
     const Request request(NULL /* no handle */,
                           CompletionCallback(),
-                          LOWEST,
+                          DEFAULT_PRIORITY,
                           internal::ClientSocketPoolBaseHelper::NO_IDLE_SOCKETS,
                           params->ignore_limits(),
                           params,
@@ -708,7 +717,7 @@ class ClientSocketPoolBase {
     return helper_.ReleaseSocket(group_name, socket, id);
   }
 
-  void Flush() { helper_.Flush(); }
+  void FlushWithError(int error) { helper_.FlushWithError(error); }
 
   bool IsStalled() const { return helper_.IsStalled(); }
 

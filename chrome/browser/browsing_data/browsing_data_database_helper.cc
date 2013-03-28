@@ -15,8 +15,8 @@
 #include "content/public/browser/storage_partition.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 
 using content::BrowserContext;
@@ -92,7 +92,8 @@ void BrowsingDataDatabaseHelper::FetchDatabaseInfoOnFileThread() {
       ori->GetAllDatabaseNames(&databases);
       for (std::vector<string16>::const_iterator db = databases.begin();
            db != databases.end(); ++db) {
-        FilePath file_path = tracker_->GetFullDBFilePath(ori->GetOrigin(), *db);
+        base::FilePath file_path =
+            tracker_->GetFullDBFilePath(ori->GetOrigin(), *db);
         base::PlatformFileInfo file_info;
         if (file_util::GetFileInfo(file_path, &file_info)) {
           database_info_.push_back(DatabaseInfo(

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "media/base/buffers.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/mp4/rcheck.h"
 
@@ -62,10 +63,12 @@ TimeDelta TimeDeltaFromRational(int64 numer, int64 denom) {
         base::Time::kMicrosecondsPerSecond * numer / denom);
 }
 
-TrackRunIterator::TrackRunIterator(const Movie* moov)
-    : moov_(moov), sample_offset_(0) {
+TrackRunIterator::TrackRunIterator(const Movie* moov,
+                                   const LogCB& log_cb)
+    : moov_(moov), log_cb_(log_cb), sample_offset_(0) {
   CHECK(moov);
 }
+
 TrackRunIterator::~TrackRunIterator() {}
 
 static void PopulateSampleInfo(const TrackExtends& trex,
@@ -430,7 +433,7 @@ scoped_ptr<DecryptConfig> TrackRunIterator::GetDecryptConfig() {
   if (!cenc_info.subsamples.empty() &&
       (cenc_info.GetTotalSizeOfSubsamples() !=
        static_cast<size_t>(sample_size()))) {
-    DVLOG(1) << "Incorrect CENC subsample size.";
+    MEDIA_LOG(log_cb_) << "Incorrect CENC subsample size.";
     return scoped_ptr<DecryptConfig>();
   }
 

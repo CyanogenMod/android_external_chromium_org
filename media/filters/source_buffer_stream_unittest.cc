@@ -8,9 +8,10 @@
 
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "media/base/data_buffer.h"
+#include "media/base/media_log.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
@@ -28,7 +29,7 @@ class SourceBufferStreamTest : public testing::Test {
     config_.Initialize(kCodecVP8, VIDEO_CODEC_PROFILE_UNKNOWN,
                        VideoFrame::YV12, kCodedSize, gfx::Rect(kCodedSize),
                        kCodedSize, NULL, 0, false, false);
-    stream_.reset(new SourceBufferStream(config_));
+    stream_.reset(new SourceBufferStream(config_, LogCB()));
     SetStreamInfo(kDefaultFramesPerSecond, kDefaultKeyframesPerSecond);
   }
 
@@ -78,19 +79,27 @@ class SourceBufferStreamTest : public testing::Test {
   }
 
   void NewSegmentAppend(const std::string& buffers_to_append) {
-    AppendBuffers(buffers_to_append, true, false);
+    AppendBuffers(buffers_to_append, true, false, true);
   }
 
   void AppendBuffers(const std::string& buffers_to_append) {
-    AppendBuffers(buffers_to_append, false, false);
+    AppendBuffers(buffers_to_append, false, false, true);
   }
 
   void NewSegmentAppendOneByOne(const std::string& buffers_to_append) {
-    AppendBuffers(buffers_to_append, true, true);
+    AppendBuffers(buffers_to_append, true, true, true);
   }
 
   void AppendBuffersOneByOne(const std::string& buffers_to_append) {
-    AppendBuffers(buffers_to_append, false, true);
+    AppendBuffers(buffers_to_append, false, true, true);
+  }
+
+  void NewSegmentAppend_ExpectFailure(const std::string& buffers_to_append) {
+    AppendBuffers(buffers_to_append, true, false, false);
+  }
+
+  void AppendBuffers_ExpectFailure(const std::string& buffers_to_append) {
+    AppendBuffers(buffers_to_append, false, false, false);
   }
 
   void Seek(int position) {
@@ -187,20 +196,23 @@ class SourceBufferStreamTest : public testing::Test {
   void CheckExpectedBuffers(const std::string& expected) {
     std::vector<std::string> timestamps;
     base::SplitString(expected, ' ', &timestamps);
+    std::stringstream ss;
     for (size_t i = 0; i < timestamps.size(); i++) {
       scoped_refptr<StreamParserBuffer> buffer;
       SourceBufferStream::Status status = stream_->GetNextBuffer(&buffer);
+
+      if (i > 0)
+        ss << " ";
 
       EXPECT_EQ(SourceBufferStream::kSuccess, status);
       if (status != SourceBufferStream::kSuccess)
         break;
 
-      std::stringstream ss;
       ss << buffer->GetDecodeTimestamp().InMilliseconds();
       if (buffer->IsKeyframe())
         ss << "K";
-      EXPECT_EQ(timestamps[i], ss.str());
     }
+    EXPECT_EQ(expected, ss.str());
   }
 
   void CheckNoNextBuffer() {
@@ -272,7 +284,8 @@ class SourceBufferStreamTest : public testing::Test {
   }
 
   void AppendBuffers(const std::string& buffers_to_append,
-                     bool start_new_segment, bool one_by_one) {
+                     bool start_new_segment, bool one_by_one,
+                     bool expect_success) {
     std::vector<std::string> timestamps;
     base::SplitString(buffers_to_append, ' ', &timestamps);
 
@@ -303,7 +316,7 @@ class SourceBufferStreamTest : public testing::Test {
     }
 
     if (!one_by_one) {
-      EXPECT_TRUE(stream_->Append(buffers));
+      EXPECT_EQ(expect_success, stream_->Append(buffers));
       return;
     }
 
@@ -492,6 +505,26 @@ TEST_F(SourceBufferStreamTest, End_Overlap_Several) {
 
   Seek(19);
   CheckExpectedBuffers(15, 19);
+}
+
+// Test an end overlap edge case where a single buffer overlaps the
+// beginning of a range.
+// old  : *0K*   30   60   90   120K  150
+// new  : *0K*
+// after: *0K*                 *120K* 150K
+// track:
+TEST_F(SourceBufferStreamTest, End_Overlap_SingleBuffer) {
+  // Seek to start of stream.
+  SeekToTimestamp(base::TimeDelta::FromMilliseconds(0));
+
+  NewSegmentAppend("0K 30 60 90 120K 150");
+  CheckExpectedRangesByTimestamp("{ [0,180) }");
+
+  NewSegmentAppend("0K");
+  CheckExpectedRangesByTimestamp("{ [0,30) [120,180) }");
+
+  CheckExpectedBuffers("0K");
+  CheckNoNextBuffer();
 }
 
 TEST_F(SourceBufferStreamTest, Complete_Overlap_Several) {
@@ -1284,6 +1317,9 @@ TEST_F(SourceBufferStreamTest, Overlap_OneByOne_BetweenMediaSegments) {
   CheckExpectedBuffers("0K 30 60 90 120K 150 180 210");
 }
 
+// old  :   10K  40  *70*  100K  125  130K
+// new  : 0K   30   60   90   120K
+// after: 0K   30   60   90  *120K*   130K
 TEST_F(SourceBufferStreamTest, Overlap_OneByOne_TrackBuffer) {
   NewSegmentAppendOneByOne("10K 40 70 100K 125 130K");
   CheckExpectedRangesByTimestamp("{ [10,160) }");
@@ -1428,6 +1464,45 @@ TEST_F(SourceBufferStreamTest, Overlap_OneByOne_TrackBuffer5) {
   NewSegmentAppendOneByOne("80K 110 140");
 
   CheckExpectedBuffers("70 80K 110 140");
+  CheckNoNextBuffer();
+}
+
+// Test that appending to a different range while there is data in
+// the track buffer doesn't affect the selected range or track buffer state.
+// old  :   10K  40  *70*  100K  125  130K ... 200K 230
+// new  : 0K   30   60   90   120K
+// after: 0K   30   60   90  *120K*   130K ... 200K 230
+// track:             70   100K
+// old  : 0K   30   60   90  *120K*   130K ... 200K 230
+// new  :                                               260K 290
+// after: 0K   30   60   90  *120K*   130K ... 200K 230 260K 290
+// track:             70   100K
+TEST_F(SourceBufferStreamTest, Overlap_OneByOne_TrackBuffer6) {
+  NewSegmentAppendOneByOne("10K 40 70 100K 125 130K");
+  NewSegmentAppendOneByOne("200K 230");
+  CheckExpectedRangesByTimestamp("{ [10,160) [200,260) }");
+
+  // Seek to 70ms.
+  SeekToTimestamp(base::TimeDelta::FromMilliseconds(10));
+  CheckExpectedBuffers("10K 40");
+
+  // Overlap with a new segment from 0 to 120ms.
+  NewSegmentAppendOneByOne("0K 30 60 90 120K");
+  CheckExpectedRangesByTimestamp("{ [0,160) [200,260) }");
+
+  // Verify that 70 gets read out of the track buffer.
+  CheckExpectedBuffers("70");
+
+  // Append more data to the unselected range.
+  NewSegmentAppendOneByOne("260K 290");
+  CheckExpectedRangesByTimestamp("{ [0,160) [200,320) }");
+
+  CheckExpectedBuffers("100K 120K 130K");
+  CheckNoNextBuffer();
+
+  // Check the final result: should not include data from the track buffer.
+  SeekToTimestamp(base::TimeDelta::FromMilliseconds(0));
+  CheckExpectedBuffers("0K 30 60 90 120K 130K");
   CheckNoNextBuffer();
 }
 
@@ -1772,8 +1847,34 @@ TEST_F(SourceBufferStreamTest, GetNextBuffer_ExhaustThenStartOverlap) {
   CheckExpectedBuffers(11, 14, &kDataB);
 
   // Replace the next buffer at position 15 with another start overlap.
-  AppendBuffers(15, 2, &kDataA);
+  NewSegmentAppend(15, 2, &kDataA);
   CheckExpectedBuffers(15, 16, &kDataA);
+}
+
+// Tests a start overlap that occurs right at the timestamp of the last output
+// buffer that was returned by GetNextBuffer(). This test verifies that
+// GetNextBuffer() skips to second GOP in the newly appended data instead
+// of returning two buffers with the same timestamp.
+TEST_F(SourceBufferStreamTest, GetNextBuffer_ExhaustThenStartOverlap2) {
+  NewSegmentAppend("0K 30 60 90 120");
+
+  Seek(0);
+  CheckExpectedBuffers("0K 30 60 90 120");
+  CheckNoNextBuffer();
+
+  // Append a keyframe with the same timestamp as the last buffer output.
+  NewSegmentAppend("120K");
+  CheckNoNextBuffer();
+
+  // Append the rest of the segment and make sure that buffers are returned
+  // from the first GOP after 120.
+  AppendBuffers("150 180 210K 240");
+  CheckExpectedBuffers("210K 240");
+
+  // Seek to the beginning and verify the contents of the source buffer.
+  Seek(0);
+  CheckExpectedBuffers("0K 30 60 90 120K 150 180 210K 240");
+  CheckNoNextBuffer();
 }
 
 // This test covers the case where new buffers completely overlap a range
@@ -2348,6 +2449,27 @@ TEST_F(SourceBufferStreamTest, DISABLED_GarbageCollection_WaitingForKeyframe) {
   CheckExpectedRanges("{ [15,15) [20,28) }");
 }
 
+// Test the performance of garbage collection.
+TEST_F(SourceBufferStreamTest, GarbageCollection_Performance) {
+  // Force |keyframes_per_second_| to be equal to kDefaultFramesPerSecond.
+  SetStreamInfo(kDefaultFramesPerSecond, kDefaultFramesPerSecond);
+
+  const int kBuffersToKeep = 1000;
+  SetMemoryLimit(kBuffersToKeep);
+
+  int buffers_appended = 0;
+
+  NewSegmentAppend(0, kBuffersToKeep);
+  buffers_appended += kBuffersToKeep;
+
+  const int kBuffersToAppend = 1000;
+  const int kGarbageCollections = 3;
+  for (int i = 0; i < kGarbageCollections; ++i) {
+    AppendBuffers(buffers_appended, kBuffersToAppend);
+    buffers_appended += kBuffersToAppend;
+  }
+}
+
 TEST_F(SourceBufferStreamTest, ConfigChange_Basic) {
   gfx::Size kNewCodedSize(kCodedSize.width() * 2, kCodedSize.height() * 2);
   VideoDecoderConfig new_config(
@@ -2556,6 +2678,113 @@ TEST_F(SourceBufferStreamTest, SetExplicitDuration_DeletePartialSelectedRange) {
   // Seek position should be reset.
   CheckNoNextBuffer();
   CheckExpectedRanges("{ [0,4) [10,10) }");
+}
+
+// Test the case were the current playback position is at the end of the
+// buffered data and several overlaps occur that causes the selected
+// range to get split and then merged back into a single range.
+TEST_F(SourceBufferStreamTest, OverlapSplitAndMergeWhileWaitingForMoreData) {
+  // Seek to start of stream.
+  SeekToTimestamp(base::TimeDelta::FromMilliseconds(0));
+
+  NewSegmentAppend("0K 30 60 90 120K 150");
+  CheckExpectedRangesByTimestamp("{ [0,180) }");
+
+  // Read all the buffered data.
+  CheckExpectedBuffers("0K 30 60 90 120K 150");
+  CheckNoNextBuffer();
+
+  // Append data over the current GOP so that a keyframe is needed before
+  // playback can continue from the current position.
+  NewSegmentAppend("120K 150");
+  CheckExpectedRangesByTimestamp("{ [0,180) }");
+
+  // Append buffers that cause the range to get split.
+  NewSegmentAppend("0K 30");
+  CheckExpectedRangesByTimestamp("{ [0,60) [120,180) }");
+
+  // Append buffers that cause the ranges to get merged.
+  AppendBuffers("60 90");
+
+  CheckExpectedRangesByTimestamp("{ [0,180) }");
+
+  // Verify that we still don't have a next buffer.
+  CheckNoNextBuffer();
+
+  // Add more data to the end and verify that this new data is read correctly.
+  NewSegmentAppend("180K 210");
+  CheckExpectedRangesByTimestamp("{ [0,240) }");
+  CheckExpectedBuffers("180K 210");
+}
+
+// Verify that non-keyframes with the same timestamp in the same
+// append are handled correctly.
+TEST_F(SourceBufferStreamTest, AltRefFrame_SingleAppend) {
+  Seek(0);
+  NewSegmentAppend("0K 30 30 60 90 120K 150");
+  CheckExpectedBuffers("0K 30 30 60 90 120K 150");
+}
+
+// Verify that non-keyframes with the same timestamp can occur
+// in different appends.
+TEST_F(SourceBufferStreamTest, AltRefFrame_TwoAppends) {
+  Seek(0);
+  NewSegmentAppend("0K 30");
+  AppendBuffers("30 60 90 120K 150");
+  CheckExpectedBuffers("0K 30 30 60 90 120K 150");
+}
+
+// Verify that a non-keyframe followed by a keyframe with the same timestamp
+// is not allowed.
+TEST_F(SourceBufferStreamTest, AltRefFrame_Invalid_1) {
+  Seek(0);
+  NewSegmentAppend("0K 30");
+  AppendBuffers_ExpectFailure("30K 60");
+}
+
+TEST_F(SourceBufferStreamTest, AltRefFrame_Invalid_2) {
+  Seek(0);
+  NewSegmentAppend_ExpectFailure("0K 30 30K 60");
+}
+
+// Verify that a keyframe followed by a non-keyframe with the same timestamp
+// is not allowed.
+TEST_F(SourceBufferStreamTest, AltRefFrame_Invalid_3) {
+  Seek(0);
+  NewSegmentAppend("0K 30K");
+  AppendBuffers_ExpectFailure("30 60");
+}
+
+TEST_F(SourceBufferStreamTest, AltRefFrame_Invalid_4) {
+  Seek(0);
+  NewSegmentAppend_ExpectFailure("0K 30K 30 60");
+}
+
+TEST_F(SourceBufferStreamTest, AltRefFrame_Overlap_1) {
+  Seek(0);
+  NewSegmentAppend("0K 30 60 60 90 120K 150");
+
+  NewSegmentAppend("60K 91 121K 151");
+  CheckExpectedBuffers("0K 30 60K 91 121K 151");
+}
+
+TEST_F(SourceBufferStreamTest, AltRefFrame_Overlap_2) {
+  Seek(0);
+  NewSegmentAppend("0K 30 60 60 90 120K 150");
+  NewSegmentAppend("0K 30 61");
+  CheckExpectedBuffers("0K 30 61 120K 150");
+}
+
+TEST_F(SourceBufferStreamTest, AltRefFrame_Overlap_3) {
+  Seek(0);
+  NewSegmentAppend("0K 20 40 60 80 100K 101 102 103K");
+  NewSegmentAppend("0K 20 40 60 80 90");
+  CheckExpectedBuffers("0K 20 40 60 80 90 100K 101 102 103K");
+  AppendBuffers("90 110K 150");
+  Seek(0);
+  CheckExpectedBuffers("0K 20 40 60 80 90 90 110K 150");
+  CheckNoNextBuffer();
+  CheckExpectedRangesByTimestamp("{ [0,190) }");
 }
 
 // TODO(vrk): Add unit tests where keyframes are unaligned between streams.

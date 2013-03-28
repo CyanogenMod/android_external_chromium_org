@@ -5,10 +5,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/gpu/gpu_info_collector.h"
 #include "content/public/common/gpu_info.h"
-#include "gpu/command_buffer/common/gl_mock.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_mock.h"
 
 using ::gfx::MockGLInterface;
 using ::testing::Return;
@@ -18,7 +18,7 @@ class GPUInfoCollectorTest : public testing::Test {
   GPUInfoCollectorTest() {}
   virtual ~GPUInfoCollectorTest() { }
 
-  void SetUp() {
+  virtual void SetUp() {
     // TODO(kbr): make this setup robust in the case where
     // GLSurface::InitializeOneOff() has already been called by
     // another unit test. http://crbug.com/100285
@@ -98,7 +98,7 @@ class GPUInfoCollectorTest : public testing::Test {
             gl_renderer)));
   }
 
-  void TearDown() {
+  virtual void TearDown() {
     ::gfx::GLInterface::SetGLInterface(NULL);
     gl_.reset();
   }

@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/settings/owner_key_util.h"
 
@@ -24,6 +24,9 @@ class MockOwnerKeyUtil : public OwnerKeyUtil {
   virtual crypto::RSAPrivateKey* FindPrivateKey(
       const std::vector<uint8>& key) OVERRIDE;
   virtual bool IsPublicKeyPresent() OVERRIDE;
+
+  // Clears the public and private keys.
+  void Clear();
 
   // Configures the mock to return the given public key.
   void SetPublicKey(const std::vector<uint8>& key);

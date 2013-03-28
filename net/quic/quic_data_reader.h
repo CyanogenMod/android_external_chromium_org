@@ -7,8 +7,8 @@
 
 #include "base/basictypes.h"
 #include "base/string_piece.h"
+#include "net/base/int128.h"
 #include "net/base/net_export.h"
-#include "net/quic/uint128.h"
 
 namespace net {
 
@@ -58,6 +58,7 @@ class NET_EXPORT_PRIVATE QuicDataReader {
   // Forwards the internal iterator on success.
   // Returns true on success, false otherwise.
   bool ReadUInt128(uint128* result);
+
   // Reads a string prefixed with 16-bit length into the given output parameter.
   //
   // NOTE: Does not copy but rather references strings in the underlying buffer.

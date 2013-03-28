@@ -5,13 +5,15 @@
 #include "chrome/browser/history/expire_history_backend.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
+#include "base/logging.h"
 #include "base/message_loop.h"
-#include "chrome/browser/api/bookmarks/bookmark_service.h"
+#include "chrome/browser/bookmarks/bookmark_service.h"
 #include "chrome/browser/history/archived_database.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_notifications.h"
@@ -46,7 +48,7 @@ const int kEarlyExpirationAdvanceDays = 3;
 class AllVisitsReader : public ExpiringVisitsReader {
  public:
   virtual bool Read(Time end_time, HistoryDatabase* db,
-                    VisitVector* visits, int max_visits) const {
+                    VisitVector* visits, int max_visits) const OVERRIDE {
     DCHECK(db) << "must have a database to operate upon";
     DCHECK(visits) << "visit vector has to exist in order to populate it";
 
@@ -66,7 +68,7 @@ class AllVisitsReader : public ExpiringVisitsReader {
 class AutoSubframeVisitsReader : public ExpiringVisitsReader {
  public:
   virtual bool Read(Time end_time, HistoryDatabase* db,
-                    VisitVector* visits, int max_visits) const {
+                    VisitVector* visits, int max_visits) const OVERRIDE {
     DCHECK(db) << "must have a database to operate upon";
     DCHECK(visits) << "visit vector has to exist in order to populate it";
 
@@ -166,6 +168,10 @@ struct ExpireHistoryBackend::DeleteDependencies {
   // that we will need to check when the delete operations are complete.
   std::set<FaviconID> affected_favicons;
 
+  // The list of all favicon urls that were actually deleted from the thumbnail
+  // db.
+  std::set<GURL> expired_favicons;
+
   // Tracks the set of databases that have changed so we can optimize when
   // when we're done.
   TextDatabaseManager::ChangeSet text_db_changes;
@@ -232,7 +238,8 @@ void ExpireHistoryBackend::DeleteURLs(const std::vector<GURL>& urls) {
     DeleteOneURL(url_row, is_bookmarked, &dependencies);
   }
 
-  DeleteFaviconsIfPossible(dependencies.affected_favicons);
+  DeleteFaviconsIfPossible(dependencies.affected_favicons,
+                           &dependencies.expired_favicons);
 
   if (text_db_)
     text_db_->OptimizeChangedDatabases(dependencies.text_db_changes);
@@ -269,6 +276,30 @@ void ExpireHistoryBackend::ExpireHistoryBetween(
   ExpireVisits(visits);
 }
 
+void ExpireHistoryBackend::ExpireHistoryForTimes(
+    const std::vector<base::Time>& times) {
+  // |times| must be in reverse chronological order and have no
+  // duplicates, i.e. each member must be earlier than the one before
+  // it.
+  DCHECK(
+      std::adjacent_find(
+          times.begin(), times.end(), std::less_equal<base::Time>()) ==
+      times.end());
+
+  if (!main_db_)
+    return;
+
+  // There may be stuff in the text database manager's temporary cache.
+  if (text_db_)
+    text_db_->DeleteFromUncommittedForTimes(times);
+
+  // Find the affected visits and delete them.
+  // TODO(brettw): bug 1171164: We should query the archived database here, too.
+  VisitVector visits;
+  main_db_->GetVisitsForTimes(times, &visits);
+  ExpireVisits(visits);
+}
+
 void ExpireHistoryBackend::ExpireVisits(const VisitVector& visits) {
   if (visits.empty())
     return;
@@ -280,7 +311,8 @@ void ExpireHistoryBackend::ExpireVisits(const VisitVector& visits) {
   // since this is called by the user who wants to delete their recent history,
   // and we don't want to leave any evidence.
   ExpireURLsForVisits(visits, &dependencies);
-  DeleteFaviconsIfPossible(dependencies.affected_favicons);
+  DeleteFaviconsIfPossible(dependencies.affected_favicons,
+                           &dependencies.expired_favicons);
 
   // An is_null begin time means that all history should be deleted.
   BroadcastDeleteNotifications(&dependencies, DELETION_USER_INITIATED);
@@ -339,14 +371,25 @@ void ExpireHistoryBackend::StartArchivingOldStuff(
 }
 
 void ExpireHistoryBackend::DeleteFaviconsIfPossible(
-    const std::set<FaviconID>& favicon_set) {
+    const std::set<FaviconID>& favicon_set,
+    std::set<GURL>* expired_favicons) {
   if (!thumb_db_)
     return;
 
   for (std::set<FaviconID>::const_iterator i = favicon_set.begin();
        i != favicon_set.end(); ++i) {
-    if (!thumb_db_->HasMappingFor(*i))
-      thumb_db_->DeleteFavicon(*i);
+    if (!thumb_db_->HasMappingFor(*i)) {
+      GURL icon_url;
+      IconType icon_type;
+      FaviconSizes favicon_sizes;
+      if (thumb_db_->GetFaviconHeader(*i,
+                                      &icon_url,
+                                      &icon_type,
+                                      &favicon_sizes) &&
+          thumb_db_->DeleteFavicon(*i)) {
+        expired_favicons->insert(icon_url);
+      }
+    }
   }
 }
 
@@ -361,6 +404,7 @@ void ExpireHistoryBackend::BroadcastDeleteNotifications(
     deleted_details->all_history = false;
     deleted_details->archived = (type == DELETION_ARCHIVED);
     deleted_details->rows = dependencies->deleted_urls;
+    deleted_details->favicon_urls = dependencies->expired_favicons;
     delegate_->BroadcastNotifications(
         chrome::NOTIFICATION_HISTORY_URLS_DELETED, deleted_details);
   }
@@ -660,7 +704,8 @@ bool ExpireHistoryBackend::ArchiveSomeOldHistory(
        i != deleted_dependencies.affected_favicons.end(); ++i) {
     affected_favicons.insert(*i);
   }
-  DeleteFaviconsIfPossible(affected_favicons);
+  DeleteFaviconsIfPossible(affected_favicons,
+                           &deleted_dependencies.expired_favicons);
 
   // Send notifications for the stuff that was deleted. These won't normally be
   // in history views since they were subframes, but they will be in the visited
@@ -703,12 +748,13 @@ void ExpireHistoryBackend::DoExpireHistoryIndexFiles() {
   TextDatabase::DBIdent cutoff_id =
       (cutoff_month / 12) * 100 + (cutoff_month % 12);
 
-  FilePath::StringType history_index_files_pattern = TextDatabase::file_base();
+  base::FilePath::StringType history_index_files_pattern =
+      TextDatabase::file_base();
   history_index_files_pattern.append(FILE_PATH_LITERAL("*"));
   file_util::FileEnumerator file_enumerator(
       text_db_->GetDir(), false, file_util::FileEnumerator::FILES,
       history_index_files_pattern);
-  for (FilePath file = file_enumerator.Next(); !file.empty();
+  for (base::FilePath file = file_enumerator.Next(); !file.empty();
        file = file_enumerator.Next()) {
     TextDatabase::DBIdent file_id = TextDatabase::FileNameToID(file);
     if (file_id < cutoff_id)

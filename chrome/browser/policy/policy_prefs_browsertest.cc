@@ -9,11 +9,13 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/prefs/pref_service.h"
+#include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -22,11 +24,10 @@
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/mock_configuration_policy_provider.h"
 #include "chrome/browser/policy/policy_map.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
@@ -36,7 +37,9 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using testing::AnyNumber;
 using testing::Return;
+using testing::_;
 
 namespace policy {
 
@@ -81,8 +84,8 @@ class PrefMapping {
               const std::string& indicator_selector)
       : pref_(pref),
         is_local_state_(is_local_state),
+        indicator_test_setup_js_(indicator_test_setup_js),
         indicator_selector_(indicator_selector) {
-    indicator_test_setup_js_ = ASCIIToWide(indicator_test_setup_js);
   }
   ~PrefMapping() {}
 
@@ -90,7 +93,7 @@ class PrefMapping {
 
   bool is_local_state() const { return is_local_state_; }
 
-  const std::wstring& indicator_test_setup_js() const {
+  const std::string& indicator_test_setup_js() const {
     return indicator_test_setup_js_;
   }
 
@@ -108,7 +111,7 @@ class PrefMapping {
  private:
   std::string pref_;
   bool is_local_state_;
-  std::wstring indicator_test_setup_js_;
+  std::string indicator_test_setup_js_;
   std::string indicator_selector_;
   ScopedVector<IndicatorTestCase> indicator_test_cases_;
 
@@ -190,9 +193,9 @@ class PolicyTestCases {
   PolicyTestCases() {
     policy_test_cases_ = new std::map<std::string, PolicyTestCase*>();
 
-    FilePath path = ui_test_utils::GetTestFilePath(
-        FilePath(FILE_PATH_LITERAL("policy")),
-        FilePath(FILE_PATH_LITERAL("policy_test_cases.json")));
+    base::FilePath path = ui_test_utils::GetTestFilePath(
+        base::FilePath(FILE_PATH_LITERAL("policy")),
+        base::FilePath(FILE_PATH_LITERAL("policy_test_cases.json")));
     std::string json;
     if (!file_util::ReadFileToString(path, &json)) {
       ADD_FAILURE();
@@ -311,7 +314,7 @@ void VerifyControlledSettingIndicators(Browser* browser,
                                        const std::string& value,
                                        const std::string& controlled_by,
                                        bool readonly) {
-  std::wstringstream javascript;
+  std::stringstream javascript;
   javascript << "var nodes = document.querySelectorAll("
              << "    'span.controlled-setting-indicator"
              <<          selector.c_str() << "');"
@@ -327,12 +330,13 @@ void VerifyControlledSettingIndicators(Browser* browser,
              << "  indicators.push(indicator)"
              << "}"
              << "domAutomationController.send(JSON.stringify(indicators));";
-  content::WebContents* contents = chrome::GetActiveWebContents(browser);
+  content::WebContents* contents =
+      browser->tab_strip_model()->GetActiveWebContents();
   std::string json;
   // Retrieve the state of all controlled setting indicators matching the
   // |selector| as JSON.
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractString(
-      contents->GetRenderViewHost(), L"", javascript.str(), &json));
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(contents, javascript.str(),
+                                                     &json));
   scoped_ptr<base::Value> value_ptr(base::JSONReader::Read(json));
   const base::ListValue* indicators = NULL;
   ASSERT_TRUE(value_ptr.get());
@@ -383,14 +387,21 @@ class PolicyPrefsTest
       public testing::WithParamInterface<PolicyDefinitionList::Entry> {
  protected:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    EXPECT_CALL(provider_, IsInitializationComplete())
+    EXPECT_CALL(provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
+    EXPECT_CALL(provider_, RegisterPolicyDomain(_, _)).Times(AnyNumber());
     BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
     ui_test_utils::WaitForTemplateURLServiceToLoad(
         TemplateURLServiceFactory::GetForProfile(browser()->profile()));
+  }
+
+  void UpdateProviderPolicy(const PolicyMap& policy) {
+    provider_.UpdateChromePolicy(policy);
+    base::RunLoop loop;
+    loop.RunUntilIdle();
   }
 
   PolicyTestCases policy_test_cases_;
@@ -415,7 +426,7 @@ IN_PROC_BROWSER_TEST_P(PolicyPrefsTest, PolicyToPrefsMapping) {
   // Verifies that policies make their corresponding preferences become managed,
   // and that the user can't override that setting.
   const PolicyTestCase* test_case = policy_test_cases_.Get(GetParam().name);
-  ASSERT_TRUE(test_case);
+  ASSERT_TRUE(test_case) << "PolicyTestCase not found for " << GetParam().name;
   const ScopedVector<PrefMapping>& pref_mappings = test_case->pref_mappings();
   if (!test_case->IsSupported() || pref_mappings.empty())
     return;
@@ -430,8 +441,10 @@ IN_PROC_BROWSER_TEST_P(PolicyPrefsTest, PolicyToPrefsMapping) {
     if (StartsWithASCII((*pref_mapping)->pref(), kCrosSettingsPrefix, true))
       continue;
 
+    PrefService* local_state = g_browser_process->local_state();
+    PrefService* user_prefs = browser()->profile()->GetPrefs();
     PrefService* prefs = (*pref_mapping)->is_local_state() ?
-        g_browser_process->local_state() : browser()->profile()->GetPrefs();
+        local_state : user_prefs;
     // The preference must have been registered.
     const PrefService::Preference* pref =
         prefs->FindPreference((*pref_mapping)->pref().c_str());
@@ -440,13 +453,13 @@ IN_PROC_BROWSER_TEST_P(PolicyPrefsTest, PolicyToPrefsMapping) {
 
     // Verify that setting the policy overrides the pref.
     const PolicyMap kNoPolicies;
-    provider_.UpdateChromePolicy(kNoPolicies);
+    UpdateProviderPolicy(kNoPolicies);
     EXPECT_TRUE(pref->IsDefaultValue());
     EXPECT_TRUE(pref->IsUserModifiable());
     EXPECT_FALSE(pref->IsUserControlled());
     EXPECT_FALSE(pref->IsManaged());
 
-    provider_.UpdateChromePolicy(test_case->test_policy());
+    UpdateProviderPolicy(test_case->test_policy());
     EXPECT_FALSE(pref->IsDefaultValue());
     EXPECT_FALSE(pref->IsUserModifiable());
     EXPECT_FALSE(pref->IsUserControlled());
@@ -459,7 +472,8 @@ IN_PROC_BROWSER_TEST_P(PolicyPrefsTest, CheckPolicyIndicators) {
   // value is recommended or enforced by a corresponding policy.
   const PolicyTestCase* policy_test_case =
       policy_test_cases_.Get(GetParam().name);
-  ASSERT_TRUE(policy_test_case);
+  ASSERT_TRUE(policy_test_case) << "PolicyTestCase not found for "
+      << GetParam().name;
   const ScopedVector<PrefMapping>& pref_mappings =
       policy_test_case->pref_mappings();
   if (!policy_test_case->IsSupported() || pref_mappings.empty())
@@ -489,8 +503,8 @@ IN_PROC_BROWSER_TEST_P(PolicyPrefsTest, CheckPolicyIndicators) {
 
     ui_test_utils::NavigateToURL(browser(), GURL(kMainSettingsPage));
     if (!(*pref_mapping)->indicator_test_setup_js().empty()) {
-      ASSERT_TRUE(content::ExecuteJavaScript(
-          chrome::GetActiveWebContents(browser())->GetRenderViewHost(), L"",
+      ASSERT_TRUE(content::ExecuteScript(
+          browser()->tab_strip_model()->GetActiveWebContents(),
           (*pref_mapping)->indicator_test_setup_js()));
     }
 
@@ -504,14 +518,14 @@ IN_PROC_BROWSER_TEST_P(PolicyPrefsTest, CheckPolicyIndicators) {
       // Check that no controlled setting indicator is visible when no value is
       // set by policy.
       PolicyMap policies;
-      provider_.UpdateChromePolicy(policies);
+      UpdateProviderPolicy(policies);
       VerifyControlledSettingIndicators(browser(), indicator_selector,
                                         "", "", false);
       // Check that the appropriate controlled setting indicator is shown when a
       // value is enforced by policy.
       policies.LoadFrom(&(*indicator_test_case)->policy(),
                         POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER);
-      provider_.UpdateChromePolicy(policies);
+      UpdateProviderPolicy(policies);
       VerifyControlledSettingIndicators(browser(), indicator_selector,
                                         (*indicator_test_case)->value(),
                                         "policy",
@@ -520,8 +534,10 @@ IN_PROC_BROWSER_TEST_P(PolicyPrefsTest, CheckPolicyIndicators) {
       if (!policy_test_case->can_be_recommended())
         continue;
 
+      PrefService* local_state = g_browser_process->local_state();
+      PrefService* user_prefs = browser()->profile()->GetPrefs();
       PrefService* prefs = (*pref_mapping)->is_local_state() ?
-          g_browser_process->local_state() : browser()->profile()->GetPrefs();
+          local_state : user_prefs;
       // The preference must have been registered.
       const PrefService::Preference* pref =
           prefs->FindPreference((*pref_mapping)->pref().c_str());
@@ -532,7 +548,7 @@ IN_PROC_BROWSER_TEST_P(PolicyPrefsTest, CheckPolicyIndicators) {
       // recommendation.
       policies.LoadFrom(&(*indicator_test_case)->policy(),
                         POLICY_LEVEL_RECOMMENDED, POLICY_SCOPE_USER);
-      provider_.UpdateChromePolicy(policies);
+      UpdateProviderPolicy(policies);
       VerifyControlledSettingIndicators(browser(), indicator_selector,
                                         (*indicator_test_case)->value(),
                                         "recommended",

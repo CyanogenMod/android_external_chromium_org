@@ -5,6 +5,7 @@
 #ifndef ASH_LAUNCHER_LAUNCHER_BUTTON_H_
 #define ASH_LAUNCHER_LAUNCHER_BUTTON_H_
 
+#include "ash/ash_export.h"
 #include "ui/gfx/shadow_value.h"
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/controls/image_view.h"
@@ -13,9 +14,10 @@ namespace ash {
 namespace internal {
 
 class LauncherButtonHost;
+class ShelfLayoutManager;
 
 // Button used for items on the launcher, except for the AppList.
-class LauncherButton : public views::CustomButton {
+class ASH_EXPORT LauncherButton : public views::CustomButton {
  public:
   // Used to indicate the current state of the button.
   enum State {
@@ -38,7 +40,8 @@ class LauncherButton : public views::CustomButton {
 
   // Called to create an instance of a LauncherButton.
   static LauncherButton* Create(views::ButtonListener* listener,
-                                LauncherButtonHost* host);
+                                LauncherButtonHost* host,
+                                ShelfLayoutManager* shelf_layout_manager);
 
   // Sets the image to display for this entry.
   void SetImage(const gfx::ImageSkia& image);
@@ -47,12 +50,21 @@ class LauncherButton : public views::CustomButton {
   void AddState(State state);
   void ClearState(State state);
   int state() const { return state_; }
+  const ShelfLayoutManager* shelf_layout_manager() const {
+    return shelf_layout_manager_;
+  }
 
   // Returns the bounds of the icon.
   gfx::Rect GetIconBounds() const;
 
+  // Overrides to views::CustomButton:
+  virtual void ShowContextMenu(const gfx::Point& p,
+                               bool is_mouse_gesture) OVERRIDE;
+
  protected:
-  LauncherButton(views::ButtonListener* listener, LauncherButtonHost* host);
+  LauncherButton(views::ButtonListener* listener,
+                 LauncherButtonHost* host,
+                 ShelfLayoutManager* shelf_layout_manager);
 
   // Class that draws the icon part of a button, so it can be animated
   // independently of the rest. This can be subclassed to provide a custom
@@ -91,7 +103,7 @@ class LauncherButton : public views::CustomButton {
   virtual void OnBlur() OVERRIDE;
 
   // ui::EventHandler overrides:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // Sets the icon image with a shadow.
   void SetShadowedImage(const gfx::ImageSkia& bitmap);
@@ -121,7 +133,13 @@ class LauncherButton : public views::CustomButton {
   // together.
   int state_;
 
+  ShelfLayoutManager* shelf_layout_manager_;
+
   gfx::ShadowValues icon_shadows_;
+
+  // If non-null the destuctor sets this to true. This is set while the menu is
+  // showing and used to detect if the menu was deleted while running.
+  bool* destroyed_flag_;
 
   DISALLOW_COPY_AND_ASSIGN(LauncherButton);
 };

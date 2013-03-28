@@ -7,9 +7,9 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/string_number_conversions.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -102,8 +102,12 @@ CoreChromeOSOptionsHandler::~CoreChromeOSOptionsHandler() {
 void CoreChromeOSOptionsHandler::InitializeHandler() {
   CoreOptionsHandler::InitializeHandler();
 
-  proxy_prefs_.Init(Profile::FromWebUI(web_ui())->GetPrefs());
-  proxy_prefs_.Add(prefs::kProxy, this);
+  PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+  proxy_prefs_.Init(prefs);
+  proxy_prefs_.Add(prefs::kProxy,
+                   base::Bind(&CoreChromeOSOptionsHandler::OnPreferenceChanged,
+                              base::Unretained(this),
+                              prefs));
   // Observe the chromeos::ProxyConfigServiceImpl for changes from the UI.
   PrefProxyConfigTracker* proxy_tracker =
       Profile::FromWebUI(web_ui())->GetProxyConfigTracker();
@@ -164,6 +168,10 @@ void CoreChromeOSOptionsHandler::SetPref(const std::string& pref_name,
   if (proxy_cros_settings_parser::IsProxyPref(pref_name)) {
     proxy_cros_settings_parser::SetProxyPrefValue(Profile::FromWebUI(web_ui()),
                                                   pref_name, value);
+    base::StringValue proxy_type(pref_name);
+    web_ui()->CallJavascriptFunction(
+        "options.internet.DetailsInternetPage.updateProxySettings",
+        proxy_type);
     ProcessUserMetric(value, metric);
     return;
   }
@@ -204,7 +212,7 @@ void CoreChromeOSOptionsHandler::Observe(
 }
 
 void CoreChromeOSOptionsHandler::OnPreferenceChanged(
-    PrefServiceBase* service,
+    PrefService* service,
     const std::string& pref_name) {
   // Special handling for preferences kUseSharedProxies and kProxy, the latter
   // controls the former and decides if it's managed by policy/extension.

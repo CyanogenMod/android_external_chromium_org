@@ -55,7 +55,12 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
   void ScrollToThumbPosition(int thumb_position, bool scroll_to_middle);
 
   // Scroll the contents by the specified offset (contents coordinates).
-  void ScrollByContentsOffset(int contents_offset);
+  bool ScrollByContentsOffset(int contents_offset);
+
+  // Called when the thumb state has been changed from |old_state| to
+  // |new_state|.
+  void OnThumbStateChanged(CustomButton::ButtonState old_state,
+                           CustomButton::ButtonState new_state);
 
   // View overrides:
   virtual gfx::Size GetPreferredSize() OVERRIDE = 0;
@@ -63,11 +68,13 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseCaptureLost() OVERRIDE;
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
 
   // ui::EventHandler overrides:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // ScrollBar overrides:
   virtual void Update(int viewport_size,
@@ -77,7 +84,7 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
   virtual int GetPosition() const OVERRIDE;
 
   // ScrollDelegate overrides:
-  virtual void OnScroll(float dx, float dy) OVERRIDE;
+  virtual bool OnScroll(float dx, float dy) OVERRIDE;
 
   // ContextMenuController overrides:
   virtual void ShowContextMenuForView(View* source,
@@ -93,7 +100,6 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE = 0;
 
   BaseScrollBarThumb* GetThumb() const;
-
   CustomButton::ButtonState GetThumbTrackState() const;
 
   // Wrapper functions that calls the controller. We need this since native
@@ -108,8 +114,8 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
   // Changes to 'pushed' state and starts a timer to scroll repeatedly.
   void ProcessPressEvent(const ui::LocatedEvent& event);
 
-  // Resets state to 'normal' and stops the repeater.
-  void ResetState();
+  // Sets state to |state| and stops the repeater.
+  void SetState(CustomButton::ButtonState state);
 
   // Called when the mouse is pressed down in the track area.
   void TrackClicked();

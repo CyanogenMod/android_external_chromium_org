@@ -16,20 +16,6 @@ cr.define('options', function() {
   // The border width of the display rectangles for the normal one.
   /** @const */ var NORMAL_BORDER_WIDTH_PX = 1;
 
-  // The constant values for the overscan calibration settings.
-  // The height of an arrow.
-  /** @const */ var ARROW_SIZE_PX = 10;
-
-  // The gap from the boundary of the display rectangle and the arrow.
-  /** @const */ var ARROW_GAP_PX = 2;
-
-  // The margin size to handle events outside the target display.
-  /** @const */ var ARROW_CONTAINER_MARGIN_PX = ARROW_SIZE_PX * 3;
-
-  // The interval times to update the overscan while the user keeps pressing
-  // the mouse button or touching.
-  /** @const */ var OVERSCAN_TIC_INTERVAL_MS = 100;
-
   /**
    * Enumeration of secondary display layout.  The value has to be same as the
    * values in ash/display/display_controller.cc.
@@ -40,15 +26,6 @@ cr.define('options', function() {
     RIGHT: 1,
     BOTTOM: 2,
     LEFT: 3
-  };
-
-  /**
-   * Enumeration of the direction for the calibrating overscan settings.
-   * @enum {number}
-   */
-  var CalibrationDirection = {
-      INNER: 1,
-      OUTER: -1
   };
 
   /**
@@ -97,278 +74,6 @@ cr.define('options', function() {
         return SecondaryDisplayLayout.TOP;
     }
   }
-
-  /**
-   * DisplayOverscanCalibrator shows the arrows to calibrate overscan settings
-   * and handles events of the actual user control.
-   * @param {Object} display The display object for the calibrating overscan.
-   * @constructor
-   */
-  function DisplayOverscanCalibrator(display) {
-    // Creates the calibration arrows over |display|.  To achieve the UI,
-    // a transparent container holds the arrows and handles events.
-    this.container_ = document.createElement('div');
-    this.container_.id = 'display-overscan-calibration-arrow-container';
-    var containerSize = {
-      width: display.div.offsetWidth + ARROW_CONTAINER_MARGIN_PX * 2,
-      height: display.div.offsetHeight + ARROW_CONTAINER_MARGIN_PX * 2
-    };
-    this.container_.style.width = containerSize.width + 'px';
-    this.container_.style.height = containerSize.height + 'px';
-    this.container_.style.left =
-        display.div.offsetLeft - ARROW_CONTAINER_MARGIN_PX + 'px';
-    this.container_.style.top =
-        display.div.offsetTop - ARROW_CONTAINER_MARGIN_PX + 'px';
-    this.container_.onmousedown = this.onMouseDown_.bind(this);
-    this.container_.onmouseup = this.onOperationEnd_.bind(this);
-    this.container_.ontouchstart = this.onTouchStart_.bind(this);
-    this.container_.ontouchend = this.onOperationEnd_.bind(this);
-
-    // Creates arrows for each direction.
-    var topArrow = this.createVerticalArrows_();
-    topArrow.style.left = containerSize.width / 2 - ARROW_SIZE_PX + 'px';
-    topArrow.style.top = ARROW_CONTAINER_MARGIN_PX -
-        ARROW_SIZE_PX - ARROW_GAP_PX + 'px';
-    this.container_.appendChild(topArrow);
-    var bottomArrow = this.createVerticalArrows_();
-    bottomArrow.style.left = containerSize.width / 2 - ARROW_SIZE_PX + 'px';
-    bottomArrow.style.bottom = ARROW_CONTAINER_MARGIN_PX -
-        ARROW_SIZE_PX - ARROW_GAP_PX + 'px';
-    this.container_.appendChild(bottomArrow);
-    var leftArrow = this.createHorizontalArrows_();
-    leftArrow.style.left = ARROW_CONTAINER_MARGIN_PX -
-        ARROW_SIZE_PX - ARROW_GAP_PX + 'px';
-    leftArrow.style.top = containerSize.height / 2 - ARROW_SIZE_PX + 'px';
-    this.container_.appendChild(leftArrow);
-    var rightArrow = this.createHorizontalArrows_();
-    rightArrow.style.right = ARROW_CONTAINER_MARGIN_PX -
-        ARROW_SIZE_PX - ARROW_GAP_PX + 'px';
-    rightArrow.style.top = containerSize.height / 2 - ARROW_SIZE_PX + 'px';
-    this.container_.appendChild(rightArrow);
-
-    display.div.parentNode.appendChild(this.container_);
-    this.displayBounds_ = getBoundsInPage(display.div);
-    this.overscan_ = display.overscan;
-    chrome.send('startOverscanCalibration', [display.id]);
-  };
-
-  DisplayOverscanCalibrator.prototype = {
-    /**
-     * The container of arrows.  It also receives the user events.
-     * @private
-     */
-    container_: null,
-
-    /**
-     * The bounds of the display rectangle in the page.
-     * @private
-     */
-    displayBounds_: null,
-
-    /**
-     * The current overscan settins.
-     * @private
-     */
-    overscan_: null,
-
-    /**
-     * The location of the current user operation against the display.  The
-     * contents should be one of 'left', 'right', 'top', or 'bottom'.
-     * @type {string}
-     * @private
-     */
-    location_: null,
-
-    /**
-     * The direction of the current user operation against the display.
-     * @type {CalibrationDirection}
-     * @private
-     */
-    direction_: null,
-
-    /**
-     * The ID for the periodic timer to tic the calibration settings while the
-     * user keeps pressing the mouse button.
-     * @type {number}
-     * @private
-     */
-    timer_: null,
-
-    /**
-     * Called when everything is finished.
-     */
-    finish: function() {
-      this.container_.parentNode.removeChild(this.container_);
-      chrome.send('finishOverscanCalibration');
-    },
-
-    /**
-     * Called when every settings are cleared.
-     */
-    clear: function() {
-      chrome.send('clearOverscanCalibration');
-    },
-
-    /**
-     * Mouse down event handler for overscan calibration.
-     * @param {Event} e The mouse down event.
-     * @private
-     */
-    onMouseDown_: function(e) {
-      e.preventDefault();
-      this.setupOverscanCalibration_(e);
-    },
-
-    /**
-     * Touch start event handler for overscan calibration.
-     * @param {Event} e The touch start event.
-     * @private
-     */
-    onTouchStart_: function(e) {
-      if (e.touches.length != 1)
-        return;
-
-      e.preventDefault();
-      var touch = e.touches[0];
-      this.setupOverscanCalibration_(e.touches[0]);
-    },
-
-    /**
-     * Event handler for ending the user operation of overscan calibration.
-     * @param {Event} e The event object, mouse up event or touch end event.
-     * @private
-     */
-    onOperationEnd_: function(e) {
-      if (this.timer_) {
-        window.clearInterval(this.timer_);
-        this.timer_ = null;
-        e.preventDefault();
-      }
-    },
-
-    /**
-     * Sets up a new overscan calibration operation.  It calculates the event
-     * location and determines the contents of location.  It also sets up a
-     * timer to change the overscan settings continuously as far as the user
-     * keeps pressing the mouse button or touching.  The timer will be cleared
-     * on ending the operation.
-     * @param {Object} e The object to contain the location of the event with
-     *     pageX and pageY attributes.
-     * @private
-     */
-    setupOverscanCalibration_: function(e) {
-      switch (getPositionToRectangle(
-          this.displayBounds_, {x: e.pageX, y: e.pageY})) {
-      case SecondaryDisplayLayout.RIGHT:
-        this.location_ = 'right';
-        if (e.pageX < this.displayBounds_.x + this.displayBounds_.width)
-          this.direction_ = CalibrationDirection.INNER;
-        else
-          this.direction_ = CalibrationDirection.OUTER;
-        break;
-      case SecondaryDisplayLayout.LEFT:
-        this.location_ = 'left';
-        if (e.pageX > this.displayBounds_.x)
-          this.direction_ = CalibrationDirection.INNER;
-        else
-          this.direction_ = CalibrationDirection.OUTER;
-        break;
-      case SecondaryDisplayLayout.TOP:
-        this.location_ = 'top';
-        if (e.pageY > this.displayBounds_.y)
-          this.direction_ = CalibrationDirection.INNER;
-        else
-          this.direction_ = CalibrationDirection.OUTER;
-        break;
-      case SecondaryDisplayLayout.BOTTOM:
-        this.location_ = 'bottom';
-        if (e.pageY < this.displayBounds_.y + this.displayBounds_.height) {
-          this.direction_ = CalibrationDirection.INNER;
-        } else {
-          this.direction_ = CalibrationDirection.OUTER;
-        }
-        break;
-      }
-
-      this.ticOverscanSize_();
-      this.timer_ = window.setInterval(
-          this.ticOverscanSize_.bind(this), OVERSCAN_TIC_INTERVAL_MS);
-    },
-
-    /**
-     * Modifies the current overscans actually and sends the update to the
-     * system.
-     * @private
-     */
-    ticOverscanSize_: function() {
-      // Ignore the operation which causes some of overscan insets negative.
-      if (this.direction_ == CalibrationDirection.OUTER &&
-          this.overscan_[this.location_] == 0) {
-        return;
-      }
-
-      this.overscan_[this.location_] += this.direction_;
-      chrome.send('updateOverscanCalibration',
-                  [this.overscan_.top, this.overscan_.left,
-                   this.overscan_.bottom, this.overscan_.right]);
-    },
-
-    /**
-     * Creates the arrows vertically aligned, for the calibration UI at the top
-     * and bottom of the target display.
-     * @return {HTMLElement} The created div which contains the arrows.
-     * @private
-     */
-    createVerticalArrows_: function() {
-      var container = document.createElement('div');
-      container.style.width = ARROW_SIZE_PX * 2 + 'px';
-      container.style.height =
-          ARROW_SIZE_PX * 2 + ARROW_GAP_PX * 2 + FOCUSED_BORDER_WIDTH_PX + 'px';
-      container.style.position = 'absolute';
-
-      var arrowUp = document.createElement('div');
-      arrowUp.className = 'display-overscan-calibration-arrow ' +
-          'display-overscan-arrow-to-top';
-      arrowUp.style.left = '0';
-      arrowUp.style.top = -ARROW_SIZE_PX + 'px';
-      container.appendChild(arrowUp);
-      var arrowDown = document.createElement('div');
-      arrowDown.className = 'display-overscan-calibration-arrow ' +
-          'display-overscan-arrow-to-bottom';
-      arrowDown.style.left = '0';
-      arrowDown.style.bottom = -ARROW_SIZE_PX + 'px';
-      container.appendChild(arrowDown);
-      return container;
-    },
-
-    /**
-     * Creates the arrows horizontally aligned, for the calibration UI at the
-     * left and right of the target display.
-     * @return {HTMLElement} The created div which contains the arrows.
-     * @private
-     */
-    createHorizontalArrows_: function() {
-      var container = document.createElement('div');
-      container.style.width =
-          ARROW_SIZE_PX * 2 + ARROW_GAP_PX * 2 + FOCUSED_BORDER_WIDTH_PX + 'px';
-      container.style.height = ARROW_SIZE_PX * 2 + 'px';
-      container.style.position = 'absolute';
-
-      var arrowLeft = document.createElement('div');
-      arrowLeft.className = 'display-overscan-calibration-arrow ' +
-          'display-overscan-arrow-to-left';
-      arrowLeft.style.left = -ARROW_SIZE_PX + 'px';
-      arrowLeft.style.top = '0';
-      container.appendChild(arrowLeft);
-      var arrowRight = document.createElement('div');
-      arrowRight.className = 'display-overscan-calibration-arrow ' +
-          'display-overscan-arrow-to-right';
-      arrowRight.style.right = -ARROW_SIZE_PX + 'px';
-      arrowRight.style.top = '0';
-      container.appendChild(arrowRight);
-      return container;
-    }
-  };
 
   /**
    * Encapsulated handling of the 'Display' page.
@@ -424,13 +129,6 @@ cr.define('options', function() {
     secondaryDisplay_: null,
 
     /**
-     * The flag to check if the current options status should be sent to the
-     * system or not (unchanged).
-     * @private
-     */
-    dirty_: false,
-
-    /**
      * The container div element which contains all of the display rectangles.
      * @private
      */
@@ -464,7 +162,7 @@ cr.define('options', function() {
 
       var container = $('display-options-displays-view-host');
       container.onmousemove = this.onMouseMove_.bind(this);
-      container.onmouseup = this.endDragging_.bind(this);
+      window.addEventListener('mouseup', this.endDragging_.bind(this), true);
       container.ontouchmove = this.onTouchMove_.bind(this);
       container.ontouchend = this.endDragging_.bind(this);
 
@@ -473,19 +171,11 @@ cr.define('options', function() {
       }).bind(this);
 
       $('selected-display-start-calibrating-overscan').onclick = (function() {
-        this.overscanCalibrator_ = new DisplayOverscanCalibrator(
-            this.displays_[this.focusedIndex_]);
-        this.updateSelectedDisplayDescription_();
-      }).bind(this);
-      $('selected-display-finish-calibrating-overscan').onclick = (function() {
-        this.overscanCalibrator_.finish();
-        this.overscanCalibrator_ = null;
-        this.updateSelectedDisplayDescription_();
-      }).bind(this);
-      $('selected-display-clear-calibrating-overscan').onclick = (function() {
-        this.overscanCalibrator_.clear();
-        this.overscanCalibrator_ = null;
-        this.updateSelectedDisplayDescription_();
+        // Passes the target display ID. Do not specify it through URL hash,
+        // we do not care back/forward.
+        var displayOverscan = options.DisplayOverscan.getInstance();
+        displayOverscan.setDisplayId(this.displays_[this.focusedIndex_].id);
+        OptionsPage.navigateToPage('displayOverscan');
       }).bind(this);
 
       chrome.send('getDisplayInfo');
@@ -522,10 +212,10 @@ cr.define('options', function() {
       // position changes slightly even though the user doesn't think to move
       // the finger, very small move is just ignored.
       /** @const */ var IGNORABLE_TOUCH_MOVE_PX = 1;
-      var x_diff = Math.abs(touchLocation.x - this.lastTouchLocation_.x);
-      var y_diff = Math.abs(touchLocation.y - this.lastTouchLocation_.y);
-      if (x_diff <= IGNORABLE_TOUCH_MOVE_PX &&
-          y_diff <= IGNORABLE_TOUCH_MOVE_PX) {
+      var xDiff = Math.abs(touchLocation.x - this.lastTouchLocation_.x);
+      var yDiff = Math.abs(touchLocation.y - this.lastTouchLocation_.y);
+      if (xDiff <= IGNORABLE_TOUCH_MOVE_PX &&
+          yDiff <= IGNORABLE_TOUCH_MOVE_PX) {
         return true;
       }
 
@@ -584,7 +274,6 @@ cr.define('options', function() {
       }
       chrome.send('setDisplayLayout',
                   [this.layout_, offset / this.visualScale_]);
-      this.dirty_ = false;
     },
 
     /**
@@ -667,22 +356,22 @@ cr.define('options', function() {
         height: baseDiv.offsetHeight
       };
       switch (getPositionToRectangle(baseBounds, newCenter)) {
-      case SecondaryDisplayLayout.RIGHT:
-        this.layout_ = this.dragging_.display.isPrimary ?
-            SecondaryDisplayLayout.LEFT : SecondaryDisplayLayout.RIGHT;
-        break;
-      case SecondaryDisplayLayout.LEFT:
-        this.layout_ = this.dragging_.display.isPrimary ?
-            SecondaryDisplayLayout.RIGHT : SecondaryDisplayLayout.LEFT;
-        break;
-      case SecondaryDisplayLayout.TOP:
-        this.layout_ = this.dragging_.display.isPrimary ?
-            SecondaryDisplayLayout.BOTTOM : SecondaryDisplayLayout.TOP;
-        break;
-      case SecondaryDisplayLayout.BOTTOM:
-        this.layout_ = this.dragging_.display.isPrimary ?
-            SecondaryDisplayLayout.TOP : SecondaryDisplayLayout.BOTTOM;
-        break;
+        case SecondaryDisplayLayout.RIGHT:
+          this.layout_ = this.dragging_.display.isPrimary ?
+              SecondaryDisplayLayout.LEFT : SecondaryDisplayLayout.RIGHT;
+          break;
+        case SecondaryDisplayLayout.LEFT:
+          this.layout_ = this.dragging_.display.isPrimary ?
+              SecondaryDisplayLayout.RIGHT : SecondaryDisplayLayout.LEFT;
+          break;
+        case SecondaryDisplayLayout.TOP:
+          this.layout_ = this.dragging_.display.isPrimary ?
+              SecondaryDisplayLayout.BOTTOM : SecondaryDisplayLayout.TOP;
+          break;
+        case SecondaryDisplayLayout.BOTTOM:
+          this.layout_ = this.dragging_.display.isPrimary ?
+              SecondaryDisplayLayout.TOP : SecondaryDisplayLayout.BOTTOM;
+          break;
       }
 
       if (this.layout_ == SecondaryDisplayLayout.LEFT ||
@@ -704,50 +393,49 @@ cr.define('options', function() {
               SecondaryDisplayLayout.RIGHT : SecondaryDisplayLayout.LEFT;
       }
 
-      var layout_to_base;
+      var layoutToBase;
       if (!this.dragging_.display.isPrimary) {
-        layout_to_base = this.layout_;
+        layoutToBase = this.layout_;
       } else {
         switch (this.layout_) {
-        case SecondaryDisplayLayout.RIGHT:
-          layout_to_base = SecondaryDisplayLayout.LEFT;
-          break;
-        case SecondaryDisplayLayout.LEFT:
-          layout_to_base = SecondaryDisplayLayout.RIGHT;
-          break;
-        case SecondaryDisplayLayout.TOP:
-          layout_to_base = SecondaryDisplayLayout.BOTTOM;
-          break;
-        case SecondaryDisplayLayout.BOTTOM:
-          layout_to_base = SecondaryDisplayLayout.TOP;
-          break;
+          case SecondaryDisplayLayout.RIGHT:
+            layoutToBase = SecondaryDisplayLayout.LEFT;
+            break;
+          case SecondaryDisplayLayout.LEFT:
+            layoutToBase = SecondaryDisplayLayout.RIGHT;
+            break;
+          case SecondaryDisplayLayout.TOP:
+            layoutToBase = SecondaryDisplayLayout.BOTTOM;
+            break;
+          case SecondaryDisplayLayout.BOTTOM:
+            layoutToBase = SecondaryDisplayLayout.TOP;
+            break;
         }
       }
 
-      switch (layout_to_base) {
-      case SecondaryDisplayLayout.RIGHT:
-        draggingDiv.style.left =
-            baseDiv.offsetLeft + baseDiv.offsetWidth + 'px';
-        draggingDiv.style.top = newPosition.y + 'px';
-        break;
-      case SecondaryDisplayLayout.LEFT:
-        draggingDiv.style.left =
-            baseDiv.offsetLeft - draggingDiv.offsetWidth + 'px';
-        draggingDiv.style.top = newPosition.y + 'px';
-        break;
-      case SecondaryDisplayLayout.TOP:
-        draggingDiv.style.top =
-            baseDiv.offsetTop - draggingDiv.offsetHeight + 'px';
-        draggingDiv.style.left = newPosition.x + 'px';
-        break;
-      case SecondaryDisplayLayout.BOTTOM:
-        draggingDiv.style.top =
-            baseDiv.offsetTop + baseDiv.offsetHeight + 'px';
-        draggingDiv.style.left = newPosition.x + 'px';
-        break;
+      switch (layoutToBase) {
+        case SecondaryDisplayLayout.RIGHT:
+          draggingDiv.style.left =
+              baseDiv.offsetLeft + baseDiv.offsetWidth + 'px';
+          draggingDiv.style.top = newPosition.y + 'px';
+          break;
+        case SecondaryDisplayLayout.LEFT:
+          draggingDiv.style.left =
+              baseDiv.offsetLeft - draggingDiv.offsetWidth + 'px';
+          draggingDiv.style.top = newPosition.y + 'px';
+          break;
+        case SecondaryDisplayLayout.TOP:
+          draggingDiv.style.top =
+              baseDiv.offsetTop - draggingDiv.offsetHeight + 'px';
+          draggingDiv.style.left = newPosition.x + 'px';
+          break;
+        case SecondaryDisplayLayout.BOTTOM:
+          draggingDiv.style.top =
+              baseDiv.offsetTop + baseDiv.offsetHeight + 'px';
+          draggingDiv.style.left = newPosition.x + 'px';
+          break;
       }
 
-      this.dirty_ = true;
       return false;
     },
 
@@ -786,10 +474,6 @@ cr.define('options', function() {
         };
       }
 
-      if (this.overscanCalibrator_) {
-        this.overscanCalibrator_.finish();
-        this.overscanCalibrator_ = null;
-      }
       this.updateSelectedDisplayDescription_();
       return false;
     },
@@ -824,9 +508,11 @@ cr.define('options', function() {
                           MIN_OFFSET_OVERLAP);
           draggingDiv.style.left = left + 'px';
         }
-        this.dragging_ = null;
-        if (this.dirty_)
+        var originalPosition = this.dragging_.display.originalPosition;
+        if (originalPosition.x != draggingDiv.offsetLeft ||
+            originalPosition.y != draggingDiv.offsetTop)
           this.applyResult_();
+        this.dragging_ = null;
       }
       this.updateSelectedDisplayDescription_();
       return false;
@@ -837,44 +523,50 @@ cr.define('options', function() {
      * @private
      */
     updateSelectedDisplayDescription_: function() {
+      if (this.mirroring_) {
+        $('display-configuration-arrow').hidden = true;
+        $('display-options-set-primary').hidden = true;
+        $('display-options-toggle-mirroring').hidden = false;
+        $('selected-display-data-container').hidden = false;
+        var display = this.displays_[0];
+        $('selected-display-name').textContent = '';
+        $('selected-display-resolution').textContent =
+            display.width + 'x' + display.height;
+        return;
+      }
+
       if (this.focusedIndex_ == null ||
           this.displays_[this.focusedIndex_] == null) {
         $('selected-display-data-container').hidden = true;
         $('display-configuration-arrow').hidden = true;
-        $('display-options-set-primary').disabled = true;
+        $('display-options-set-primary').hidden = true;
+        $('display-options-toggle-mirroring').hidden = true;
         return;
       }
 
       $('selected-display-data-container').hidden = false;
       var display = this.displays_[this.focusedIndex_];
       var nameElement = $('selected-display-name');
-      while (nameElement.childNodes.length > 0)
-        nameElement.removeChild(nameElement.firstChild);
-      nameElement.appendChild(document.createTextNode(display.name));
+      nameElement.textContent = display.name;
 
-      var resolutionData = display.width + 'x' + display.height;
       var resolutionElement = $('selected-display-resolution');
-      while (resolutionElement.childNodes.length > 0)
-        resolutionElement.removeChild(resolutionElement.firstChild);
-      resolutionElement.appendChild(document.createTextNode(resolutionData));
+      resolutionElement.textContent = display.width + 'x' + display.height;
 
-      if (this.overscanCalibrator_) {
-        $('start-calibrating-overscan-control').hidden = true;
-        $('end-calibrating-overscan-control').hidden = false;
-      } else {
-        $('start-calibrating-overscan-control').hidden = false;
-        $('end-calibrating-overscan-control').hidden = true;
-      }
+      $('start-calibrating-overscan-control').hidden = display.isInternal;
 
       var arrow = $('display-configuration-arrow');
       arrow.hidden = false;
-      arrow.style.top =
-          $('display-configurations').offsetTop - arrow.offsetHeight / 2 + 'px';
+      // Adding 1 px to the position to fit the border line and the border in
+      // arrow precisely.
+      arrow.style.top = $('display-configurations').offsetTop -
+          arrow.offsetHeight / 2 + 1 + 'px';
       arrow.style.left = display.div.offsetLeft + display.div.offsetWidth / 2 -
           arrow.offsetWidth / 2 + 'px';
 
-      $('display-options-set-primary').disabled =
+      $('display-options-set-primary').hidden =
           this.displays_[this.focusedIndex_].isPrimary;
+      $('display-options-toggle-mirroring').hidden =
+          (this.displays_.length <= 1 && !this.mirroring_);
     },
 
     /**
@@ -901,14 +593,10 @@ cr.define('options', function() {
           FOCUSED_BORDER_WIDTH_PX : NORMAL_BORDER_WIDTH_PX;
       display.div.style.width =
           display.width * this.visualScale_ - borderWidth * 2 + 'px';
-      display.div.style.height =
-          display.height * this.visualScale_ - borderWidth * 2 + 'px';
-      if (display.isPrimary) {
-        var launcher = display.div.firstChild;
-        if (launcher && launcher.id == 'display-launcher') {
-          launcher.style.width = display.div.style.width;
-        }
-      }
+      var newHeight = display.height * this.visualScale_ - borderWidth * 2;
+      display.div.style.height = newHeight + 'px';
+      display.nameContainer.style.marginTop =
+            (newHeight - display.nameContainer.offsetHeight) / 2 + 'px';
     },
 
     /**
@@ -916,8 +604,9 @@ cr.define('options', function() {
      * @private
      */
     layoutMirroringDisplays_: function() {
-      // Offset pixels for secondary display rectangles.
-      /** @const */ var MIRRORING_OFFSET_PIXELS = 2;
+      // Offset pixels for secondary display rectangles. The offset includes the
+      // border width.
+      /** @const */ var MIRRORING_OFFSET_PIXELS = 3;
       // Always show two displays because there must be two displays when
       // the display_options is enabled.  Don't rely on displays_.length because
       // there is only one display from chrome's perspective in mirror mode.
@@ -1009,21 +698,17 @@ cr.define('options', function() {
           div.classList.add('displays-focused');
 
         if (display.isPrimary) {
-          // Put a grey rectangle to the primary display to denote launcher
-          // below.
-          var launcher = document.createElement('div');
-          launcher.id = 'display-launcher';
-          div.appendChild(launcher);
           this.primaryDisplay_ = display;
         } else {
           this.secondaryDisplay_ = display;
         }
-        this.resizeDisplayRectangle_(display, i);
-        div.style.left = display.x * this.visualScale_ + offset.x + 'px';
-        div.style.top = display.y * this.visualScale_ + offset.y + 'px';
         var displayNameContainer = document.createElement('div');
         displayNameContainer.textContent = display.name;
         div.appendChild(displayNameContainer);
+        display.nameContainer = displayNameContainer;
+        this.resizeDisplayRectangle_(display, i);
+        div.style.left = display.x * this.visualScale_ + offset.x + 'px';
+        div.style.top = display.y * this.visualScale_ + offset.y + 'px';
 
         div.onmousedown = this.onMouseDown_.bind(this);
         div.ontouchstart = this.onTouchStart_.bind(this);
@@ -1035,6 +720,7 @@ cr.define('options', function() {
         // |displaysView_|.  Otherwise its offsetHeight is yet 0.
         displayNameContainer.style.marginTop =
             (div.offsetHeight - displayNameContainer.offsetHeight) / 2 + 'px';
+        display.originalPosition = {x: div.offsetLeft, y: div.offsetTop};
       }
     },
 
@@ -1047,6 +733,21 @@ cr.define('options', function() {
      * @private
      */
     onDisplayChanged_: function(mirroring, displays, layout, offset) {
+      if (!this.visible)
+        return;
+
+      var hasExternal = false;
+      for (var i = 0; i < displays.length; i++) {
+        if (!displays[i].isInternal) {
+          hasExternal = true;
+          break;
+        }
+      }
+      if (!hasExternal && !mirroring) {
+        OptionsPage.showDefaultPage();
+        return;
+      }
+
       this.mirroring_ = mirroring;
       this.layout_ = layout;
       this.offset_ = offset;
@@ -1071,11 +772,6 @@ cr.define('options', function() {
       else
         this.layoutDisplays_();
 
-      if (this.overscanCalibrator_) {
-        this.overscanCalibrator_.finish();
-        this.overscanCalibrator_ = new DisplayOverscanCalibrator(
-            this.displays_[this.focusedIndex_]);
-      }
       this.updateSelectedDisplayDescription_();
     }
   };

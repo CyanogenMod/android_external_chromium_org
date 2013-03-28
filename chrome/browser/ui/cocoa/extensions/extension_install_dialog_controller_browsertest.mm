@@ -26,18 +26,43 @@ public:
 
 IN_PROC_BROWSER_TEST_F(ExtensionInstallDialogControllerTest, BasicTest) {
   content::WebContents* tab = browser()->tab_strip_model()->GetWebContentsAt(0);
+  ExtensionInstallPrompt::ShowParams show_params(tab);
 
   chrome::MockExtensionInstallPromptDelegate delegate;
   ExtensionInstallPrompt::Prompt prompt =
       chrome::BuildExtensionInstallPrompt(extension_);
 
   ExtensionInstallDialogController* controller =
-      new ExtensionInstallDialogController(tab,
+      new ExtensionInstallDialogController(show_params,
                                            &delegate,
                                            prompt);
 
   scoped_nsobject<NSWindow> window(
-      [controller->constrained_window()->GetNativeWindow() retain]);
+      [[[controller->view_controller() view] window] retain]);
+  EXPECT_TRUE([window isVisible]);
+
+  // Press cancel to close the window
+  [[controller->view_controller() cancelButton] performClick:nil];
+
+  // Wait for the window to finish closing.
+  EXPECT_FALSE([window isVisible]);
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionInstallDialogControllerTest, Permissions) {
+  content::WebContents* tab = browser()->tab_strip_model()->GetWebContentsAt(0);
+  ExtensionInstallPrompt::ShowParams show_params(tab);
+
+  chrome::MockExtensionInstallPromptDelegate delegate;
+  ExtensionInstallPrompt::Prompt prompt =
+      chrome::BuildExtensionPostInstallPermissionsPrompt(extension_);
+
+  ExtensionInstallDialogController* controller =
+      new ExtensionInstallDialogController(show_params,
+                                           &delegate,
+                                           prompt);
+
+  scoped_nsobject<NSWindow> window(
+      [[[controller->view_controller() view] window] retain]);
   EXPECT_TRUE([window isVisible]);
 
   // Press cancel to close the window

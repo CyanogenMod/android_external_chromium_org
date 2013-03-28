@@ -20,6 +20,7 @@ namespace chromeos {
 
 class DBusThreadManagerObserver;
 class MockIBusClient;
+class MockIBusConfigClient;
 class MockIBusEngineFactoryService;
 class MockIBusEngineService;
 class MockIBusInputContextClient;
@@ -35,7 +36,8 @@ class MockDBusThreadManagerWithoutGMock : public DBusThreadManager {
 
   virtual void AddObserver(DBusThreadManagerObserver* observer) OVERRIDE;
   virtual void RemoveObserver(DBusThreadManagerObserver* observer) OVERRIDE;
-  virtual void InitIBusBus(const std::string& ibus_address) OVERRIDE;
+  virtual void InitIBusBus(const std::string& ibus_address,
+                           const base::Closure& closure) OVERRIDE;
   virtual dbus::Bus* GetSystemBus() OVERRIDE;
   virtual dbus::Bus* GetIBusBus() OVERRIDE;
 
@@ -44,14 +46,12 @@ class MockDBusThreadManagerWithoutGMock : public DBusThreadManager {
   virtual BluetoothInputClient* GetBluetoothInputClient() OVERRIDE;
   virtual BluetoothManagerClient* GetBluetoothManagerClient() OVERRIDE;
   virtual BluetoothNodeClient* GetBluetoothNodeClient() OVERRIDE;
-  virtual CashewClient* GetCashewClient() OVERRIDE;
   virtual CrosDisksClient* GetCrosDisksClient() OVERRIDE;
   virtual CryptohomeClient* GetCryptohomeClient() OVERRIDE;
   virtual DebugDaemonClient* GetDebugDaemonClient() OVERRIDE;
   virtual ShillDeviceClient* GetShillDeviceClient() OVERRIDE;
   virtual ShillIPConfigClient* GetShillIPConfigClient() OVERRIDE;
   virtual ShillManagerClient* GetShillManagerClient() OVERRIDE;
-  virtual ShillNetworkClient* GetShillNetworkClient() OVERRIDE;
   virtual ShillProfileClient* GetShillProfileClient() OVERRIDE;
   virtual ShillServiceClient* GetShillServiceClient() OVERRIDE;
   virtual GsmSMSClient* GetGsmSMSClient() OVERRIDE;
@@ -60,22 +60,28 @@ class MockDBusThreadManagerWithoutGMock : public DBusThreadManager {
   virtual ModemMessagingClient* GetModemMessagingClient() OVERRIDE;
   virtual PermissionBrokerClient* GetPermissionBrokerClient() OVERRIDE;
   virtual PowerManagerClient* GetPowerManagerClient() OVERRIDE;
+  virtual PowerPolicyController* GetPowerPolicyController() OVERRIDE;
   virtual SessionManagerClient* GetSessionManagerClient() OVERRIDE;
   virtual SMSClient* GetSMSClient() OVERRIDE;
-  virtual SpeechSynthesizerClient* GetSpeechSynthesizerClient() OVERRIDE;
+  virtual SystemClockClient* GetSystemClockClient() OVERRIDE;
   virtual UpdateEngineClient* GetUpdateEngineClient() OVERRIDE;
   virtual BluetoothOutOfBandClient* GetBluetoothOutOfBandClient() OVERRIDE;
   virtual IBusClient* GetIBusClient() OVERRIDE;
+  virtual IBusConfigClient* GetIBusConfigClient() OVERRIDE;
   virtual IBusInputContextClient* GetIBusInputContextClient() OVERRIDE;
   virtual IBusEngineFactoryService* GetIBusEngineFactoryService() OVERRIDE;
   virtual IBusEngineService* GetIBusEngineService(
       const dbus::ObjectPath& object_path) OVERRIDE;
   virtual void RemoveIBusEngineService(
       const dbus::ObjectPath& object_path) OVERRIDE;
-  virtual ibus::IBusPanelService* GetIBusPanelService() OVERRIDE;
+  virtual IBusPanelService* GetIBusPanelService() OVERRIDE;
 
   MockIBusClient* mock_ibus_client() {
     return mock_ibus_client_.get();
+  }
+
+  MockIBusConfigClient* mock_ibus_config_client() {
+    return mock_ibus_config_client_.get();
   }
 
   MockIBusInputContextClient* mock_ibus_input_context_client() {
@@ -100,6 +106,7 @@ class MockDBusThreadManagerWithoutGMock : public DBusThreadManager {
 
  private:
   scoped_ptr<MockIBusClient> mock_ibus_client_;
+  scoped_ptr<MockIBusConfigClient> mock_ibus_config_client_;
   scoped_ptr<MockIBusInputContextClient> mock_ibus_input_context_client_;
   scoped_ptr<MockIBusEngineService> mock_ibus_engine_service_;
   scoped_ptr<MockIBusEngineFactoryService> mock_ibus_engine_factory_service_;

@@ -23,16 +23,12 @@ class CommonSwitches {
         easy_off_store_install(
             switches::kEasyOffStoreExtensionInstall,
             FeatureSwitch::DEFAULT_DISABLED),
-        extensions_in_action_box(
-            switches::kExtensionsInActionBox,
-            FeatureSwitch::DEFAULT_DISABLED),
         script_badges(
             switches::kScriptBadges,
             FeatureSwitch::DEFAULT_DISABLED),
         script_bubble(
             switches::kScriptBubble,
             FeatureSwitch::DEFAULT_DISABLED),
-        // TODO(finnur): When enabling this, only enable for OS_WIN.
         sideload_wipeout(
             switches::kSideloadWipeout,
             base::FieldTrialList::FindFullName("SideloadWipeout") == "Enabled" ?
@@ -40,22 +36,17 @@ class CommonSwitches {
                 FeatureSwitch::DEFAULT_DISABLED),
         prompt_for_external_extensions(
             switches::kPromptForExternalExtensions,
-            base::FieldTrialList::FindFullName("SideloadWipeout") == "Enabled" ?
-                FeatureSwitch::DEFAULT_ENABLED :
-                FeatureSwitch::DEFAULT_DISABLED),
+#if defined(OS_WIN)
+            FeatureSwitch::DEFAULT_ENABLED),
+#else
+            FeatureSwitch::DEFAULT_DISABLED),
+#endif
         tab_capture(
             switches::kTabCapture,
-            FeatureSwitch::DEFAULT_DISABLED)
-  {
-    if (!action_box.IsEnabled()){
-      extensions_in_action_box.SetOverrideValue(
-          FeatureSwitch::OVERRIDE_DISABLED);
-    }
-  }
+            FeatureSwitch::DEFAULT_ENABLED) {}
 
   FeatureSwitch action_box;
   FeatureSwitch easy_off_store_install;
-  FeatureSwitch extensions_in_action_box;
   FeatureSwitch script_badges;
   FeatureSwitch script_bubble;
   FeatureSwitch sideload_wipeout;
@@ -74,9 +65,6 @@ FeatureSwitch* FeatureSwitch::action_box() {
 }
 FeatureSwitch* FeatureSwitch::easy_off_store_install() {
   return &g_common_switches.Get().easy_off_store_install;
-}
-FeatureSwitch* FeatureSwitch::extensions_in_action_box() {
-  return &g_common_switches.Get().extensions_in_action_box;
 }
 FeatureSwitch* FeatureSwitch::script_badges() {
   return &g_common_switches.Get().script_badges;

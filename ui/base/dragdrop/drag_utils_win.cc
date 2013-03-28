@@ -46,7 +46,7 @@ static HBITMAP CreateHBITMAPFromSkBitmap(const SkBitmap& sk_bitmap) {
   HBITMAP bitmap =
       CreateDIBSection(screen_dc, reinterpret_cast<BITMAPINFO*>(&header),
                        DIB_RGB_COLORS, &bits, NULL, 0);
-  DCHECK(sk_bitmap.rowBytes() == sk_bitmap.width() * 4);
+  DCHECK_EQ(sk_bitmap.rowBytes(), static_cast<size_t>(sk_bitmap.width() * 4));
   SkAutoLockPixels lock(sk_bitmap);
   memcpy(
       bits, sk_bitmap.getPixels(), sk_bitmap.height() * sk_bitmap.rowBytes());
@@ -68,6 +68,14 @@ void SetDragImageOnDataObject(const gfx::ImageSkia& image_skia,
   // Attach 'bitmap' to the data_object.
   SetDragImageOnDataObject(bitmap, size, cursor_offset,
       ui::OSExchangeDataProviderWin::GetIDataObject(*data_object));
+
+#if defined(USE_AURA)
+  // TODO: the above code is used in non-Ash, while below is used in Ash. If we
+  // could figure this context out then we wouldn't do unnecessary work. However
+  // as it stands getting this information in ui/base would be a layering
+  // violation.
+  data_object->provider().SetDragImage(image_skia, cursor_offset);
+#endif
 }
 
 }  // namespace drag_utils

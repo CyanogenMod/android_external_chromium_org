@@ -13,10 +13,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/host_resolver.h"
+#include "net/dns/host_resolver.h"
+#include "net/socket/client_socket_pool.h"
 #include "net/socket/client_socket_pool_base.h"
 #include "net/socket/client_socket_pool_histograms.h"
-#include "net/socket/client_socket_pool.h"
 
 namespace net {
 
@@ -137,7 +137,7 @@ class NET_EXPORT_PRIVATE SOCKSClientSocketPool
                              StreamSocket* socket,
                              int id) OVERRIDE;
 
-  virtual void Flush() OVERRIDE;
+  virtual void FlushWithError(int error) OVERRIDE;
 
   virtual bool IsStalled() const OVERRIDE;
 

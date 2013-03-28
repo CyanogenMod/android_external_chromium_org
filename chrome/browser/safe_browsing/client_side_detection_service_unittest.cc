@@ -65,14 +65,14 @@ class ClientSideDetectionServiceTest : public testing::Test {
     file_thread_.reset(new content::TestBrowserThread(BrowserThread::FILE,
                                                       &msg_loop_));
 
-    factory_.reset(new net::FakeURLFetcherFactory());
+    factory_.reset(new net::FakeURLFetcherFactory(NULL));
 
     browser_thread_.reset(new content::TestBrowserThread(BrowserThread::UI,
                                                          &msg_loop_));
   }
 
   virtual void TearDown() {
-    msg_loop_.RunAllPending();
+    msg_loop_.RunUntilIdle();
     csd_service_.reset();
     file_thread_.reset();
     browser_thread_.reset();
@@ -93,6 +93,18 @@ class ClientSideDetectionServiceTest : public testing::Test {
     return is_phishing_;
   }
 
+  bool SendClientReportMalwareRequest(const GURL& url) {
+    scoped_ptr<ClientMalwareRequest> request(new ClientMalwareRequest());
+    request->set_url(url.spec());
+    csd_service_->SendClientReportMalwareRequest(
+        request.release(),
+        base::Bind(&ClientSideDetectionServiceTest::SendMalwareRequestDone,
+                   base::Unretained(this)));
+    phishing_url_ = url;
+    msg_loop_.Run();  // Waits until callback is called.
+    return is_malware_;
+  }
+
   void SetModelFetchResponse(std::string response_data, bool success) {
     factory_->SetFakeResponse(ClientSideDetectionService::kClientModelUrl,
                               response_data, success);
@@ -101,7 +113,16 @@ class ClientSideDetectionServiceTest : public testing::Test {
   void SetClientReportPhishingResponse(std::string response_data,
                                        bool success) {
     factory_->SetFakeResponse(
-        ClientSideDetectionService::GetClientReportPhishingUrl(),
+        ClientSideDetectionService::GetClientReportUrl(
+            ClientSideDetectionService::kClientReportPhishingUrl),
+        response_data, success);
+  }
+
+  void SetClientReportMalwareResponse(std::string response_data,
+                                      bool success) {
+    factory_->SetFakeResponse(
+        ClientSideDetectionService::GetClientReportUrl(
+            ClientSideDetectionService::kClientReportMalwareUrl),
         response_data, success);
   }
 
@@ -200,11 +221,17 @@ class ClientSideDetectionServiceTest : public testing::Test {
     msg_loop_.Quit();
   }
 
+  void SendMalwareRequestDone(GURL url, bool is_malware) {
+    ASSERT_EQ(phishing_url_, url);
+    is_malware_ = is_malware;
+    msg_loop_.Quit();
+  }
   scoped_ptr<content::TestBrowserThread> browser_thread_;
   scoped_ptr<content::TestBrowserThread> file_thread_;
 
   GURL phishing_url_;
   bool is_phishing_;
+  bool is_malware_;
 };
 
 TEST_F(ClientSideDetectionServiceTest, FetchModelTest) {
@@ -330,7 +357,7 @@ TEST_F(ClientSideDetectionServiceTest, ServiceObjectDeletedBeforeCallbackDone) {
   csd_service_.reset();
   // Waiting for the callbacks to run should not crash even if the service
   // object is gone.
-  msg_loop_.RunAllPending();
+  msg_loop_.RunUntilIdle();
 }
 
 TEST_F(ClientSideDetectionServiceTest, SendClientReportPhishingRequest) {
@@ -379,6 +406,34 @@ TEST_F(ClientSideDetectionServiceTest, SendClientReportPhishingRequest) {
   EXPECT_TRUE(csd_service_->GetValidCachedResult(url, &is_phishing));
   EXPECT_TRUE(is_phishing);
   EXPECT_FALSE(csd_service_->IsInCache(second_url));
+}
+
+TEST_F(ClientSideDetectionServiceTest, SendClientReportMalwareRequest) {
+  SetModelFetchResponse("bogus model", true /* success */);
+  csd_service_.reset(ClientSideDetectionService::Create(NULL));
+  csd_service_->SetEnabledAndRefreshState(true);
+  GURL url("http://a.com/");
+
+  // Invalid response body from the server.
+  SetClientReportMalwareResponse("invalid proto response", true /* success */);
+  EXPECT_FALSE(SendClientReportMalwareRequest(url));
+
+  // Normal behavior.
+  ClientMalwareResponse response;
+  response.set_blacklist(true);
+  SetClientReportMalwareResponse(response.SerializeAsString(), true);
+  EXPECT_TRUE(SendClientReportMalwareRequest(url));
+
+  // This request will fail
+  response.set_blacklist(false);
+  SetClientReportMalwareResponse(response.SerializeAsString(),
+                                 false /* success */);
+  EXPECT_FALSE(SendClientReportMalwareRequest(url));
+
+  // server blacklist decision is false, and response is succesful
+  response.set_blacklist(false);
+  SetClientReportMalwareResponse(response.SerializeAsString(), true);
+  EXPECT_FALSE(SendClientReportMalwareRequest(url));
 }
 
 TEST_F(ClientSideDetectionServiceTest, GetNumReportTest) {
@@ -640,7 +695,7 @@ TEST_F(ClientSideDetectionServiceTest, SetEnabledAndRefreshState) {
   EXPECT_TRUE(csd_service_->model_fetcher_.get() != NULL);
   csd_service_->SetEnabledAndRefreshState(false);
   EXPECT_TRUE(csd_service_->model_fetcher_.get() == NULL);
-  msg_loop_.RunAllPending();
+  msg_loop_.RunUntilIdle();
   // No calls expected.
   Mock::VerifyAndClearExpectations(service);
 

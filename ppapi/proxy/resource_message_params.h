@@ -11,7 +11,7 @@
 #include "ipc/ipc_message_utils.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
-#include "ppapi/proxy/serialized_structs.h"
+#include "ppapi/proxy/serialized_handle.h"
 
 namespace ppapi {
 namespace proxy {
@@ -29,6 +29,11 @@ class PPAPI_PROXY_EXPORT ResourceMessageParams {
     return handles_->data();
   }
 
+  // Makes ResourceMessageParams leave its handles open, even if they weren't
+  // taken using a Take.* function. After this call, no Take.* calls are
+  // allowed.
+  void ConsumeHandles() const;
+
   // Returns the handle at the given index if it exists and is of the given
   // type. The corresponding slot in the list is set to an invalid handle.
   // If the index doesn't exist or the handle isn't of the given type, returns
@@ -38,8 +43,8 @@ class PPAPI_PROXY_EXPORT ResourceMessageParams {
   SerializedHandle TakeHandleOfTypeAtIndex(size_t index,
                                            SerializedHandle::Type type) const;
 
-  // Helper functions to return shared memory or socket handles passed in the
-  // params struct.
+  // Helper functions to return shared memory, socket or file handles passed in
+  // the params struct.
   // If the index has a valid handle of the given type, it will be placed in the
   // output parameter, the corresponding slot in the list will be set to an
   // invalid handle, and the function will return true. If the handle doesn't
@@ -54,6 +59,10 @@ class PPAPI_PROXY_EXPORT ResourceMessageParams {
                                      base::SharedMemoryHandle* handle) const;
   bool TakeSocketHandleAtIndex(size_t index,
                                IPC::PlatformFileForTransit* handle) const;
+  bool TakeFileHandleAtIndex(size_t index,
+                             IPC::PlatformFileForTransit* handle) const;
+  void TakeAllSharedMemoryHandles(
+      std::vector<base::SharedMemoryHandle>* handles) const;
 
   // Appends the given handle to the list of handles sent with the call or
   // reply.
@@ -66,8 +75,17 @@ class PPAPI_PROXY_EXPORT ResourceMessageParams {
   virtual void Serialize(IPC::Message* msg) const;
   virtual bool Deserialize(const IPC::Message* msg, PickleIterator* iter);
 
+  // Writes everything except the handles to |msg|.
+  void WriteHeader(IPC::Message* msg) const;
+  // Writes the handles to |msg|.
+  void WriteHandles(IPC::Message* msg) const;
+  // Matching deserialize helpers.
+  bool ReadHeader(const IPC::Message* msg, PickleIterator* iter);
+  bool ReadHandles(const IPC::Message* msg, PickleIterator* iter);
+
  private:
-  class SerializedHandles : public base::RefCounted<SerializedHandles> {
+  class SerializedHandles
+      : public base::RefCountedThreadSafe<SerializedHandles> {
    public:
     SerializedHandles();
     ~SerializedHandles();
@@ -76,7 +94,7 @@ class PPAPI_PROXY_EXPORT ResourceMessageParams {
     std::vector<SerializedHandle>& data() { return data_; }
 
    private:
-    friend class base::RefCounted<SerializedHandles>;
+    friend class base::RefCountedThreadSafe<SerializedHandles>;
 
     // Whether the handles stored in |data_| should be closed when this object
     // goes away.
@@ -148,6 +166,9 @@ class PPAPI_PROXY_EXPORT ResourceMessageReplyParams
   virtual void Serialize(IPC::Message* msg) const OVERRIDE;
   virtual bool Deserialize(const IPC::Message* msg,
                            PickleIterator* iter) OVERRIDE;
+
+  // Writes everything except the handles to |msg|.
+  void WriteReplyHeader(IPC::Message* msg) const;
 
  private:
   // Pepper "result code" for the callback.

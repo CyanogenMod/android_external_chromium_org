@@ -73,6 +73,7 @@ namespace extension_info_keys {
   extern const char kHomepageUrlKey[];
   extern const char kIdKey[];
   extern const char kNameKey[];
+  extern const char kKioskEnabledKey[];
   extern const char kOfflineEnabledKey[];
   extern const char kOptionsUrlKey[];
   extern const char kDetailsUrlKey[];
@@ -111,6 +112,18 @@ namespace extension_misc {
   // The extension id of the Crosh component app for ChromeOS.
   extern const char kCroshBuiltinAppId[];
 
+  // The extension id of the Office Viewer component extension.
+  extern const char kQuickOfficeComponentExtensionId[];
+
+  // The extension id of the Office Viewer dev extension.
+  extern const char kQuickOfficeDevExtensionId[];
+
+  // The extension id of the Office Viewer extension.
+  extern const char kQuickOfficeExtensionId[];
+
+  // The extension id used for testing streamsPrivate
+  extern const char kStreamsPrivateTestExtensionId[];
+
   // The extension id of the Web Store component application.
   extern const char kWebStoreAppId[];
 
@@ -119,6 +132,9 @@ namespace extension_misc {
 
   // The extension id of the Chrome component application.
   extern const char kChromeAppId[];
+
+  // The extension id of the settings application.
+  extern const char kSettingsAppId[];
 
   // Note: this structure is an ASN.1 which encodes the algorithm used
   // with its parameters. This is defined in PKCS #1 v2.1 (RFC 3447).
@@ -141,6 +157,9 @@ namespace extension_misc {
 
   // The name of the app launch histogram.
   extern const char kAppLaunchHistogram[];
+
+  // The name of the app launch histogram for platform apps.
+  extern const char kPlatformAppLaunchHistogram[];
 
   // The buckets used for app launches.
   enum AppLaunchBucket {
@@ -206,15 +225,23 @@ namespace extension_misc {
     // User clicked [+] icon in apps page.
     APP_LAUNCH_NTP_WEBSTORE_PLUS_ICON,
 
+    // User clicked icon in app launcher main view.
+    APP_LAUNCH_APP_LIST_MAIN,
+
+    // User clicked app launcher search result.
+    APP_LAUNCH_APP_LIST_SEARCH,
+
     APP_LAUNCH_BUCKET_BOUNDARY,
     APP_LAUNCH_BUCKET_INVALID
   };
 
 #if defined(OS_CHROMEOS)
-  // The directory path on a ChromeOS device where accessibility extensions are
-  // stored.
-  extern const char kAccessExtensionPath[];
-  extern const char kChromeVoxDirectoryName[];
+  // Path to preinstalled ChromeVox screen reader extension.
+  extern const char kChromeVoxExtensionPath[];
+  // Path to preinstalled speech synthesis extension.
+  extern const char kSpeechSynthesisExtensionPath[];
+  // The extension id of the speech synthesis extension.
+  extern const char kSpeechSynthesisExtensionId[];
   // The extension id of the wallpaper manager application.
   extern const char kWallpaperManagerId[];
 #endif
@@ -235,6 +262,7 @@ namespace extension_misc {
     UNLOAD_REASON_UPDATE,     // Extension is being updated to a newer version.
     UNLOAD_REASON_UNINSTALL,  // Extension is being uninstalled.
     UNLOAD_REASON_TERMINATE,  // Extension has terminated.
+    UNLOAD_REASON_BLACKLIST,  // Extension has been blacklisted.
   };
 
   // The states that an app can be in, as reported by chrome.app.installState
@@ -248,10 +276,6 @@ namespace extension_misc {
 
   // The path part of the file system url used for media file systems.
   extern const char kMediaFileSystemPathPart[];
-
-  // Error indicating that the app notifications API is not accessible by split
-  // mode extensions in incognito windows.
-  extern const char kAppNotificationsIncognitoError[];
 
   // NOTE: If you change this list, you should also change kExtensionIconSizes
   // in cc file.

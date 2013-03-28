@@ -28,9 +28,9 @@ void OSExchangeDataProviderAura::SetURL(const GURL& url,
   formats_ |= OSExchangeData::URL;
 }
 
-void OSExchangeDataProviderAura::SetFilename(const FilePath& path) {
+void OSExchangeDataProviderAura::SetFilename(const base::FilePath& path) {
   filenames_.clear();
-  filenames_.push_back(OSExchangeData::FileInfo(path, FilePath()));
+  filenames_.push_back(OSExchangeData::FileInfo(path, base::FilePath()));
   formats_ |= OSExchangeData::FILE_NAME;
 }
 
@@ -69,7 +69,7 @@ bool OSExchangeDataProviderAura::GetURLAndTitle(GURL* url,
   return true;
 }
 
-bool OSExchangeDataProviderAura::GetFilename(FilePath* path) const {
+bool OSExchangeDataProviderAura::GetFilename(base::FilePath* path) const {
   if ((formats_ & OSExchangeData::FILE_NAME) == 0)
     return false;
   DCHECK(!filenames_.empty());
@@ -119,13 +119,13 @@ bool OSExchangeDataProviderAura::HasCustomFormat(
 
 #if defined(OS_WIN)
   void OSExchangeDataProviderAura::SetFileContents(
-      const FilePath& filename,
+      const base::FilePath& filename,
       const std::string& file_contents) {
     NOTIMPLEMENTED();
   }
 
   bool OSExchangeDataProviderAura::GetFileContents(
-      FilePath* filename,
+      base::FilePath* filename,
       std::string* file_contents) const {
     NOTIMPLEMENTED();
     return false;
@@ -160,6 +160,21 @@ bool OSExchangeDataProviderAura::GetHtml(string16* html,
 
 bool OSExchangeDataProviderAura::HasHtml() const {
   return ((formats_ & OSExchangeData::HTML) != 0);
+}
+
+void OSExchangeDataProviderAura::SetDragImage(
+    const gfx::ImageSkia& image,
+    const gfx::Vector2d& cursor_offset) {
+  drag_image_ = image;
+  drag_image_offset_ = cursor_offset;
+}
+
+const gfx::ImageSkia& OSExchangeDataProviderAura::GetDragImage() const {
+  return drag_image_;
+}
+
+const gfx::Vector2d& OSExchangeDataProviderAura::GetDragImageOffset() const {
+  return drag_image_offset_;
 }
 
 bool OSExchangeDataProviderAura::GetPlainTextURL(GURL* url) const {

@@ -6,22 +6,25 @@
 #define WEBKIT_PLUGINS_PPAPI_PPB_BUFFER_IMPL_H_
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/shared_memory.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
-#include "ppapi/thunk/ppb_buffer_trusted_api.h"
 #include "ppapi/shared_impl/resource.h"
+#include "webkit/plugins/webkit_plugins_export.h"
 
 namespace webkit {
 namespace ppapi {
 
-class PPB_Buffer_Impl : public ::ppapi::Resource,
-                        public ::ppapi::thunk::PPB_Buffer_API,
-                        public ::ppapi::thunk::PPB_BufferTrusted_API {
+class WEBKIT_PLUGINS_EXPORT PPB_Buffer_Impl :
+    public ::ppapi::Resource,
+    public ::ppapi::thunk::PPB_Buffer_API {
  public:
   virtual ~PPB_Buffer_Impl();
 
   static PP_Resource Create(PP_Instance instance, uint32_t size);
+  static scoped_refptr<PPB_Buffer_Impl> CreateResource(PP_Instance instance,
+                                                       uint32_t size);
 
   virtual PPB_Buffer_Impl* AsPPB_Buffer_Impl();
 
@@ -30,7 +33,6 @@ class PPB_Buffer_Impl : public ::ppapi::Resource,
 
   // Resource overrides.
   virtual ::ppapi::thunk::PPB_Buffer_API* AsPPB_Buffer_API() OVERRIDE;
-  virtual ::ppapi::thunk::PPB_BufferTrusted_API* AsPPB_BufferTrusted_API();
 
   // PPB_Buffer_API implementation.
   virtual PP_Bool Describe(uint32_t* size_in_bytes) OVERRIDE;
@@ -38,7 +40,7 @@ class PPB_Buffer_Impl : public ::ppapi::Resource,
   virtual void* Map() OVERRIDE;
   virtual void Unmap() OVERRIDE;
 
-  // PPB_BufferTrusted_API implementation.
+  // Trusted.
   virtual int32_t GetSharedMemory(int* handle) OVERRIDE;
 
  private:

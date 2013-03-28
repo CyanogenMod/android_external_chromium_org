@@ -12,7 +12,7 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -120,9 +120,9 @@ IN_PROC_BROWSER_TEST_F(AutocompleteBrowserTest, MAYBE_Autocomplete) {
   AutocompleteController* autocomplete_controller = GetAutocompleteController();
 
   {
-    autocomplete_controller->Start(
-        ASCIIToUTF16("chrome"), string16(), true, false, true,
-        AutocompleteInput::SYNCHRONOUS_MATCHES);
+    autocomplete_controller->Start(AutocompleteInput(
+        ASCIIToUTF16("chrome"), string16::npos, string16(), GURL(), true, false,
+        true, AutocompleteInput::SYNCHRONOUS_MATCHES));
 
     OmniboxView* location_entry = location_bar->GetLocationEntry();
 

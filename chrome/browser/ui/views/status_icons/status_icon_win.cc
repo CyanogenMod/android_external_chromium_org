@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/views/status_icons/status_icon_win.h"
 
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/win/metro.h"
 #include "base/win/windows_version.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -13,6 +13,7 @@
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
+#include "win8/util/win8_util.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // StatusIconWin, public:
@@ -166,7 +167,7 @@ void StatusIconWin::InitIconData(NOTIFYICONDATA* icon_data) {
 
 StatusIconMetro::StatusIconMetro(UINT id)
     : id_(id) {
-  DCHECK(base::win::IsMetroProcess());
+  DCHECK(win8::IsSingleWindowMetroMode());
 }
 
 StatusIconMetro::~StatusIconMetro() {

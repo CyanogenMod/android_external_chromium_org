@@ -14,16 +14,27 @@
 
 namespace cryptohome {
 
-// This class manages calls to Cryptohome service's 'async' methods.
-// Note: This class is placed in ::cryptohome instead of ::chromeos::cryptohome
+// Note: This file is placed in ::cryptohome instead of ::chromeos::cryptohome
 // since there is already a namespace ::cryptohome which holds the error code
 // enum (MountError) and referencing ::chromeos::cryptohome and ::cryptohome
 // within the same code is confusing.
+
+// Flags for the AsyncMount method.
+enum MountFlags {
+    MOUNT_FLAGS_NONE = 0,       // Used to explicitly denote that no flags are
+                                // set.
+    CREATE_IF_MISSING = 1,      // Create a cryptohome if it does not exist yet.
+    ENSURE_EPHEMERAL = 1 << 1,  // Ensure that the mount is ephemeral.
+};
+
+// This class manages calls to Cryptohome service's 'async' methods.
 class CHROMEOS_EXPORT AsyncMethodCaller {
  public:
   // A callback type which is called back on the UI thread when the results of
   // method calls are ready.
   typedef base::Callback<void(bool success, MountError return_code)> Callback;
+  typedef base::Callback<void(bool success, const std::string& data)>
+      DataCallback;
 
   virtual ~AsyncMethodCaller() {}
 
@@ -45,16 +56,22 @@ class CHROMEOS_EXPORT AsyncMethodCaller {
 
   // Asks cryptohomed to asynchronously try to find the cryptohome for
   // |user_email| and then mount it using |passhash| to unlock the key.
-  // |create_if_missing| controls whether or not we ask cryptohomed to
-  // create a new home dir if one does not yet exist for |user_email|.
+  // The |flags| are a combination of |MountFlags|:
+  // * CREATE_IF_MISSING Controls whether or not cryptohomed is asked to create
+  //                     a new cryptohome if one does not exist yet for
+  //                     |user_email|.
+  // * ENSURE_EPHEMERAL  If |true|, the mounted cryptohome will be backed by
+  //                     tmpfs. If |false|, the ephemeral users policy decides
+  //                     whether tmpfs or an encrypted directory is used as the
+  //                     backend.
   // |callback| will be called with status info on completion.
-  // If |create_if_missing| is false, and no cryptohome exists for |user_email|,
-  // we'll get
-  // callback.Run(false, kCryptohomeMountErrorUserDoesNotExist).
-  // Otherwise, we expect the normal range of return codes.
+  // If the |CREATE_IF_MISSING| flag is not given and no cryptohome exists
+  // for |user_email|, the expected result is
+  // callback.Run(false, kCryptohomeMountErrorUserDoesNotExist). Otherwise,
+  // the normal range of return codes is expected.
   virtual void AsyncMount(const std::string& user_email,
                           const std::string& passhash,
-                          const bool create_if_missing,
+                          int flags,
                           Callback callback) = 0;
 
   // Asks cryptohomed to asynchronously to mount a tmpfs for guest mode.
@@ -65,6 +82,40 @@ class CHROMEOS_EXPORT AsyncMethodCaller {
   // |user_email| and then nuke it.
   virtual void AsyncRemove(const std::string& user_email,
                            Callback callback) = 0;
+
+  // Asks cryptohomed to asynchronously create an attestation enrollment
+  // request.  On success the data sent to |callback| is a request to be sent
+  // to the Privacy CA.
+  virtual void AsyncTpmAttestationCreateEnrollRequest(
+      const DataCallback& callback) = 0;
+
+  // Asks cryptohomed to asynchronously finish an attestation enrollment.
+  // |pca_response| is the response to the enrollment request emitted by the
+  // Privacy CA.
+  virtual void AsyncTpmAttestationEnroll(const std::string& pca_response,
+                                         const Callback& callback) = 0;
+
+  // Asks cryptohomed to asynchronously create an attestation certificate
+  // request.  On success the data sent to |callback| is a request to be sent
+  // to the Privacy CA.
+  virtual void AsyncTpmAttestationCreateCertRequest(
+      bool is_cert_for_owner,
+      const DataCallback& callback) = 0;
+
+  // Asks cryptohomed to asynchronously finish an attestation certificate
+  // request.  On success the data sent to |callback| is a certificate chain
+  // in PEM format.  |pca_response| is the response to the certificate request
+  // emitted by the Privacy CA.
+  virtual void AsyncTpmAttestationFinishCertRequest(
+      const std::string& pca_response,
+      const DataCallback& callback) = 0;
+
+  // Asks cryptohome  to asynchronously retrieve a string associated with given
+  // |user| that would be used in mount path instead of |user|.
+  // On success the data is sent to |callback|.
+  virtual void AsyncGetSanitizedUsername(
+      const std::string& user,
+      const DataCallback& callback) = 0;
 
   // Creates the global AsyncMethodCaller instance.
   static void Initialize();

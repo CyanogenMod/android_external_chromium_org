@@ -7,10 +7,8 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/prefs/public/pref_observer.h"
-#include "chrome/browser/api/prefs/pref_member.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "base/prefs/pref_member.h"
+#include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
@@ -21,9 +19,7 @@ class WebContents;
 }
 
 // Per-tab class to manage the Omnibox zoom icon.
-class ZoomController : public content::NotificationObserver,
-                       public PrefObserver,
-                       public content::WebContentsObserver,
+class ZoomController : public content::WebContentsObserver,
                        public content::WebContentsUserData<ZoomController> {
  public:
   virtual ~ZoomController();
@@ -38,23 +34,17 @@ class ZoomController : public content::NotificationObserver,
 
   void set_observer(ZoomObserver* observer) { observer_ = observer; }
 
- private:
-  explicit ZoomController(content::WebContents* web_contents);
-  friend class content::WebContentsUserData<ZoomController>;
-
   // content::WebContentsObserver overrides:
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
 
-  // content::NotificationObserver overrides:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+ private:
+  explicit ZoomController(content::WebContents* web_contents);
+  friend class content::WebContentsUserData<ZoomController>;
+  friend class ZoomControllerTest;
 
-  // PrefObserver overrides:
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
+  void OnZoomLevelChanged(const content::HostZoomMap::ZoomLevelChange& change);
 
   // Updates the zoom icon and zoom percentage based on current values and
   // notifies the observer if changes have occurred. |host| may be empty,
@@ -65,13 +55,15 @@ class ZoomController : public content::NotificationObserver,
   // The current zoom percentage.
   int zoom_percent_;
 
-  content::NotificationRegistrar registrar_;
-
   // Used to access the default zoom level preference.
   DoublePrefMember default_zoom_level_;
 
   // Observer receiving notifications on state changes.
   ZoomObserver* observer_;
+
+  content::BrowserContext* browser_context_;
+
+  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ZoomController);
 };

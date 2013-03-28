@@ -378,40 +378,6 @@
         </div>
       </div>
     </section>
-    <!-- Intent registration filter -->
-    <section>
-      <h3 i18n-content="webIntentsTabLabel" class="content-settings-header">
-      </h3>
-      <div class="checkbox">
-        <label>
-          <input pref="webintents.enabled" type="checkbox">
-          <span i18n-content="allowWebIntents"></span>
-        </label>
-      </div>
-    </section>
-    <!-- Pepper Flash camera and microphone filter -->
-    <section id="pepper-flash-cameramic-section" class="pepper-flash-settings">
-      <h3 i18n-content="pepperFlashCameramicTabLabel"></h3>
-      <div>
-        <div class="radio">
-          <label>
-            <input type="radio" name="pepper-flash-cameramic" value="ask">
-            <span i18n-content="pepperFlashCameramicAsk"></span>
-          </label>
-        </div>
-        <div class="radio">
-          <label>
-            <input type="radio" name="pepper-flash-cameramic" value="block">
-            <span i18n-content="pepperFlashCameramicBlock"></span>
-          </label>
-        </div>
-        <div class="settings-row">
-          <button class="exceptions-list-button"
-              contentType="pepper-flash-cameramic"
-              i18n-content="manageExceptions"></button>
-        </div>
-      </div>
-    </section>
 <if expr="pp_ifdef('chromeos')">
     <!-- Protected Content filter -->
     <section guest-visibility="disabled">
@@ -432,14 +398,27 @@
 </if>
     <!-- Media Stream capture device filter -->
     <section>
-      <h3 i18n-content="mediaStreamTabLabel"></h3>
+      <div class="section-header">
+        <h3 i18n-content="mediaStreamTabLabel"></h3>
+        <span id="media-indicator"
+            class="controlled-setting-indicator group-indicator"></span>
+      </div>
       <div>
+        <div class="media-device-control">
+          <span i18n-content="mediaSelectMicLabel"></span>
+          <select id="media-select-mic" class="weakrtl"></select>
+        </div>
+        <div class="media-device-control">
+          <span i18n-content="mediaSelectCameraLabel"></span>
+          <select id="media-select-camera" class="weakrtl"></select>
+        </div>
         <div class="radio">
           <span class="controlled-setting-with-label">
             <input id="media-stream-ask" type="radio" name="media-stream"
                 value="ask">
             <span>
-              <label for="media-stream-ask" i18n-content="mediaStreamAsk">
+              <label id="media-stream-ask-label" for="media-stream-ask"
+                  i18n-content="mediaStreamAsk">
               </label>
               <span class="controlled-setting-indicator"
                   content-setting="media-stream" value="ask">
@@ -452,7 +431,8 @@
             <input id="media-stream-block" type="radio" name="media-stream"
                 value="block">
             <span>
-              <label for="media-stream-block" i18n-content="mediaStreamBlock">
+              <label id="media-stream-block-label" for="media-stream-block"
+                  i18n-content="mediaStreamBlock">
               </label>
               <span class="controlled-setting-indicator"
                   content-setting="media-stream" value="block">
@@ -463,6 +443,11 @@
         <div class="settings-row">
           <button class="exceptions-list-button" contentType="media-stream"
               i18n-content="manageExceptions"></button>
+        </div>
+        <div id="media-pepper-flash-default" class="pepper-flash-settings">
+          <span i18n-content="mediaPepperFlashDefaultDivergedLabel"></span>
+          <a target="_blank" i18n-content="mediaPepperFlashChangeLink"
+              i18n-values="href:mediaPepperFlashGlobalPrivacyURL"></a>
         </div>
       </div>
     </section>
@@ -504,7 +489,8 @@
   </div>
   <div class="action-area">
     <div class="button-strip">
-      <button id="content-settings-overlay-confirm" i18n-content="ok"></button>
+      <button id="content-settings-overlay-confirm" i18n-content="done">
+      </button>
     </div>
   </div>
 </div>

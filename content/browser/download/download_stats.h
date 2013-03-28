@@ -92,7 +92,6 @@ enum DownloadSource {
   DOWNLOAD_SOURCE_LAST_ENTRY
 };
 
-
 // Increment one of the above counts.
 void RecordDownloadCount(DownloadCountTypes type);
 
@@ -109,6 +108,9 @@ void RecordDownloadInterrupted(DownloadInterruptReason reason,
 
 // Records the mime type of the download.
 void RecordDownloadMimeType(const std::string& mime_type);
+
+// Records usage of Content-Disposition header.
+void RecordDownloadContentDisposition(const std::string& content_disposition);
 
 // Record WRITE_SIZE_COUNT and data_len.
 void RecordDownloadWriteSize(size_t data_len);
@@ -127,10 +129,6 @@ void RecordBandwidth(double actual_bandwidth, double potential_bandwidth);
 // Record the time of both the first open and all subsequent opens since the
 // download completed.
 void RecordOpen(const base::Time& end, bool first);
-
-// Record the number of items that are in the history at the time that a
-// new download is added to the history.
-void RecordHistorySize(int size);
 
 // Record whether or not the server accepts ranges, and the download size.
 void RecordAcceptsRanges(const std::string& accepts_ranges, int64 download_len);

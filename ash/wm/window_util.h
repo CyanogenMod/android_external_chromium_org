@@ -48,6 +48,15 @@ ASH_EXPORT bool IsActiveWindowFullscreen();
 // Returns true if |window| can be maximized.
 ASH_EXPORT bool CanMaximizeWindow(const aura::Window* window);
 
+// Returns true if |window| can be minimized.
+ASH_EXPORT bool CanMinimizeWindow(const aura::Window* window);
+
+// Returns true if |window| can be resized.
+ASH_EXPORT bool CanResizeWindow(const aura::Window* window);
+
+// Returns true if |window| can be snapped to the left or right.
+ASH_EXPORT bool CanSnapWindow(aura::Window* window);
+
 // Returns true if |window| is normal or default.
 ASH_EXPORT bool IsWindowNormal(const aura::Window* window);
 
@@ -78,21 +87,6 @@ ASH_EXPORT void ToggleMaximizedWindow(aura::Window* window);
 // Moves the window to the center of the display.
 ASH_EXPORT void CenterWindow(aura::Window* window);
 
-// Returns the existing Layer for |window| (and all its descendants) and creates
-// a new layer for |window| and all its descendants. This is intended for
-// animations that want to animate between the existing visuals and a new window
-// state. The caller owns the return value.
-//
-// As a result of this |window| has freshly created layers, meaning the layers
-// are all empty (nothing has been painted to them) and are sized to 0x0. Soon
-// after this call you need to reset the bounds of the window. Or, you can pass
-// true as the second argument to let the function do that.
-ASH_EXPORT ui::Layer* RecreateWindowLayers(aura::Window* window,
-                                           bool set_bounds) WARN_UNUSED_RESULT;
-
-// Deletes |layer| and all its child layers.
-ASH_EXPORT void DeepDeleteLayers(ui::Layer* layer);
-
 // Returns true if |window|'s position can automatically be managed.
 ASH_EXPORT bool IsWindowPositionManaged(const aura::Window* window);
 
@@ -116,10 +110,19 @@ ASH_EXPORT const gfx::Rect* GetPreAutoManageWindowBounds(
 ASH_EXPORT void SetPreAutoManageWindowBounds(aura::Window* window,
                                              const gfx::Rect& bounds);
 
-// Move the given bounds inside the given work area, including a safety margin.
+// Move the given bounds inside the given work area, including a safety margin
+// given by |kMinimumOnScreenArea|.
+ASH_EXPORT void AdjustBoundsToEnsureMinimumWindowVisibility(
+    const gfx::Rect& work_area,
+    gfx::Rect* bounds);
+
+// Move the given bounds inside the given work area, including a safety margin
+// given by |min_width| and |min_height|.
 ASH_EXPORT void AdjustBoundsToEnsureWindowVisibility(
-    gfx::Rect* bounds,
-    const gfx::Rect& work_area);
+    const gfx::Rect& work_area,
+    int min_width,
+    int min_height,
+    gfx::Rect* bounds);
 
 }  // namespace wm
 }  // namespace ash

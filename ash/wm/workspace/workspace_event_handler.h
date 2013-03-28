@@ -23,8 +23,8 @@ class WorkspaceEventHandler : public ToplevelWindowEventHandler {
   virtual ~WorkspaceEventHandler();
 
   // Overridden from ToplevelWindowEventHandler:
-  virtual ui::EventResult OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
  private:
   friend class WorkspaceEventHandlerTestHelper;

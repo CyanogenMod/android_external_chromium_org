@@ -7,16 +7,12 @@
 #include "ash/root_window_controller.h"
 #include "ash/wm/always_on_top_controller.h"
 #include "ash/wm/frame_painter.h"
-#include "ash/wm/shadow_types.h"
 #include "ui/aura/window_property.h"
 #include "ui/gfx/rect.h"
-#include "ui/ui_controls/ui_controls_aura.h"
 
 DECLARE_WINDOW_PROPERTY_TYPE(ash::internal::AlwaysOnTopController*);
-DECLARE_WINDOW_PROPERTY_TYPE(ash::internal::ShadowType);
 DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(ASH_EXPORT, ash::FramePainter*);
 DECLARE_WINDOW_PROPERTY_TYPE(ash::WindowPersistsAcrossAllWorkspacesType)
-DECLARE_WINDOW_PROPERTY_TYPE(ui_controls::UIControlsAura*)
 DECLARE_WINDOW_PROPERTY_TYPE(ash::internal::RootWindowController*);
 
 namespace ash {
@@ -24,20 +20,18 @@ namespace internal {
 DEFINE_OWNED_WINDOW_PROPERTY_KEY(ash::internal::AlwaysOnTopController,
                                  kAlwaysOnTopControllerKey,
                                  NULL);
-DEFINE_WINDOW_PROPERTY_KEY(
-    bool, kChildWindowVisibilityChangesAnimatedKey, false);
+DEFINE_WINDOW_PROPERTY_KEY(bool, kContinueDragAfterReparent, false);
+DEFINE_WINDOW_PROPERTY_KEY(bool, kCyclingThroughWorkspacesKey, false);
+DEFINE_WINDOW_PROPERTY_KEY(bool, kIgnoreSoloWindowFramePainterPolicy, false);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kIgnoredByShelfKey, false);
+DEFINE_WINDOW_PROPERTY_KEY(bool, kImmersiveModeKey, false);
+DEFINE_WINDOW_PROPERTY_KEY(bool, kPanelAttachedKey, true);
 DEFINE_WINDOW_PROPERTY_KEY(
     ui::WindowShowState, kRestoreShowStateKey, ui::SHOW_STATE_DEFAULT);
 DEFINE_WINDOW_PROPERTY_KEY(RootWindowController*,
                            kRootWindowControllerKey, NULL);
-DEFINE_WINDOW_PROPERTY_KEY(ShadowType, kShadowTypeKey, SHADOW_TYPE_NONE);
-DEFINE_WINDOW_PROPERTY_KEY(
-    ash::FramePainter*, kSoloWindowFramePainterKey, NULL);
+DEFINE_WINDOW_PROPERTY_KEY(bool, kSoloWindowHeaderKey, false);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kStayInSameRootWindowKey, false);
-DEFINE_OWNED_WINDOW_PROPERTY_KEY(ui_controls::UIControlsAura,
-                                 kUIControlsKey,
-                                 NULL);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kUsesScreenCoordinatesKey, false);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kUserChangedWindowPositionOrSizeKey, false);
 DEFINE_OWNED_WINDOW_PROPERTY_KEY(gfx::Rect,
@@ -47,6 +41,7 @@ DEFINE_WINDOW_PROPERTY_KEY(ash::WindowPersistsAcrossAllWorkspacesType,
                            kWindowPersistsAcrossAllWorkspacesKey,
                            WINDOW_PERSISTS_ACROSS_ALL_WORKSPACES_VALUE_DEFAULT);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kWindowPositionManagedKey, false);
+DEFINE_WINDOW_PROPERTY_KEY(bool, kWindowRestoresToRestoreBounds, false);
 DEFINE_WINDOW_PROPERTY_KEY(bool, kWindowTrackedByWorkspaceKey, true);
 
 }  // namespace internal

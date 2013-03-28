@@ -72,9 +72,19 @@ void BitmapPlatformDevice::DrawToNativeContext(
   SkASSERT(false);
 }
 
-// Port of PlatformBitmap to android
+// PlatformCanvas impl
 
-PlatformBitmap::~PlatformBitmap() {}
+SkCanvas* CreatePlatformCanvas(int width, int height, bool is_opaque,
+                               uint8_t* data, OnFailureType failureType) {
+  skia::RefPtr<SkDevice> dev = skia::AdoptRef(
+      BitmapPlatformDevice::Create(width, height, is_opaque, data));
+  return CreateCanvas(dev, failureType);
+}
+
+// Port of PlatformBitmap to android
+PlatformBitmap::~PlatformBitmap() {
+  // Nothing to do.
+}
 
 bool PlatformBitmap::Allocate(int width, int height, bool is_opaque) {
   bitmap_.setConfig(SkBitmap::kARGB_8888_Config, width, height);

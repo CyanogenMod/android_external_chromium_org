@@ -4,7 +4,6 @@
 
 #include "content/renderer/pepper/pepper_audio_input_host.h"
 
-#include "base/bind.h"
 #include "base/logging.h"
 #include "build/build_config.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
@@ -15,7 +14,6 @@
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/serialized_structs.h"
-#include "ppapi/shared_impl/ppb_device_ref_shared.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 
 namespace content {
@@ -45,7 +43,9 @@ PepperAudioInputHost::PepperAudioInputHost(
     PP_Resource resource)
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       renderer_ppapi_host_(host),
-      audio_input_(NULL) {
+      audio_input_(NULL),
+      ALLOW_THIS_IN_INITIALIZER_LIST(
+          enumeration_helper_(this, this, PP_DEVICETYPE_DEV_AUDIOCAPTURE)) {
 }
 
 PepperAudioInputHost::~PepperAudioInputHost() {
@@ -55,14 +55,16 @@ PepperAudioInputHost::~PepperAudioInputHost() {
 int32_t PepperAudioInputHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
+  int32_t result = PP_ERROR_FAILED;
+  if (enumeration_helper_.HandleResourceMessage(msg, context, &result))
+    return result;
+
   IPC_BEGIN_MESSAGE_MAP(PepperAudioInputHost, msg)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(
-        PpapiHostMsg_AudioInput_EnumerateDevices, OnMsgEnumerateDevices)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_AudioInput_Open, OnMsgOpen)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_AudioInput_Open, OnOpen)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_AudioInput_StartOrStop,
-                                      OnMsgStartOrStop);
+                                      OnStartOrStop);
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_AudioInput_Close,
-                                        OnMsgClose);
+                                        OnClose);
   IPC_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
@@ -79,26 +81,15 @@ void PepperAudioInputHost::StreamCreationFailed() {
                  base::SyncSocket::kInvalidHandle);
 }
 
-int32_t PepperAudioInputHost::OnMsgEnumerateDevices(
-    ppapi::host::HostMessageContext* context) {
-  if (enumerate_devices_context_.get())
-    return PP_ERROR_INPROGRESS;
-
-  webkit::ppapi::PluginDelegate* plugin_delegate = GetDelegate();
-  if (!plugin_delegate)
-    return PP_ERROR_FAILED;
-
-  enumerate_devices_context_.reset(
-      new ppapi::host::ReplyMessageContext(context->MakeReplyMessageContext()));
-  // Note that the callback may be called synchronously.
-  plugin_delegate->EnumerateDevices(
-      PP_DEVICETYPE_DEV_AUDIOCAPTURE,
-      base::Bind(&PepperAudioInputHost::EnumerateDevicesCallbackFunc,
-                 AsWeakPtr()));
-  return PP_OK_COMPLETIONPENDING;
+webkit::ppapi::PluginDelegate* PepperAudioInputHost::GetPluginDelegate() {
+  webkit::ppapi::PluginInstance* instance =
+      renderer_ppapi_host_->GetPluginInstance(pp_instance());
+  if (instance)
+    return instance->delegate();
+  return NULL;
 }
 
-int32_t PepperAudioInputHost::OnMsgOpen(
+int32_t PepperAudioInputHost::OnOpen(
     ppapi::host::HostMessageContext* context,
     const std::string& device_id,
     PP_AudioSampleRate sample_rate,
@@ -108,7 +99,7 @@ int32_t PepperAudioInputHost::OnMsgOpen(
   if (audio_input_)
     return PP_ERROR_FAILED;
 
-  webkit::ppapi::PluginDelegate* plugin_delegate = GetDelegate();
+  webkit::ppapi::PluginDelegate* plugin_delegate = GetPluginDelegate();
   if (!plugin_delegate)
     return PP_ERROR_FAILED;
 
@@ -125,7 +116,7 @@ int32_t PepperAudioInputHost::OnMsgOpen(
   }
 }
 
-int32_t PepperAudioInputHost::OnMsgStartOrStop(
+int32_t PepperAudioInputHost::OnStartOrStop(
     ppapi::host::HostMessageContext* /* context */,
     bool capture) {
   if (!audio_input_)
@@ -137,29 +128,10 @@ int32_t PepperAudioInputHost::OnMsgStartOrStop(
   return PP_OK;
 }
 
-int32_t PepperAudioInputHost::OnMsgClose(
+int32_t PepperAudioInputHost::OnClose(
     ppapi::host::HostMessageContext* /* context */) {
   Close();
   return PP_OK;
-}
-
-void PepperAudioInputHost::EnumerateDevicesCallbackFunc(
-    int request_id,
-    bool succeeded,
-    const std::vector<ppapi::DeviceRefData>& devices) {
-  DCHECK(enumerate_devices_context_.get());
-
-  webkit::ppapi::PluginDelegate* plugin_delegate = GetDelegate();
-  if (plugin_delegate)
-    plugin_delegate->StopEnumerateDevices(request_id);
-
-  enumerate_devices_context_->params.set_result(
-      succeeded ? PP_OK : PP_ERROR_FAILED);
-  host()->SendReply(
-      *enumerate_devices_context_,
-      PpapiPluginMsg_AudioInput_EnumerateDevicesReply(
-          succeeded ? devices : std::vector<ppapi::DeviceRefData>()));
-  enumerate_devices_context_.reset();
 }
 
 void PepperAudioInputHost::OnOpenComplete(
@@ -241,14 +213,6 @@ void PepperAudioInputHost::Close() {
     host()->SendReply(*open_context_, PpapiPluginMsg_AudioInput_OpenReply());
     open_context_.reset();
   }
-}
-
-webkit::ppapi::PluginDelegate* PepperAudioInputHost::GetDelegate() const {
-  webkit::ppapi::PluginInstance* instance =
-      renderer_ppapi_host_->GetPluginInstance(pp_instance());
-  if (instance)
-    return instance->delegate();
-  return NULL;
 }
 
 }  // namespace content

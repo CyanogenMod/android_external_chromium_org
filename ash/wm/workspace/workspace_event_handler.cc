@@ -6,6 +6,7 @@
 
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "ash/wm/property_util.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace/workspace_window_resizer.h"
@@ -25,9 +26,7 @@ void SingleAxisMaximize(aura::Window* window, const gfx::Rect& maximize_rect) {
   gfx::Rect bounds_in_screen =
       ScreenAsh::ConvertRectToScreen(window->parent(), window->bounds());
 
-  window->ClearProperty(aura::client::kRestoreBoundsKey);
-  window->SetProperty(aura::client::kRestoreBoundsKey,
-                      new gfx::Rect(bounds_in_screen));
+  SetRestoreBoundsInScreen(window, bounds_in_screen);
   window->SetBounds(maximize_rect);
 }
 
@@ -36,7 +35,7 @@ void SingleAxisUnmaximize(aura::Window* window,
   gfx::Rect restore_bounds = ScreenAsh::ConvertRectFromScreen(
       window->parent(), restore_bounds_in_screen);
   window->SetBounds(restore_bounds);
-  window->ClearProperty(aura::client::kRestoreBoundsKey);
+  ClearRestoreBounds(window);
 }
 
 void ToggleMaximizedState(aura::Window* window) {
@@ -67,7 +66,7 @@ WorkspaceEventHandler::~WorkspaceEventHandler() {
     *destroyed_ = true;
 }
 
-ui::EventResult WorkspaceEventHandler::OnMouseEvent(ui::MouseEvent* event) {
+void WorkspaceEventHandler::OnMouseEvent(ui::MouseEvent* event) {
   aura::Window* target = static_cast<aura::Window*>(event->target());
   switch (event->type()) {
     case ui::ET_MOUSE_MOVED: {
@@ -85,17 +84,21 @@ ui::EventResult WorkspaceEventHandler::OnMouseEvent(ui::MouseEvent* event) {
     case ui::ET_MOUSE_PRESSED: {
       // Maximize behavior is implemented as post-target handling so the target
       // can cancel it.
-      if (ui::EventCanceledDefaultHandling(*event))
-        return ToplevelWindowEventHandler::OnMouseEvent(event);
+      if (ui::EventCanceledDefaultHandling(*event)) {
+        ToplevelWindowEventHandler::OnMouseEvent(event);
+        return;
+      }
 
       if (event->flags() & ui::EF_IS_DOUBLE_CLICK &&
           target->delegate()->GetNonClientComponent(event->location()) ==
           HTCAPTION) {
         bool destroyed = false;
         destroyed_ = &destroyed;
+        ash::Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+            ash::UMA_TOGGLE_MAXIMIZE_CAPTION_CLICK);
         ToggleMaximizedState(target);
         if (destroyed)
-          return ui::ER_UNHANDLED;
+          return;
         destroyed_ = NULL;
       }
       multi_window_resize_controller_.Hide();
@@ -105,23 +108,28 @@ ui::EventResult WorkspaceEventHandler::OnMouseEvent(ui::MouseEvent* event) {
     default:
       break;
   }
-  return ToplevelWindowEventHandler::OnMouseEvent(event);
+  ToplevelWindowEventHandler::OnMouseEvent(event);
 }
 
-ui::EventResult WorkspaceEventHandler::OnGestureEvent(ui::GestureEvent* event) {
+void WorkspaceEventHandler::OnGestureEvent(ui::GestureEvent* event) {
   aura::Window* target = static_cast<aura::Window*>(event->target());
-  if (event->type() == ui::ET_GESTURE_DOUBLE_TAP &&
+  if (event->type() == ui::ET_GESTURE_TAP &&
+      event->details().tap_count() == 2 &&
       target->delegate()->GetNonClientComponent(event->location()) ==
       HTCAPTION) {
+    ash::Shell::GetInstance()->delegate()->RecordUserMetricsAction(
+        ash::UMA_TOGGLE_MAXIMIZE_CAPTION_GESTURE);
     ToggleMaximizedState(target);  // |this| may be destroyed from here.
-    return ui::ER_CONSUMED;
+    event->StopPropagation();
+    return;
   }
-  return ToplevelWindowEventHandler::OnGestureEvent(event);
+  ToplevelWindowEventHandler::OnGestureEvent(event);
 }
 
 void WorkspaceEventHandler::HandleVerticalResizeDoubleClick(
     aura::Window* target,
     ui::MouseEvent* event) {
+  gfx::Rect max_size(target->delegate()->GetMaximumSize());
   if (event->flags() & ui::EF_IS_DOUBLE_CLICK &&
       !wm::IsWindowMaximized(target)) {
     int component =
@@ -129,8 +137,11 @@ void WorkspaceEventHandler::HandleVerticalResizeDoubleClick(
     gfx::Rect work_area =
         Shell::GetScreen()->GetDisplayNearestWindow(target).work_area();
     const gfx::Rect* restore_bounds =
-        target->GetProperty(aura::client::kRestoreBoundsKey);
+        GetRestoreBoundsInScreen(target);
     if (component == HTBOTTOM || component == HTTOP) {
+      // Don't maximize vertically if the window has a max height defined.
+      if (max_size.height() != 0)
+        return;
       if (restore_bounds &&
           (target->bounds().height() == work_area.height() &&
            target->bounds().y() == work_area.y())) {
@@ -143,6 +154,9 @@ void WorkspaceEventHandler::HandleVerticalResizeDoubleClick(
                                      work_area.height()));
       }
     } else if (component == HTLEFT || component == HTRIGHT) {
+      // Don't maximize horizontally if the window has a max width defined.
+      if (max_size.width() != 0)
+        return;
       if (restore_bounds &&
           (target->bounds().width() == work_area.width() &&
            target->bounds().x() == work_area.x())) {

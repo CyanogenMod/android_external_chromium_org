@@ -7,7 +7,10 @@
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "base/run_loop.h"
+#include "base/utf_string_conversions.h"
+#include "base/values.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/test/test_launcher.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -42,6 +45,27 @@ void RunAllPendingMessageAndSendQuit(BrowserThread::ID thread_id,
   BrowserThread::PostTask(thread_id, FROM_HERE, quit_task);
 }
 
+// Class used handle result callbacks for ExecuteScriptAndGetValue.
+class ScriptCallback {
+ public:
+  ScriptCallback() { }
+  virtual ~ScriptCallback() { }
+  void ResultCallback(const base::Value* result);
+
+  scoped_ptr<base::Value> result() { return result_.Pass(); }
+
+ private:
+  scoped_ptr<base::Value> result_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScriptCallback);
+};
+
+void ScriptCallback::ResultCallback(const base::Value* result) {
+  if (result)
+    result_.reset(result->DeepCopy());
+  MessageLoop::current()->Quit();
+}
+
 }  // namespace
 
 void RunMessageLoop() {
@@ -54,7 +78,10 @@ void RunThisRunLoop(base::RunLoop* run_loop) {
 
   // If we're running inside a browser test, we might need to allow the test
   // launcher to do extra work before/after running a nested message loop.
-  TestLauncherDelegate* delegate = GetCurrentTestLauncherDelegate();
+  TestLauncherDelegate* delegate = NULL;
+#if !defined(OS_IOS)
+  delegate = GetCurrentTestLauncherDelegate();
+#endif
   if (delegate)
     delegate->PreRunMessageLoop(run_loop);
   run_loop->Run();
@@ -91,13 +118,36 @@ base::Closure GetQuitTaskForRunLoop(base::RunLoop* run_loop) {
                     kNumQuitDeferrals);
 }
 
-MessageLoopRunner::MessageLoopRunner() {
+scoped_ptr<base::Value> ExecuteScriptAndGetValue(
+    RenderViewHost* render_view_host,
+    const std::string& script) {
+  ScriptCallback observer;
+
+  render_view_host->ExecuteJavascriptInWebFrameCallbackResult(
+      string16(),  // frame_xpath,
+      UTF8ToUTF16(script),
+      base::Bind(&ScriptCallback::ResultCallback, base::Unretained(&observer)));
+  MessageLoop* loop = MessageLoop::current();
+  loop->Run();
+  return observer.result().Pass();
+}
+
+MessageLoopRunner::MessageLoopRunner()
+    : loop_running_(false),
+      quit_closure_called_(false) {
 }
 
 MessageLoopRunner::~MessageLoopRunner() {
 }
 
 void MessageLoopRunner::Run() {
+  // Do not run the message loop if our quit closure has already been called.
+  // This helps in scenarios where the closure has a chance to run before
+  // we Run explicitly.
+  if (quit_closure_called_)
+    return;
+
+  loop_running_ = true;
   RunThisRunLoop(&run_loop_);
 }
 
@@ -106,7 +156,13 @@ base::Closure MessageLoopRunner::QuitClosure() {
 }
 
 void MessageLoopRunner::Quit() {
-  GetQuitTaskForRunLoop(&run_loop_).Run();
+  quit_closure_called_ = true;
+
+  // Only run the quit task if we are running the message loop.
+  if (loop_running_) {
+    GetQuitTaskForRunLoop(&run_loop_).Run();
+    loop_running_ = false;
+  }
 }
 
 WindowedNotificationObserver::WindowedNotificationObserver(

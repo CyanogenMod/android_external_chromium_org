@@ -18,6 +18,15 @@
 #include "dbus/object_proxy.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
+namespace {
+
+// The |Connect| DBus call needs a longer timeout than the default in order to
+// give BlueZ enough time to return the timeout error response.
+// See crosbug.com/37607
+const int kConnectTimeoutMs = 50 * 1000;
+
+} // namespace
+
 namespace chromeos {
 
 const char BluetoothInputClient::kNoResponseError[] =
@@ -44,8 +53,6 @@ class BluetoothInputClientImpl: public BluetoothInputClient,
                            BluetoothAdapterClient* adapter_client)
       : bus_(bus),
       weak_ptr_factory_(this) {
-    DVLOG(1) << "Creating BluetoothInputClientImpl";
-
     DCHECK(adapter_client);
     adapter_client->AddObserver(this);
   }
@@ -92,7 +99,7 @@ class BluetoothInputClientImpl: public BluetoothInputClient,
 
     object_proxy->CallMethodWithErrorCallback(
         &method_call,
-        dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+        kConnectTimeoutMs,
         base::Bind(&BluetoothInputClientImpl::OnConnect,
                    weak_ptr_factory_.GetWeakPtr(), object_path,
                    callback),
@@ -209,7 +216,7 @@ class BluetoothInputClientImpl: public BluetoothInputClient,
     if (response) {
       dbus::MessageReader reader(response);
       error_name = response->GetErrorName();
-      error_message = reader.PopString(&error_message);
+      reader.PopString(&error_message);
     } else {
       error_name = kNoResponseError;
       error_message = "";

@@ -8,6 +8,7 @@
 #include <string>
 
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -20,16 +21,15 @@ namespace chromeos {
 class AuthAttemptState {
  public:
   // Used to initialize for a login attempt.
-  AuthAttemptState(const std::string& username,
-                   const std::string& password,
+  AuthAttemptState(const UserCredentials& credentials,
                    const std::string& ascii_hash,
                    const std::string& login_token,
                    const std::string& login_captcha,
+                   const User::UserType user_type,
                    const bool user_is_new);
 
   // Used to initialize for a externally authenticated login.
-  AuthAttemptState(const std::string& username,
-                   const std::string& password,
+  AuthAttemptState(const UserCredentials& credentials,
                    const std::string& ascii_hash,
                    const bool user_is_new);
 
@@ -66,21 +66,17 @@ class AuthAttemptState {
   virtual bool cryptohome_outcome();
   virtual cryptohome::MountError cryptohome_code();
 
-  const std::string oauth1_access_token() const { return oauth1_access_token_; }
-  const std::string oauth1_access_secret() const {
-    return oauth1_access_secret_;
-  }
-  void SetOAuth1Token(const std::string& token, const std::string& secret);
-
   // Saved so we can retry client login, and also so we know for whom login
   // has succeeded, in the event of successful completion.
-  const std::string username;
+  const UserCredentials credentials;
 
   // These fields are saved so we can retry client login.
-  const std::string password;
   const std::string ascii_hash;
   const std::string login_token;
   const std::string login_captcha;
+
+  // The type of the user attempting to log in.
+  const User::UserType user_type;
 
   const bool unlock;  // True if authenticating to unlock the computer.
 
@@ -98,8 +94,6 @@ class AuthAttemptState {
   bool cryptohome_complete_;
   bool cryptohome_outcome_;
   cryptohome::MountError cryptohome_code_;
-  std::string oauth1_access_token_;
-  std::string oauth1_access_secret_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AuthAttemptState);

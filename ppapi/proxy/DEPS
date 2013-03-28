@@ -1,7 +1,8 @@
 include_rules = [
   "+base",
-  "+ipc",
+  "+components/tracing",
   "+gpu",
+  "+ipc",
   "+media/audio",
   "+skia",
   "+ui/surface",

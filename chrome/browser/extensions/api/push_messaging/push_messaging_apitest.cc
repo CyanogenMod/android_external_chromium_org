@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_api.h"
+
+#include "base/stringprintf.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_mapper.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/extensions/platform_app_launcher.h"
 #include "chrome/browser/profiles/profile.h"
@@ -25,11 +25,22 @@ using ::testing::StrictMock;
 
 namespace extensions {
 
+namespace {
+
+invalidation::ObjectId ExtensionAndSubchannelToObjectId(
+    const std::string& extension_id, int subchannel_id) {
+  return invalidation::ObjectId(
+      ipc::invalidation::ObjectSource::CHROME_PUSH_MESSAGING,
+      base::StringPrintf("U/%s/%d", extension_id.c_str(), subchannel_id));
+}
+
 class MockInvalidationMapper : public PushMessagingInvalidationMapper {
  public:
   MockInvalidationMapper();
   ~MockInvalidationMapper();
 
+  MOCK_METHOD1(SuppressInitialInvalidationsForExtension,
+               void(const std::string&));
   MOCK_METHOD1(RegisterExtension, void(const std::string&));
   MOCK_METHOD1(UnregisterExtension, void(const std::string&));
 };
@@ -37,29 +48,32 @@ class MockInvalidationMapper : public PushMessagingInvalidationMapper {
 MockInvalidationMapper::MockInvalidationMapper() {}
 MockInvalidationMapper::~MockInvalidationMapper() {}
 
+}  // namespace
+
 class PushMessagingApiTest : public ExtensionApiTest {
  public:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
   }
 
+  PushMessagingAPI* GetAPI() {
+    return PushMessagingAPI::Get(profile());
+  }
+
   PushMessagingEventRouter* GetEventRouter() {
-    return ExtensionSystem::Get(browser()->profile())->extension_service()->
-        push_messaging_event_router();
+    return PushMessagingAPI::Get(profile())->GetEventRouterForTest();
   }
 };
 
 IN_PROC_BROWSER_TEST_F(PushMessagingApiTest, EventDispatch) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
-  ExtensionTestMessageListener ready("ready", true);
+  catcher.RestrictToProfile(profile());
 
   const extensions::Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("push_messaging"));
   ASSERT_TRUE(extension);
   ui_test_utils::NavigateToURL(
       browser(), extension->GetResourceURL("event_dispatch.html"));
-  EXPECT_TRUE(ready.WaitUntilSatisfied());
 
   GetEventRouter()->TriggerMessageForTest(extension->id(), 1, "payload");
 
@@ -70,29 +84,27 @@ IN_PROC_BROWSER_TEST_F(PushMessagingApiTest, EventDispatch) {
 // that we install.
 IN_PROC_BROWSER_TEST_F(PushMessagingApiTest, ReceivesPush) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
-  ExtensionTestMessageListener ready("ready", true);
+  catcher.RestrictToProfile(profile());
 
   const extensions::Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("push_messaging"));
   ASSERT_TRUE(extension);
   ui_test_utils::NavigateToURL(
       browser(), extension->GetResourceURL("event_dispatch.html"));
-  EXPECT_TRUE(ready.WaitUntilSatisfied());
 
-  ProfileSyncService* pss = ProfileSyncServiceFactory::GetForProfile(
-      browser()->profile());
+  ProfileSyncService* pss =
+      ProfileSyncServiceFactory::GetForProfile(profile());
   ASSERT_TRUE(pss);
 
-  // Construct a sync id for the object "U/<extension-id>/1".
-  std::string id = "U/";
-  id += extension->id();
-  id += "/1";
+  // PushMessagingInvalidationHandler suppresses the initial invalidation on
+  // each subchannel at install, so trigger the suppressions first.
+  for (int i = 0; i < 3; ++i) {
+    pss->EmitInvalidationForTest(
+        ExtensionAndSubchannelToObjectId(extension->id(), i), std::string());
+  }
 
-  invalidation::ObjectId object_id(
-      ipc::invalidation::ObjectSource::CHROME_PUSH_MESSAGING, id);
-
-  pss->EmitInvalidationForTest(object_id, "payload");
+  pss->EmitInvalidationForTest(
+      ExtensionAndSubchannelToObjectId(extension->id(), 1), "payload");
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
@@ -103,16 +115,20 @@ IN_PROC_BROWSER_TEST_F(PushMessagingApiTest, AutoRegistration) {
       new StrictMock<MockInvalidationMapper>);
   StrictMock<MockInvalidationMapper>* unsafe_mapper = mapper.get();
   // PushMessagingEventRouter owns the mapper now.
-  GetEventRouter()->SetMapperForTest(
+  GetAPI()->SetMapperForTest(
       mapper.PassAs<PushMessagingInvalidationMapper>());
 
-  std::string extension_id;
+  std::string extension_id1;
+  std::string extension_id2;
+  EXPECT_CALL(*unsafe_mapper, SuppressInitialInvalidationsForExtension(_))
+      .WillOnce(SaveArg<0>(&extension_id1));
   EXPECT_CALL(*unsafe_mapper, RegisterExtension(_))
-      .WillOnce(SaveArg<0>(&extension_id));
+      .WillOnce(SaveArg<0>(&extension_id2));
   const extensions::Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("push_messaging"));
   ASSERT_TRUE(extension);
-  EXPECT_EQ(extension->id(), extension_id);
+  EXPECT_EQ(extension->id(), extension_id1);
+  EXPECT_EQ(extension->id(), extension_id2);
   EXPECT_CALL(*unsafe_mapper, UnregisterExtension(extension->id()));
   UnloadExtension(extension->id());
 }
@@ -122,7 +138,7 @@ IN_PROC_BROWSER_TEST_F(PushMessagingApiTest, AutoRegistration) {
 IN_PROC_BROWSER_TEST_F(PushMessagingApiTest, PRE_Restart) {
   PushMessagingInvalidationHandler* handler =
       static_cast<PushMessagingInvalidationHandler*>(
-          GetEventRouter()->GetMapperForTest());
+          GetAPI()->GetMapperForTest());
   EXPECT_TRUE(handler->GetRegisteredExtensionsForTest().empty());
   ASSERT_TRUE(InstallExtension(test_data_dir_.AppendASCII("push_messaging"),
                                1 /* new install */));
@@ -131,14 +147,14 @@ IN_PROC_BROWSER_TEST_F(PushMessagingApiTest, PRE_Restart) {
 IN_PROC_BROWSER_TEST_F(PushMessagingApiTest, Restart) {
   PushMessagingInvalidationHandler* handler =
       static_cast<PushMessagingInvalidationHandler*>(
-          GetEventRouter()->GetMapperForTest());
+          GetAPI()->GetMapperForTest());
   EXPECT_EQ(1U, handler->GetRegisteredExtensionsForTest().size());
 }
 
 // Test that GetChannelId fails if no user is signed in.
 IN_PROC_BROWSER_TEST_F(PushMessagingApiTest, GetChannelId) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToProfile(profile());
 
   const extensions::Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("push_messaging"));

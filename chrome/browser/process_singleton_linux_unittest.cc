@@ -4,19 +4,20 @@
 
 #include "chrome/browser/process_singleton.h"
 
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <signal.h>
 #include <unistd.h>
-#include <vector>
+
 #include <string>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/process_util.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
@@ -32,12 +33,23 @@ using content::BrowserThread;
 namespace {
 
 bool NotificationCallback(const CommandLine& command_line,
-                          const FilePath& current_directory) {
+                          const base::FilePath& current_directory) {
   return true;
 }
 
 class ProcessSingletonLinuxTest : public testing::Test {
  public:
+  // A ProcessSingleton exposing some protected methods for testing.
+  class TestableProcessSingleton : public ProcessSingleton {
+   public:
+    explicit TestableProcessSingleton(const base::FilePath& user_data_dir)
+        : ProcessSingleton(user_data_dir) {}
+    using ProcessSingleton::NotifyOtherProcessWithTimeout;
+    using ProcessSingleton::NotifyOtherProcessWithTimeoutOrCreate;
+    using ProcessSingleton::OverrideCurrentPidForTesting;
+    using ProcessSingleton::OverrideKillCallbackForTesting;
+  };
+
   ProcessSingletonLinuxTest()
       : kill_callbacks_(0),
         io_thread_(BrowserThread::IO),
@@ -98,14 +110,15 @@ class ProcessSingletonLinuxTest : public testing::Test {
     ASSERT_TRUE(helper->Run());
   }
 
-  ProcessSingleton* CreateProcessSingleton() {
-    return new ProcessSingleton(temp_dir_.path());
+  TestableProcessSingleton* CreateProcessSingleton() {
+    return new TestableProcessSingleton(temp_dir_.path());
   }
 
   ProcessSingleton::NotifyResult NotifyOtherProcess(
       bool override_kill,
       base::TimeDelta timeout) {
-    scoped_ptr<ProcessSingleton> process_singleton(CreateProcessSingleton());
+    scoped_ptr<TestableProcessSingleton> process_singleton(
+        CreateProcessSingleton());
     CommandLine command_line(CommandLine::ForCurrentProcess()->GetProgram());
     command_line.AppendArg("about:blank");
     if (override_kill) {
@@ -123,7 +136,8 @@ class ProcessSingletonLinuxTest : public testing::Test {
   ProcessSingleton::NotifyResult NotifyOtherProcessOrCreate(
       const std::string& url,
       base::TimeDelta timeout) {
-    scoped_ptr<ProcessSingleton> process_singleton(CreateProcessSingleton());
+    scoped_ptr<TestableProcessSingleton> process_singleton(
+        CreateProcessSingleton());
     CommandLine command_line(CommandLine::ForCurrentProcess()->GetProgram());
     command_line.AppendArg(url);
     return process_singleton->NotifyOtherProcessWithTimeoutOrCreate(
@@ -160,9 +174,9 @@ class ProcessSingletonLinuxTest : public testing::Test {
     signal_event_.Signal();
   }
 
-  FilePath lock_path_;
-  FilePath socket_path_;
-  FilePath cookie_path_;
+  base::FilePath lock_path_;
+  base::FilePath socket_path_;
+  base::FilePath cookie_path_;
   int kill_callbacks_;
 
  private:
@@ -181,7 +195,7 @@ class ProcessSingletonLinuxTest : public testing::Test {
   }
 
   bool InternalCallback(const CommandLine& command_line,
-                        const FilePath& current_directory) {
+                        const base::FilePath& current_directory) {
     callback_command_lines_.push_back(command_line.argv());
     return true;
   }
@@ -191,12 +205,12 @@ class ProcessSingletonLinuxTest : public testing::Test {
   }
 
   content::TestBrowserThread io_thread_;
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   base::WaitableEvent wait_event_;
   base::WaitableEvent signal_event_;
 
   scoped_ptr<base::Thread> worker_thread_;
-  ProcessSingleton* process_singleton_on_thread_;
+  TestableProcessSingleton* process_singleton_on_thread_;
 
   std::vector<CommandLine::StringVector> callback_command_lines_;
 };
@@ -220,7 +234,7 @@ TEST_F(ProcessSingletonLinuxTest, CheckSocketFile) {
 
   len = readlink(socket_path_.value().c_str(), buf, PATH_MAX);
   ASSERT_GT(len, 0);
-  FilePath socket_target_path = FilePath(std::string(buf, len));
+  base::FilePath socket_target_path = base::FilePath(std::string(buf, len));
 
   ASSERT_EQ(0, lstat(socket_target_path.value().c_str(), &statbuf));
   ASSERT_TRUE(S_ISSOCK(statbuf.st_mode));
@@ -229,7 +243,7 @@ TEST_F(ProcessSingletonLinuxTest, CheckSocketFile) {
   ASSERT_GT(len, 0);
   std::string cookie(buf, len);
 
-  FilePath remote_cookie_path = socket_target_path.DirName().
+  base::FilePath remote_cookie_path = socket_target_path.DirName().
       Append(chrome::kSingletonCookieFilename);
   len = readlink(remote_cookie_path.value().c_str(), buf, PATH_MAX);
   ASSERT_GT(len, 0);
@@ -331,7 +345,8 @@ TEST_F(ProcessSingletonLinuxTest, NotifyOtherProcessOrCreate_DifferingHost) {
 TEST_F(ProcessSingletonLinuxTest, CreateFailsWithExistingBrowser) {
   CreateProcessSingletonOnThread();
 
-  scoped_ptr<ProcessSingleton> process_singleton(CreateProcessSingleton());
+  scoped_ptr<TestableProcessSingleton> process_singleton(
+      CreateProcessSingleton());
   process_singleton->OverrideCurrentPidForTesting(base::GetCurrentProcId() + 1);
   EXPECT_FALSE(process_singleton->Create(
                base::Bind(&NotificationCallback)));
@@ -341,14 +356,15 @@ TEST_F(ProcessSingletonLinuxTest, CreateFailsWithExistingBrowser) {
 // but with the old socket location.
 TEST_F(ProcessSingletonLinuxTest, CreateChecksCompatibilitySocket) {
   CreateProcessSingletonOnThread();
-  scoped_ptr<ProcessSingleton> process_singleton(CreateProcessSingleton());
+  scoped_ptr<TestableProcessSingleton> process_singleton(
+      CreateProcessSingleton());
   process_singleton->OverrideCurrentPidForTesting(base::GetCurrentProcId() + 1);
 
   // Do some surgery so as to look like the old configuration.
   char buf[PATH_MAX];
   ssize_t len = readlink(socket_path_.value().c_str(), buf, sizeof(buf));
   ASSERT_GT(len, 0);
-  FilePath socket_target_path = FilePath(std::string(buf, len));
+  base::FilePath socket_target_path = base::FilePath(std::string(buf, len));
   ASSERT_EQ(0, unlink(socket_path_.value().c_str()));
   ASSERT_EQ(0, rename(socket_target_path.value().c_str(),
                       socket_path_.value().c_str()));

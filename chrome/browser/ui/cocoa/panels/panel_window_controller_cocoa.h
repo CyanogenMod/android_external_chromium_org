@@ -15,8 +15,6 @@
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/chrome_browser_window.h"
 #import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
-#import "chrome/browser/ui/cocoa/themed_window.h"
-#import "chrome/browser/ui/cocoa/tracking_area.h"
 #include "chrome/browser/ui/panels/panel.h"
 
 class PanelCocoa;
@@ -51,10 +49,6 @@ class PanelCocoa;
 
 // Load the window nib and do any Cocoa-specific initialization.
 - (id)initWithPanel:(PanelCocoa*)window;
-
-- (ui::ThemeProvider*)themeProvider;
-- (ThemedWindowStyle)themedWindowStyle;
-- (NSPoint)themePatternPhase;
 
 - (void)webContentsInserted:(content::WebContents*)contents;
 - (void)webContentsDetached:(content::WebContents*)contents;
@@ -131,13 +125,14 @@ class PanelCocoa;
 // Returns true if Panel requested activation of the window.
 - (BOOL)activationRequestedByPanel;
 
-- (void)ensureFullyVisible;
-
 // Adjust NSStatusWindowLevel based on whether panel is always on top
 // and whether the panel is minimized. The first version wraps the second
 // version using the current panel expanstion state.
 - (void)updateWindowLevel;
 - (void)updateWindowLevel:(BOOL)panelIsMinimized;
+
+// Adjusts NSWindowCollectionBehavior based on whether panel is always on top.
+- (void)updateWindowCollectionBehavior;
 
 // Turns on user-resizable corners/sides indications and enables live resize.
 - (void)enableResizeByMouse:(BOOL)enable;

@@ -56,44 +56,85 @@ class MockConnectionManager : public ServerConnectionManager {
   // The SyncEntity returned is only valid until the Sync is completed
   // (e.g. with SyncShare.) It allows to add further entity properties before
   // sync, using SetLastXXX() methods and/or GetMutableLastUpdate().
-  sync_pb::SyncEntity* AddUpdateDirectory(syncable::Id id,
-                                          syncable::Id parent_id,
-                                          std::string name,
-                                          int64 version,
-                                          int64 sync_ts);
+  sync_pb::SyncEntity* AddUpdateDirectory(
+      syncable::Id id,
+      syncable::Id parent_id,
+      std::string name,
+      int64 version,
+      int64 sync_ts,
+      std::string originator_cache_guid,
+      std::string originator_client_item_id);
   sync_pb::SyncEntity* AddUpdateBookmark(syncable::Id id,
                                          syncable::Id parent_id,
                                          std::string name,
                                          int64 version,
-                                         int64 sync_ts);
+                                         int64 sync_ts,
+                                         std::string originator_cache_guid,
+                                         std::string originator_client_item_id);
   // Versions of the AddUpdate functions that accept integer IDs.
-  sync_pb::SyncEntity* AddUpdateDirectory(int id,
-                                          int parent_id,
-                                          std::string name,
-                                          int64 version,
-                                          int64 sync_ts);
+  sync_pb::SyncEntity* AddUpdateDirectory(
+      int id,
+      int parent_id,
+      std::string name,
+      int64 version,
+      int64 sync_ts,
+      std::string originator_cache_guid,
+      std::string originator_client_item_id);
   sync_pb::SyncEntity* AddUpdateBookmark(int id,
                                          int parent_id,
                                          std::string name,
                                          int64 version,
-                                         int64 sync_ts);
+                                         int64 sync_ts,
+                                         std::string originator_cache_guid,
+                                         std::string originator_client_item_id);
   // New protocol versions of the AddUpdate functions.
-  sync_pb::SyncEntity* AddUpdateDirectory(std::string id,
-                                          std::string parent_id,
-                                          std::string name,
-                                          int64 version,
-                                          int64 sync_ts);
+  sync_pb::SyncEntity* AddUpdateDirectory(
+      std::string id,
+      std::string parent_id,
+      std::string name,
+      int64 version,
+      int64 sync_ts,
+      std::string originator_cache_guid,
+      std::string originator_client_item_id);
   sync_pb::SyncEntity* AddUpdateBookmark(std::string id,
                                          std::string parent_id,
                                          std::string name,
                                          int64 version,
-                                         int64 sync_ts);
+                                         int64 sync_ts,
+                                         std::string originator_cache_guid,
+                                         std::string originator_client_item_id);
   // Versions of the AddUpdate function that accept specifics.
-  sync_pb::SyncEntity* AddUpdateSpecifics(int id, int parent_id,
-      std::string name,int64 version, int64 sync_ts, bool is_dir,
-      int64 position, const sync_pb::EntitySpecifics& specifics);
-  sync_pb::SyncEntity* SetNigori(int id, int64 version, int64 sync_ts,
+  sync_pb::SyncEntity* AddUpdateSpecifics(
+      int id,
+      int parent_id,
+      std::string name,
+      int64 version,
+      int64 sync_ts,
+      bool is_dir,
+      int64 position,
       const sync_pb::EntitySpecifics& specifics);
+  sync_pb::SyncEntity* AddUpdateSpecifics(
+      int id,
+      int parent_id,
+      std::string name,
+      int64 version,
+      int64 sync_ts,
+      bool is_dir,
+      int64 position,
+      const sync_pb::EntitySpecifics& specifics,
+      std::string originator_cache_guid,
+      std::string originator_client_item_id);
+  sync_pb::SyncEntity* SetNigori(
+      int id,
+      int64 version,
+      int64 sync_ts,
+      const sync_pb::EntitySpecifics& specifics);
+  // Unique client tag variant for adding items.
+  sync_pb::SyncEntity* AddUpdatePref(std::string id,
+                                     std::string parent_id,
+                                     std::string client_tag,
+                                     int64 version,
+                                     int64 sync_ts);
 
   // Find the last commit sent by the client, and replay it for the next get
   // updates command.  This can be used to simulate the GetUpdates that happens
@@ -132,6 +173,8 @@ class MockConnectionManager : public ServerConnectionManager {
   // warning: These take ownership of their input.
   void SetGUClientCommand(sync_pb::ClientCommand* command);
   void SetCommitClientCommand(sync_pb::ClientCommand* command);
+
+  void SetTransientErrorId(syncable::Id);
 
   const std::vector<syncable::Id>& committed_ids() const {
     return committed_ids_;
@@ -243,6 +286,10 @@ class MockConnectionManager : public ServerConnectionManager {
   // Determine if one entry in a commit should be rejected with a conflict.
   bool ShouldConflictThisCommit();
 
+  // Determine if the given item's commit request should be refused with
+  // a TRANSIENT_ERROR response.
+  bool ShouldTransientErrorThisId(syncable::Id id);
+
   // Generate a numeric position_in_parent value.  We use a global counter
   // that only decreases; this simulates new objects always being added to the
   // front of the ordering.
@@ -273,6 +320,9 @@ class MockConnectionManager : public ServerConnectionManager {
 
   // All IDs that have been committed.
   std::vector<syncable::Id> committed_ids_;
+
+  // List of IDs which should return a transient error.
+  std::vector<syncable::Id> transient_error_ids_;
 
   // Control of when/if we return conflicts.
   bool conflict_all_commits_;

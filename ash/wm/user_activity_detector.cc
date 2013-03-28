@@ -10,9 +10,14 @@
 
 namespace ash {
 
-const double UserActivityDetector::kNotifyIntervalMs = 200.0;
+const int UserActivityDetector::kNotifyIntervalMs = 200;
 
-UserActivityDetector::UserActivityDetector() : ignore_next_mouse_event_(false) {
+// Too low and mouse events generated at the tail end of reconfiguration
+// will be reported as user activity and turn the screen back on; too high
+// and we'll ignore legitimate activity.
+const int UserActivityDetector::kDisplayPowerChangeIgnoreMouseMs = 1000;
+
+UserActivityDetector::UserActivityDetector() {
 }
 
 UserActivityDetector::~UserActivityDetector() {
@@ -30,43 +35,44 @@ void UserActivityDetector::RemoveObserver(UserActivityObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void UserActivityDetector::OnAllOutputsTurnedOff() {
-  ignore_next_mouse_event_ = true;
+void UserActivityDetector::OnDisplayPowerChanging() {
+  honor_mouse_events_time_ = GetCurrentTime() +
+      base::TimeDelta::FromMilliseconds(kDisplayPowerChangeIgnoreMouseMs);
 }
 
-bool UserActivityDetector::PreHandleKeyEvent(aura::Window* target,
-                                             ui::KeyEvent* event) {
-  MaybeNotify();
-  return false;
+void UserActivityDetector::OnKeyEvent(ui::KeyEvent* event) {
+  HandleActivity();
 }
 
-bool UserActivityDetector::PreHandleMouseEvent(aura::Window* target,
-                                               ui::MouseEvent* event) {
-  VLOG_IF(1, ignore_next_mouse_event_) << "ignoring mouse event";
-  if (!(event->flags() & ui::EF_IS_SYNTHESIZED) &&
-      !ignore_next_mouse_event_)
-    MaybeNotify();
-  ignore_next_mouse_event_ = false;
-  return false;
+void UserActivityDetector::OnMouseEvent(ui::MouseEvent* event) {
+  if (event->flags() & ui::EF_IS_SYNTHESIZED)
+    return;
+  if (!honor_mouse_events_time_.is_null() &&
+      GetCurrentTime() < honor_mouse_events_time_)
+    return;
+
+  HandleActivity();
 }
 
-ui::EventResult UserActivityDetector::PreHandleTouchEvent(
-    aura::Window* target,
-    ui::TouchEvent* event) {
-  MaybeNotify();
-  return ui::ER_UNHANDLED;
+void UserActivityDetector::OnScrollEvent(ui::ScrollEvent* event) {
+  HandleActivity();
 }
 
-ui::EventResult UserActivityDetector::PreHandleGestureEvent(
-    aura::Window* target,
-    ui::GestureEvent* event) {
-  MaybeNotify();
-  return ui::ER_UNHANDLED;
+void UserActivityDetector::OnTouchEvent(ui::TouchEvent* event) {
+  HandleActivity();
 }
 
-void UserActivityDetector::MaybeNotify() {
-  base::TimeTicks now =
-      !now_for_test_.is_null() ? now_for_test_ : base::TimeTicks::Now();
+void UserActivityDetector::OnGestureEvent(ui::GestureEvent* event) {
+  HandleActivity();
+}
+
+base::TimeTicks UserActivityDetector::GetCurrentTime() const {
+  return !now_for_test_.is_null() ? now_for_test_ : base::TimeTicks::Now();
+}
+
+void UserActivityDetector::HandleActivity() {
+  base::TimeTicks now = GetCurrentTime();
+  last_activity_time_ = now;
   if (last_observer_notification_time_.is_null() ||
       (now - last_observer_notification_time_).InMillisecondsF() >=
       kNotifyIntervalMs) {

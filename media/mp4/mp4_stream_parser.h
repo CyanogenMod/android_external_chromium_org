@@ -5,6 +5,7 @@
 #ifndef MEDIA_MP4_MP4_STREAM_PARSER_H_
 #define MEDIA_MP4_MP4_STREAM_PARSER_H_
 
+#include <set>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -24,7 +25,7 @@ class BoxReader;
 
 class MEDIA_EXPORT MP4StreamParser : public StreamParser {
  public:
-  MP4StreamParser(bool has_sbr);
+  MP4StreamParser(const std::set<int>& audio_object_types, bool has_sbr);
   virtual ~MP4StreamParser();
 
   virtual void Init(const InitCB& init_cb, const NewConfigCB& config_cb,
@@ -32,7 +33,8 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
                     const NewBuffersCB& video_cb,
                     const NeedKeyCB& need_key_cb,
                     const NewMediaSegmentCB& new_segment_cb,
-                    const base::Closure& end_of_segment_cb) OVERRIDE;
+                    const base::Closure& end_of_segment_cb,
+                    const LogCB& log_cb) OVERRIDE;
   virtual void Flush() OVERRIDE;
   virtual bool Parse(const uint8* buf, int size) OVERRIDE;
 
@@ -85,6 +87,7 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
   NeedKeyCB need_key_cb_;
   NewMediaSegmentCB new_segment_cb_;
   base::Closure end_of_segment_cb_;
+  LogCB log_cb_;
 
   OffsetByteQueue queue_;
 
@@ -105,7 +108,11 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
   bool has_video_;
   uint32 audio_track_id_;
   uint32 video_track_id_;
+  // The object types allowed for audio tracks.
+  std::set<int> audio_object_types_;
   bool has_sbr_;
+  bool is_audio_track_encrypted_;
+  bool is_video_track_encrypted_;
 
   DISALLOW_COPY_AND_ASSIGN(MP4StreamParser);
 };

@@ -5,33 +5,30 @@
 #ifndef CC_TEST_RENDER_PASS_TEST_COMMON_H_
 #define CC_TEST_RENDER_PASS_TEST_COMMON_H_
 
-#include "cc/render_pass.h"
+#include "cc/quads/render_pass.h"
 
 namespace cc {
 class ResourceProvider;
 }
 
-namespace WebKitTests {
+namespace cc {
 
 class TestRenderPass : public cc::RenderPass {
-public:
-    static scoped_ptr<TestRenderPass> create(Id id, gfx::Rect outputRect, const WebKit::WebTransformationMatrix& transformToRootTarget) {
-        return make_scoped_ptr(new TestRenderPass(id, outputRect, transformToRootTarget));
-    }
+ public:
+  static scoped_ptr<TestRenderPass> Create() {
+    return make_scoped_ptr(new TestRenderPass);
+  }
 
-    cc::QuadList& quadList() { return m_quadList; }
-    cc::SharedQuadStateList& sharedQuadStateList() { return m_sharedQuadStateList; }
+  void AppendQuad(scoped_ptr<cc::DrawQuad> quad);
+  void AppendSharedQuadState(scoped_ptr<cc::SharedQuadState> state);
 
-    void appendQuad(scoped_ptr<cc::DrawQuad> quad) { m_quadList.append(quad.Pass()); }
-    void appendSharedQuadState(scoped_ptr<cc::SharedQuadState> state) { m_sharedQuadStateList.append(state.Pass()); }
+  void AppendOneOfEveryQuadType(
+      cc::ResourceProvider*, RenderPass::Id child_pass);
 
-    void appendOneOfEveryQuadType(cc::ResourceProvider*);
-
-protected:
-    TestRenderPass(Id id, gfx::Rect outputRect, const WebKit::WebTransformationMatrix& transformToRootTarget)
-        : RenderPass(id, outputRect, transformToRootTarget) { }
+ protected:
+  TestRenderPass() : RenderPass() {}
 };
 
-}  // namespace WebKitTests
+}  // namespace cc
 
 #endif  // CC_TEST_RENDER_PASS_TEST_COMMON_H_

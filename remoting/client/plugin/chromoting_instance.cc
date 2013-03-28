@@ -14,7 +14,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/stringprintf.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
@@ -23,13 +23,14 @@
 #include "media/base/media.h"
 #include "net/socket/ssl_server_socket.h"
 #include "ppapi/cpp/completion_callback.h"
+#include "ppapi/cpp/dev/url_util_dev.h"
 #include "ppapi/cpp/input_event.h"
 #include "ppapi/cpp/mouse_cursor.h"
 #include "ppapi/cpp/rect.h"
 #include "remoting/base/constants.h"
 #include "remoting/base/util.h"
-#include "remoting/client/client_config.h"
 #include "remoting/client/chromoting_client.h"
+#include "remoting/client/client_config.h"
 #include "remoting/client/frame_consumer_proxy.h"
 #include "remoting/client/plugin/pepper_audio_player.h"
 #include "remoting/client/plugin/pepper_input_handler.h"
@@ -53,7 +54,14 @@ namespace {
 // 32-bit BGRA is 4 bytes per pixel.
 const int kBytesPerPixel = 4;
 
+// Default DPI to assume for old clients that use notifyClientDimensions.
+const int kDefaultDPI = 96;
+
+// Interval at which to sample performance statistics.
 const int kPerfStatsIntervalMs = 1000;
+
+// URL scheme used by Chrome apps and extensions.
+const char kChromeExtensionUrlScheme[] = "chrome-extension";
 
 std::string ConnectionStateToString(protocol::ConnectionToHost::State state) {
   // Values returned by this function must match the
@@ -126,7 +134,8 @@ logging::LogMessageHandlerFunction g_logging_old_handler = NULL;
 // String sent in the "hello" message to the plugin to describe features.
 const char ChromotingInstance::kApiFeatures[] =
     "highQualityScaling injectKeyEvent sendClipboardItem remapKey trapKey "
-    "notifyClientDimensions pauseVideo pauseAudio";
+    "notifyClientDimensions notifyClientResolution pauseVideo pauseAudio "
+    "asyncPin";
 
 bool ChromotingInstance::ParseAuthMethods(const std::string& auth_methods_str,
                                           ClientConfig* config) {
@@ -163,6 +172,7 @@ ChromotingInstance::ChromotingInstance(PP_Instance pp_instance)
       key_mapper_(&input_tracker_),
 #endif
       input_handler_(&key_mapper_),
+      use_async_pin_dialog_(false),
       weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
   RequestInputEvents(PP_INPUTEVENT_CLASS_MOUSE | PP_INPUTEVENT_CLASS_WHEEL);
   RequestFilteringInputEvents(PP_INPUTEVENT_CLASS_KEYBOARD);
@@ -217,6 +227,12 @@ bool ChromotingInstance::Init(uint32_t argc,
     return false;
   }
 
+  // Check that the calling content is part of an app or extension.
+  if (!IsCallerAppOrExtension()) {
+    LOG(ERROR) << "Not an app or extension";
+    return false;
+  }
+
   // Enable support for SSL server sockets, which must be done as early as
   // possible, preferably before any NSS SSL sockets (client or server) have
   // been created.
@@ -226,17 +242,6 @@ bool ChromotingInstance::Init(uint32_t argc,
 
   // Start all the threads.
   context_.Start();
-
-  // Create the chromoting objects that don't depend on the network connection.
-  // RectangleUpdateDecoder runs on a separate thread so for now we wrap
-  // PepperView with a ref-counted proxy object.
-  scoped_refptr<FrameConsumerProxy> consumer_proxy =
-      new FrameConsumerProxy(plugin_task_runner_);
-  rectangle_decoder_ = new RectangleUpdateDecoder(context_.main_task_runner(),
-                                                  context_.decode_task_runner(),
-                                                  consumer_proxy);
-  view_.reset(new PepperView(this, &context_, rectangle_decoder_.get()));
-  consumer_proxy->Attach(view_->AsWeakPtr());
 
   return true;
 }
@@ -267,14 +272,25 @@ void ChromotingInstance::HandleMessage(const pp::Var& message) {
     if (!data->GetString("hostJid", &config.host_jid) ||
         !data->GetString("hostPublicKey", &config.host_public_key) ||
         !data->GetString("localJid", &config.local_jid) ||
-        !data->GetString("sharedSecret", &config.shared_secret) ||
         !data->GetString("authenticationMethods", &auth_methods) ||
         !ParseAuthMethods(auth_methods, &config) ||
         !data->GetString("authenticationTag", &config.authentication_tag)) {
       LOG(ERROR) << "Invalid connect() data.";
       return;
     }
-
+    if (use_async_pin_dialog_) {
+      config.fetch_secret_callback =
+          base::Bind(&ChromotingInstance::FetchSecretFromDialog,
+                     this->AsWeakPtr());
+    } else {
+      std::string shared_secret;
+      if (!data->GetString("sharedSecret", &shared_secret)) {
+        LOG(ERROR) << "sharedSecret not specified in connect().";
+        return;
+      }
+      config.fetch_secret_callback =
+          base::Bind(&ChromotingInstance::FetchSecretFromString, shared_secret);
+    }
     Connect(config);
   } else if (method == "disconnect") {
     Disconnect();
@@ -329,15 +345,33 @@ void ChromotingInstance::HandleMessage(const pp::Var& message) {
       return;
     }
     SendClipboardItem(mime_type, item);
-  } else if (method == "notifyClientDimensions") {
+  } else if (method == "notifyClientDimensions" ||
+             method == "notifyClientResolution") {
+    // notifyClientResolution's width and height are in pixels,
+    // notifyClientDimension's in DIPs, but since for the latter
+    // we assume 96dpi, DIPs and pixels are equivalent.
     int width = 0;
     int height = 0;
     if (!data->GetInteger("width", &width) ||
-        !data->GetInteger("height", &height)) {
-      LOG(ERROR) << "Invalid notifyClientDimensions.";
+        !data->GetInteger("height", &height) ||
+        width <= 0 || height <= 0) {
+      LOG(ERROR) << "Invalid " << method << ".";
       return;
     }
-    NotifyClientDimensions(width, height);
+
+    // notifyClientResolution requires that DPI be specified.
+    // For notifyClientDimensions we assume 96dpi.
+    int x_dpi = kDefaultDPI;
+    int y_dpi = kDefaultDPI;
+    if (method == "notifyClientResolution" &&
+        (!data->GetInteger("x_dpi", &x_dpi) ||
+         !data->GetInteger("y_dpi", &y_dpi) ||
+         x_dpi <= 0 || y_dpi <= 0)) {
+      LOG(ERROR) << "Invalid notifyClientResolution.";
+      return;
+    }
+
+    NotifyClientResolution(width, height, x_dpi, y_dpi);
   } else if (method == "pauseVideo") {
     bool pause = false;
     if (!data->GetBoolean("pause", &pause)) {
@@ -352,15 +386,26 @@ void ChromotingInstance::HandleMessage(const pp::Var& message) {
       return;
     }
     PauseAudio(pause);
+  } else if (method == "useAsyncPinDialog") {
+    use_async_pin_dialog_ = true;
+  } else if (method == "onPinFetched") {
+    std::string pin;
+    if (!data->GetString("pin", &pin)) {
+      LOG(ERROR) << "Invalid onPinFetched.";
+      return;
+    }
+    OnPinFetched(pin);
   }
 }
 
 void ChromotingInstance::DidChangeView(const pp::View& view) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
 
-  view_->SetView(view);
-
-  mouse_input_filter_.set_input_size(view_->get_view_size_dips());
+  plugin_view_ = view;
+  if (view_) {
+    view_->SetView(view);
+    mouse_input_filter_.set_input_size(view_->get_view_size_dips());
+  }
 }
 
 bool ChromotingInstance::HandleInputEvent(const pp::InputEvent& event) {
@@ -369,15 +414,13 @@ bool ChromotingInstance::HandleInputEvent(const pp::InputEvent& event) {
   if (!IsConnected())
     return false;
 
-  // TODO(wez): When we have a good hook into Host dimensions changes, move
-  // this there.
-  mouse_input_filter_.set_output_size(view_->get_screen_size());
-
   return input_handler_.HandleInputEvent(event);
 }
 
 void ChromotingInstance::SetDesktopSize(const SkISize& size,
                                         const SkIPoint& dpi) {
+  mouse_input_filter_.set_output_size(size);
+
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
   data->SetInteger("width", size.width());
   data->SetInteger("height", size.height());
@@ -401,6 +444,23 @@ void ChromotingInstance::OnConnectionReady(bool ready) {
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
   data->SetBoolean("ready", ready);
   PostChromotingMessage("onConnectionReady", data.Pass());
+}
+
+void ChromotingInstance::FetchSecretFromDialog(
+    const protocol::SecretFetchedCallback& secret_fetched_callback) {
+  // Once the Session object calls this function, it won't continue the
+  // authentication until the callback is called (or connection is canceled).
+  // So, it's impossible to reach this with a callback already registered.
+  DCHECK(secret_fetched_callback_.is_null());
+  secret_fetched_callback_ = secret_fetched_callback;
+  scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
+  PostChromotingMessage("fetchPin", data.Pass());
+}
+
+void ChromotingInstance::FetchSecretFromString(
+    const std::string& shared_secret,
+    const protocol::SecretFetchedCallback& secret_fetched_callback) {
+  secret_fetched_callback.Run(shared_secret);
 }
 
 protocol::ClipboardStub* ChromotingInstance::GetClipboardStub() {
@@ -433,18 +493,30 @@ void ChromotingInstance::SetCursorShape(
     return;
   }
 
-  if (pp::ImageData::GetNativeImageDataFormat() !=
-      PP_IMAGEDATAFORMAT_BGRA_PREMUL) {
-    VLOG(2) << "Unable to set cursor shape - non-native image format";
-    return;
-  }
-
   int width = cursor_shape.width();
   int height = cursor_shape.height();
+
+  if (width < 0 || height < 0) {
+    return;
+  }
 
   if (width > 32 || height > 32) {
     VLOG(2) << "Cursor too large for SetCursor: "
             << width << "x" << height << " > 32x32";
+    return;
+  }
+
+  uint32 cursor_total_bytes = width * height * kBytesPerPixel;
+  if (cursor_shape.data().size() < cursor_total_bytes) {
+    VLOG(2) << "Expected " << cursor_total_bytes << " bytes for a "
+            << width << "x" << height << " cursor. Only received "
+            << cursor_shape.data().size() << " bytes";
+    return;
+  }
+
+  if (pp::ImageData::GetNativeImageDataFormat() !=
+      PP_IMAGEDATAFORMAT_BGRA_PREMUL) {
+    VLOG(2) << "Unable to set cursor shape - non-native image format";
     return;
   }
 
@@ -479,12 +551,22 @@ void ChromotingInstance::Connect(const ClientConfig& config) {
 
   jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
 
+  // RectangleUpdateDecoder runs on a separate thread so for now we wrap
+  // PepperView with a ref-counted proxy object.
+  scoped_refptr<FrameConsumerProxy> consumer_proxy =
+      new FrameConsumerProxy(plugin_task_runner_);
+
   host_connection_.reset(new protocol::ConnectionToHost(true));
   scoped_ptr<AudioPlayer> audio_player(new PepperAudioPlayer(this));
   client_.reset(new ChromotingClient(config, &context_,
                                      host_connection_.get(), this,
-                                     rectangle_decoder_.get(),
-                                     audio_player.Pass()));
+                                     consumer_proxy, audio_player.Pass()));
+
+  view_.reset(new PepperView(this, &context_, client_->GetFrameProducer()));
+  consumer_proxy->Attach(view_->AsWeakPtr());
+  if (!plugin_view_.is_null()) {
+    view_->SetView(plugin_view_);
+  }
 
   // Connect the input pipeline to the protocol stub & initialize components.
   mouse_input_filter_.set_input_stub(host_connection_->input_stub());
@@ -568,14 +650,25 @@ void ChromotingInstance::SendClipboardItem(const std::string& mime_type,
   host_connection_->clipboard_stub()->InjectClipboardEvent(event);
 }
 
-void ChromotingInstance::NotifyClientDimensions(int width, int height) {
+void ChromotingInstance::NotifyClientResolution(int width,
+                                                int height,
+                                                int x_dpi,
+                                                int y_dpi) {
   if (!IsConnected()) {
     return;
   }
-  protocol::ClientDimensions client_dimensions;
-  client_dimensions.set_width(width);
-  client_dimensions.set_height(height);
-  host_connection_->host_stub()->NotifyClientDimensions(client_dimensions);
+
+  protocol::ClientResolution client_resolution;
+  client_resolution.set_width(width);
+  client_resolution.set_height(height);
+  client_resolution.set_x_dpi(x_dpi);
+  client_resolution.set_y_dpi(y_dpi);
+
+  // Include the legacy width & height in DIPs for use by older hosts.
+  client_resolution.set_dips_width((width * kDefaultDPI) / x_dpi);
+  client_resolution.set_dips_height((height * kDefaultDPI) / y_dpi);
+
+  host_connection_->host_stub()->NotifyClientResolution(client_resolution);
 }
 
 void ChromotingInstance::PauseVideo(bool pause) {
@@ -594,6 +687,15 @@ void ChromotingInstance::PauseAudio(bool pause) {
   protocol::AudioControl audio_control;
   audio_control.set_enable(!pause);
   host_connection_->host_stub()->ControlAudio(audio_control);
+}
+
+void ChromotingInstance::OnPinFetched(const std::string& pin) {
+  if (!secret_fetched_callback_.is_null()) {
+    secret_fetched_callback_.Run(pin);
+    secret_fetched_callback_.Reset();
+  } else {
+    VLOG(1) << "Ignored OnPinFetched received without a pending fetch.";
+  }
 }
 
 ChromotingStats* ChromotingInstance::GetStats() {
@@ -748,6 +850,22 @@ void ChromotingInstance::ProcessLogToUI(const std::string& message) {
   data->SetString("message", message);
   PostChromotingMessage("logDebugMessage", data.Pass());
   g_logging_to_plugin = false;
+}
+
+bool ChromotingInstance::IsCallerAppOrExtension() {
+  const pp::URLUtil_Dev* url_util = pp::URLUtil_Dev::Get();
+  if (!url_util)
+    return false;
+
+  PP_URLComponents_Dev url_components;
+  pp::Var url_var = url_util->GetDocumentURL(this, &url_components);
+  if (!url_var.is_string())
+    return false;
+
+  std::string url = url_var.AsString();
+  std::string url_scheme = url.substr(url_components.scheme.begin,
+                                      url_components.scheme.len);
+  return url_scheme == kChromeExtensionUrlScheme;
 }
 
 bool ChromotingInstance::IsConnected() {

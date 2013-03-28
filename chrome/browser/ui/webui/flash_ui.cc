@@ -13,8 +13,8 @@
 #include "base/i18n/time_formatting.h"
 #include "base/memory/weak_ptr.h"
 #include "base/string16.h"
-#include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer.h"
 #include "base/utf_string_conversions.h"
@@ -22,8 +22,6 @@
 #include "chrome/browser/crash_upload_list.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/crashes_ui.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
@@ -33,6 +31,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "content/public/common/gpu_info.h"
 #include "grit/browser_resources.h"
@@ -58,15 +57,16 @@ namespace {
 
 const char kFlashPlugin[] = "Flash plugin";
 
-ChromeWebUIDataSource* CreateFlashUIHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIFlashHost);
+content::WebUIDataSource* CreateFlashUIHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIFlashHost);
 
+  source->SetUseJsonJSFormatV2();
   source->AddLocalizedString("loadingMessage", IDS_FLASH_LOADING_MESSAGE);
   source->AddLocalizedString("flashLongTitle", IDS_FLASH_TITLE_MESSAGE);
-  source->set_json_path("strings.js");
-  source->add_resource_path("about_flash.js", IDR_ABOUT_FLASH_JS);
-  source->set_default_resource(IDR_ABOUT_FLASH_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("about_flash.js", IDR_ABOUT_FLASH_JS);
+  source->SetDefaultResource(IDR_ABOUT_FLASH_HTML);
   return source;
 }
 
@@ -94,9 +94,6 @@ class FlashDOMHandler : public WebUIMessageHandler,
 
   // GpuDataManager::Observer implementation.
   virtual void OnGpuInfoUpdate() OVERRIDE;
-  virtual void OnVideoMemoryUsageStatsUpdate(
-      const content::GPUVideoMemoryUsageStats& video_memory_usage_stats)
-          OVERRIDE {}
 
   // Callback for the "requestFlashInfo" message.
   void HandleRequestFlashInfo(const ListValue* args);
@@ -271,20 +268,26 @@ void FlashDOMHandler::MaybeRespondToPage() {
   std::vector<webkit::WebPluginInfo> info_array;
   PluginService::GetInstance()->GetPluginInfoArray(
       GURL(), kFlashPluginSwfMimeType, false, &info_array, NULL);
-  string16 flash_version;
   if (info_array.empty()) {
-    AddPair(list, ASCIIToUTF16(kFlashPlugin), "Disabled");
+    AddPair(list, ASCIIToUTF16(kFlashPlugin), "Not installed");
   } else {
     PluginPrefs* plugin_prefs =
         PluginPrefs::GetForProfile(Profile::FromWebUI(web_ui()));
+    bool found_enabled = false;
     for (size_t i = 0; i < info_array.size(); ++i) {
+      string16 flash_version = info_array[i].version + ASCIIToUTF16(" ") +
+                               info_array[i].path.LossyDisplayName();
       if (plugin_prefs->IsPluginEnabled(info_array[i])) {
-        flash_version = info_array[i].version + ASCIIToUTF16(" ") +
-                        info_array[i].path.LossyDisplayName();
-        if (i != 0)
+        // If we have already found an enabled Flash version, this one
+        // is not used.
+        if (found_enabled)
           flash_version += ASCIIToUTF16(" (not used)");
-        AddPair(list, ASCIIToUTF16(kFlashPlugin), flash_version);
+
+        found_enabled = true;
+      } else {
+        flash_version += ASCIIToUTF16(" (disabled)");
       }
+      AddPair(list, ASCIIToUTF16(kFlashPlugin), flash_version);
     }
   }
 
@@ -381,7 +384,7 @@ FlashUI::FlashUI(content::WebUI* web_ui) : WebUIController(web_ui) {
 
   // Set up the about:flash source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, CreateFlashUIHTMLSource());
+  content::WebUIDataSource::Add(profile, CreateFlashUIHTMLSource());
 }
 
 // static

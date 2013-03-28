@@ -8,7 +8,9 @@
 #include <string>
 #include <vector>
 
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
+#include "chrome/browser/ui/host_desktop.h"
 
 class Profile;
 class TabNavigation;
@@ -63,16 +65,21 @@ class TabRestoreServiceDelegate {
   virtual void CloseTab() = 0;
 
   // see Browser::Create
-  static TabRestoreServiceDelegate* Create(Profile* profile,
-                                           const std::string& app_name);
+  static TabRestoreServiceDelegate* Create(
+      Profile* profile,
+      chrome::HostDesktopType host_desktop_type,
+      const std::string& app_name);
 
   // see browser::FindBrowserForWebContents
   static TabRestoreServiceDelegate* FindDelegateForWebContents(
       const content::WebContents* contents);
 
-  // see browser::FindBrowserWithID
+  // see chrome::FindBrowserWithID
+  // Returns the TabRestoreServiceDelegate of the Browser with |desired_id| if
+  // such a Browser exists and is on the desktop defined by |host_desktop_type|.
   static TabRestoreServiceDelegate* FindDelegateWithID(
-      SessionID::id_type desired_id);
+      SessionID::id_type desired_id,
+      chrome::HostDesktopType host_desktop_type);
 
  protected:
   virtual ~TabRestoreServiceDelegate() {}

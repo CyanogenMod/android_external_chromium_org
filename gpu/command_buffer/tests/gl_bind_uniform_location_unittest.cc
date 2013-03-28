@@ -4,6 +4,7 @@
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#include <GLES2/gl2extchromium.h>
 
 #include "gpu/command_buffer/tests/gl_manager.h"
 #include "gpu/command_buffer/tests/gl_test_utils.h"
@@ -18,7 +19,9 @@ class BindUniformLocationTest : public testing::Test {
  protected:
   static const GLsizei kResolution = 4;
   virtual void SetUp() {
-    gl_.Initialize(gfx::Size(kResolution, kResolution));
+    GLManager::Options options;
+    options.size = gfx::Size(kResolution, kResolution);
+    gl_.Initialize(options);
   }
 
   virtual void TearDown() {

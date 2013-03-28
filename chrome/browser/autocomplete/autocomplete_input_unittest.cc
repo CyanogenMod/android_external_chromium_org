@@ -34,7 +34,7 @@ TEST(AutocompleteInputTest, InputType) {
     { ASCIIToUTF16("foo/bar/"), AutocompleteInput::URL },
     { ASCIIToUTF16("foo/bar baz\\"), AutocompleteInput::URL },
     { ASCIIToUTF16("foo.com/bar"), AutocompleteInput::URL },
-    { ASCIIToUTF16("foo;bar"), AutocompleteInput::QUERY },
+    { ASCIIToUTF16("foo;bar"), AutocompleteInput::UNKNOWN },
     { ASCIIToUTF16("foo/bar baz"), AutocompleteInput::UNKNOWN },
     { ASCIIToUTF16("foo bar.com"), AutocompleteInput::QUERY },
     { ASCIIToUTF16("foo bar"), AutocompleteInput::QUERY },
@@ -121,8 +121,9 @@ TEST(AutocompleteInputTest, InputType) {
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(input_cases); ++i) {
     SCOPED_TRACE(input_cases[i].input);
-    AutocompleteInput input(input_cases[i].input, string16(), true, false,
-                            true, AutocompleteInput::ALL_MATCHES);
+    AutocompleteInput input(input_cases[i].input, string16::npos, string16(),
+                            GURL(), true, false, true,
+                            AutocompleteInput::ALL_MATCHES);
     EXPECT_EQ(input_cases[i].type, input.type());
   }
 }
@@ -131,26 +132,38 @@ TEST(AutocompleteInputTest, InputTypeWithDesiredTLD) {
   struct test_data {
     const string16 input;
     const AutocompleteInput::Type type;
+    const std::string spec;  // Unused if not a URL.
   } input_cases[] = {
-    { ASCIIToUTF16("401k"), AutocompleteInput::REQUESTED_URL },
-    { ASCIIToUTF16("999999999999999"), AutocompleteInput::REQUESTED_URL },
-    { ASCIIToUTF16("x@y"), AutocompleteInput::REQUESTED_URL },
-    { ASCIIToUTF16("y/z z"), AutocompleteInput::REQUESTED_URL },
+    { ASCIIToUTF16("401k"), AutocompleteInput::URL,
+        std::string("http://www.401k.com/") },
+    { ASCIIToUTF16("999999999999999"), AutocompleteInput::URL,
+        std::string("http://www.999999999999999.com/") },
+    { ASCIIToUTF16("x@y"), AutocompleteInput::URL,
+        std::string("http://x@www.y.com/") },
+    { ASCIIToUTF16("y/z z"), AutocompleteInput::URL,
+        std::string("http://www.y.com/z%20z") },
+    { ASCIIToUTF16("abc.com"), AutocompleteInput::URL,
+        std::string("http://abc.com/") },
+    { ASCIIToUTF16("foo bar"), AutocompleteInput::QUERY, std::string() },
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(input_cases); ++i) {
     SCOPED_TRACE(input_cases[i].input);
-    AutocompleteInput input(input_cases[i].input, ASCIIToUTF16("com"), true,
-                            false, true, AutocompleteInput::ALL_MATCHES);
+    AutocompleteInput input(input_cases[i].input, string16::npos,
+                            ASCIIToUTF16("com"), GURL(), true, false, true,
+                            AutocompleteInput::ALL_MATCHES);
     EXPECT_EQ(input_cases[i].type, input.type());
+    if (input_cases[i].type == AutocompleteInput::URL)
+      EXPECT_EQ(input_cases[i].spec, input.canonicalized_url().spec());
   }
 }
 
 // This tests for a regression where certain input in the omnibox caused us to
 // crash. As long as the test completes without crashing, we're fine.
 TEST(AutocompleteInputTest, InputCrash) {
-  AutocompleteInput input(WideToUTF16(L"\uff65@s"), string16(), true, false,
-                          true, AutocompleteInput::ALL_MATCHES);
+  AutocompleteInput input(WideToUTF16(L"\uff65@s"), string16::npos, string16(),
+                          GURL(), true, false, true,
+                          AutocompleteInput::ALL_MATCHES);
 }
 
 TEST(AutocompleteInputTest, ParseForEmphasizeComponent) {
@@ -189,14 +202,51 @@ TEST(AutocompleteInputTest, ParseForEmphasizeComponent) {
     SCOPED_TRACE(input_cases[i].input);
     Component scheme, host;
     AutocompleteInput::ParseForEmphasizeComponents(input_cases[i].input,
-                                                   string16(),
                                                    &scheme,
                                                    &host);
-    AutocompleteInput input(input_cases[i].input, string16(), true, false,
-                            true, AutocompleteInput::ALL_MATCHES);
+    AutocompleteInput input(input_cases[i].input, string16::npos, string16(),
+                            GURL(), true, false, true,
+                            AutocompleteInput::ALL_MATCHES);
     EXPECT_EQ(input_cases[i].scheme.begin, scheme.begin);
     EXPECT_EQ(input_cases[i].scheme.len, scheme.len);
     EXPECT_EQ(input_cases[i].host.begin, host.begin);
     EXPECT_EQ(input_cases[i].host.len, host.len);
+  }
+}
+
+TEST(AutocompleteInputTest, InputTypeWithCursorPosition) {
+  struct test_data {
+    const string16 input;
+    size_t cursor_position;
+    const string16 normalized_input;
+    size_t normalized_cursor_position;
+  } input_cases[] = {
+    { ASCIIToUTF16("foo bar"), string16::npos,
+      ASCIIToUTF16("foo bar"), string16::npos },
+
+    // regular case, no changes.
+    { ASCIIToUTF16("foo bar"), 3, ASCIIToUTF16("foo bar"), 3 },
+
+    // extra leading space.
+    { ASCIIToUTF16("  foo bar"), 3, ASCIIToUTF16("foo bar"), 1 },
+    { ASCIIToUTF16("      foo bar"), 3, ASCIIToUTF16("foo bar"), 0 },
+    { ASCIIToUTF16("      foo bar   "), 2, ASCIIToUTF16("foo bar   "), 0 },
+
+    // forced query.
+    { ASCIIToUTF16("?foo bar"), 2, ASCIIToUTF16("foo bar"), 1 },
+    { ASCIIToUTF16("  ?foo bar"), 4, ASCIIToUTF16("foo bar"), 1 },
+    { ASCIIToUTF16("?  foo bar"), 4, ASCIIToUTF16("foo bar"), 1 },
+    { ASCIIToUTF16("  ?  foo bar"), 6, ASCIIToUTF16("foo bar"), 1 },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(input_cases); ++i) {
+    SCOPED_TRACE(input_cases[i].input);
+    AutocompleteInput input(input_cases[i].input,
+                            input_cases[i].cursor_position,
+                            string16(), GURL(), true, false, true,
+                            AutocompleteInput::ALL_MATCHES);
+    EXPECT_EQ(input_cases[i].normalized_input, input.text());
+    EXPECT_EQ(input_cases[i].normalized_cursor_position,
+              input.cursor_position());
   }
 }

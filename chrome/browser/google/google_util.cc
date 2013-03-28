@@ -9,20 +9,22 @@
 
 #include "base/command_line.h"
 #include "base/string16.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/url_util.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "net/base/url_util.h"
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/mac/keystone_glue.h"
+#elif defined(OS_CHROMEOS)
+#include "chrome/browser/google/google_util_chromeos.h"
 #endif
 
 #if defined(GOOGLE_CHROME_BUILD)
@@ -37,27 +39,21 @@ namespace {
 
 const char* brand_for_testing = NULL;
 
-// True iff |str| contains a "q=" query parameter with a non-empty value.
-// |str| should be a URL parameter or a hash fragment, without the ? or # (as
-// returned by GURL::query() or GURL::ref().
-bool HasQueryParameter(const std::string& str) {
-  std::vector<std::string> parameters;
-
-  base::SplitString(str, '&', &parameters);
-  for (std::vector<std::string>::const_iterator itr = parameters.begin();
-       itr != parameters.end();
-       ++itr) {
-    if (StartsWithASCII(*itr, "q=", false) && itr->size() > 2)
-      return true;
-  }
-  return false;
-}
-
 bool gUseMockLinkDoctorBaseURLForTesting = false;
 
 }  // anonymous namespace
 
 namespace google_util {
+
+bool HasGoogleSearchQueryParam(const std::string& str) {
+  url_parse::Component query(0, str.length()), key, value;
+  while (url_parse::ExtractQueryKeyValue(str.c_str(), &query, &key,
+                                         &value)) {
+    if ((key.len == 1) && (str[key.begin] == 'q') && value.is_nonempty())
+      return true;
+  }
+  return false;
+}
 
 GURL LinkDoctorBaseURL() {
   if (gUseMockLinkDoctorBaseURLForTesting)
@@ -84,7 +80,7 @@ GURL AppendGoogleLocaleParam(const GURL& url) {
   std::string locale = g_browser_process->GetApplicationLocale();
   if (locale == "nb")
     locale = "no";
-  return chrome_common_net::AppendQueryParameter(url, "hl", locale);
+  return net::AppendQueryParameter(url, "hl", locale);
 }
 
 std::string StringAppendGoogleLocaleParam(const std::string& url) {
@@ -103,8 +99,8 @@ GURL AppendGoogleTLDParam(Profile* profile, const GURL& url) {
     NOTREACHED();
     return url;
   }
-  return chrome_common_net::AppendQueryParameter(
-      url, "sd", google_domain.substr(first_dot + 1));
+  return net::AppendQueryParameter(url, "sd",
+                                   google_domain.substr(first_dot + 1));
 }
 
 #if defined(OS_WIN)
@@ -140,6 +136,8 @@ bool GetBrand(std::string* brand) {
 
 #if defined(OS_MACOSX)
   brand->assign(keystone_glue::BrandCode());
+#elif defined(OS_CHROMEOS)
+  brand->assign(google_util::chromeos::GetBrand());
 #else
   brand->clear();
 #endif
@@ -234,31 +232,8 @@ bool IsGoogleSearchUrl(const std::string& url) {
   // the path type.
   std::string query(original_url.query());
   std::string ref(original_url.ref());
-  return HasQueryParameter(ref) ||
-      (!is_home_page_base && HasQueryParameter(query));
-}
-
-bool IsInstantExtendedAPIGoogleSearchUrl(const std::string& url) {
-  if (!IsGoogleSearchUrl(url))
-    return false;
-
-  const std::string embedded_search_key = kInstantExtendedAPIParam;
-
-  url_parse::Parsed parsed_url;
-  url_parse::ParseStandardURL(url.c_str(), url.length(), &parsed_url);
-  url_parse::Component key, value;
-  while (url_parse::ExtractQueryKeyValue(
-      url.c_str(), &parsed_url.query, &key, &value)) {
-    // If the parameter key is |embedded_search_key| and the value is not 0 this
-    // is an Instant Extended API Google search URL.
-    if (!url.compare(key.begin, key.len, embedded_search_key)) {
-      int int_value = 0;
-      if (value.is_nonempty())
-        base::StringToInt(url.substr(value.begin, value.len), &int_value);
-      return int_value != 0;
-    }
-  }
-  return false;
+  return HasGoogleSearchQueryParam(ref) ||
+      (!is_home_page_base && HasGoogleSearchQueryParam(query));
 }
 
 bool IsOrganic(const std::string& brand) {

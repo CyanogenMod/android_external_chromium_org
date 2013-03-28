@@ -9,8 +9,9 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "chrome/browser/api/webdata/autofill_web_data_service.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
-#include "chrome/browser/webdata/web_data_service.h"
+
 
 class CommandLine;
 class Profile;
@@ -32,12 +33,14 @@ class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
           debug_info_listener,
       browser_sync::SyncBackendHost* backend,
       const browser_sync::DataTypeController::TypeMap* controllers,
-      browser_sync::DataTypeManagerObserver* observer) OVERRIDE;
+      browser_sync::DataTypeManagerObserver* observer,
+      const FailedDatatypesHandler* failed_datatypes_handler) OVERRIDE;
 
   virtual browser_sync::GenericChangeProcessor* CreateGenericChangeProcessor(
       ProfileSyncService* profile_sync_service,
       browser_sync::DataTypeErrorHandler* error_handler,
-      const base::WeakPtr<syncer::SyncableService>& local_service) OVERRIDE;
+      const base::WeakPtr<syncer::SyncableService>& local_service,
+      const base::WeakPtr<syncer::SyncMergeResult>& merge_result) OVERRIDE;
 
   virtual browser_sync::SharedChangeProcessor*
       CreateSharedChangeProcessor() OVERRIDE;
@@ -73,7 +76,7 @@ class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
   // non-threadsafe); accessed on both the UI and FILE threads in
   // GetSyncableServiceForType.
   extensions::ExtensionSystem* extension_system_;
-  scoped_refptr<WebDataService> web_data_service_;
+  scoped_refptr<AutofillWebDataService> web_data_service_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncComponentsFactoryImpl);
 };

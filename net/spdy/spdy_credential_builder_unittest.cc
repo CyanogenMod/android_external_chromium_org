@@ -5,12 +5,12 @@
 #include "net/spdy/spdy_credential_builder.h"
 
 #include "base/threading/sequenced_worker_pool.h"
-#include "crypto/ec_signature_creator.h"
 #include "crypto/ec_private_key.h"
+#include "crypto/ec_signature_creator.h"
 #include "net/base/asn1_util.h"
-#include "net/base/default_server_bound_cert_store.h"
-#include "net/base/server_bound_cert_service.h"
 #include "net/spdy/spdy_test_util_spdy3.h"
+#include "net/ssl/default_server_bound_cert_store.h"
+#include "net/ssl/server_bound_cert_service.h"
 #include "testing/platform_test.h"
 
 using namespace net::test_spdy3;
@@ -69,10 +69,10 @@ class SpdyCredentialBuilderTest : public testing::Test {
         MockClientSocket::kTlsUnique);
   }
 
-  SpdyTestStateHelper helper_;  // Provides deterministic EC signatures.
   std::string cert_;
   std::string key_;
   SpdyCredential credential_;
+  MockECSignatureCreatorFactory ec_signature_creator_factory_;
 };
 
 // http://crbug.com/142833, http://crbug.com/140991. The following tests fail
@@ -109,6 +109,17 @@ TEST_F(SpdyCredentialBuilderTest, MAYBE_SucceedsWithECDSACert) {
 TEST_F(SpdyCredentialBuilderTest, MAYBE_FailsWithRSACert) {
   EXPECT_EQ(ERR_BAD_SSL_CLIENT_AUTH_CERT,
             BuildWithType(CLIENT_CERT_RSA_SIGN));
+}
+
+#if defined(USE_OPENSSL)
+#define MAYBE_FailsWithDSACert DISABLED_FailsWithDSACert
+#else
+#define MAYBE_FailsWithDSACert FailsWithDSACert
+#endif
+
+TEST_F(SpdyCredentialBuilderTest, MAYBE_FailsWithDSACert) {
+  EXPECT_EQ(ERR_BAD_SSL_CLIENT_AUTH_CERT,
+            BuildWithType(CLIENT_CERT_DSS_SIGN));
 }
 
 #if defined(USE_OPENSSL)

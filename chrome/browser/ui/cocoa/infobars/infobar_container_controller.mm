@@ -5,9 +5,9 @@
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #import "chrome/browser/ui/cocoa/animatable_view.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
@@ -28,15 +28,16 @@ class InfoBarNotificationObserver : public content::NotificationObserver {
 
  private:
   // NotificationObserver implementation
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) {
-    InfoBarTabHelper* infobar_helper =
-        content::Source<InfoBarTabHelper>(source).ptr();
+  virtual void Observe(
+      int type,
+      const content::NotificationSource& source,
+      const content::NotificationDetails& details) OVERRIDE {
+    InfoBarService* infobar_service =
+        content::Source<InfoBarService>(source).ptr();
     switch (type) {
       case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED:
         [controller_ addInfoBar:content::Details<InfoBarAddedDetails>(details)->
-                                    CreateInfoBar(infobar_helper)
+                                    CreateInfoBar(infobar_service)
                         animate:YES];
         break;
 
@@ -55,7 +56,7 @@ class InfoBarNotificationObserver : public content::NotificationObserver {
         [controller_ closeInfoBarsForDelegate:replaced_details->first
                                       animate:NO];
         [controller_ addInfoBar:replaced_details->second->
-                                    CreateInfoBar(infobar_helper)
+                                    CreateInfoBar(infobar_service)
                         animate:NO];
         break;
       }
@@ -141,15 +142,15 @@ class InfoBarNotificationObserver : public content::NotificationObserver {
 
   currentWebContents_ = contents;
   if (currentWebContents_) {
-    InfoBarTabHelper* infobarTabHelper =
-        InfoBarTabHelper::FromWebContents(currentWebContents_);
-    for (size_t i = 0; i < infobarTabHelper->GetInfoBarCount(); ++i) {
-      InfoBar* infobar = infobarTabHelper->
-          GetInfoBarDelegateAt(i)->CreateInfoBar(infobarTabHelper);
+    InfoBarService* infobarService =
+        InfoBarService::FromWebContents(currentWebContents_);
+    for (size_t i = 0; i < infobarService->GetInfoBarCount(); ++i) {
+      InfoBar* infobar = infobarService->
+          GetInfoBarDelegateAt(i)->CreateInfoBar(infobarService);
       [self addInfoBar:infobar animate:NO];
     }
 
-    content::Source<InfoBarTabHelper> source(infobarTabHelper);
+    content::Source<InfoBarService> source(infobarService);
     registrar_.Add(infoBarObserver_.get(),
                    chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED, source);
     registrar_.Add(infoBarObserver_.get(),

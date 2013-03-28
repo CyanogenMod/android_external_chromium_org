@@ -27,6 +27,7 @@ using ::testing::_;
 using ::testing::DeleteArg;
 using ::testing::DoAll;
 using ::testing::Return;
+using ::testing::SaveArg;
 
 const int kProcessId = 5;
 const int kRenderId = 6;
@@ -194,7 +195,7 @@ TEST_F(MediaStreamDispatcherHostTest, GenerateStream) {
   EXPECT_CALL(*host_, OnStreamGenerated(kRenderId, kPageRequestId, 0, 1));
   host_->OnGenerateStream(kPageRequestId, options);
 
-  EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _));
+  EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _, _));
   EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesClosed(_, _, _));
 
   WaitForResult();
@@ -221,7 +222,7 @@ TEST_F(MediaStreamDispatcherHostTest, GenerateThreeStreams) {
   EXPECT_CALL(*host_, OnStreamGenerated(kRenderId, kPageRequestId, 0, 1));
   host_->OnGenerateStream(kPageRequestId, options);
 
-  EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _));
+  EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _, _));
 
   WaitForResult();
 
@@ -229,7 +230,7 @@ TEST_F(MediaStreamDispatcherHostTest, GenerateThreeStreams) {
   EXPECT_EQ(host_->audio_devices_.size(), 0u);
   EXPECT_EQ(host_->video_devices_.size(), 1u);
   std::string label1 = host_->label_;
-  std::string device_id1 = host_->video_devices_.front().device_id;
+  std::string device_id1 = host_->video_devices_.front().device.id;
 
   // Check that we now have one opened streams.
   EXPECT_EQ(host_->NumberOfStreams(), 1u);
@@ -238,7 +239,7 @@ TEST_F(MediaStreamDispatcherHostTest, GenerateThreeStreams) {
   EXPECT_CALL(*host_, OnStreamGenerated(kRenderId, kPageRequestId + 1, 0, 1));
   host_->OnGenerateStream(kPageRequestId+1, options);
 
-  EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _));
+  EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _, _));
 
   WaitForResult();
 
@@ -246,7 +247,7 @@ TEST_F(MediaStreamDispatcherHostTest, GenerateThreeStreams) {
   EXPECT_EQ(host_->audio_devices_.size(), 0u);
   EXPECT_EQ(host_->video_devices_.size(), 1u);
   std::string label2 = host_->label_;
-  std::string device_id2 = host_->video_devices_.front().device_id;
+  std::string device_id2 = host_->video_devices_.front().device.id;
   EXPECT_EQ(device_id1, device_id2);
   EXPECT_NE(label1, label2);
 
@@ -257,7 +258,7 @@ TEST_F(MediaStreamDispatcherHostTest, GenerateThreeStreams) {
   EXPECT_CALL(*host_, OnStreamGenerated(kRenderId, kPageRequestId + 2, 0, 1));
   host_->OnGenerateStream(kPageRequestId+2, options);
 
-  EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _));
+  EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _, _));
   EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesClosed(_, _, _))
       .Times(3);
 
@@ -267,7 +268,7 @@ TEST_F(MediaStreamDispatcherHostTest, GenerateThreeStreams) {
   EXPECT_EQ(host_->audio_devices_.size(), 0u);
   EXPECT_EQ(host_->video_devices_.size(), 1u);
   std::string label3 = host_->label_;
-  std::string device_id3 = host_->video_devices_.front().device_id;
+  std::string device_id3 = host_->video_devices_.front().device.id;
   EXPECT_EQ(device_id1, device_id3);
   EXPECT_NE(label1, label3);
   EXPECT_NE(label2, label3);
@@ -323,7 +324,7 @@ TEST_F(MediaStreamDispatcherHostTest, StopGeneratedStreamsOnChannelClosing) {
   size_t generated_streams = 3;
   for (size_t i = 0; i < generated_streams; ++i) {
     EXPECT_CALL(*host_, OnStreamGenerated(kRenderId, kPageRequestId + i, 0, 1));
-    EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _));
+    EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _, _));
     host_->OnGenerateStream(kPageRequestId + i, options);
 
     // Wait until the stream is generated.
@@ -337,6 +338,34 @@ TEST_F(MediaStreamDispatcherHostTest, StopGeneratedStreamsOnChannelClosing) {
   host_->OnChannelClosing();
 
   // Streams should have been cleaned up.
+  EXPECT_EQ(host_->NumberOfStreams(), 0u);
+}
+
+TEST_F(MediaStreamDispatcherHostTest, CloseFromUI) {
+  StreamOptions options(MEDIA_NO_SERVICE, MEDIA_DEVICE_VIDEO_CAPTURE);
+
+  EXPECT_CALL(*host_, GetMediaObserver())
+      .WillRepeatedly(Return(media_observer_.get()));
+  EXPECT_CALL(*host_, OnStreamGenerated(kRenderId, kPageRequestId, 0, 1));
+  EXPECT_CALL(*host_, OnStreamGenerationFailed(kRenderId, kPageRequestId));
+  host_->OnGenerateStream(kPageRequestId, options);
+
+  base::Closure close_callback;
+
+  EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesOpened(_, _, _, _))
+      .WillOnce(SaveArg<3>(&close_callback));
+  EXPECT_CALL(*media_observer_.get(), OnCaptureDevicesClosed(_, _, _));
+
+  WaitForResult();
+
+  EXPECT_EQ(host_->audio_devices_.size(), 0u);
+  EXPECT_EQ(host_->video_devices_.size(), 1u);
+  EXPECT_EQ(host_->NumberOfStreams(), 1u);
+
+  ASSERT_FALSE(close_callback.is_null());
+  close_callback.Run();
+  message_loop_->RunUntilIdle();
+
   EXPECT_EQ(host_->NumberOfStreams(), 0u);
 }
 

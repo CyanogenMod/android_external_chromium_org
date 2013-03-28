@@ -6,14 +6,15 @@
 #define CHROME_BROWSER_UI_GTK_EXTENSIONS_MEDIA_GALLERIES_DIALOG_GTK_H_
 
 #include <gtk/gtk.h>
+
 #include <map>
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "chrome/browser/media_gallery/media_galleries_dialog_controller.h"
+#include "chrome/browser/media_galleries/media_galleries_dialog_controller.h"
 #include "chrome/browser/ui/gtk/constrained_window_gtk.h"
 #include "ui/base/gtk/gtk_signal.h"
-#include "ui/base/gtk/owned_widget_gtk.h"
+#include "ui/base/gtk/scoped_gobject.h"
 
 namespace chrome {
 
@@ -22,8 +23,7 @@ class MediaGalleriesDialogTest;
 
 // The media galleries configuration view for Gtk. It will immediately show
 // upon construction.
-class MediaGalleriesDialogGtk : public MediaGalleriesDialog,
-                                public ConstrainedWindowGtkDelegate {
+class MediaGalleriesDialogGtk : public MediaGalleriesDialog {
  public:
   explicit MediaGalleriesDialogGtk(MediaGalleriesDialogController* controller);
   virtual ~MediaGalleriesDialogGtk();
@@ -31,11 +31,7 @@ class MediaGalleriesDialogGtk : public MediaGalleriesDialog,
   // MediaGalleriesDialog implementation:
   virtual void UpdateGallery(const MediaGalleryPrefInfo* gallery,
                              bool permitted) OVERRIDE;
-
-  // ConstrainedWindowGtkDelegate implementation:
-  virtual GtkWidget* GetWidgetRoot() OVERRIDE;
-  virtual GtkWidget* GetFocusWidget() OVERRIDE;
-  virtual void DeleteDelegate() OVERRIDE;
+  virtual void ForgetGallery(const MediaGalleryPrefInfo* gallery) OVERRIDE;
 
   // Event callbacks.
   CHROMEGTK_CALLBACK_0(MediaGalleriesDialogGtk, void, OnToggled);
@@ -47,6 +43,7 @@ class MediaGalleriesDialogGtk : public MediaGalleriesDialog,
   FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, InitializeCheckboxes);
   FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, ToggleCheckboxes);
   FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, UpdateAdds);
+  FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, ForgetDeletes);
 
   typedef std::map<const MediaGalleryPrefInfo*, GtkWidget*> CheckboxMap;
 
@@ -56,11 +53,13 @@ class MediaGalleriesDialogGtk : public MediaGalleriesDialog,
   // Updates the state of the confirm button. It will be disabled when
   void UpdateConfirmButtonState();
 
+  CHROMEGTK_CALLBACK_0(MediaGalleriesDialogGtk, void, OnDestroy);
+
   MediaGalleriesDialogController* controller_;
-  ConstrainedWindowGtk* window_;
+  GtkWidget* window_;
 
   // The root widget for the dialog.
-  ui::OwnedWidgetGtk contents_;
+  ui::ScopedGObject<GtkWidget>::Type contents_;
 
   // The confirm button.
   GtkWidget* confirm_;

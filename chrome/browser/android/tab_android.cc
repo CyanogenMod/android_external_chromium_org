@@ -3,50 +3,66 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/android/tab_android.h"
-#include "chrome/browser/autofill/autofill_external_delegate.h"
-#include "chrome/browser/autofill/autofill_manager.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/history/history_tab_helper.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/password_manager/password_manager_delegate_impl.h"
+#include "chrome/browser/prerender/prerender_tab_helper.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ssl/ssl_tab_helper.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/ui/alternate_error_tab_observer.h"
 #include "chrome/browser/ui/android/window_android_helper.h"
 #include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
+#include "chrome/browser/ui/browser_tab_contents.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
 #include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/browser/ui/sync/tab_contents_synced_tab_delegate.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
+#include "chrome/browser/view_type_utils.h"
+#include "components/autofill/browser/autofill_external_delegate.h"
+#include "components/autofill/browser/autofill_manager.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/web_contents.h"
 
-TabContents* TabAndroid::GetOrCreateTabContents(
-    content::WebContents* web_contents) {
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents);
-  if (!tab_contents) {
-    tab_contents = TabContents::Factory::CreateTabContents(web_contents);
-    InitTabHelpers(web_contents);
-  }
-  return tab_contents;
-}
+using content::WebContents;
 
-void TabAndroid::InitTabHelpers(content::WebContents* contents) {
-  // TODO(nileshagrawal): Currently this is not used by Chrome for Android,
-  // as it uses TabContents. When TabContents is not created for Android,
-  // this will be used to initialize all the tab helpers.
+namespace {
+
+const char kTabHelpersInitializedUserDataKey[] =
+    "TabAndroidTabHelpersInitialized";
+
+}  // namespace
+
+void BrowserTabContents::AttachTabHelpers(WebContents* contents) {
+  // If already initialized, nothing to be done.
+  base::SupportsUserData::Data* initialization_tag =
+      contents->GetUserData(&kTabHelpersInitializedUserDataKey);
+  if (initialization_tag)
+    return;
+
+  // Mark as initialized.
+  contents->SetUserData(&kTabHelpersInitializedUserDataKey,
+                            new base::SupportsUserData::Data());
+
+  // Set the view type.
+  chrome::SetViewType(contents, chrome::VIEW_TYPE_TAB_CONTENTS);
 
   // SessionTabHelper comes first because it sets up the tab ID, and other
   // helpers may rely on that.
   SessionTabHelper::CreateForWebContents(contents);
 
-  TabAutofillManagerDelegate::CreateForWebContents(contents);
+  AlternateErrorPageTabObserver::CreateForWebContents(contents);
+  autofill::TabAutofillManagerDelegate::CreateForWebContents(contents);
   AutofillManager::CreateForWebContentsAndDelegate(
-      contents, TabAutofillManagerDelegate::FromWebContents(contents));
+      contents,
+      autofill::TabAutofillManagerDelegate::FromWebContents(contents));
   AutofillExternalDelegate::CreateForWebContentsAndManager(
       contents, AutofillManager::FromWebContents(contents));
   AutofillManager::FromWebContents(contents)->SetExternalDelegate(
@@ -54,33 +70,50 @@ void TabAndroid::InitTabHelpers(content::WebContents* contents) {
   BlockedContentTabHelper::CreateForWebContents(contents);
   BookmarkTabHelper::CreateForWebContents(contents);
   CoreTabHelper::CreateForWebContents(contents);
+  extensions::TabHelper::CreateForWebContents(contents);
   FaviconTabHelper::CreateForWebContents(contents);
   FindTabHelper::CreateForWebContents(contents);
   HistoryTabHelper::CreateForWebContents(contents);
-  InfoBarTabHelper::CreateForWebContents(contents);
+  InfoBarService::CreateForWebContents(contents);
   PasswordManagerDelegateImpl::CreateForWebContents(contents);
   PasswordManager::CreateForWebContentsAndDelegate(
       contents, PasswordManagerDelegateImpl::FromWebContents(contents));
   PrefsTabHelper::CreateForWebContents(contents);
+  prerender::PrerenderTabHelper::CreateForWebContents(contents);
   SSLTabHelper::CreateForWebContents(contents);
   TabContentsSyncedTabDelegate::CreateForWebContents(contents);
   TabSpecificContentSettings::CreateForWebContents(contents);
+  TranslateTabHelper::CreateForWebContents(contents);
   WindowAndroidHelper::CreateForWebContents(contents);
 }
 
-TabContents* TabAndroid::InitTabContentsFromView(JNIEnv* env,
+void TabAndroid::InitTabHelpers(WebContents* contents) {
+  BrowserTabContents::AttachTabHelpers(contents);
+}
+
+WebContents* TabAndroid::InitWebContentsFromView(JNIEnv* env,
                                                  jobject content_view) {
   content::ContentViewCore* content_view_core =
       content::ContentViewCore::GetNativeContentViewCore(env, content_view);
   DCHECK(content_view_core);
-  DCHECK(content_view_core->GetWebContents());
-  return GetOrCreateTabContents(content_view_core->GetWebContents());
+  WebContents* web_contents = content_view_core->GetWebContents();
+  DCHECK(web_contents);
+  InitTabHelpers(web_contents);
+  return web_contents;
 }
 
 TabAndroid::TabAndroid() : tab_id_(-1) {
 }
 
 TabAndroid::~TabAndroid() {
+}
+
+content::WebContents* TabAndroid::GetWebContents() {
+  return NULL;
+}
+
+ToolbarModel::SecurityLevel TabAndroid::GetSecurityLevel() {
+  return ToolbarModelImpl::GetSecurityLevelForWebContents(GetWebContents());
 }
 
 void TabAndroid::RunExternalProtocolDialog(const GURL& url) {

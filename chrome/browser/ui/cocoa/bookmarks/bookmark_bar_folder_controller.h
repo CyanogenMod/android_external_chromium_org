@@ -9,28 +9,27 @@
 
 #include "base/memory/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
-#import "chrome/browser/ui/cocoa/tracking_area.h"
+#import "ui/base/cocoa/tracking_area.h"
 
 @class BookmarkBarController;
 @class BookmarkBarFolderView;
-@class BookmarkFolderTarget;
 @class BookmarkBarFolderHoverState;
 @class BookmarkBarFolderWindow;
 @class BookmarkBarFolderWindowContentView;
+@class BookmarkFolderTarget;
 
 // A controller for the pop-up windows from bookmark folder buttons
 // which look sort of like menus.
 @interface BookmarkBarFolderController :
     NSWindowController<BookmarkButtonDelegate,
-                       BookmarkButtonControllerProtocol,
-                       NSUserInterfaceValidations> {
+                       BookmarkButtonControllerProtocol> {
  @private
   // The button whose click opened us.
   scoped_nsobject<BookmarkButton> parentButton_;
 
   // Bookmark bar folder controller chains are torn down in two ways:
-  // 1. Clicking "outside" the folder (see use of
-  // CrApplicationEventHookProtocol in the bookmark bar controller).
+  // 1. Clicking "outside" the folder (see use of the NSEvent local event
+  //    monitor in the bookmark bar controller).
   // 2. Engaging a different folder (via hover over or explicit click).
   //
   // In either case, the BookmarkButtonControllerProtocol method
@@ -98,12 +97,6 @@
   // setShowsBorderOnlyWhileMouseInside bug.
   BookmarkButton* buttonThatMouseIsIn_;
 
-  // The context menu for a bookmark button which represents an URL.
-  IBOutlet NSMenu* buttonMenu_;
-
-  // The context menu for a bookmark button which represents a folder.
-  IBOutlet NSMenu* folderMenu_;
-
   // We model hover state as a state machine with specific allowable
   // transitions.  |hoverState_| is the state of this machine at any
   // given time.
@@ -119,7 +112,7 @@
   BookmarkBarFolderController* folderController_;
 
   // Implement basic menu scrolling through this tracking area.
-  ScopedCrTrackingArea scrollTrackingArea_;
+  ui::ScopedCrTrackingArea scrollTrackingArea_;
 
   // Timer to continue scrolling as needed.  We own the timer but
   // don't release it when done (we invalidate it).
@@ -140,6 +133,9 @@
   // Set to YES to prevent any node animations. Useful for unit testing so that
   // incomplete animations do not cause valgrind complaints.
   BOOL ignoreAnimations_;
+
+  // The screen to which the menu should be restricted.
+  NSScreen* screen_;
 
   int selectedIndex_;
   NSString* typedPrefix_;
@@ -177,29 +173,10 @@
 // and altering the contents of the off-the-side folder.
 - (void)reconfigureMenu;
 
-// Actions from a context menu over a button or folder.
-- (IBAction)cutBookmark:(id)sender;
-- (IBAction)copyBookmark:(id)sender;
-- (IBAction)pasteBookmark:(id)sender;
-- (IBAction)deleteBookmark:(id)sender;
-
 // Passed up by a child view to tell us of a desire to scroll.
 - (void)scrollWheel:(NSEvent *)theEvent;
 
 - (void)mouseDragged:(NSEvent*)theEvent;
-
-
-// Forwarded to the associated BookmarkBarController.
-- (IBAction)addFolder:(id)sender;
-- (IBAction)addPage:(id)sender;
-- (IBAction)editBookmark:(id)sender;
-- (IBAction)openBookmark:(id)sender;
-- (IBAction)openAllBookmarks:(id)sender;
-- (IBAction)openAllBookmarksIncognitoWindow:(id)sender;
-- (IBAction)openAllBookmarksNewWindow:(id)sender;
-- (IBAction)openBookmarkInIncognitoWindow:(id)sender;
-- (IBAction)openBookmarkInNewForegroundTab:(id)sender;
-- (IBAction)openBookmarkInNewWindow:(id)sender;
 
 @property(assign, nonatomic) BOOL subFolderGrowthToRight;
 
@@ -224,6 +201,8 @@
 - (NSView*)visibleView;
 - (NSScrollView*)scrollView;
 - (NSView*)folderView;
+
+- (IBAction)openBookmarkFolderFromButton:(id)sender;
 
 - (BookmarkButton*)buttonForDroppingOnAtPoint:(NSPoint)point;
 @end

@@ -4,26 +4,33 @@
 
 #include "webkit/fileapi/syncable/syncable_file_system_util.h"
 
+#include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_observers.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_util.h"
-#include "webkit/fileapi/isolated_context.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 
-namespace fileapi {
+using fileapi::ExternalMountPoints;
+using fileapi::FileSystemContext;
+using fileapi::FileSystemURL;
+using fileapi::LocalFileSystemOperation;
+
+namespace sync_file_system {
 
 bool RegisterSyncableFileSystem(const std::string& service_name) {
-  return IsolatedContext::GetInstance()->RegisterExternalFileSystem(
-      service_name, kFileSystemTypeSyncable, FilePath());
+  return ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
+      service_name, fileapi::kFileSystemTypeSyncable, base::FilePath());
 }
 
 bool RevokeSyncableFileSystem(const std::string& service_name) {
-  return IsolatedContext::GetInstance()->RevokeFileSystem(service_name);
+  return ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
+      service_name);
 }
 
 GURL GetSyncableFileSystemRootURI(const GURL& origin,
                                   const std::string& service_name) {
-  const GURL url = GetFileSystemRootURI(origin, kFileSystemTypeExternal);
+  const GURL url = GetFileSystemRootURI(origin,
+                                        fileapi::kFileSystemTypeExternal);
   const std::string path = service_name + "/";
   url_canon::Replacements<char> replacements;
   replacements.SetPath(path.c_str(), url_parse::Component(0, path.length()));
@@ -32,15 +39,16 @@ GURL GetSyncableFileSystemRootURI(const GURL& origin,
 
 FileSystemURL CreateSyncableFileSystemURL(const GURL& origin,
                                           const std::string& service_name,
-                                          const FilePath& path) {
-  return FileSystemURL(origin,
-                       kFileSystemTypeExternal,
-                       FilePath::FromUTF8Unsafe(service_name).Append(path));
+                                          const base::FilePath& path) {
+  return ExternalMountPoints::GetSystemInstance()->CreateCrackedFileSystemURL(
+      origin,
+      fileapi::kFileSystemTypeExternal,
+      base::FilePath::FromUTF8Unsafe(service_name).Append(path));
 }
 
 bool SerializeSyncableFileSystemURL(const FileSystemURL& url,
                                     std::string* serialized_url) {
-  if (!url.is_valid() || url.type() != kFileSystemTypeSyncable)
+  if (!url.is_valid() || url.type() != fileapi::kFileSystemTypeSyncable)
     return false;
   *serialized_url =
       GetSyncableFileSystemRootURI(url.origin(), url.filesystem_id()).spec() +
@@ -54,20 +62,22 @@ bool DeserializeSyncableFileSystemURL(
   DCHECK(serialized_url.find('\\') == std::string::npos);
 #endif  // FILE_PATH_USES_WIN_SEPARATORS
 
-  const FileSystemURL deserialized_url = FileSystemURL(GURL(serialized_url));
-  if (!deserialized_url.is_valid() ||
-      deserialized_url.type() != kFileSystemTypeSyncable)
+  FileSystemURL deserialized =
+      ExternalMountPoints::GetSystemInstance()->CrackURL(GURL(serialized_url));
+  if (!deserialized.is_valid() ||
+      deserialized.type() != fileapi::kFileSystemTypeSyncable) {
     return false;
+  }
 
-  *url = deserialized_url;
+  *url = deserialized;
   return true;
 }
 
-LocalFileSystemOperation*
-CreateFileSystemOperationForSync(FileSystemContext* file_system_context) {
+LocalFileSystemOperation* CreateFileSystemOperationForSync(
+    FileSystemContext* file_system_context) {
   DCHECK(file_system_context);
   return file_system_context->sandbox_provider()->
       CreateFileSystemOperationForSync(file_system_context);
 }
 
-}  // namespace fileapi
+}  // namespace sync_file_system

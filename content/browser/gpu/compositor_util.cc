@@ -36,6 +36,13 @@ bool CanDoAcceleratedCompositing() {
   return true;
 }
 
+bool IsForceCompositingModeBlacklisted() {
+  GpuFeatureType blacklisted_features =
+      GpuDataManager::GetInstance()->GetBlacklistedFeatures();
+  return GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE ==
+      (blacklisted_features & GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE);
+}
+
 }  // namespace
 
 bool IsThreadedCompositingEnabled() {
@@ -47,24 +54,24 @@ bool IsThreadedCompositingEnabled() {
   if (!CanDoAcceleratedCompositing())
     return false;
 
-  const GpuDataManager* gpu_data_manager = GpuDataManager::GetInstance();
-  GpuFeatureType blacklisted_features =
-      gpu_data_manager->GetBlacklistedFeatures();
-  // Disallow threaded compositing when texture sharing is blacklisted since
-  // this triggers renderer-side readbacks for the thumbnailer / extensions.
-  // http://crbug.com/158747
-  if (blacklisted_features & GPU_FEATURE_TYPE_TEXTURE_SHARING)
-    return false;
-
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
-  // Command line switches take precedence over field trials.
+  // Command line switches take precedence over blacklist and field trials.
   if (command_line.HasSwitch(switches::kDisableForceCompositingMode) ||
       command_line.HasSwitch(switches::kDisableThreadedCompositing))
     return false;
 
+#if defined(OS_CHROMEOS)
+  // We always want threaded compositing on  ChromeOS unless it's explicitly
+  // disabled above.
+  return true;
+#endif
+
   if (command_line.HasSwitch(switches::kEnableThreadedCompositing))
     return true;
+
+  if (IsForceCompositingModeBlacklisted())
+    return false;
 
   base::FieldTrial* trial =
       base::FieldTrialList::Find(kGpuCompositingFieldTrialName);
@@ -83,12 +90,20 @@ bool IsForceCompositingModeEnabled() {
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
-  // Command line switches take precedence over field trials.
+  // Command line switches take precedence over blacklisting and field trials.
   if (command_line.HasSwitch(switches::kDisableForceCompositingMode))
     return false;
 
+#if defined(OS_CHROMEOS)
+  // We always want compositing ChromeOS unless it's explicitly disabled above.
+  return true;
+#endif
+
   if (command_line.HasSwitch(switches::kForceCompositingMode))
     return true;
+
+  if (IsForceCompositingModeBlacklisted())
+    return false;
 
   base::FieldTrial* trial =
       base::FieldTrialList::Find(kGpuCompositingFieldTrialName);

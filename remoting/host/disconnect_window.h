@@ -12,7 +12,7 @@
 
 namespace remoting {
 
-class ChromotingHost;
+struct UiStrings;
 
 class DisconnectWindow {
  public:
@@ -20,22 +20,23 @@ class DisconnectWindow {
     kMaximumConnectedNameWidthInPixels = 400
   };
 
-  // DisconnectCallback is called when the user clicks on the Disconnect button
-  // to disconnect the session. This callback is provided as a parameter to the
-  // Show() method, and will be triggered on the UI thread.
-  typedef base::Callback<void(void)> DisconnectCallback;
-
   virtual ~DisconnectWindow() {}
 
-  // Show the disconnect window allowing the user to shut down |host|.
-  virtual void Show(ChromotingHost* host,
-                    const DisconnectCallback& disconnect_callback,
+  // Shows the disconnect window, allowing the user to disconnect the session.
+  // |disconnect_callback| will be invoked on the calling UI thread when the
+  // user chooses to disconnect, or if the window is closed by any means other
+  // than Hide(), or deletion of the DisconnectWindow instance.
+  // Show returns false if the window cannot be shown, in which case the
+  // callback will not be invoked.
+  virtual bool Show(const base::Closure& disconnect_callback,
                     const std::string& username) = 0;
 
-  // Hide the disconnect window.
+  // Hides the disconnect window. The disconnect callback will not be invoked.
   virtual void Hide() = 0;
 
-  static scoped_ptr<DisconnectWindow> Create();
+  // |ui_strings| specifies localized strings to be used by the window.
+  // |ui_strings| must outlive the returned object.
+  static scoped_ptr<DisconnectWindow> Create(const UiStrings* ui_strings);
 };
 
 }  // namespace remoting

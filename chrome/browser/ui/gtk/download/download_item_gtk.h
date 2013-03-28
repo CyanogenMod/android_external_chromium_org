@@ -14,7 +14,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time.h"
 #include "base/timer.h"
+#include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/icon_manager.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -23,7 +25,6 @@
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/owned_widget_gtk.h"
 
-class BaseDownloadItemModel;
 class DownloadShelfContextMenuGtk;
 class DownloadShelfGtk;
 class GtkThemeService;
@@ -43,7 +44,7 @@ class DownloadItemGtk : public content::DownloadItem::Observer,
  public:
   // DownloadItemGtk takes ownership of |download_item_model|.
   DownloadItemGtk(DownloadShelfGtk* parent_shelf,
-                  BaseDownloadItemModel* download_item_model);
+                  content::DownloadItem* download_item);
 
   // Destroys all widgets belonging to this DownloadItemGtk.
   virtual ~DownloadItemGtk();
@@ -63,13 +64,11 @@ class DownloadItemGtk : public content::DownloadItem::Observer,
 
   // Called when the icon manager has finished loading the icon. We take
   // ownership of |icon_bitmap|.
-  void OnLoadSmallIconComplete(IconManager::Handle handle,
-                               gfx::Image* image);
-  void OnLoadLargeIconComplete(IconManager::Handle handle,
-                               gfx::Image* image);
+  void OnLoadSmallIconComplete(gfx::Image* image);
+  void OnLoadLargeIconComplete(gfx::Image* image);
 
   // Returns the DownloadItem model object belonging to this item.
-  content::DownloadItem* get_download();
+  content::DownloadItem* download() { return download_model_.download(); }
 
  private:
   friend class DownloadShelfContextMenuGtk;
@@ -200,7 +199,7 @@ class DownloadItemGtk : public content::DownloadItem::Observer,
   scoped_ptr<DownloadShelfContextMenuGtk> menu_;
 
   // The download item model we represent.
-  scoped_ptr<BaseDownloadItemModel> download_model_;
+  DownloadItemModel download_model_;
 
   // The dangerous download dialog. This will be null for safe downloads.
   GtkWidget* dangerous_prompt_;
@@ -228,7 +227,7 @@ class DownloadItemGtk : public content::DownloadItem::Observer,
   gfx::Image* icon_large_;
 
   // The last download file path for which we requested an icon.
-  FilePath icon_filepath_;
+  base::FilePath icon_filepath_;
 
   content::NotificationRegistrar registrar_;
 
@@ -236,7 +235,7 @@ class DownloadItemGtk : public content::DownloadItem::Observer,
   base::Time creation_time_;
 
   // For canceling an in progress icon request.
-  CancelableRequestConsumerT<int, 0> icon_consumer_;
+  CancelableTaskTracker cancelable_task_tracker_;
 
   // Indicates when the download has completed, so we don't redo
   // on-completion actions.

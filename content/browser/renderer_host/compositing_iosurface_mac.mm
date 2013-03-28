@@ -4,16 +4,25 @@
 
 #include "content/browser/renderer_host/compositing_iosurface_mac.h"
 
+#include <OpenGL/CGLRenderers.h>
 #include <OpenGL/OpenGL.h>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "base/message_loop.h"
 #include "base/threading/platform_thread.h"
+#include "content/browser/renderer_host/compositing_iosurface_shader_programs_mac.h"
+#include "content/browser/renderer_host/compositing_iosurface_transformer_mac.h"
 #include "content/common/content_constants_internal.h"
-#include "content/public/browser/browser_thread.h"
+#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
+#include "media/base/video_util.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gl/gl_context.h"
@@ -31,82 +40,19 @@
   } while (0)
 #endif
 
-#define SHADER_STRING_GLSL(shader) #shader
-
 namespace content {
 namespace {
 
-const char* g_vertex_shader_blit_rgb = SHADER_STRING_GLSL(
-    varying vec2 texture_coordinate;
-    void main() {
-      gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
-      texture_coordinate = vec2(gl_MultiTexCoord0);
-    });
+// How many times to test if asynchronous copy has completed.
+// This value is chosen such that we allow at most 1 second to finish a copy.
+const int kFinishCopyRetryCycles = 100;
 
-const char* g_fragment_shader_blit_rgb = SHADER_STRING_GLSL(
-    varying vec2 texture_coordinate;
-    uniform sampler2DRect texture;
-    void main() {
-      gl_FragColor = vec4(texture2DRect(texture, texture_coordinate).rgb, 1.0);
-    });
+// Time in milliseconds to allow asynchronous copy to finish.
+// This value is shorter than 16ms such that copy can complete within a vsync.
+const int kFinishCopyPollingPeriodMs = 10;
 
-const char* g_vertex_shader_white = SHADER_STRING_GLSL(
-    void main() {
-      gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
-    });
-
-const char* g_fragment_shader_white = SHADER_STRING_GLSL(
-    void main() {
-      gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-    });
-
-// Create and compile shader, return its ID or 0 on error.
-GLuint CompileShaderGLSL(GLenum type, const char* shader_str) {
-  GLuint shader = glCreateShader(type);
-  glShaderSource(shader, 1, &shader_str, NULL);
-  glCompileShader(shader); CHECK_GL_ERROR();
-  GLint error;
-  glGetShaderiv(shader, GL_COMPILE_STATUS, &error);
-  if (error != GL_TRUE) {
-    glDeleteShader(shader);
-    return 0;
-  }
-  return shader;
-}
-
-// Compile the given vertex and shader source strings into a GLSL program.
-GLuint CreateProgramGLSL(const char* vertex_shader_str,
-                         const char* fragment_shader_str) {
-  GLuint vertex_shader =
-      CompileShaderGLSL(GL_VERTEX_SHADER, vertex_shader_str);
-  if (!vertex_shader)
-    return 0;
-
-  GLuint fragment_shader =
-      CompileShaderGLSL(GL_FRAGMENT_SHADER, fragment_shader_str);
-  if (!fragment_shader) {
-    glDeleteShader(vertex_shader);
-    return 0;
-  }
-
-  GLuint program = glCreateProgram(); CHECK_GL_ERROR();
-  glAttachShader(program, vertex_shader);
-  glAttachShader(program, fragment_shader);
-  glLinkProgram(program); CHECK_GL_ERROR();
-
-  // Flag shaders for deletion so that they will be deleted when the program
-  // is deleted. That way we don't have to retain these IDs.
-  glDeleteShader(vertex_shader);
-  glDeleteShader(fragment_shader);
-
-  GLint error;
-  glGetProgramiv(program, GL_LINK_STATUS, &error);
-  if (error != GL_TRUE) {
-    glDeleteProgram(program);
-    return 0;
-  }
-  return program;
-}
+// Everything uses only the GL_TEXTURE0 texture unit.
+const int kTextureUnit = 0;
 
 bool HasAppleFenceExtension() {
   static bool initialized_has_fence = false;
@@ -134,16 +80,77 @@ bool HasPixelBufferObjectExtension() {
   return has_pbo;
 }
 
-bool IsVendorIntel() {
-  static bool initialized_is_intel = false;
-  static bool is_intel = false;
+// Helper function to reverse the argument order.  Also takes ownership of
+// |bitmap_output| for the life of the binding.
+void ReverseArgumentOrder(
+    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    scoped_ptr<SkBitmap> bitmap_output, bool success) {
+  callback.Run(success, *bitmap_output);
+}
 
-  if (!initialized_is_intel) {
-    is_intel = strstr(reinterpret_cast<const char*>(glGetString(GL_VENDOR)),
-                      "Intel") != NULL;
-    initialized_is_intel = true;
+// Called during an async GPU readback with a pointer to the pixel buffer.  In
+// the snapshot path, we just memcpy the data into our output bitmap since the
+// width, height, and stride should all be equal.
+bool MapBufferToSkBitmap(const SkBitmap* output, const void* buf, int ignored) {
+  TRACE_EVENT0("browser", "MapBufferToSkBitmap()");
+
+  if (buf) {
+    SkAutoLockPixels output_lock(*output);
+    memcpy(output->getPixels(), buf, output->getSize());
   }
-  return is_intel;
+  return buf != NULL;
+}
+
+// Copies tightly-packed scanlines from |buf| to |region_in_frame| in the given
+// |target| VideoFrame's |plane|.  Assumption: |buf|'s width is
+// |region_in_frame.width()| and its stride is always in 4-byte alignment.
+//
+// TODO(miu): Refactor by moving this function into media/video_util.
+// http://crbug.com/219779
+bool MapBufferToVideoFrame(
+    const scoped_refptr<media::VideoFrame>& target,
+    const gfx::Rect& region_in_frame,
+    const void* buf,
+    int plane) {
+  COMPILE_ASSERT(media::VideoFrame::kYPlane == 0, VideoFrame_kYPlane_mismatch);
+  COMPILE_ASSERT(media::VideoFrame::kUPlane == 1, VideoFrame_kUPlane_mismatch);
+  COMPILE_ASSERT(media::VideoFrame::kVPlane == 2, VideoFrame_kVPlane_mismatch);
+
+  TRACE_EVENT1("browser", "MapBufferToVideoFrame()", "plane", plane);
+
+  // Apply black-out in the regions surrounding the view area (for
+  // letterboxing/pillarboxing).  Only do this once, since this is performed on
+  // all planes in the VideoFrame here.
+  if (plane == 0)
+    media::LetterboxYUV(target, region_in_frame);
+
+  if (buf) {
+    int packed_width = region_in_frame.width();
+    int packed_height = region_in_frame.height();
+    // For planes 1 and 2, the width and height are 1/2 size (rounded up).
+    if (plane > 0) {
+      packed_width = (packed_width + 1) / 2;
+      packed_height = (packed_height + 1) / 2;
+    }
+    const uint8* src = reinterpret_cast<const uint8*>(buf);
+    const int src_stride = (packed_width % 4 == 0 ?
+                                packed_width :
+                                (packed_width + 4 - (packed_width % 4)));
+    const uint8* const src_end = src + packed_height * src_stride;
+
+    // Calculate starting offset and stride into the destination buffer.
+    const int dst_stride = target->stride(plane);
+    uint8* dst = target->data(plane);
+    if (plane == 0)
+      dst += (region_in_frame.y() * dst_stride) + region_in_frame.x();
+    else
+      dst += (region_in_frame.y() / 2 * dst_stride) + (region_in_frame.x() / 2);
+
+    // Copy each row, accounting for strides in the source and destination.
+    for (; src < src_end; src += src_stride, dst += dst_stride)
+      memcpy(dst, src, packed_width);
+  }
+  return buf != NULL;
 }
 
 }  // namespace
@@ -160,14 +167,33 @@ CVReturn DisplayLinkCallback(CVDisplayLinkRef display_link,
   return kCVReturnSuccess;
 }
 
-CompositingIOSurfaceMac::CopyContext::CopyContext() {
-  Reset();
+CompositingIOSurfaceMac::CopyContext::CopyContext()
+  : num_outputs(0),
+    fence(0),
+    cycles_elapsed(0) {
+  memset(output_textures, 0, sizeof(output_textures));
+  memset(frame_buffers, 0, sizeof(frame_buffers));
+  memset(pixel_buffers, 0, sizeof(pixel_buffers));
 }
 
 CompositingIOSurfaceMac::CopyContext::~CopyContext() {
 }
 
-CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
+void CompositingIOSurfaceMac::CopyContext::CleanUp() {
+  glDeleteFramebuffersEXT(num_outputs, frame_buffers); CHECK_GL_ERROR();
+  glDeleteTextures(num_outputs, output_textures);
+  CHECK_GL_ERROR();
+
+  // For an asynchronous read-back, there are more objects to delete:
+  if (fence) {
+    glDeleteBuffers(num_outputs, pixel_buffers);
+    CHECK_GL_ERROR();
+    glDeleteFencesAPPLE(1, &fence); CHECK_GL_ERROR();
+  }
+}
+
+// static
+CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create(SurfaceOrder order) {
   TRACE_EVENT0("browser", "CompositingIOSurfaceMac::Create");
   IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
   if (!io_surface_support) {
@@ -198,10 +224,13 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
     return NULL;
   }
 
-  // We "punch a hole" in the window, and have the WindowServer render the
-  // OpenGL surface underneath so we can draw over it.
-  GLint belowWindow = -1;
-  [glContext setValues:&belowWindow forParameter:NSOpenGLCPSurfaceOrder];
+  // If requested, ask the WindowServer to render the OpenGL surface underneath
+  // the window. This, combined with a hole punched in the window, will allow
+  // for views to "overlap" the GL surface from the user's point of view.
+  if (order == SURFACE_ORDER_BELOW_WINDOW) {
+    GLint belowWindow = -1;
+    [glContext setValues:&belowWindow forParameter:NSOpenGLCPSurfaceOrder];
+  }
 
   CGLContextObj cglContext = (CGLContextObj)[glContext CGLContextObj];
   if (!cglContext) {
@@ -215,19 +244,17 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
   GLint swapInterval = is_vsync_disabled ? 0 : 1;
   [glContext setValues:&swapInterval forParameter:NSOpenGLCPSwapInterval];
 
-  // Build shaders.
+  // Prepare the shader program cache.  Precompile only the shader programs
+  // needed to draw the IO Surface.
   CGLSetCurrentContext(cglContext);
-  GLuint shader_program_blit_rgb =
-      CreateProgramGLSL(g_vertex_shader_blit_rgb, g_fragment_shader_blit_rgb);
-  GLuint shader_program_white =
-      CreateProgramGLSL(g_vertex_shader_white, g_fragment_shader_white);
-  GLint blit_rgb_sampler_location =
-      glGetUniformLocation(shader_program_blit_rgb, "texture");
+  scoped_ptr<CompositingIOSurfaceShaderPrograms> shader_program_cache(
+      new CompositingIOSurfaceShaderPrograms());
+  const bool prepared = (shader_program_cache->UseBlitProgram(kTextureUnit) &&
+                         shader_program_cache->UseSolidWhiteProgram());
+  glUseProgram(0u);
   CGLSetCurrentContext(0);
-
-  if (!shader_program_blit_rgb || !shader_program_white ||
-      blit_rgb_sampler_location == -1) {
-    LOG(ERROR) << "IOSurface shader build error";
+  if (!prepared) {
+    LOG(ERROR) << "IOSurface failed to compile/link required shader programs.";
     return NULL;
   }
 
@@ -240,9 +267,7 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
 
   return new CompositingIOSurfaceMac(io_surface_support, glContext.release(),
                                      cglContext,
-                                     shader_program_blit_rgb,
-                                     blit_rgb_sampler_location,
-                                     shader_program_white,
+                                     shader_program_cache.Pass(),
                                      is_vsync_disabled,
                                      display_link);
 }
@@ -251,9 +276,7 @@ CompositingIOSurfaceMac::CompositingIOSurfaceMac(
     IOSurfaceSupport* io_surface_support,
     NSOpenGLContext* glContext,
     CGLContextObj cglContext,
-    GLuint shader_program_blit_rgb,
-    GLint blit_rgb_sampler_location,
-    GLuint shader_program_white,
+    scoped_ptr<CompositingIOSurfaceShaderPrograms> shader_program_cache,
     bool is_vsync_disabled,
     CVDisplayLinkRef display_link)
     : io_surface_support_(io_surface_support),
@@ -261,9 +284,13 @@ CompositingIOSurfaceMac::CompositingIOSurfaceMac(
       cglContext_(cglContext),
       io_surface_handle_(0),
       texture_(0),
-      shader_program_blit_rgb_(shader_program_blit_rgb),
-      blit_rgb_sampler_location_(blit_rgb_sampler_location),
-      shader_program_white_(shader_program_white),
+      finish_copy_timer_(
+          FROM_HERE,
+          base::TimeDelta::FromMilliseconds(kFinishCopyPollingPeriodMs),
+          base::Bind(&CompositingIOSurfaceMac::FinishAllCopies,
+                     base::Unretained(this)),
+          true),
+      shader_program_cache_(shader_program_cache.Pass()),
       is_vsync_disabled_(is_vsync_disabled),
       display_link_(display_link),
       display_link_stop_timer_(FROM_HERE, base::TimeDelta::FromSeconds(1),
@@ -271,7 +298,10 @@ CompositingIOSurfaceMac::CompositingIOSurfaceMac(
       vsync_count_(0),
       swap_count_(0),
       vsync_interval_numerator_(0),
-      vsync_interval_denominator_(0) {
+      vsync_interval_denominator_(0),
+      initialized_is_intel_(false),
+      is_intel_(false),
+      screen_(0) {
   CVReturn ret = CVDisplayLinkSetOutputCallback(display_link_,
                                                 &DisplayLinkCallback, this);
   DCHECK(ret == kCVReturnSuccess)
@@ -303,10 +333,12 @@ void CompositingIOSurfaceMac::GetVSyncParameters(base::TimeTicks* timebase,
 }
 
 CompositingIOSurfaceMac::~CompositingIOSurfaceMac() {
+  FailAllCopies();
   CVDisplayLinkRelease(display_link_);
   CGLSetCurrentContext(cglContext_);
-  CleanupResourcesForCopy();
+  CleanupAllCopiesWithinContext();
   UnrefIOSurfaceWithContextCurrent();
+  shader_program_cache_->Reset();
   CGLSetCurrentContext(0);
 }
 
@@ -318,7 +350,18 @@ void CompositingIOSurfaceMac::SetIOSurface(uint64 io_surface_handle,
   CGLSetCurrentContext(0);
 }
 
-void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
+int CompositingIOSurfaceMac::GetRendererID() {
+  GLint current_renderer_id = -1;
+  if (CGLGetParameter(cglContext_,
+                      kCGLCPCurrentRendererID,
+                      &current_renderer_id) == kCGLNoError)
+    return current_renderer_id & kCGLRendererIDMatchingMask;
+  return -1;
+}
+
+void CompositingIOSurfaceMac::DrawIOSurface(
+    NSView* view, float scale_factor,
+    RenderWidgetHostViewFrameSubscriber* frame_subscriber) {
   CGLSetCurrentContext(cglContext_);
 
   bool has_io_surface = MapIOSurfaceToTexture(io_surface_handle_);
@@ -352,11 +395,8 @@ void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
   glDisable(GL_BLEND);
 
   if (has_io_surface) {
-    glUseProgram(shader_program_blit_rgb_);
-
-    int texture_unit = 0;
-    glUniform1i(blit_rgb_sampler_location_, texture_unit);
-    glActiveTexture(GL_TEXTURE0 + texture_unit);
+    shader_program_cache_->UseBlitProgram(kTextureUnit);
+    glActiveTexture(GL_TEXTURE0 + kTextureUnit);
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, texture_);
 
     DrawQuad(quad_);
@@ -366,7 +406,7 @@ void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
     // Fill the resize gutters with white.
     if (window_size.width() > io_surface_size_.width() ||
         window_size.height() > io_surface_size_.height()) {
-      glUseProgram(shader_program_white_);
+      shader_program_cache_->UseSolidWhiteProgram();
       SurfaceQuad filler_quad;
       if (window_size.width() > io_surface_size_.width()) {
         // Draw right-side gutter down to the bottom of the window.
@@ -382,6 +422,12 @@ void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
       }
     }
 
+    // Workaround for issue 158469. Issue a dummy draw call with texture_ not
+    // bound to blit_rgb_sampler_location_, in order to shake all references
+    // to the IOSurface out of the driver.
+    glBegin(GL_TRIANGLES);
+    glEnd();
+
     glUseProgram(0); CHECK_GL_ERROR();
   } else {
     // Should match the clear color of RenderWidgetHostViewMac.
@@ -390,25 +436,41 @@ void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
   }
 
   static bool initialized_workaround = false;
-  static bool use_glfinish_workaround = false;
-
+  static bool force_on_workaround = false;
+  static bool force_off_workaround = false;
   if (!initialized_workaround) {
-    use_glfinish_workaround =
-        (IsVendorIntel() ||
-         CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kForceGLFinishWorkaround)) &&
-         !CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kDisableGpuDriverBugWorkarounds);
+    force_on_workaround = CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kForceGLFinishWorkaround);
+    force_off_workaround = CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kDisableGpuDriverBugWorkarounds);
 
     initialized_workaround = true;
   }
 
+  const bool workaround_needed =
+      IsVendorIntel() && !base::mac::IsOSMountainLionOrLater();
+  const bool use_glfinish_workaround =
+      (workaround_needed || force_on_workaround) && !force_off_workaround;
+
   if (use_glfinish_workaround) {
+    TRACE_EVENT0("gpu", "glFinish");
     // http://crbug.com/123409 : work around bugs in graphics driver on
     // MacBook Air with Intel HD graphics, and possibly on other models,
     // by forcing the graphics pipeline to be completely drained at this
     // point.
+    // This workaround is not necessary on Mountain Lion.
     glFinish();
+  }
+
+  base::Closure copy_done_callback;
+  if (frame_subscriber) {
+    scoped_refptr<media::VideoFrame> frame;
+    RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
+    if (frame_subscriber->ShouldCaptureFrame(&frame, &callback)) {
+      copy_done_callback = CopyToVideoFrameWithinContext(
+          gfx::Rect(io_surface_size_), scale_factor, true, frame,
+          base::Bind(callback, base::Time::Now()));
+    }
   }
 
   CGLFlushDrawable(cglContext_);
@@ -416,7 +478,16 @@ void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
   // For latency_tests.cc:
   UNSHIPPED_TRACE_EVENT_INSTANT0("test_gpu", "CompositorSwapBuffersComplete");
 
+  // Try to finish previous copy requests after flush to get better pipelining.
+  std::vector<base::Closure> copy_done_callbacks;
+  FinishAllCopiesWithinContext(&copy_done_callbacks);
+
   CGLSetCurrentContext(0);
+
+  if (!copy_done_callback.is_null())
+    copy_done_callbacks.push_back(copy_done_callback);
+  for (size_t i = 0; i < copy_done_callbacks.size(); ++i)
+    copy_done_callbacks[i].Run();
 
   StartOrContinueDisplayLink();
 
@@ -426,28 +497,66 @@ void CompositingIOSurfaceMac::DrawIOSurface(NSView* view, float scale_factor) {
 
 void CompositingIOSurfaceMac::CopyTo(
       const gfx::Rect& src_pixel_subrect,
+      float src_scale_factor,
       const gfx::Size& dst_pixel_size,
-      void* out,
-      const base::Callback<void(bool)>& callback) {
+      const base::Callback<void(bool, const SkBitmap&)>& callback) {
+  scoped_ptr<SkBitmap> output(new SkBitmap());
+  output->setConfig(SkBitmap::kARGB_8888_Config,
+                    dst_pixel_size.width(), dst_pixel_size.height());
+  if (!output->allocPixels()) {
+    DLOG(ERROR) << "Failed to allocate SkBitmap pixels!";
+    callback.Run(false, *output);
+    return;
+  }
+  DCHECK_EQ(output->rowBytesAsPixels(), dst_pixel_size.width())
+      << "Stride is required to be equal to width for GPU readback.";
+  output->setIsOpaque(true);
+
   CGLSetCurrentContext(cglContext_);
-  bool async_copy = HasPixelBufferObjectExtension() && !IsVendorIntel();
-  bool ret = false;
-  if (async_copy)
-    ret = AsynchronousCopyTo(src_pixel_subrect, dst_pixel_size, out, callback);
-  else
-    ret = SynchronousCopyTo(src_pixel_subrect, dst_pixel_size, out);
+  const base::Closure copy_done_callback = CopyToSelectedOutputWithinContext(
+      src_pixel_subrect, src_scale_factor, gfx::Rect(dst_pixel_size), false,
+      output.get(), NULL,
+      base::Bind(&ReverseArgumentOrder, callback, base::Passed(&output)));
   CGLSetCurrentContext(0);
+  if (!copy_done_callback.is_null())
+    copy_done_callback.Run();
+}
 
-  if (!ret) {
-    VLOG(1) << "Failed to copy IOSurface, asynchronous mode: " << async_copy;
-  }
+void CompositingIOSurfaceMac::CopyToVideoFrame(
+    const gfx::Rect& src_pixel_subrect,
+    float src_scale_factor,
+    const scoped_refptr<media::VideoFrame>& target,
+    const base::Callback<void(bool)>& callback) {
+  CGLSetCurrentContext(cglContext_);
+  const base::Closure copy_done_callback = CopyToVideoFrameWithinContext(
+      src_pixel_subrect, src_scale_factor, false, target, callback);
+  CGLSetCurrentContext(0);
+  if (!copy_done_callback.is_null())
+    copy_done_callback.Run();
+}
 
-  if (async_copy) {
-    if (!ret)
-      callback.Run(false);
-  } else {
-    callback.Run(ret);
-  }
+base::Closure CompositingIOSurfaceMac::CopyToVideoFrameWithinContext(
+    const gfx::Rect& src_pixel_subrect,
+    float src_scale_factor,
+    bool called_within_draw,
+    const scoped_refptr<media::VideoFrame>& target,
+    const base::Callback<void(bool)>& callback) {
+  gfx::Rect region_in_frame = media::ComputeLetterboxRegion(
+      gfx::Rect(target->coded_size()), src_pixel_subrect.size());
+  // Make coordinates and sizes even because we letterbox in YUV space right
+  // now (see CopyRGBToVideoFrame). They need to be even for the UV samples to
+  // line up correctly.
+  region_in_frame = gfx::Rect(region_in_frame.x() & ~1,
+                              region_in_frame.y() & ~1,
+                              region_in_frame.width() & ~1,
+                              region_in_frame.height() & ~1);
+  DCHECK(!region_in_frame.IsEmpty());
+  DCHECK_LE(region_in_frame.right(), target->coded_size().width());
+  DCHECK_LE(region_in_frame.bottom(), target->coded_size().height());
+
+  return CopyToSelectedOutputWithinContext(
+      src_pixel_subrect, src_scale_factor, region_in_frame, called_within_draw,
+      NULL, target, callback);
 }
 
 bool CompositingIOSurfaceMac::MapIOSurfaceToTexture(
@@ -520,6 +629,20 @@ void CompositingIOSurfaceMac::DrawQuad(const SurfaceQuad& quad) {
 
   glDisableClientState(GL_VERTEX_ARRAY);
   glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+}
+
+bool CompositingIOSurfaceMac::IsVendorIntel() {
+  GLint screen;
+  CGLGetVirtualScreen(cglContext_, &screen);
+  if (screen != screen_)
+    initialized_is_intel_ = false;
+  screen_ = screen;
+  if (!initialized_is_intel_) {
+    is_intel_ = strstr(reinterpret_cast<const char*>(glGetString(GL_VENDOR)),
+                      "Intel") != NULL;
+    initialized_is_intel_ = true;
+  }
+  return is_intel_;
 }
 
 void CompositingIOSurfaceMac::UnrefIOSurfaceWithContextCurrent() {
@@ -607,241 +730,288 @@ void CompositingIOSurfaceMac::StopDisplayLink() {
     CVDisplayLinkStop(display_link_);
 }
 
-bool CompositingIOSurfaceMac::SynchronousCopyTo(
-      const gfx::Rect& src_pixel_subrect,
-      const gfx::Size& dst_pixel_size,
-      void* out) {
-  if (!MapIOSurfaceToTexture(io_surface_handle_))
-    return false;
-
-  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::SynchronousCopyTo()");
-
-  GLuint target = GL_TEXTURE_RECTANGLE_ARB;
-
-  GLuint dst_texture = 0;
-  glGenTextures(1, &dst_texture); CHECK_GL_ERROR();
-  glBindTexture(target, dst_texture); CHECK_GL_ERROR();
-
-  GLuint dst_framebuffer = 0;
-  glGenFramebuffersEXT(1, &dst_framebuffer); CHECK_GL_ERROR();
-  glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, dst_framebuffer); CHECK_GL_ERROR();
-
-  glTexImage2D(target,
-               0,
-               GL_RGBA,
-               dst_pixel_size.width(),
-               dst_pixel_size.height(),
-               0,
-               GL_BGRA,
-               GL_UNSIGNED_INT_8_8_8_8_REV,
-               NULL); CHECK_GL_ERROR();
-  glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
-                            GL_COLOR_ATTACHMENT0_EXT,
-                            target,
-                            dst_texture,
-                            0); CHECK_GL_ERROR();
-  glBindTexture(target, 0); CHECK_GL_ERROR();
-
-  glViewport(0, 0, dst_pixel_size.width(), dst_pixel_size.height());
-
-  glMatrixMode(GL_PROJECTION);
-  glLoadIdentity();
-  glOrtho(0, dst_pixel_size.width(), 0, dst_pixel_size.height(), -1, 1);
-  glMatrixMode(GL_MODELVIEW);
-  glLoadIdentity();
-
-  glDisable(GL_DEPTH_TEST);
-  glDisable(GL_BLEND);
-
-  glUseProgram(shader_program_blit_rgb_);
-
-  int texture_unit = 0;
-  glUniform1i(blit_rgb_sampler_location_, texture_unit);
-  glActiveTexture(GL_TEXTURE0 + texture_unit);
-  glBindTexture(GL_TEXTURE_RECTANGLE_ARB, texture_);
-
-  SurfaceQuad quad;
-  quad.set_rect(0.0f, 0.0f, dst_pixel_size.width(), dst_pixel_size.height());
-  quad.set_texcoord_rect(src_pixel_subrect.x(), src_pixel_subrect.y(),
-                         src_pixel_subrect.right(), src_pixel_subrect.bottom());
-  DrawQuad(quad);
-
-  glBindTexture(GL_TEXTURE_RECTANGLE_ARB, 0); CHECK_GL_ERROR();
-  glUseProgram(0);
-
-  CGLFlushDrawable(cglContext_);
-
-  glReadPixels(0, 0, dst_pixel_size.width(), dst_pixel_size.height(),
-               GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, out);
-
-  glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); CHECK_GL_ERROR();
-
-  glDeleteFramebuffersEXT(1, &dst_framebuffer);
-  glDeleteTextures(1, &dst_texture);
-  return true;
+bool CompositingIOSurfaceMac::IsAsynchronousReadbackSupported() {
+  // Using PBO crashes on Intel drivers but not on newer Mountain Lion
+  // systems. See bug http://crbug.com/152225.
+  return (HasAppleFenceExtension() &&
+          HasPixelBufferObjectExtension() &&
+          (base::mac::IsOSMountainLionOrLater() || !IsVendorIntel()));
 }
 
-bool CompositingIOSurfaceMac::AsynchronousCopyTo(
-      const gfx::Rect& src_pixel_subrect,
-      const gfx::Size& dst_pixel_size,
-      void* out,
-      const base::Callback<void(bool)>& callback) {
-  if (copy_context_.started)
-    return false;
+base::Closure CompositingIOSurfaceMac::CopyToSelectedOutputWithinContext(
+    const gfx::Rect& src_pixel_subrect,
+    float src_scale_factor,
+    const gfx::Rect& dst_pixel_rect,
+    bool called_within_draw,
+    const SkBitmap* bitmap_output,
+    const scoped_refptr<media::VideoFrame>& video_frame_output,
+    const base::Callback<void(bool)>& done_callback) {
+  DCHECK_NE(bitmap_output != NULL, video_frame_output != NULL);
+  DCHECK(!done_callback.is_null());
 
+  const bool async_copy = IsAsynchronousReadbackSupported();
+  TRACE_EVENT2(
+      "browser", "CompositingIOSurfaceMac::CopyToSelectedOutputWithinContext()",
+      "output", bitmap_output ? "SkBitmap (ARGB)" : "VideoFrame (YV12)",
+      "async_readback", async_copy);
+
+  // Set up source texture, bound to the GL_TEXTURE_RECTANGLE_ARB target.
   if (!MapIOSurfaceToTexture(io_surface_handle_))
-    return false;
+    return base::Bind(done_callback, false);
 
-  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::AsynchronousCopyTo()");
-
-  copy_context_.started = true;
-  copy_context_.src_rect = src_pixel_subrect;
-  copy_context_.dest_size = dst_pixel_size;
-  copy_context_.out_buf = out;
-  copy_context_.callback = callback;
-
-  const bool use_fence = HasAppleFenceExtension();
-  if (use_fence) {
-    glGenFencesAPPLE(1, &copy_context_.fence); CHECK_GL_ERROR();
-    copy_context_.use_fence = true;
-    copy_context_.cycles_elapsed = 0;
+  // Create the transformer_ on first use.
+  if (!transformer_) {
+    transformer_.reset(new CompositingIOSurfaceTransformer(
+        GL_TEXTURE_RECTANGLE_ARB, kTextureUnit, true,
+        shader_program_cache_.get()));
   }
 
-  // Create an offscreen framebuffer.
-  // This is used to render and scale a subrect of IOSurface.
-  const GLenum kTarget = GL_TEXTURE_RECTANGLE_ARB;
-  const int dest_width = copy_context_.dest_size.width();
-  const int dest_height = copy_context_.dest_size.height();
-
-  glGenTextures(1, &copy_context_.frame_buffer_texture); CHECK_GL_ERROR();
-  glBindTexture(kTarget, copy_context_.frame_buffer_texture); CHECK_GL_ERROR();
-  glGenFramebuffersEXT(1, &copy_context_.frame_buffer); CHECK_GL_ERROR();
-  glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, copy_context_.frame_buffer);
-  CHECK_GL_ERROR();
-
-  glTexImage2D(kTarget,
-               0,
-               GL_RGBA,
-               dest_width,
-               dest_height,
-               0,
-               GL_BGRA,
-               GL_UNSIGNED_INT_8_8_8_8_REV,
-               NULL); CHECK_GL_ERROR();
-  glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
-                            GL_COLOR_ATTACHMENT0_EXT,
-                            kTarget,
-                            copy_context_.frame_buffer_texture,
-                            0); CHECK_GL_ERROR();
-
-  glViewport(0, 0, dest_width, dest_height); CHECK_GL_ERROR();
-  glMatrixMode(GL_PROJECTION); CHECK_GL_ERROR();
-  glLoadIdentity(); CHECK_GL_ERROR();
-  glOrtho(0, dest_width, 0, dest_height, -1, 1); CHECK_GL_ERROR();
-  glMatrixMode(GL_MODELVIEW); CHECK_GL_ERROR();
-  glLoadIdentity(); CHECK_GL_ERROR();
-
-  glDisable(GL_DEPTH_TEST); CHECK_GL_ERROR();
-  glDisable(GL_BLEND); CHECK_GL_ERROR();
-
-  glUseProgram(shader_program_blit_rgb_); CHECK_GL_ERROR();
-
-  const int kTextureUnit = 0;
-  glUniform1i(blit_rgb_sampler_location_, kTextureUnit); CHECK_GL_ERROR();
-  glActiveTexture(GL_TEXTURE0 + kTextureUnit); CHECK_GL_ERROR();
-  glBindTexture(kTarget, texture_); CHECK_GL_ERROR();
-  glTexParameterf(kTarget, GL_TEXTURE_MIN_FILTER, GL_LINEAR); CHECK_GL_ERROR();
-  glTexParameterf(kTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST); CHECK_GL_ERROR();
-
-  SurfaceQuad quad;
-  quad.set_rect(0.0f, 0.0f, dest_width, dest_height); CHECK_GL_ERROR();
-  quad.set_texcoord_rect(
-      copy_context_.src_rect.x(), copy_context_.src_rect.y(),
-      copy_context_.src_rect.right(), copy_context_.src_rect.bottom());
-  DrawQuad(quad);
-
-  glBindTexture(kTarget, 0); CHECK_GL_ERROR();
-  glUseProgram(0); CHECK_GL_ERROR();
-
-  // Copy the offscreen framebuffer to a PBO.
-  glGenBuffersARB(1, &copy_context_.pixel_buffer); CHECK_GL_ERROR();
-  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, copy_context_.pixel_buffer);
-  CHECK_GL_ERROR();
-  glBufferDataARB(GL_PIXEL_PACK_BUFFER_ARB,
-                  dest_width * dest_height * 4,
-                  NULL, GL_STREAM_READ_ARB); CHECK_GL_ERROR();
-  glReadPixels(0, 0, dest_width, dest_height, GL_BGRA,
-               GL_UNSIGNED_INT_8_8_8_8_REV, 0); CHECK_GL_ERROR();
-
-  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, 0); CHECK_GL_ERROR();
-  glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); CHECK_GL_ERROR();
-
-  if (use_fence) {
-    glSetFenceAPPLE(copy_context_.fence); CHECK_GL_ERROR();
-  }
-  glFlush(); CHECK_GL_ERROR();
-
-  // 20ms is an estimate assuming most hardware can complete asynchronous
-  // readback within this time limit. The timer will keep running until
-  // operation is completed.
-  const int kIntervalMilliseconds = 20;
-  copy_timer_.Start(FROM_HERE,
-                    base::TimeDelta::FromMilliseconds(kIntervalMilliseconds),
-                    this, &CompositingIOSurfaceMac::FinishCopy);
-  return true;
-}
-
-void CompositingIOSurfaceMac::FinishCopy() {
-  CHECK(copy_context_.started);
-  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::FinishCopy()");
-
-  CGLSetCurrentContext(cglContext_);
-
-  if (copy_context_.use_fence) {
-    bool copy_completed = glTestFenceAPPLE(copy_context_.fence);
-    CHECK_GL_ERROR();
-
-    // Allow 1s for the operation to complete.
-    const int kRetryCycles = 50;
-
-    if (!copy_completed && copy_context_.cycles_elapsed < kRetryCycles) {
-      ++copy_context_.cycles_elapsed;
-      CGLSetCurrentContext(0);
-      return;
+  // Send transform commands to the GPU.
+  const gfx::Rect src_rect = IntersectWithIOSurface(src_pixel_subrect,
+                                                    src_scale_factor);
+  CopyContext copy_context;
+  if (bitmap_output) {
+    if (transformer_->ResizeBilinear(texture_, src_rect, dst_pixel_rect.size(),
+                                     &copy_context.output_textures[0])) {
+      copy_context.num_outputs = 1;
+      copy_context.output_texture_sizes[0] = dst_pixel_rect.size();
+    }
+  } else {
+    if (transformer_->TransformRGBToYV12(
+            texture_, src_rect, dst_pixel_rect.size(),
+            &copy_context.output_textures[0],
+            &copy_context.output_textures[1],
+            &copy_context.output_textures[2],
+            &copy_context.output_texture_sizes[0],
+            &copy_context.output_texture_sizes[1])) {
+      copy_context.num_outputs = 3;
+      copy_context.output_texture_sizes[2] =
+          copy_context.output_texture_sizes[1];
     }
   }
-  copy_timer_.Stop();
+  if (!copy_context.num_outputs)
+    return base::Bind(done_callback, false);
 
-  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, copy_context_.pixel_buffer);
-  CHECK_GL_ERROR();
-
-  void* buf = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY_ARB);
-  CHECK_GL_ERROR();
-
-  if (buf) {
-    memcpy(copy_context_.out_buf, buf, copy_context_.dest_size.GetArea() * 4);
-    glUnmapBufferARB(GL_PIXEL_PACK_BUFFER_ARB); CHECK_GL_ERROR();
+  // In the asynchronous case, issue commands to the GPU and return a null
+  // closure here.  In the synchronous case, perform a blocking readback and
+  // return a callback to be run outside the CGL context to indicate success.
+  if (async_copy) {
+    copy_context.done_callback = done_callback;
+    AsynchronousReadbackForCopy(
+        dst_pixel_rect, called_within_draw, &copy_context, bitmap_output,
+        video_frame_output);
+    copy_requests_.push_back(copy_context);
+    if (!finish_copy_timer_.IsRunning())
+      finish_copy_timer_.Reset();
+    return base::Closure();
+  } else {
+    const bool success = SynchronousReadbackForCopy(
+        dst_pixel_rect, &copy_context, bitmap_output, video_frame_output);
+    return base::Bind(done_callback, success);
   }
-  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, 0); CHECK_GL_ERROR();
-
-  base::Callback<void(bool)> callback = copy_context_.callback;
-  CleanupResourcesForCopy();
-  CGLSetCurrentContext(0);
-
-  callback.Run(buf != NULL);
 }
 
-void CompositingIOSurfaceMac::CleanupResourcesForCopy() {
-  if (!copy_context_.started)
-    return;
+void CompositingIOSurfaceMac::AsynchronousReadbackForCopy(
+    const gfx::Rect& dst_pixel_rect,
+    bool called_within_draw,
+    CopyContext* copy_context,
+    const SkBitmap* bitmap_output,
+    const scoped_refptr<media::VideoFrame>& video_frame_output) {
+  glGenFencesAPPLE(1, &copy_context->fence); CHECK_GL_ERROR();
 
-  glDeleteFramebuffersEXT(1, &copy_context_.frame_buffer); CHECK_GL_ERROR();
-  glDeleteTextures(1, &copy_context_.frame_buffer_texture); CHECK_GL_ERROR();
-  glDeleteBuffers(1, &copy_context_.pixel_buffer); CHECK_GL_ERROR();
-  if (copy_context_.use_fence) {
-    glDeleteFencesAPPLE(1, &copy_context_.fence); CHECK_GL_ERROR();
+  // Copy the textures to a PBO.
+  glGenFramebuffersEXT(copy_context->num_outputs, copy_context->frame_buffers);
+  CHECK_GL_ERROR();
+  glGenBuffersARB(copy_context->num_outputs, copy_context->pixel_buffers);
+  CHECK_GL_ERROR();
+  for (int i = 0; i < copy_context->num_outputs; ++i) {
+    TRACE_EVENT1(
+        "browser", "CompositingIOSurfaceMac::AsynchronousReadbackForCopy()",
+        "plane", i);
+
+    // Attach the output texture to the FBO.
+    glBindFramebufferEXT(
+        GL_READ_FRAMEBUFFER_EXT, copy_context->frame_buffers[i]);
+    glFramebufferTexture2DEXT(
+        GL_READ_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT,
+        GL_TEXTURE_RECTANGLE_ARB, copy_context->output_textures[i], 0);
+    DCHECK(glCheckFramebufferStatusEXT(GL_READ_FRAMEBUFFER_EXT) ==
+               GL_FRAMEBUFFER_COMPLETE_EXT);
+
+    // Create a PBO and issue an asynchronous read-back.
+    glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, copy_context->pixel_buffers[i]);
+    CHECK_GL_ERROR();
+    glBufferDataARB(GL_PIXEL_PACK_BUFFER_ARB,
+                    copy_context->output_texture_sizes[i].GetArea() * 4,
+                    NULL, GL_STREAM_READ_ARB); CHECK_GL_ERROR();
+    glReadPixels(0, 0,
+                 copy_context->output_texture_sizes[i].width(),
+                 copy_context->output_texture_sizes[i].height(),
+                 GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, 0); CHECK_GL_ERROR();
   }
-  copy_context_.Reset();
+
+  glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, 0); CHECK_GL_ERROR();
+  glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0); CHECK_GL_ERROR();
+
+  glSetFenceAPPLE(copy_context->fence); CHECK_GL_ERROR();
+
+  // When this asynchronous copy happens in a draw operaton there is not need
+  // to explicitly flush because there will be a swap buffer and this flush
+  // hurts performance.
+  if (!called_within_draw) {
+    glFlush(); CHECK_GL_ERROR();
+  }
+
+  copy_context->map_buffer_callback = bitmap_output ?
+      base::Bind(&MapBufferToSkBitmap, bitmap_output) :
+      base::Bind(&MapBufferToVideoFrame, video_frame_output, dst_pixel_rect);
+}
+
+void CompositingIOSurfaceMac::FinishAllCopies() {
+  std::vector<base::Closure> done_callbacks;
+  CGLSetCurrentContext(cglContext_);
+  FinishAllCopiesWithinContext(&done_callbacks);
+  CGLSetCurrentContext(0);
+  for (size_t i = 0; i < done_callbacks.size(); ++i)
+    done_callbacks[i].Run();
+}
+
+void CompositingIOSurfaceMac::FinishAllCopiesWithinContext(
+    std::vector<base::Closure>* done_callbacks) {
+  while (!copy_requests_.empty()) {
+    CopyContext& copy_context = copy_requests_.front();
+
+    if (copy_context.fence) {
+      const bool copy_completed = glTestFenceAPPLE(copy_context.fence);
+      CHECK_GL_ERROR();
+
+      if (!copy_completed &&
+        copy_context.cycles_elapsed < kFinishCopyRetryCycles) {
+        ++copy_context.cycles_elapsed;
+        // This copy has not completed there is no need to test subsequent
+        // requests.
+        break;
+      }
+    }
+
+    bool success = true;
+    for (int i = 0; success && i < copy_context.num_outputs; ++i) {
+      TRACE_EVENT1(
+        "browser", "CompositingIOSurfaceMac::FinishAllCopyWithinContext()",
+        "plane", i);
+
+      glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, copy_context.pixel_buffers[i]);
+      CHECK_GL_ERROR();
+
+      void* buf = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY_ARB);
+      CHECK_GL_ERROR();
+      success &= copy_context.map_buffer_callback.Run(buf, i);
+      glUnmapBufferARB(GL_PIXEL_PACK_BUFFER_ARB); CHECK_GL_ERROR();
+    }
+
+    glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, 0); CHECK_GL_ERROR();
+    copy_context.CleanUp();
+    done_callbacks->push_back(base::Bind(copy_context.done_callback, success));
+    copy_requests_.pop_front();
+  }
+  if (copy_requests_.empty())
+    finish_copy_timer_.Stop();
+}
+
+bool CompositingIOSurfaceMac::SynchronousReadbackForCopy(
+    const gfx::Rect& dst_pixel_rect,
+    CopyContext* copy_context,
+    const SkBitmap* bitmap_output,
+    const scoped_refptr<media::VideoFrame>& video_frame_output) {
+  bool success = true;
+  glGenFramebuffersEXT(copy_context->num_outputs, copy_context->frame_buffers);
+  CHECK_GL_ERROR();
+  for (int i = 0; i < copy_context->num_outputs; ++i) {
+    TRACE_EVENT1(
+        "browser", "CompositingIOSurfaceMac::SynchronousReadbackForCopy()",
+        "plane", i);
+
+    // Attach the output texture to the FBO.
+    glBindFramebufferEXT(
+        GL_READ_FRAMEBUFFER_EXT, copy_context->frame_buffers[i]);
+    glFramebufferTexture2DEXT(
+        GL_READ_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT,
+        GL_TEXTURE_RECTANGLE_ARB, copy_context->output_textures[i], 0);
+    DCHECK(glCheckFramebufferStatusEXT(GL_READ_FRAMEBUFFER_EXT) ==
+               GL_FRAMEBUFFER_COMPLETE_EXT);
+
+    // Blocking read-back of pixels from textures.
+    void* buf;
+    // When data must be transferred into a VideoFrame one scanline at a time,
+    // it is necessary to allocate a separate buffer for glReadPixels() that can
+    // be populated one-shot.
+    //
+    // TODO(miu): Don't keep allocating/deleting this buffer for every frame.
+    // Keep it cached, allocated on first use.
+    scoped_ptr<uint32[]> temp_readback_buffer;
+    if (bitmap_output) {
+      // The entire SkBitmap is populated, never a region within.  So, read the
+      // texture directly into the bitmap's pixel memory.
+      buf = bitmap_output->getPixels();
+    } else {
+      // Optimization: If the VideoFrame is letterboxed (not pillarboxed), and
+      // its stride is equal to the stride of the data being read back, then
+      // readback directly into the VideoFrame's buffer to save a round of
+      // memcpy'ing.
+      //
+      // TODO(miu): Move these calculations into VideoFrame (need a CalcOffset()
+      // method).  http://crbug.com/219779
+      const int src_stride = copy_context->output_texture_sizes[i].width() * 4;
+      const int dst_stride = video_frame_output->stride(i);
+      if (src_stride == dst_stride && dst_pixel_rect.x() == 0) {
+        const int y_offset = dst_pixel_rect.y() / (i == 0 ? 1 : 2);
+        buf = video_frame_output->data(i) + y_offset * dst_stride;
+      } else {
+        // Create and readback into a temporary buffer because the data must be
+        // transferred to VideoFrame's pixel memory one scanline at a time.
+        temp_readback_buffer.reset(
+            new uint32[copy_context->output_texture_sizes[i].GetArea()]);
+        buf = temp_readback_buffer.get();
+      }
+    }
+    glReadPixels(0, 0,
+                 copy_context->output_texture_sizes[i].width(),
+                 copy_context->output_texture_sizes[i].height(),
+                 GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
+                 buf); CHECK_GL_ERROR();
+    if (video_frame_output) {
+      if (!temp_readback_buffer) {
+        // Apply letterbox black-out around view region.
+        media::LetterboxYUV(video_frame_output, dst_pixel_rect);
+      } else {
+        // Copy from temporary buffer and fully render the VideoFrame.
+        success &= MapBufferToVideoFrame(video_frame_output, dst_pixel_rect,
+                                         temp_readback_buffer.get(), i);
+      }
+    }
+  }
+
+  glBindFramebufferEXT(GL_READ_FRAMEBUFFER_EXT, 0); CHECK_GL_ERROR();
+  copy_context->CleanUp();
+  return success;
+}
+
+void CompositingIOSurfaceMac::CleanupAllCopiesWithinContext() {
+  for (size_t i = 0; i < copy_requests_.size(); ++i)
+    copy_requests_[i].CleanUp();
+  copy_requests_.clear();
+}
+
+void CompositingIOSurfaceMac::FailAllCopies() {
+  for (size_t i = 0; i < copy_requests_.size(); ++i)
+    copy_requests_[i].done_callback.Run(false);
+}
+
+gfx::Rect CompositingIOSurfaceMac::IntersectWithIOSurface(
+    const gfx::Rect& rect, float scale_factor) const {
+  return gfx::IntersectRects(rect,
+      gfx::ToEnclosingRect(gfx::ScaleRect(gfx::Rect(io_surface_size_),
+                                          scale_factor)));
 }
 
 }  // namespace content

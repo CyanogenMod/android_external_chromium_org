@@ -6,26 +6,14 @@ package org.chromium.content.browser;
 
 import android.util.Log;
 
+import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
-import org.chromium.content_shell.ContentShellActivity;
-import org.chromium.content_shell.ContentShellTestBase;
-
-import java.util.concurrent.TimeUnit;
+import org.chromium.content_shell_apk.ContentShellActivity;
+import org.chromium.content_shell_apk.ContentShellTestBase;
 
 public class ContentViewTestBase extends ContentShellTestBase {
 
-    protected static int WAIT_TIMEOUT_SECONDS = 15;
-
     protected TestCallbackHelperContainer mTestCallbackHelperContainer;
-
-    /**
-     * Allows access to the {@link ContentView}.
-     *
-     * @return The first {@link ContentView}
-     */
-    public ContentView getContentView() {
-        return getActivity().getActiveContentView();
-    }
 
     /**
      * Sets up the ContentView and injects the supplied object. Intended to be called from setUp().
@@ -33,7 +21,7 @@ public class ContentViewTestBase extends ContentShellTestBase {
     protected void setUpContentView(final Object object, final String name) throws Exception {
         // This starts the activity, so must be called on the test thread.
         final ContentShellActivity activity = launchContentShellWithUrl(
-                "data:text/html;utf-8,<html><head></head><body>test</body></html>");
+                UrlUtils.encodeHtmlDataUri("<html><head></head><body>test</body></html>"));
 
         waitForActiveShellToBeDoneLoading();
 
@@ -44,7 +32,8 @@ public class ContentViewTestBase extends ContentShellTestBase {
                 @Override
                 public void run() {
                     ContentView contentView = activity.getActiveContentView();
-                    contentView.getContentViewCore().addJavascriptInterface(object, name, false);
+                    contentView.getContentViewCore().addPossiblyUnsafeJavascriptInterface(object,
+                            name, null);
                     mTestCallbackHelperContainer =
                             new TestCallbackHelperContainer(contentView);
                 }
@@ -64,26 +53,7 @@ public class ContentViewTestBase extends ContentShellTestBase {
      */
     protected void loadDataSync(final ContentView contentView, final String data,
             final String mimeType, final boolean isBase64Encoded) throws Throwable {
-        TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
-                mTestCallbackHelperContainer.getOnPageFinishedHelper();
-        int currentCallCount = onPageFinishedHelper.getCallCount();
-        loadDataAsync(contentView, data, mimeType, isBase64Encoded);
-        onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS);
-    }
-
-    /**
-     * Loads data on the UI thread but does not block.
-     * TODO(cramya): Move method to a separate util file once UiUtils.java moves into base.
-     */
-    protected void loadDataAsync(final ContentView contentView, final String data,
-            final String mimeType, final boolean isBase64Encoded) throws Throwable {
-        runTestOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                contentView.loadUrl(LoadUrlParams.createLoadDataParams(
-                        data, mimeType, isBase64Encoded));
-            }
-        });
+        loadUrl(contentView, mTestCallbackHelperContainer, LoadUrlParams.createLoadDataParams(
+                data, mimeType, isBase64Encoded));
     }
 }

@@ -9,13 +9,12 @@
 #include "content/browser/web_contents/navigation_controller_impl.h"
 #include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/web_contents/render_view_host_manager.h"
-#include "content/browser/web_contents/test_web_contents.h"
+#include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_ui_controller.h"
-#include "content/public/browser/web_ui_controller_factory.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_transition_types.h"
@@ -25,7 +24,7 @@
 #include "content/public/test/test_notification_tracker.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_content_client.h"
-#include "googleurl/src/url_util.h"
+#include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/glue/glue_serialize.h"
 
@@ -47,7 +46,7 @@ class RenderViewHostManagerTestWebUIControllerFactory
   // WebUIFactory implementation.
   virtual WebUIController* CreateWebUIControllerForURL(
       WebUI* web_ui, const GURL& url) const OVERRIDE {
-    if (!(should_create_webui_ && GetContentClient()->HasWebUIScheme(url)))
+    if (!(should_create_webui_ && HasWebUIScheme(url)))
       return NULL;
     return new WebUIController(web_ui);
   }
@@ -59,57 +58,18 @@ class RenderViewHostManagerTestWebUIControllerFactory
 
   virtual bool UseWebUIForURL(BrowserContext* browser_context,
                               const GURL& url) const OVERRIDE {
-    return GetContentClient()->HasWebUIScheme(url);
+    return HasWebUIScheme(url);
   }
 
   virtual bool UseWebUIBindingsForURL(BrowserContext* browser_context,
                                       const GURL& url) const OVERRIDE {
-    return GetContentClient()->HasWebUIScheme(url);
-  }
-
-  virtual bool IsURLAcceptableForWebUI(
-      BrowserContext* browser_context,
-      const GURL& url,
-      bool data_urls_allowed) const OVERRIDE {
-    return GetContentClient()->HasWebUIScheme(url);
+    return HasWebUIScheme(url);
   }
 
  private:
   bool should_create_webui_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostManagerTestWebUIControllerFactory);
-};
-
-class RenderViewHostManagerTestClient : public TestContentClient {
- public:
-  RenderViewHostManagerTestClient() {
-  }
-
-  virtual bool HasWebUIScheme(const GURL& url) const OVERRIDE {
-    return url.SchemeIs(chrome::kChromeUIScheme);
-  }
-};
-
-class RenderViewHostManagerTestBrowserClient
-    : public TestContentBrowserClient {
- public:
-  RenderViewHostManagerTestBrowserClient() {}
-  virtual ~RenderViewHostManagerTestBrowserClient() {}
-
-  void set_should_create_webui(bool should_create_webui) {
-    factory_.set_should_create_webui(should_create_webui);
-  }
-
-  // TestContentBrowserClient implementation.
-  virtual WebUIControllerFactory*
-      GetWebUIControllerFactory() OVERRIDE {
-    return &factory_;
-  }
-
- private:
-  RenderViewHostManagerTestWebUIControllerFactory factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(RenderViewHostManagerTestBrowserClient);
 };
 
 }  // namespace
@@ -119,21 +79,16 @@ class RenderViewHostManagerTest
  public:
   virtual void SetUp() OVERRIDE {
     RenderViewHostImplTestHarness::SetUp();
-    old_client_ = GetContentClient();
-    old_browser_client_ = GetContentClient()->browser();
-    SetContentClient(&client_);
-    GetContentClient()->set_browser_for_testing(&browser_client_);
-    url_util::AddStandardScheme(chrome::kChromeUIScheme);
+    WebUIControllerFactory::RegisterFactory(&factory_);
   }
 
   virtual void TearDown() OVERRIDE {
     RenderViewHostImplTestHarness::TearDown();
-    GetContentClient()->set_browser_for_testing(old_browser_client_);
-    SetContentClient(old_client_);
+    WebUIControllerFactory::UnregisterFactoryForTesting(&factory_);
   }
 
   void set_should_create_webui(bool should_create_webui) {
-    browser_client_.set_should_create_webui(should_create_webui);
+    factory_.set_should_create_webui(should_create_webui);
   }
 
   void NavigateActiveAndCommit(const GURL& url) {
@@ -166,10 +121,7 @@ class RenderViewHostManagerTest
   }
 
  private:
-  RenderViewHostManagerTestClient client_;
-  RenderViewHostManagerTestBrowserClient browser_client_;
-  ContentClient* old_client_;
-  ContentBrowserClient* old_browser_client_;
+  RenderViewHostManagerTestWebUIControllerFactory factory_;
 };
 
 // Tests that when you navigate from a chrome:// url to another page, and
@@ -177,12 +129,15 @@ class RenderViewHostManagerTest
 // different SiteInstances, BrowsingInstances, and RenderProcessHosts. This is
 // a regression test for bug 9364.
 TEST_F(RenderViewHostManagerTest, NewTabPageProcesses) {
+  set_should_create_webui(true);
   BrowserThreadImpl ui_thread(BrowserThread::UI, MessageLoop::current());
   const GURL kChromeUrl("chrome://foo");
   const GURL kDestUrl("http://www.google.com/");
 
-  // Navigate our first tab to the chrome url and then to the destination.
+  // Navigate our first tab to the chrome url and then to the destination,
+  // ensuring we grant bindings to the chrome URL.
   NavigateActiveAndCommit(kChromeUrl);
+  EXPECT_TRUE(active_rvh()->GetEnabledBindings() & BINDINGS_POLICY_WEB_UI);
   NavigateActiveAndCommit(kDestUrl);
 
   // Make a second tab.
@@ -644,6 +599,7 @@ TEST_F(RenderViewHostManagerTest, WebUI) {
                                 web_contents.get());
 
   manager.Init(browser_context(), instance, MSG_ROUTING_NONE);
+  EXPECT_FALSE(manager.current_host()->IsRenderViewLive());
 
   const GURL kUrl("chrome://foo");
   NavigationEntryImpl entry(NULL /* instance */, -1 /* page_id */, kUrl,
@@ -652,13 +608,16 @@ TEST_F(RenderViewHostManagerTest, WebUI) {
                             false /* is_renderer_init */);
   RenderViewHost* host = manager.Navigate(entry);
 
+  // We commit the pending RenderViewHost immediately because the previous
+  // RenderViewHost was not live.  We test a case where it is live in
+  // WebUIInNewTab.
   EXPECT_TRUE(host);
-  EXPECT_TRUE(host == manager.current_host());
+  EXPECT_EQ(host, manager.current_host());
   EXPECT_FALSE(manager.pending_render_view_host());
 
   // It's important that the site instance get set on the Web UI page as soon
   // as the navigation starts, rather than lazily after it commits, so we don't
-  // try to re-use the SiteInstance/process for non DOM-UI things that may
+  // try to re-use the SiteInstance/process for non Web UI things that may
   // get loaded in between.
   EXPECT_TRUE(static_cast<SiteInstanceImpl*>(host->GetSiteInstance())->
       HasSite());
@@ -672,6 +631,66 @@ TEST_F(RenderViewHostManagerTest, WebUI) {
   // Commit.
   manager.DidNavigateMainFrame(host);
   EXPECT_TRUE(host->GetEnabledBindings() & BINDINGS_POLICY_WEB_UI);
+}
+
+// Tests that we can open a WebUI link in a new tab from a WebUI page and still
+// grant the correct bindings.  http://crbug.com/189101.
+TEST_F(RenderViewHostManagerTest, WebUIInNewTab) {
+  set_should_create_webui(true);
+  SiteInstance* blank_instance = SiteInstance::Create(browser_context());
+
+  // Create a blank tab.
+  scoped_ptr<TestWebContents> web_contents1(
+      TestWebContents::Create(browser_context(), blank_instance));
+  RenderViewHostManager manager1(web_contents1.get(), web_contents1.get(),
+                                 web_contents1.get());
+  manager1.Init(browser_context(), blank_instance, MSG_ROUTING_NONE);
+  // Test the case that new RVH is considered live.
+  manager1.current_host()->CreateRenderView(string16(), -1, -1);
+
+  // Navigate to a WebUI page.
+  const GURL kUrl1("chrome://foo");
+  NavigationEntryImpl entry1(NULL /* instance */, -1 /* page_id */, kUrl1,
+                             Referrer(), string16() /* title */,
+                             PAGE_TRANSITION_TYPED,
+                             false /* is_renderer_init */);
+  RenderViewHost* host1 = manager1.Navigate(entry1);
+
+  // We should have a pending navigation to the WebUI RenderViewHost.
+  // It should already have bindings.
+  EXPECT_EQ(host1, manager1.pending_render_view_host());
+  EXPECT_NE(host1, manager1.current_host());
+  EXPECT_TRUE(host1->GetEnabledBindings() & BINDINGS_POLICY_WEB_UI);
+
+  // Commit and ensure we still have bindings.
+  manager1.DidNavigateMainFrame(host1);
+  SiteInstance* webui_instance = host1->GetSiteInstance();
+  EXPECT_EQ(host1, manager1.current_host());
+  EXPECT_TRUE(host1->GetEnabledBindings() & BINDINGS_POLICY_WEB_UI);
+
+  // Now simulate clicking a link that opens in a new tab.
+  scoped_ptr<TestWebContents> web_contents2(
+      TestWebContents::Create(browser_context(), webui_instance));
+  RenderViewHostManager manager2(web_contents2.get(), web_contents2.get(),
+                                 web_contents2.get());
+  manager2.Init(browser_context(), webui_instance, MSG_ROUTING_NONE);
+  // Make sure the new RVH is considered live.  This is usually done in
+  // RenderWidgetHost::Init when opening a new tab from a link.
+  manager2.current_host()->CreateRenderView(string16(), -1, -1);
+
+  const GURL kUrl2("chrome://foo/bar");
+  NavigationEntryImpl entry2(NULL /* instance */, -1 /* page_id */, kUrl2,
+                             Referrer(), string16() /* title */,
+                             PAGE_TRANSITION_LINK,
+                             true /* is_renderer_init */);
+  RenderViewHost* host2 = manager2.Navigate(entry2);
+
+  // No cross-process transition happens because we are already in the right
+  // SiteInstance.  We should grant bindings immediately.
+  EXPECT_EQ(host2, manager2.current_host());
+  EXPECT_TRUE(host2->GetEnabledBindings() & BINDINGS_POLICY_WEB_UI);
+
+  manager2.DidNavigateMainFrame(host2);
 }
 
 // Tests that we don't end up in an inconsistent state if a page does a back and

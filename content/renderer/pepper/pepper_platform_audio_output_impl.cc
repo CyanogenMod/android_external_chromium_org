@@ -11,9 +11,9 @@
 #include "build/build_config.h"
 #include "content/common/child_process.h"
 #include "content/common/media/audio_messages.h"
-#include "content/renderer/media/audio_hardware.h"
 #include "content/renderer/media/audio_message_filter.h"
 #include "content/renderer/render_thread_impl.h"
+#include "media/base/audio_hardware_config.h"
 #include "media/base/media_switches.h"
 
 namespace content {
@@ -22,13 +22,16 @@ namespace content {
 PepperPlatformAudioOutputImpl* PepperPlatformAudioOutputImpl::Create(
     int sample_rate,
     int frames_per_buffer,
+    int source_render_view_id,
     webkit::ppapi::PluginDelegate::PlatformAudioOutputClient* client) {
   scoped_refptr<PepperPlatformAudioOutputImpl> audio_output(
       new PepperPlatformAudioOutputImpl());
-  if (audio_output->Initialize(sample_rate, frames_per_buffer, client)) {
+  if (audio_output->Initialize(sample_rate, frames_per_buffer,
+                               source_render_view_id, client)) {
     // Balanced by Release invoked in
     // PepperPlatformAudioOutputImpl::ShutDownOnIOThread().
-    return audio_output.release();
+    audio_output->AddRef();
+    return audio_output.get();
   }
   return NULL;
 }
@@ -114,24 +117,25 @@ PepperPlatformAudioOutputImpl::PepperPlatformAudioOutputImpl()
 bool PepperPlatformAudioOutputImpl::Initialize(
     int sample_rate,
     int frames_per_buffer,
+    int source_render_view_id,
     webkit::ppapi::PluginDelegate::PlatformAudioOutputClient* client) {
   DCHECK(client);
-  // Make sure we don't call init more than once.
-  DCHECK_EQ(0, stream_id_);
-
   client_ = client;
 
   media::AudioParameters::Format format;
   const int kMaxFramesForLowLatency = 2047;
+
+  media::AudioHardwareConfig* hardware_config =
+      RenderThreadImpl::current()->GetAudioHardwareConfig();
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   if (!cmd_line->HasSwitch(switches::kDisableAudioOutputResampler)) {
     // Rely on AudioOutputResampler to handle any inconsistencies between the
     // hardware params required for low latency and the requested params.
     format = media::AudioParameters::AUDIO_PCM_LOW_LATENCY;
-  } else if (sample_rate == GetAudioOutputSampleRate() &&
+  } else if (sample_rate == hardware_config->GetOutputSampleRate() &&
              frames_per_buffer <= kMaxFramesForLowLatency &&
-             frames_per_buffer % content::GetAudioOutputBufferSize() == 0) {
+             frames_per_buffer % hardware_config->GetOutputBufferSize() == 0) {
     // Use the low latency back end if the client request is compatible, and
     // the sample count is low enough to justify using AUDIO_PCM_LOW_LATENCY.
     format = media::AudioParameters::AUDIO_PCM_LOW_LATENCY;
@@ -145,14 +149,19 @@ bool PepperPlatformAudioOutputImpl::Initialize(
   ChildProcess::current()->io_message_loop()->PostTask(
       FROM_HERE,
       base::Bind(&PepperPlatformAudioOutputImpl::InitializeOnIOThread,
-                 this, params));
+                 this, params, source_render_view_id));
   return true;
 }
 
 void PepperPlatformAudioOutputImpl::InitializeOnIOThread(
-    const media::AudioParameters& params) {
+    const media::AudioParameters& params, int source_render_view_id) {
+  // Make sure we don't call init more than once.
+  DCHECK_EQ(0, stream_id_);
   stream_id_ = ipc_->AddDelegate(this);
-  ipc_->CreateStream(stream_id_, params, 0);
+  DCHECK_NE(0, stream_id_);
+
+  ipc_->CreateStream(stream_id_, params);
+  ipc_->AssociateStreamWithProducer(stream_id_, source_render_view_id);
 }
 
 void PepperPlatformAudioOutputImpl::StartPlaybackOnIOThread() {

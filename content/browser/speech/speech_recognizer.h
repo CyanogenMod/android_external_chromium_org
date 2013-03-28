@@ -81,9 +81,8 @@ class CONTENT_EXPORT SpeechRecognizer
     ~FSMEventArgs();
 
     FSMEvent event;
-    int audio_error_code;
     scoped_refptr<AudioChunk> audio_data;
-    SpeechRecognitionResult engine_result;
+    SpeechRecognitionResults engine_results;
     SpeechRecognitionError engine_error;
   };
 
@@ -129,14 +128,13 @@ class CONTENT_EXPORT SpeechRecognizer
   // AudioInputController::EventHandler methods.
   virtual void OnCreated(media::AudioInputController* controller) OVERRIDE {}
   virtual void OnRecording(media::AudioInputController* controller) OVERRIDE {}
-  virtual void OnError(media::AudioInputController* controller,
-                       int error_code) OVERRIDE;
+  virtual void OnError(media::AudioInputController* controller) OVERRIDE;
   virtual void OnData(media::AudioInputController* controller,
                       const uint8* data, uint32 size) OVERRIDE;
 
   // SpeechRecognitionEngineDelegate methods.
-  virtual void OnSpeechRecognitionEngineResult(
-      const SpeechRecognitionResult& result) OVERRIDE;
+  virtual void OnSpeechRecognitionEngineResults(
+      const SpeechRecognitionResults& results) OVERRIDE;
   virtual void OnSpeechRecognitionEngineError(
       const SpeechRecognitionError& error) OVERRIDE;
 

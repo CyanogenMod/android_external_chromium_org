@@ -29,7 +29,7 @@ class DeviceOrientation implements SensorEventListener {
     private Handler mHandler;
 
     // The lock to access the mHandler.
-  private Object mHandlerLock;
+    private Object mHandlerLock = new Object();
 
     // Non-zero if and only if we're listening for events.
     // To avoid race conditions on the C++ side, access must be synchronized.
@@ -46,6 +46,10 @@ class DeviceOrientation implements SensorEventListener {
 
     // Lazily initialized when registering for notifications.
     private SensorManager mSensorManager;
+
+    // The only instance of that class and its associated lock.
+    private static DeviceOrientation sSingleton;
+    private static Object sSingletonLock = new Object();
 
     private DeviceOrientation() {
     }
@@ -229,7 +233,7 @@ class DeviceOrientation implements SensorEventListener {
             // Wait for the background thread to spin up.
             while (mHandler == null) {
                 try {
-                    wait();
+                    mHandlerLock.wait();
                 } catch (InterruptedException e) {
                     // Somebody doesn't want us to wait! That's okay, SensorManager accepts null.
                     return null;
@@ -242,13 +246,18 @@ class DeviceOrientation implements SensorEventListener {
     private void setHandler(Handler handler) {
         synchronized (mHandlerLock) {
             mHandler = handler;
-            notify();
+            mHandlerLock.notify();
         }
     }
 
     @CalledByNative
-    private static DeviceOrientation create() {
-        return new DeviceOrientation();
+    private static DeviceOrientation getInstance() {
+        synchronized (sSingletonLock) {
+            if (sSingleton == null) {
+                sSingleton = new DeviceOrientation();
+            }
+            return sSingleton;
+        }
     }
 
     /**

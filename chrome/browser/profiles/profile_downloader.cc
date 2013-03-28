@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,9 +10,9 @@
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_split.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_downloader_delegate.h"
@@ -210,7 +210,8 @@ void ProfileDownloader::Start() {
   if (!service) {
     // This can happen in some test paths.
     LOG(WARNING) << "User has no token service";
-    delegate_->OnProfileDownloadFailure(this);
+    delegate_->OnProfileDownloadFailure(
+        this, ProfileDownloaderDelegate::TOKEN_ERROR);
     return;
   }
 
@@ -280,14 +281,17 @@ void ProfileDownloader::OnURLFetchComplete(const net::URLFetcher* source) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   std::string data;
   source->GetResponseAsString(&data);
-  if (source->GetStatus().status() != net::URLRequestStatus::SUCCESS ||
-      source->GetResponseCode() != 200) {
+  bool network_error =
+      source->GetStatus().status() != net::URLRequestStatus::SUCCESS;
+  if (network_error || source->GetResponseCode() != 200) {
     LOG(WARNING) << "Fetching profile data failed";
     DVLOG(1) << "  Status: " << source->GetStatus().status();
     DVLOG(1) << "  Error: " << source->GetStatus().error();
     DVLOG(1) << "  Response code: " << source->GetResponseCode();
     DVLOG(1) << "  Url: " << source->GetURL().spec();
-    delegate_->OnProfileDownloadFailure(this);
+    delegate_->OnProfileDownloadFailure(this, network_error ?
+        ProfileDownloaderDelegate::NETWORK_ERROR :
+        ProfileDownloaderDelegate::SERVICE_ERROR);
     return;
   }
 
@@ -295,7 +299,8 @@ void ProfileDownloader::OnURLFetchComplete(const net::URLFetcher* source) {
     std::string image_url;
     if (!GetProfileNameAndImageURL(data, &profile_full_name_, &image_url,
         delegate_->GetDesiredImageSideLength())) {
-      delegate_->OnProfileDownloadFailure(this);
+      delegate_->OnProfileDownloadFailure(
+          this, ProfileDownloaderDelegate::SERVICE_ERROR);
       return;
     }
     if (!delegate_->NeedsProfilePicture()) {
@@ -332,7 +337,9 @@ void ProfileDownloader::OnURLFetchComplete(const net::URLFetcher* source) {
     VLOG(1) << "Decoding the image...";
     scoped_refptr<ImageDecoder> image_decoder = new ImageDecoder(
         this, data, ImageDecoder::DEFAULT_CODEC);
-    image_decoder->Start();
+    scoped_refptr<base::MessageLoopProxy> task_runner =
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
+    image_decoder->Start(task_runner);
   }
 }
 
@@ -351,7 +358,8 @@ void ProfileDownloader::OnImageDecoded(const ImageDecoder* decoder,
 
 void ProfileDownloader::OnDecodeImageFailed(const ImageDecoder* decoder) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  delegate_->OnProfileDownloadFailure(this);
+  delegate_->OnProfileDownloadFailure(
+      this, ProfileDownloaderDelegate::IMAGE_DECODE_FAILED);
 }
 
 void ProfileDownloader::Observe(
@@ -374,7 +382,8 @@ void ProfileDownloader::Observe(
     if (token_details->service() ==
         GaiaConstants::kGaiaOAuth2LoginRefreshToken) {
       LOG(WARNING) << "ProfileDownloader: token request failed";
-      delegate_->OnProfileDownloadFailure(this);
+      delegate_->OnProfileDownloadFailure(
+          this, ProfileDownloaderDelegate::TOKEN_ERROR);
     }
   }
 }
@@ -390,5 +399,6 @@ void ProfileDownloader::OnGetTokenSuccess(const std::string& access_token,
 // Callback for OAuth2AccessTokenFetcher on failure.
 void ProfileDownloader::OnGetTokenFailure(const GoogleServiceAuthError& error) {
   LOG(WARNING) << "ProfileDownloader: token request using refresh token failed";
-  delegate_->OnProfileDownloadFailure(this);
+  delegate_->OnProfileDownloadFailure(
+      this, ProfileDownloaderDelegate::TOKEN_ERROR);
 }

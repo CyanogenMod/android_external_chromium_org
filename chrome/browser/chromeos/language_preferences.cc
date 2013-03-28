@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
+#include "base/prefs/pref_registry_simple.h"
 #include "chrome/browser/chromeos/language_preferences.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "grit/generated_resources.h"
 
 namespace chromeos {
@@ -26,33 +28,33 @@ const char kChewingSectionName[] = "engine/Chewing";
 const LanguageBooleanPrefs kChewingBooleanPrefs[] = {
   { prefs::kLanguageChewingAutoShiftCur, false, "autoShiftCur",
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SETTING_AUTO_SHIFT_CUR,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguageChewingAddPhraseDirection, false, "addPhraseDirection",
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SETTING_ADD_PHRASE_DIRECTION,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   /* Temporarily disabled. (crosbug.com/14185)
   { prefs::kLanguageChewingEasySymbolInput, true, "easySymbolInput",
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SETTING_EASY_SYMBOL_INPUT,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   */
   { prefs::kLanguageChewingEscCleanAllBuf, false, "escCleanAllBuf",
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SETTING_ESC_CLEAN_ALL_BUF,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguageChewingForceLowercaseEnglish, false,
     "forceLowercaseEnglish",
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SETTING_FORCE_LOWER_CASE_ENGLISH,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   /* Temporarily disabled. (crosbug.com/14185)
   { prefs::kLanguageChewingPlainZhuyin, false, "plainZhuyin",
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SETTING_PLAIN_ZHUYIN,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   */
   { prefs::kLanguageChewingPhraseChoiceRearward, true, "phraseChoiceRearward",
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SETTING_PHRASE_CHOICE_REARWARD,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguageChewingSpaceAsSelection, true, "spaceAsSelection",
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SETTING_SPACE_AS_SELECTION,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
 };
 COMPILE_ASSERT(kNumChewingBooleanPrefs == arraysize(kChewingBooleanPrefs),
                TheSizeShouldMatch);
@@ -60,11 +62,11 @@ COMPILE_ASSERT(kNumChewingBooleanPrefs == arraysize(kChewingBooleanPrefs),
 const LanguageIntegerRangePreference kChewingIntegerPrefs[] = {
   { prefs::kLanguageChewingMaxChiSymbolLen, 20, 8, 40, "maxChiSymbolLen",
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SETTING_MAX_CHI_SYMBOL_LEN,
-    PrefService::SYNCABLE_PREF
+    PrefRegistrySyncable::SYNCABLE_PREF
   },
   { prefs::kLanguageChewingCandPerPage, 10, 8, 10, "candPerPage",
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SETTING_CAND_PER_PAGE,
-    PrefService::SYNCABLE_PREF
+    PrefRegistrySyncable::SYNCABLE_PREF
   },
 };
 COMPILE_ASSERT(kNumChewingIntegerPrefs == arraysize(kChewingIntegerPrefs),
@@ -90,7 +92,7 @@ const LanguageMultipleChoicePreference<const char*>
        IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_KEYBOARD_TYPE_DACHEN_26 },
      { "hanyu", IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_KEYBOARD_TYPE_HANYU }},
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_KEYBOARD_TYPE,
-    PrefService::SYNCABLE_PREF,
+    PrefRegistrySyncable::SYNCABLE_PREF,
   },
   { prefs::kLanguageChewingSelKeys,
     "1234567890",
@@ -112,7 +114,7 @@ const LanguageMultipleChoicePreference<const char*>
      { "1234qweras",
        IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SEL_KEYS_1234QWERAS }},
     IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_SEL_KEYS,
-    PrefService::SYNCABLE_PREF,
+    PrefRegistrySyncable::SYNCABLE_PREF,
   },
 };
 COMPILE_ASSERT(kNumChewingMultipleChoicePrefs ==
@@ -126,7 +128,7 @@ const LanguageMultipleChoicePreference<int> kChewingHsuSelKeyType = {
   {{ 1, IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_HSU_SEL_KEY_TYPE_1 },
    { 2, IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_HSU_SEL_KEY_TYPE_2 }},
   IDS_OPTIONS_SETTINGS_LANGUAGES_CHEWING_HSU_SEL_KEY_TYPE,
-  PrefService::SYNCABLE_PREF,
+  PrefRegistrySyncable::SYNCABLE_PREF,
 };
 
 // ---------------------------------------------------------------------------
@@ -167,37 +169,37 @@ const char kPinyinSectionName[] = "engine/Pinyin";
 const LanguageBooleanPrefs kPinyinBooleanPrefs[] = {
   { prefs::kLanguagePinyinCorrectPinyin, true, "CorrectPinyin",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_CORRECT_PINYIN,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguagePinyinFuzzyPinyin, false, "FuzzyPinyin",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_FUZZY_PINYIN,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguagePinyinShiftSelectCandidate, false, "ShiftSelectCandidate",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_SHIFT_SELECT_PINYIN,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguagePinyinMinusEqualPage, true, "MinusEqualPage",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_MINUS_EQUAL_PAGE,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguagePinyinCommaPeriodPage, true, "CommaPeriodPage",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_COMMA_PERIOD_PAGE,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguagePinyinAutoCommit, false, "AutoCommit",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_AUTO_COMMIT,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguagePinyinDoublePinyin, false, "DoublePinyin",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_DOUBLE_PINYIN,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguagePinyinInitChinese, true, "InitChinese",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_INIT_CHINESE,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguagePinyinInitFull, false, "InitFull",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_INIT_FULL,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguagePinyinInitFullPunct, true, "InitFullPunct",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_INIT_FULL_PUNCT,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguagePinyinInitSimplifiedChinese, true, "InitSimplifiedChinese",
     IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_SETTING_INIT_SIMPLIFIED_CHINESE,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   // TODO(yusukes): Support PINYIN_{INCOMPLETE,CORRECT,FUZZY}_... prefs (32
   // additional boolean prefs.)
 };
@@ -215,13 +217,17 @@ const LanguageMultipleChoicePreference<int> kPinyinDoublePinyinSchema = {
    { 3, IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_DOUBLE_SCHEMA_ZGPY},
    { 4, IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_DOUBLE_SCHEMA_PYJJ}},
   IDS_OPTIONS_SETTINGS_LANGUAGES_PINYIN_DOUBLE_SCHEMA,
-  PrefService::SYNCABLE_PREF,
+  PrefRegistrySyncable::SYNCABLE_PREF,
 };
 
 const PinyinIntegerPref kPinyinIntegerPrefs[] = {
   // TODO(yusukes): the type of lookup_table_page_size on ibus should be uint.
-  { prefs::kLanguagePinyinLookupTablePageSize, 5, "LookupTablePageSize",
-    PrefService::UNSYNCABLE_PREF }  // don't sync as it's not user configurable.
+  { prefs::kLanguagePinyinLookupTablePageSize,
+    5,
+    "LookupTablePageSize",
+
+    // don't sync as it's not user configurable.
+    PrefRegistrySyncable::UNSYNCABLE_PREF }
 };
 COMPILE_ASSERT(kNumPinyinIntegerPrefs == arraysize(kPinyinIntegerPrefs),
                TheSizeShouldMatch);
@@ -236,22 +242,22 @@ const LanguageBooleanPrefs kMozcBooleanPrefs[] = {
     false,
     "incognito_mode",
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_INCOGNITO_MODE,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguageMozcUseAutoImeTurnOff,
     true,
     "use_auto_ime_turn_off",
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_USE_AUTO_IME_TURN_OFF,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguageMozcUseHistorySuggest,
     true,
     "use_history_suggest",
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_USE_HISTORY_SUGGEST,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
   { prefs::kLanguageMozcUseDictionarySuggest,
     true,
     "use_dictionary_suggest",
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_USE_DICTIONARY_SUGGEST,
-    PrefService::SYNCABLE_PREF },
+    PrefRegistrySyncable::SYNCABLE_PREF },
 };
 COMPILE_ASSERT(kNumMozcBooleanPrefs == arraysize(kMozcBooleanPrefs),
                TheSizeShouldMatch);
@@ -264,7 +270,7 @@ extern const LanguageMultipleChoicePreference<const char*>
     {{ "ROMAN", IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PREEDIT_METHOD_ROMAN },
      { "KANA", IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PREEDIT_METHOD_KANA }},
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PREEDIT_METHOD,
-    PrefService::SYNCABLE_PREF,
+    PrefRegistrySyncable::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcSessionKeymap,
     "MSIME",
@@ -274,7 +280,7 @@ extern const LanguageMultipleChoicePreference<const char*>
      { "KOTOERI", IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SESSION_KEYMAP_KOTOERI }},
     // TODO: Support "CUSTOM" keymap.
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SESSION_KEYMAP,
-    PrefService::SYNCABLE_PREF,
+    PrefRegistrySyncable::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcPunctuationMethod,
     "KUTEN_TOUTEN",
@@ -288,7 +294,7 @@ extern const LanguageMultipleChoicePreference<const char*>
      { "COMMA_TOUTEN",
        IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PUNCTUATION_METHOD_COMMA_TOUTEN }},
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PUNCTUATION_METHOD,
-    PrefService::SYNCABLE_PREF,
+    PrefRegistrySyncable::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcSymbolMethod,
     "CORNER_BRACKET_MIDDLE_DOT",
@@ -302,7 +308,7 @@ extern const LanguageMultipleChoicePreference<const char*>
      { "SQUARE_BRACKET_MIDDLE_DOT",
        IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SYMBOL_METHOD_SQUARE_BRACKET_MIDDLE_DOT }},
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SYMBOL_METHOD,
-    PrefService::SYNCABLE_PREF,
+    PrefRegistrySyncable::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcSpaceCharacterForm,
     "FUNDAMENTAL_INPUT_MODE",
@@ -314,7 +320,7 @@ extern const LanguageMultipleChoicePreference<const char*>
      { "FUNDAMENTAL_HALF_WIDTH",
        IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SPACE_CHARACTER_FORM_FUNDAMENTAL_HALF_WIDTH }},
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SPACE_CHARACTER_FORM,
-    PrefService::SYNCABLE_PREF,
+    PrefRegistrySyncable::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcHistoryLearningLevel,
     "DEFAULT_HISTORY",
@@ -326,7 +332,7 @@ extern const LanguageMultipleChoicePreference<const char*>
      { "NO_HISTORY",
        IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_HISTORY_LEARNING_LEVEL_NO_HISTORY }},
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_HISTORY_LEARNING_LEVEL,
-    PrefService::SYNCABLE_PREF,
+    PrefRegistrySyncable::SYNCABLE_PREF,
   },
   // TODO(mazda): Uncomment this block once the candidate window in Chrome OS
   // supports changing shortcut labels.
@@ -340,7 +346,7 @@ extern const LanguageMultipleChoicePreference<const char*>
   //    { "SHORTCUT_ASDFGHJKL",
   //      IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SELECTION_SHORTCUT_SHORTCUT_ASDFGHJKL }},
   //   IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SELECTION_SHORTCUT,
-  //   PrefService::SYNCABLE_PREF,
+  //   PrefRegistrySyncable::SYNCABLE_PREF,
   // },
   { prefs::kLanguageMozcShiftKeyModeSwitch,
     "ASCII_INPUT_MODE",
@@ -352,7 +358,7 @@ extern const LanguageMultipleChoicePreference<const char*>
      { "KATAKANA_INPUT_MODE",
        IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SHIFT_KEY_MODE_SWITCH_KATAKANA_INPUT_MODE }},
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SHIFT_KEY_MODE_SWITCH,
-    PrefService::SYNCABLE_PREF,
+    PrefRegistrySyncable::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcNumpadCharacterForm,
     "NUMPAD_HALF_WIDTH",
@@ -366,7 +372,7 @@ extern const LanguageMultipleChoicePreference<const char*>
      { "NUMPAD_DIRECT_INPUT",
        IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_NUMPAD_CHARACTER_FORM_NUMPAD_DIRECT_INPUT }},
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_NUMPAD_CHARACTER_FORM,
-    PrefService::SYNCABLE_PREF,
+    PrefRegistrySyncable::SYNCABLE_PREF,
   },
 };
 COMPILE_ASSERT(kNumMozcMultipleChoicePrefs ==
@@ -376,7 +382,7 @@ COMPILE_ASSERT(kNumMozcMultipleChoicePrefs ==
 const LanguageIntegerRangePreference kMozcIntegerPrefs[] = {
   { prefs::kLanguageMozcSuggestionsSize, 3, 1, 9, "suggestions_size",
     IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SUGGESTIONS_SIZE,
-    PrefService::SYNCABLE_PREF }
+    PrefRegistrySyncable::SYNCABLE_PREF }
 };
 COMPILE_ASSERT(kNumMozcIntegerPrefs == arraysize(kMozcIntegerPrefs),
                TheSizeShouldMatch);
@@ -388,14 +394,12 @@ const int kXkbAutoRepeatDelayInMs = 500;
 const int kXkbAutoRepeatIntervalInMs = 50;
 const char kPreferredKeyboardLayout[] = "PreferredKeyboardLayout";
 
-void RegisterPrefs(PrefService* local_state) {
+void RegisterPrefs(PrefRegistrySimple* registry) {
   // We use an empty string here rather than a hardware keyboard layout name
   // since input_method::GetHardwareInputMethodId() might return a fallback
-  // layout name if local_state->RegisterStringPref(kHardwareKeyboardLayout)
+  // layout name if registry->RegisterStringPref(kHardwareKeyboardLayout)
   // is not called yet.
-  local_state->RegisterStringPref(kPreferredKeyboardLayout,
-                                  "",
-                                  PrefService::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(kPreferredKeyboardLayout, "");
 }
 
 }  // namespace language_prefs

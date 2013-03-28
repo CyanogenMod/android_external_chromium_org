@@ -27,6 +27,8 @@ class TransportDIB;
 namespace ppapi {
 namespace proxy {
 
+class SerializedHandle;
+
 // The proxied image data resource. Unlike most resources, this needs to be
 // public in the header since a number of other resources need to access it.
 class ImageData : public ppapi::Resource,
@@ -51,18 +53,18 @@ class ImageData : public ppapi::Resource,
   // Resource overrides.
   virtual ppapi::thunk::PPB_ImageData_API* AsPPB_ImageData_API() OVERRIDE;
   virtual void LastPluginRefWasDeleted() OVERRIDE;
+  virtual void InstanceWasDeleted() OVERRIDE;
 
   // PPB_ImageData API.
   virtual PP_Bool Describe(PP_ImageDataDesc* desc) OVERRIDE;
   virtual void* Map() OVERRIDE;
   virtual void Unmap() OVERRIDE;
   virtual int32_t GetSharedMemory(int* handle, uint32_t* byte_count) OVERRIDE;
-  virtual skia::PlatformCanvas* GetPlatformCanvas() OVERRIDE;
+  virtual SkCanvas* GetPlatformCanvas() OVERRIDE;
   virtual SkCanvas* GetCanvas() OVERRIDE;
+  virtual void SetUsedInReplaceContents() OVERRIDE;
 
   const PP_ImageDataDesc& desc() const { return desc_; }
-
-  void set_used_in_replace_contents() { used_in_replace_contents_ = true; }
 
   // Prepares this image data to be recycled to the plugin. The contents will be
   // cleared if zero_contents is set.
@@ -84,7 +86,7 @@ class ImageData : public ppapi::Resource,
   scoped_ptr<TransportDIB> transport_dib_;
 
   // Null when the image isn't mapped.
-  scoped_ptr<skia::PlatformCanvas> mapped_canvas_;
+  scoped_ptr<SkCanvas> mapped_canvas_;
 #endif
 
   // Set to true when this ImageData has been used in a call to

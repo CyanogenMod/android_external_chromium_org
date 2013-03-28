@@ -9,14 +9,15 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/prefs/pref_member.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
-#include "chrome/browser/api/prefs/pref_member.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/notifier/invalidation_state_tracker.h"
 
+class PrefRegistrySyncable;
 class PrefService;
+class ProfileIOData;
 
 namespace browser_sync {
 
@@ -44,8 +45,7 @@ class SyncPrefObserver {
 //   sync_setup_wizard_unittest.cc
 //   two_client_preferences_sync_test.cc
 class SyncPrefs : NON_EXPORTED_BASE(public base::NonThreadSafe),
-                  public base::SupportsWeakPtr<SyncPrefs>,
-                  public PrefObserver {
+                  public base::SupportsWeakPtr<SyncPrefs> {
  public:
   // |pref_service| may be NULL (for unit tests), but in that case no
   // setter methods should be called.  Does not take ownership of
@@ -53,6 +53,13 @@ class SyncPrefs : NON_EXPORTED_BASE(public base::NonThreadSafe),
   explicit SyncPrefs(PrefService* pref_service);
 
   virtual ~SyncPrefs();
+
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
+
+  // Checks if sync is enabled for the profile that owns |io_data|. This must
+  // be invoked on the IO thread, and can be used to check if sync is enabled
+  // on that thread.
+  static bool IsSyncAccessibleOnIOThread(ProfileIOData* io_data);
 
   void AddSyncPrefObserver(SyncPrefObserver* sync_pref_observer);
   void RemoveSyncPrefObserver(SyncPrefObserver* sync_pref_observer);
@@ -103,6 +110,10 @@ class SyncPrefs : NON_EXPORTED_BASE(public base::NonThreadSafe),
   std::string GetKeystoreEncryptionBootstrapToken() const;
   void SetKeystoreEncryptionBootstrapToken(const std::string& token);
 
+  // Use this for the unique machine tag used for session sync.
+  std::string GetSyncSessionsGUID() const;
+  void SetSyncSessionsGUID(const std::string& guid);
+
   // Maps |data_type| to its corresponding preference name.
   static const char* GetPrefNameForDataType(syncer::ModelType data_type);
 
@@ -116,10 +127,6 @@ class SyncPrefs : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Merges the given set of types with the set of acknowledged types.
   void AcknowledgeSyncedTypes(syncer::ModelTypeSet types);
 
-  // PrefObserver implementation.
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
-
   // For testing.
 
   void SetManagedForTest(bool is_managed);
@@ -127,10 +134,9 @@ class SyncPrefs : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
  private:
   void RegisterPrefGroups();
-  void RegisterPreferences();
 
-  void RegisterDataTypePreferredPref(
-      syncer::ModelType type, bool is_preferred);
+  static void RegisterDataTypePreferredPref(
+      PrefRegistrySyncable* prefs, syncer::ModelType type, bool is_preferred);
   bool GetDataTypePreferred(syncer::ModelType type) const;
   void SetDataTypePreferred(syncer::ModelType type, bool is_preferred);
 
@@ -139,6 +145,8 @@ class SyncPrefs : NON_EXPORTED_BASE(public base::NonThreadSafe),
   syncer::ModelTypeSet ResolvePrefGroups(
       syncer::ModelTypeSet registered_types,
       syncer::ModelTypeSet types) const;
+
+  void OnSyncManagedPrefChanged();
 
   // May be NULL.
   PrefService* const pref_service_;

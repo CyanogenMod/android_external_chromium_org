@@ -41,20 +41,21 @@ bool TabStripMenuController::IsCommandIdEnabled(int command_id) const {
 
 bool TabStripMenuController::GetAcceleratorForCommandId(
     int command_id,
-    ui::Accelerator* accelerator) {
+    ui::Accelerator* out_accelerator) {
   int browser_command;
   if (!TabStripModel::ContextMenuCommandToBrowserCommand(command_id,
                                                          &browser_command))
     return false;
-  const ui::AcceleratorGtk* accelerator_gtk =
+  const ui::Accelerator* accelerator =
       AcceleratorsGtk::GetInstance()->GetPrimaryAcceleratorForCommand(
           browser_command);
-  if (accelerator_gtk)
-    *accelerator = *accelerator_gtk;
-  return !!accelerator_gtk;
+  if (!accelerator)
+    return false;
+  *out_accelerator = *accelerator;
+  return true;
 }
 
-void TabStripMenuController::ExecuteCommand(int command_id) {
+void TabStripMenuController::ExecuteCommand(int command_id, int event_flags) {
   // Checking if the tab still exists since it is possible that the tab
   // corresponding to this context menu has been closed.
   if (!tab_)

@@ -7,9 +7,10 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/history/history.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/history/history_db_task.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -27,7 +28,7 @@ namespace {
 // The history service exposes a special non-standard task API which calls back
 // once a task has been dispatched, so we have to build a special wrapper around
 // the tasks we want to run.
-class RunTaskOnHistoryThread : public HistoryDBTask {
+class RunTaskOnHistoryThread : public history::HistoryDBTask {
  public:
   explicit RunTaskOnHistoryThread(const base::Closure& task,
                                   TypedUrlDataTypeController* dtc)
@@ -70,7 +71,11 @@ TypedUrlDataTypeController::TypedUrlDataTypeController(
                                     sync_service),
       backend_(NULL) {
   pref_registrar_.Init(profile->GetPrefs());
-  pref_registrar_.Add(prefs::kSavingBrowserHistoryDisabled, this);
+  pref_registrar_.Add(
+      prefs::kSavingBrowserHistoryDisabled,
+      base::Bind(
+          &TypedUrlDataTypeController::OnSavingBrowserHistoryDisabledChanged,
+          base::Unretained(this)));
 }
 
 syncer::ModelType TypedUrlDataTypeController::type() const {
@@ -87,11 +92,8 @@ void TypedUrlDataTypeController::SetBackend(history::HistoryBackend* backend) {
   backend_ = backend;
 }
 
-void TypedUrlDataTypeController::OnPreferenceChanged(
-    PrefServiceBase* service,
-    const std::string& pref_name) {
+void TypedUrlDataTypeController::OnSavingBrowserHistoryDisabledChanged() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(std::string(prefs::kSavingBrowserHistoryDisabled), pref_name);
   if (profile()->GetPrefs()->GetBoolean(
           prefs::kSavingBrowserHistoryDisabled)) {
     // We've turned off history persistence, so if we are running,

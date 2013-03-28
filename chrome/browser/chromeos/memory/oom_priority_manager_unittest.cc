@@ -9,6 +9,8 @@
 #include "base/string16.h"
 #include "base/time.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
+#include "chrome/common/url_constants.h"
+#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -20,10 +22,12 @@ enum TestIndicies {
   kSelected,
   kPinned,
   kApp,
+  kPlayingAudio,
   kRecent,
   kOld,
   kReallyOld,
-  kOldButPinned
+  kOldButPinned,
+  kReloadableUI,
 };
 }  // namespace
 
@@ -46,6 +50,13 @@ TEST_F(OomPriorityManagerTest, Comparator) {
     OomPriorityManager::TabStats stats;
     stats.is_app = true;
     stats.renderer_handle = kApp;
+    test_list.push_back(stats);
+  }
+
+  {
+    OomPriorityManager::TabStats stats;
+    stats.is_playing_audio = true;
+    stats.renderer_handle = kPlayingAudio;
     test_list.push_back(stats);
   }
 
@@ -78,6 +89,13 @@ TEST_F(OomPriorityManagerTest, Comparator) {
     test_list.push_back(stats);
   }
 
+  {
+    OomPriorityManager::TabStats stats;
+    stats.is_reloadable_ui = true;
+    stats.renderer_handle = kReloadableUI;
+    test_list.push_back(stats);
+  }
+
   // This entry sorts to the front, so by adding it last we verify that
   // we are actually sorting the array.
   {
@@ -91,13 +109,37 @@ TEST_F(OomPriorityManagerTest, Comparator) {
             test_list.end(),
             OomPriorityManager::CompareTabStats);
 
-  EXPECT_EQ(kSelected, test_list[0].renderer_handle);
-  EXPECT_EQ(kPinned, test_list[1].renderer_handle);
-  EXPECT_EQ(kOldButPinned, test_list[2].renderer_handle);
-  EXPECT_EQ(kApp, test_list[3].renderer_handle);
-  EXPECT_EQ(kRecent, test_list[4].renderer_handle);
-  EXPECT_EQ(kOld, test_list[5].renderer_handle);
-  EXPECT_EQ(kReallyOld, test_list[6].renderer_handle);
+  int index = 0;
+  EXPECT_EQ(kSelected, test_list[index++].renderer_handle);
+  EXPECT_EQ(kPinned, test_list[index++].renderer_handle);
+  EXPECT_EQ(kOldButPinned, test_list[index++].renderer_handle);
+  EXPECT_EQ(kApp, test_list[index++].renderer_handle);
+  EXPECT_EQ(kPlayingAudio, test_list[index++].renderer_handle);
+  EXPECT_EQ(kRecent, test_list[index++].renderer_handle);
+  EXPECT_EQ(kOld, test_list[index++].renderer_handle);
+  EXPECT_EQ(kReallyOld, test_list[index++].renderer_handle);
+  EXPECT_EQ(kReloadableUI, test_list[index++].renderer_handle);
+}
+
+TEST_F(OomPriorityManagerTest, IsReloadableUI) {
+  EXPECT_TRUE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUIDownloadsURL)));
+  EXPECT_TRUE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUIHistoryURL)));
+  EXPECT_TRUE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUINewTabURL)));
+  EXPECT_TRUE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUISettingsURL)));
+
+  // Debugging URLs are not included.
+  EXPECT_FALSE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUIDiscardsURL)));
+  EXPECT_FALSE(OomPriorityManager::IsReloadableUI(
+      GURL(chrome::kChromeUINetInternalsURL)));
+
+  // Prefix matches are included.
+  EXPECT_TRUE(OomPriorityManager::IsReloadableUI(
+      GURL("chrome://settings/fakeSetting")));
 }
 
 }  // namespace chromeos

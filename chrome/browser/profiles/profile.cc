@@ -6,12 +6,13 @@
 
 #include <string>
 
+#include "base/prefs/pref_service.h"
 #include "build/build_config.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
@@ -47,67 +48,68 @@ TestingProfile* Profile::AsTestingProfile() {
 const char* const Profile::kProfileKey = "__PROFILE__";
 
 // static
-void Profile::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kSearchSuggestEnabled,
-                             true,
-                             PrefService::SYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kSessionExitedCleanly,
-                             true,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kSessionExitType,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kSafeBrowsingEnabled,
-                             true,
-                             PrefService::SYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kSafeBrowsingReportingEnabled,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kSafeBrowsingProceedAnywayDisabled,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kDisableExtensions,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kExtensionAlertsInitializedPref,
-                             false, PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kSelectFileLastDirectory,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterDoublePref(prefs::kDefaultZoomLevel,
-                            0.0,
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterDictionaryPref(prefs::kPerHostZoomLevels,
-                                PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kDefaultApps,
-                            "install",
-                            PrefService::UNSYNCABLE_PREF);
+void Profile::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(prefs::kSearchSuggestEnabled,
+                                true,
+                                PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kSessionExitedCleanly,
+                                true,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kSessionExitType,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kSafeBrowsingEnabled,
+                                true,
+                                PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kSafeBrowsingReportingEnabled,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kSafeBrowsingProceedAnywayDisabled,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kDisableExtensions,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kExtensionAlertsInitializedPref,
+                                false, PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kSelectFileLastDirectory,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDoublePref(prefs::kDefaultZoomLevel,
+                               0.0,
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(prefs::kPerHostZoomLevels,
+                                   PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kDefaultApps,
+                               "install",
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
 #if defined(OS_CHROMEOS)
   // TODO(dilmah): For OS_CHROMEOS we maintain kApplicationLocale in both
   // local state and user's profile.  For other platforms we maintain
   // kApplicationLocale only in local state.
   // In the future we may want to maintain kApplicationLocale
   // in user's profile for other platforms as well.
-  prefs->RegisterStringPref(prefs::kApplicationLocale,
-                            std::string(),
-                            PrefService::SYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kApplicationLocaleBackup,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterStringPref(prefs::kApplicationLocaleAccepted,
-                            std::string(),
-                            PrefService::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kApplicationLocale,
+                               std::string(),
+                               PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kApplicationLocaleBackup,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kApplicationLocaleAccepted,
+                               std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
 
 #if defined(OS_ANDROID)
-  prefs->RegisterBooleanPref(prefs::kDevToolsRemoteEnabled,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kSpdyProxyEnabled,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kDevToolsRemoteEnabled,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
-
+#if defined(OS_ANDROID) || defined(OS_IOS)
+  registry->RegisterBooleanPref(prefs::kSpdyProxyAuthEnabled,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 }
 
 
@@ -119,8 +121,7 @@ std::string Profile::GetDebugName() {
   return name;
 }
 
-// static
-bool Profile::IsGuestSession() {
+bool Profile::IsGuestSession() const {
 #if defined(OS_CHROMEOS)
   static bool is_guest_session =
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession);

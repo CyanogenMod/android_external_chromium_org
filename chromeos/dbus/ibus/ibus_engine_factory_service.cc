@@ -9,6 +9,7 @@
 
 #include "base/string_number_conversions.h"
 #include "chromeos/dbus/ibus/ibus_constants.h"
+#include "chromeos/ime/ibus_bridge.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/exported_object.h"
@@ -73,19 +74,19 @@ class IBusEngineFactoryServiceImpl : public IBusEngineFactoryService {
       create_engine_callback_map_[engine_name].Run(
           base::Bind(&IBusEngineFactoryServiceImpl::CreateEngineSendReply,
                      weak_ptr_factory_.GetWeakPtr(),
-                     dbus::Response::FromMethodCall(method_call),
+                     base::Passed(dbus::Response::FromMethodCall(method_call)),
                      response_sender));
     }
   }
 
   // Sends reply message for CreateEngine method call.
   void CreateEngineSendReply(
-      dbus::Response* response,
+      scoped_ptr<dbus::Response> response,
       const dbus::ExportedObject::ResponseSender response_sender,
       const dbus::ObjectPath& path) {
-    dbus::MessageWriter writer(response);
+    dbus::MessageWriter writer(response.get());
     writer.AppendObjectPath(path);
-    response_sender.Run(response);
+    response_sender.Run(response.Pass());
   }
 
   // Called when the CreateEngine method is exported.
@@ -106,20 +107,29 @@ class IBusEngineFactoryServiceImpl : public IBusEngineFactoryService {
   DISALLOW_COPY_AND_ASSIGN(IBusEngineFactoryServiceImpl);
 };
 
-class IBusEngineFactoryServiceStubImpl : public IBusEngineFactoryService {
+// An implementation of IBusEngineFactoryService without ibus-daemon
+// interaction. Currently this class is used only on linux desktop.
+// TODO(nona): Use this on ChromeOS device once crbug.com/171351 is fixed.
+class IBusEngineFactoryServiceDaemonlessImpl : public IBusEngineFactoryService {
  public:
-  IBusEngineFactoryServiceStubImpl() {}
-  virtual ~IBusEngineFactoryServiceStubImpl() {}
+  IBusEngineFactoryServiceDaemonlessImpl() {}
+  virtual ~IBusEngineFactoryServiceDaemonlessImpl() {}
 
-  // IBusEngineFactoryService overrides.
+  // IBusEngineFactoryService override.
   virtual void SetCreateEngineHandler(
       const std::string& engine_id,
-      const CreateEngineHandler& create_engine_handler) OVERRIDE {}
+      const CreateEngineHandler& create_engine_handler) OVERRIDE {
+    IBusBridge::Get()->SetCreateEngineHandler(engine_id, create_engine_handler);
+  }
+
+  // IBusEngineFactoryService override.
   virtual void UnsetCreateEngineHandler(
-      const std::string& engine_id) OVERRIDE {}
+      const std::string& engine_id) OVERRIDE {
+    IBusBridge::Get()->UnsetCreateEngineHandler(engine_id);
+  }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(IBusEngineFactoryServiceStubImpl);
+  DISALLOW_COPY_AND_ASSIGN(IBusEngineFactoryServiceDaemonlessImpl);
 };
 
 IBusEngineFactoryService::IBusEngineFactoryService() {
@@ -135,7 +145,7 @@ IBusEngineFactoryService* IBusEngineFactoryService::Create(
   if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
     return new IBusEngineFactoryServiceImpl(bus);
   else
-    return new IBusEngineFactoryServiceStubImpl();
+    return new IBusEngineFactoryServiceDaemonlessImpl();
 }
 
 }  // namespace chromeos

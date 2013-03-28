@@ -18,19 +18,54 @@ from idl_outfile import IDLOutFile
 from idl_parser import ParseFiles
 from idl_c_proto import CGen, GetNodeComments, CommentLines, Comment
 from idl_generator import Generator, GeneratorByFile
+from idl_visitor import IDLVisitor
 
 Option('dstroot', 'Base directory of output', default=os.path.join('..', 'c'))
 Option('guard', 'Include guard prefix', default=os.path.join('ppapi', 'c'))
-Option('out', 'List of output files', default='')
 
 
-def GetOutFileName(filenode, relpath=None, prefix=None):
+#
+# PrototypeResolver
+#
+# A specialized visitor which traverses the AST, building a mapping of
+# Release names to Versions numbers and calculating a min version.
+# The mapping is applied to the File nodes within the AST.
+#
+class ProtoResolver(IDLVisitor):
+  def __init__(self):
+    IDLVisitor.__init__(self)
+    self.struct_map = {}
+    self.interface_map = {}
+
+  def Arrive(self, node, ignore):
+    if node.IsA('Member') and node.GetProperty('ref'):
+      typeref = node.typelist.GetReleases()[0]
+      if typeref.IsA('Struct'):
+        nodelist = self.struct_map.get(typeref.GetName(), [])
+        nodelist.append(node)
+        self.struct_map[typeref.GetName()] = nodelist
+
+    if node.IsA('Param'):
+      typeref = node.typelist.GetReleases()[0]
+      if typeref.IsA('Interface'):
+        nodelist = self.struct_map.get(typeref.GetName(), [])
+        nodelist.append(node)
+        self.interface_map[typeref.GetName()] = nodelist
+
+    return None
+
+
+def GetPathFromNode(filenode, relpath=None, ext=None):
   path, name = os.path.split(filenode.GetProperty('NAME'))
-  name = os.path.splitext(name)[0] + '.h'
-  if prefix: name = '%s%s' % (prefix, name)
+  if ext: name = os.path.splitext(name)[0] + ext
   if path: name = os.path.join(path, name)
   if relpath: name = os.path.join(relpath, name)
+  name = os.path.normpath(name)
   return name
+
+
+def GetHeaderFromNode(filenode, relpath=None):
+  return GetPathFromNode(filenode, relpath, ext='.h')
 
 
 def WriteGroupMarker(out, node, last_group):
@@ -109,7 +144,7 @@ class HGen(GeneratorByFile):
     Generator.__init__(self, 'C Header', 'cgen', 'Generate the C headers.')
 
   def GenerateFile(self, filenode, releases, options):
-    savename = GetOutFileName(filenode, GetOption('dstroot'))
+    savename = GetHeaderFromNode(filenode, GetOption('dstroot'))
     my_min, my_max = filenode.GetMinMax(releases)
     if my_min > releases[-1] or my_max < releases[0]:
       if os.path.isfile(savename):
@@ -125,9 +160,13 @@ class HGen(GeneratorByFile):
 
   def GenerateHead(self, out, filenode, releases, options):
     __pychecker__ = 'unusednames=options'
+
+    proto = ProtoResolver()
+    proto.Visit(filenode, None)
+
     cgen = CGen()
     gpath = GetOption('guard')
-    def_guard = GetOutFileName(filenode, relpath=gpath)
+    def_guard = GetHeaderFromNode(filenode, relpath=gpath)
     def_guard = def_guard.replace(os.sep,'_').replace('.','_').upper() + '_'
 
     cright_node = filenode.GetChildren()[0]
@@ -138,8 +177,7 @@ class HGen(GeneratorByFile):
     out.Write('%s\n' % cgen.Copyright(cright_node))
 
     # Wrap the From ... modified ... comment if it would be >80 characters.
-    from_text = 'From %s' % (
-        filenode.GetProperty('NAME').replace(os.sep,'/'))
+    from_text = 'From %s' % GetPathFromNode(filenode).replace(os.sep, '/')
     modified_text = 'modified %s.' % (
         filenode.GetProperty('DATETIME'))
     if len(from_text) + len(modified_text) < 74:
@@ -159,7 +197,7 @@ class HGen(GeneratorByFile):
       depfile = dep.GetProperty('FILE')
       if depfile:
         includes.add(depfile)
-    includes = [GetOutFileName(
+    includes = [GetHeaderFromNode(
         include, relpath=gpath).replace(os.sep, '/') for include in includes]
     includes.append('ppapi/c/pp_macros.h')
 
@@ -168,19 +206,26 @@ class HGen(GeneratorByFile):
       includes.append('ppapi/c/pp_stdint.h')
 
     includes = sorted(set(includes))
-    cur_include = GetOutFileName(filenode, relpath=gpath).replace(os.sep, '/')
+    cur_include = GetHeaderFromNode(filenode,
+                                    relpath=gpath).replace(os.sep, '/')
     for include in includes:
       if include == cur_include: continue
       out.Write('#include "%s"\n' % include)
 
-    # If we are generating a single release, then create a macro for the highest
-    # available release number.
+    # Generate Prototypes
+    if proto.struct_map:
+      out.Write('\n/* Struct prototypes */\n')
+      for struct in proto.struct_map:
+        out.Write('struct %s;\n' % struct)
+
+    # Create a macro for the highest available release number.
     if filenode.GetProperty('NAME').endswith('pp_macros.idl'):
-      releasestr = GetOption('release')
+      releasestr = ' '.join(releases)
       if releasestr:
-        release_numbers = re.findall('\d+', releasestr)
-        if release_numbers:
-          out.Write('\n#define PPAPI_RELEASE %s\n' % release_numbers[0])
+        release_numbers = re.findall('[\d\_]+', releasestr)
+        release = re.findall('\d+', release_numbers[-1])[0]
+        if release:
+          out.Write('\n#define PPAPI_RELEASE %s\n' % release)
 
     # Generate all interface defines
     out.Write('\n')
@@ -210,14 +255,14 @@ class HGen(GeneratorByFile):
   def GenerateTail(self, out, filenode, releases, options):
     __pychecker__ = 'unusednames=options,releases'
     gpath = GetOption('guard')
-    def_guard = GetOutFileName(filenode, relpath=gpath)
+    def_guard = GetPathFromNode(filenode, relpath=gpath, ext='.h')
     def_guard = def_guard.replace(os.sep,'_').replace('.','_').upper() + '_'
     out.Write('#endif  /* %s */\n\n' % def_guard)
 
 
 hgen = HGen()
 
-def Main(args):
+def main(args):
   # Default invocation will verify the golden files are unchanged.
   failed = 0
   if not args:
@@ -250,5 +295,5 @@ def Main(args):
   return failed
 
 if __name__ == '__main__':
-  sys.exit(Main(sys.argv[1:]))
+  sys.exit(main(sys.argv[1:]))
 

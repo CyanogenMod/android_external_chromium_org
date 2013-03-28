@@ -9,11 +9,13 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/tab_contents/render_view_context_menu_observer.h"
 
-class TabContents;
+namespace content {
+class WebContents;
+}
 
 class PrintPreviewContextMenuObserver : public RenderViewContextMenuObserver {
  public:
-  explicit PrintPreviewContextMenuObserver(TabContents* tab);
+  explicit PrintPreviewContextMenuObserver(content::WebContents* contents);
   virtual ~PrintPreviewContextMenuObserver();
 
   // RenderViewContextMenuObserver implementation.
@@ -21,9 +23,9 @@ class PrintPreviewContextMenuObserver : public RenderViewContextMenuObserver {
   virtual bool IsCommandIdEnabled(int command_id) OVERRIDE;
 
  private:
-  bool IsPrintPreviewTab();
+  bool IsPrintPreviewDialog();
 
-  TabContents* tab_;
+  content::WebContents* contents_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintPreviewContextMenuObserver);
 };

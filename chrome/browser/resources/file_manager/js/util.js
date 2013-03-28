@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * Namespace for utility functions.
  */
@@ -11,7 +13,7 @@ var util = {};
  * Returns a function that console.log's its arguments, prefixed by |msg|.
  *
  * @param {string} msg The message prefix to use in the log.
- * @param {function} opt_callback A function to invoke after logging.
+ * @param {function=} opt_callback A function to invoke after logging.
  * @return {function} Function that logs.
  */
 util.flog = function(msg, opt_callback) {
@@ -48,7 +50,7 @@ util.ferr = function(msg) {
 util.installFileErrorToString = function() {
   FileError.prototype.toString = function() {
     return '[object FileError: ' + util.getFileErrorMnemonic(this.code) + ']';
-  }
+  };
 };
 
 /**
@@ -83,6 +85,20 @@ util.getFileErrorString = function(code) {
 };
 
 /**
+ * @param {string} str String to escape.
+ * @return {string} Escaped string.
+ */
+util.htmlEscape = function(str) {
+  return str.replace(/[<>&]/g, function(entity) {
+    switch (entity) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+    }
+  });
+};
+
+/**
  * @param {string} str String to unescape.
  * @return {string} Unescaped string.
  */
@@ -102,7 +118,7 @@ util.htmlUnescape = function(str) {
  * (including the original set).
  * @param {Array.<Entry>} entries List of entries.
  * @param {boolean} recurse Whether to recurse.
- * @param {function(object)} successCallback Object has the fields dirEntries,
+ * @param {function(Object)} successCallback Object has the fields dirEntries,
  *     fileEntries and fileBytes.
  */
 util.recurseAndResolveEntries = function(entries, recurse, successCallback) {
@@ -113,7 +129,7 @@ util.recurseAndResolveEntries = function(entries, recurse, successCallback) {
   var fileEntries = [];
   var fileBytes = 0;
 
-  function pathCompare(a, b) {
+  var pathCompare = function(a, b) {
     if (a.fullPath > b.fullPath)
       return 1;
 
@@ -121,15 +137,15 @@ util.recurseAndResolveEntries = function(entries, recurse, successCallback) {
       return -1;
 
     return 0;
-  }
+  };
 
-  function parentPath(path) {
+  var parentPath = function(path) {
     return path.substring(0, path.lastIndexOf('/'));
-  }
+  };
 
   // We invoke this after each async callback to see if we've received all
   // the expected callbacks.  If so, we're done.
-  function areWeThereYet() {
+  var areWeThereYet = function() {
     if (pendingSubdirectories == 0 && pendingFiles == 0) {
       var result = {
         dirEntries: dirEntries.sort(pathCompare),
@@ -141,9 +157,9 @@ util.recurseAndResolveEntries = function(entries, recurse, successCallback) {
         successCallback(result);
       }
     }
-  }
+  };
 
-  function tallyEntry(entry, originalSourcePath) {
+  var tallyEntry = function(entry, originalSourcePath) {
     entry.originalSourcePath = originalSourcePath;
     if (entry.isDirectory) {
       dirEntries.push(entry);
@@ -159,9 +175,9 @@ util.recurseAndResolveEntries = function(entries, recurse, successCallback) {
         areWeThereYet();
       });
     }
-  }
+  };
 
-  function recurseDirectory(dirEntry, originalSourcePath) {
+  var recurseDirectory = function(dirEntry, originalSourcePath) {
     pendingSubdirectories++;
 
     util.forEachDirEntry(dirEntry, function(entry) {
@@ -173,7 +189,7 @@ util.recurseAndResolveEntries = function(entries, recurse, successCallback) {
           tallyEntry(entry, originalSourcePath);
         }
     });
-  }
+  };
 
   for (var i = 0; i < entries.length; i++) {
     tallyEntry(entries[i], parentPath(entries[i].fullPath));
@@ -184,6 +200,8 @@ util.recurseAndResolveEntries = function(entries, recurse, successCallback) {
 
 /**
  * Utility function to invoke callback once for each entry in dirEntry.
+ * callback is called with 'null' after all entries are visited to indicate
+ * the end of the directory scan.
  *
  * @param {DirectoryEntry} dirEntry The directory entry to enumerate.
  * @param {function(Entry)} callback The function to invoke for each entry in
@@ -192,11 +210,11 @@ util.recurseAndResolveEntries = function(entries, recurse, successCallback) {
 util.forEachDirEntry = function(dirEntry, callback) {
   var reader;
 
-  function onError(err) {
+  var onError = function(err) {
     console.error('Failed to read  dir entries at ' + dirEntry.fullPath);
-  }
+  };
 
-  function onReadSome(results) {
+  var onReadSome = function(results) {
     if (results.length == 0)
       return callback(null);
 
@@ -217,13 +235,13 @@ util.forEachDirEntry = function(dirEntry, callback) {
  * @param {function(Array.<Entry>)} callback List of entries passed to callback.
  */
 util.readDirectory = function(root, path, callback) {
-  function onError(e) {
+  var onError = function(e) {
     callback([], e);
-  }
+  };
   root.getDirectory(path, {create: false}, function(entry) {
     var reader = entry.createReader();
     var r = [];
-    function readNext() {
+    var readNext = function() {
       reader.readEntries(function(results) {
         if (results.length == 0) {
           callback(r, null);
@@ -232,7 +250,7 @@ util.readDirectory = function(root, path, callback) {
         r.push.apply(r, results);
         readNext();
       }, onError);
-    }
+    };
     readNext();
   }, onError);
 };
@@ -250,7 +268,7 @@ util.readDirectory = function(root, path, callback) {
  * @param {DirEntry} dirEntry The base directory.
  * @param {Object} params The parameters to pass to the underlying
  *     getDirectory calls.
- * @param {Array<string>} paths The list of directories to resolve.
+ * @param {Array.<string>} paths The list of directories to resolve.
  * @param {function(!DirEntry)} successCallback The function to invoke for
  *     each DirEntry found.  Also invoked once with null at the end of the
  *     process.
@@ -263,11 +281,11 @@ util.getDirectories = function(dirEntry, params, paths, successCallback,
   // Copy the params array, since we're going to destroy it.
   params = [].slice.call(params);
 
-  function onComplete() {
+  var onComplete = function() {
     successCallback(null);
-  }
+  };
 
-  function getNextDirectory() {
+  var getNextDirectory = function() {
     var path = paths.shift();
     if (!path)
       return onComplete();
@@ -282,7 +300,7 @@ util.getDirectories = function(dirEntry, params, paths, successCallback,
         errorCallback(err);
         getNextDirectory();
       });
-  }
+  };
 
   getNextDirectory();
 };
@@ -300,7 +318,7 @@ util.getDirectories = function(dirEntry, params, paths, successCallback,
  * @param {DirEntry} dirEntry The base directory.
  * @param {Object} params The parameters to pass to the underlying
  *     getFile calls.
- * @param {Array<string>} paths The list of files to resolve.
+ * @param {Array.<string>} paths The list of files to resolve.
  * @param {function(!FileEntry)} successCallback The function to invoke for
  *     each FileEntry found.  Also invoked once with null at the end of the
  *     process.
@@ -312,11 +330,11 @@ util.getFiles = function(dirEntry, params, paths, successCallback,
   // Copy the params array, since we're going to destroy it.
   params = [].slice.call(params);
 
-  function onComplete() {
+  var onComplete = function() {
     successCallback(null);
-  }
+  };
 
-  function getNextFile() {
+  var getNextFile = function() {
     var path = paths.shift();
     if (!path)
       return onComplete();
@@ -331,7 +349,7 @@ util.getFiles = function(dirEntry, params, paths, successCallback,
         errorCallback(err);
         getNextFile();
       });
-  }
+  };
 
   getNextFile();
 };
@@ -382,10 +400,10 @@ util.getOrCreateFile = function(root, path, successCallback, errorCallback) {
   var dirname = null;
   var basename = null;
 
-  function onDirFound(dirEntry) {
+  var onDirFound = function(dirEntry) {
     dirEntry.getFile(basename, { create: true },
                      successCallback, errorCallback);
-  }
+  };
 
   var i = path.lastIndexOf('/');
   if (i > -1) {
@@ -415,7 +433,7 @@ util.getOrCreateDirectory = function(root, path, successCallback,
                                      errorCallback) {
   var names = path.split('/');
 
-  function getOrCreateNextName(dir) {
+  var getOrCreateNextName = function(dir) {
     if (!names.length)
       return successCallback(dir);
 
@@ -426,7 +444,7 @@ util.getOrCreateDirectory = function(root, path, successCallback,
 
     dir.getDirectory(name, { create: true }, getOrCreateNextName,
                      errorCallback);
-  }
+  };
 
   getOrCreateNextName(root);
 };
@@ -445,61 +463,61 @@ util.removeFileOrDirectory = function(entry, onSuccess, onError) {
 };
 
 /**
- * Units table for bytesToSi.
- * Note: changing this requires some code change in bytesToSi.
- * Note: these values are localized in file_manager.js.
- */
-util.UNITS = ['KB', 'MB', 'GB', 'TB', 'PB'];
-
-/**
- * Scale table for bytesToSi.
- */
-util.SCALE = [Math.pow(2, 10),
-              Math.pow(2, 20),
-              Math.pow(2, 30),
-              Math.pow(2, 40),
-              Math.pow(2, 50)];
-
-/**
- * Convert a number of bytes into an appropriate International System of
- * Units (SI) representation, using the correct number separators.
+ * Convert a number of bytes into a human friendly format, using the correct
+ * number separators.
  *
  * @param {number} bytes The number of bytes.
  * @return {string} Localized string.
  */
-util.bytesToSi = function(bytes) {
-  function str(n, u) {
+util.bytesToString = function(bytes) {
+  // Translation identifiers for size units.
+  var UNITS = ['SIZE_BYTES',
+               'SIZE_KB',
+               'SIZE_MB',
+               'SIZE_GB',
+               'SIZE_TB',
+               'SIZE_PB'];
+
+  // Minimum values for the units above.
+  var STEPS = [0,
+               Math.pow(2, 10),
+               Math.pow(2, 20),
+               Math.pow(2, 30),
+               Math.pow(2, 40),
+               Math.pow(2, 50)];
+
+  var str = function(n, u) {
     // TODO(rginda): Switch to v8Locale's number formatter when it's
     // available.
-    return n.toLocaleString() + ' ' + u;
-  }
+    return strf(u, n.toLocaleString());
+  };
 
-  function fmt(s, u) {
+  var fmt = function(s, u) {
     var rounded = Math.round(bytes / s * 10) / 10;
     return str(rounded, u);
-  }
+  };
 
-  // Less than 1KB is displayed like '0.8 KB'.
-  if (bytes < util.SCALE[0]) {
-    return fmt(util.SCALE[0], util.UNITS[0]);
+  // Less than 1KB is displayed like '80 bytes'.
+  if (bytes < STEPS[1]) {
+    return str(bytes, UNITS[0]);
   }
 
   // Up to 1MB is displayed as rounded up number of KBs.
-  if (bytes < util.SCALE[1]) {
-    var rounded = Math.ceil(bytes / util.SCALE[0]);
-    return str(rounded, util.UNITS[0]);
+  if (bytes < STEPS[2]) {
+    var rounded = Math.ceil(bytes / STEPS[1]);
+    return str(rounded, UNITS[1]);
   }
 
   // This loop index is used outside the loop if it turns out |bytes|
   // requires the largest unit.
   var i;
 
-  for (i = 1; i < util.UNITS.length - 1; i++) {
-    if (bytes < util.SCALE[i + 1])
-      return fmt(util.SCALE[i], util.UNITS[i]);
+  for (i = 2 /* MB */; i < UNITS.length - 1; i++) {
+    if (bytes < STEPS[i + 1])
+      return fmt(STEPS[i], UNITS[i]);
   }
 
-  return fmt(util.SCALE[i], util.UNITS[i]);
+  return fmt(STEPS[i], UNITS[i]);
 };
 
 /**
@@ -536,16 +554,16 @@ if (!Blob.prototype.slice) {
  * @param {function(FileError)} onError Error handler.
  */
 util.writeBlobToFile = function(entry, blob, onSuccess, onError) {
-  function truncate(writer) {
+  var truncate = function(writer) {
     writer.onerror = onError;
     writer.onwriteend = write.bind(null, writer);
     writer.truncate(0);
-  }
+  };
 
-  function write(writer) {
+  var write = function(writer) {
     writer.onwriteend = onSuccess;
     writer.write(blob);
-  }
+  };
 
   entry.createWriter(truncate, onError);
 };
@@ -584,7 +602,12 @@ util.applyTransform = function(element, transform) {
  */
 util.makeFilesystemUrl = function(path) {
   path = path.split('/').map(encodeURIComponent).join('/');
-  return 'filesystem:' + util.platform.getURL('external' + path);
+  var prefix = 'external';
+  if (chrome.fileBrowserPrivate.mocked) {
+    prefix = (chrome.fileBrowserPrivate.FS_TYPE == window.TEMPORARY) ?
+        'temporary' : 'persistent';
+  }
+  return 'filesystem:' + document.location.origin + '/' + prefix + path;
 };
 
 /**
@@ -593,8 +616,10 @@ util.makeFilesystemUrl = function(path) {
  * @return {string} The path.
  */
 util.extractFilePath = function(url) {
-  var path = /^filesystem:[\w-]*:\/\/[\w]*\/(external|persistent)(\/.*)$/.
-      exec(url)[2];
+  var match =
+      /^filesystem:[\w-]*:\/\/[\w]*\/(external|persistent|temporary)(\/.*)$/.
+      exec(url);
+  var path = match && match[2];
   if (!path) return null;
   return decodeURIComponent(path);
 };
@@ -605,8 +630,10 @@ util.extractFilePath = function(url) {
  * @param {function(Array.<Entry>)} callback The callback is called at the very
  *     end with a list of entries found.
  * @param {number?} max_depth Maximum depth. Pass zero to traverse everything.
+ * @param {function(entry):boolean=} opt_filter Optional filter to skip some
+ *     files/directories.
  */
-util.traverseTree = function(root, callback, max_depth) {
+util.traverseTree = function(root, callback, max_depth, opt_filter) {
   var list = [];
   util.forEachEntryInTree(root, function(entry) {
     if (entry) {
@@ -615,19 +642,27 @@ util.traverseTree = function(root, callback, max_depth) {
       callback(list);
     }
     return true;
-  }, max_depth);
+  }, max_depth, opt_filter);
 };
 
 /**
  * Traverses a tree up to a certain depth, and calls a callback for each entry.
+ * callback is called with 'null' after all entries are visited to indicate
+ * the end of the traversal.
  * @param {FileEntry} root Root entry.
  * @param {function(Entry):boolean} callback The callback is called for each
  *     entry, and then once with null passed. If callback returns false once,
  *     the whole traversal is stopped.
  * @param {number?} max_depth Maximum depth. Pass zero to traverse everything.
+ * @param {function(entry):boolean=} opt_filter Optional filter to skip some
+ *     files/directories.
  */
-util.forEachEntryInTree = function(root, callback, max_depth) {
+util.forEachEntryInTree = function(root, callback, max_depth, opt_filter) {
   if (root.isFile) {
+    if (opt_filter && !opt_filter(root)) {
+      callback(null);
+      return;
+    }
     if (callback(root))
       callback(null);
     return;
@@ -636,13 +671,14 @@ util.forEachEntryInTree = function(root, callback, max_depth) {
   var pending = 0;
   var cancelled = false;
 
-  function maybeDone() {
+  var maybeDone = function() {
     if (pending == 0 && !cancelled)
       callback(null);
-  }
+  };
 
-  function readEntry(entry, depth) {
+  var readEntry = function(entry, depth) {
     if (cancelled) return;
+    if (opt_filter && !opt_filter(entry)) return;
 
     if (!callback(entry)) {
       cancelled = true;
@@ -663,7 +699,7 @@ util.forEachEntryInTree = function(root, callback, max_depth) {
         readEntry(childEntry, depth + 1);
       }
     });
-  }
+  };
 
   readEntry(root, 0);
 };
@@ -672,8 +708,8 @@ util.forEachEntryInTree = function(root, callback, max_depth) {
  * A shortcut function to create a child element with given tag and class.
  *
  * @param {HTMLElement} parent Parent element.
- * @param {string} opt_className Class name.
- * @param {string} opt_tag Element tag, DIV is omitted.
+ * @param {string=} opt_className Class name.
+ * @param {string=} opt_tag Element tag, DIV is omitted.
  * @return {Element} Newly created element.
  */
 util.createChild = function(parent, opt_className, opt_tag) {
@@ -685,21 +721,32 @@ util.createChild = function(parent, opt_className, opt_tag) {
 };
 
 /**
- * Update the top window location search query and hash.
+ * Update the app state.
+ * For app v1 use the top window location search query and hash.
+ * For app v2 use the top window appState variable.
  *
  * @param {boolean} replace True if the history state should be replaced,
  *                          false if pushed.
  * @param {string} path Path to be put in the address bar after the hash.
  *   If null the hash is left unchanged.
- * @param {string|object} opt_param Search parameter. Used directly if string,
+ * @param {string|Object=} opt_param Search parameter. Used directly if string,
  *   stringified if object. If omitted the search query is left unchanged.
  */
-util.updateLocation = function(replace, path, opt_param) {
-  if (util.platform.v2())
+util.updateAppState = function(replace, path, opt_param) {
+  if (window.appState) {
+    // |replace| parameter is ignored. There is no stack, so saving/restoring
+    // the state is the apps responsibility.
+    if (typeof opt_param == 'string')
+      window.appState.params = {};
+    else if (typeof opt_param == 'object')
+      window.appState.params = opt_param;
+    if (path)
+      window.appState.defaultPath = path;
+    util.saveAppState();
     return;
+  }
 
-  var location = window.top.document.location;
-  var history = window.top.history;
+  var location = document.location;
 
   var search;
   if (typeof opt_param == 'string')
@@ -711,7 +758,7 @@ util.updateLocation = function(replace, path, opt_param) {
 
   var hash;
   if (path)
-    hash = '#' + encodeURI(path);
+    hash = '#' + encodeURIComponent(path);
   else
     hash = location.hash;
 
@@ -719,9 +766,9 @@ util.updateLocation = function(replace, path, opt_param) {
   //TODO(kaznacheev): Fix replaceState for component extensions. Currently it
   //does not replace the content of the address bar.
   if (replace)
-    history.replaceState(undefined, path, newLocation);
+    window.history.replaceState(undefined, path, newLocation);
   else
-    history.pushState(undefined, path, newLocation);
+    window.history.pushState(undefined, path, newLocation);
 };
 
 /**
@@ -763,7 +810,6 @@ util.platform = {
     try {
       return !!(chrome.app && chrome.app.runtime);
     } catch (e) {
-      console.log(new Error.stack);
       return false;
     }
   },
@@ -787,7 +833,7 @@ util.platform = {
     try {
       callback(window.localStorage[key]);
     } catch (ignore) {
-      chrome.storage.local.get(function(items) {
+      chrome.storage.local.get(key, function(items) {
         callback(items[key]);
       });
     }
@@ -795,10 +841,13 @@ util.platform = {
 
   /**
    * @param {string} key Preference name.
-   * @param {string} value Preference value.
-   * @param {function} callback Completion callback.
+   * @param {string|Object} value Preference value.
+   * @param {function=} opt_callback Completion callback.
    */
   setPreference: function(key, value, opt_callback) {
+    if (typeof value != 'string')
+      value = JSON.stringify(value);
+
     try {
       window.localStorage[key] = value;
       if (opt_callback) opt_callback();
@@ -825,7 +874,7 @@ util.platform = {
    * Close current window.
    */
   closeWindow: function() {
-    if (this.v2()) {
+    if (util.platform.v2()) {
       window.close();
     } else {
       chrome.tabs.getCurrent(function(tab) {
@@ -838,10 +887,10 @@ util.platform = {
    * @return {string} Applicaton id.
    */
   getAppId: function() {
-    try {
-      return chrome.extension.getURL('').split('/')[2];
-    } catch (ignore) {
+    if (util.platform.v2()) {
       return chrome.runtime.id;
+    } else {
+      return chrome.extension.getURL('').split('/')[2];
     }
   },
 
@@ -850,10 +899,10 @@ util.platform = {
    * @return {string} Extension-based URL.
    */
   getURL: function(path) {
-    try {
-      return chrome.extension.getURL(path);
-    } catch (ignore) {
+    if (util.platform.v2()) {
       return chrome.runtime.getURL(path);
+    } else {
+      return chrome.extension.getURL(path);
     }
   },
 
@@ -906,10 +955,10 @@ util.loadScripts = function(urls, onload) {
     onload();
     return;
   }
-  function done() {
+  var done = function() {
     if (--countdown == 0)
       onload();
-  }
+  };
   while (urls.length) {
     var script = document.createElement('script');
     script.src = urls.shift();
@@ -918,6 +967,70 @@ util.loadScripts = function(urls, onload) {
     script.onerror = done;
   }
 };
+
+// TODO(serya): remove it when have migrated to AppsV2.
+util.__defineGetter__('storage', function() {
+  delete util.storage;
+  if (chrome.storage) {
+    util.storage = chrome.storage;
+    return util.storage;
+  }
+
+  var listeners = [];
+
+  function StorageArea(type) {
+    this.type_ = type;
+  }
+
+  StorageArea.prototype.set = function(items, opt_callback) {
+    var changes = {};
+    for (var i in items) {
+      changes[i] = {oldValue: window.localStorage[i], newValue: items[i]};
+      window.localStorage[i] = items[i];
+    }
+    if (opt_callback)
+      opt_callback();
+    for (var i = 0; i < listeners.length; i++) {
+      listeners[i](changes, this.type_);
+    }
+  };
+
+  StorageArea.prototype.get = function(keys, callback) {
+    if (!callback) {
+      // Since key is optionsl it's the callback.
+      keys(window.localStorage);
+      return;
+    }
+    if (typeof(keys) == 'string')
+      keys = [keys];
+    var result = {};
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      result[key] = window.localStorage[key];
+    }
+    callback(result);
+  };
+
+  /**
+   * Simulation of the AppsV2 storage interface.
+   * @type {Object}
+   */
+  util.storage = {
+    local: new StorageArea('local'),
+    sync: new StorageArea('sync'),
+    onChanged: {
+      addListener: function(l) {
+        listeners.push(l);
+      },
+      removeListener: function(l) {
+        for (var i = 0; i < listeners.length; i++) {
+          listeners.splice(i, 1);
+        }
+      }
+    }
+  };
+  return util.storage;
+});
 
 /**
  * Attach page load handler.
@@ -935,4 +1048,234 @@ util.addPageLoadHandler = function(handler) {
     }
     util.platform.suppressContextMenu();
   });
+};
+
+/**
+ * Save app v2 launch data to the local storage.
+ */
+util.saveAppState = function() {
+  if (window.appState)
+    util.platform.setPreference(window.appID, window.appState);
+};
+
+
+/**
+ *  AppCache is a persistent timestamped key-value storage backed by
+ *  HTML5 local storage.
+ *
+ *  It is not designed for frequent access. In order to avoid costly
+ *  localStorage iteration all data is kept in a single localStorage item.
+ *  There is no in-memory caching, so concurrent access is _almost_ safe.
+ *
+ *  TODO(kaznacheev) Reimplement this based on Indexed DB.
+ */
+util.AppCache = function() {};
+
+/**
+ * Local storage key.
+ */
+util.AppCache.KEY = 'AppCache';
+
+/**
+ * Max number of items.
+ */
+util.AppCache.CAPACITY = 100;
+
+/**
+ * Default lifetime.
+ */
+util.AppCache.LIFETIME = 30 * 24 * 60 * 60 * 1000;  // 30 days.
+
+/**
+ * @param {string} key Key.
+ * @param {function(number)} callback Callback accepting a value.
+ */
+util.AppCache.getValue = function(key, callback) {
+  util.AppCache.read_(function(map) {
+    var entry = map[key];
+    callback(entry && entry.value);
+  });
+};
+
+/**
+ * Update the cache.
+ *
+ * @param {string} key Key.
+ * @param {string} value Value. Remove the key if value is null.
+ * @param {number=} opt_lifetime Maximim time to keep an item (in milliseconds).
+ */
+util.AppCache.update = function(key, value, opt_lifetime) {
+  util.AppCache.read_(function(map) {
+    if (value != null) {
+      map[key] = {
+        value: value,
+        expire: Date.now() + (opt_lifetime || util.AppCache.LIFETIME)
+      };
+    } else if (key in map) {
+      delete map[key];
+    } else {
+      return;  // Nothing to do.
+    }
+    util.AppCache.cleanup_(map);
+    util.AppCache.write_(map);
+  });
+};
+
+/**
+ * @param {function(Object)} callback Callback accepting a map of timestamped
+ *   key-value pairs.
+ * @private
+ */
+util.AppCache.read_ = function(callback) {
+  util.platform.getPreference(util.AppCache.KEY, function(json) {
+    if (json) {
+      try {
+        callback(JSON.parse(json));
+      } catch (e) {
+        // The local storage item somehow got messed up, start fresh.
+      }
+    }
+    callback({});
+  });
+};
+
+/**
+ * @param {Object} map A map of timestamped key-value pairs.
+ * @private
+ */
+util.AppCache.write_ = function(map) {
+  util.platform.setPreference(util.AppCache.KEY, JSON.stringify(map));
+};
+
+/**
+ * Remove over-capacity and obsolete items.
+ *
+ * @param {Object} map A map of timestamped key-value pairs.
+ * @private
+ */
+util.AppCache.cleanup_ = function(map) {
+  // Sort keys by ascending timestamps.
+  var keys = [];
+  for (var key in map) {
+    if (map.hasOwnProperty(key))
+      keys.push(key);
+  }
+  keys.sort(function(a, b) { return map[a].expire > map[b].expire });
+
+  var cutoff = Date.now();
+
+  var obsolete = 0;
+  while (obsolete < keys.length &&
+         map[keys[obsolete]].expire < cutoff) {
+    obsolete++;
+  }
+
+  var overCapacity = Math.max(0, keys.length - util.AppCache.CAPACITY);
+
+  var itemsToDelete = Math.max(obsolete, overCapacity);
+  for (var i = 0; i != itemsToDelete; i++) {
+    delete map[keys[i]];
+  }
+};
+
+/**
+ * Load an image.
+ *
+ * @param {Image} image Image element.
+ * @param {string} url Source url.
+ * @param {Object=} opt_options Hash array of options, eg. width, height,
+ *     maxWidth, maxHeight, scale, cache.
+ * @param {function()=} opt_isValid Function returning false iff the task
+ *     is not valid and should be aborted.
+ * @return {?number} Task identifier or null if fetched immediately from
+ *     cache.
+ */
+util.loadImage = function(image, url, opt_options, opt_isValid) {
+  return ImageLoader.Client.loadToImage(url,
+                                        image,
+                                        opt_options || {},
+                                        function() { },
+                                        function() { image.onerror(); },
+                                        opt_isValid);
+};
+
+/**
+ * Cancels loading an image.
+ * @param {number} taskId Task identifier returned by util.loadImage().
+ */
+util.cancelLoadImage = function(taskId) {
+  ImageLoader.Client.getInstance().cancel(taskId);
+};
+
+/**
+ * Finds proerty descriptor in the object prototype chain.
+ * @param {Object} object The object.
+ * @param {string} propertyName The property name.
+ * @return {Object} Property descriptor.
+ */
+util.findPropertyDescriptor = function(object, propertyName) {
+  for (var p = object; p; p = Object.getPrototypeOf(p)) {
+    var d = Object.getOwnPropertyDescriptor(p, propertyName);
+    if (d)
+      return d;
+  }
+  return null;
+};
+
+/**
+ * Calls inherited property setter (useful when property is
+ * overriden).
+ * @param {Object} object The object.
+ * @param {string} propertyName The property name.
+ * @param {*} value Value to set.
+ */
+util.callInheritedSetter = function(object, propertyName, value) {
+  var d = util.findPropertyDescriptor(Object.getPrototypeOf(object),
+                                      propertyName);
+  d.set.call(object, value);
+};
+
+/**
+ * Returns true if the board of the device matches the given prefix.
+ * @param {string} boardPrefix The board prefix to match against.
+ *     (ex. "x86-mario". Prefix is used as the actual board name comes with
+ *     suffix like "x86-mario-something".
+ * @return {boolean} True if the board of the device matches the given prefix.
+ */
+util.boardIs = function(boardPrefix) {
+  // The board name should be lower-cased, but making it case-insensitive for
+  // backward compatibility just in case.
+  var board = str('CHROMEOS_RELEASE_BOARD');
+  var pattern = new RegExp('^' + boardPrefix, 'i');
+  return board.match(pattern) != null;
+};
+
+/**
+ * Disabled browser shortcus key events on the given document.
+ * @param {Element} element Element to be disabled browser shortcut keys on.
+ */
+util.disableBrowserShortcutKeys = function(element) {
+  element.addEventListener('keydown', function(e) {
+    switch (util.getKeyModifiers(e) + e.keyCode) {
+      case 'Ctrl-79':  // Disable native Ctrl-O (open file).
+      case 'Ctrl-83':  // Disable native Ctrl-S (save as).
+      case 'Ctrl-85':  // Disable native Ctrl-U (view source).
+        e.preventDefault();
+    }
+  });
+};
+
+/**
+ * Makes a redirect to the specified Files.app's window from another window.
+ * @param {number} id Window id.
+ * @param {string} url Target url.
+ * @return {boolean} True if the window has been found. False otherwise.
+ */
+util.redirectMainWindow = function(id, url) {
+  var windowViews = chrome.extension.getViews({ windowId: parseInt(id) });
+  if (!windowViews || windowViews.length === 0)
+    return false;
+
+  windowViews[0].location.href = url;
+  return true;
 };

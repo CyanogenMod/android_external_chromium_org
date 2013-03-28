@@ -11,8 +11,9 @@
 #include "base/base_switches.h"
 #import "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/debug/crash_logging.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #import "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
@@ -26,6 +27,8 @@
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/crash_keys.h"
+#include "chrome/common/dump_without_crashing.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/installer/util/google_update_settings.h"
@@ -56,6 +59,16 @@ void ClearCrashKeyValue(NSString* key) {
   BreakpadRemoveUploadParameter(gBreakpadRef, key);
 }
 
+void SetCrashKeyValueImpl(const base::StringPiece& key,
+                          const base::StringPiece& value) {
+  SetCrashKeyValue(base::SysUTF8ToNSString(key.as_string()),
+                   base::SysUTF8ToNSString(value.as_string()));
+}
+
+void ClearCrashKeyValueImpl(const base::StringPiece& key) {
+  ClearCrashKeyValue(base::SysUTF8ToNSString(key.as_string()));
+}
+
 bool FatalMessageHandler(int severity, const char* file, int line,
                          size_t message_start, const std::string& str) {
   // Do not handle non-FATAL.
@@ -70,7 +83,7 @@ bool FatalMessageHandler(int severity, const char* file, int line,
   if (guarded)
     return false;
 
-  AutoReset<bool> guard(&guarded, true);
+  base::AutoReset<bool> guard(&guarded, true);
 
   // Only log last path component.  This matches logging.cc.
   if (file) {
@@ -117,7 +130,7 @@ class DumpHelper : public base::PlatformThread::Delegate {
  private:
   DumpHelper() {}
 
-  virtual void ThreadMain() {
+  virtual void ThreadMain() OVERRIDE {
     base::PlatformThread::SetName("CrDumpHelper");
     BreakpadGenerateAndSendReport(gBreakpadRef);
   }
@@ -211,14 +224,15 @@ void InitCrashReporter() {
   // location to write brekapad crash dumps can be set.
   const char* alternate_minidump_location = getenv("BREAKPAD_DUMP_LOCATION");
   if (alternate_minidump_location) {
-    FilePath alternate_minidump_location_path(alternate_minidump_location);
+    base::FilePath alternate_minidump_location_path(
+        alternate_minidump_location);
     if (!file_util::PathExists(alternate_minidump_location_path)) {
       LOG(ERROR) << "Directory " << alternate_minidump_location <<
           " doesn't exist";
     } else {
       PathService::Override(
           chrome::DIR_CRASH_DUMPS,
-          FilePath(alternate_minidump_location));
+          base::FilePath(alternate_minidump_location));
       if (is_browser) {
         // Print out confirmation message to the stdout, but only print
         // from browser process so we don't flood the terminal.
@@ -228,7 +242,7 @@ void InitCrashReporter() {
     }
   }
 
-  FilePath dir_crash_dumps;
+  base::FilePath dir_crash_dumps;
   PathService::Get(chrome::DIR_CRASH_DUMPS, &dir_crash_dumps);
   [breakpad_config setObject:base::SysUTF8ToNSString(dir_crash_dumps.value())
                       forKey:@BREAKPAD_DUMP_DIRECTORY];
@@ -240,16 +254,16 @@ void InitCrashReporter() {
     return;
   }
 
+  // Initialize the scoped crash key system.
+  base::debug::SetCrashKeyReportingFunctions(&SetCrashKeyValueImpl,
+                                             &ClearCrashKeyValueImpl);
+  crash_keys::RegisterChromeCrashKeys();
+
   // Set Breakpad metadata values.  These values are added to Info.plist during
   // the branded Google Chrome.app build.
   SetCrashKeyValue(@"ver", [info_dictionary objectForKey:@BREAKPAD_VERSION]);
   SetCrashKeyValue(@"prod", [info_dictionary objectForKey:@BREAKPAD_PRODUCT]);
   SetCrashKeyValue(@"plat", @"OS X");
-
-  // Enable child process crashes to include the page URL.
-  // TODO: Should this only be done for certain process types?
-  base::mac::SetCrashKeyFunctions(SetCrashKeyValue,
-                                  ClearCrashKeyValue);
 
   if (!is_browser) {
     // Get the guid from the command line switch.

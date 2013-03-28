@@ -15,9 +15,14 @@
         '<(policy_out_dir)/policy/policy_constants.cc',
     'protobuf_decoder_path':
         '<(policy_out_dir)/policy/cloud_policy_generated.cc',
+    # This is the "full" protobuf, which defines one protobuf message per
+    # policy. It is also the format currently used by the server.
+    'chrome_settings_proto_path':
+        '<(policy_out_dir)/policy/chrome_settings.proto',
+    # This protobuf is equivalent to chrome_settings.proto but shares messages
+    # for policies of the same type, so that less classes have to be generated
+    # and compiled.
     'cloud_policy_proto_path': '<(policy_out_dir)/policy/cloud_policy.proto',
-    'proto_path_substr': 'chrome/browser/policy/proto',
-    'proto_rel_path': '<(DEPTH)/<(proto_path_substr)',
   },
   'targets': [
     {
@@ -33,6 +38,7 @@
             '<(policy_constant_header_path)',
             '<(policy_constant_source_path)',
             '<(protobuf_decoder_path)',
+            '<(chrome_settings_proto_path)',
             '<(cloud_policy_proto_path)',
           ],
           'action_name': 'generate_policy_source',
@@ -41,8 +47,9 @@
             '<@(generate_policy_source_script_path)',
             '--policy-constants-header=<(policy_constant_header_path)',
             '--policy-constants-source=<(policy_constant_source_path)',
-            '--policy-protobuf=<(cloud_policy_proto_path)',
-            '--protobuf-decoder=<(protobuf_decoder_path)',
+            '--chrome-settings-protobuf=<(chrome_settings_proto_path)',
+            '--cloud-policy-protobuf=<(cloud_policy_proto_path)',
+            '--cloud-policy-decoder=<(protobuf_decoder_path)',
             '<(OS)',
             '<(chromeos)',
             'policy_templates.json',
@@ -58,35 +65,36 @@
       },
     },
     {
-      'target_name': 'cloud_policy_proto_compile',
+      'target_name': 'cloud_policy_proto_generated_compile',
       'type': 'static_library',
       'sources': [
         '<(cloud_policy_proto_path)',
       ],
       'variables': {
         'proto_in_dir': '<(policy_out_dir)/policy',
-        'proto_out_dir': '<(proto_path_substr)',
+        'proto_out_dir': 'policy/proto',
       },
       'dependencies': [
         'cloud_policy_code_generate',
       ],
       'includes': [ '../../../build/protoc.gypi' ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [4267, ],
     },
     {
-      'target_name': 'cloud_policy_backend_header_compile',
+      # This target builds the "full" protobuf, used for tests only.
+      'target_name': 'chrome_settings_proto_generated_compile',
       'type': 'static_library',
       'sources': [
-        '<(proto_rel_path)/chrome_device_policy.proto',
-        '<(proto_rel_path)/device_management_backend.proto',
-        '<(proto_rel_path)/device_management_local.proto',
-        '<(proto_rel_path)/old_generic_format.proto',
+        '<(chrome_settings_proto_path)',
       ],
       'variables': {
-        'proto_in_dir': '<(proto_rel_path)',
-        'proto_out_dir': '<(proto_path_substr)',
+        'proto_in_dir': '<(policy_out_dir)/policy',
+        'proto_out_dir': 'policy/proto',
       },
       'dependencies': [
         'cloud_policy_code_generate',
+        'cloud_policy_proto_generated_compile',
       ],
       'includes': [ '../../../build/protoc.gypi' ],
     },
@@ -110,15 +118,29 @@
       ],
       'dependencies': [
         'cloud_policy_code_generate',
-        'cloud_policy_proto_compile',
-        'cloud_policy_backend_header_compile',
+        'cloud_policy_proto_generated_compile',
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/third_party/protobuf/protobuf.gyp:protobuf_lite',
       ],
     },
+    {
+      'target_name': 'policy_test_support',
+      'type': 'none',
+      'hard_dependency': 1,
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(policy_out_dir)',
+          '<(protoc_out_dir)',
+        ],
+      },
+      'dependencies': [
+        'policy',
+        'chrome_settings_proto_generated_compile',
+      ],
+    },
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'policy_win64',

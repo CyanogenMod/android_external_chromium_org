@@ -18,8 +18,8 @@
 #include "chrome/browser/autocomplete/autocomplete_log.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
-#include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_notifications.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_database.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
@@ -140,8 +140,10 @@ void AutocompleteActionPredictor::StartPrerendering(
     const GURL& url,
     const content::SessionStorageNamespaceMap& session_storage_namespace_map,
     const gfx::Size& size) {
-  if (prerender_handle_.get())
-    prerender_handle_->OnNavigateAway();
+  // Only cancel the old prerender after starting the new one, so if the URLs
+  // are the same, the underlying prerender will be reused.
+  scoped_ptr<prerender::PrerenderHandle> old_prerender_handle(
+      prerender_handle_.release());
   if (prerender::PrerenderManager* prerender_manager =
           prerender::PrerenderManagerFactory::GetForProfile(profile_)) {
     content::SessionStorageNamespace* session_storage_namespace = NULL;
@@ -152,9 +154,9 @@ void AutocompleteActionPredictor::StartPrerendering(
     prerender_handle_.reset(
         prerender_manager->AddPrerenderFromOmnibox(
             url, session_storage_namespace, size));
-  } else {
-    prerender_handle_.reset();
   }
+  if (old_prerender_handle)
+    old_prerender_handle->OnCancel();
 }
 
 // Given a match, return a recommended action.
@@ -328,8 +330,8 @@ void AutocompleteActionPredictor::OnOmniboxOpenedUrl(
   const AutocompleteMatch& match = log.result.match_at(log.selected_index);
 
   UMA_HISTOGRAM_BOOLEAN(
-      StringPrintf("Prerender.OmniboxNavigationsCouldPrerender%s",
-                   prerender::PrerenderManager::GetModeString()).c_str(),
+      base::StringPrintf("Prerender.OmniboxNavigationsCouldPrerender%s",
+                         prerender::PrerenderManager::GetModeString()).c_str(),
       prerender::IsOmniboxEnabled(profile_));
 
   const GURL& opened_url = match.destination_url;

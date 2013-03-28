@@ -9,9 +9,8 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/values.h"
-#include "net/base/net_errors.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/ssl_cert_request_info.h"
+#include "net/base/net_errors.h"
 #include "net/http/http_proxy_client_socket.h"
 #include "net/http/http_proxy_client_socket_pool.h"
 #include "net/socket/client_socket_factory.h"
@@ -19,6 +18,7 @@
 #include "net/socket/socks_client_socket_pool.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/transport_client_socket_pool.h"
+#include "net/ssl/ssl_cert_request_info.h"
 
 namespace net {
 
@@ -129,7 +129,7 @@ void SSLConnectJob::GetAdditionalErrorState(ClientSocketHandle* handle) {
         transport_socket_handle_.release());
   }
   handle->set_ssl_error_response_info(error_response_info_);
-  if (!ssl_connect_start_time_.is_null())
+  if (!connect_timing_.ssl_start.is_null())
     handle->set_is_ssl_error(true);
 }
 
@@ -259,7 +259,22 @@ int SSLConnectJob::DoSSLConnect() {
   next_state_ = STATE_SSL_CONNECT_COMPLETE;
   // Reset the timeout to just the time allowed for the SSL handshake.
   ResetTimer(base::TimeDelta::FromSeconds(kSSLHandshakeTimeoutInSeconds));
-  ssl_connect_start_time_ = base::TimeTicks::Now();
+
+  // If the handle has a fresh socket, get its connect start and DNS times.
+  // This should always be the case.
+  const LoadTimingInfo::ConnectTiming& socket_connect_timing =
+      transport_socket_handle_->connect_timing();
+  if (!transport_socket_handle_->is_reused() &&
+      !socket_connect_timing.connect_start.is_null()) {
+    // Overwriting |connect_start| serves two purposes - it adjusts timing so
+    // |connect_start| doesn't include dns times, and it adjusts the time so
+    // as not to include time spent waiting for an idle socket.
+    connect_timing_.connect_start = socket_connect_timing.connect_start;
+    connect_timing_.dns_start = socket_connect_timing.dns_start;
+    connect_timing_.dns_end = socket_connect_timing.dns_end;
+  }
+
+  connect_timing_.ssl_start = base::TimeTicks::Now();
 
   ssl_socket_.reset(client_socket_factory_->CreateSSLClientSocket(
       transport_socket_handle_.release(), params_->host_and_port(),
@@ -268,6 +283,8 @@ int SSLConnectJob::DoSSLConnect() {
 }
 
 int SSLConnectJob::DoSSLConnectComplete(int result) {
+  connect_timing_.ssl_end = base::TimeTicks::Now();
+
   SSLClientSocket::NextProtoStatus status =
       SSLClientSocket::kNextProtoUnsupported;
   std::string proto;
@@ -284,12 +301,11 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
     NextProto protocol_negotiated =
         SSLClientSocket::NextProtoFromString(proto);
     ssl_socket_->set_protocol_negotiated(protocol_negotiated);
-    // If we negotiated either version of SPDY, we must have
-    // advertised it, so allow it.
-    // TODO(mbelshe): verify it was a protocol we advertised?
-    if (protocol_negotiated == kProtoSPDY1 ||
-        protocol_negotiated == kProtoSPDY2 ||
-        protocol_negotiated == kProtoSPDY3) {
+    // If we negotiated a SPDY version, it must have been present in
+    // SSLConfig::next_protos.
+    // TODO(mbelshe): Verify this.
+    if (protocol_negotiated >= kProtoSPDYMinimumVersion &&
+        protocol_negotiated <= kProtoSPDYMaximumVersion) {
       ssl_socket_->set_was_spdy_negotiated(true);
     }
   }
@@ -302,21 +318,21 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
 
   if (result == OK ||
       ssl_socket_->IgnoreCertError(result, params_->load_flags())) {
-    DCHECK(ssl_connect_start_time_ != base::TimeTicks());
+    DCHECK(!connect_timing_.ssl_start.is_null());
     base::TimeDelta connect_duration =
-        base::TimeTicks::Now() - ssl_connect_start_time_;
+        connect_timing_.ssl_end - connect_timing_.ssl_start;
     if (using_spdy) {
-      UMA_HISTOGRAM_CUSTOM_TIMES("Net.SpdyConnectionLatency",
+      UMA_HISTOGRAM_CUSTOM_TIMES("Net.SpdyConnectionLatency_2",
                                  connect_duration,
                                  base::TimeDelta::FromMilliseconds(1),
-                                 base::TimeDelta::FromMinutes(10),
+                                 base::TimeDelta::FromMinutes(1),
                                  100);
     }
 
-    UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency",
+    UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_2",
                                connect_duration,
                                base::TimeDelta::FromMilliseconds(1),
-                               base::TimeDelta::FromMinutes(10),
+                               base::TimeDelta::FromMinutes(1),
                                100);
 
     SSLInfo ssl_info;
@@ -341,10 +357,10 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
                      (host.size() > 11 &&
                       host.rfind(".google.com") == host.size() - 11);
     if (is_google) {
-      UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_Google",
+      UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_Google2",
                                  connect_duration,
                                  base::TimeDelta::FromMilliseconds(1),
-                                 base::TimeDelta::FromMinutes(10),
+                                 base::TimeDelta::FromMinutes(1),
                                  100);
       if (ssl_info.handshake_type == SSLInfo::HANDSHAKE_RESUME) {
         UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_Google_"
@@ -530,8 +546,8 @@ void SSLClientSocketPool::ReleaseSocket(const std::string& group_name,
   base_.ReleaseSocket(group_name, socket, id);
 }
 
-void SSLClientSocketPool::Flush() {
-  base_.Flush();
+void SSLClientSocketPool::FlushWithError(int error) {
+  base_.FlushWithError(error);
 }
 
 bool SSLClientSocketPool::IsStalled() const {
@@ -603,7 +619,7 @@ ClientSocketPoolHistograms* SSLClientSocketPool::histograms() const {
 }
 
 void SSLClientSocketPool::OnSSLConfigChanged() {
-  Flush();
+  FlushWithError(ERR_NETWORK_CHANGED);
 }
 
 bool SSLClientSocketPool::CloseOneIdleConnection() {

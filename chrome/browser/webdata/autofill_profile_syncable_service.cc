@@ -8,13 +8,12 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autofill/autofill_profile.h"
-#include "chrome/browser/autofill/form_group.h"
-#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/api/webdata/autofill_web_data_service.h"
 #include "chrome/browser/webdata/autofill_table.h"
-#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/browser/webdata/web_database.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "components/autofill/browser/autofill_profile.h"
+#include "components/autofill/browser/form_group.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -33,23 +32,45 @@ std::string LimitData(const std::string& data) {
   return sanitized_value;
 }
 
+void* UserDataKey() {
+  // Use the address of a static that COMDAT folding won't ever fold
+  // with something else.
+  static int user_data_key = 0;
+  return reinterpret_cast<void*>(&user_data_key);
+}
+
 }  // namespace
 
 const char kAutofillProfileTag[] = "google_chrome_autofill_profiles";
 
 AutofillProfileSyncableService::AutofillProfileSyncableService(
-    WebDataService* web_data_service)
+    AutofillWebDataService* web_data_service)
     : web_data_service_(web_data_service) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
   DCHECK(web_data_service_);
   notification_registrar_.Add(
       this,
       chrome::NOTIFICATION_AUTOFILL_PROFILE_CHANGED,
-      content::Source<WebDataService>(web_data_service_));
+      content::Source<AutofillWebDataService>(web_data_service_));
 }
 
 AutofillProfileSyncableService::~AutofillProfileSyncableService() {
   DCHECK(CalledOnValidThread());
+}
+
+// static
+void AutofillProfileSyncableService::CreateForWebDataService(
+    AutofillWebDataService* web_data_service) {
+  web_data_service->GetDBUserData()->SetUserData(
+      UserDataKey(), new AutofillProfileSyncableService(web_data_service));
+}
+
+// static
+AutofillProfileSyncableService*
+AutofillProfileSyncableService::FromWebDataService(
+    AutofillWebDataService* web_data_service) {
+  return static_cast<AutofillProfileSyncableService*>(
+      web_data_service->GetDBUserData()->GetUserData(UserDataKey()));
 }
 
 AutofillProfileSyncableService::AutofillProfileSyncableService()
@@ -57,7 +78,8 @@ AutofillProfileSyncableService::AutofillProfileSyncableService()
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
 }
 
-syncer::SyncError AutofillProfileSyncableService::MergeDataAndStartSyncing(
+syncer::SyncMergeResult
+AutofillProfileSyncableService::MergeDataAndStartSyncing(
     syncer::ModelType type,
     const syncer::SyncDataList& initial_sync_data,
     scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
@@ -68,10 +90,12 @@ syncer::SyncError AutofillProfileSyncableService::MergeDataAndStartSyncing(
   DCHECK(sync_error_factory.get());
   DVLOG(1) << "Associating Autofill: MergeDataAndStartSyncing";
 
+  syncer::SyncMergeResult merge_result(type);
   sync_error_factory_ = sync_error_factory.Pass();
   if (!LoadAutofillData(&profiles_.get())) {
-    return sync_error_factory_->CreateAndUploadError(
-        FROM_HERE, "Could not get the autofill data from WebDatabase.");
+    merge_result.set_error(sync_error_factory_->CreateAndUploadError(
+        FROM_HERE, "Could not get the autofill data from WebDatabase."));
+    return merge_result;
   }
 
   if (DLOG_IS_ON(INFO)) {
@@ -131,9 +155,10 @@ syncer::SyncError AutofillProfileSyncableService::MergeDataAndStartSyncing(
   }
 
   if (!SaveChangesToWebData(bundle)) {
-    return sync_error_factory_->CreateAndUploadError(
+    merge_result.set_error(sync_error_factory_->CreateAndUploadError(
         FROM_HERE,
-        "Failed to update webdata.");
+        "Failed to update webdata."));
+    return merge_result;
   }
 
   syncer::SyncChangeList new_changes;
@@ -153,13 +178,14 @@ syncer::SyncError AutofillProfileSyncableService::MergeDataAndStartSyncing(
                            CreateData(*(bundle.profiles_to_sync_back[i]))));
   }
 
-  syncer::SyncError error;
-  if (!new_changes.empty())
-    error = sync_processor_->ProcessSyncChanges(FROM_HERE, new_changes);
+  if (!new_changes.empty()) {
+    merge_result.set_error(
+        sync_processor_->ProcessSyncChanges(FROM_HERE, new_changes));
+  }
 
-  WebDataService::NotifyOfMultipleAutofillChanges(web_data_service_);
+  AutofillWebDataService::NotifyOfMultipleAutofillChanges(web_data_service_);
 
-  return error;
+  return merge_result;
 }
 
 void AutofillProfileSyncableService::StopSyncing(syncer::ModelType type) {
@@ -228,7 +254,7 @@ syncer::SyncError AutofillProfileSyncableService::ProcessSyncChanges(
         "Failed to update webdata.");
   }
 
-  WebDataService::NotifyOfMultipleAutofillChanges(web_data_service_);
+  AutofillWebDataService::NotifyOfMultipleAutofillChanges(web_data_service_);
 
   return syncer::SyncError();
 }
@@ -237,7 +263,8 @@ void AutofillProfileSyncableService::Observe(int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   DCHECK_EQ(type, chrome::NOTIFICATION_AUTOFILL_PROFILE_CHANGED);
-  DCHECK_EQ(web_data_service_, content::Source<WebDataService>(source).ptr());
+  DCHECK_EQ(web_data_service_,
+            content::Source<AutofillWebDataService>(source).ptr());
   // Check if sync is on. If we receive notification prior to the sync being set
   // up we are going to process all when MergeData..() is called. If we receive
   // notification after the sync exited, it will be sinced next time Chrome
@@ -330,17 +357,17 @@ void AutofillProfileSyncableService::WriteAutofillProfile(
 
   specifics->set_guid(profile.guid());
   std::vector<string16> values;
-  profile.GetMultiInfo(NAME_FIRST, &values);
+  profile.GetRawMultiInfo(NAME_FIRST, &values);
   for (size_t i = 0; i < values.size(); ++i) {
     specifics->add_name_first(LimitData(UTF16ToUTF8(values[i])));
   }
 
-  profile.GetMultiInfo(NAME_MIDDLE, &values);
+  profile.GetRawMultiInfo(NAME_MIDDLE, &values);
   for (size_t i = 0; i < values.size(); ++i) {
     specifics->add_name_middle(LimitData(UTF16ToUTF8(values[i])));
   }
 
-  profile.GetMultiInfo(NAME_LAST, &values);
+  profile.GetRawMultiInfo(NAME_LAST, &values);
   for (size_t i = 0; i < values.size(); ++i) {
     specifics->add_name_last(LimitData(UTF16ToUTF8(values[i])));
   }
@@ -358,7 +385,7 @@ void AutofillProfileSyncableService::WriteAutofillProfile(
   specifics->set_address_home_zip(
       LimitData(UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_ZIP))));
 
-  profile.GetMultiInfo(EMAIL_ADDRESS, &values);
+  profile.GetRawMultiInfo(EMAIL_ADDRESS, &values);
   for (size_t i = 0; i < values.size(); ++i) {
     specifics->add_email_address(LimitData(UTF16ToUTF8(values[i])));
   }
@@ -366,7 +393,7 @@ void AutofillProfileSyncableService::WriteAutofillProfile(
   specifics->set_company_name(
       LimitData(UTF16ToUTF8(profile.GetRawInfo(COMPANY_NAME))));
 
-  profile.GetMultiInfo(PHONE_HOME_WHOLE_NUMBER, &values);
+  profile.GetRawMultiInfo(PHONE_HOME_WHOLE_NUMBER, &values);
   for (size_t i = 0; i < values.size(); ++i) {
     specifics->add_phone_home_whole_number(LimitData(UTF16ToUTF8(values[i])));
   }
@@ -513,7 +540,7 @@ bool AutofillProfileSyncableService::UpdateMultivaluedField(
     const ::google::protobuf::RepeatedPtrField<std::string>& new_values,
     AutofillProfile* autofill_profile) {
   std::vector<string16> values;
-  autofill_profile->GetMultiInfo(field_type, &values);
+  autofill_profile->GetRawMultiInfo(field_type, &values);
   bool changed = false;
   if (static_cast<size_t>(new_values.size()) != values.size()) {
     values.clear();
@@ -529,7 +556,7 @@ bool AutofillProfileSyncableService::UpdateMultivaluedField(
     }
   }
   if (changed)
-    autofill_profile->SetMultiInfo(field_type, values);
+    autofill_profile->SetRawMultiInfo(field_type, values);
   return changed;
 }
 
@@ -541,10 +568,9 @@ bool AutofillProfileSyncableService::MergeProfile(
 }
 
 AutofillTable* AutofillProfileSyncableService::GetAutofillTable() const {
-  return web_data_service_->GetDatabase()->GetAutofillTable();
+  return AutofillTable::FromWebDatabase(web_data_service_->GetDatabase());
 }
 
 AutofillProfileSyncableService::DataBundle::DataBundle() {}
 
-AutofillProfileSyncableService::DataBundle::~DataBundle() {
-}
+AutofillProfileSyncableService::DataBundle::~DataBundle() {}

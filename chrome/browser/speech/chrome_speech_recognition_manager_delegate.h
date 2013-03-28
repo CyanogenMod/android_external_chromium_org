@@ -12,7 +12,6 @@
 #include "content/public/browser/speech_recognition_manager_delegate.h"
 #include "content/public/browser/speech_recognition_session_config.h"
 
-class SpeechRecognitionTrayIconController;
 
 namespace speech {
 
@@ -40,8 +39,8 @@ class ChromeSpeechRecognitionManagerDelegate
   virtual void OnSoundEnd(int session_id) OVERRIDE;
   virtual void OnAudioEnd(int session_id) OVERRIDE;
   virtual void OnRecognitionEnd(int session_id) OVERRIDE;
-  virtual void OnRecognitionResult(
-      int session_id, const content::SpeechRecognitionResult& result) OVERRIDE;
+  virtual void OnRecognitionResults(
+      int session_id, const content::SpeechRecognitionResults& result) OVERRIDE;
   virtual void OnRecognitionError(
       int session_id, const content::SpeechRecognitionError& error) OVERRIDE;
   virtual void OnAudioLevelsChange(int session_id, float volume,
@@ -58,15 +57,6 @@ class ChromeSpeechRecognitionManagerDelegate
  private:
   class OptionalRequestInfo;
   class TabWatcher;
-
-  // Shows the recognition tray icon for a given |context_name|, eventually
-  // with a notification balloon. The balloon is shown only once per profile
-  // for a given context_name. |render_process_id| is required to lookup the
-  // profile associated with the renderer that initiated the recognition.
-  static void ShowTrayIconOnUIThread(
-      const std::string& context_name,
-      int render_process_id,
-      scoped_refptr<SpeechRecognitionTrayIconController> tray_icon_controller);
 
   // Checks for VIEW_TYPE_TAB_CONTENTS host in the UI thread and notifies back
   // the result in the IO thread through |callback|.
@@ -85,10 +75,8 @@ class ChromeSpeechRecognitionManagerDelegate
 
   // Lazy initializers for bubble and tray icon controller.
   SpeechRecognitionBubbleController* GetBubbleController();
-  SpeechRecognitionTrayIconController* GetTrayIconController();
 
   scoped_refptr<SpeechRecognitionBubbleController> bubble_controller_;
-  scoped_refptr<SpeechRecognitionTrayIconController> tray_icon_controller_;
   scoped_refptr<OptionalRequestInfo> optional_request_info_;
   scoped_ptr<content::SpeechRecognitionSessionConfig> last_session_config_;
   scoped_refptr<TabWatcher> tab_watcher_;

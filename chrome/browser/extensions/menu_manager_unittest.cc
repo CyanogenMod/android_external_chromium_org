@@ -4,20 +4,21 @@
 
 #include <vector>
 
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/menu_manager.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/extensions/test_extension_prefs.h"
 #include "chrome/browser/extensions/test_extension_system.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
@@ -457,13 +458,13 @@ class MockEventRouter : public EventRouter {
                     EventRouter::UserGestureState state));
 
   virtual void DispatchEventToExtension(const std::string& extension_id,
-                                        const std::string& event_name,
-                                        scoped_ptr<base::ListValue> event_args,
-                                        Profile* source_profile,
-                                        const GURL& event_url,
-                                        EventRouter::UserGestureState state) {
-    DispatchEventToExtensionMock(extension_id, event_name, event_args.release(),
-                                 source_profile, event_url, state);
+                                        scoped_ptr<Event> event) {
+    DispatchEventToExtensionMock(extension_id,
+                                 event->event_name,
+                                 event->event_args.release(),
+                                 event->restrict_to_profile,
+                                 event->event_url,
+                                 event->user_gesture);
   }
 
  private:
@@ -476,7 +477,7 @@ class MockExtensionSystem : public TestExtensionSystem {
   explicit MockExtensionSystem(Profile* profile)
       : TestExtensionSystem(profile) {}
 
-  virtual EventRouter* event_router() {
+  virtual EventRouter* event_router() OVERRIDE {
     if (!mock_event_router_.get())
       mock_event_router_.reset(new MockEventRouter(profile_));
     return mock_event_router_.get();
@@ -561,9 +562,12 @@ TEST_F(MenuManagerTest, ExecuteCommand) {
   params.is_editable = false;
 
   Extension* extension = AddExtension("test");
+  MenuItem* parent = CreateTestItem(extension);
   MenuItem* item = CreateTestItem(extension);
+  MenuItem::Id parent_id = parent->id();
   MenuItem::Id id = item->id();
-  ASSERT_TRUE(manager_.AddContextItem(extension, item));
+  ASSERT_TRUE(manager_.AddContextItem(extension, parent));
+  ASSERT_TRUE(manager_.AddChildItem(parent->id(), item));
 
   // Use the magic of googlemock to save a parameter to our mock's
   // DispatchEventToExtension method into event_args.
@@ -591,7 +595,7 @@ TEST_F(MenuManagerTest, ExecuteCommand) {
       .Times(1)
       .WillOnce(DeleteArg<2>());
   }
-  manager_.ExecuteCommand(&profile, NULL /* tab_contents */, params, id);
+  manager_.ExecuteCommand(&profile, NULL /* web_contents */, params, id);
 
   ASSERT_EQ(2u, list->GetSize());
 
@@ -601,6 +605,8 @@ TEST_F(MenuManagerTest, ExecuteCommand) {
   int tmp_id = 0;
   ASSERT_TRUE(info->GetInteger("menuItemId", &tmp_id));
   ASSERT_EQ(id.uid, tmp_id);
+  ASSERT_TRUE(info->GetInteger("parentMenuItemId", &tmp_id));
+  ASSERT_EQ(parent_id.uid, tmp_id);
 
   std::string tmp;
   ASSERT_TRUE(info->GetString("mediaType", &tmp));

@@ -24,10 +24,6 @@ void Button::SetAccessibleName(const string16& name) {
   accessible_name_ = name;
 }
 
-void Button::SetAccessibleKeyboardShortcut(const string16& shortcut) {
-  accessible_shortcut_ = shortcut;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Button, View overrides:
 
@@ -42,7 +38,6 @@ bool Button::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
 void Button::GetAccessibleState(ui::AccessibleViewState* state) {
   state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
   state->name = accessible_name_;
-  state->keyboard_shortcut = accessible_shortcut_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -50,19 +45,15 @@ void Button::GetAccessibleState(ui::AccessibleViewState* state) {
 
 Button::Button(ButtonListener* listener)
     : listener_(listener),
-      tag_(-1),
-      mouse_event_flags_(0) {
+      tag_(-1) {
   set_accessibility_focusable(true);
 }
 
 void Button::NotifyClick(const ui::Event& event) {
-  mouse_event_flags_ = event.IsMouseEvent() ? event.flags() : 0;
   // We can be called when there is no listener, in cases like double clicks on
   // menu buttons etc.
   if (listener_)
     listener_->ButtonPressed(this, event);
-  // NOTE: don't attempt to reset mouse_event_flags_ as the listener may have
-  // deleted us.
 }
 
 }  // namespace views

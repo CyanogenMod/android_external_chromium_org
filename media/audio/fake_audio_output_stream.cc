@@ -22,10 +22,7 @@ FakeAudioOutputStream::FakeAudioOutputStream(AudioManagerBase* manager,
                                              const AudioParameters& params)
     : audio_manager_(manager),
       callback_(NULL),
-      audio_bus_(AudioBus::Create(params)),
-      frames_per_millisecond_(
-          params.sample_rate() / static_cast<float>(
-              base::Time::kMillisecondsPerSecond)) {
+      fake_consumer_(manager->GetMessageLoop(), params) {
 }
 
 FakeAudioOutputStream::~FakeAudioOutputStream() {
@@ -40,16 +37,14 @@ bool FakeAudioOutputStream::Open() {
 void FakeAudioOutputStream::Start(AudioSourceCallback* callback)  {
   DCHECK(audio_manager_->GetMessageLoop()->BelongsToCurrentThread());
   callback_ = callback;
-  on_more_data_cb_.Reset(base::Bind(
-      &FakeAudioOutputStream::OnMoreDataTask, base::Unretained(this)));
-  audio_manager_->GetMessageLoop()->PostTask(
-      FROM_HERE, on_more_data_cb_.callback());
+  fake_consumer_.Start(base::Bind(
+      &FakeAudioOutputStream::CallOnMoreData, base::Unretained(this)));
 }
 
 void FakeAudioOutputStream::Stop() {
   DCHECK(audio_manager_->GetMessageLoop()->BelongsToCurrentThread());
+  fake_consumer_.Stop();
   callback_ = NULL;
-  on_more_data_cb_.Cancel();
 }
 
 void FakeAudioOutputStream::Close() {
@@ -64,19 +59,9 @@ void FakeAudioOutputStream::GetVolume(double* volume) {
   *volume = 0;
 };
 
-void FakeAudioOutputStream::OnMoreDataTask() {
+void FakeAudioOutputStream::CallOnMoreData(AudioBus* audio_bus) {
   DCHECK(audio_manager_->GetMessageLoop()->BelongsToCurrentThread());
-  DCHECK(callback_);
-
-  audio_bus_->Zero();
-  int frames_received = callback_->OnMoreData(
-      audio_bus_.get(), AudioBuffersState());
-
-  // Calculate our sleep duration for simulated playback.  Sleep for at least
-  // one millisecond so we don't spin the CPU.
-  audio_manager_->GetMessageLoop()->PostDelayedTask(
-      FROM_HERE, on_more_data_cb_.callback(), base::TimeDelta::FromMilliseconds(
-          std::max(1.0f, frames_received / frames_per_millisecond_)));
+  callback_->OnMoreData(audio_bus, AudioBuffersState());
 }
 
 }  // namespace media

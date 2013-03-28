@@ -9,6 +9,7 @@
     "functions": [
       {
         "name": "install",
+        "nocompile": true,
         "description": "Installs the extension corresponding to the given id",
         "parameters": [
           {
@@ -56,7 +57,7 @@
           {
             "name": "callback",
             "type": "function",
-            "description": "Called when the install process completes. Upon failures, chrome.extension.lastError will be set to 'user_canceled' or 'unknown_error'.",
+            "description": "Called when the install process completes. Upon failures, chrome.runtime.lastError will be set to 'user_canceled' or 'unknown_error'.",
             "optional": "true",
             "parameters": []
           }
@@ -105,6 +106,11 @@
                 "type": "boolean",
                 "optional": true,
                 "description": "A flag to change the UI we show when an app is installed - a value of true means to show a bubble pointing at the new tab button (instead of the default behavior of opening the new tab page and animating the app icon)."
+              },
+              "enableLauncher": {
+                "type": "boolean",
+                "optional": true,
+                "description": "A flag to cause the app launcher to be installed before installing the extension, if it isn't installed already."
               }
             },
             "additionalProperties": { "type": "any" }
@@ -155,8 +161,7 @@
                 "name": "info",
                 "type": "object",
                 "properties": {
-                  "login": { "type": "string" },
-                  "token": { "type": "string", "optional": true }
+                  "login": { "type": "string" }
                 }
               }
             ]
@@ -191,32 +196,6 @@
         ]
       },
       {
-        "name": "promptBrowserLogin",
-        "description": "Causes the browser to bring up the browser login UI.",
-        "parameters": [
-          {
-            "name": "preferred_email",
-            "type": "string",
-            "description": "The email address to use to pre-populate the login dialog (can be an empty string)."
-          },
-          {
-            "name": "callback",
-            "type": "function",
-            "optional": "true",
-            "parameters": [
-              {
-                "name": "info",
-                "type": "object",
-                "properties": {
-                  "login": { "type": "string", "optional": true },
-                  "token": { "type": "string", "optional": true }
-                }
-              }
-            ]
-          }
-        ]
-      },
-      {
         "name": "getWebGLStatus",
         "description": "Invokes a callback that returns whether WebGL is blacklisted or not.",
         "parameters": [
@@ -230,6 +209,20 @@
                 "type": "string",
                 "enum": ["webgl_allowed", "webgl_blocked"]
               }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "getIsLauncherEnabled",
+        "description": "Returns whether the apps launcher is enabled or not.",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": "false",
+            "parameters": [
+              { "name": "is_enabled", "type": "boolean" }
             ]
           }
         ]

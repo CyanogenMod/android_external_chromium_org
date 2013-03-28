@@ -36,7 +36,6 @@ cr.define('ntp', function() {
       document.body.appendChild(this.menu);
 
       this.needsRebuild_ = true;
-      this.classList.add('invisible');
       this.anchorType = cr.ui.AnchorType.ABOVE;
       this.invertLeftRight = true;
     },
@@ -47,14 +46,14 @@ cr.define('ntp', function() {
      * button.
      * @override
      */
-    showMenu: function() {
+    showMenu: function(shouldSetFocus) {
       if (this.needsRebuild_) {
         this.menu.textContent = '';
         this.dataItems_.forEach(this.addItem_, this);
         this.needsRebuild_ = false;
       }
 
-      MenuButton.prototype.showMenu.call(this);
+      MenuButton.prototype.showMenu.apply(this, arguments);
     },
 
     /**
@@ -64,10 +63,7 @@ cr.define('ntp', function() {
     set dataItems(dataItems) {
       this.dataItems_ = dataItems;
       this.needsRebuild_ = true;
-      if (dataItems.length)
-        this.classList.remove('invisible');
-      else
-        this.classList.add('invisible');
+      this.classList.toggle('invisible', !dataItems.length);
     },
 
     /**
@@ -86,23 +82,31 @@ cr.define('ntp', function() {
         a.title = data.tabs.map(function(tab) { return tab.title; }).join('\n');
       } else {
         a.href = data.url;
-        a.style.backgroundImage = 'url(chrome://favicon/' + data.url + ')';
+        a.style.backgroundImage = getFaviconImageSet(data.url);
         a.textContent = data.title;
       }
 
-      function onClick(e) {
+      function onActivated(e) {
         ntp.logTimeToClick('RecentlyClosed');
         chrome.send('recordAppLaunchByURL',
                     [encodeURIComponent(data.url),
                      ntp.APP_LAUNCH.NTP_RECENTLY_CLOSED]);
         var index = Array.prototype.indexOf.call(a.parentNode.children, a);
-        chrome.send('reopenTab', [data.sessionId, index,
-            e.button, e.altKey, e.ctrlKey, e.metaKey, e.shiftKey]);
-        // We are likely deleted by this point!
+        var orig = e.originalEvent;
+        var params = [data.sessionId,
+                      index,
+                      orig.type == 'click' ? orig.button : 0,
+                      orig.altKey,
+                      orig.ctrlKey,
+                      orig.metaKey,
+                      orig.shiftKey];
+        chrome.send('reopenTab', params);
 
         e.preventDefault();
+        e.stopPropagation();
       }
-      a.addEventListener('click', onClick);
+      a.addEventListener('activate', onActivated);
+      a.addEventListener('click', function(e) { e.preventDefault(); });
 
       this.menu.appendChild(a);
       cr.ui.decorate(a, MenuItem);

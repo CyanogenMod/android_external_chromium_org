@@ -25,7 +25,7 @@ namespace {
 
 const int kAnimationDurationInMs = 600;
 const float kAnimationOpacity[] = { 1.0f, 0.4f, 1.0f };
-const int kImageOffsetY = 9;
+const int kBorderSize = 9;
 }  // namespace
 
 AppListButton::AppListButton(views::ButtonListener* listener,
@@ -34,20 +34,19 @@ AppListButton::AppListButton(views::ButtonListener* listener,
       host_(host) {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   SetImage(
-      views::CustomButton::BS_NORMAL,
+      views::CustomButton::STATE_NORMAL,
       rb.GetImageNamed(IDR_AURA_LAUNCHER_ICON_APPLIST).ToImageSkia());
   SetImage(
-      views::CustomButton::BS_HOT,
+      views::CustomButton::STATE_HOVERED,
       rb.GetImageNamed(IDR_AURA_LAUNCHER_ICON_APPLIST_HOT).
           ToImageSkia());
   SetImage(
-      views::CustomButton::BS_PUSHED,
+      views::CustomButton::STATE_PRESSED,
       rb.GetImageNamed(IDR_AURA_LAUNCHER_ICON_APPLIST_PUSHED).
           ToImageSkia());
   SetAccessibleName(l10n_util::GetStringUTF16(IDS_AURA_APP_LIST_TITLE));
   SetSize(gfx::Size(kLauncherPreferredSize, kLauncherPreferredSize));
   SetImageAlignment(ImageButton::ALIGN_CENTER, ImageButton::ALIGN_TOP);
-  set_border(views::Border::CreateEmptyBorder(kImageOffsetY, 0, 0, 0));
 }
 
 AppListButton::~AppListButton() {

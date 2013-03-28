@@ -10,20 +10,25 @@
 #include "base/compiler_specific.h"
 #include "android_webview/renderer/aw_render_process_observer.h"
 
+namespace components {
+class VisitedLinkSlave;
+}  // namespace components
+
 namespace android_webview {
 
 class AwContentRendererClient : public content::ContentRendererClient {
  public:
-  AwContentRendererClient();
+  typedef MessageLoop* CompositorMessageLoopGetter();
+
+  explicit AwContentRendererClient(
+      CompositorMessageLoopGetter* compositor_message_loop_getter,
+      bool should_create_compositor_input_handler);
   virtual ~AwContentRendererClient();
 
   // ContentRendererClient implementation.
   virtual void RenderThreadStarted() OVERRIDE;
   virtual void RenderViewCreated(content::RenderView* render_view) OVERRIDE;
   virtual std::string GetDefaultEncoding() OVERRIDE;
-  virtual WebKit::WebPlugin* CreatePluginReplacement(
-      content::RenderView* render_view,
-      const FilePath& plugin_path) OVERRIDE;
   virtual bool HasErrorPage(int http_status_code,
                             std::string* error_domain) OVERRIDE;
   virtual void GetNavigationErrorStrings(
@@ -35,9 +40,14 @@ class AwContentRendererClient : public content::ContentRendererClient {
                                              size_t length) OVERRIDE;
   virtual bool IsLinkVisited(unsigned long long link_hash) OVERRIDE;
   virtual void PrefetchHostName(const char* hostname, size_t length) OVERRIDE;
+  virtual MessageLoop* OverrideCompositorMessageLoop() const OVERRIDE;
+  virtual bool ShouldCreateCompositorInputHandler() const OVERRIDE;
 
  private:
   scoped_ptr<AwRenderProcessObserver> aw_render_process_observer_;
+  scoped_ptr<components::VisitedLinkSlave> visited_link_slave_;
+  CompositorMessageLoopGetter* compositor_message_loop_getter_;
+  bool should_create_compositor_input_handler_;
 };
 
 }  // namespace android_webview

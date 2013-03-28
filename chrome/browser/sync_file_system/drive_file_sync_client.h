@@ -7,13 +7,11 @@
 
 #include <string>
 
-#include "base/callback_forward.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/threading/non_thread_safe.h"
 #include "chrome/browser/google_apis/drive_service_interface.h"
-#include "chrome/browser/google_apis/gdata_errorcode.h"
-#include "chrome/browser/google_apis/gdata_wapi_parser.h"
+#include "chrome/browser/google_apis/gdata_wapi_url_generator.h"
+#include "chrome/browser/sync_file_system/drive_file_sync_client_interface.h"
+#include "net/base/network_change_notifier.h"
 
 class GURL;
 class Profile;
@@ -27,122 +25,89 @@ namespace sync_file_system {
 // This class is responsible for talking to the Drive service to get and put
 // Drive directories, files and metadata.
 // This class is owned by DriveFileSyncService.
-class DriveFileSyncClient : public base::NonThreadSafe,
-                            public base::SupportsWeakPtr<DriveFileSyncClient> {
+class DriveFileSyncClient
+    : public DriveFileSyncClientInterface,
+      public google_apis::DriveServiceObserver,
+      public net::NetworkChangeNotifier::ConnectionTypeObserver,
+      public base::NonThreadSafe,
+      public base::SupportsWeakPtr<DriveFileSyncClient> {
  public:
-  // TODO(tzik): Implement a function to map GDataErrorcode to SyncStatusCode.
-  // crbug.com/157837
-  typedef base::Callback<void(google_apis::GDataErrorCode error)>
-      GDataErrorCallback;
-  typedef base::Callback<void(google_apis::GDataErrorCode error,
-                              const std::string& file_md5)>
-      DownloadFileCallback;
-  typedef base::Callback<void(google_apis::GDataErrorCode error,
-                              const std::string& file_md5)>
-      UploadFileCallback;
-  typedef base::Callback<void(google_apis::GDataErrorCode error,
-                              const std::string& resource_id)>
-      ResourceIdCallback;
-  typedef base::Callback<void(google_apis::GDataErrorCode error,
-                              int64 changestamp)> ChangeStampCallback;
-  typedef base::Callback<void(google_apis::GDataErrorCode error,
-                              scoped_ptr<google_apis::DocumentFeed> feed)>
-      DocumentFeedCallback;
-
   explicit DriveFileSyncClient(Profile* profile);
   virtual ~DriveFileSyncClient();
 
+  virtual void AddObserver(DriveFileSyncClientObserver* observer) OVERRIDE;
+  virtual void RemoveObserver(DriveFileSyncClientObserver* observer) OVERRIDE;
+
   static scoped_ptr<DriveFileSyncClient> CreateForTesting(
       Profile* profile,
+      const GURL& base_url,
       scoped_ptr<google_apis::DriveServiceInterface> drive_service,
       scoped_ptr<google_apis::DriveUploaderInterface> drive_uploader);
 
-  // Fetches Resource ID of the directory where we should place all files to
-  // sync.  Upon completion, invokes |callback|.
-  // If the directory does not exist on the server this also creates
-  // the directory.
-  void GetDriveDirectoryForSyncRoot(const ResourceIdCallback& callback);
+  // DriveFileSyncClientInterface overrides.
+  virtual void GetDriveDirectoryForSyncRoot(
+      const ResourceIdCallback& callback) OVERRIDE;
+  virtual void GetDriveDirectoryForOrigin(
+      const std::string& sync_root_resource_id,
+      const GURL& origin,
+      const ResourceIdCallback& callback) OVERRIDE;
+  virtual void GetLargestChangeStamp(
+      const ChangeStampCallback& callback) OVERRIDE;
+  virtual void GetResourceEntry(
+      const std::string& resource_id,
+      const ResourceEntryCallback& callback) OVERRIDE;
+  virtual void ListFiles(
+      const std::string& directory_resource_id,
+      const ResourceListCallback& callback) OVERRIDE;
+  virtual void ListChanges(
+      int64 start_changestamp,
+      const ResourceListCallback& callback) OVERRIDE;
+  virtual void ContinueListing(
+      const GURL& feed_url,
+      const ResourceListCallback& callback) OVERRIDE;
+  virtual void DownloadFile(
+      const std::string& resource_id,
+      const std::string& local_file_md5,
+      const base::FilePath& local_file_path,
+      const DownloadFileCallback& callback) OVERRIDE;
+  virtual void UploadNewFile(
+      const std::string& directory_resource_id,
+      const base::FilePath& local_file_path,
+      const std::string& title,
+      const UploadFileCallback& callback) OVERRIDE;
+  virtual void UploadExistingFile(
+      const std::string& resource_id,
+      const std::string& remote_file_md5,
+      const base::FilePath& local_file_path,
+      const UploadFileCallback& callback) OVERRIDE;
+  virtual bool IsAuthenticated() const OVERRIDE;
+  virtual void DeleteFile(
+      const std::string& resource_id,
+      const std::string& remote_file_md5,
+      const GDataErrorCallback& callback) OVERRIDE;
+  virtual GURL ResourceIdToResourceLink(
+      const std::string& resource_id) const OVERRIDE;
+  virtual void EnsureSyncRootIsNotInMyDrive(
+      const std::string& sync_root_resource_id) const OVERRIDE;
 
-  // Fetches Resource ID of the directory for the |origin|.
-  // Upon completion, invokes |callback|.
-  // If the directory does not exist on the server this also creates
-  // the directory.
-  void GetDriveDirectoryForOrigin(const std::string& sync_root_resource_id,
-                                  const GURL& origin,
-                                  const ResourceIdCallback& callback);
+  static std::string OriginToDirectoryTitle(const GURL& origin);
+  static GURL DirectoryTitleToOrigin(const std::string& title);
 
-  // Fetches the largest changestamp for the signed-in account.
-  // Upon completion, invokes |callback|.
-  void GetLargestChangeStamp(const ChangeStampCallback& callback);
+  // DriveServiceObserver overrides.
+  virtual void OnReadyToPerformOperations() OVERRIDE;
 
-  // Lists files in the directory identified by |resource_id|.
-  // Upon completion, invokes |callback|.
-  // The result may be chunked and may have successive results. The caller needs
-  // to call ContunueListing with the result of GetNextFeedURL to get complete
-  // list of files.
-  void ListFiles(const std::string& directory_resource_id,
-                 const DocumentFeedCallback& callback);
-
-  // Lists changes that happened after |start_changestamp|.
-  // Upon completion, invokes |callback|.
-  // The result may be chunked and may have successive results. The caller needs
-  // to call ContunueListing with the result of GetNextFeedURL to get complete
-  // list of changes.
-  void ListChanges(int64 start_changestamp,
-                   const DocumentFeedCallback& callback);
-
-  // Fetches the next chunk of DocumentFeed identified by |feed_url|.
-  // Upon completion, invokes |callback|.
-  void ContinueListing(const GURL& feed_url,
-                       const DocumentFeedCallback& callback);
-
-  // Downloads the file identified by |resource_id| from Drive to
-  // |local_file_path|.
-  // |local_file_md5| represents the hash value of the local file to be updated.
-  // If |local_file_md5| is equal to remote file's value, cancels the download
-  // and invokes |callback| with GDataErrorCode::HTTP_NOT_MODIFIED immediately.
-  // When there is no local file to be updated, |local_file_md5| should be
-  // empty.
-  void DownloadFile(const std::string& resource_id,
-                    const std::string& local_file_md5,
-                    const FilePath& local_file_path,
-                    const DownloadFileCallback& callback);
-
-  // Uploads the new file |local_file_path| with specified |title| into the
-  // directory identified by |directory_resource_id|.
-  // Upon completion, invokes |callback|.
-  void UploadNewFile(const std::string& directory_resource_id,
-                     const FilePath& local_file_path,
-                     const std::string& title,
-                     int64 file_size,
-                     const UploadFileCallback& callback);
-
-  // Uploads the existing file identified by |local_file_path|.
-  // |remote_file_md5| represents the expected hash value of the file to be
-  // updated on Drive. If |remote_file_md5| is different from the actual value,
-  // cancels the upload and invokes |callback| with
-  // GDataErrorCode::HTTP_CONFLICT immediately.
-  void UploadExistingFile(const std::string& resource_id,
-                          const std::string& remote_file_md5,
-                          const FilePath& local_file_path,
-                          int64 file_size,
-                          const UploadFileCallback& callback);
-
-  // Deletes the file identified by |resource_id|.
-  // |remote_file_md5| represents the expected hash value of the file to be
-  // deleted from Drive. If |remote_file_md5| is different from the actual
-  // value, cancels the deletion and invokes |callback| with
-  // GDataErrorCode::HTTP_CONFLICT immediately.
-  void DeleteFile(const std::string& resource_id,
-                  const std::string& remote_file_md5,
-                  const GDataErrorCallback& callback);
+  // ConnectionTypeObserver overrides.
+  virtual void OnConnectionTypeChanged(
+      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
 
  private:
   friend class DriveFileSyncClientTest;
+  friend class DriveFileSyncServiceMockTest;
 
   // Constructor for test use.
   DriveFileSyncClient(
       Profile* profile,
+      const GURL& base_url,
       scoped_ptr<google_apis::DriveServiceInterface> drive_service,
       scoped_ptr<google_apis::DriveUploaderInterface> drive_uploader);
 
@@ -150,34 +115,103 @@ class DriveFileSyncClient : public base::NonThreadSafe,
                        const std::string& directory_name,
                        const ResourceIdCallback& callback,
                        google_apis::GDataErrorCode error,
-                       scoped_ptr<google_apis::DocumentFeed> feed);
+                       scoped_ptr<google_apis::ResourceList> feed);
 
-  void DidGetParentDirectoryForCreateDirectory(
-      const FilePath::StringType& directory_name,
+  void DidCreateDirectory(const std::string& parent_resource_id,
+                          const std::string& title,
+                          const ResourceIdCallback& callback,
+                          google_apis::GDataErrorCode error,
+                          scoped_ptr<google_apis::ResourceEntry> entry);
+
+  void DidEnsureUniquenessForCreateDirectory(
       const ResourceIdCallback& callback,
       google_apis::GDataErrorCode error,
-      scoped_ptr<base::Value> data);
-
-  void DidCreateDirectory(const ResourceIdCallback& callback,
-                          google_apis::GDataErrorCode error,
-                          scoped_ptr<base::Value> data);
+      scoped_ptr<google_apis::ResourceEntry> entry);
 
   void SearchFilesInDirectory(const std::string& directory_resource_id,
                               const std::string& search_query,
-                              const DocumentFeedCallback& callback);
+                              const ResourceListCallback& callback);
 
-  void DidGetAccountMetadata(const ChangeStampCallback& callback,
+  void DidGetAboutResource(
+      const ChangeStampCallback& callback,
+      google_apis::GDataErrorCode error,
+      scoped_ptr<google_apis::AboutResource> about_resource);
+
+  void DidGetResourceList(
+      const ResourceListCallback& callback,
+      google_apis::GDataErrorCode error,
+      scoped_ptr<google_apis::ResourceList> resource_list);
+
+  void DidGetResourceEntry(const ResourceEntryCallback& callback,
+                           google_apis::GDataErrorCode error,
+                           scoped_ptr<google_apis::ResourceEntry> entry);
+
+  void DownloadFileInternal(const std::string& local_file_md5,
+                            const base::FilePath& local_file_path,
+                            const DownloadFileCallback& callback,
+                            google_apis::GDataErrorCode error,
+                            scoped_ptr<google_apis::ResourceEntry> entry);
+
+  void DidDownloadFile(const std::string& downloaded_file_md5,
+                       const DownloadFileCallback& callback,
+                       google_apis::GDataErrorCode error,
+                       const base::FilePath& downloaded_file_path);
+
+  void DidUploadNewFile(const std::string& parent_resource_id,
+                        const std::string& title,
+                        const UploadFileCallback& callback,
+                        google_apis::GDataErrorCode error,
+                        scoped_ptr<google_apis::ResourceEntry> entry);
+
+  void DidEnsureUniquenessForCreateFile(
+      const std::string& expected_resource_id,
+      const UploadFileCallback& callback,
+      google_apis::GDataErrorCode error,
+      scoped_ptr<google_apis::ResourceEntry> entry);
+
+  void UploadExistingFileInternal(
+      const std::string& remote_file_md5,
+      const base::FilePath& local_file_path,
+      const UploadFileCallback& callback,
+      google_apis::GDataErrorCode error,
+      scoped_ptr<google_apis::ResourceEntry> entry);
+
+  void DidUploadExistingFile(const UploadFileCallback& callback,
                              google_apis::GDataErrorCode error,
-                             scoped_ptr<base::Value> data);
+                             scoped_ptr<google_apis::ResourceEntry> entry);
 
-  void DidGetDocumentFeedData(const DocumentFeedCallback& callback,
-                              google_apis::GDataErrorCode error,
-                              scoped_ptr<base::Value> data);
+  void DeleteFileInternal(const std::string& remote_file_md5,
+                          const GDataErrorCallback& callback,
+                          google_apis::GDataErrorCode error,
+                          scoped_ptr<google_apis::ResourceEntry> entry);
+
+  void DidDeleteFile(const GDataErrorCallback& callback,
+                     google_apis::GDataErrorCode error);
+
+  void EnsureTitleUniqueness(const std::string& parent_resource_id,
+                             const std::string& expected_title,
+                             const ResourceEntryCallback& callback);
+  void DidListEntriesToEnsureUniqueness(
+      const std::string& parent_resource_id,
+      const std::string& expected_title,
+      const ResourceEntryCallback& callback,
+      google_apis::GDataErrorCode error,
+      scoped_ptr<google_apis::ResourceList> feed);
+  void DeleteEntriesForEnsuringTitleUniqueness(
+      ScopedVector<google_apis::ResourceEntry> entries,
+      const GDataErrorCallback& callback);
+  void DidDeleteEntriesForEnsuringTitleUniqueness(
+      ScopedVector<google_apis::ResourceEntry> entries,
+      const GDataErrorCallback& callback,
+      google_apis::GDataErrorCode error);
 
   static std::string FormatTitleQuery(const std::string& title);
 
   scoped_ptr<google_apis::DriveServiceInterface> drive_service_;
   scoped_ptr<google_apis::DriveUploaderInterface> drive_uploader_;
+  google_apis::GDataWapiUrlGenerator url_generator_;
+
+  ObserverList<DriveFileSyncClientObserver> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(DriveFileSyncClient);
 };

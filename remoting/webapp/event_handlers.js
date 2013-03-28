@@ -15,14 +15,14 @@ function onLoad() {
     // We don't need a token until we authenticate, but asking for one here
     // handles the token-expired case earlier, avoiding asking the user for
     // the access code both before and after re-authentication.
-    remoting.oauth2.callWithToken(
+    remoting.identity.callWithToken(
         /** @param {string} token */
         function(token) {
           remoting.setMode(remoting.AppMode.CLIENT_UNCONNECTED);
         },
         remoting.showErrorMessage);
   };
-  var goFinishedIt2Me = function() {
+  var goFinishedIT2Me = function() {
     if (remoting.currentMode == remoting.AppMode.CLIENT_CONNECT_FAILED_IT2ME) {
       remoting.setMode(remoting.AppMode.CLIENT_UNCONNECTED);
     } else {
@@ -34,12 +34,7 @@ function onLoad() {
   };
   /** @param {Event} event The event. */
   var sendAccessCode = function(event) {
-    remoting.connectIt2Me();
-    event.preventDefault();
-  };
-  /** @param {Event} event The event. */
-  var connectHostWithPin = function(event) {
-    remoting.connectMe2MeWithPin();
+    remoting.connectIT2Me();
     event.preventDefault();
   };
   var doAuthRedirect = function() {
@@ -49,6 +44,10 @@ function onLoad() {
   var stopDaemon = function(event) {
     remoting.hostSetupDialog.showForStop();
     event.stopPropagation();
+  };
+  var cancelAccessCode = function() {
+    remoting.setMode(remoting.AppMode.HOME);
+    document.getElementById('access-code-entry').value = '';
   };
   /** @type {Array.<{event: string, id: string, fn: function(Event):void}>} */
   var actions = [
@@ -64,15 +63,12 @@ function onLoad() {
       { event: 'click', id: 'cancel-share-button', fn: remoting.cancelShare },
       { event: 'click', id: 'stop-sharing-button', fn: remoting.cancelShare },
       { event: 'click', id: 'host-finished-button', fn: restartWebapp },
-      { event: 'click', id: 'client-finished-it2me-button',
-        fn: goFinishedIt2Me },
+      { event: 'click', id: 'client-finished-it2me-button', fn: restartWebapp },
       { event: 'click', id: 'client-finished-me2me-button', fn: restartWebapp },
       { event: 'click', id: 'cancel-pin-entry-button', fn: restartWebapp },
       { event: 'click', id: 'client-reconnect-button', fn: reload },
-      { event: 'click', id: 'cancel-access-code-button',
-        fn: remoting.cancelConnect },
-      { event: 'click', id: 'cancel-connect-button',
-        fn: remoting.cancelConnect },
+      { event: 'click', id: 'cancel-access-code-button', fn: cancelAccessCode},
+      { event: 'click', id: 'cancel-connect-button', fn: restartWebapp },
       { event: 'click', id: 'toolbar-stub',
         fn: function() { remoting.toolbar.toggle(); } },
       { event: 'click', id: 'start-daemon',
@@ -81,9 +77,8 @@ function onLoad() {
         fn: function() { remoting.hostSetupDialog.showForPin(); } },
       { event: 'click', id: 'stop-daemon', fn: stopDaemon },
       { event: 'submit', id: 'access-code-form', fn: sendAccessCode },
-      { event: 'submit', id: 'pin-form', fn: connectHostWithPin },
       { event: 'click', id: 'get-started-it2me',
-        fn: remoting.showIt2MeUiAndSave },
+        fn: remoting.showIT2MeUiAndSave },
       { event: 'click', id: 'get-started-me2me',
         fn: remoting.showMe2MeUiAndSave },
       { event: 'click', id: 'daemon-pin-cancel',

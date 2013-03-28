@@ -5,15 +5,23 @@
 #ifndef ANDROID_WEBVIEW_LIB_RENDERER_HOST_AW_RESOURCE_DISPATCHER_HOST_DELEGATE_H_
 #define ANDROID_WEBVIEW_LIB_RENDERER_HOST_AW_RESOURCE_DISPATCHER_HOST_DELEGATE_H_
 
-#include "content/public/browser/resource_dispatcher_host_delegate.h"
+#include <map>
 
 #include "base/lazy_instance.h"
+#include "content/public/browser/resource_dispatcher_host_delegate.h"
 
 namespace content {
 class ResourceDispatcherHostLoginDelegate;
-}
+struct ResourceResponse;
+}  // namespace content
+
+namespace IPC {
+class Sender;
+}  // namespace IPC
 
 namespace android_webview {
+
+class IoThreadClientThrottle;
 
 class AwResourceDispatcherHostDelegate
     : public content::ResourceDispatcherHostDelegate {
@@ -30,24 +38,54 @@ class AwResourceDispatcherHostDelegate
       int route_id,
       bool is_continuation_of_transferred_request,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE;
-
+  virtual void DownloadStarting(
+      net::URLRequest* request,
+      content::ResourceContext* resource_context,
+      int child_id,
+      int route_id,
+      int request_id,
+      bool is_content_initiated,
+      bool must_download,
+      ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE;
   virtual bool AcceptAuthRequest(net::URLRequest* request,
                                  net::AuthChallengeInfo* auth_info) OVERRIDE;
-
   virtual content::ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
       net::AuthChallengeInfo* auth_info,
       net::URLRequest* request) OVERRIDE;
-
   virtual bool HandleExternalProtocol(const GURL& url,
                                       int child_id,
                                       int route_id) OVERRIDE;
+  virtual void OnResponseStarted(
+      net::URLRequest* request,
+      content::ResourceContext* resource_context,
+      content::ResourceResponse* response,
+      IPC::Sender* sender) OVERRIDE;
+
+  void RemovePendingThrottleOnIoThread(IoThreadClientThrottle* throttle);
+
+  static void OnIoThreadClientReady(int new_child_id, int new_route_id);
+  static void AddPendingThrottle(int child_id,
+                                 int route_id,
+                                 IoThreadClientThrottle* pending_throttle);
 
  private:
   friend struct base::DefaultLazyInstanceTraits<
       AwResourceDispatcherHostDelegate>;
   AwResourceDispatcherHostDelegate();
   virtual ~AwResourceDispatcherHostDelegate();
-  void SetOnlyAllowLoadFromCache(net::URLRequest* request);
+
+  // These methods must be called on IO thread.
+  void OnIoThreadClientReadyInternal(int child_id, int route_id);
+  void AddPendingThrottleOnIoThread(int child_id,
+                                    int route_id,
+                                    IoThreadClientThrottle* pending_throttle);
+
+  typedef std::pair<int, int> ChildRouteIDPair;
+  typedef std::map<ChildRouteIDPair, IoThreadClientThrottle*>
+      PendingThrottleMap;
+
+  // Only accessed on the IO thread.
+  PendingThrottleMap pending_throttles_;
 
   DISALLOW_COPY_AND_ASSIGN(AwResourceDispatcherHostDelegate);
 };

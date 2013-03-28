@@ -11,7 +11,9 @@
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace content {
 
@@ -49,18 +51,18 @@ class ChildProcessSecurityPolicy {
   // Grants certain permissions to a file. |permissions| must be a bit-set of
   // base::PlatformFileFlags.
   virtual void GrantPermissionsForFile(int child_id,
-                                       const FilePath& file,
+                                       const base::FilePath& file,
                                        int permissions) = 0;
 
   // Before servicing a child process's request to upload a file to the web, the
   // browser should call this method to determine whether the process has the
   // capability to upload the requested file.
-  virtual bool CanReadFile(int child_id, const FilePath& file) = 0;
+  virtual bool CanReadFile(int child_id, const base::FilePath& file) = 0;
 
   // Whenever the user picks a file from a <input type="file"> element, the
   // browser should call this function to grant the child process the capability
   // to upload the file to the web.
-  virtual void GrantReadFile(int child_id, const FilePath& file) = 0;
+  virtual void GrantReadFile(int child_id, const base::FilePath& file) = 0;
 
   // Grants read access permission to the given isolated file system
   // identified by |filesystem_id|. An isolated file system can be
@@ -87,10 +89,20 @@ class ChildProcessSecurityPolicy {
   // to individual file paths.
   //
   // This must be called with a great care as this gives write permission
-  // to all files/directories included in the file system.  Especially this
-  // should NOT be called if the file system contains directories.
-  virtual void GrantReadWriteFileSystem(int child_id,
-                                        const std::string& filesystem_id) = 0;
+  // to all files/directories included in the file system.
+  virtual void GrantWriteFileSystem(int child_id,
+                                    const std::string& filesystem_id) = 0;
+
+  // Grant create file permission to the given isolated file system identified
+  // by |filesystem_id|.
+  // See comments for GrantReadFileSystem for more details.  For creating you
+  // do NOT need to give direct permission to individual file paths.
+  //
+  // This must be called with a great care as this gives create permission
+  // within all directories included in the file system.
+  virtual void GrantCreateFileForFileSystem(
+      int child_id,
+      const std::string& filesystem_id) = 0;
 
   // Grants the child process the capability to access URLs of the provided
   // scheme.

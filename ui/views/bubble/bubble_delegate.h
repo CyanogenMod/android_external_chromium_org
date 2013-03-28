@@ -11,6 +11,10 @@
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
 
+namespace gfx {
+class Rect;
+}
+
 namespace ui {
 class SlideAnimation;
 }
@@ -27,9 +31,6 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
                                         public ui::AnimationDelegate,
                                         public WidgetObserver {
  public:
-  // The default bubble background color.
-  static const SkColor kBackgroundColor;
-
   BubbleDelegateView();
   BubbleDelegateView(View* anchor_view,
                      BubbleBorder::ArrowLocation arrow_location);
@@ -45,10 +46,11 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   virtual NonClientFrameView* CreateNonClientFrameView(Widget* widget) OVERRIDE;
 
   // WidgetObserver overrides:
-  virtual void OnWidgetClosing(Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(Widget* widget) OVERRIDE;
   virtual void OnWidgetVisibilityChanged(Widget* widget, bool visible) OVERRIDE;
   virtual void OnWidgetActivationChanged(Widget* widget, bool active) OVERRIDE;
-  virtual void OnWidgetMoved(Widget* widget) OVERRIDE;
+  virtual void OnWidgetBoundsChanged(Widget* widget,
+                                     const gfx::Rect& new_bounds) OVERRIDE;
 
   bool close_on_esc() const { return close_on_esc_; }
   void set_close_on_esc(bool close_on_esc) { close_on_esc_ = close_on_esc; }
@@ -73,7 +75,10 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   void set_shadow(BubbleBorder::Shadow shadow) { shadow_ = shadow; }
 
   SkColor color() const { return color_; }
-  void set_color(SkColor color) { color_ = color; }
+  void set_color(SkColor color) {
+    color_ = color;
+    color_explicitly_set_ = true;
+  }
 
   const gfx::Insets& margins() const { return margins_; }
   void set_margins(const gfx::Insets& margins) { margins_ = margins; }
@@ -92,14 +97,16 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   bool accept_events() const { return accept_events_; }
   void set_accept_events(bool accept_events) { accept_events_ = accept_events; }
 
+  bool border_accepts_events() const { return border_accepts_events_; }
+  void set_border_accepts_events(bool accept) {
+    border_accepts_events_ = accept;
+  }
+
   bool adjust_if_offscreen() const { return adjust_if_offscreen_; }
   void set_adjust_if_offscreen(bool adjust) { adjust_if_offscreen_ = adjust; }
 
   // Get the arrow's anchor rect in screen space.
   virtual gfx::Rect GetAnchorRect();
-
-  // Show the bubble's widget (and |border_widget_| on Windows).
-  void Show();
 
   // Fade the bubble in or out via Widget transparency.
   // Fade in calls Widget::Show; fade out calls Widget::Close upon completion.
@@ -109,7 +116,8 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   // bubble to the setting before StartFade() was called.
   void ResetFade();
 
-  // Sets the bubble alignment relative to the anchor.
+  // Sets the bubble alignment relative to the anchor. This may only be called
+  // after calling CreateBubble.
   void SetAlignment(BubbleBorder::BubbleAlignment alignment);
 
  protected:
@@ -118,6 +126,7 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
 
   // View overrides:
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
+  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
   // ui::AnimationDelegate overrides:
   virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
@@ -151,6 +160,9 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   FRIEND_TEST_ALL_PREFIXES(BubbleFrameViewTest, NonClientHitTest);
   FRIEND_TEST_ALL_PREFIXES(BubbleDelegateTest, CreateDelegate);
 
+  // Update the bubble color from |theme|, unless it was explicitly set.
+  void UpdateColorsFromTheme(const ui::NativeTheme* theme);
+
 #if defined(OS_WIN) && !defined(USE_AURA)
   // Get bounds for the Windows-only widget that hosts the bubble's contents.
   gfx::Rect GetBubbleClientBounds() const;
@@ -179,8 +191,9 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   // Bubble border shadow to use.
   BubbleBorder::Shadow shadow_;
 
-  // The background color of the bubble.
+  // The background color of the bubble; and flag for when it's explicitly set.
   SkColor color_;
+  bool color_explicitly_set_;
 
   // The margins between the content and the inside of the border.
   gfx::Insets margins_;
@@ -194,12 +207,16 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   // The widget hosting the border for this bubble (non-Aura Windows only).
   Widget* border_widget_;
 
-  // Create a popup window for focusless bubbles on Linux/ChromeOS.
-  // These bubbles are not interactive and should not gain focus.
+  // If true (defaults to false), the bubble does not take user focus upon
+  // display.
   bool use_focusless_;
 
   // Specifies whether the popup accepts events or lets them pass through.
   bool accept_events_;
+
+  // Specifies whether the bubble border accepts events or lets them pass
+  // through.
+  bool border_accepts_events_;
 
   // If true (defaults to true), the arrow may be mirrored and moved to fit the
   // bubble on screen better. It would be a no-op if the bubble has no arrow.

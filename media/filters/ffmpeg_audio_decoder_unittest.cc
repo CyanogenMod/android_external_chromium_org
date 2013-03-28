@@ -7,13 +7,13 @@
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "base/stringprintf.h"
+#include "media/base/data_buffer.h"
 #include "media/base/decoder_buffer.h"
-#include "media/base/mock_callback.h"
 #include "media/base/mock_filters.h"
 #include "media/base/test_data_util.h"
+#include "media/base/test_helpers.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_audio_decoder.h"
-#include "media/filters/ffmpeg_decoder_unittest.h"
 #include "media/filters/ffmpeg_glue.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -30,9 +30,7 @@ ACTION_P(InvokeReadPacket, test) {
 class FFmpegAudioDecoderTest : public testing::Test {
  public:
   FFmpegAudioDecoderTest()
-      : decoder_(new FFmpegAudioDecoder(base::Bind(
-            &Identity<scoped_refptr<base::MessageLoopProxy> >,
-            message_loop_.message_loop_proxy()))),
+      : decoder_(new FFmpegAudioDecoder(message_loop_.message_loop_proxy())),
         demuxer_(new StrictMock<MockDemuxerStream>()) {
     FFmpegGlue::InitializeFFmpeg();
 
@@ -57,7 +55,7 @@ class FFmpegAudioDecoderTest : public testing::Test {
     encoded_audio_.push_back(DecoderBuffer::CreateEOSBuffer());
 
     config_.Initialize(kCodecVorbis,
-                       16,
+                       kSampleFormatPlanarF32,
                        CHANNEL_LAYOUT_STEREO,
                        44100,
                        vorbis_extradata_->GetData(),
@@ -77,7 +75,7 @@ class FFmpegAudioDecoderTest : public testing::Test {
                          base::Bind(&MockStatisticsCB::OnStatistics,
                                     base::Unretained(&statistics_cb_)));
 
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   void ReadPacket(const DemuxerStream::ReadCB& read_cb) {
@@ -93,11 +91,11 @@ class FFmpegAudioDecoderTest : public testing::Test {
   void Read() {
     decoder_->Read(base::Bind(
         &FFmpegAudioDecoderTest::DecodeFinished, base::Unretained(this)));
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   void DecodeFinished(AudioDecoder::Status status,
-                      const scoped_refptr<Buffer>& buffer) {
+                      const scoped_refptr<DataBuffer>& buffer) {
     decoded_audio_.push_back(buffer);
   }
 
@@ -110,20 +108,18 @@ class FFmpegAudioDecoderTest : public testing::Test {
 
   void ExpectEndOfStream(size_t i) {
     EXPECT_LT(i, decoded_audio_.size());
-    EXPECT_EQ(0, decoded_audio_[i]->GetTimestamp().InMicroseconds());
-    EXPECT_EQ(0, decoded_audio_[i]->GetDuration().InMicroseconds());
     EXPECT_TRUE(decoded_audio_[i]->IsEndOfStream());
   }
 
   MessageLoop message_loop_;
-  scoped_refptr<FFmpegAudioDecoder> decoder_;
+  scoped_ptr<FFmpegAudioDecoder> decoder_;
   scoped_refptr<StrictMock<MockDemuxerStream> > demuxer_;
   MockStatisticsCB statistics_cb_;
 
   scoped_refptr<DecoderBuffer> vorbis_extradata_;
 
   std::deque<scoped_refptr<DecoderBuffer> > encoded_audio_;
-  std::deque<scoped_refptr<Buffer> > decoded_audio_;
+  std::deque<scoped_refptr<DataBuffer> > decoded_audio_;
 
   AudioDecoderConfig config_;
 };
@@ -131,9 +127,9 @@ class FFmpegAudioDecoderTest : public testing::Test {
 TEST_F(FFmpegAudioDecoderTest, Initialize) {
   Initialize();
 
-  EXPECT_EQ(16, decoder_->bits_per_channel());
-  EXPECT_EQ(CHANNEL_LAYOUT_STEREO, decoder_->channel_layout());
-  EXPECT_EQ(44100, decoder_->samples_per_second());
+  EXPECT_EQ(config_.bits_per_channel(), decoder_->bits_per_channel());
+  EXPECT_EQ(config_.channel_layout(), decoder_->channel_layout());
+  EXPECT_EQ(config_.samples_per_second(), decoder_->samples_per_second());
 }
 
 TEST_F(FFmpegAudioDecoderTest, ProduceAudioSamples) {

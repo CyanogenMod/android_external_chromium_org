@@ -7,13 +7,14 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/i18n/rtl.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
@@ -95,11 +96,8 @@ void CustomHomePagesTableModel::SetURLs(const std::vector<GURL>& urls) {
  */
 void CustomHomePagesTableModel::MoveURLs(int insert_before,
                                          const std::vector<int>& index_list) {
-  // Was causing crashes when just a DCHECK(), see http://crbug.com/136576.
-  if (index_list.empty() || insert_before < 0 || insert_before > RowCount()) {
-    NOTREACHED();
-    return;
-  }
+  DCHECK(!index_list.empty());
+  DCHECK(insert_before >= 0 && insert_before <= RowCount());
 
   // The range of elements that needs to be reshuffled is [ |first|, |last| ).
   int first = std::min(insert_before, index_list.front());
@@ -120,7 +118,7 @@ void CustomHomePagesTableModel::MoveURLs(int insert_before,
     if (skip_count < index_list.size() && index_list[skip_count] == i)
       skip_count++;
     else
-      entries_[i - skip_count]=entries_[i];
+      entries_[i - skip_count] = entries_[i];
   }
 
   // Moving items down created a gap. We start compacting up after it.
@@ -179,14 +177,16 @@ void CustomHomePagesTableModel::SetToCurrentlyOpenPages() {
 
   // And add all tabs for all open browsers with our profile.
   int add_index = 0;
-  for (BrowserList::const_iterator browser_i = BrowserList::begin();
-       browser_i != BrowserList::end(); ++browser_i) {
-    Browser* browser = *browser_i;
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
     if (browser->profile() != profile_)
       continue;  // Skip incognito browsers.
 
-    for (int tab_index = 0; tab_index < browser->tab_count(); ++tab_index) {
-      const GURL url = chrome::GetWebContentsAt(browser, tab_index)->GetURL();
+    for (int tab_index = 0;
+         tab_index < browser->tab_strip_model()->count();
+         ++tab_index) {
+      const GURL url =
+          browser->tab_strip_model()->GetWebContentsAt(tab_index)->GetURL();
       if (ShouldAddPage(url))
         Add(add_index++, url);
     }

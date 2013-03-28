@@ -9,11 +9,14 @@
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/common/form_data.h"
-#include "chrome/renderer/autofill/form_autofill_util.h"
-#include "chrome/renderer/autofill/form_cache.h"
 #include "chrome/test/base/chrome_render_view_test.h"
+#include "components/autofill/common/form_data.h"
+#include "components/autofill/common/web_element_descriptor.h"
+#include "components/autofill/renderer/form_autofill_util.h"
+#include "components/autofill/renderer/form_cache.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFormControlElement.h"
@@ -21,8 +24,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSelectElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "webkit/glue/web_io_operators.h"
 
 using WebKit::WebDocument;
@@ -37,8 +38,10 @@ using WebKit::WebString;
 using WebKit::WebVector;
 
 using autofill::ClearPreviewedFormWithElement;
+using autofill::ClickElement;
 using autofill::FillForm;
 using autofill::FindFormAndFieldForInputElement;
+using autofill::FillFormIncludingNonFocusableElements;
 using autofill::FormWithElementIsAutofilled;
 using autofill::FormCache;
 using autofill::PreviewForm;
@@ -92,7 +95,7 @@ class FormAutofillTest : public ChromeRenderViewTest {
       expected.value = values[i];
       expected.form_control_type = control_types[i];
       expected.max_length = max_length;
-      SCOPED_TRACE(StringPrintf("i: %" PRIuS, i));
+      SCOPED_TRACE(base::StringPrintf("i: %" PRIuS, i));
       EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[i]);
     }
   }
@@ -212,6 +215,41 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldAutofilled) {
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
 }
 
+// We should be able to extract a radio or a checkbox field that has been
+// autofilled.
+TEST_F(FormAutofillTest, WebFormControlElementToClickableFormField) {
+  LoadHTML("<INPUT type=\"checkbox\" id=\"checkbox\" value=\"mail\"/>"
+           "<INPUT type=\"radio\" id=\"radio\" value=\"male\"/>");
+
+  WebFrame* frame = GetMainFrame();
+  ASSERT_NE(static_cast<WebFrame*>(NULL), frame);
+
+  WebElement web_element = frame->document().getElementById("checkbox");
+  WebInputElement element = web_element.to<WebInputElement>();
+  element.setAutofilled(true);
+  FormFieldData result;
+  WebFormControlElementToFormField(element, autofill::EXTRACT_VALUE, &result);
+
+  FormFieldData expected;
+  expected.name = ASCIIToUTF16("checkbox");
+  expected.value = ASCIIToUTF16("mail");
+  expected.form_control_type = "checkbox";
+  expected.is_autofilled = true;
+  expected.is_checkable = true;
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
+
+  web_element = frame->document().getElementById("radio");
+  element = web_element.to<WebInputElement>();
+  element.setAutofilled(true);
+  WebFormControlElementToFormField(element, autofill::EXTRACT_VALUE, &result);
+  expected.name = ASCIIToUTF16("radio");
+  expected.value = ASCIIToUTF16("male");
+  expected.form_control_type = "radio";
+  expected.is_autofilled = true;
+  expected.is_checkable = true;
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
+}
+
 // We should be able to extract a <select> field.
 TEST_F(FormAutofillTest, WebFormControlElementToFormFieldSelect) {
   LoadHTML("<SELECT id=\"element\"/>"
@@ -262,9 +300,6 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldSelect) {
 TEST_F(FormAutofillTest, WebFormControlElementToFormFieldInvalidType) {
   LoadHTML("<FORM name=\"TestForm\" action=\"http://cnn.com\" method=\"post\">"
            "  <INPUT type=\"hidden\" id=\"hidden\" value=\"apple\"/>"
-           "  <INPUT type=\"password\" id=\"password\" value=\"secret\"/>"
-           "  <INPUT type=\"checkbox\" id=\"checkbox\" value=\"mail\"/>"
-           "  <INPUT type=\"radio\" id=\"radio\" value=\"male\"/>"
            "  <INPUT type=\"submit\" id=\"submit\" value=\"Send\"/>"
            "</FORM>");
 
@@ -283,33 +318,33 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldInvalidType) {
   expected.form_control_type = "hidden";
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
 
-  web_element = frame->document().getElementById("password");
-  element = web_element.to<WebFormControlElement>();
-  WebFormControlElementToFormField(element, autofill::EXTRACT_VALUE, &result);
-  expected.name = ASCIIToUTF16("password");
-  expected.form_control_type = "password";
-  EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
-
-  web_element = frame->document().getElementById("checkbox");
-  element = web_element.to<WebFormControlElement>();
-  WebFormControlElementToFormField(element, autofill::EXTRACT_VALUE, &result);
-  expected.name = ASCIIToUTF16("checkbox");
-  expected.form_control_type = "checkbox";
-  EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
-
-  web_element = frame->document().getElementById("radio");
-  element = web_element.to<WebFormControlElement>();
-  WebFormControlElementToFormField(element, autofill::EXTRACT_VALUE, &result);
-  expected.name = ASCIIToUTF16("radio");
-  expected.form_control_type = "radio";
-  EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
-
-
   web_element = frame->document().getElementById("submit");
   element = web_element.to<WebFormControlElement>();
   WebFormControlElementToFormField(element, autofill::EXTRACT_VALUE, &result);
   expected.name = ASCIIToUTF16("submit");
   expected.form_control_type = "submit";
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
+}
+
+// We should be able to extract password fields.
+TEST_F(FormAutofillTest, WebFormControlElementToPasswordFormField) {
+  LoadHTML("<FORM name=\"TestForm\" action=\"http://cnn.com\" method=\"post\">"
+           "  <INPUT type=\"password\" id=\"password\" value=\"secret\"/>"
+           "</FORM>");
+
+  WebFrame* frame = GetMainFrame();
+  ASSERT_NE(static_cast<WebFrame*>(NULL), frame);
+
+  WebElement web_element = frame->document().getElementById("password");
+  WebFormControlElement element = web_element.to<WebFormControlElement>();
+  FormFieldData result;
+  WebFormControlElementToFormField(element, autofill::EXTRACT_VALUE, &result);
+
+  FormFieldData expected;
+  expected.max_length = WebInputElement::defaultMaxLength();
+  expected.name = ASCIIToUTF16("password");
+  expected.form_control_type = "password";
+  expected.value = ASCIIToUTF16("secret");
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, result);
 }
 
@@ -396,12 +431,12 @@ TEST_F(FormAutofillTest, WebFormElementToFormData) {
            "    <OPTION value=\"CA\">California</OPTION>"
            "    <OPTION value=\"TX\">Texas</OPTION>"
            "  </SELECT>"
-           // The below inputs should be ignored
-           " <LABEL for=\"notvisible\">Hidden:</LABEL>"
-           "  <INPUT type=\"hidden\" id=\"notvisible\" value=\"apple\"/>"
            " <LABEL for=\"password\">Password:</LABEL>"
            "  <INPUT type=\"password\" id=\"password\" value=\"secret\"/>"
            "  <INPUT type=\"submit\" name=\"reply-send\" value=\"Send\"/>"
+           // The below inputs should be ignored
+           " <LABEL for=\"notvisible\">Hidden:</LABEL>"
+           "  <INPUT type=\"hidden\" id=\"notvisible\" value=\"apple\"/>"
            "</FORM>");
 
   WebFrame* frame = GetMainFrame();
@@ -427,7 +462,7 @@ TEST_F(FormAutofillTest, WebFormElementToFormData) {
   EXPECT_EQ(GURL("http://cnn.com"), form.action);
 
   const std::vector<FormFieldData>& fields = form.fields;
-  ASSERT_EQ(3U, fields.size());
+  ASSERT_EQ(4U, fields.size());
 
   FormFieldData expected;
   expected.name = ASCIIToUTF16("firstname");
@@ -450,6 +485,13 @@ TEST_F(FormAutofillTest, WebFormElementToFormData) {
   expected.form_control_type = "select-one";
   expected.max_length = 0;
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[2]);
+
+  expected.name = ASCIIToUTF16("password");
+  expected.value = ASCIIToUTF16("secret");
+  expected.label = ASCIIToUTF16("Password:");
+  expected.form_control_type = "password";
+  expected.max_length = WebInputElement::defaultMaxLength();
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[3]);
 }
 
 // We should not be able to serialize a form with too many fillable fields.
@@ -566,6 +608,26 @@ TEST_F(FormAutofillTest, ExtractFormsTooFewFields) {
   LoadHTML("<FORM name=\"TestForm\" action=\"http://cnn.com\" method=\"post\">"
            "  <INPUT type=\"text\" id=\"firstname\" value=\"John\"/>"
            "  <INPUT type=\"text\" id=\"lastname\" value=\"Smith\"/>"
+           "  <INPUT type=\"submit\" name=\"reply-send\" value=\"Send\"/>"
+           "</FORM>");
+
+  WebFrame* web_frame = GetMainFrame();
+  ASSERT_NE(static_cast<WebFrame*>(NULL), web_frame);
+
+  FormCache form_cache;
+  std::vector<FormData> forms;
+  form_cache.ExtractForms(*web_frame, &forms);
+  EXPECT_EQ(0U, forms.size());
+}
+
+// We should not extract a form if it has too few fillable fields.
+// Make sure radio and checkbox fields don't count.
+TEST_F(FormAutofillTest, ExtractFormsTooFewFieldsSkipsCheckable) {
+  LoadHTML("<FORM name=\"TestForm\" action=\"http://cnn.com\" method=\"post\">"
+           "  <INPUT type=\"text\" id=\"firstname\" value=\"John\"/>"
+           "  <INPUT type=\"text\" id=\"lastname\" value=\"Smith\"/>"
+           "  <INPUT type=\"radio\" id=\"a_radio\" value=\"0\"/>"
+           "  <INPUT type=\"checkbox\" id=\"a_check\" value=\"1\"/>"
            "  <INPUT type=\"submit\" name=\"reply-send\" value=\"Send\"/>"
            "</FORM>");
 
@@ -2167,6 +2229,86 @@ TEST_F(FormAutofillTest, FillFormEmptyFormNames) {
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[2]);
 }
 
+TEST_F(FormAutofillTest, FillFormIncludingNonFocusableElements) {
+  LoadHTML("<FORM action=\"http://abc.com\" method=\"post\" id=\"formid\">"
+           "  <INPUT type=\"text\" id=\"firstname\" value=\"not-firstname\"/>"
+           "  <INPUT type=\"text\" id=\"lastname\"/>"
+           "  <INPUT type=\"text\" id=\"middlename\"/>"
+           "  <INPUT type=\"submit\" value=\"Send\"/>"
+           "</FORM>"
+           "<FORM action=\"http://abc.com\" method=\"post\">"
+           "  <INPUT type=\"text\" id=\"apple\"/>"
+           "  <INPUT type=\"text\" id=\"banana\"/>"
+           "  <INPUT type=\"text\" id=\"cantelope\"/>"
+           "  <INPUT type=\"submit\" value=\"Send\"/>"
+           "</FORM>");
+
+  WebFrame* web_frame = GetMainFrame();
+  ASSERT_NE(static_cast<WebFrame*>(NULL), web_frame);
+
+  FormCache form_cache;
+  std::vector<FormData> forms;
+  form_cache.ExtractForms(*web_frame, &forms);
+  ASSERT_EQ(2U, forms.size());
+
+  // Get the input element we want to find.
+  WebElement firstname = web_frame->document().getElementById("firstname");
+  WebInputElement input_element = firstname.to<WebInputElement>();
+  WebElement formid = web_frame->document().getElementById("formid");
+  WebFormElement formid_element = formid.to<WebFormElement>();
+
+  // Find the form that contains the input element.
+  FormData form;
+  FormFieldData field;
+  EXPECT_TRUE(FindFormAndFieldForInputElement(input_element, &form, &field,
+                                              autofill::REQUIRE_NONE));
+  EXPECT_EQ(ASCIIToUTF16("formid"), form.name);
+  EXPECT_EQ(GURL(web_frame->document().url()), form.origin);
+  EXPECT_EQ(GURL("http://abc.com"), form.action);
+  const std::vector<FormFieldData>& fields = form.fields;
+  ASSERT_EQ(3U, fields.size());
+  FormFieldData expected;
+  expected.form_control_type = "text";
+  expected.max_length = WebInputElement::defaultMaxLength();
+  expected.is_autofilled = false;
+  expected.name = ASCIIToUTF16("firstname");
+  expected.value = ASCIIToUTF16("not-firstname");
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[0]);
+  expected.name = ASCIIToUTF16("lastname");
+  expected.value = string16();
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[1]);
+
+  // Fill the form.
+  form.fields[0].value = ASCIIToUTF16("FirstName");
+  form.fields[1].value = ASCIIToUTF16("LastName");
+  FillFormIncludingNonFocusableElements(form, formid_element);
+
+  // Find the newly-filled form that contains the input element, and verify
+  // if all fields have been filled.
+  FormData form2;
+  FormFieldData field2;
+  EXPECT_TRUE(FindFormAndFieldForInputElement(input_element, &form2, &field2,
+                                              autofill::REQUIRE_NONE));
+  EXPECT_EQ(ASCIIToUTF16("formid"), form2.name);
+  EXPECT_EQ(GURL(web_frame->document().url()), form2.origin);
+  EXPECT_EQ(GURL("http://abc.com"), form2.action);
+  std::vector<FormFieldData>& fields2 = form2.fields;
+  ASSERT_EQ(3U, fields2.size());
+  expected.form_control_type = "text";
+  expected.max_length = WebInputElement::defaultMaxLength();
+  // All of the fields should be autofilled now.
+  expected.is_autofilled = true;
+
+  // fields[0].value should have changed from not-firstname to FirstName.
+  expected.name = ASCIIToUTF16("firstname");
+  expected.value = ASCIIToUTF16("FirstName");
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[0]);
+
+  expected.name = ASCIIToUTF16("lastname");
+  expected.value = ASCIIToUTF16("LastName");
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[1]);
+}
+
 TEST_F(FormAutofillTest, ThreePartPhone) {
   LoadHTML("<FORM name=\"TestForm\" action=\"http://cnn.com\" method=\"post\">"
            "  Phone:"
@@ -2809,6 +2951,32 @@ TEST_F(FormAutofillTest, MultipleLabelsPerElement) {
       "  <INPUT type=\"submit\" name=\"reply-send\" value=\"Send\"/>"
       "</FORM>",
       labels, names, values);
+}
+
+TEST_F(FormAutofillTest, ClickElement) {
+  LoadHTML("<BUTTON id=\"link\">Button</BUTTON>"
+           "<BUTTON name=\"button\">Button</BUTTON>");
+  WebFrame* frame = GetMainFrame();
+  ASSERT_NE(static_cast<WebFrame*>(NULL), frame);
+
+  // Successful retrieval by id.
+  autofill::WebElementDescriptor clicker;
+  clicker.retrieval_method = autofill::WebElementDescriptor::ID;
+  clicker.descriptor = "link";
+  EXPECT_TRUE(ClickElement(frame->document(), clicker));
+
+  // Successful retrieval by css selector.
+  clicker.retrieval_method = autofill::WebElementDescriptor::CSS_SELECTOR;
+  clicker.descriptor = "button[name=\"button\"]";
+  EXPECT_TRUE(ClickElement(frame->document(), clicker));
+
+  // Unsuccessful retrieval due to invalid CSS selector.
+  clicker.descriptor = "^*&";
+  EXPECT_FALSE(ClickElement(frame->document(), clicker));
+
+  // Unsuccessful retrieval because element does not exist.
+  clicker.descriptor = "#junk";
+  EXPECT_FALSE(ClickElement(frame->document(), clicker));
 }
 
 TEST_F(FormAutofillTest, SelectOneAsText) {

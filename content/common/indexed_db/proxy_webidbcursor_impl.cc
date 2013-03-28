@@ -10,14 +10,15 @@
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "content/common/indexed_db/indexed_db_dispatcher.h"
 
+using WebKit::WebData;
 using WebKit::WebExceptionCode;
 using WebKit::WebIDBCallbacks;
 using WebKit::WebIDBKey;
 
 namespace content {
 
-RendererWebIDBCursorImpl::RendererWebIDBCursorImpl(int32 idb_cursor_id)
-    : idb_cursor_id_(idb_cursor_id),
+RendererWebIDBCursorImpl::RendererWebIDBCursorImpl(int32 ipc_cursor_id)
+    : ipc_cursor_id_(ipc_cursor_id),
       continue_count_(0),
       used_prefetches_(0),
       pending_onsuccess_callbacks_(0),
@@ -26,14 +27,18 @@ RendererWebIDBCursorImpl::RendererWebIDBCursorImpl(int32 idb_cursor_id)
 
 RendererWebIDBCursorImpl::~RendererWebIDBCursorImpl() {
   // It's not possible for there to be pending callbacks that address this
-  // object since inside WebKit, they hold a reference to the object wich owns
+  // object since inside WebKit, they hold a reference to the object which owns
   // this object. But, if that ever changed, then we'd need to invalidate
   // any such pointers.
-  IndexedDBDispatcher::Send(new IndexedDBHostMsg_CursorDestroyed(
-      idb_cursor_id_));
+
+  if (ipc_cursor_id_ != kInvalidCursorId) {
+    // Invalid ID used in tests to avoid really sending this message.
+    IndexedDBDispatcher::Send(new IndexedDBHostMsg_CursorDestroyed(
+        ipc_cursor_id_));
+  }
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance();
-  dispatcher->CursorDestroyed(idb_cursor_id_);
+  dispatcher->CursorDestroyed(ipc_cursor_id_);
 }
 
 void RendererWebIDBCursorImpl::advance(unsigned long count,
@@ -44,7 +49,7 @@ void RendererWebIDBCursorImpl::advance(unsigned long count,
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
   ResetPrefetchCache();
   dispatcher->RequestIDBCursorAdvance(count, callbacks.release(),
-                                      idb_cursor_id_, &ec);
+                                      ipc_cursor_id_, &ec);
 }
 
 void RendererWebIDBCursorImpl::continueFunction(const WebIDBKey& key,
@@ -66,9 +71,10 @@ void RendererWebIDBCursorImpl::continueFunction(const WebIDBKey& key,
 
     if (continue_count_ > kPrefetchContinueThreshold) {
       // Request pre-fetch.
+      ++pending_onsuccess_callbacks_;
       dispatcher->RequestIDBCursorPrefetch(prefetch_amount_,
                                            callbacks.release(),
-                                           idb_cursor_id_, &ec);
+                                           ipc_cursor_id_, &ec);
 
       // Increase prefetch_amount_ exponentially.
       prefetch_amount_ *= 2;
@@ -84,14 +90,14 @@ void RendererWebIDBCursorImpl::continueFunction(const WebIDBKey& key,
 
   dispatcher->RequestIDBCursorContinue(IndexedDBKey(key),
                                        callbacks.release(),
-                                       idb_cursor_id_, &ec);
+                                       ipc_cursor_id_, &ec);
 }
 
 void RendererWebIDBCursorImpl::deleteFunction(WebIDBCallbacks* callbacks,
                                               WebExceptionCode& ec) {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance();
-  dispatcher->RequestIDBCursorDelete(callbacks, idb_cursor_id_, &ec);
+  dispatcher->RequestIDBCursorDelete(callbacks, ipc_cursor_id_, &ec);
 }
 
 void RendererWebIDBCursorImpl::postSuccessHandlerCallback() {
@@ -110,7 +116,7 @@ void RendererWebIDBCursorImpl::postSuccessHandlerCallback() {
 void RendererWebIDBCursorImpl::SetPrefetchData(
     const std::vector<IndexedDBKey>& keys,
     const std::vector<IndexedDBKey>& primary_keys,
-    const std::vector<SerializedScriptValue>& values) {
+    const std::vector<WebData>& values) {
   prefetch_keys_.assign(keys.begin(), keys.end());
   prefetch_primary_keys_.assign(primary_keys.begin(), primary_keys.end());
   prefetch_values_.assign(values.begin(), values.end());
@@ -127,7 +133,8 @@ void RendererWebIDBCursorImpl::CachedContinue(
 
   IndexedDBKey key = prefetch_keys_.front();
   IndexedDBKey primary_key = prefetch_primary_keys_.front();
-  SerializedScriptValue value = prefetch_values_.front();
+  // this could be a real problem.. we need 2 CachedContinues
+  WebData value = prefetch_values_.front();
 
   prefetch_keys_.pop_front();
   prefetch_primary_keys_.pop_front();
@@ -152,7 +159,7 @@ void RendererWebIDBCursorImpl::ResetPrefetchCache() {
       IndexedDBDispatcher::ThreadSpecificInstance();
   dispatcher->RequestIDBCursorPrefetchReset(used_prefetches_,
                                             prefetch_keys_.size(),
-                                            idb_cursor_id_);
+                                            ipc_cursor_id_);
   prefetch_keys_.clear();
   prefetch_primary_keys_.clear();
   prefetch_values_.clear();

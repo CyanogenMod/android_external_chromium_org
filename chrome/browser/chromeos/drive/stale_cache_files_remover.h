@@ -32,7 +32,7 @@ class StaleCacheFilesRemover : public DriveFileSystemObserver {
   // Removes stale cache files.
   // Gets the list of all the resource id and calls OnGetResourceIdsOfAllFiles()
   // with the list.
-  virtual void OnInitialLoadFinished(DriveFileError error) OVERRIDE;
+  virtual void OnInitialLoadFinished() OVERRIDE;
 
   // Gets the file entry and calls RemoveCacheIfNecessary() with the file entry.
   // This is called from StaleCacheFilesRemover::OnInitialLoadFinished.
@@ -46,7 +46,7 @@ class StaleCacheFilesRemover : public DriveFileSystemObserver {
       const std::string& resource_id,
       const std::string& cache_md5,
       DriveFileError error,
-      const FilePath& drive_file_path,
+      const base::FilePath& drive_file_path,
       scoped_ptr<DriveEntryProto> entry_proto);
 
   DriveCache* cache_;  // Not owned.

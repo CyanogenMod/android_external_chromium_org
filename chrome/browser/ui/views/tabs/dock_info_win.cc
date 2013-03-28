@@ -14,7 +14,11 @@
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/widget/desktop_root_window_host_win.h"
+#include "ui/views/win/hwnd_util.h"
+
+#if defined(USE_AURA)
+#include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
+#endif
 
 namespace {
 
@@ -216,13 +220,7 @@ class DockToWindowFinder : public BaseWindowFinder {
   static DockInfo GetDockInfoAtPoint(const gfx::Point& screen_loc,
                                      const std::set<HWND>& ignore) {
     DockToWindowFinder finder(screen_loc, ignore);
-#if defined(USE_AURA)
-    HWND hwnd = finder.result_.window() ?
-        finder.result_.window()->GetRootWindow()->GetAcceleratedWidget() :
-        NULL;
-#else
-    HWND hwnd = finder.result_.window();
-#endif
+    HWND hwnd = views::HWNDForNativeWindow(finder.result_.window());
     if (!finder.result_.window() ||
         !TopMostFinder::IsTopMostWindowAtPoint(hwnd,
                                                finder.result_.hot_spot(),
@@ -303,10 +301,14 @@ class DockToWindowFinder : public BaseWindowFinder {
 
 std::set<HWND> RemapIgnoreSet(const std::set<gfx::NativeView>& ignore) {
 #if defined(USE_AURA)
-  // TODO(scottmg): Figure out how to reimplement |ignore| on Aura. The ignore
-  // in BaseWindowFinder is via EnumThreadWindows, but the NativeViews won't
-  // be enumerated on Aura.
-  return std::set<HWND>();
+  std::set<HWND> hwnd_set;
+  std::set<gfx::NativeView>::const_iterator it = ignore.begin();
+  for (; it != ignore.end(); ++it) {
+    HWND w = (*it)->GetRootWindow()->GetAcceleratedWidget();
+    if (w)
+      hwnd_set.insert(w);
+  }
+  return hwnd_set;
 #else
   // NativeViews are already HWNDs on non-Aura Windows.
   return ignore;

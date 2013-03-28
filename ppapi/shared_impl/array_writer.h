@@ -18,6 +18,7 @@
 namespace ppapi {
 
 class Resource;
+class Var;
 
 // Holds a PP_ArrayWriter and provides helper functions for writing arrays
 // to it. It also handles 0-initialization of the raw C struct and attempts
@@ -38,7 +39,8 @@ class PPAPI_SHARED_EXPORT ArrayWriter {
   // Sets the array output back to its is_null() state.
   void Reset();
 
-  // Copies the given vector of data to the plugin output array.
+  // StoreArray() and StoreVector() copy the given array/vector of data to the
+  // plugin output array.
   //
   // Returns true on success, false if the plugin reported allocation failure.
   // In either case, the object will become is_null() immediately after the
@@ -48,25 +50,33 @@ class PPAPI_SHARED_EXPORT ArrayWriter {
   // want to transfer a reference only on success. Likewise, if you have a
   // structure of PP_Vars or a struct that contains a PP_Resource, we need to
   // make sure that the right thing happens with the ref on success and failure.
-  template<typename T>
-  bool StoreVector(const std::vector<T>& input) {
+  template <typename T>
+  bool StoreArray(const T* input, uint32_t count) {
     // Always call the alloc function, even on 0 array size.
     void* dest = pp_array_output_.GetDataBuffer(
         pp_array_output_.user_data,
-        static_cast<uint32_t>(input.size()),
+        count,
         sizeof(T));
 
     // Regardless of success, we clear the output to prevent future calls on
     // this same output object.
     Reset();
 
-    if (input.empty())
+    if (count == 0)
       return true;  // Allow plugin to return NULL on 0 elements.
     if (!dest)
       return false;
 
-    memcpy(dest, &input[0], sizeof(T) * input.size());
+    if (input)
+      memcpy(dest, input, sizeof(T) * count);
     return true;
+  }
+
+  // Copies the given array/vector of data to the plugin output array.  See
+  // comment of StoreArray() for detail.
+  template<typename T>
+  bool StoreVector(const std::vector<T>& input) {
+    return StoreArray(input.size() ? &input[0] : NULL, input.size());
   }
 
   // Stores the given vector of resources as PP_Resources to the output vector,
@@ -80,12 +90,24 @@ class PPAPI_SHARED_EXPORT ArrayWriter {
   // Note: potentially this could be a template in case you have a vector of
   // FileRef objects, for example. However, this saves code since there's only
   // one instantiation and is sufficient for now.
-  bool StoreResourceVector(
-      const std::vector< scoped_refptr<Resource> >& input);
+  bool StoreResourceVector(const std::vector< scoped_refptr<Resource> >& input);
 
-  // Like the above version but takes an array of AddRed'ed PP_Resources. On
+  // Like the above version but takes an array of AddRef'ed PP_Resources. On
   // storage failure, this will release each resource.
   bool StoreResourceVector(const std::vector<PP_Resource>& input);
+
+  // Stores the given vector of vars as PP_Vars to the output vector,
+  // adding one reference to each.
+  //
+  // On failure this returns false, nothing will be copied, and the var
+  // refcounts will be unchanged. In either case, the object will become
+  // is_null() immediately after the call since one output function should only
+  // be issued once.
+  bool StoreVarVector(const std::vector< scoped_refptr<Var> >& input);
+
+  // Like the above version but takes an array of AddRef'ed PP_Vars. On
+  // storage failure, this will release each var.
+  bool StoreVarVector(const std::vector<PP_Var>& input);
 
  private:
   PP_ArrayOutput pp_array_output_;

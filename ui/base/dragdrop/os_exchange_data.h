@@ -17,7 +17,7 @@
 #endif
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/base/dragdrop/download_file_interface.h"
 #include "ui/base/ui_export.h"
@@ -28,6 +28,11 @@
 
 class GURL;
 class Pickle;
+
+namespace gfx {
+class ImageSkia;
+class Vector2d;
+}
 
 namespace ui {
 
@@ -49,12 +54,12 @@ class UI_EXPORT OSExchangeData {
  public:
   // CustomFormats are used for non-standard data types. For example, bookmark
   // nodes are written using a CustomFormat.
-#if defined(USE_AURA)
+#if defined(OS_WIN)
+  typedef CLIPFORMAT CustomFormat;
+#elif defined(USE_AURA)
   // Use the same type as the clipboard (why do we want two different
   // definitions of this on other platforms?).
   typedef Clipboard::FormatType CustomFormat;
-#elif defined(OS_WIN)
-  typedef CLIPFORMAT CustomFormat;
 #elif defined(TOOLKIT_GTK)
   typedef GdkAtom CustomFormat;
 #else
@@ -77,23 +82,23 @@ class UI_EXPORT OSExchangeData {
 
   // Encapsulates the info about a file to be downloaded.
   struct UI_EXPORT DownloadFileInfo {
-    DownloadFileInfo(const FilePath& filename,
+    DownloadFileInfo(const base::FilePath& filename,
                      DownloadFileProvider* downloader);
     ~DownloadFileInfo();
 
-    FilePath filename;
+    base::FilePath filename;
     scoped_refptr<DownloadFileProvider> downloader;
   };
 
   // Encapsulates the info about a file.
   struct UI_EXPORT FileInfo {
-    FileInfo(const FilePath& path, const FilePath& display_name);
+    FileInfo(const base::FilePath& path, const base::FilePath& display_name);
     ~FileInfo();
 
     // The path of the file.
-    FilePath path;
+    base::FilePath path;
     // The display name of the file. This field is optional.
-    FilePath display_name;
+    base::FilePath display_name;
   };
 
   // Provider defines the platform specific part of OSExchangeData that
@@ -105,14 +110,14 @@ class UI_EXPORT OSExchangeData {
 
     virtual void SetString(const string16& data) = 0;
     virtual void SetURL(const GURL& url, const string16& title) = 0;
-    virtual void SetFilename(const FilePath& path) = 0;
+    virtual void SetFilename(const base::FilePath& path) = 0;
     virtual void SetFilenames(
         const std::vector<FileInfo>& file_names) = 0;
     virtual void SetPickledData(CustomFormat format, const Pickle& data) = 0;
 
     virtual bool GetString(string16* data) const = 0;
     virtual bool GetURLAndTitle(GURL* url, string16* title) const = 0;
-    virtual bool GetFilename(FilePath* path) const = 0;
+    virtual bool GetFilename(base::FilePath* path) const = 0;
     virtual bool GetFilenames(
         std::vector<FileInfo>* file_names) const = 0;
     virtual bool GetPickledData(CustomFormat format, Pickle* data) const = 0;
@@ -124,9 +129,9 @@ class UI_EXPORT OSExchangeData {
         OSExchangeData::CustomFormat format) const = 0;
 
 #if defined(OS_WIN)
-    virtual void SetFileContents(const FilePath& filename,
+    virtual void SetFileContents(const base::FilePath& filename,
                                  const std::string& file_contents) = 0;
-    virtual bool GetFileContents(FilePath* filename,
+    virtual bool GetFileContents(base::FilePath* filename,
                                  std::string* file_contents) const = 0;
     virtual bool HasFileContents() const = 0;
     virtual void SetDownloadFileInfo(const DownloadFileInfo& download) = 0;
@@ -137,7 +142,17 @@ class UI_EXPORT OSExchangeData {
     virtual bool GetHtml(string16* html, GURL* base_url) const = 0;
     virtual bool HasHtml() const = 0;
 #endif
+
+#if defined(USE_AURA)
+    virtual void SetDragImage(const gfx::ImageSkia& image,
+                              const gfx::Vector2d& cursor_offset) = 0;
+    virtual const gfx::ImageSkia& GetDragImage() const = 0;
+    virtual const gfx::Vector2d& GetDragImageOffset() const = 0;
+#endif
   };
+
+  // Creates the platform specific Provider.
+  static Provider* CreateProvider();
 
   OSExchangeData();
   // Creates an OSExchangeData with the specified provider. OSExchangeData
@@ -167,7 +182,7 @@ class UI_EXPORT OSExchangeData {
   // A URL can have an optional title in some exchange formats.
   void SetURL(const GURL& url, const string16& title);
   // A full path to a file.
-  void SetFilename(const FilePath& path);
+  void SetFilename(const base::FilePath& path);
   // Full path to one or more files. See also SetFilenames() in Provider.
   void SetFilenames(
       const std::vector<FileInfo>& file_names);
@@ -181,7 +196,7 @@ class UI_EXPORT OSExchangeData {
   bool GetString(string16* data) const;
   bool GetURLAndTitle(GURL* url, string16* title) const;
   // Return the path of a file, if available.
-  bool GetFilename(FilePath* path) const;
+  bool GetFilename(base::FilePath* path) const;
   bool GetFilenames(
       std::vector<FileInfo>* file_names) const;
   bool GetPickledData(CustomFormat format, Pickle* data) const;
@@ -205,9 +220,9 @@ class UI_EXPORT OSExchangeData {
 
 #if defined(OS_WIN)
   // Adds the bytes of a file (CFSTR_FILECONTENTS and CFSTR_FILEDESCRIPTOR).
-  void SetFileContents(const FilePath& filename,
+  void SetFileContents(const base::FilePath& filename,
                        const std::string& file_contents);
-  bool GetFileContents(FilePath* filename,
+  bool GetFileContents(base::FilePath* filename,
                        std::string* file_contents) const;
 
   // Adds a download file with full path (CF_HDROP).
@@ -222,9 +237,6 @@ class UI_EXPORT OSExchangeData {
 #endif
 
  private:
-  // Creates the platform specific Provider.
-  static Provider* CreateProvider();
-
   // Provides the actual data.
   scoped_ptr<Provider> provider_;
 

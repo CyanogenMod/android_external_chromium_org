@@ -19,8 +19,8 @@ class ResumeObserver : public PowerManagerClient::Observer {
   ResumeObserver();
   virtual ~ResumeObserver();
 
-  // PowerManagerClient::Observer overrides.
-  virtual void SystemResumed() OVERRIDE;
+  // PowerManagerClient::Observer overrides:
+  virtual void SystemResumed(const base::TimeDelta& sleep_duration) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ResumeObserver);

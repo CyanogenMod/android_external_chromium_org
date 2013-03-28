@@ -4,14 +4,19 @@
 
 #include "content/renderer/browser_plugin/browser_plugin_manager_impl.h"
 
-#include "content/common/browser_plugin_messages.h"
+#include "content/common/browser_plugin/browser_plugin_constants.h"
+#include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/renderer/browser_plugin/browser_plugin.h"
 #include "content/renderer/render_thread_impl.h"
+#include "ui/gfx/point.h"
 #include "webkit/glue/webcursor.h"
 
 namespace content {
 
-BrowserPluginManagerImpl::BrowserPluginManagerImpl() {
+BrowserPluginManagerImpl::BrowserPluginManagerImpl(
+    RenderViewImpl* render_view)
+    : BrowserPluginManager(render_view),
+      request_id_counter_(0) {
 }
 
 BrowserPluginManagerImpl::~BrowserPluginManagerImpl() {
@@ -21,121 +26,96 @@ BrowserPlugin* BrowserPluginManagerImpl::CreateBrowserPlugin(
     RenderViewImpl* render_view,
     WebKit::WebFrame* frame,
     const WebKit::WebPluginParams& params) {
-  return new BrowserPlugin(browser_plugin_counter_++,
-                           render_view,
-                           frame,
-                           params);
+  return new BrowserPlugin(render_view, frame, params);
+}
+
+void BrowserPluginManagerImpl::AllocateInstanceID(
+    BrowserPlugin* browser_plugin) {
+  int request_id = request_id_counter_++;
+  pending_allocate_instance_id_requests_.AddWithID(browser_plugin, request_id);
+  Send(new BrowserPluginHostMsg_AllocateInstanceID(
+      browser_plugin->render_view_routing_id(), request_id));
 }
 
 bool BrowserPluginManagerImpl::Send(IPC::Message* msg) {
   return RenderThread::Get()->Send(msg);
 }
 
-bool BrowserPluginManagerImpl::OnControlMessageReceived(
+bool BrowserPluginManagerImpl::OnMessageReceived(
     const IPC::Message& message) {
-  DCHECK(CalledOnValidThread());
+  if (BrowserPlugin::ShouldForwardToBrowserPlugin(message)) {
+    int instance_id = browser_plugin::kInstanceIDNone;
+    // All allowed messages must have instance_id as their first parameter.
+    PickleIterator iter(message);
+    bool success = iter.ReadInt(&instance_id);
+    DCHECK(success);
+    BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
+    if (plugin && plugin->OnMessageReceived(message))
+      return true;
+  }
+
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(BrowserPluginManagerImpl, message)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_UpdateRect, OnUpdateRect)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestGone, OnGuestGone)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_AdvanceFocus, OnAdvanceFocus)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestContentWindowReady,
-                        OnGuestContentWindowReady)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_ShouldAcceptTouchEvents,
-                        OnShouldAcceptTouchEvents)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadStart, OnLoadStart)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadAbort, OnLoadAbort)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadRedirect, OnLoadRedirect)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadCommit, OnLoadCommit)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_LoadStop, OnLoadStop)
-    IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetCursor, OnSetCursor)
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_AllocateInstanceID_ACK,
+                        OnAllocateInstanceIDACK)
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_BuffersSwapped,
+                        OnUnhandledSwap);
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_PluginAtPositionRequest,
+                        OnPluginAtPositionRequest);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
-void BrowserPluginManagerImpl::OnUpdateRect(
-    int instance_id,
-    int message_id,
-    const BrowserPluginMsg_UpdateRect_Params& params) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
+void BrowserPluginManagerImpl::OnAllocateInstanceIDACK(
+    const IPC::Message& message, int request_id, int instance_id) {
+  BrowserPlugin* plugin =
+      pending_allocate_instance_id_requests_.Lookup(request_id);
+  pending_allocate_instance_id_requests_.Remove(request_id);
   if (plugin)
-    plugin->UpdateRect(message_id, params);
+    plugin->SetInstanceID(instance_id, true /* new_guest */);
 }
 
-void BrowserPluginManagerImpl::OnGuestGone(int instance_id,
-                                           int process_id,
-                                           int status) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
-  if (plugin)
-    plugin->GuestGone(process_id, static_cast<base::TerminationStatus>(status));
+void BrowserPluginManagerImpl::OnPluginAtPositionRequest(
+    const IPC::Message& message,
+    int request_id,
+    const gfx::Point& position) {
+  int instance_id = browser_plugin::kInstanceIDNone;
+  IDMap<BrowserPlugin>::iterator it(&instances_);
+  gfx::Point local_position = position;
+  while (!it.IsAtEnd()) {
+    const BrowserPlugin* plugin = it.GetCurrentValue();
+    if (plugin->InBounds(position)) {
+      instance_id = plugin->instance_id();
+      local_position = plugin->ToLocalCoordinates(position);
+      break;
+    }
+    it.Advance();
+  }
+
+  Send(new BrowserPluginHostMsg_PluginAtPositionResponse(
+       message.routing_id(), instance_id, request_id, local_position));
 }
 
-void BrowserPluginManagerImpl::OnAdvanceFocus(int instance_id, bool reverse) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
-  if (plugin)
-    plugin->AdvanceFocus(reverse);
-}
-
-void BrowserPluginManagerImpl::OnGuestContentWindowReady(int instance_id,
-                                                         int guest_routing_id) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
-  if (plugin)
-    plugin->GuestContentWindowReady(guest_routing_id);
-}
-
-void BrowserPluginManagerImpl::OnShouldAcceptTouchEvents(int instance_id,
-                                                         bool accept) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
-  if (plugin)
-    plugin->SetAcceptTouchEvents(accept);
-}
-
-void BrowserPluginManagerImpl::OnLoadStart(int instance_id,
-                                           const GURL& url,
-                                           bool is_top_level) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
-  if (plugin)
-    plugin->LoadStart(url, is_top_level);
-}
-
-void BrowserPluginManagerImpl::OnLoadCommit(
-    int instance_id,
-    const BrowserPluginMsg_LoadCommit_Params& params) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
-  if (plugin)
-    plugin->LoadCommit(params);
-}
-
-void BrowserPluginManagerImpl::OnLoadStop(int instance_id) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
-  if (plugin)
-    plugin->LoadStop();
-}
-
-void BrowserPluginManagerImpl::OnLoadAbort(int instance_id,
-                                           const GURL& url,
-                                           bool is_top_level,
-                                           const std::string& type) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
-  if (plugin)
-    plugin->LoadAbort(url, is_top_level, type);
-}
-
-void BrowserPluginManagerImpl::OnLoadRedirect(int instance_id,
-                                              const GURL& old_url,
-                                              const GURL& new_url,
-                                              bool is_top_level) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
-  if (plugin)
-    plugin->LoadRedirect(old_url, new_url, is_top_level);
-}
-
-void BrowserPluginManagerImpl::OnSetCursor(int instance_id,
-                                           const WebCursor& cursor) {
-  BrowserPlugin* plugin = GetBrowserPlugin(instance_id);
-  if (plugin)
-    plugin->SetCursor(cursor);
+void BrowserPluginManagerImpl::OnUnhandledSwap(const IPC::Message& message,
+                                               int instance_id,
+                                               const gfx::Size& size,
+                                               std::string mailbox_name,
+                                               int gpu_route_id,
+                                               int gpu_host_id) {
+  // After the BrowserPlugin object sends a destroy message to the
+  // guest, it goes away and is unable to handle messages that
+  // might still be coming from the guest.
+  // In this case, we might receive a BuffersSwapped message that
+  // we need to ACK.
+  // Issue is tracked in crbug.com/170745.
+  Send(new BrowserPluginHostMsg_BuffersSwappedACK(
+      message.routing_id(),
+      instance_id,
+      gpu_route_id,
+      gpu_host_id,
+      mailbox_name,
+      0));
 }
 
 }  // namespace content

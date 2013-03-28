@@ -21,9 +21,12 @@
 #include "sync/protocol/experiments_specifics.pb.h"
 #include "sync/protocol/extension_setting_specifics.pb.h"
 #include "sync/protocol/extension_specifics.pb.h"
+#include "sync/protocol/favicon_image_specifics.pb.h"
+#include "sync/protocol/favicon_tracking_specifics.pb.h"
 #include "sync/protocol/nigori_specifics.pb.h"
 #include "sync/protocol/password_specifics.pb.h"
 #include "sync/protocol/preference_specifics.pb.h"
+#include "sync/protocol/priority_preference_specifics.pb.h"
 #include "sync/protocol/search_engine_specifics.pb.h"
 #include "sync/protocol/session_specifics.pb.h"
 #include "sync/protocol/sync.pb.h"
@@ -49,7 +52,7 @@ TEST_F(ProtoValueConversionsTest, ProtoChangeCheck) {
   // If this number changes, that means we added or removed a data
   // type.  Don't forget to add a unit test for {New
   // type}SpecificsToValue below.
-  EXPECT_EQ(20, MODEL_TYPE_COUNT);
+  EXPECT_EQ(26, MODEL_TYPE_COUNT);
 
   // We'd also like to check if we changed any field in our messages.
   // However, that's hard to do: sizeof could work, but it's
@@ -124,13 +127,22 @@ TEST_F(ProtoValueConversionsTest, BookmarkSpecificsToValue) {
 
 TEST_F(ProtoValueConversionsTest, BookmarkSpecificsData) {
   const base::Time creation_time(base::Time::Now());
+  const std::string icon_url = "http://www.google.com/favicon.ico";
   sync_pb::BookmarkSpecifics specifics;
   specifics.set_creation_time_us(creation_time.ToInternalValue());
+  specifics.set_icon_url(icon_url);
   scoped_ptr<DictionaryValue> value(BookmarkSpecificsToValue(specifics));
   EXPECT_FALSE(value->empty());
   std::string encoded_time;
   EXPECT_TRUE(value->GetString("creation_time_us", &encoded_time));
   EXPECT_EQ(base::Int64ToString(creation_time.ToInternalValue()), encoded_time);
+  std::string encoded_icon_url;
+  EXPECT_TRUE(value->GetString("icon_url", &encoded_icon_url));
+  EXPECT_EQ(icon_url, encoded_icon_url);
+}
+
+TEST_F(ProtoValueConversionsTest, PriorityPreferenceSpecificsToValue) {
+  TestSpecificsToValue(PriorityPreferenceSpecificsToValue);
 }
 
 TEST_F(ProtoValueConversionsTest, DeviceInfoSpecificsToValue) {
@@ -147,6 +159,14 @@ TEST_F(ProtoValueConversionsTest, ExtensionSettingSpecificsToValue) {
 
 TEST_F(ProtoValueConversionsTest, ExtensionSpecificsToValue) {
   TestSpecificsToValue(ExtensionSpecificsToValue);
+}
+
+TEST_F(ProtoValueConversionsTest, FaviconImageSpecificsToValue) {
+  TestSpecificsToValue(FaviconImageSpecificsToValue);
+}
+
+TEST_F(ProtoValueConversionsTest, FaviconTrackingSpecificsToValue) {
+  TestSpecificsToValue(FaviconTrackingSpecificsToValue);
 }
 
 TEST_F(ProtoValueConversionsTest, HistoryDeleteDirectiveSpecificsToValue) {
@@ -173,12 +193,20 @@ TEST_F(ProtoValueConversionsTest, SessionSpecificsToValue) {
   TestSpecificsToValue(SessionSpecificsToValue);
 }
 
+TEST_F(ProtoValueConversionsTest, SyncedNotificationSpecificsToValue) {
+  TestSpecificsToValue(SyncedNotificationSpecificsToValue);
+}
+
 TEST_F(ProtoValueConversionsTest, ThemeSpecificsToValue) {
   TestSpecificsToValue(ThemeSpecificsToValue);
 }
 
 TEST_F(ProtoValueConversionsTest, TypedUrlSpecificsToValue) {
   TestSpecificsToValue(TypedUrlSpecificsToValue);
+}
+
+TEST_F(ProtoValueConversionsTest, DictionarySpecificsToValue) {
+  TestSpecificsToValue(DictionarySpecificsToValue);
 }
 
 // TODO(akalin): Figure out how to better test EntitySpecificsToValue.
@@ -195,23 +223,29 @@ TEST_F(ProtoValueConversionsTest, EntitySpecificsToValue) {
   SET_FIELD(autofill);
   SET_FIELD(autofill_profile);
   SET_FIELD(bookmark);
+  SET_FIELD(device_info);
+  SET_FIELD(dictionary);
   SET_FIELD(experiments);
   SET_FIELD(extension);
   SET_FIELD(extension_setting);
+  SET_FIELD(favicon_image);
+  SET_FIELD(favicon_tracking);
   SET_FIELD(history_delete_directive);
   SET_FIELD(nigori);
   SET_FIELD(password);
-  SET_FIELD(device_info);
   SET_FIELD(preference);
+  SET_FIELD(priority_preference);
   SET_FIELD(search_engine);
   SET_FIELD(session);
+  SET_FIELD(synced_notification);
   SET_FIELD(theme);
   SET_FIELD(typed_url);
 
 #undef SET_FIELD
 
   scoped_ptr<DictionaryValue> value(EntitySpecificsToValue(specifics));
-  EXPECT_EQ(MODEL_TYPE_COUNT - FIRST_REAL_MODEL_TYPE,
+  EXPECT_EQ(MODEL_TYPE_COUNT - FIRST_REAL_MODEL_TYPE -
+            (LAST_PROXY_TYPE - FIRST_PROXY_TYPE + 1),
             static_cast<int>(value->size()));
 }
 

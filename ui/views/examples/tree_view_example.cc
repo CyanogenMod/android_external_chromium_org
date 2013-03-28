@@ -41,7 +41,6 @@ void TreeViewExample::CreateExampleView(View* container) {
   tree_view_ = new TreeView();
   tree_view_->set_context_menu_controller(this);
   tree_view_->SetRootShown(false);
-  tree_view_->set_lines_at_root(true);
   tree_view_->SetModel(&model_);
   tree_view_->SetController(this);
   add_ = new TextButton(this, ASCIIToUTF16("Add"));
@@ -150,7 +149,7 @@ bool TreeViewExample::GetAcceleratorForCommandId(
   return false;
 }
 
-void TreeViewExample::ExecuteCommand(int command_id) {
+void TreeViewExample::ExecuteCommand(int command_id, int event_flags) {
   NodeType* selected_node =
       static_cast<NodeType*>(tree_view_->GetSelectedNode());
   switch (command_id) {

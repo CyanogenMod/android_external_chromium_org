@@ -9,7 +9,10 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
+#include "ui/base/win/dpi.h"
 #include "ui/gfx/gdi_util.h"
+#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/size_conversions.h"
 #include "ui/surface/transport_dib.h"
 
 namespace content {
@@ -43,29 +46,6 @@ HANDLE CreateDIB(HDC dc, int width, int height, int color_depth) {
                                 0, &data, NULL, 0);
   DCHECK(data);
   return dib;
-}
-
-void CallStretchDIBits(HDC hdc, int dest_x, int dest_y, int dest_w, int dest_h,
-                       int src_x, int src_y, int src_w, int src_h, void* pixels,
-                       const BITMAPINFO* bitmap_info) {
-  // When blitting a rectangle that touches the bottom, left corner of the
-  // bitmap, StretchDIBits looks at it top-down!  For more details, see
-  // http://wiki.allegro.cc/index.php?title=StretchDIBits.
-  int rv;
-  int bitmap_h = -bitmap_info->bmiHeader.biHeight;
-  int bottom_up_src_y = bitmap_h - src_y - src_h;
-  if (bottom_up_src_y == 0 && src_x == 0 && src_h != bitmap_h) {
-    rv = StretchDIBits(hdc,
-                       dest_x, dest_h + dest_y - 1, dest_w, -dest_h,
-                       src_x, bitmap_h - src_y + 1, src_w, -src_h,
-                       pixels, bitmap_info, DIB_RGB_COLORS, SRCCOPY);
-  } else {
-    rv = StretchDIBits(hdc,
-                       dest_x, dest_y, dest_w, dest_h,
-                       src_x, bottom_up_src_y, src_w, src_h,
-                       pixels, bitmap_info, DIB_RGB_COLORS, SRCCOPY);
-  }
-  DCHECK(rv != GDI_ERROR);
 }
 
 }  // namespace
@@ -111,7 +91,9 @@ bool BackingStoreWin::ColorManagementEnabled() {
 }
 
 size_t BackingStoreWin::MemorySize() {
-  return size().GetArea() * (color_depth_ / 8);
+  gfx::Size size_in_pixels = gfx::ToCeiledSize(gfx::ScaleSize(size(),
+      ui::win::GetDeviceScaleFactor()));
+  return size_in_pixels.GetArea() * (color_depth_ / 8);
 }
 
 void BackingStoreWin::PaintToBackingStore(
@@ -123,9 +105,13 @@ void BackingStoreWin::PaintToBackingStore(
     const base::Closure& completion_callback,
     bool* scheduled_completion_callback) {
   *scheduled_completion_callback = false;
+  gfx::Size size_in_pixels = gfx::ToCeiledSize(gfx::ScaleSize(
+    size(), scale_factor));
   if (!backing_store_dib_) {
-    backing_store_dib_ = CreateDIB(hdc_, size().width(),
-                                   size().height(), color_depth_);
+    backing_store_dib_ = CreateDIB(hdc_,
+                                   size_in_pixels.width(),
+                                   size_in_pixels.height(),
+                                   color_depth_);
     if (!backing_store_dib_) {
       NOTREACHED();
       return;
@@ -137,29 +123,39 @@ void BackingStoreWin::PaintToBackingStore(
   if (!dib)
     return;
 
-  BITMAPINFOHEADER hdr;
-  gfx::CreateBitmapHeader(bitmap_rect.width(), bitmap_rect.height(), &hdr);
-  // Account for a bitmap_rect that exceeds the bounds of our view
+  gfx::Rect pixel_bitmap_rect = gfx::ToEnclosingRect(
+      gfx::ScaleRect(bitmap_rect, scale_factor));
+
+  BITMAPINFO bitmap_info;
+  memset(&bitmap_info, 0, sizeof(bitmap_info));
+  gfx::CreateBitmapHeader(pixel_bitmap_rect.width(),
+                          pixel_bitmap_rect.height(),
+                          &bitmap_info.bmiHeader);
+  // Account for a bitmap_rect that exceeds the bounds of our view.
   gfx::Rect view_rect(size());
 
   for (size_t i = 0; i < copy_rects.size(); i++) {
     gfx::Rect paint_rect = gfx::IntersectRects(view_rect, copy_rects[i]);
-    CallStretchDIBits(hdc_,
-                      paint_rect.x(),
-                      paint_rect.y(),
-                      paint_rect.width(),
-                      paint_rect.height(),
-                      paint_rect.x() - bitmap_rect.x(),
-                      paint_rect.y() - bitmap_rect.y(),
-                      paint_rect.width(),
-                      paint_rect.height(),
-                      dib->memory(),
-                      reinterpret_cast<BITMAPINFO*>(&hdr));
+    gfx::Rect pixel_copy_rect = gfx::ToEnclosingRect(
+        gfx::ScaleRect(paint_rect, scale_factor));
+    gfx::Rect target_rect = pixel_copy_rect;
+    gfx::StretchDIBits(hdc_,
+                       target_rect.x(),
+                       target_rect.y(),
+                       target_rect.width(),
+                       target_rect.height(),
+                       pixel_copy_rect.x() - pixel_bitmap_rect.x(),
+                       pixel_copy_rect.y() - pixel_bitmap_rect.y(),
+                       pixel_copy_rect.width(),
+                       pixel_copy_rect.height(),
+                       dib->memory(),
+                       &bitmap_info);
   }
 }
 
 bool BackingStoreWin::CopyFromBackingStore(const gfx::Rect& rect,
                                            skia::PlatformBitmap* output) {
+  // TODO(kevers): Make sure this works with HiDPI backing stores.
   if (!output->Allocate(rect.width(), rect.height(), true))
     return false;
 
@@ -169,14 +165,19 @@ bool BackingStoreWin::CopyFromBackingStore(const gfx::Rect& rect,
   return true;
 }
 
-void BackingStoreWin::ScrollBackingStore(int dx, int dy,
+void BackingStoreWin::ScrollBackingStore(const gfx::Vector2d& delta,
                                          const gfx::Rect& clip_rect,
                                          const gfx::Size& view_size) {
-  RECT damaged_rect, r = clip_rect.ToRECT();
-  ScrollDC(hdc_, dx, dy, NULL, &r, NULL, &damaged_rect);
+  // TODO(darin): this doesn't work if delta x() and y() are both non-zero!
+  DCHECK(delta.x() == 0 || delta.y() == 0);
 
-  // TODO(darin): this doesn't work if dx and dy are both non-zero!
-  DCHECK(dx == 0 || dy == 0);
+  float scale = ui::win::GetDeviceScaleFactor();
+  gfx::Rect screen_rect = gfx::ToEnclosingRect(
+      gfx::ScaleRect(clip_rect, scale));
+  int dx = static_cast<int>(delta.x() * scale);
+  int dy = static_cast<int>(delta.y() * scale);
+  RECT damaged_rect, r = screen_rect.ToRECT();
+  ScrollDC(hdc_, dx, dy, NULL, &r, NULL, &damaged_rect);
 }
 
 }  // namespace content

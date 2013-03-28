@@ -6,7 +6,6 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/api/commands/command_service_factory.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
@@ -19,16 +18,15 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/extension_resource.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/events/event.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/image/image.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
@@ -48,21 +46,21 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
       popup_(NULL),
       ALLOW_THIS_IN_INITIALIZER_LIST(scoped_icon_animation_observer_(
           page_action->GetIconAnimation(
-              SessionID::IdForTab(owner->GetTabContents()->web_contents())),
+              SessionID::IdForTab(owner->GetWebContents())),
           this)) {
   const Extension* extension = owner_->profile()->GetExtensionService()->
       GetExtensionById(page_action->extension_id(), false);
   DCHECK(extension);
 
   icon_factory_.reset(
-      new ExtensionActionIconFactory(extension, page_action, this));
+      new ExtensionActionIconFactory(
+          owner_->profile(), extension, page_action, this));
 
   set_accessibility_focusable(true);
   set_context_menu_controller(this);
 
   extensions::CommandService* command_service =
-      extensions::CommandServiceFactory::GetForProfile(
-          browser_->profile());
+      extensions::CommandService::Get(browser_->profile());
   extensions::Command page_action_command;
   if (command_service->GetPageActionCommand(
           extension->id(),
@@ -112,12 +110,12 @@ PageActionImageView::~PageActionImageView() {
 
 void PageActionImageView::ExecuteAction(
     ExtensionPopup::ShowAction show_action) {
-  TabContents* tab_contents = owner_->GetTabContents();
-  if (!tab_contents)
+  WebContents* web_contents = owner_->GetWebContents();
+  if (!web_contents)
     return;
 
   extensions::TabHelper* extensions_tab_helper =
-      extensions::TabHelper::FromWebContents(tab_contents->web_contents());
+      extensions::TabHelper::FromWebContents(web_contents);
   LocationBarController* controller =
       extensions_tab_helper->location_bar_controller();
 
@@ -241,16 +239,16 @@ void PageActionImageView::InspectPopup(ExtensionAction* action) {
   ExecuteAction(ExtensionPopup::SHOW_AND_INSPECT);
 }
 
-void PageActionImageView::OnWidgetClosing(views::Widget* widget) {
+void PageActionImageView::OnWidgetDestroying(views::Widget* widget) {
   DCHECK_EQ(popup_->GetWidget(), widget);
   popup_->GetWidget()->RemoveObserver(this);
   popup_ = NULL;
 }
 
 void PageActionImageView::OnIconUpdated() {
-  TabContents* tab_contents = owner_->GetTabContents();
-  if (tab_contents)
-    UpdateVisibility(tab_contents->web_contents(), current_url_);
+  WebContents* web_contents = owner_->GetWebContents();
+  if (web_contents)
+    UpdateVisibility(web_contents, current_url_);
 }
 
 void PageActionImageView::OnIconChanged() {
@@ -259,10 +257,8 @@ void PageActionImageView::OnIconChanged() {
 
 void PageActionImageView::PaintChildren(gfx::Canvas* canvas) {
   View::PaintChildren(canvas);
-  if (current_tab_id_ >= 0) {
-    page_action_->PaintBadge(canvas, gfx::Rect(width(), height()),
-                             current_tab_id_);
-  }
+  if (current_tab_id_ >= 0)
+    page_action_->PaintBadge(canvas, GetLocalBounds(), current_tab_id_);
 }
 
 void PageActionImageView::ShowPopupWithURL(

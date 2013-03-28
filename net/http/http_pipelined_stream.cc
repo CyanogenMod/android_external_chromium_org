@@ -27,6 +27,7 @@ HttpPipelinedStream::~HttpPipelinedStream() {
 
 int HttpPipelinedStream::InitializeStream(
     const HttpRequestInfo* request_info,
+    RequestPriority priority,
     const BoundNetLog& net_log,
     const CompletionCallback& callback) {
   request_info_ = request_info;
@@ -35,11 +36,9 @@ int HttpPipelinedStream::InitializeStream(
 }
 
 
-int HttpPipelinedStream::SendRequest(
-    const HttpRequestHeaders& headers,
-    UploadDataStream* request_body,
-    HttpResponseInfo* response,
-    const CompletionCallback& callback) {
+int HttpPipelinedStream::SendRequest(const HttpRequestHeaders& headers,
+                                     HttpResponseInfo* response,
+                                     const CompletionCallback& callback) {
   CHECK(pipeline_id_);
   CHECK(request_info_);
   // TODO(simonjam): Proxy support will be needed here.
@@ -47,8 +46,8 @@ int HttpPipelinedStream::SendRequest(
   std::string request_line_ = base::StringPrintf("%s %s HTTP/1.1\r\n",
                                                  request_info_->method.c_str(),
                                                  path.c_str());
-  return pipeline_->SendRequest(pipeline_id_, request_line_, headers,
-                                request_body, response, callback);
+  return pipeline_->SendRequest(pipeline_id_, request_line_, headers, response,
+                                callback);
 }
 
 UploadProgress HttpPipelinedStream::GetUploadProgress() const {
@@ -88,10 +87,6 @@ bool HttpPipelinedStream::CanFindEndOfResponse() const {
   return pipeline_->CanFindEndOfResponse(pipeline_id_);
 }
 
-bool HttpPipelinedStream::IsMoreDataBuffered() const {
-  return pipeline_->IsMoreDataBuffered(pipeline_id_);
-}
-
 bool HttpPipelinedStream::IsConnectionReused() const {
   return pipeline_->IsConnectionReused(pipeline_id_);
 }
@@ -102,6 +97,11 @@ void HttpPipelinedStream::SetConnectionReused() {
 
 bool HttpPipelinedStream::IsConnectionReusable() const {
   return pipeline_->usable();
+}
+
+bool HttpPipelinedStream::GetLoadTimingInfo(
+    LoadTimingInfo* load_timing_info) const {
+  return pipeline_->GetLoadTimingInfo(pipeline_id_, load_timing_info);
 }
 
 void HttpPipelinedStream::GetSSLInfo(SSLInfo* ssl_info) {

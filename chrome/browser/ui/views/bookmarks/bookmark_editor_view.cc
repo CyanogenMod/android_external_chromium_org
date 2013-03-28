@@ -8,26 +8,25 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/net/url_fixer_upper.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
-#include "chrome/common/pref_names.h"
+#include "components/user_prefs/user_prefs.h"
 #include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
-#include "net/base/net_util.h"
 #include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/background.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
@@ -45,9 +44,6 @@ namespace {
 
 // Background color of text field when URL is invalid.
 const SkColor kErrorColor = SkColorSetRGB(0xFF, 0xBC, 0xBC);
-
-// Preferred width of the tree.
-const int kTreeWidth = 300;
 
 }  // namespace
 
@@ -94,7 +90,7 @@ string16 BookmarkEditorView::GetDialogButtonLabel(
     ui::DialogButton button) const {
   if (button == ui::DIALOG_BUTTON_OK)
     return l10n_util::GetStringUTF16(IDS_SAVE);
-  return string16();
+  return views::DialogDelegateView::GetDialogButtonLabel(button);
 }
 
 bool BookmarkEditorView::IsDialogButtonEnabled(ui::DialogButton button) const {
@@ -106,6 +102,10 @@ bool BookmarkEditorView::IsDialogButtonEnabled(ui::DialogButton button) const {
       return GetInputURL().is_valid();
   }
   return true;
+}
+
+views::View* BookmarkEditorView::CreateExtraView() {
+  return new_folder_button_.get();
 }
 
 ui::ModalType BookmarkEditorView::GetModalType() const {
@@ -134,31 +134,6 @@ bool BookmarkEditorView::Accept() {
   return true;
 }
 
-bool BookmarkEditorView::AreAcceleratorsEnabled(ui::DialogButton button) {
-  return !show_tree_ || !tree_view_->GetEditingNode();
-}
-
-views::View* BookmarkEditorView::GetContentsView() {
-  return this;
-}
-
-void BookmarkEditorView::Layout() {
-  // Let the grid layout manager lay out most of the dialog...
-  GetLayoutManager()->Layout(this);
-
-  if (!show_tree_)
-    return;
-
-  // Manually lay out the New Folder button in the same row as the OK/Cancel
-  // buttons...
-  gfx::Rect parent_bounds = parent()->GetContentsBounds();
-  gfx::Size prefsize = new_folder_button_->GetPreferredSize();
-  int button_y =
-      parent_bounds.bottom() - prefsize.height() - views::kButtonVEdgeMargin;
-  new_folder_button_->SetBounds(
-      views::kPanelHorizMargin, button_y, prefsize.width(), prefsize.height());
-}
-
 gfx::Size BookmarkEditorView::GetPreferredSize() {
   if (!show_tree_)
     return views::View::GetPreferredSize();
@@ -166,19 +141,6 @@ gfx::Size BookmarkEditorView::GetPreferredSize() {
   return gfx::Size(views::Widget::GetLocalizedContentsSize(
       IDS_EDITBOOKMARK_DIALOG_WIDTH_CHARS,
       IDS_EDITBOOKMARK_DIALOG_HEIGHT_LINES));
-}
-
-void BookmarkEditorView::ViewHierarchyChanged(bool is_add,
-                                              views::View* parent,
-                                              views::View* child) {
-  if (show_tree_ && child == this) {
-    // Add and remove the New Folder button from the ClientView's hierarchy.
-    if (is_add) {
-      parent->AddChildView(new_folder_button_.get());
-    } else {
-      parent->RemoveChildView(new_folder_button_.get());
-    }
-  }
 }
 
 void BookmarkEditorView::OnTreeViewSelectionChanged(
@@ -231,7 +193,7 @@ bool BookmarkEditorView::GetAcceleratorForCommandId(
   return GetWidget()->GetAccelerator(command_id, accelerator);
 }
 
-void BookmarkEditorView::ExecuteCommand(int command_id) {
+void BookmarkEditorView::ExecuteCommand(int command_id, int event_flags) {
   DCHECK(tree_view_->GetSelectedNode());
   if (command_id == IDS_EDIT) {
     tree_view_->StartEditing(tree_view_->GetSelectedNode());
@@ -256,8 +218,8 @@ void BookmarkEditorView::ExecuteCommand(int command_id) {
   }
 }
 
-void BookmarkEditorView::Show(gfx::NativeWindow parent_window) {
-  views::Widget::CreateWindowWithParent(this, parent_window);
+void BookmarkEditorView::Show(gfx::NativeWindow parent) {
+  views::DialogDelegateView::CreateDialogWidget(this, NULL, parent);
   UserInputChanged();
   if (show_tree_ && bb_model_->IsLoaded())
     ExpandAndSelect();
@@ -319,17 +281,18 @@ void BookmarkEditorView::Init() {
   if (show_tree_) {
     tree_view_ = new views::TreeView;
     tree_view_->SetRootShown(false);
-    tree_view_->set_lines_at_root(true);
     tree_view_->set_context_menu_controller(this);
 
-    new_folder_button_.reset(new views::NativeTextButton(this,
+    new_folder_button_.reset(new views::LabelButton(this,
         l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_NEW_FOLDER_BUTTON)));
+    new_folder_button_->SetStyle(views::Button::STYLE_NATIVE_TEXTBUTTON);
     new_folder_button_->set_owned_by_client();
     new_folder_button_->SetEnabled(false);
   }
 
-  // Yummy layout code.
   GridLayout* layout = GridLayout::CreatePanel(this);
+  if (views::DialogDelegate::UseNewStyle())
+    layout->SetInsets(gfx::Insets());
   SetLayoutManager(layout);
 
   const int labels_column_set_id = 0;
@@ -344,8 +307,13 @@ void BookmarkEditorView::Init() {
                         GridLayout::USE_PREF, 0, 0);
 
   column_set = layout->AddColumnSet(single_column_view_set_id);
-  column_set->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
-                        GridLayout::FIXED, kTreeWidth, 0);
+  if (views::DialogDelegate::UseNewStyle()) {
+    column_set->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
+                          GridLayout::USE_PREF, 0, 0);
+  } else {
+    column_set->AddColumn(GridLayout::FILL, GridLayout::FILL, 1,
+                          GridLayout::FIXED, 300, 0);
+  }
 
   column_set = layout->AddColumnSet(buttons_column_set_id);
   column_set->AddColumn(GridLayout::FILL, GridLayout::LEADING, 0,
@@ -359,26 +327,18 @@ void BookmarkEditorView::Init() {
   column_set->LinkColumnSizes(0, 2, 4, -1);
 
   layout->StartRow(0, labels_column_set_id);
-
   layout->AddView(title_label_);
   layout->AddView(title_tf_);
 
   if (details_.GetNodeType() != BookmarkNode::FOLDER) {
     url_label_ = new views::Label(
-      l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_URL_LABEL));
-
-    std::string languages =
-        profile_ ? profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)
-                 : std::string();
-    // Because this gets parsed by FixupURL(), it's safe to omit the scheme or
-    // trailing slash, and unescape most characters, but we need to not drop any
-    // username/password, or unescape anything that changes the meaning.
-    string16 url_text = net::FormatUrl(url, languages,
-        net::kFormatUrlOmitAll & ~net::kFormatUrlOmitUsernamePassword,
-        net::UnescapeRule::SPACES, NULL, NULL, NULL);
+        l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_URL_LABEL));
 
     url_tf_ = new views::Textfield;
-    url_tf_->SetText(url_text);
+    PrefService* prefs = profile_ ?
+        components::UserPrefs::Get(profile_) :
+        NULL;
+    url_tf_->SetText(chrome::FormatBookmarkURLForDisplay(url, prefs));
     url_tf_->SetController(this);
     url_tf_->SetAccessibleName(url_label_->text());
 

@@ -10,7 +10,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/string16.h"
 #include "base/version.h"
 #include "chrome/installer/util/util_constants.h"
@@ -18,10 +18,6 @@
 #if defined(OS_WIN)
 #include <windows.h>  // NOLINT
 #endif
-
-namespace installer {
-class Product;
-}
 
 class BrowserDistribution {
  public:
@@ -33,28 +29,6 @@ class BrowserDistribution {
     NUM_TYPES
   };
 
-  // Flags to control what to show in the UserExperiment dialog.
-  enum ToastUIflags {
-    kUninstall          = 1,    // Uninstall radio button.
-    kDontBugMeAsButton  = 2,    // Don't bug me is a button, not a radio button.
-    kWhyLink            = 4,    // Has the 'why I am seeing this' link.
-    kMakeDefault        = 8     // Has the 'make it default' checkbox.
-  };
-
-  // A struct for communicating what a UserExperiment contains. In these
-  // experiments we show toasts to the user if they are inactive for a certain
-  // amount of time.
-  struct UserExperiment {
-    string16 prefix;      // The experiment code prefix for this experiment,
-                          // also known as the 'TV' part in 'TV80'.
-    int flavor;           // The flavor index for this experiment.
-    int heading;          // The heading resource ID to use for this experiment.
-    int flags;            // See ToastUIFlags above.
-    int control_group;    // Size of the control group (in percentages). Control
-                          // group is the group that qualifies for the
-                          // experiment but does not participate.
-  };
-
   virtual ~BrowserDistribution() {}
 
   static BrowserDistribution* GetDistribution();
@@ -64,8 +38,11 @@ class BrowserDistribution {
   Type GetType() const { return type_; }
 
   virtual void DoPostUninstallOperations(const Version& version,
-                                         const FilePath& local_data_path,
+                                         const base::FilePath& local_data_path,
                                          const string16& distribution_data);
+
+  // Returns the GUID to be used when registering for Active Setup.
+  virtual string16 GetActiveSetupGuid();
 
   virtual string16 GetAppGuid();
 
@@ -121,40 +98,32 @@ class BrowserDistribution {
 
   virtual bool CanCreateDesktopShortcuts();
 
+  // Returns the executable filename (not path) that contains the product icon.
+  virtual string16 GetIconFilename();
+
+  // Returns the index of the icon for the product, inside the file specified by
+  // GetIconFilename().
   virtual int GetIconIndex();
 
   virtual bool GetChromeChannel(string16* channel);
 
-  // Returns true if the distribution includes a DelegateExecute verb handler,
+  // Returns true if this distribution includes a DelegateExecute verb handler,
   // and provides the CommandExecuteImpl class UUID if |handler_class_uuid| is
   // non-NULL.
   virtual bool GetCommandExecuteImplClsid(string16* handler_class_uuid);
+
+  // Returns true if this distribution uses app_host.exe to run platform apps.
+  virtual bool AppHostIsSupported();
 
   virtual void UpdateInstallStatus(bool system_install,
       installer::ArchiveType archive_type,
       installer::InstallStatus install_status);
 
-  // Gets the experiment details for a given language-brand combo. If |flavor|
-  // is -1, then a flavor will be selected at random. |experiment| is the struct
-  // you want to write the experiment information to. Returns false if no
-  // experiment details could be gathered.
-  virtual bool GetExperimentDetails(UserExperiment* experiment, int flavor);
+  // Returns true if this distribution should set the Omaha experiment_labels
+  // registry value.
+  virtual bool ShouldSetExperimentLabels();
 
-  // After an install or upgrade the user might qualify to participate in an
-  // experiment. This function determines if the user qualifies and if so it
-  // sets the wheels in motion or in simple cases does the experiment itself.
-  virtual void LaunchUserExperiment(const FilePath& setup_path,
-                                    installer::InstallStatus status,
-                                    const Version& version,
-                                    const installer::Product& product,
-                                    bool system_level);
-
-  // The user has qualified for the inactive user toast experiment and this
-  // function just performs it.
-  virtual void InactiveUserToastExperiment(int flavor,
-      const string16& experiment_group,
-      const installer::Product& installation,
-      const FilePath& application_path);
+  virtual bool HasUserExperiments();
 
  protected:
   explicit BrowserDistribution(Type type);

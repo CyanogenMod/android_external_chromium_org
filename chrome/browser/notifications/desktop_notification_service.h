@@ -5,11 +5,13 @@
 #ifndef CHROME_BROWSER_NOTIFICATIONS_DESKTOP_NOTIFICATION_SERVICE_H_
 #define CHROME_BROWSER_NOTIFICATIONS_DESKTOP_NOTIFICATION_SERVICE_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/prefs/pref_member.h"
 #include "base/string16.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
@@ -24,6 +26,7 @@ class ContentSettingsPattern;
 class Notification;
 class NotificationDelegate;
 class NotificationUIManager;
+class PrefRegistrySyncable;
 class Profile;
 
 namespace content {
@@ -32,18 +35,20 @@ struct ShowDesktopNotificationHostMsgParams;
 }
 
 namespace gfx {
-class ImageSkia;
+class Image;
 }
 
 // The DesktopNotificationService is an object, owned by the Profile,
 // which provides the creation of desktop "toasts" to web pages and workers.
-class DesktopNotificationService : public content::NotificationObserver,
-                                   public ProfileKeyedService {
+class DesktopNotificationService : public ProfileKeyedService {
  public:
   enum DesktopNotificationSource {
     PageNotification,
     WorkerNotification
   };
+
+  // Register profile-specific prefs of notifications.
+  static void RegisterUserPrefs(PrefRegistrySyncable* prefs);
 
   DesktopNotificationService(Profile* profile,
                              NotificationUIManager* ui_manager);
@@ -77,11 +82,6 @@ class DesktopNotificationService : public content::NotificationObserver,
   void GrantPermission(const GURL& origin);
   void DenyPermission(const GURL& origin);
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   // Creates a data:xxxx URL which contains the full HTML for a notification
   // using supplied icon, title, and text, run through a template which contains
   // the standard formatting for notifications.
@@ -99,6 +99,8 @@ class DesktopNotificationService : public content::NotificationObserver,
   // Add a desktop notification. On non-Ash platforms this will generate a HTML
   // notification from the input parameters. On Ash it will generate a normal
   // ash notification. Returns the notification id.
+  // TODO(mukai): remove these methods. HTML notifications are no longer
+  // supported.
   static std::string AddNotification(const GURL& origin_url,
                                      const string16& title,
                                      const string16& message,
@@ -107,11 +109,11 @@ class DesktopNotificationService : public content::NotificationObserver,
                                      NotificationDelegate* delegate,
                                      Profile* profile);
 
-  // Same as above, but takes a gfx::ImageSkia for the icon instead.
+  // Same as above, but takes a gfx::Image for the icon instead.
   static std::string AddIconNotification(const GURL& origin_url,
                                          const string16& title,
                                          const string16& message,
-                                         const gfx::ImageSkia& icon,
+                                         const gfx::Image& icon,
                                          const string16& replace_id,
                                          NotificationDelegate* delegate,
                                          Profile* profile);
@@ -145,10 +147,14 @@ class DesktopNotificationService : public content::NotificationObserver,
   WebKit::WebNotificationPresenter::Permission
       HasPermission(const GURL& origin);
 
- private:
-  void StartObserving();
-  void StopObserving();
+  // Returns true if the extension of the specified |id| is allowed to send
+  // notifications.
+  bool IsExtensionEnabled(const std::string& id);
 
+  // Updates the availability of the extension to send notifications.
+  void SetExtensionEnabled(const std::string& id, bool enabled);
+
+ private:
   // Takes a notification object and shows it in the UI.
   void ShowNotification(const Notification& notification);
 
@@ -162,6 +168,9 @@ class DesktopNotificationService : public content::NotificationObserver,
 
   NotificationUIManager* GetUIManager();
 
+  // Called when the disabled_extension_id pref has been changed.
+  void OnDisabledExtensionIdsChanged();
+
   // The profile which owns this object.
   Profile* profile_;
 
@@ -169,7 +178,11 @@ class DesktopNotificationService : public content::NotificationObserver,
   // UI for desktop toasts.
   NotificationUIManager* ui_manager_;
 
-  content::NotificationRegistrar notification_registrar_;
+  // Prefs listener for disabled_extension_id.
+  StringListPrefMember disabled_extension_id_pref_;
+
+  // On-memory data for the availability of extensions.
+  std::set<std::string> disabled_extension_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopNotificationService);
 };

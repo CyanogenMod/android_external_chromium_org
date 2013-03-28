@@ -9,7 +9,6 @@
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "sql/connection.h"
-#include "sql/diagnostic_error_delegate.h"
 #include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
@@ -138,15 +137,6 @@ const IndexInfo kIndexes[] = {
 const int kTableCount = ARRAYSIZE_UNSAFE(kTables);
 const int kIndexCount = ARRAYSIZE_UNSAFE(kIndexes);
 
-class HistogramUniquifier {
- public:
-  static const char* name() { return "Sqlite.AppCache.Error"; }
-};
-
-sql::ErrorDelegate* GetErrorHandlerForAppCacheDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier>();
-}
-
 bool CreateTable(sql::Connection* db, const TableInfo& info) {
   std::string sql("CREATE TABLE ");
   sql += info.table_name;
@@ -187,7 +177,7 @@ AppCacheDatabase::NamespaceRecord::~NamespaceRecord() {
 }
 
 
-AppCacheDatabase::AppCacheDatabase(const FilePath& path)
+AppCacheDatabase::AppCacheDatabase(const base::FilePath& path)
     : db_file_path_(path), is_disabled_(false), is_recreating_(false) {
 }
 
@@ -972,7 +962,7 @@ bool AppCacheDatabase::LazyOpen(bool create_if_needed) {
   db_.reset(new sql::Connection);
   meta_table_.reset(new sql::MetaTable);
 
-  db_->set_error_delegate(GetErrorHandlerForAppCacheDb());
+  db_->set_error_histogram_name("Sqlite.AppCache.Error");
 
   bool opened = false;
   if (use_in_memory_db) {
@@ -1113,7 +1103,7 @@ bool AppCacheDatabase::DeleteExistingAndCreateNewDatabase() {
   ResetConnectionAndTables();
 
   // This also deletes the disk cache data.
-  FilePath directory = db_file_path_.DirName();
+  base::FilePath directory = db_file_path_.DirName();
   if (!file_util::Delete(directory, true) ||
       !file_util::CreateDirectory(directory)) {
     return false;
@@ -1127,7 +1117,7 @@ bool AppCacheDatabase::DeleteExistingAndCreateNewDatabase() {
   if (is_recreating_)
     return false;
 
-  AutoReset<bool> auto_reset(&is_recreating_, true);
+  base::AutoReset<bool> auto_reset(&is_recreating_, true);
   return LazyOpen(true);
 }
 

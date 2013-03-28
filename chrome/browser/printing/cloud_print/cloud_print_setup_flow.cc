@@ -6,10 +6,10 @@
 
 #include "base/json/json_writer.h"
 #include "base/memory/singleton.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_setup_message_handler.h"
@@ -21,11 +21,11 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/service_messages.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
@@ -62,7 +62,8 @@ CloudPrintSetupFlow* CloudPrintSetupFlow::OpenDialog(
     const base::WeakPtr<Delegate>& delegate,
     gfx::NativeWindow parent_window) {
   DCHECK(profile);
-  Browser* browser = chrome::FindLastActiveWithProfile(profile);
+  Browser* browser = chrome::FindLastActiveWithProfile(profile,
+      chrome::GetActiveDesktop());
   // Set the arguments for showing the gaia login page.
   DictionaryValue args;
   args.SetString("user", "");
@@ -97,14 +98,13 @@ CloudPrintSetupFlow::CloudPrintSetupFlow(
     bool setup_done)
     : web_ui_(NULL),
       dialog_start_args_(args),
-      last_auth_error_(GoogleServiceAuthError::None()),
+      last_auth_error_(GoogleServiceAuthError::AuthErrorNone()),
       setup_done_(setup_done),
       process_control_(NULL),
       delegate_(delegate) {
   // TODO(hclam): The data source should be added once.
   profile_ = profile;
-  ChromeURLDataManager::AddDataSource(profile,
-      new CloudPrintSetupSource());
+  content::URLDataSource::Add(profile, new CloudPrintSetupSource());
 }
 
 CloudPrintSetupFlow::~CloudPrintSetupFlow() {

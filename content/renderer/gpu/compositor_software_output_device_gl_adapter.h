@@ -5,52 +5,35 @@
 #ifndef CONTENT_RENDERER_GPU_COMPOSITOR_SOFTWARE_OUTPUT_DEVICE_GL_ADAPTER_H_
 #define CONTENT_RENDERER_GPU_COMPOSITOR_SOFTWARE_OUTPUT_DEVICE_GL_ADAPTER_H_
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/ref_counted.h"
 #include "base/threading/non_thread_safe.h"
-#include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebImage.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCompositorSoftwareOutputDevice.h"
+#include "cc/output/software_output_device.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
-#include "ui/gfx/size.h"
 
 namespace content {
 
 // This class can be created only on the main thread, but then becomes pinned
 // to a fixed thread when bindToClient is called.
 class CompositorSoftwareOutputDeviceGLAdapter
-    : NON_EXPORTED_BASE(public WebKit::WebCompositorSoftwareOutputDevice),
+    : NON_EXPORTED_BASE(public cc::SoftwareOutputDevice),
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
-public:
+ public:
   CompositorSoftwareOutputDeviceGLAdapter(
       WebKit::WebGraphicsContext3D* context3d);
   virtual ~CompositorSoftwareOutputDeviceGLAdapter();
 
-  virtual WebKit::WebImage* lock(bool forWrite) OVERRIDE;
-  virtual void unlock() OVERRIDE;
+  virtual void Resize(gfx::Size size) OVERRIDE;
+  virtual void EndPaint(cc::SoftwareFrameData* frame_data) OVERRIDE;
 
-  virtual void didChangeViewportSize(WebKit::WebSize size) OVERRIDE;
+ private:
+  void InitShaders();
 
-private:
-  void Initialize();
-  void Destroy();
-  void Resize(const gfx::Size& viewportSize);
-  void Draw(void* pixels);
-
-  bool initialized_;
-  int program_;
-  int vertex_shader_;
-  int fragment_shader_;
-  unsigned int vertex_buffer_;
-  unsigned framebuffer_texture_id_;
-  gfx::Size framebuffer_texture_size_;
-
+  unsigned program_;
+  unsigned vertex_shader_;
+  unsigned fragment_shader_;
+  unsigned vertex_buffer_;
+  unsigned texture_id_;
   scoped_ptr<WebKit::WebGraphicsContext3D> context3d_;
-  scoped_ptr<SkDevice> device_;
-  WebKit::WebImage image_;
-  bool locked_for_write_;
 };
 
 }  // namespace content

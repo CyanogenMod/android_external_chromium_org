@@ -14,7 +14,7 @@
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/time.h"
 
 namespace base {
@@ -77,6 +77,8 @@ enum PlatformFileError {
   PLATFORM_FILE_ERROR_NOT_A_FILE = -13,
   PLATFORM_FILE_ERROR_NOT_EMPTY = -14,
   PLATFORM_FILE_ERROR_INVALID_URL = -15,
+  // Put new entries here and increment PLATFORM_FILE_ERROR_MAX.
+  PLATFORM_FILE_ERROR_MAX = -16
 };
 
 // This explicit mapping matches both FILE_ on Windows and SEEK_ on Linux.
@@ -117,11 +119,23 @@ struct BASE_EXPORT PlatformFileInfo {
 // Creates or opens the given file. If |created| is provided, it will be set to
 // true if a new file was created [or an old one truncated to zero length to
 // simulate a new file, which can happen with PLATFORM_FILE_CREATE_ALWAYS], and
-// false otherwise.  |error_code| can be NULL.
+// false otherwise.  |error| can be NULL.
+//
+// This function fails with 'access denied' if the |name| contains path
+// traversal ('..') components.
 BASE_EXPORT PlatformFile CreatePlatformFile(const FilePath& name,
                                             int flags,
                                             bool* created,
-                                            PlatformFileError* error_code);
+                                            PlatformFileError* error);
+
+// Same as CreatePlatformFile but allows paths with traversal (like \..\)
+// components. Use only with extreme care.
+BASE_EXPORT PlatformFile CreatePlatformFileUnsafe(const FilePath& name,
+                                                  int flags,
+                                                  bool* created,
+                                                  PlatformFileError* error);
+
+BASE_EXPORT FILE* FdopenPlatformFile(PlatformFile file, const char* mode);
 
 // Closes a file handle. Returns |true| on success and |false| otherwise.
 BASE_EXPORT bool ClosePlatformFile(PlatformFile file);

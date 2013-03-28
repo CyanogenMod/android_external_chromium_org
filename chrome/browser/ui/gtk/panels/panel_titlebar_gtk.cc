@@ -5,8 +5,8 @@
 #include "chrome/browser/ui/gtk/panels/panel_titlebar_gtk.h"
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
-#include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/panels/panel_gtk.h"
 #include "chrome/browser/ui/panels/panel.h"
@@ -22,10 +22,16 @@
 namespace {
 
 // Padding around the titlebar.
-const int kPanelTitlebarPaddingTop = 7;
-const int kPanelTitlebarPaddingBottom = 7;
-const int kPanelTitlebarPaddingLeft = 4;
-const int kPanelTitlebarPaddingRight = 8;
+const int kPanelTitlebarPaddingTop = 4;
+const int kPanelTitlebarPaddingBottom = 8;
+const int kPanelTitlebarPaddingLeft = 6;
+const int kPanelTitlebarPaddingRight = 0;
+
+// Padding around the box containing icon and title.
+const int kPanelIconTitlePaddingTop = 3;
+const int kPanelIconTitlePaddingBottom = 0;
+const int kPanelIconTitlePaddingLeft = 0;
+const int kPanelIconTitlePaddingRight = 0;
 
 // Spacing between buttons of panel's titlebar.
 const int kPanelButtonSpacing = 5;
@@ -37,7 +43,8 @@ const int kPanelIconTitleSpacing = 9;
 const SkColor kTitleTextDefaultColor = SkColorSetRGB(0xf9, 0xf9, 0xf9);
 
 // Markup used to paint the title with the desired font.
-const char* const kTitleMarkupPrefix = "<span face='Arial' size='11264'>";
+const char* const kTitleMarkupPrefix =
+    "<span face='Arial' weight='bold' size='11264'>";
 const char* const kTitleMarkupSuffix = "</span>";
 
 }  // namespace
@@ -48,8 +55,7 @@ PanelTitlebarGtk::PanelTitlebarGtk(PanelGtk* panel_gtk)
       titlebar_right_buttons_vbox_(NULL),
       titlebar_right_buttons_hbox_(NULL),
       icon_(NULL),
-      title_(NULL),
-      theme_service_(GtkThemeService::GetFrom(panel_gtk_->panel()->profile())) {
+      title_(NULL) {
 }
 
 PanelTitlebarGtk::~PanelTitlebarGtk() {
@@ -80,9 +86,18 @@ void PanelTitlebarGtk::Init() {
                    FALSE, FALSE, 0);
   BuildButtons();
 
+  // Add an extra alignment to control the paddings for icon and title.
+  GtkWidget* icon_title_alignment = gtk_alignment_new(0.0, 0.0, 1.0, 1.0);
+  gtk_container_add(GTK_CONTAINER(container_hbox), icon_title_alignment);
+  gtk_alignment_set_padding(GTK_ALIGNMENT(icon_title_alignment),
+                            kPanelIconTitlePaddingTop,
+                            kPanelIconTitlePaddingBottom,
+                            kPanelIconTitlePaddingLeft,
+                            kPanelIconTitlePaddingRight);
+
   // Add hbox for holding icon and title.
   GtkWidget* icon_title_hbox = gtk_hbox_new(FALSE, kPanelIconTitleSpacing);
-  gtk_box_pack_start(GTK_BOX(container_hbox), icon_title_hbox, TRUE, TRUE, 0);
+  gtk_container_add(GTK_CONTAINER(icon_title_alignment), icon_title_hbox);
 
   // Add icon. We use the app logo as a placeholder image so the title doesn't
   // jump around.
@@ -105,12 +120,7 @@ void PanelTitlebarGtk::Init() {
 }
 
 SkColor PanelTitlebarGtk::GetTextColor() const {
-  if (panel_gtk_->UsingDefaultTheme())
-    return kTitleTextDefaultColor;
-  return theme_service_->GetColor(panel_gtk_->paint_state() ==
-      PanelGtk::PAINT_AS_ACTIVE ?
-          ThemeService::COLOR_TAB_TEXT :
-          ThemeService::COLOR_BACKGROUND_TAB_TEXT);
+  return kTitleTextDefaultColor;
 }
 
 void PanelTitlebarGtk::BuildButtons() {
@@ -139,6 +149,9 @@ CustomDrawButton* PanelTitlebarGtk::CreateButton(
                                                   pressed_image_id,
                                                   hover_image_id,
                                                   0);
+  gtk_widget_set_size_request(button->widget(),
+                              panel::kPanelButtonSize,
+                              panel::kPanelButtonSize);
   gtk_widget_add_events(GTK_WIDGET(button->widget()), GDK_POINTER_MOTION_MASK);
   g_signal_connect(button->widget(), "clicked",
                    G_CALLBACK(OnButtonClickedThunk), this);
@@ -241,8 +254,10 @@ void PanelTitlebarGtk::UpdateTextColor() {
 
 void PanelTitlebarGtk::UpdateMinimizeRestoreButtonVisibility() {
   Panel* panel = panel_gtk_->panel();
-  gtk_widget_set_visible(minimize_button_->widget(), panel->CanMinimize());
-  gtk_widget_set_visible(restore_button_->widget(), panel->CanRestore());
+  gtk_widget_set_visible(minimize_button_->widget(),
+                         panel->CanShowMinimizeButton());
+  gtk_widget_set_visible(restore_button_->widget(),
+                         panel->CanShowRestoreButton());
 }
 
 void PanelTitlebarGtk::OnButtonClicked(GtkWidget* button) {
@@ -263,6 +278,7 @@ void PanelTitlebarGtk::OnButtonClicked(GtkWidget* button) {
     panel->OnRestoreButtonClicked(
         (event->button.state & GDK_CONTROL_MASK) ?
             panel::APPLY_TO_ALL : panel::NO_MODIFIER);
+    panel->Activate();
   }
 
   gdk_event_free(event);

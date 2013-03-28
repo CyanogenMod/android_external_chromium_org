@@ -5,7 +5,6 @@
 #ifndef DEVICE_BLUETOOTH_BLUETOOTH_ADAPTER_CHROMEOS_H_
 #define DEVICE_BLUETOOTH_BLUETOOTH_ADAPTER_CHROMEOS_H_
 
-#include <map>
 #include <string>
 #include <vector>
 
@@ -28,11 +27,11 @@ struct BluetoothOutOfBandPairingData;
 
 namespace chromeos {
 
-class BluetoothDeviceChromeOs;
+class BluetoothDeviceChromeOS;
 
-// The BluetoothAdapterChromeOs class is an implementation of BluetoothAdapter
+// The BluetoothAdapterChromeOS class is an implementation of BluetoothAdapter
 // for Chrome OS platform.
-class BluetoothAdapterChromeOs
+class BluetoothAdapterChromeOS
     : public device::BluetoothAdapter,
       public BluetoothManagerClient::Observer,
       public BluetoothAdapterClient::Observer,
@@ -43,6 +42,7 @@ class BluetoothAdapterChromeOs
       device::BluetoothAdapter::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(
       device::BluetoothAdapter::Observer* observer) OVERRIDE;
+  virtual bool IsInitialized() const OVERRIDE;
   virtual bool IsPresent() const OVERRIDE;
   virtual bool IsPowered() const OVERRIDE;
   virtual void SetPowered(
@@ -50,39 +50,33 @@ class BluetoothAdapterChromeOs
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual bool IsDiscovering() const OVERRIDE;
-  virtual void SetDiscovering(
-      bool discovering,
+  virtual bool IsScanning() const OVERRIDE;
+  virtual void StartDiscovering(
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
-  virtual ConstDeviceList GetDevices() const OVERRIDE;
-  virtual device::BluetoothDevice* GetDevice(
-      const std::string& address) OVERRIDE;
-  virtual const device::BluetoothDevice* GetDevice(
-      const std::string& address) const OVERRIDE;
+  virtual void StopDiscovering(
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
   virtual void ReadLocalOutOfBandPairingData(
       const device::BluetoothAdapter::BluetoothOutOfBandPairingDataCallback&
           callback,
       const ErrorCallback& error_callback) OVERRIDE;
 
  private:
-  friend class BluetoothDeviceChromeOs;
+  friend class BluetoothDeviceChromeOS;
   friend class device::BluetoothAdapterFactory;
   friend class device::MockBluetoothAdapter;
 
-  BluetoothAdapterChromeOs();
-  virtual ~BluetoothAdapterChromeOs();
+  BluetoothAdapterChromeOS();
+  virtual ~BluetoothAdapterChromeOS();
 
   // Obtains the default adapter object path from the Bluetooth Daemon
   // and tracks future changes to it.
   void TrackDefaultAdapter();
 
-  // Obtains the object paht for the adapter named by |address| from the
-  // Bluetooth Daemon.
-  void FindAdapter(const std::string& address);
-
-  // Called by dbus:: in response to the method call sent by both
-  // DefaultAdapter() and FindAdapter(), |object_path| will contain the
-  // dbus object path of the requested adapter when |success| is true.
+  // Called by dbus:: in response to the method call sent by DefaultAdapter().
+  // |object_path| will contain the dbus object path of the requested adapter
+  // when |success| is true.
   void AdapterCallback(const dbus::ObjectPath& adapter_path, bool success);
 
   // BluetoothManagerClient::Observer override.
@@ -118,19 +112,23 @@ class BluetoothAdapterChromeOs
   // and directly using values obtained from properties.
   void PoweredChanged(bool powered);
 
-  // Called by dbus:: in response to the method calls send by SetDiscovering().
-  // |callback| and |error_callback| are the callbacks passed to
-  // SetDiscovering().
+  // Called by BluetoothAdapterClient in response to the method call sent
+  // by StartDiscovering(), |callback| and |error_callback| are the callbacks
+  // provided to that method.
   void OnStartDiscovery(const base::Closure& callback,
                         const ErrorCallback& error_callback,
                         const dbus::ObjectPath& adapter_path,
                         bool success);
+
+  // Called by BluetoothAdapterClient in response to the method call sent
+  // by StopDiscovering(), |callback| and |error_callback| are the callbacks
+  // provided to that method.
   void OnStopDiscovery(const base::Closure& callback,
                        const ErrorCallback& error_callback,
                        const dbus::ObjectPath& adapter_path,
                        bool success);
 
-  // Updates the tracked state of the adapter's discovering state to
+  // Updates the tracked state of the adapter's scanning state to
   // |discovering| and notifies observers. Called on receipt of a property
   // changed signal, and directly using values obtained from properties.
   void DiscoveringChanged(bool discovering);
@@ -224,20 +222,17 @@ class BluetoothAdapterChromeOs
   // Tracked adapter state, cached locally so we only send change notifications
   // to observers on a genuine change.
   bool powered_;
-  bool discovering_;
+  bool scanning_;
 
-  // Devices paired with, connected to, discovered by, or visible to the
-  // adapter. The key is the Bluetooth address of the device and the value
-  // is the BluetoothDeviceChromeOs object whose lifetime is managed by the
-  // adapter instance.
-  typedef std::map<const std::string, BluetoothDeviceChromeOs*> DevicesMap;
-  DevicesMap devices_;
+  // Count of callers to StartDiscovering() and StopDiscovering(), used to
+  // provide the IsDiscovering() status.
+  int discovering_count_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
-  base::WeakPtrFactory<BluetoothAdapterChromeOs> weak_ptr_factory_;
+  base::WeakPtrFactory<BluetoothAdapterChromeOS> weak_ptr_factory_;
 
-  DISALLOW_COPY_AND_ASSIGN(BluetoothAdapterChromeOs);
+  DISALLOW_COPY_AND_ASSIGN(BluetoothAdapterChromeOS);
 };
 
 }  // namespace chromeos

@@ -5,21 +5,22 @@
 #include "chrome/browser/chromeos/drive/drive_file_system_util.h"
 
 #include <string>
-#include <vector>
 #include <utility>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/message_loop_proxy.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
+#include "chrome/browser/chromeos/drive/drive_cache.h"
 #include "chrome/browser/chromeos/drive/drive_file_system_interface.h"
 #include "chrome/browser/chromeos/drive/drive_system_service.h"
 #include "chrome/browser/chromeos/drive/file_write_helper.h"
@@ -44,7 +45,9 @@ const char kDriveSpecialRootPath[] = "/special";
 
 const char kDriveMountPointPath[] = "/special/drive";
 
-const FilePath::CharType* kDriveMountPointPathComponents[] = {
+const char kDriveMyDriveMountPointPath[] = "/special/drive/root";
+
+const base::FilePath::CharType* kDriveMountPointPathComponents[] = {
   "/", "special", "drive"
 };
 
@@ -74,33 +77,35 @@ FileWriteHelper* GetFileWriteHelper(Profile* profile) {
   return system_service ? system_service->file_write_helper() : NULL;
 }
 
-void GetHostedDocumentURLBlockingThread(const FilePath& drive_cache_path,
-                                        GURL* url) {
+GURL GetHostedDocumentURLBlockingThread(
+    const base::FilePath& drive_cache_path) {
   std::string json;
   if (!file_util::ReadFileToString(drive_cache_path, &json)) {
     NOTREACHED() << "Unable to read file " << drive_cache_path.value();
-    return;
+    return GURL();
   }
   DVLOG(1) << "Hosted doc content " << json;
   scoped_ptr<base::Value> val(base::JSONReader::Read(json));
   base::DictionaryValue* dict_val;
   if (!val.get() || !val->GetAsDictionary(&dict_val)) {
     NOTREACHED() << "Parse failure for " << json;
-    return;
+    return GURL();
   }
   std::string edit_url;
   if (!dict_val->GetString("url", &edit_url)) {
     NOTREACHED() << "url field doesn't exist in " << json;
-    return;
+    return GURL();
   }
-  *url = GURL(edit_url);
-  DVLOG(1) << "edit url " << *url;
+  GURL url(edit_url);
+  DVLOG(1) << "edit url " << url;
+  return url;
 }
 
-void OpenEditURLUIThread(Profile* profile, const GURL* edit_url) {
-  Browser* browser = chrome::FindLastActiveWithProfile(profile);
+void OpenEditURLUIThread(Profile* profile, const GURL& edit_url) {
+  Browser* browser = chrome::FindLastActiveWithProfile(profile,
+      chrome::HOST_DESKTOP_TYPE_ASH);
   if (browser) {
-    browser->OpenURL(content::OpenURLParams(*edit_url, content::Referrer(),
+    browser->OpenURL(content::OpenURLParams(edit_url, content::Referrer(),
         CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false));
   }
 }
@@ -110,7 +115,7 @@ void OpenEditURLUIThread(Profile* profile, const GURL* edit_url) {
 void OnGetEntryInfoByResourceId(Profile* profile,
                                 const std::string& resource_id,
                                 DriveFileError error,
-                                const FilePath& /* drive_file_path */,
+                                const base::FilePath& /* drive_file_path */,
                                 scoped_ptr<DriveEntryProto> entry_proto) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -120,70 +125,34 @@ void OnGetEntryInfoByResourceId(Profile* profile,
   DCHECK(entry_proto.get());
   const std::string& base_name = entry_proto->base_name();
   const GURL edit_url = GetFileResourceUrl(resource_id, base_name);
-  OpenEditURLUIThread(profile, &edit_url);
+  OpenEditURLUIThread(profile, edit_url);
   DVLOG(1) << "OnFindEntryByResourceId " << edit_url;
-}
-
-// Invoked upon completion of GetEntryInfoByPath initiated by
-// InsertDriveCachePathPermissions.
-void OnGetEntryInfoForInsertDriveCachePathsPermissions(
-    Profile* profile,
-    std::vector<std::pair<FilePath, int> >* cache_paths,
-    const base::Closure& callback,
-    DriveFileError error,
-    scoped_ptr<DriveEntryProto> entry_proto) {
-  DCHECK(profile);
-  DCHECK(cache_paths);
-  DCHECK(!callback.is_null());
-
-  if (entry_proto.get() && !entry_proto->has_file_specific_info())
-    error = DRIVE_FILE_ERROR_NOT_FOUND;
-
-  DriveCache* cache = GetDriveCache(profile);
-  if (!cache || error != DRIVE_FILE_OK) {
-    callback.Run();
-    return;
-  }
-
-  DCHECK(entry_proto.get());
-  const std::string& resource_id = entry_proto->resource_id();
-  const std::string& file_md5 = entry_proto->file_specific_info().file_md5();
-
-  // We check permissions for raw cache file paths only for read-only
-  // operations (when fileEntry.file() is called), so read only permissions
-  // should be sufficient for all cache paths. For the rest of supported
-  // operations the file access check is done for drive/ paths.
-  cache_paths->push_back(std::make_pair(
-      cache->GetCacheFilePath(resource_id, file_md5,
-          DriveCache::CACHE_TYPE_PERSISTENT,
-          DriveCache::CACHED_FILE_FROM_SERVER),
-      kReadOnlyFilePermissions));
-  // TODO(tbarzic): When we start supporting openFile operation, we may have to
-  // change permission for localy modified files to match handler's permissions.
-  cache_paths->push_back(std::make_pair(
-      cache->GetCacheFilePath(resource_id, file_md5,
-          DriveCache::CACHE_TYPE_PERSISTENT,
-          DriveCache::CACHED_FILE_LOCALLY_MODIFIED),
-     kReadOnlyFilePermissions));
-  cache_paths->push_back(std::make_pair(
-      cache->GetCacheFilePath(resource_id, file_md5,
-          DriveCache::CACHE_TYPE_PERSISTENT,
-          DriveCache::CACHED_FILE_MOUNTED),
-     kReadOnlyFilePermissions));
-  cache_paths->push_back(std::make_pair(
-      cache->GetCacheFilePath(resource_id, file_md5,
-          DriveCache::CACHE_TYPE_TMP,
-          DriveCache::CACHED_FILE_FROM_SERVER),
-      kReadOnlyFilePermissions));
-
-  callback.Run();
 }
 
 }  // namespace
 
-const FilePath& GetDriveMountPointPath() {
-  CR_DEFINE_STATIC_LOCAL(FilePath, drive_mount_path,
-      (FilePath::FromUTF8Unsafe(kDriveMountPointPath)));
+
+const base::FilePath& GetDriveGrandRootPath() {
+  CR_DEFINE_STATIC_LOCAL(base::FilePath, grand_root_path,
+      (base::FilePath::FromUTF8Unsafe(util::kDriveGrandRootDirName)));
+  return grand_root_path;
+}
+
+const base::FilePath& GetDriveMyDriveRootPath() {
+  CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_root_path,
+      (base::FilePath::FromUTF8Unsafe(util::kDriveMyDriveRootPath)));
+  return drive_root_path;
+}
+
+const base::FilePath& GetDriveOtherDirPath() {
+  CR_DEFINE_STATIC_LOCAL(base::FilePath, other_root_path,
+      (base::FilePath::FromUTF8Unsafe(util::kDriveOtherDirPath)));
+  return other_root_path;
+}
+
+const base::FilePath& GetDriveMountPointPath() {
+  CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_mount_path,
+      (base::FilePath::FromUTF8Unsafe(kDriveMountPointPath)));
   return drive_mount_path;
 }
 
@@ -193,10 +162,16 @@ const std::string& GetDriveMountPointPathAsString() {
   return drive_mount_path_string;
 }
 
-const FilePath& GetSpecialRemoteRootPath() {
-  CR_DEFINE_STATIC_LOCAL(FilePath, drive_mount_path,
-      (FilePath::FromUTF8Unsafe(kDriveSpecialRootPath)));
+const base::FilePath& GetSpecialRemoteRootPath() {
+  CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_mount_path,
+      (base::FilePath::FromUTF8Unsafe(kDriveSpecialRootPath)));
   return drive_mount_path;
+}
+
+const base::FilePath& GetDriveMyDriveMountPointPath() {
+  CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_mydrive_mount_path,
+      (base::FilePath::FromUTF8Unsafe(kDriveMyDriveMountPointPath)));
+  return drive_mydrive_mount_path;
 }
 
 GURL GetFileResourceUrl(const std::string& resource_id,
@@ -209,7 +184,7 @@ GURL GetFileResourceUrl(const std::string& resource_id,
 }
 
 void ModifyDriveFileResourceUrl(Profile* profile,
-                                const FilePath& drive_cache_path,
+                                const base::FilePath& drive_cache_path,
                                 GURL* url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -224,11 +199,11 @@ void ModifyDriveFileResourceUrl(Profile* profile,
       IsParent(drive_cache_path)) {
     // Handle hosted documents. The edit url is in the temporary file, so we
     // read it on a blocking thread.
-    GURL* edit_url = new GURL();
-    content::BrowserThread::GetBlockingPool()->PostTaskAndReply(FROM_HERE,
-        base::Bind(&GetHostedDocumentURLBlockingThread,
-                   drive_cache_path, edit_url),
-        base::Bind(&OpenEditURLUIThread, profile, base::Owned(edit_url)));
+    base::PostTaskAndReplyWithResult(
+        content::BrowserThread::GetBlockingPool(),
+        FROM_HERE,
+        base::Bind(&GetHostedDocumentURLBlockingThread, drive_cache_path),
+        base::Bind(&OpenEditURLUIThread, profile));
     *url = GURL();
   } else if (cache->GetCacheDirectoryPath(DriveCache::CACHE_TYPE_TMP).
                  IsParent(drive_cache_path) ||
@@ -246,63 +221,50 @@ void ModifyDriveFileResourceUrl(Profile* profile,
   }
 }
 
-bool IsUnderDriveMountPoint(const FilePath& path) {
+bool IsUnderDriveMountPoint(const base::FilePath& path) {
   return GetDriveMountPointPath() == path ||
          GetDriveMountPointPath().IsParent(path);
 }
 
-FilePath ExtractDrivePath(const FilePath& path) {
-  if (!IsUnderDriveMountPoint(path))
-    return FilePath();
+bool NeedsNamespaceMigration(const base::FilePath& path) {
+  return false;
+  // TODO(haruki): Update this along with http://crbug.com/174233.
+  //  return IsUnderDriveMountPoint(path) &&
+  //      !(GetDriveMyDriveMountPointPath() == path ||
+  //          GetDriveMyDriveMountPointPath().IsParent(path));
+}
 
-  std::vector<FilePath::StringType> components;
+base::FilePath ConvertToMyDriveNamespace(const base::FilePath& path) {
+  // Double check the path.
+  // TODO(haruki): Update this with DCHECK(NeedsNamespaceMigration(path)).
+  DCHECK(IsUnderDriveMountPoint(path) &&
+         !(GetDriveMyDriveMountPointPath() == path ||
+           GetDriveMyDriveMountPointPath().IsParent(path)));
+
+  // Need to migrate "/special/drive(.*)" to "/special/drive/root(.*)".
+  // Append the relative path from "/special/drive".
+  base::FilePath new_path(GetDriveMyDriveMountPointPath());
+  GetDriveMountPointPath().AppendRelativePath(path, &new_path);
+  DVLOG(1) << "Migrate download.default_directory setting from "
+      << path.AsUTF8Unsafe() << " to " << new_path.AsUTF8Unsafe();
+  DCHECK(!NeedsNamespaceMigration(new_path));
+  return new_path;
+}
+
+base::FilePath ExtractDrivePath(const base::FilePath& path) {
+  if (!IsUnderDriveMountPoint(path))
+    return base::FilePath();
+
+  std::vector<base::FilePath::StringType> components;
   path.GetComponents(&components);
 
   // -1 to include 'drive'.
-  FilePath extracted;
+  base::FilePath extracted;
   for (size_t i = arraysize(kDriveMountPointPathComponents) - 1;
        i < components.size(); ++i) {
     extracted = extracted.Append(components[i]);
   }
   return extracted;
-}
-
-void InsertDriveCachePathsPermissions(
-    Profile* profile,
-    scoped_ptr<std::vector<FilePath> > drive_paths,
-    std::vector<std::pair<FilePath, int> >* cache_paths,
-    const base::Closure& callback) {
-  DCHECK(profile);
-  DCHECK(drive_paths.get());
-  DCHECK(cache_paths);
-  DCHECK(!callback.is_null());
-
-  DriveFileSystemInterface* file_system = GetDriveFileSystem(profile);
-  if (!file_system || drive_paths->empty()) {
-    callback.Run();
-    return;
-  }
-
-  // Remove one file path entry from the back of the input vector |drive_paths|.
-  FilePath drive_path = drive_paths->back();
-  drive_paths->pop_back();
-
-  // Call GetEntryInfoByPath() to get file info for |drive_path| then insert
-  // all possible cache paths to the output vector |cache_paths|.
-  // Note that we can only process one file path at a time. Upon completion
-  // of OnGetEntryInfoForInsertDriveCachePathsPermissions(), we recursively call
-  // InsertDriveCachePathsPermissions() to process the next file path from the
-  // back of the input vector |drive_paths| until it is empty.
-  file_system->GetEntryInfoByPath(
-      drive_path,
-      base::Bind(&OnGetEntryInfoForInsertDriveCachePathsPermissions,
-                 profile,
-                 cache_paths,
-                 base::Bind(&InsertDriveCachePathsPermissions,
-                             profile,
-                             base::Passed(&drive_paths),
-                             cache_paths,
-                             callback)));
 }
 
 std::string EscapeCacheFileName(const std::string& filename) {
@@ -346,7 +308,7 @@ std::string ExtractResourceIdFromUrl(const GURL& url) {
                                    net::UnescapeRule::URL_SPECIAL_CHARS);
 }
 
-void ParseCacheFilePath(const FilePath& path,
+void ParseCacheFilePath(const base::FilePath& path,
                         std::string* resource_id,
                         std::string* md5,
                         std::string* extra_extension) {
@@ -355,13 +317,13 @@ void ParseCacheFilePath(const FilePath& path,
   DCHECK(extra_extension);
 
   // Extract up to two extensions from the right.
-  FilePath base_name = path.BaseName();
+  base::FilePath base_name = path.BaseName();
   const int kNumExtensionsToExtract = 2;
-  std::vector<FilePath::StringType> extensions;
+  std::vector<base::FilePath::StringType> extensions;
   for (int i = 0; i < kNumExtensionsToExtract; ++i) {
-    FilePath::StringType extension = base_name.Extension();
+    base::FilePath::StringType extension = base_name.Extension();
     if (!extension.empty()) {
-      // FilePath::Extension returns ".", so strip it.
+      // base::FilePath::Extension returns ".", so strip it.
       extension = UnescapeCacheFileName(extension.substr(1));
       base_name = base_name.RemoveExtension();
       extensions.push_back(extension);
@@ -382,7 +344,7 @@ void ParseCacheFilePath(const FilePath& path,
 }
 
 void PrepareWritableFileAndRun(Profile* profile,
-                               const FilePath& path,
+                               const base::FilePath& path,
                                const OpenFileCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -390,7 +352,7 @@ void PrepareWritableFileAndRun(Profile* profile,
     FileWriteHelper* file_write_helper = GetFileWriteHelper(profile);
     if (!file_write_helper)
       return;
-    FilePath remote_path(ExtractDrivePath(path));
+    base::FilePath remote_path(ExtractDrivePath(path));
     file_write_helper->PrepareWritableFileAndRun(remote_path, callback);
   } else {
     content::BrowserThread::GetBlockingPool()->PostTask(
@@ -399,7 +361,7 @@ void PrepareWritableFileAndRun(Profile* profile,
 }
 
 void EnsureDirectoryExists(Profile* profile,
-                           const FilePath& directory,
+                           const base::FilePath& directory,
                            const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
          BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -422,6 +384,7 @@ DriveFileError GDataToDriveFileError(google_apis::GDataErrorCode status) {
   switch (status) {
     case google_apis::HTTP_SUCCESS:
     case google_apis::HTTP_CREATED:
+    case google_apis::HTTP_NO_CONTENT:
       return DRIVE_FILE_OK;
     case google_apis::HTTP_UNAUTHORIZED:
     case google_apis::HTTP_FORBIDDEN:
@@ -439,6 +402,32 @@ DriveFileError GDataToDriveFileError(google_apis::GDataErrorCode status) {
     default:
       return DRIVE_FILE_ERROR_FAILED;
   }
+}
+
+void ConvertProtoToPlatformFileInfo(const PlatformFileInfoProto& proto,
+                                    base::PlatformFileInfo* file_info) {
+  file_info->size = proto.size();
+  file_info->is_directory = proto.is_directory();
+  file_info->is_symbolic_link = proto.is_symbolic_link();
+  file_info->last_modified = base::Time::FromInternalValue(
+      proto.last_modified());
+  file_info->last_accessed = base::Time::FromInternalValue(
+      proto.last_accessed());
+  file_info->creation_time = base::Time::FromInternalValue(
+      proto.creation_time());
+}
+
+void ConvertPlatformFileInfoToProto(const base::PlatformFileInfo& file_info,
+                                    PlatformFileInfoProto* proto) {
+  proto->set_size(file_info.size);
+  proto->set_is_directory(file_info.is_directory);
+  proto->set_is_symbolic_link(file_info.is_symbolic_link);
+  proto->set_last_modified(file_info.last_modified.ToInternalValue());
+  proto->set_last_accessed(file_info.last_accessed.ToInternalValue());
+  proto->set_creation_time(file_info.creation_time.ToInternalValue());
+}
+
+void EmptyFileOperationCallback(DriveFileError error) {
 }
 
 }  // namespace util

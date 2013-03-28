@@ -5,8 +5,10 @@
 #ifndef CHROME_TEST_BASE_BROWSER_WITH_TEST_WINDOW_TEST_H_
 #define CHROME_TEST_BASE_BROWSER_WITH_TEST_WINDOW_TEST_H_
 
+#include "base/at_exit.h"
 #include "base/message_loop.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
@@ -35,12 +37,12 @@ class WebContents;
 // Base class for browser based unit tests. BrowserWithTestWindowTest creates a
 // Browser with a TestingProfile and TestBrowserWindow. To add a tab use
 // AddTab. For example, the following adds a tab and navigates to
-// two URLs that target the TestTabContents:
+// two URLs that target the TestWebContents:
 //
 //   // Add a new tab and navigate it. This will be at index 0.
 //   AddTab(browser(), GURL("http://foo/1"));
 //   NavigationController* controller =
-//       &chrome::GetTabContentsAt(browser(), 0)->GetController();
+//       &browser()->tab_strip_model()->GetWebContentsAt(0)->GetController();
 //
 //   // Navigate somewhere else.
 //   GURL url2("http://foo/2");
@@ -56,7 +58,14 @@ class WebContents;
 // for creating the various objects of this class.
 class BrowserWithTestWindowTest : public testing::Test {
  public:
+  // Creates a BrowserWithTestWindowTest for which the initial window will be
+  // created on the native desktop.
   BrowserWithTestWindowTest();
+
+  // Creates a BrowserWithTestWindowTest for which the initial window will be
+  // created on the desktop of type |host_desktop_type|.
+  explicit BrowserWithTestWindowTest(chrome::HostDesktopType host_desktop_type);
+
   virtual ~BrowserWithTestWindowTest();
 
   virtual void SetUp() OVERRIDE;
@@ -96,6 +105,12 @@ class BrowserWithTestWindowTest : public testing::Test {
   // Navigates the current tab. This is a wrapper around NavigateAndCommit.
   void NavigateAndCommitActiveTab(const GURL& url);
 
+  // Set the |title| of the current tab.
+  void NavigateAndCommitActiveTabWithTitle(
+      Browser* browser,
+      const GURL& url,
+      const string16& title);
+
  protected:
   // Destroys the browser, window, and profile created by this class. This is
   // invoked from the destructor.
@@ -107,6 +122,7 @@ class BrowserWithTestWindowTest : public testing::Test {
  private:
   // We need to create a MessageLoop, otherwise a bunch of things fails.
   MessageLoopForUI ui_loop_;
+  base::ShadowingAtExitManager at_exit_manager_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
   content::TestBrowserThread file_thread_;
@@ -127,6 +143,9 @@ class BrowserWithTestWindowTest : public testing::Test {
 #if defined(OS_WIN)
   ui::ScopedOleInitializer ole_initializer_;
 #endif
+
+  // The desktop to create the initial window on.
+  chrome::HostDesktopType host_desktop_type_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserWithTestWindowTest);
 };

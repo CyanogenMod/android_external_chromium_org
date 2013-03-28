@@ -5,25 +5,28 @@
 #include <string>
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/guid.h"
 #include "base/message_loop.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stl_util.h"
 #include "base/string16.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/autofill/autofill_profile.h"
-#include "chrome/browser/autofill/autofill_type.h"
-#include "chrome/browser/autofill/credit_card.h"
 #include "chrome/browser/webdata/autofill_change.h"
 #include "chrome/browser/webdata/autofill_entry.h"
+#include "chrome/browser/webdata/autofill_table.h"
 #include "chrome/browser/webdata/keyword_table.h"
+#include "chrome/browser/webdata/logins_table.h"
+#include "chrome/browser/webdata/token_service_table.h"
+#include "chrome/browser/webdata/web_apps_table.h"
 #include "chrome/browser/webdata/web_database.h"
 #include "chrome/browser/webdata/web_intents_table.h"
-#include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/autofill/browser/autofill_profile.h"
+#include "components/autofill/browser/autofill_type.h"
+#include "components/autofill/browser/credit_card.h"
 #include "content/public/test/test_browser_thread.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -125,6 +128,24 @@ void CreditCard32FromStatement(const sql::Statement& s,
   *date_modified = s.ColumnInt64(5);
 }
 
+void CheckHasBackupData(sql::MetaTable* meta_table) {
+  std::string value;
+  EXPECT_TRUE(meta_table->GetValue(
+      "Default Search Provider ID Backup", &value));
+  EXPECT_TRUE(meta_table->GetValue(
+      "Default Search Provider ID Backup Signature", &value));
+}
+
+void CheckNoBackupData(const sql::Connection& connection,
+                       sql::MetaTable* meta_table) {
+  std::string value;
+  EXPECT_FALSE(meta_table->GetValue(
+      "Default Search Provider ID Backup", &value));
+  EXPECT_FALSE(meta_table->GetValue(
+      "Default Search Provider ID Backup Signature", &value));
+  EXPECT_FALSE(connection.DoesTableExist("keywords_backup"));
+}
+
 }  // anonymous namespace
 
 // The WebDatabaseMigrationTest encapsulates testing of database migrations.
@@ -146,6 +167,32 @@ class WebDatabaseMigrationTest : public testing::Test {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   }
 
+  // Load the database via the WebDatabase class and migrate the database to
+  // the current version.
+  void DoMigration() {
+    // TODO(joi): This whole unit test file needs to stay in //chrome
+    // for now, as it needs to know about all the different table
+    // types. Once all webdata datatypes have been componentized, this
+    // could move to components_unittests.
+    AutofillTable autofill_table;
+    KeywordTable keyword_table;
+    LoginsTable logins_table;
+    TokenServiceTable token_service_table;
+    WebAppsTable web_apps_table;
+    WebIntentsTable web_intents_table;
+
+    WebDatabase db;
+    db.AddTable(&autofill_table);
+    db.AddTable(&keyword_table);
+    db.AddTable(&logins_table);
+    db.AddTable(&token_service_table);
+    db.AddTable(&web_apps_table);
+    db.AddTable(&web_intents_table);
+
+    // This causes the migration to occur.
+    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath(), std::string()));
+  }
+
  protected:
   // Current tested version number.  When adding a migration in
   // |WebDatabase::MigrateOldVersionsAsNeeded()| and changing the version number
@@ -153,18 +200,18 @@ class WebDatabaseMigrationTest : public testing::Test {
   // number and a new migration test added below.
   static const int kCurrentTestedVersionNumber;
 
-  FilePath GetDatabasePath() {
-    const FilePath::CharType kWebDatabaseFilename[] =
+  base::FilePath GetDatabasePath() {
+    const base::FilePath::CharType kWebDatabaseFilename[] =
         FILE_PATH_LITERAL("TestWebDatabase.sqlite3");
-    return temp_dir_.path().Append(FilePath(kWebDatabaseFilename));
+    return temp_dir_.path().Append(base::FilePath(kWebDatabaseFilename));
   }
 
   // The textual contents of |file| are read from
   // "chrome/test/data/web_database" and returned in the string |contents|.
   // Returns true if the file exists and is read successfully, false otherwise.
-  bool GetWebDatabaseData(const FilePath& file, std::string* contents) {
-    FilePath path = ui_test_utils::GetTestFilePath(
-        FilePath(FILE_PATH_LITERAL("web_database")), file);
+  bool GetWebDatabaseData(const base::FilePath& file, std::string* contents) {
+    base::FilePath path = ui_test_utils::GetTestFilePath(
+        base::FilePath(FILE_PATH_LITERAL("web_database")), file);
     return file_util::PathExists(path) &&
         file_util::ReadFileToString(path, contents);
   }
@@ -185,21 +232,22 @@ class WebDatabaseMigrationTest : public testing::Test {
   // Like this:
   //   > .output version_nn.sql
   //   > .dump
-  void LoadDatabase(const FilePath::StringType& file);
+  void LoadDatabase(const base::FilePath::StringType& file);
 
  private:
   MessageLoopForUI message_loop_for_ui_;
   content::TestBrowserThread ui_thread_;
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
 
   DISALLOW_COPY_AND_ASSIGN(WebDatabaseMigrationTest);
 };
 
-const int WebDatabaseMigrationTest::kCurrentTestedVersionNumber = 47;
+const int WebDatabaseMigrationTest::kCurrentTestedVersionNumber = 49;
 
-void WebDatabaseMigrationTest::LoadDatabase(const FilePath::StringType& file) {
+void WebDatabaseMigrationTest::LoadDatabase(
+    const base::FilePath::StringType& file) {
   std::string contents;
-  ASSERT_TRUE(GetWebDatabaseData(FilePath(file), &contents));
+  ASSERT_TRUE(GetWebDatabaseData(base::FilePath(file), &contents));
 
   sql::Connection connection;
   ASSERT_TRUE(connection.Open(GetDatabasePath()));
@@ -208,12 +256,7 @@ void WebDatabaseMigrationTest::LoadDatabase(const FilePath::StringType& file) {
 
 // Tests that the all migrations from an empty database succeed.
 TEST_F(WebDatabaseMigrationTest, MigrateEmptyToCurrent) {
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -260,12 +303,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion22ToCurrent) {
         connection.DoesColumnExist("credit_cards", "card_number_encrypted"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -308,12 +346,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion22CorruptedToCurrent) {
     ASSERT_TRUE(connection.DoesColumnExist("keywords", "id"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -348,12 +381,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion25ToCurrent) {
     ASSERT_TRUE(connection.Open(GetDatabasePath()));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -411,12 +439,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion26ToCurrentStringLabels) {
     EXPECT_EQ(s3.ColumnType(0), sql::COLUMN_TYPE_TEXT);
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -481,12 +504,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion26ToCurrentStringIDs) {
     EXPECT_EQ(s3.ColumnType(0), sql::COLUMN_TYPE_TEXT);
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -530,12 +548,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion27ToCurrent) {
     ASSERT_FALSE(connection.DoesColumnExist("keywords", "instant_url"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -603,13 +616,8 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion29ToCurrent) {
                                             "date_modified"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
   Time pre_creation_time = Time::Now();
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
   Time post_creation_time = Time::Now();
 
   // Verify post-conditions.  These are expectations for current version of the
@@ -666,12 +674,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion30ToCurrent) {
     EXPECT_FALSE(connection.DoesColumnExist("credit_cards", "guid"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -768,12 +771,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion31ToCurrent) {
     EXPECT_NE(profile.guid(), credit_card.guid());
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -891,12 +889,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion32ToCurrent) {
     EXPECT_TRUE(connection.DoesColumnExist("credit_cards", "label"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -1176,12 +1169,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion33ToCurrent) {
     EXPECT_EQ("United States", country);
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -1232,12 +1220,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion34ToCurrent) {
     ASSERT_FALSE(s.Step());
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -1289,12 +1272,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion35ToCurrent) {
     EXPECT_EQ(6, i);
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -1373,12 +1351,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion37ToCurrent) {
     ASSERT_FALSE(connection.DoesColumnExist("keywords", "last_modified"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -1413,12 +1386,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion38ToCurrent) {
     ASSERT_FALSE(connection.DoesColumnExist("keywords", "sync_guid"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -1435,8 +1403,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion38ToCurrent) {
   }
 }
 
-// Tests that the backup field for the default search provider gets added to
-// the meta table of a version 39 database.
+// Tests that no backup data is added to a version 39 database.
 TEST_F(WebDatabaseMigrationTest, MigrateVersion39ToCurrent) {
   // This schema is taken from a build prior to the addition of the default
   // search provider backup field to the meta table.
@@ -1456,164 +1423,10 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion39ToCurrent) {
     EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
                                     &default_search_provider_id));
 
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_FALSE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                     &default_search_provider_id_backup));
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_FALSE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
+    EXPECT_NO_FATAL_FAILURE(CheckNoBackupData(connection, &meta_table));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-    ASSERT_FALSE(db.GetKeywordTable()->DidDefaultSearchProviderChange());
-  }
-
-  // Verify post-conditions.  These are expectations for current version of the
-  // database.
-  {
-    sql::Connection connection;
-    ASSERT_TRUE(connection.Open(GetDatabasePath()));
-    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
-
-    // Check version.
-    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
-
-    sql::MetaTable meta_table;
-    ASSERT_TRUE(meta_table.Init(&connection, kCurrentTestedVersionNumber,
-                                kCurrentTestedVersionNumber));
-
-    int64 default_search_provider_id = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
-                                    &default_search_provider_id));
-
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-    EXPECT_EQ(default_search_provider_id, default_search_provider_id_backup);
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-  }
-}
-
-#if !defined(GOOGLE_CHROME_BUILD)
-// Test that a valid backup is not overwritten during migration from version 39.
-// This is enabled on Chromium only because a valid signature is required for
-// this test, which makes it key-dependent.
-TEST_F(WebDatabaseMigrationTest, MigrateVersion39WithBackupToCurrent) {
-  // This schema is taken from a build prior to the addition of the default
-  // search provider backup field to the meta table.
-  ASSERT_NO_FATAL_FAILURE(
-      LoadDatabase(FILE_PATH_LITERAL("version_39_with_backup.sql")));
-
-  // Verify pre-conditions.  These are expectations for version 39 of the
-  // database.
-  {
-    sql::Connection connection;
-    ASSERT_TRUE(connection.Open(GetDatabasePath()));
-    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
-
-    sql::MetaTable meta_table;
-    ASSERT_TRUE(meta_table.Init(&connection, 39, 39));
-
-    int64 default_search_provider_id = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
-                                    &default_search_provider_id));
-
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-    EXPECT_NE(default_search_provider_id, default_search_provider_id_backup);
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-  }
-
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-    // A change to the default search provider must be detected.
-    ASSERT_TRUE(db.GetKeywordTable()->DidDefaultSearchProviderChange());
-  }
-
-  // Verify post-conditions.  These are expectations for current version of the
-  // database.
-  {
-    sql::Connection connection;
-    ASSERT_TRUE(connection.Open(GetDatabasePath()));
-    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
-
-    // Check version.
-    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
-
-    sql::MetaTable meta_table;
-    ASSERT_TRUE(meta_table.Init(&connection, kCurrentTestedVersionNumber,
-                                kCurrentTestedVersionNumber));
-
-    int64 default_search_provider_id = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
-                                    &default_search_provider_id));
-
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-    EXPECT_NE(default_search_provider_id, default_search_provider_id_backup);
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-  }
-}
-#endif  // !defined(GOOGLE_CHROME_BUILD)
-
-// Tests that the backup field for the default search provider is rewritten
-// despite any value in the old version.
-TEST_F(WebDatabaseMigrationTest, MigrateVersion40ToCurrent) {
-  // This schema is taken from a build after the addition of the default
-  // search provider backup field to the meta table. Due to crbug.com/101815
-  // the signature was empty in all build between revisions 106214 and 108111.
-  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_40.sql")));
-
-  // Verify pre-conditions.  These are expectations for version 40 of the
-  // database.
-  {
-    sql::Connection connection;
-    ASSERT_TRUE(connection.Open(GetDatabasePath()));
-    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
-
-    sql::MetaTable meta_table;
-    ASSERT_TRUE(meta_table.Init(&connection, 40, 40));
-
-    int64 default_search_provider_id = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
-                                    &default_search_provider_id));
-
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-    EXPECT_TRUE(default_search_provider_id_backup_signature.empty());
-  }
-
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-    ASSERT_FALSE(db.GetKeywordTable()->DidDefaultSearchProviderChange());
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -1634,20 +1447,57 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion40ToCurrent) {
                                     &default_search_provider_id));
     EXPECT_NE(0, default_search_provider_id);
 
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-    EXPECT_EQ(default_search_provider_id, default_search_provider_id_backup);
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-    EXPECT_FALSE(default_search_provider_id_backup_signature.empty());
+    EXPECT_NO_FATAL_FAILURE(CheckNoBackupData(connection, &meta_table));
   }
 }
 
-// Used to test that the default search provider was backed up and signed,
-// before the backup method was changed in version 43.
+// Tests that the backup data is removed from the database.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion40ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_40.sql")));
+
+  // Verify pre-conditions.  These are expectations for version 40 of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
+
+    sql::MetaTable meta_table;
+    ASSERT_TRUE(meta_table.Init(&connection, 40, 40));
+
+    int64 default_search_provider_id = 0;
+    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
+                                    &default_search_provider_id));
+
+    EXPECT_NO_FATAL_FAILURE(CheckHasBackupData(&meta_table));
+  }
+
+  DoMigration();
+
+  // Verify post-conditions.  These are expectations for current version of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
+
+    // Check version.
+    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
+
+    sql::MetaTable meta_table;
+    ASSERT_TRUE(meta_table.Init(&connection, kCurrentTestedVersionNumber,
+                                kCurrentTestedVersionNumber));
+
+    int64 default_search_provider_id = 0;
+    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
+                                    &default_search_provider_id));
+    EXPECT_NE(0, default_search_provider_id);
+
+    EXPECT_NO_FATAL_FAILURE(CheckNoBackupData(connection, &meta_table));
+  }
+}
+
+// Tests that the backup data is removed from the database.
 TEST_F(WebDatabaseMigrationTest, MigrateVersion41ToCurrent) {
   ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_41.sql")));
 
@@ -1665,23 +1515,10 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion41ToCurrent) {
     EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
                                     &default_search_provider_id));
 
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-    EXPECT_FALSE(default_search_provider_id_backup_signature.empty());
+    EXPECT_NO_FATAL_FAILURE(CheckHasBackupData(&meta_table));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-    ASSERT_FALSE(db.GetKeywordTable()->DidDefaultSearchProviderChange());
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -1702,19 +1539,11 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion41ToCurrent) {
                                     &default_search_provider_id));
     EXPECT_NE(0, default_search_provider_id);
 
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-    EXPECT_EQ(default_search_provider_id, default_search_provider_id_backup);
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-    EXPECT_FALSE(default_search_provider_id_backup_signature.empty());
+    EXPECT_NO_FATAL_FAILURE(CheckNoBackupData(connection, &meta_table));
   }
 }
 
-// Tests that all keywords are backed up and signed.
+// Tests that the backup data is removed from the database.
 TEST_F(WebDatabaseMigrationTest, MigrateVersion42ToCurrent) {
   ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_42.sql")));
 
@@ -1732,25 +1561,12 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion42ToCurrent) {
     EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
                                     &default_search_provider_id));
 
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-    EXPECT_FALSE(default_search_provider_id_backup_signature.empty());
+    EXPECT_NO_FATAL_FAILURE(CheckHasBackupData(&meta_table));
 
     EXPECT_FALSE(connection.DoesTableExist("keywords_backup"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-    ASSERT_FALSE(db.GetKeywordTable()->DidDefaultSearchProviderChange());
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -1771,50 +1587,11 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion42ToCurrent) {
                                     &default_search_provider_id));
     EXPECT_NE(0, default_search_provider_id);
 
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-    EXPECT_EQ(default_search_provider_id, default_search_provider_id_backup);
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-    EXPECT_FALSE(default_search_provider_id_backup_signature.empty());
-
-    EXPECT_TRUE(connection.DoesTableExist("keywords_backup"));
-    std::string query("SELECT " + KeywordTable::GetKeywordColumns() +
-                      " FROM keywords_backup");
-    sql::Statement s(connection.GetUniqueStatement(query.c_str()));
-    ASSERT_TRUE(s.Step());
-    EXPECT_EQ(2, s.ColumnInt(0));
-    EXPECT_EQ("Google", s.ColumnString(1));
-    EXPECT_EQ("google.com", s.ColumnString(2));
-    EXPECT_EQ("http://www.google.com/favicon.ico", s.ColumnString(3));
-    EXPECT_EQ("{google:baseURL}search?{google:RLZ}{google:acceptedSuggestion}"
-              "{google:originalQueryForSuggestion}sourceid=chrome&"
-              "ie={inputEncoding}&q={searchTerms}",
-              s.ColumnString(4));
-    EXPECT_TRUE(s.ColumnBool(5));
-    EXPECT_EQ(std::string(), s.ColumnString(6));
-    EXPECT_EQ(0, s.ColumnInt(7));
-    EXPECT_EQ(0, s.ColumnInt(8));
-    EXPECT_EQ("UTF-8", s.ColumnString(9));
-    EXPECT_TRUE(s.ColumnBool(10));
-    EXPECT_EQ("{google:baseSuggestURL}search?client=chrome&hl={language}&"
-              "q={searchTerms}", s.ColumnString(11));
-    EXPECT_EQ(1, s.ColumnInt(12));
-    //EXPECT_EQ(false, s.ColumnBool(13));
-    EXPECT_EQ("{google:baseURL}webhp?{google:RLZ}sourceid=chrome-instant&"
-              "ie={inputEncoding}&ion=1{searchTerms}&nord=1",
-              s.ColumnString(14));
-    EXPECT_EQ(0, s.ColumnInt(15));
-    EXPECT_EQ("{1234-5678-90AB-CDEF}", s.ColumnString(16));
-
-    EXPECT_FALSE(s.Step());
+    EXPECT_NO_FATAL_FAILURE(CheckNoBackupData(connection, &meta_table));
   }
 }
 
-// Tests that the default search provider is backed up and signed.
+// Tests that the backup data is removed from the database.
 TEST_F(WebDatabaseMigrationTest, MigrateVersion43ToCurrent) {
   ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_43.sql")));
 
@@ -1836,27 +1613,11 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion43ToCurrent) {
     EXPECT_NE(default_search_provider_id, 0);
     previous_default_search_provider_id = default_search_provider_id;
 
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-    EXPECT_NE(default_search_provider_id_backup, 0);
-
-    // Backup ID is invalid, signature is invalid as well.
-    EXPECT_NE(default_search_provider_id, default_search_provider_id_backup);
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-    EXPECT_FALSE(default_search_provider_id_backup_signature.empty());
+    EXPECT_NO_FATAL_FAILURE(CheckHasBackupData(&meta_table));
+    EXPECT_TRUE(connection.DoesTableExist("keywords_backup"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-    ASSERT_FALSE(db.GetKeywordTable()->DidDefaultSearchProviderChange());
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -1880,25 +1641,12 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion43ToCurrent) {
     // Default search provider ID should not change.
     EXPECT_EQ(previous_default_search_provider_id, default_search_provider_id);
 
-    int64 default_search_provider_id_backup = 0;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchIDBackupKey,
-                                    &default_search_provider_id_backup));
-    // Backup ID must be updated to match the old default search provider ID.
-    EXPECT_EQ(default_search_provider_id, default_search_provider_id_backup);
-
-    std::string default_search_provider_id_backup_signature;
-    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kBackupSignatureKey,
-        &default_search_provider_id_backup_signature));
-    EXPECT_FALSE(default_search_provider_id_backup_signature.empty());
+    EXPECT_NO_FATAL_FAILURE(CheckNoBackupData(connection, &meta_table));
   }
 }
 
-#if !defined(GOOGLE_CHROME_BUILD)
 // Tests that the |autogenerate_keyword| and |logo_id| columns get removed from
 // the keyword table schema for a version 45 database.
-//
-// This is enabled on Chromium only because a valid signature is required for
-// this test, which makes it key-dependent.
 TEST_F(WebDatabaseMigrationTest, MigrateVersion44ToCurrent) {
   ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_44.sql")));
 
@@ -1916,83 +1664,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion44ToCurrent) {
     ASSERT_TRUE(connection.DoesColumnExist("keywords", "logo_id"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-    ASSERT_FALSE(db.GetKeywordTable()->DidDefaultSearchProviderChange());
-
-    // The backup table should match the keyword table.
-    std::string keywords_contents;
-    EXPECT_TRUE(db.GetKeywordTable()->GetTableContents("keywords",
-        kCurrentTestedVersionNumber, &keywords_contents));
-    std::string keywords_backup_contents;
-    EXPECT_TRUE(db.GetKeywordTable()->GetTableContents("keywords_backup",
-        kCurrentTestedVersionNumber, &keywords_backup_contents));
-    EXPECT_EQ(keywords_contents, keywords_backup_contents);
-  }
-
-  // Verify post-conditions.  These are expectations for current version of the
-  // database.
-  {
-    sql::Connection connection;
-    ASSERT_TRUE(connection.Open(GetDatabasePath()));
-    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
-
-    // Check version.
-    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
-
-    sql::MetaTable meta_table;
-    ASSERT_TRUE(meta_table.Init(&connection, kCurrentTestedVersionNumber,
-                                kCurrentTestedVersionNumber));
-
-    // We should have removed this obsolete key.
-    std::string default_search_provider_backup;
-    EXPECT_FALSE(meta_table.GetValue("Default Search Provider Backup",
-                                     &default_search_provider_backup));
-
-    // Two columns should have been removed.
-    EXPECT_FALSE(connection.DoesColumnExist("keywords",
-                                            "autogenerate_keyword"));
-    EXPECT_FALSE(connection.DoesColumnExist("keywords", "logo_id"));
-  }
-}
-#endif  // !defined(GOOGLE_CHROME_BUILD)
-
-// Like MigrateVersion44ToCurrent above, but with a corrupt backup signature.
-// This should result in us dropping the backup table but successfully migrating
-// otherwise.
-//
-// Because this test doesn't rely on a valid signature, we can run it on
-// official builds as well.
-TEST_F(WebDatabaseMigrationTest, MigrateVersion44CorruptBackupToCurrent) {
-  ASSERT_NO_FATAL_FAILURE(
-      LoadDatabase(FILE_PATH_LITERAL("version_44_backup_corrupt.sql")));
-
-  // Verify pre-conditions.  These are expectations for version 44 of the
-  // database.
-  {
-    sql::Connection connection;
-    ASSERT_TRUE(connection.Open(GetDatabasePath()));
-    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
-
-    sql::MetaTable meta_table;
-    ASSERT_TRUE(meta_table.Init(&connection, 44, 44));
-
-    ASSERT_TRUE(connection.DoesColumnExist("keywords", "autogenerate_keyword"));
-    ASSERT_TRUE(connection.DoesColumnExist("keywords", "logo_id"));
-  }
-
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-    // We should detect a "search provider change" as a side effect of dropping
-    // the backup table.
-    ASSERT_TRUE(db.GetKeywordTable()->DidDefaultSearchProviderChange());
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -2018,8 +1690,8 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion44CorruptBackupToCurrent) {
                                             "autogenerate_keyword"));
     EXPECT_FALSE(connection.DoesColumnExist("keywords", "logo_id"));
 
-    // The backup table should be gone.
-    EXPECT_FALSE(connection.DoesTableExist("keywords_backup"));
+    // Backup data should have been removed.
+    EXPECT_NO_FATAL_FAILURE(CheckNoBackupData(connection, &meta_table));
   }
 }
 
@@ -2043,12 +1715,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion45ToCurrent) {
         "scheme", "web_intents_defaults"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -2124,12 +1791,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion45InvalidToCurrent) {
         "scheme", "web_intents_defaults"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -2189,12 +1851,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion45CompatibleToCurrent) {
     ASSERT_TRUE(meta_table.Init(&connection, 40, 45));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -2209,12 +1866,8 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion45CompatibleToCurrent) {
   }
 }
 
-#if !defined(GOOGLE_CHROME_BUILD)
 // Tests that the |alternate_urls| column is added to the keyword table schema
 // for a version 47 database.
-//
-// This is enabled on Chromium only because a valid signature is required for
-// this test, which makes it key-dependent.
 TEST_F(WebDatabaseMigrationTest, MigrateVersion46ToCurrent) {
   ASSERT_NO_FATAL_FAILURE(
       LoadDatabase(FILE_PATH_LITERAL("version_46.sql")));
@@ -2234,13 +1887,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion46ToCurrent) {
                                             "alternate_urls"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
-  {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-    ASSERT_FALSE(db.GetKeywordTable()->DidDefaultSearchProviderChange());
-  }
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -2254,23 +1901,14 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion46ToCurrent) {
 
     // A new column should have been created.
     EXPECT_TRUE(connection.DoesColumnExist("keywords", "alternate_urls"));
-    ASSERT_TRUE(connection.DoesColumnExist("keywords_backup",
-                                           "alternate_urls"));
   }
 }
-#endif  // !defined(GOOGLE_CHROME_BUILD)
 
-// Like MigrateVersion46ToCurrent above, but with a corrupt backup signature.
-// This should result in us dropping the backup table but successfully migrating
-// otherwise.
-//
-// Because this test doesn't rely on a valid signature, we can run it on
-// official builds as well.
-TEST_F(WebDatabaseMigrationTest, MigrateVersion46CorruptBackupToCurrent) {
-  ASSERT_NO_FATAL_FAILURE(
-      LoadDatabase(FILE_PATH_LITERAL("version_46_backup_corrupt.sql")));
+// Tests that the backup data is removed from the database.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion47ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_47.sql")));
 
-  // Verify pre-conditions.  These are expectations for version 46 of the
+  // Verify pre-conditions.  These are expectations for version 47 of the
   // database.
   {
     sql::Connection connection;
@@ -2278,22 +1916,63 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion46CorruptBackupToCurrent) {
     ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
 
     sql::MetaTable meta_table;
-    ASSERT_TRUE(meta_table.Init(&connection, 46, 46));
+    ASSERT_TRUE(meta_table.Init(&connection, 47, 47));
 
-    ASSERT_FALSE(connection.DoesColumnExist("keywords", "alternate_urls"));
-    ASSERT_FALSE(connection.DoesColumnExist("keywords_backup",
-                                            "alternate_urls"));
+    int64 default_search_provider_id = 0;
+    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
+                                    &default_search_provider_id));
+    EXPECT_NE(0, default_search_provider_id);
+
+    EXPECT_NO_FATAL_FAILURE(CheckHasBackupData(&meta_table));
+    EXPECT_TRUE(connection.DoesTableExist("keywords_backup"));
   }
 
-  // Load the database via the WebDatabase class and migrate the database to
-  // the current version.
+  DoMigration();
+
+  // Verify post-conditions.  These are expectations for current version of the
+  // database.
   {
-    WebDatabase db;
-    ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath()));
-    // We should detect a "search provider change" as a side effect of dropping
-    // the backup table.
-    ASSERT_TRUE(db.GetKeywordTable()->DidDefaultSearchProviderChange());
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
+
+    // Check version.
+    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
+
+    sql::MetaTable meta_table;
+    ASSERT_TRUE(meta_table.Init(&connection, kCurrentTestedVersionNumber,
+                                kCurrentTestedVersionNumber));
+
+    int64 default_search_provider_id = 0;
+    EXPECT_TRUE(meta_table.GetValue(KeywordTable::kDefaultSearchProviderKey,
+                                    &default_search_provider_id));
+    EXPECT_NE(0, default_search_provider_id);
+
+    EXPECT_NO_FATAL_FAILURE(CheckNoBackupData(connection, &meta_table));
   }
+}
+
+// Tests that the |search_terms_replacement_key| column is added to the keyword
+// table schema for a version 49 database.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion48ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(
+      LoadDatabase(FILE_PATH_LITERAL("version_48.sql")));
+
+  // Verify pre-conditions.  These are expectations for version 48 of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
+
+    sql::MetaTable meta_table;
+    ASSERT_TRUE(meta_table.Init(&connection, 48, 48));
+
+    ASSERT_FALSE(connection.DoesColumnExist("keywords",
+                                            "search_terms_replacement_key"));
+  }
+
+  DoMigration();
 
   // Verify post-conditions.  These are expectations for current version of the
   // database.
@@ -2306,9 +1985,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion46CorruptBackupToCurrent) {
     EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
 
     // A new column should have been created.
-    EXPECT_TRUE(connection.DoesColumnExist("keywords", "alternate_urls"));
-
-    // The backup table should be gone.
-    EXPECT_FALSE(connection.DoesTableExist("keywords_backup"));
+    EXPECT_TRUE(connection.DoesColumnExist("keywords",
+                                           "search_terms_replacement_key"));
   }
 }

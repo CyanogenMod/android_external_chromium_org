@@ -10,19 +10,20 @@
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/sys_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "net/base/net_util.h"
-#include "remoting/base/auto_thread_task_runner.h"
 #include "remoting/base/auth_token_util.h"
+#include "remoting/base/auto_thread.h"
+#include "remoting/base/rsa_key_pair.h"
+#include "remoting/host/basic_desktop_environment.h"
 #include "remoting/host/chromoting_host.h"
 #include "remoting/host/chromoting_host_context.h"
-#include "remoting/host/desktop_environment_factory.h"
 #include "remoting/host/host_config.h"
 #include "remoting/host/host_event_logger.h"
-#include "remoting/host/host_key_pair.h"
 #include "remoting/host/host_secret.h"
 #include "remoting/host/host_status_observer.h"
 #include "remoting/host/it2me_host_user_interface.h"
@@ -31,9 +32,11 @@
 #include "remoting/host/plugin/host_log_handler.h"
 #include "remoting/host/policy_hack/policy_watcher.h"
 #include "remoting/host/register_support_host_request.h"
+#include "remoting/host/service_urls.h"
 #include "remoting/host/session_manager_factory.h"
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/it2me_host_authenticator_factory.h"
+#include "third_party/npapi/bindings/npruntime.h"
 
 namespace remoting {
 
@@ -51,6 +54,9 @@ const char* kAttrNameLogDebugInfo = "logDebugInfo";
 const char* kAttrNameOnNatTraversalPolicyChanged =
     "onNatTraversalPolicyChanged";
 const char* kAttrNameOnStateChanged = "onStateChanged";
+const char* kAttrNameXmppServerAddress = "xmppServerAddress";
+const char* kAttrNameXmppServerUseTls = "xmppServerUseTls";
+const char* kAttrNameDirectoryBotJid = "directoryBotJid";
 const char* kFuncNameConnect = "connect";
 const char* kFuncNameDisconnect = "disconnect";
 const char* kFuncNameLocalize = "localize";
@@ -87,14 +93,16 @@ class HostNPScriptObject::It2MeImpl
       scoped_ptr<ChromotingHostContext> context,
       scoped_refptr<base::SingleThreadTaskRunner> plugin_task_runner,
       base::WeakPtr<HostNPScriptObject> script_object,
-      const UiStrings& ui_strings);
+      const XmppSignalStrategy::XmppServerConfig& xmpp_server_config,
+      const std::string& directory_bot_jid);
 
   // Methods called by the script object, from the plugin thread.
 
   // Creates It2Me host structures and starts the host.
   void Connect(const std::string& uid,
                const std::string& auth_token,
-               const std::string& auth_service);
+               const std::string& auth_service,
+               const UiStrings& ui_strings);
 
   // Disconnects the host, ready for tear-down.
   // Also called internally, from the network thread.
@@ -113,9 +121,6 @@ class HostNPScriptObject::It2MeImpl
   friend class base::RefCountedThreadSafe<It2MeImpl>;
 
   virtual ~It2MeImpl();
-
-  // Used to delete and join the ChromotingHostContext on the UI thread.
-  static void DeleteHostContext(scoped_ptr<ChromotingHostContext> context) {}
 
   // Updates state of the host. Can be called only on the network thread.
   void SetState(State state);
@@ -148,14 +153,16 @@ class HostNPScriptObject::It2MeImpl
   void UpdateNatPolicy(bool nat_traversal_enabled);
   void UpdateHostDomainPolicy(const std::string& host_domain);
 
+  // Caller supplied fields.
   scoped_ptr<ChromotingHostContext> host_context_;
   scoped_refptr<base::SingleThreadTaskRunner> plugin_task_runner_;
   base::WeakPtr<HostNPScriptObject> script_object_;
-  UiStrings ui_strings_;
+  XmppSignalStrategy::XmppServerConfig xmpp_server_config_;
+  std::string directory_bot_jid_;
 
   State state_;
 
-  HostKeyPair host_key_pair_;
+  scoped_refptr<RsaKeyPair> host_key_pair_;
   scoped_ptr<SignalStrategy> signal_strategy_;
   scoped_ptr<RegisterSupportHostRequest> register_request_;
   scoped_ptr<LogToServer> log_to_server_;
@@ -192,11 +199,13 @@ HostNPScriptObject::It2MeImpl::It2MeImpl(
     scoped_ptr<ChromotingHostContext> host_context,
     scoped_refptr<base::SingleThreadTaskRunner> plugin_task_runner,
     base::WeakPtr<HostNPScriptObject> script_object,
-    const UiStrings& ui_strings)
+    const XmppSignalStrategy::XmppServerConfig& xmpp_server_config,
+    const std::string& directory_bot_jid)
   : host_context_(host_context.Pass()),
     plugin_task_runner_(plugin_task_runner),
     script_object_(script_object),
-    ui_strings_(ui_strings),
+    xmpp_server_config_(xmpp_server_config),
+    directory_bot_jid_(directory_bot_jid),
     state_(kDisconnected),
     failed_login_attempts_(0),
     nat_traversal_enabled_(false),
@@ -207,18 +216,21 @@ HostNPScriptObject::It2MeImpl::It2MeImpl(
 void HostNPScriptObject::It2MeImpl::Connect(
     const std::string& uid,
     const std::string& auth_token,
-    const std::string& auth_service) {
+    const std::string& auth_service,
+    const UiStrings& ui_strings) {
   if (!host_context_->ui_task_runner()->BelongsToCurrentThread()) {
     DCHECK(plugin_task_runner_->BelongsToCurrentThread());
     host_context_->ui_task_runner()->PostTask(
         FROM_HERE,
-        base::Bind(&It2MeImpl::Connect, this, uid, auth_token, auth_service));
+        base::Bind(&It2MeImpl::Connect, this, uid, auth_token, auth_service,
+                   ui_strings));
     return;
   }
 
-  // Create the desktop environment factory.
-  desktop_environment_factory_.reset(new DesktopEnvironmentFactory(
-      host_context_->input_task_runner(), host_context_->ui_task_runner()));
+  desktop_environment_factory_.reset(new BasicDesktopEnvironmentFactory(
+      host_context_->network_task_runner(),
+      host_context_->input_task_runner(),
+      host_context_->ui_task_runner()));
 
   // Start monitoring configured policies.
   policy_watcher_.reset(
@@ -229,7 +241,7 @@ void HostNPScriptObject::It2MeImpl::Connect(
   // The UserInterface object needs to be created on the UI thread.
   it2me_host_user_interface_.reset(
       new It2MeHostUserInterface(host_context_->network_task_runner(),
-                                 host_context_->ui_task_runner()));
+                                 host_context_->ui_task_runner(), ui_strings));
   it2me_host_user_interface_->Init();
 
   // Switch to the network thread to start the actual connection.
@@ -333,17 +345,18 @@ void HostNPScriptObject::It2MeImpl::FinishConnect(
 
   // Generate a key pair for the Host to use.
   // TODO(wez): Move this to the worker thread.
-  host_key_pair_.Generate();
+  host_key_pair_ = RsaKeyPair::Generate();
 
   // Create XMPP connection.
   scoped_ptr<SignalStrategy> signal_strategy(
       new XmppSignalStrategy(host_context_->url_request_context_getter(),
-                             uid, auth_token, auth_service));
+                             uid, auth_token, auth_service,
+                             xmpp_server_config_));
 
   // Request registration of the host for support.
   scoped_ptr<RegisterSupportHostRequest> register_request(
       new RegisterSupportHostRequest(
-          signal_strategy.get(), &host_key_pair_,
+          signal_strategy.get(), host_key_pair_, directory_bot_jid_,
           base::Bind(&It2MeImpl::OnReceivedSupportID,
                      base::Unretained(this))));
 
@@ -369,12 +382,15 @@ void HostNPScriptObject::It2MeImpl::FinishConnect(
       CreateHostSessionManager(network_settings,
                                host_context_->url_request_context_getter()),
       host_context_->audio_task_runner(),
-      host_context_->capture_task_runner(),
-      host_context_->encode_task_runner(),
-      host_context_->network_task_runner());
+      host_context_->input_task_runner(),
+      host_context_->video_capture_task_runner(),
+      host_context_->video_encode_task_runner(),
+      host_context_->network_task_runner(),
+      host_context_->ui_task_runner());
   host_->AddStatusObserver(this);
   log_to_server_.reset(
-      new LogToServer(host_, ServerLogEntry::IT2ME, signal_strategy_.get()));
+      new LogToServer(host_->AsWeakPtr(), ServerLogEntry::IT2ME,
+                      signal_strategy_.get(), directory_bot_jid_));
 
   // Disable audio by default.
   // TODO(sergeyu): Add UI to enable it.
@@ -383,15 +399,13 @@ void HostNPScriptObject::It2MeImpl::FinishConnect(
   protocol::CandidateSessionConfig::DisableAudioChannel(protocol_config.get());
   host_->set_protocol_config(protocol_config.Pass());
 
-  // Provide localization strings to the host.
-  host_->SetUiStrings(ui_strings_);
-
   // Create user interface.
   it2me_host_user_interface_->Start(host_.get(),
                                     base::Bind(&It2MeImpl::Disconnect, this));
 
   // Create event logger.
-  host_event_logger_ = HostEventLogger::Create(host_, kApplicationName);
+  host_event_logger_ =
+      HostEventLogger::Create(host_->AsWeakPtr(), kApplicationName);
 
   // Connect signaling and start the host.
   signal_strategy_->Connect();
@@ -559,12 +573,6 @@ HostNPScriptObject::It2MeImpl::~It2MeImpl() {
   DCHECK(!it2me_host_user_interface_.get());
   DCHECK(!desktop_environment_factory_.get());
   DCHECK(!policy_watcher_.get());
-
-  // We might be getting deleted on one of the threads the |host_context| owns,
-  // so we need to post it back to the plugin thread to safely join & delete the
-  // threads it contains.  This will go away when we move to AutoThread.
-  plugin_task_runner_->PostTask(FROM_HERE,
-      base::Bind(&It2MeImpl::DeleteHostContext, base::Passed(&host_context_)));
 }
 
 void HostNPScriptObject::It2MeImpl::SetState(State state) {
@@ -635,7 +643,7 @@ void HostNPScriptObject::It2MeImpl::OnReceivedSupportID(
   std::string host_secret = GenerateSupportHostSecret();
   std::string access_code = support_id + host_secret;
 
-  std::string local_certificate = host_key_pair_.GenerateCertificate();
+  std::string local_certificate = host_key_pair_->GenerateCertificate();
   if (local_certificate.empty()) {
     LOG(ERROR) << "Failed to generate host certificate.";
     SetState(kError);
@@ -645,7 +653,7 @@ void HostNPScriptObject::It2MeImpl::OnReceivedSupportID(
 
   scoped_ptr<protocol::AuthenticatorFactory> factory(
       new protocol::It2MeHostAuthenticatorFactory(
-          local_certificate, *host_key_pair_.private_key(), access_code));
+          local_certificate, host_key_pair_, access_code));
   host_->SetAuthenticatorFactory(factory.Pass());
 
   // Pass the Access Code to the script object before changing state.
@@ -659,24 +667,28 @@ void HostNPScriptObject::It2MeImpl::OnReceivedSupportID(
 HostNPScriptObject::HostNPScriptObject(
     NPP plugin,
     NPObject* parent,
-    PluginThreadTaskRunner::Delegate* plugin_thread_delegate)
+    scoped_refptr<AutoThreadTaskRunner> plugin_task_runner)
     : plugin_(plugin),
       parent_(parent),
-      plugin_task_runner_(
-          new PluginThreadTaskRunner(plugin_thread_delegate)),
-      auto_plugin_task_runner_(
-          new AutoThreadTaskRunner(plugin_task_runner_,
-                                   base::Bind(&PluginThreadTaskRunner::Quit,
-                                              plugin_task_runner_))),
+      plugin_task_runner_(plugin_task_runner),
       am_currently_logging_(false),
       state_(kDisconnected),
       daemon_controller_(DaemonController::Create()),
-      worker_thread_("RemotingHostPlugin"),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       weak_ptr_(weak_factory_.GetWeakPtr()) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
+  ServiceUrls* service_urls = ServiceUrls::GetInstance();
+  bool xmpp_server_valid = net::ParseHostAndPort(
+      service_urls->xmpp_server_address(),
+      &xmpp_server_config_.host, &xmpp_server_config_.port);
+  // For the plugin, this is always the default address, which must be valid.
+  DCHECK(xmpp_server_valid);
+  xmpp_server_config_.use_tls = service_urls->xmpp_server_use_tls();
+  directory_bot_jid_ = service_urls->directory_bot_jid();
 
-  worker_thread_.Start();
+  // Create worker thread for encryption key generation.
+  worker_thread_ = AutoThread::Create("ChromotingWorkerThread",
+                                      plugin_task_runner_);
 }
 
 HostNPScriptObject::~HostNPScriptObject() {
@@ -689,16 +701,6 @@ HostNPScriptObject::~HostNPScriptObject() {
     it2me_impl_->Disconnect();
     it2me_impl_ = NULL;
   }
-
-  // Release the AutoThreadTaskRunner so the plugin thread can quit.
-  auto_plugin_task_runner_ = NULL;
-
-  // Stop the message loop and run the remaining tasks. The loop will exit
-  // once the wrapping AutoThreadTaskRunner is destroyed.
-  plugin_task_runner_->DetachAndRunShutdownLoop();
-
-  // Stop the worker thread.
-  worker_thread_.Stop();
 }
 
 bool HostNPScriptObject::HasMethod(const std::string& method_name) {
@@ -780,7 +782,10 @@ bool HostNPScriptObject::HasProperty(const std::string& property_name) {
           property_name == kAttrNameReceivedAccessCode ||
           property_name == kAttrNameConnected ||
           property_name == kAttrNameDisconnecting ||
-          property_name == kAttrNameError);
+          property_name == kAttrNameError ||
+          property_name == kAttrNameXmppServerAddress ||
+          property_name == kAttrNameXmppServerUseTls ||
+          property_name == kAttrNameDirectoryBotJid);
 }
 
 bool HostNPScriptObject::GetProperty(const std::string& property_name,
@@ -840,6 +845,16 @@ bool HostNPScriptObject::GetProperty(const std::string& property_name,
   } else if (property_name == kAttrNameInvalidDomainError) {
     INT32_TO_NPVARIANT(kInvalidDomainError, *result);
     return true;
+  } else if (property_name == kAttrNameXmppServerAddress) {
+    *result = NPVariantFromString(base::StringPrintf(
+        "%s:%u", xmpp_server_config_.host.c_str(), xmpp_server_config_.port));
+    return true;
+  } else if (property_name == kAttrNameXmppServerUseTls) {
+    BOOLEAN_TO_NPVARIANT(xmpp_server_config_.use_tls, *result);
+    return true;
+  } else if (property_name == kAttrNameDirectoryBotJid) {
+    *result = NPVariantFromString(directory_bot_jid_);
+    return true;
   } else {
     SetException("GetProperty: unsupported property " + property_name);
     return false;
@@ -889,6 +904,48 @@ bool HostNPScriptObject::SetProperty(const std::string& property_name,
     return false;
   }
 
+#if !defined(NDEBUG)
+  if (property_name == kAttrNameXmppServerAddress) {
+    if (NPVARIANT_IS_STRING(*value)) {
+      std::string address = StringFromNPVariant(*value);
+      bool xmpp_server_valid = net::ParseHostAndPort(
+          address, &xmpp_server_config_.host, &xmpp_server_config_.port);
+      if (xmpp_server_valid) {
+        return true;
+      } else {
+        SetException("SetProperty: invalid value for property " +
+                     property_name);
+      }
+    } else {
+      SetException("SetProperty: unexpected type for property " +
+                   property_name);
+    }
+    return false;
+  }
+
+  if (property_name == kAttrNameXmppServerUseTls) {
+    if (NPVARIANT_IS_BOOLEAN(*value)) {
+      xmpp_server_config_.use_tls = NPVARIANT_TO_BOOLEAN(*value);
+      return true;
+    } else {
+      SetException("SetProperty: unexpected type for property " +
+                   property_name);
+    }
+    return false;
+  }
+
+  if (property_name == kAttrNameDirectoryBotJid) {
+    if (NPVARIANT_IS_STRING(*value)) {
+      directory_bot_jid_ = StringFromNPVariant(*value);
+      return true;
+    } else {
+      SetException("SetProperty: unexpected type for property " +
+                   property_name);
+    }
+    return false;
+  }
+#endif  // !defined(NDEBUG)
+
   return false;
 }
 
@@ -913,6 +970,9 @@ bool HostNPScriptObject::Enumerate(std::vector<std::string>* values) {
     kAttrNameConnected,
     kAttrNameDisconnecting,
     kAttrNameError,
+    kAttrNameXmppServerAddress,
+    kAttrNameXmppServerUseTls,
+    kAttrNameDirectoryBotJid,
     kFuncNameConnect,
     kFuncNameDisconnect,
     kFuncNameLocalize,
@@ -967,17 +1027,18 @@ bool HostNPScriptObject::Connect(const NPVariant* args,
   }
 
   // Create threads for the Chromoting host & desktop environment to use.
-  scoped_ptr<ChromotingHostContext> host_context(
-      new ChromotingHostContext(auto_plugin_task_runner_));
-  if (!host_context->Start()) {
+  scoped_ptr<ChromotingHostContext> host_context =
+    ChromotingHostContext::Create(plugin_task_runner_);
+  if (!host_context) {
     SetException("connect: failed to start threads");
     return false;
   }
 
   // Create the It2Me host implementation and start connecting.
   it2me_impl_ = new It2MeImpl(
-      host_context.Pass(), auto_plugin_task_runner_, weak_ptr_, ui_strings_);
-  it2me_impl_->Connect(uid, auth_token, auth_service);
+      host_context.Pass(), plugin_task_runner_, weak_ptr_,
+      xmpp_server_config_, directory_bot_jid_);
+  it2me_impl_->Connect(uid, auth_token, auth_service, ui_strings_);
 
   return true;
 }
@@ -1021,19 +1082,28 @@ bool HostNPScriptObject::Localize(const NPVariant* args,
 bool HostNPScriptObject::GetHostName(const NPVariant* args,
                                      uint32_t arg_count,
                                      NPVariant* result) {
-  if (arg_count != 0) {
+  if (arg_count != 1) {
     SetException("getHostName: bad number of arguments");
     return false;
   }
-  DCHECK(result);
-  *result = NPVariantFromString(net::GetHostName());
+
+  ScopedRefNPObject callback_obj(ObjectFromNPVariant(args[0]));
+  if (!callback_obj.get()) {
+    SetException("getHostName: invalid callback parameter");
+    return false;
+  }
+
+  NPVariant host_name_val = NPVariantFromString(net::GetHostName());
+  InvokeAndIgnoreResult(callback_obj.get(), &host_name_val, 1);
+  g_npnetscape_funcs->releasevariantvalue(&host_name_val);
+
   return true;
 }
 
 bool HostNPScriptObject::GetPinHash(const NPVariant* args,
                                     uint32_t arg_count,
                                     NPVariant* result) {
-  if (arg_count != 2) {
+  if (arg_count != 3) {
     SetException("getPinHash: bad number of arguments");
     return false;
   }
@@ -1050,7 +1120,16 @@ bool HostNPScriptObject::GetPinHash(const NPVariant* args,
   }
   std::string pin = StringFromNPVariant(args[1]);
 
-  *result = NPVariantFromString(remoting::MakeHostPinHash(host_id, pin));
+  ScopedRefNPObject callback_obj(ObjectFromNPVariant(args[2]));
+  if (!callback_obj.get()) {
+    SetException("getPinHash: invalid callback parameter");
+    return false;
+  }
+
+  NPVariant pin_hash_val = NPVariantFromString(
+      remoting::MakeHostPinHash(host_id, pin));
+  InvokeAndIgnoreResult(callback_obj.get(), &pin_hash_val, 1);
+  g_npnetscape_funcs->releasevariantvalue(&pin_hash_val);
 
   return true;
 }
@@ -1072,7 +1151,7 @@ bool HostNPScriptObject::GenerateKeyPair(const NPVariant* args,
   // TODO(wez): HostNPScriptObject needn't be touched on worker
   // thread, so make DoGenerateKeyPair static and pass it a callback
   // to run (crbug.com/156257).
-  worker_thread_.message_loop_proxy()->PostTask(
+  worker_thread_->PostTask(
       FROM_HERE, base::Bind(&HostNPScriptObject::DoGenerateKeyPair,
                             base::Unretained(this), callback_obj));
   return true;
@@ -1325,15 +1404,6 @@ void HostNPScriptObject::LocalizeStrings(NPObject* localize_func) {
                  &ui_strings_.product_name);
   LocalizeString(localize_func, /*i18n-content*/"DISCONNECT_OTHER_BUTTON",
                  &ui_strings_.disconnect_button_text);
-  LocalizeString(localize_func,
-#if defined(OS_WIN)
-      /*i18n-content*/"DISCONNECT_BUTTON_PLUS_SHORTCUT_WINDOWS",
-#elif defined(OS_MACOSX)
-      /*i18n-content*/"DISCONNECT_BUTTON_PLUS_SHORTCUT_MAC_OS_X",
-#else
-      /*i18n-content*/"DISCONNECT_BUTTON_PLUS_SHORTCUT_LINUX",
-#endif
-      &ui_strings_.disconnect_button_text_plus_shortcut);
   LocalizeString(localize_func, /*i18n-content*/"CONTINUE_PROMPT",
                  &ui_strings_.continue_prompt);
   LocalizeString(localize_func, /*i18n-content*/"CONTINUE_BUTTON",
@@ -1379,10 +1449,9 @@ bool HostNPScriptObject::LocalizeStringWithSubstitution(
 }
 
 void HostNPScriptObject::DoGenerateKeyPair(const ScopedRefNPObject& callback) {
-  HostKeyPair key_pair;
-  key_pair.Generate();
-  InvokeGenerateKeyPairCallback(callback, key_pair.GetAsString(),
-                                key_pair.GetPublicKey());
+  scoped_refptr<RsaKeyPair> key_pair = RsaKeyPair::Generate();
+  InvokeGenerateKeyPairCallback(callback, key_pair->ToString(),
+                                key_pair->GetPublicKey());
 }
 
 void HostNPScriptObject::InvokeGenerateKeyPairCallback(

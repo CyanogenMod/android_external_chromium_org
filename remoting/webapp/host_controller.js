@@ -10,12 +10,18 @@ var remoting = remoting || {};
 /** @constructor */
 remoting.HostController = function() {
   /** @type {remoting.HostPlugin} @private */
-  this.plugin_ = remoting.HostSession.createPlugin();
-  /** @type {HTMLElement} @private */
-  this.container_ = document.getElementById('daemon-plugin-container');
-  this.container_.appendChild(this.plugin_);
-  /** @type {remoting.Host?} */
-  this.localHost = null;
+  this.plugin_ = null;
+  if (remoting.HostNativeMessaging.isSupported()) {
+    this.plugin_ = new remoting.HostNativeMessaging();
+  } else {
+    this.plugin_ = remoting.HostSession.createPlugin();
+    /** @type {HTMLElement} @private */
+    var container = document.getElementById('daemon-plugin-container');
+    container.appendChild(this.plugin_);
+  }
+
+  /** @type {string?} */
+  this.localHostId_ = null;
   /** @param {string} version */
   var printVersion = function(version) {
     if (version == '') {
@@ -24,10 +30,13 @@ remoting.HostController = function() {
       console.log('Host version: ' + version);
     }
   };
+  /** @type {boolean} @private */
+  this.pluginSupported_ = true;
   try {
     this.plugin_.getDaemonVersion(printVersion);
   } catch (err) {
     console.log('Host version not available.');
+    this.pluginSupported_ = false;
   }
 };
 
@@ -53,16 +62,29 @@ remoting.HostController.AsyncResult = {
   FAILED_DIRECTORY: 3
 };
 
-/** @return {remoting.HostController.State} The current state of the daemon. */
-remoting.HostController.prototype.state = function() {
-  var result = this.plugin_.daemonState;
-  if (typeof(result) == 'undefined') {
-    // If the plug-in can't be instantiated, for example on ChromeOS, then
-    // return something sensible.
-    return remoting.HostController.State.NOT_IMPLEMENTED;
-  } else {
-    return result;
-  }
+/**
+ * Checks if the host is installed on the local computer.
+ *
+ * TODO(sergeyu): Make this method asynchronous or just remove it and use
+ * getLocalHostStateAndId() instead.
+ *
+ * @return {boolean} True if the host is installed.
+ */
+remoting.HostController.prototype.isInstalled = function() {
+  var state = this.plugin_.daemonState;
+  return typeof(state) != 'undefined' &&
+    state != remoting.HostController.State.NOT_INSTALLED &&
+    state != remoting.HostController.State.INSTALLING;
+}
+
+/**
+ * Checks whether or not the host plugin is valid.
+ *
+ * @return {boolean} True if the plugin is supported and loaded; false
+ *     otherwise.
+ */
+remoting.HostController.prototype.isPluginSupported = function() {
+  return this.pluginSupported_;
 };
 
 /**
@@ -74,42 +96,8 @@ remoting.HostController.prototype.getConsent = function(callback) {
 };
 
 /**
- * Show or hide daemon-specific parts of the UI.
- * @return {void} Nothing.
- */
-remoting.HostController.prototype.updateDom = function() {
-  var match = '';
-  var state = this.state();
-  var enabled = (state == remoting.HostController.State.STARTING) ||
-      (state == remoting.HostController.State.STARTED);
-  var supported = (state != remoting.HostController.State.NOT_IMPLEMENTED);
-  remoting.updateModalUi(enabled ? 'enabled' : 'disabled', 'data-daemon-state');
-  document.getElementById('daemon-control').hidden = !supported;
-  var element = document.getElementById('host-list-empty-hosting-supported');
-  element.hidden = !supported;
-  element = document.getElementById('host-list-empty-hosting-unsupported');
-  element.hidden = supported;
-};
-
-/**
- * Set tool-tips for the 'connect' action. We can't just set this on the
- * parent element because the button has no tool-tip, and therefore would
- * inherit connectStr.
- *
- * return {void} Nothing.
- */
-remoting.HostController.prototype.setTooltips = function() {
-  var connectStr = '';
-  if (this.localHost) {
-    chrome.i18n.getMessage(/*i18n-content*/'TOOLTIP_CONNECT',
-                           this.localHost.hostName);
-  }
-  document.getElementById('this-host-name').title = connectStr;
-  document.getElementById('this-host-icon').title = connectStr;
-};
-
-/**
  * Registers and starts the host.
+ *
  * @param {string} hostPin Host PIN.
  * @param {boolean} consent The user's consent to crash dump reporting.
  * @param {function(remoting.HostController.AsyncResult):void} callback
@@ -119,7 +107,6 @@ remoting.HostController.prototype.setTooltips = function() {
 remoting.HostController.prototype.start = function(hostPin, consent, callback) {
   /** @type {remoting.HostController} */
   var that = this;
-  var hostName = this.plugin_.getHostName();
 
   /** @return {string} */
   function generateUuid() {
@@ -143,48 +130,28 @@ remoting.HostController.prototype.start = function(hostPin, consent, callback) {
    *  @param {string} publicKey */
   function onStarted(callback, result, hostName, publicKey) {
     if (result == remoting.HostController.AsyncResult.OK) {
-      // Create a dummy remoting.Host instance to represent the local host.
-      // Refreshing the list is no good in general, because the directory
-      // information won't be in sync for several seconds. We don't know the
-      // host JID, but it can be missing from the cache with no ill effects.
-      // It will be refreshed if the user tries to connect to the local host,
-      // and we hope that the directory will have been updated by that point.
-      var localHost = new remoting.Host();
-      localHost.hostName = hostName;
-      localHost.hostId = newHostId;
-      localHost.publicKey = publicKey;
-      localHost.status = 'ONLINE';
-      that.setHost(localHost);
-      remoting.hostList.addHost(localHost);
+      that.localHostId_ = newHostId;
+      remoting.hostList.onLocalHostStarted(hostName, newHostId, publicKey);
     } else {
+      that.localHostId_ = null;
       // Unregister the host if we failed to start it.
       remoting.HostList.unregisterHostById(newHostId);
     }
     callback(result);
   };
 
-  /** @param {string} publicKey
-   *  @param {string} privateKey
-   *  @param {XMLHttpRequest} xhr */
-  function onRegistered(publicKey, privateKey, xhr) {
+  /**
+   * @param {string} hostName
+   * @param {string} publicKey
+   * @param {string} privateKey
+   * @param {XMLHttpRequest} xhr
+   */
+  function onRegistered(hostName, publicKey, privateKey, xhr) {
     var success = (xhr.status == 200);
 
     if (success) {
-      var hostSecretHash =
-          that.plugin_.getPinHash(newHostId, hostPin);
-      var hostConfig = JSON.stringify({
-          xmpp_login: remoting.oauth2.getCachedEmail(),
-          oauth_refresh_token: remoting.oauth2.exportRefreshToken(),
-          host_id: newHostId,
-          host_name: hostName,
-          host_secret_hash: hostSecretHash,
-          private_key: privateKey
-      });
-      /** @param {remoting.HostController.AsyncResult} result */
-      var onStartDaemon = function(result) {
-        onStarted(callback, result, hostName, publicKey);
-      };
-      that.plugin_.startDaemon(hostConfig, consent, onStartDaemon);
+      that.plugin_.getPinHash(newHostId, hostPin, startHostWithHash.bind(
+          null, hostName, publicKey, privateKey, xhr));
     } else {
       console.log('Failed to register the host. Status: ' + xhr.status +
                   ' response: ' + xhr.responseText);
@@ -193,11 +160,36 @@ remoting.HostController.prototype.start = function(hostPin, consent, callback) {
   };
 
   /**
+   * @param {string} hostName
+   * @param {string} publicKey
+   * @param {string} privateKey
+   * @param {XMLHttpRequest} xhr
+   * @param {string} hostSecretHash
+   */
+  function startHostWithHash(hostName, publicKey, privateKey, xhr,
+                             hostSecretHash) {
+    var hostConfig = JSON.stringify({
+        xmpp_login: remoting.identity.getCachedEmail(),
+        oauth_refresh_token: remoting.oauth2.exportRefreshToken(),
+        host_id: newHostId,
+        host_name: hostName,
+        host_secret_hash: hostSecretHash,
+        private_key: privateKey
+    });
+    /** @param {remoting.HostController.AsyncResult} result */
+    var onStartDaemon = function(result) {
+      onStarted(callback, result, hostName, publicKey);
+    };
+    that.plugin_.startDaemon(hostConfig, consent, onStartDaemon);
+  }
+
+  /**
+   * @param {string} hostName
    * @param {string} privateKey
    * @param {string} publicKey
    * @param {string} oauthToken
    */
-  function doRegisterHost(privateKey, publicKey, oauthToken) {
+  function doRegisterHost(hostName, privateKey, publicKey, oauthToken) {
     var headers = {
       'Authorization': 'OAuth ' + oauthToken,
       'Content-type' : 'application/json; charset=UTF-8'
@@ -209,20 +201,23 @@ remoting.HostController.prototype.start = function(hostPin, consent, callback) {
        publicKey: publicKey
     } };
     remoting.xhr.post(
-        'https://www.googleapis.com/chromoting/v1/@me/hosts/',
+        remoting.settings.DIRECTORY_API_BASE_URL + '/@me/hosts/',
         /** @param {XMLHttpRequest} xhr */
-        function (xhr) { onRegistered(publicKey, privateKey, xhr); },
+        function (xhr) { onRegistered(hostName, publicKey, privateKey, xhr); },
         JSON.stringify(newHostDetails),
         headers);
   };
 
-  /** @param {string} privateKey
-   *  @param {string} publicKey */
-  function onKeyGenerated(privateKey, publicKey) {
-    remoting.oauth2.callWithToken(
+  /**
+   * @param {string} hostName
+   * @param {string} privateKey
+   * @param {string} publicKey
+   */
+  function onKeyGenerated(hostName, privateKey, publicKey) {
+    remoting.identity.callWithToken(
         /** @param {string} oauthToken */
         function(oauthToken) {
-          doRegisterHost(privateKey, publicKey, oauthToken);
+          doRegisterHost(hostName, privateKey, publicKey, oauthToken);
         },
         /** @param {remoting.Error} error */
         function(error) {
@@ -231,7 +226,15 @@ remoting.HostController.prototype.start = function(hostPin, consent, callback) {
         });
   };
 
-  this.plugin_.generateKeyPair(onKeyGenerated);
+  /**
+   * @param {string} hostName
+   * @return {void} Nothing.
+   */
+  function startWithHostname(hostName) {
+    that.plugin_.generateKeyPair(onKeyGenerated.bind(null, hostName));
+  }
+
+  this.plugin_.getHostName(startWithHostname);
 };
 
 /**
@@ -247,8 +250,8 @@ remoting.HostController.prototype.stop = function(callback) {
   /** @param {remoting.HostController.AsyncResult} result */
   function onStopped(result) {
     if (result == remoting.HostController.AsyncResult.OK &&
-        that.localHost && that.localHost.hostId) {
-      remoting.HostList.unregisterHostById(that.localHost.hostId);
+        that.localHostId_) {
+      remoting.HostList.unregisterHostById(that.localHostId_);
     }
     callback(result);
   };
@@ -299,8 +302,13 @@ remoting.HostController.prototype.updatePin = function(newPin, callback) {
       return;
     }
     var hostId = config['host_id'];
+    that.plugin_.getPinHash(hostId, newPin, updateDaemonConfigWithHash);
+  };
+
+  /** @param {string} pinHash */
+  function updateDaemonConfigWithHash(pinHash) {
     var newConfig = JSON.stringify({
-        host_secret_hash: that.plugin_.getPinHash(hostId, newPin)
+        host_secret_hash: pinHash
       });
     that.plugin_.updateDaemonConfig(newConfig, callback);
   };
@@ -311,71 +319,37 @@ remoting.HostController.prototype.updatePin = function(newPin, callback) {
 };
 
 /**
- * Set the remoting.Host instance (retrieved from the Chromoting service)
- * that corresponds to the local computer, if any.
- *
- * @param {remoting.Host?} host The host, or null if not registered.
- * @return {void} Nothing.
- */
-remoting.HostController.prototype.setHost = function(host) {
-  this.localHost = host;
-  this.setTooltips();
-  /** @type {remoting.HostController} */
-  var that = this;
-  if (host) {
-    /** @param {remoting.HostTableEntry} host */
-    var renameHost = function(host) {
-      remoting.hostList.renameHost(host);
-      that.setTooltips();
-    };
-    if (!this.hostTableEntry_) {
-      /** @type {remoting.HostTableEntry} @private */
-      this.hostTableEntry_ = new remoting.HostTableEntry();
-      this.hostTableEntry_.init(host,
-                                document.getElementById('this-host-connect'),
-                                document.getElementById('this-host-name'),
-                                document.getElementById('this-host-rename'),
-                                renameHost);
-    } else {
-      // TODO(jamiewalch): This is hack to prevent multiple click handlers being
-      // registered for the same DOM elements if this method is called more than
-      // once. A better solution would be to let HostTable create the daemon row
-      // like it creates the rows for non-local hosts.
-      this.hostTableEntry_.host = host;
-    }
-  } else {
-    this.hostTableEntry_ = null;
-  }
-};
-
-/**
  * Update the internal state so that the local host can be correctly filtered
  * out of the host list.
  *
- * @param {remoting.HostList} hostList The new host list, returned by the
- *     Chromoting service.
- * @param {function():void} onDone Completion callback.
+ * @param {function(remoting.HostController.State, string?):void} onDone
+ *     Completion callback.
  */
-remoting.HostController.prototype.onHostListRefresh =
-    function(hostList, onDone) {
+remoting.HostController.prototype.getLocalHostStateAndId = function(onDone) {
   /** @type {remoting.HostController} */
   var that = this;
   /** @param {string} configStr */
   function onConfig(configStr) {
     var config = parseHostConfig_(configStr);
     if (config) {
-      var hostId = config['host_id'];
-      that.setHost(hostList.getHostForId(hostId));
+      that.localHostId_ = config['host_id'];
     } else {
-      that.setHost(null);
+      that.localHostId_ = null;
     }
-    onDone();
+
+    var state = that.plugin_.daemonState;
+    if (typeof(state) == 'undefined') {
+      // If the plug-in can't be instantiated, for example on ChromeOS, then
+      // return something sensible.
+      state = remoting.HostController.State.NOT_IMPLEMENTED;
+    }
+
+    onDone(state, that.localHostId_);
   };
   try {
     this.plugin_.getDaemonConfig(onConfig);
   } catch (err) {
-    this.setHost(null);
-    onDone();
+    onDone(remoting.HostController.State.NOT_IMPLEMENTED, null);
   }
 };
 

@@ -9,6 +9,7 @@
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/dispatcher.h"
+#include "chrome/renderer/extensions/scoped_persistent.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_observer.h"
@@ -49,8 +50,9 @@ class DidCreateDocumentElementObserver : public content::RenderViewObserver {
   Dispatcher* dispatcher_;
 };
 
-AppWindowCustomBindings::AppWindowCustomBindings(Dispatcher* dispatcher)
-    : ChromeV8Extension(dispatcher) {
+AppWindowCustomBindings::AppWindowCustomBindings(
+    Dispatcher* dispatcher,
+    v8::Handle<v8::Context> context) : ChromeV8Extension(dispatcher, context) {
   RouteFunction("GetView",
       base::Bind(&AppWindowCustomBindings::GetView,
                  base::Unretained(this)));
@@ -60,50 +62,27 @@ AppWindowCustomBindings::AppWindowCustomBindings(Dispatcher* dispatcher)
 }
 
 namespace {
-class FindViewByID : public content::RenderViewVisitor {
- public:
-  explicit FindViewByID(int route_id) : route_id_(route_id), view_(NULL) {
-  }
-
-  content::RenderView* view() { return view_; }
-
-  // Returns false to terminate the iteration.
-  virtual bool Visit(content::RenderView* render_view) {
-    if (render_view->GetRoutingID() == route_id_) {
-      view_ = render_view;
-      return false;
-    }
-    return true;
-  }
-
- private:
-  int route_id_;
-  content::RenderView* view_;
-};
-
 class LoadWatcher : public content::RenderViewObserver {
  public:
-  LoadWatcher(
-      content::RenderView* view, v8::Handle<v8::Function> cb)
+  LoadWatcher(v8::Isolate* isolate,
+              content::RenderView* view,
+              v8::Handle<v8::Function> cb)
       : content::RenderViewObserver(view),
-        callback_(v8::Persistent<v8::Function>::New(cb)) {
+        callback_(cb) {
   }
 
   virtual void DidCreateDocumentElement(WebKit::WebFrame* frame) OVERRIDE {
     CallbackAndDie(frame, true);
   }
 
-  virtual void DidFailProvisionalLoad(WebKit::WebFrame* frame,
-                                      const WebKit::WebURLError& error) {
+  virtual void DidFailProvisionalLoad(
+      WebKit::WebFrame* frame,
+      const WebKit::WebURLError& error) OVERRIDE {
     CallbackAndDie(frame, false);
   }
 
-  virtual ~LoadWatcher() {
-    callback_.Dispose();
-  }
-
  private:
-  v8::Persistent<v8::Function> callback_;
+  ScopedPersistent<v8::Function> callback_;
 
   void CallbackAndDie(WebKit::WebFrame* frame, bool succeeded) {
     v8::HandleScope handle_scope;
@@ -134,14 +113,12 @@ v8::Handle<v8::Value> AppWindowCustomBindings::OnContextReady(
 
   int view_id = args[0]->Int32Value();
 
-  FindViewByID view_finder(view_id);
-  content::RenderView::ForEach(&view_finder);
-  content::RenderView* view = view_finder.view();
+  content::RenderView* view = content::RenderView::FromRoutingID(view_id);
   if (!view)
     return v8::Undefined();
 
   v8::Handle<v8::Function> func = v8::Handle<v8::Function>::Cast(args[1]);
-  new LoadWatcher(view, func);
+  new LoadWatcher(args.GetIsolate(), view, func);
 
   return v8::True();
 }
@@ -166,14 +143,7 @@ v8::Handle<v8::Value> AppWindowCustomBindings::GetView(
   if (view_id == MSG_ROUTING_NONE)
     return v8::Undefined();
 
-  // TODO(jeremya): there exists a direct map of routing_id -> RenderView as
-  // ChildThread::current()->ResolveRoute(), but ResolveRoute returns an
-  // IPC::Listener*, which RenderView doesn't inherit from (RenderViewImpl
-  // does, indirectly, via RenderWidget, but the link isn't exposed outside of
-  // content/.)
-  FindViewByID view_finder(view_id);
-  content::RenderView::ForEach(&view_finder);
-  content::RenderView* view = view_finder.view();
+  content::RenderView* view = content::RenderView::FromRoutingID(view_id);
   if (!view)
     return v8::Undefined();
 
@@ -184,7 +154,7 @@ v8::Handle<v8::Value> AppWindowCustomBindings::GetView(
   // need to make sure the security origin is set up before returning the DOM
   // reference. A better way to do this would be to have the browser pass the
   // opener through so opener_id is set in RenderViewImpl's constructor.
-  content::RenderView* render_view = GetCurrentRenderView();
+  content::RenderView* render_view = GetRenderView();
   if (!render_view)
     return v8::Undefined();
   WebKit::WebFrame* opener = render_view->GetWebView()->mainFrame();

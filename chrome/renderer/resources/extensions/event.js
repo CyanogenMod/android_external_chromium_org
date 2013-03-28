@@ -3,19 +3,22 @@
 // found in the LICENSE file.
 
   var DCHECK = requireNative('logging').DCHECK;
+  // TODO(cduvall/kalman): json_schema shouldn't put things on chromeHidden.
+  require('json_schema');
   var eventBindingsNatives = requireNative('event_bindings');
   var AttachEvent = eventBindingsNatives.AttachEvent;
   var DetachEvent = eventBindingsNatives.DetachEvent;
   var AttachFilteredEvent = eventBindingsNatives.AttachFilteredEvent;
   var DetachFilteredEvent = eventBindingsNatives.DetachFilteredEvent;
   var MatchAgainstEventFilter = eventBindingsNatives.MatchAgainstEventFilter;
+  var forEach = require('utils').forEach;
   var sendRequest = require('sendRequest').sendRequest;
   var utils = require('utils');
   var validate = require('schemaUtils').validate;
 
   var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
-  var GetExtensionAPIDefinition =
-      requireNative('apiDefinitions').GetExtensionAPIDefinition;
+  var chrome = requireNative('chrome').GetChrome();
+  var schemaRegistry = requireNative('schema_registry');
 
   // Schemas for the rule-style functions on the events API that
   // only need to be generated occasionally, so populate them lazily.
@@ -30,7 +33,7 @@
   function ensureRuleSchemasLoaded() {
     if (ruleFunctionSchemas.addRules)
       return;
-    var eventsSchema = GetExtensionAPIDefinition("events")[0];
+    var eventsSchema = schemaRegistry.GetSchema("events");
     var eventType = utils.lookup(eventsSchema.types, 'id', 'events.Event');
 
     ruleFunctionSchemas.addRules =
@@ -40,44 +43,6 @@
     ruleFunctionSchemas.removeRules =
         utils.lookup(eventType.functions, 'name', 'removeRules');
   }
-
-  // Local implementation of JSON.parse & JSON.stringify that protect us
-  // from being clobbered by an extension.
-  //
-  // TODO(aa): This makes me so sad. We shouldn't need it, as we can just pass
-  // Values directly over IPC without serializing to strings and use
-  // JSONValueConverter.
-  chromeHidden.JSON = new (function() {
-    var $Object = Object;
-    var $Array = Array;
-    var $jsonStringify = JSON.stringify;
-    var $jsonParse = JSON.parse;
-
-    this.stringify = function(thing) {
-      var customizedObjectToJSON = $Object.prototype.toJSON;
-      var customizedArrayToJSON = $Array.prototype.toJSON;
-      if (customizedObjectToJSON !== undefined) {
-        $Object.prototype.toJSON = null;
-      }
-      if (customizedArrayToJSON !== undefined) {
-        $Array.prototype.toJSON = null;
-      }
-      try {
-        return $jsonStringify(thing);
-      } finally {
-        if (customizedObjectToJSON !== undefined) {
-          $Object.prototype.toJSON = customizedObjectToJSON;
-        }
-        if (customizedArrayToJSON !== undefined) {
-          $Array.prototype.toJSON = customizedArrayToJSON;
-        }
-      }
-    };
-
-    this.parse = function(thing) {
-      return $jsonParse(thing);
-    };
-  })();
 
   // A map of event names to the event object that is registered to that name.
   var attachedNamedEvents = {};
@@ -189,7 +154,7 @@
   //
   // If opt_eventOptions exists, it is a dictionary that contains the boolean
   // entries "supportsListeners" and "supportsRules".
-  chrome.Event = function(opt_eventName, opt_argSchemas, opt_eventOptions) {
+  var Event = function(opt_eventName, opt_argSchemas, opt_eventOptions) {
     this.eventName_ = opt_eventName;
     this.listeners_ = [];
     this.eventOptions_ = chromeHidden.parseEventOptions(opt_eventOptions);
@@ -246,9 +211,10 @@
       return;
 
     var dispatchArgs = function(args) {
-      result = event.dispatch_(args, listenerIDs);
+      var result = event.dispatch_(args, listenerIDs);
       if (result)
         DCHECK(!result.validationErrors, result.validationErrors);
+      return result;
     };
 
     if (eventArgumentMassagers[name])
@@ -264,7 +230,7 @@
   };
 
   // Registers a callback to be called when this event is dispatched.
-  chrome.Event.prototype.addListener = function(cb, filters) {
+  Event.prototype.addListener = function(cb, filters) {
     if (!this.eventOptions_.supportsListeners)
       throw new Error("This event does not support listeners.");
     if (this.eventOptions_.maxListeners &&
@@ -281,7 +247,7 @@
     this.listeners_.push(listener);
   };
 
-  chrome.Event.prototype.attach_ = function(listener) {
+  Event.prototype.attach_ = function(listener) {
     this.attachmentStrategy_.onAddedListener(listener);
     if (this.listeners_.length == 0) {
       allAttachedEvents[allAttachedEvents.length] = this;
@@ -298,7 +264,7 @@
   };
 
   // Unregisters a callback.
-  chrome.Event.prototype.removeListener = function(cb) {
+  Event.prototype.removeListener = function(cb) {
     if (!this.eventOptions_.supportsListeners)
       throw new Error("This event does not support listeners.");
     var idx = this.findListener_(cb);
@@ -326,19 +292,19 @@
   };
 
   // Test if the given callback is registered for this event.
-  chrome.Event.prototype.hasListener = function(cb) {
+  Event.prototype.hasListener = function(cb) {
     if (!this.eventOptions_.supportsListeners)
       throw new Error("This event does not support listeners.");
     return this.findListener_(cb) > -1;
   };
 
   // Test if any callbacks are registered for this event.
-  chrome.Event.prototype.hasListeners = function() {
+  Event.prototype.hasListeners = function() {
     return this.getListenerCount() > 0;
   };
 
   // Return the number of listeners on this event.
-  chrome.Event.prototype.getListenerCount = function() {
+  Event.prototype.getListenerCount = function() {
     if (!this.eventOptions_.supportsListeners)
       throw new Error("This event does not support listeners.");
     return this.listeners_.length;
@@ -346,7 +312,7 @@
 
   // Returns the index of the given callback if registered, or -1 if not
   // found.
-  chrome.Event.prototype.findListener_ = function(cb) {
+  Event.prototype.findListener_ = function(cb) {
     for (var i = 0; i < this.listeners_.length; i++) {
       if (this.listeners_[i].callback == cb) {
         return i;
@@ -356,7 +322,7 @@
     return -1;
   };
 
-  chrome.Event.prototype.dispatch_ = function(args, listenerIDs) {
+  Event.prototype.dispatch_ = function(args, listenerIDs) {
     if (!this.eventOptions_.supportsListeners)
       throw new Error("This event does not support listeners.");
     var validationErrors = this.validateEventArgs_(args);
@@ -365,7 +331,10 @@
       return {validationErrors: validationErrors};
     }
 
-    var listeners = this.attachmentStrategy_.getListenersByIDs(listenerIDs);
+    // Make a copy of the listeners in case the listener list is modified
+    // while dispatching the event.
+    var listeners =
+        this.attachmentStrategy_.getListenersByIDs(listenerIDs).slice();
 
     var results = [];
     for (var i = 0; i < listeners.length; i++) {
@@ -383,28 +352,28 @@
   }
 
   // Can be overridden to support custom dispatching.
-  chrome.Event.prototype.dispatchToListener = function(callback, args) {
+  Event.prototype.dispatchToListener = function(callback, args) {
     return callback.apply(null, args);
   }
 
   // Dispatches this event object to all listeners, passing all supplied
   // arguments to this function each listener.
-  chrome.Event.prototype.dispatch = function(varargs) {
+  Event.prototype.dispatch = function(varargs) {
     return this.dispatch_(Array.prototype.slice.call(arguments), undefined);
   };
 
   // Detaches this event object from its name.
-  chrome.Event.prototype.detach_ = function() {
+  Event.prototype.detach_ = function() {
     this.attachmentStrategy_.detach(false);
   };
 
-  chrome.Event.prototype.destroy_ = function() {
+  Event.prototype.destroy_ = function() {
     this.listeners_ = [];
     this.validateEventArgs_ = [];
     this.detach_(false);
   };
 
-  chrome.Event.prototype.addRules = function(rules, opt_cb) {
+  Event.prototype.addRules = function(rules, opt_cb) {
     if (!this.eventOptions_.supportsRules)
       throw new Error("This event does not support rules.");
 
@@ -430,7 +399,7 @@
     function validateRules(rules, conditions, actions) {
       var conditionsSchema = buildArrayOfChoicesSchema(conditions);
       var actionsSchema = buildArrayOfChoicesSchema(actions);
-      rules.forEach(function(rule) {
+      forEach(rules, function(i, rule) {
         validate([rule.conditions], [conditionsSchema]);
         validate([rule.actions], [actionsSchema]);
       })
@@ -454,7 +423,7 @@
                 ruleFunctionSchemas.addRules.parameters);
   }
 
-  chrome.Event.prototype.removeRules = function(ruleIdentifiers, opt_cb) {
+  Event.prototype.removeRules = function(ruleIdentifiers, opt_cb) {
     if (!this.eventOptions_.supportsRules)
       throw new Error("This event does not support rules.");
     ensureRuleSchemasLoaded();
@@ -467,7 +436,7 @@
                 ruleFunctionSchemas.removeRules.parameters);
   }
 
-  chrome.Event.prototype.getRules = function(ruleIdentifiers, cb) {
+  Event.prototype.getRules = function(ruleIdentifiers, cb) {
     if (!this.eventOptions_.supportsRules)
       throw new Error("This event does not support rules.");
     ensureRuleSchemasLoaded();
@@ -484,14 +453,16 @@
   // Special load events: we don't use the DOM unload because that slows
   // down tab shutdown.  On the other hand, onUnload might not always fire,
   // since Chrome will terminate renderers on shutdown (SuddenTermination).
-  chromeHidden.onLoad = new chrome.Event();
-  chromeHidden.onUnload = new chrome.Event();
+  chromeHidden.onLoad = new Event();
+  chromeHidden.onUnload = new Event();
 
   chromeHidden.dispatchOnLoad =
       chromeHidden.onLoad.dispatch.bind(chromeHidden.onLoad);
 
   chromeHidden.dispatchOnUnload = function() {
     chromeHidden.onUnload.dispatch();
+    chromeHidden.wasUnloaded = true;
+
     for (var i = 0; i < allAttachedEvents.length; ++i) {
       var event = allAttachedEvents[i];
       if (event)
@@ -503,4 +474,4 @@
     console.error(msg);
   };
 
-  exports.Event = chrome.Event;
+  chrome.Event = Event;

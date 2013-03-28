@@ -5,9 +5,11 @@
 #include "ash/system/date/tray_date.h"
 
 #include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "ash/system/date/date_view.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
+#include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_item_view.h"
 #include "ash/system/tray/tray_views.h"
@@ -18,13 +20,16 @@
 #include "base/utf_string_conversions.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
+#include "third_party/icu/public/i18n/unicode/datefmt.h"
+#include "third_party/icu/public/i18n/unicode/fieldpos.h"
+#include "third_party/icu/public/i18n/unicode/fmtable.h"
 #include "third_party/skia/include/core/SkRect.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/size.h"
 #include "ui/views/controls/button/button.h"
-#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
@@ -32,9 +37,6 @@
 #include "ui/views/painter.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
-#include "unicode/datefmt.h"
-#include "unicode/fieldpos.h"
-#include "unicode/fmtable.h"
 
 namespace {
 
@@ -71,27 +73,32 @@ class DateDefaultView : public views::View,
         IDR_AURA_UBER_TRAY_HELP_HOVER,
         IDR_AURA_UBER_TRAY_HELP_HOVER,
         IDS_ASH_STATUS_TRAY_HELP);
+    help_->SetTooltipText(l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_HELP));
     view->AddButton(help_);
 
     if (login != ash::user::LOGGED_IN_LOCKED &&
-        login != ash::user::LOGGED_IN_KIOSK) {
+        login != ash::user::LOGGED_IN_RETAIL_MODE) {
       shutdown_ = new ash::internal::TrayPopupHeaderButton(this,
           IDR_AURA_UBER_TRAY_SHUTDOWN,
           IDR_AURA_UBER_TRAY_SHUTDOWN,
           IDR_AURA_UBER_TRAY_SHUTDOWN_HOVER,
           IDR_AURA_UBER_TRAY_SHUTDOWN_HOVER,
           IDS_ASH_STATUS_TRAY_SHUTDOWN);
+      shutdown_->SetTooltipText(
+          l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_SHUTDOWN));
       view->AddButton(shutdown_);
+    }
 
-      if (login != ash::user::LOGGED_IN_GUEST) {
-        lock_ = new ash::internal::TrayPopupHeaderButton(this,
-            IDR_AURA_UBER_TRAY_LOCKSCREEN,
-            IDR_AURA_UBER_TRAY_LOCKSCREEN,
-            IDR_AURA_UBER_TRAY_LOCKSCREEN_HOVER,
-            IDR_AURA_UBER_TRAY_LOCKSCREEN_HOVER,
-            IDS_ASH_STATUS_TRAY_LOCK);
-        view->AddButton(lock_);
-      }
+    if (ash::Shell::GetInstance()->CanLockScreen()) {
+      lock_ = new ash::internal::TrayPopupHeaderButton(this,
+          IDR_AURA_UBER_TRAY_LOCKSCREEN,
+          IDR_AURA_UBER_TRAY_LOCKSCREEN,
+          IDR_AURA_UBER_TRAY_LOCKSCREEN_HOVER,
+          IDR_AURA_UBER_TRAY_LOCKSCREEN_HOVER,
+          IDS_ASH_STATUS_TRAY_LOCK);
+      lock_->SetTooltipText(
+          l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_LOCK));
+      view->AddButton(lock_);
     }
   }
 
@@ -101,15 +108,21 @@ class DateDefaultView : public views::View,
   // Overridden from views::ButtonListener.
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE {
-    ash::SystemTrayDelegate* tray = ash::Shell::GetInstance()->tray_delegate();
-    if (sender == help_)
-      tray->ShowHelp();
-    else if (sender == shutdown_)
-      tray->ShutDown();
-    else if (sender == lock_)
-      tray->RequestLockScreen();
-    else
+    ash::Shell* shell = ash::Shell::GetInstance();
+    ash::ShellDelegate* shell_delegate = shell->delegate();
+    ash::SystemTrayDelegate* tray_delegate = shell->system_tray_delegate();
+    if (sender == help_) {
+      shell_delegate->RecordUserMetricsAction(ash::UMA_TRAY_HELP);
+      tray_delegate->ShowHelp();
+    } else if (sender == shutdown_) {
+      shell_delegate->RecordUserMetricsAction(ash::UMA_TRAY_SHUT_DOWN);
+      tray_delegate->ShutDown();
+    } else if (sender == lock_) {
+      shell_delegate->RecordUserMetricsAction(ash::UMA_TRAY_LOCK_SCREEN);
+      tray_delegate->RequestLockScreen();
+    } else {
       NOTREACHED();
+    }
   }
 
   ash::internal::TrayPopupHeaderButton* help_;
@@ -124,21 +137,24 @@ class DateDefaultView : public views::View,
 namespace ash {
 namespace internal {
 
-TrayDate::TrayDate()
-    : time_tray_(NULL) {
+TrayDate::TrayDate(SystemTray* system_tray)
+    : SystemTrayItem(system_tray),
+      time_tray_(NULL) {
+  Shell::GetInstance()->system_tray_notifier()->AddClockObserver(this);
 }
 
 TrayDate::~TrayDate() {
+  Shell::GetInstance()->system_tray_notifier()->RemoveClockObserver(this);
 }
 
 views::View* TrayDate::CreateTrayView(user::LoginStatus status) {
   CHECK(time_tray_ == NULL);
   ClockLayout clock_layout =
-      ash::Shell::GetInstance()->system_tray()->shelf_alignment() ==
-         SHELF_ALIGNMENT_BOTTOM ?
-      HORIZONTAL_CLOCK : VERTICAL_CLOCK;
+      (system_tray()->shelf_alignment() == SHELF_ALIGNMENT_BOTTOM ||
+       system_tray()->shelf_alignment() == SHELF_ALIGNMENT_TOP) ?
+          HORIZONTAL_CLOCK : VERTICAL_CLOCK;
   time_tray_ = new tray::TimeView(clock_layout);
-  views::View* view = new TrayItemView;
+  views::View* view = new TrayItemView(this);
   view->AddChildView(time_tray_);
   return view;
 }
@@ -166,13 +182,19 @@ void TrayDate::UpdateAfterLoginStatusChange(user::LoginStatus status) {
 
 void TrayDate::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
   if (time_tray_) {
-    ClockLayout clock_layout = alignment == SHELF_ALIGNMENT_BOTTOM ?
-        HORIZONTAL_CLOCK : VERTICAL_CLOCK;
+    ClockLayout clock_layout = (alignment == SHELF_ALIGNMENT_BOTTOM ||
+        alignment == SHELF_ALIGNMENT_TOP) ?
+            HORIZONTAL_CLOCK : VERTICAL_CLOCK;
     time_tray_->UpdateClockLayout(clock_layout);
   }
 }
 
 void TrayDate::OnDateFormatChanged() {
+  if (time_tray_)
+    time_tray_->UpdateTimeFormat();
+}
+
+void TrayDate::OnSystemClockTimeUpdated() {
   if (time_tray_)
     time_tray_->UpdateTimeFormat();
 }

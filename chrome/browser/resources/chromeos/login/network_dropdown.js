@@ -17,7 +17,7 @@ cr.define('cr.ui', function() {
   DropDownContainer.prototype = {
     __proto__: HTMLDivElement.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       this.classList.add('dropdown-container');
       // Selected item in the menu list.
@@ -89,17 +89,20 @@ cr.define('cr.ui', function() {
   DropDown.prototype = {
     __proto__: HTMLDivElement.prototype,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       this.appendChild(this.createOverlay_());
       this.appendChild(this.title_ = this.createTitle_());
-      this.appendChild(new DropDownContainer());
+      var container = new DropDownContainer();
+      container.id = this.id + '-dropdown-container';
+      this.appendChild(container);
 
       this.addEventListener('keydown', this.keyDownHandler_);
 
       this.title_.id = this.id + '-dropdown';
       this.title_.setAttribute('role', 'button');
       this.title_.setAttribute('aria-haspopup', 'true');
+      this.title_.setAttribute('aria-owns', container.id);
     },
 
     /**
@@ -119,18 +122,9 @@ cr.define('cr.ui', function() {
       this.container.hidden = !show;
       if (show) {
         this.container.selectItem(this.container.firstItem, false);
-        this.title_.setAttribute('aria-pressed', 'true');
       } else {
-        this.title_.setAttribute('aria-pressed', 'false');
         this.title_.removeAttribute('aria-activedescendant');
       }
-    },
-
-    /**
-     * Returns title button.
-     */
-    get titleButton() {
-      return this.children[1];
     },
 
     /**
@@ -146,8 +140,8 @@ cr.define('cr.ui', function() {
      * @param {string} icon Icon in dataURL format.
      */
     setTitle: function(title, icon) {
-      this.titleButton.firstElementChild.src = icon;
-      this.titleButton.lastElementChild.textContent = title;
+      this.title_.firstElementChild.src = icon;
+      this.title_.lastElementChild.textContent = title;
     },
 
     /**
@@ -230,7 +224,7 @@ cr.define('cr.ui', function() {
           item.controller.isShown = false;
           if (item.iid >= 0)
             chrome.send('networkItemChosen', [item.iid]);
-          this.parentNode.parentNode.titleButton.focus();
+          this.parentNode.parentNode.title_.focus();
         });
         wrapperDiv.addEventListener('mouseover', function f(e) {
           this.parentNode.selectItem(this, true);
@@ -252,7 +246,7 @@ cr.define('cr.ui', function() {
       var overlay = this.ownerDocument.createElement('div');
       overlay.classList.add('dropdown-overlay');
       overlay.addEventListener('click', function() {
-        this.parentNode.titleButton.focus();
+        this.parentNode.title_.focus();
         this.parentNode.isShown = false;
       });
       return overlay;
@@ -342,20 +336,18 @@ cr.define('cr.ui', function() {
           break;
         }
         case DropDown.KEYCODE_ENTER: {
-          var button = this.titleButton;
-          if (!button.opening) {
-            button.focus();
+          if (!this.title_.opening) {
+            this.title_.focus();
             this.isShown = false;
             var item =
-                button.controller.container.selectedItem.lastElementChild;
+                this.title_.controller.container.selectedItem.lastElementChild;
             if (item.iid >= 0 && !item.classList.contains('disabled-item'))
               chrome.send('networkItemChosen', [item.iid]);
-          } else {
-            button.opening = false;
           }
           break;
         }
       }
+      this.title_.opening = false;
     }
   };
 

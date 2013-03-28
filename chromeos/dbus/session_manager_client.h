@@ -30,12 +30,24 @@ class CHROMEOS_EXPORT SessionManagerClient {
     // Called when the property change is complete.
     virtual void PropertyChangeComplete(bool success) {}
 
-    // Called when the screen is locked.
+    // Called when the session manager requests that the lock screen be
+    // displayed.  NotifyLockScreenShown() is called after the lock screen
+    // is shown (the canonical "is the screen locked?" state lives in the
+    // session manager).
     virtual void LockScreen() {}
 
-    // Called when the screen is unlocked.
+    // Called when the session manager requests that the lock screen be
+    // dismissed.  NotifyLockScreenDismissed() is called afterward.
     virtual void UnlockScreen() {}
 
+    // Called when the session manager announces that the screen has been locked
+    // successfully (i.e. after NotifyLockScreenShown() has been called).
+    virtual void ScreenIsLocked() {}
+
+    // Called when the session manager announces that the screen has been
+    // unlocked successfully (i.e. after NotifyLockScreenDismissed() has
+    // been called).
+    virtual void ScreenIsUnlocked() {}
   };
 
   // Adds and removes the observer.
@@ -77,14 +89,10 @@ class CHROMEOS_EXPORT SessionManagerClient {
   // Notifies that the lock screen is dismissed.
   virtual void NotifyLockScreenDismissed() = 0;
 
-  // Returns whether or not the screen is locked. Implementation should cache
-  // this state so that it can return immediately. Useful for observers that
-  // need to know the current screen lock state when they are added.
-  virtual bool GetIsScreenLocked() = 0;
-
-  // Used for RetrieveDevicePolicy and RetrieveUserPolicy. Takes a serialized
-  // protocol buffer as string.  Upon success, we will pass a protobuf to the
-  // callback.  On failure, we will pass "".
+  // Used for RetrieveDevicePolicy, RetrieveUserPolicy and
+  // RetrieveDeviceLocalAccountPolicy. Takes a serialized protocol buffer as
+  // string.  Upon success, we will pass a protobuf to the callback.  On
+  // failure, we will pass "".
   typedef base::Callback<void(const std::string&)> RetrievePolicyCallback;
 
   // Fetches the device policy blob stored by the session manager.  Upon
@@ -96,8 +104,15 @@ class CHROMEOS_EXPORT SessionManagerClient {
   // call the provided callback.
   virtual void RetrieveUserPolicy(const RetrievePolicyCallback& callback) = 0;
 
-  // Used for StoreDevicePolicy and StoreUserPolicy. Takes a boolean indicating
-  // whether the operation was successful or not.
+  // Fetches the policy blob associated with the specified device-local account
+  // from session manager.  |callback| is invoked up on completion.
+  virtual void RetrieveDeviceLocalAccountPolicy(
+      const std::string& account_id,
+      const RetrievePolicyCallback& callback) = 0;
+
+  // Used for StoreDevicePolicy, StoreUserPolicy and
+  // StoreDeviceLocalAccountPolicy. Takes a boolean indicating whether the
+  // operation was successful or not.
   typedef base::Callback<void(bool)> StorePolicyCallback;
 
   // Attempts to asynchronously store |policy_blob| as device policy.  Upon
@@ -110,6 +125,13 @@ class CHROMEOS_EXPORT SessionManagerClient {
   // call callback.
   virtual void StoreUserPolicy(const std::string& policy_blob,
                                const StorePolicyCallback& callback) = 0;
+
+  // Sends a request to store a policy blob for the specified device-local
+  // account. The result of the operation is reported through |callback|.
+  virtual void StoreDeviceLocalAccountPolicy(
+      const std::string& account_id,
+      const std::string& policy_blob,
+      const StorePolicyCallback& callback) = 0;
 
   // Creates the instance.
   static SessionManagerClient* Create(DBusClientImplementationType type,

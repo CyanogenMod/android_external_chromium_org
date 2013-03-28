@@ -10,10 +10,11 @@
 
 #include "base/memory/ref_counted.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
+#include "ppapi/c/pp_array_output.h"
+#include "ppapi/c/pp_resource.h"
 
 namespace ppapi {
 
-struct DeviceRefData;
 class TrackedCallback;
 
 namespace thunk {
@@ -22,8 +23,13 @@ class PPB_VideoCapture_API {
  public:
   virtual ~PPB_VideoCapture_API() {}
 
-  virtual int32_t EnumerateDevices(PP_Resource* devices,
+  virtual int32_t EnumerateDevices0_2(
+      PP_Resource* devices,
+      scoped_refptr<TrackedCallback> callback) = 0;
+  virtual int32_t EnumerateDevices(const PP_ArrayOutput& output,
                                    scoped_refptr<TrackedCallback> callback) = 0;
+  virtual int32_t MonitorDeviceChange(PP_MonitorDeviceChangeCallback callback,
+                                      void* user_data) = 0;
   virtual int32_t Open(const std::string& device_id,
                        const PP_VideoCaptureDeviceInfo_Dev& requested_info,
                        uint32_t buffer_count,
@@ -33,14 +39,9 @@ class PPB_VideoCapture_API {
   virtual int32_t StopCapture() = 0;
   virtual void Close() = 0;
 
-  // For backward compatibility.
-  virtual int32_t StartCapture0_1(
-      const PP_VideoCaptureDeviceInfo_Dev& requested_info,
-      uint32_t buffer_count) = 0;
-
-  // This function is not exposed through the C API, but returns the internal
-  // data for easy proxying.
-  virtual const std::vector<DeviceRefData>& GetDeviceRefData() const = 0;
+  // This function is not exposed through the C API.  It is only used by flash
+  // to make synchronous device enumeration.
+  virtual int32_t EnumerateDevicesSync(const PP_ArrayOutput& devices) = 0;
 };
 
 }  // namespace thunk

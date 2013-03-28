@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 // If directory files changes too often, don't rescan directory more than once
 // per specified interval
 var SIMULTANEOUS_RESCAN_INTERVAL = 1000;
@@ -11,16 +13,16 @@ var SHORT_RESCAN_INTERVAL = 100;
 /**
  * Data model of the file manager.
  *
- * @constructor
  * @param {DirectoryEntry} root File system root.
  * @param {boolean} singleSelection True if only one file could be selected
  *                                  at the time.
  * @param {MetadataCache} metadataCache The metadata cache service.
  * @param {VolumeManager} volumeManager The volume manager.
- * @param {boolean} isGDataEnabled True if GDATA enabled (initial value).
+ * @param {boolean} isDriveEnabled True if DRIVE enabled (initial value).
+ * @constructor
  */
 function DirectoryModel(root, singleSelection,
-                        metadataCache, volumeManager, isGDataEnabled) {
+                        metadataCache, volumeManager, isDriveEnabled) {
   this.root_ = root;
   var fileList = new cr.ui.ArrayDataModel([]);
   this.fileListSelection_ = singleSelection ?
@@ -30,7 +32,7 @@ function DirectoryModel(root, singleSelection,
   this.pendingScan_ = null;
   this.rescanTime_ = null;
   this.scanFailures_ = 0;
-  this.gDataEnabled_ = isGDataEnabled;
+  this.driveEnabled_ = isDriveEnabled;
 
   this.currentFileListContext_ = new FileListContext(
       metadataCache, fileList, false);
@@ -38,30 +40,46 @@ function DirectoryModel(root, singleSelection,
       this.currentFileListContext_, root);
 
   this.rootsList_ = new cr.ui.ArrayDataModel([]);
-  this.rootsListSelection_ = new cr.ui.ListSingleSelectionModel();
-  this.rootsListSelection_.addEventListener(
-      'change', this.onRootChange_.bind(this));
-
-  this.rootsListSelection_.addEventListener(
-      'beforeChange', this.onBeforeRootChange_.bind(this));
-
-  /**
-   * A map root.fullPath -> currentDirectory.fullPath.
-   * @private
-   * @type {Object.<string, string>}
-   */
-  this.currentDirByRoot_ = {};
 
   this.volumeManager_ = volumeManager;
 }
 
 /**
  * Fake entry to be used in currentDirEntry_ when current directory is
- * unmounted GDATA.
+ * unmounted DRIVE. TODO(haruki): Support "drive/root" and "drive/other".
+ * @type {Object}
+ * @const
  * @private
  */
-DirectoryModel.fakeGDataEntry_ = {
-  fullPath: RootDirectory.GDATA,
+DirectoryModel.fakeDriveEntry_ = {
+  fullPath: RootDirectory.DRIVE,
+  isDirectory: true
+};
+
+/**
+ * Fake entry representing a psuedo directory, which contains Drive files
+ * available offline. This entry works as a trigger to start a search using
+ * DirectoryContentsDriveOffline. specialSearch() must be called to start a
+ * special search.
+ * @type {Object}
+ * @const
+ * @private
+ */
+DirectoryModel.fakeDriveOfflineEntry_ = {
+  fullPath: RootDirectory.DRIVE_OFFLINE,
+  isDirectory: true
+};
+
+/**
+ * Fake entry representing a psuedo directory, which contains shared-with-me
+ * Drive files. This entry works as a trigger to start a search for
+ * shared-with-me files.
+ * @type {Object}
+ * @const
+ * @private
+ */
+DirectoryModel.fakeDriveSharedWithMeEntry_ = {
+  fullPath: RootDirectory.DRIVE_SHARED_WITH_ME,
   isDirectory: true
 };
 
@@ -76,8 +94,8 @@ DirectoryModel.prototype.__proto__ = cr.EventTarget.prototype;
 DirectoryModel.prototype.start = function() {
   var volumesChangeHandler = this.onMountChanged_.bind(this);
   this.volumeManager_.addEventListener('change', volumesChangeHandler);
-  this.volumeManager_.addEventListener('gdata-status-changed',
-      this.onGDataStatusChanged_.bind(this));
+  this.volumeManager_.addEventListener('drive-status-changed',
+      this.onDriveStatusChanged_.bind(this));
   this.updateRoots_();
 };
 
@@ -96,16 +114,17 @@ DirectoryModel.prototype.getMetadataCache = function() {
 };
 
 /**
- * Sets whether GDATA appears in the roots list and
+ * Sets whether DRIVE appears in the roots list and
  * if it could be used as current directory.
- * @param {boolead} enabled True if GDATA enabled.
+ * @param {boolead} enabled True if DRIVE enabled.
  */
-DirectoryModel.prototype.setGDataEnabled = function(enabled) {
-  if (this.gDataEnabled_ == enabled)
+DirectoryModel.prototype.setDriveEnabled = function(enabled) {
+  if (this.driveEnabled_ == enabled)
     return;
-  this.gDataEnabled_ = enabled;
+  this.driveEnabled_ = enabled;
   this.updateRoots_();
-  if (!enabled && this.getCurrentRootType() == RootType.GDATA)
+  if (!enabled && (this.getCurrentRootType() == RootType.DRIVE ||
+                   this.getCurrentRootType() == RootType.DRIVE_OFFLINE))
     this.changeDirectory(this.getDefaultDirectory());
 };
 
@@ -158,19 +177,15 @@ DirectoryModel.prototype.getCurrentRootUrl = function() {
 /**
  * @return {boolean} on True if offline.
  */
-DirectoryModel.prototype.isOffline = function() {
-  return this.offline_;
+DirectoryModel.prototype.isDriveOffline = function() {
+  var connection = this.volumeManager_.getDriveConnectionState();
+  return connection.type == VolumeManager.DriveConnectionType.OFFLINE;
 };
 
 /**
- * @param {boolean} offline True if offline.
- */
-DirectoryModel.prototype.setOffline = function(offline) {
-  this.offline_ = offline;
-};
-
-/**
- * @return {boolean} True if current directory is read only.
+ * TODO(haruki): This actually checks the current root. Fix the method name and
+ * related code.
+ * @return {boolean} True if the root for the current directory is read only.
  */
 DirectoryModel.prototype.isReadOnly = function() {
   return this.isPathReadOnly(this.getCurrentRootPath());
@@ -203,8 +218,10 @@ DirectoryModel.prototype.isPathReadOnly = function(path) {
       return true;
     case RootType.DOWNLOADS:
       return false;
-    case RootType.GDATA:
-      return this.isOffline();
+    case RootType.DRIVE:
+      // TODO(haruki): Maybe add DRIVE_OFFLINE as well to allow renaming in the
+      // offline tab.
+      return this.isDriveOffline();
     default:
       return true;
   }
@@ -233,6 +250,17 @@ DirectoryModel.prototype.getCurrentDirEntry = function() {
 };
 
 /**
+ * @return {string} URL of the current directory. or null if unavailable.
+ */
+DirectoryModel.prototype.getCurrentDirectoryURL = function() {
+  var entry = this.currentDirContents_.getDirectoryEntry();
+  if (entry == DirectoryModel.fakeDriveOfflineEntry_) {
+    return util.makeFilesystemUrl(entry.fullPath);
+  }
+  return entry.toURL();
+};
+
+/**
  * @return {string} Path for the current directory.
  */
 DirectoryModel.prototype.getCurrentDirPath = function() {
@@ -240,8 +268,8 @@ DirectoryModel.prototype.getCurrentDirPath = function() {
 };
 
 /**
- * @private
  * @return {Array.<string>} File paths of selected files.
+ * @private
  */
 DirectoryModel.prototype.getSelectedPaths_ = function() {
   var indexes = this.fileListSelection_.selectedIndexes;
@@ -255,19 +283,19 @@ DirectoryModel.prototype.getSelectedPaths_ = function() {
 };
 
 /**
- * @private
  * @param {Array.<string>} value List of file paths of selected files.
+ * @private
  */
 DirectoryModel.prototype.setSelectedPaths_ = function(value) {
   var indexes = [];
   var fileList = this.getFileList();
 
-  function safeKey(key) {
+  var safeKey = function(key) {
     // The transformation must:
     // 1. Never generate a reserved name ('__proto__')
     // 2. Keep different keys different.
     return '#' + key;
-  }
+  };
 
   var hash = {};
 
@@ -282,8 +310,8 @@ DirectoryModel.prototype.setSelectedPaths_ = function(value) {
 };
 
 /**
- * @private
  * @return {string} Lead item file path.
+ * @private
  */
 DirectoryModel.prototype.getLeadPath_ = function() {
   var index = this.fileListSelection_.leadIndex;
@@ -291,8 +319,8 @@ DirectoryModel.prototype.getLeadPath_ = function() {
 };
 
 /**
- * @private
  * @param {string} value The name of new lead index.
+ * @private
  */
 DirectoryModel.prototype.setLeadPath_ = function(value) {
   var fileList = this.getFileList();
@@ -309,13 +337,6 @@ DirectoryModel.prototype.setLeadPath_ = function(value) {
  */
 DirectoryModel.prototype.getRootsList = function() {
   return this.rootsList_;
-};
-
-/**
- * @return {cr.ui.ListSingleSelectionModel} Root list selection model.
- */
-DirectoryModel.prototype.getRootsListSelectionModel = function() {
-  return this.rootsListSelection_;
 };
 
 /**
@@ -394,10 +415,10 @@ DirectoryModel.prototype.rescan = function() {
  *
  * This should be used when changing directory or initiating a new search.
  *
- * @private
  * @param {DirectoryContentes} newDirContents New DirectoryContents instance to
  *     replace currentDirContents_.
- * @param {Function} opt_callback Called on success.
+ * @param {function=} opt_callback Called on success.
+ * @private
  */
 DirectoryModel.prototype.clearAndScan_ = function(newDirContents,
                                                   opt_callback) {
@@ -431,10 +452,10 @@ DirectoryModel.prototype.clearAndScan_ = function(newDirContents,
  * Perform a directory contents scan. Should be called only from rescan() and
  * clearAndScan_().
  *
- * @private
  * @param {DirectoryContents} dirContents DirectoryContents instance on which
  *     the scan will be run.
  * @param {function} successCallback Callback on success.
+ * @private
  */
 DirectoryModel.prototype.scan_ = function(dirContents, successCallback) {
   var self = this;
@@ -444,23 +465,23 @@ DirectoryModel.prototype.scan_ = function(dirContents, successCallback) {
    *
    * @return {boolean} Did pending scan exist.
    */
-  function maybeRunPendingRescan() {
+  var maybeRunPendingRescan = function() {
     if (self.pendingRescan_) {
       self.rescanSoon();
       self.pendingRescan_ = false;
       return true;
     }
     return false;
-  }
+  };
 
-  function onSuccess() {
+  var onSuccess = function() {
     self.runningScan_ = null;
     successCallback();
     self.scanFailures_ = 0;
     maybeRunPendingRescan();
-  }
+  };
 
-  function onFailure() {
+  var onFailure = function() {
     self.runningScan_ = null;
     self.scanFailures_++;
 
@@ -469,7 +490,7 @@ DirectoryModel.prototype.scan_ = function(dirContents, successCallback) {
 
     if (self.scanFailures_ <= 1)
       self.rescanLater();
-  }
+  };
 
   this.runningScan_ = dirContents;
 
@@ -480,14 +501,16 @@ DirectoryModel.prototype.scan_ = function(dirContents, successCallback) {
 };
 
 /**
- * @private
  * @param {DirectoryContents} dirContents DirectoryContents instance.
+ * @private
  */
 DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
   cr.dispatchSimpleEvent(this, 'begin-update-files');
   this.fileListSelection_.beginChange();
 
   var selectedPaths = this.getSelectedPaths_();
+  var selectedIndices = this.fileListSelection_.selectedIndexes;
+
   // Restore leadIndex in case leadName no longer exists.
   var leadIndex = this.fileListSelection_.leadIndex;
   var leadPath = this.getLeadPath_();
@@ -498,7 +521,17 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
   this.setSelectedPaths_(selectedPaths);
   this.fileListSelection_.leadIndex = leadIndex;
   this.setLeadPath_(leadPath);
+
+  // If nothing is selected after update, then select file next to the
+  // latest selection
+  if (this.fileListSelection_.selectedIndexes.length == 0 &&
+      selectedIndices.length != 0) {
+    var maxIdx = Math.max.apply(null, selectedIndices);
+    this.selectIndex(Math.min(maxIdx - selectedIndices.length + 2,
+                              this.getFileList().length) - 1);
+  }
   this.fileListSelection_.endChange();
+
   cr.dispatchSimpleEvent(this, 'end-update-files');
 };
 
@@ -510,7 +543,7 @@ DirectoryModel.prototype.onEntryChanged = function(name) {
   var fileList = this.getFileList();
   var self = this;
 
-  function onEntryFound(entry) {
+  var onEntryFound = function(entry) {
     // Do nothing if current directory changed during async operations.
     if (self.getCurrentDirEntry() != currentEntry)
       return;
@@ -527,7 +560,7 @@ DirectoryModel.prototype.onEntryChanged = function(name) {
     });
   };
 
-  function onError(err) {
+  var onError = function(err) {
     if (err.code != FileError.NOT_FOUND_ERR) {
       self.rescanLater();
       return;
@@ -542,9 +575,9 @@ DirectoryModel.prototype.onEntryChanged = function(name) {
 };
 
 /**
- * @private
  * @param {string} name Filename.
  * @return {number} The index in the fileList.
+ * @private
  */
 DirectoryModel.prototype.findIndexByName_ = function(name) {
   var fileList = this.getFileList();
@@ -559,7 +592,7 @@ DirectoryModel.prototype.findIndexByName_ = function(name) {
  * @param {Entry} entry Entry to rename.
  * @param {string} newName New name.
  * @param {function} errorCallback Called on error.
- * @param {function} opt_successCallback Called on success.
+ * @param {function=} opt_successCallback Called on success.
  */
 DirectoryModel.prototype.renameEntry = function(entry, newName,
                                                 errorCallback,
@@ -567,15 +600,33 @@ DirectoryModel.prototype.renameEntry = function(entry, newName,
   var currentDirPath = this.getCurrentDirPath();
   var onSuccess = function(newEntry) {
     this.currentDirContents_.prefetchMetadata([newEntry], function() {
-      // Do not call the callback if current directory has changed.
-      if (currentDirPath == this.getCurrentDirPath() && opt_successCallback)
-        opt_successCallback();
+      // Do not change anything or call the callback if current
+      // directory changed.
+      if (currentDirPath != this.getCurrentDirPath())
+        return;
+
+      var index = this.findIndexByName_(entry.name);
+
+      if (index >= 0) {
+        var wasSelected = this.fileListSelection_.getIndexSelected(index);
+
+        this.getFileList().splice(index, 1, newEntry);
+
+        if (wasSelected)
+          this.fileListSelection_.setIndexSelected(
+              this.findIndexByName_(newName), true);
+      }
+
+      // If the entry doesn't exist in the list it mean that it updated from
+      // outside (probably by directory rescan).
+      if (opt_successCallback)
+         opt_successCallback();
     }.bind(this));
   }.bind(this);
 
-  function onParentFound(parentEntry) {
+  var onParentFound = function(parentEntry) {
     entry.moveTo(parentEntry, newName, onSuccess, errorCallback);
-  }
+  };
 
   entry.getParent(onParentFound, errorCallback);
 };
@@ -589,13 +640,13 @@ DirectoryModel.prototype.renameEntry = function(entry, newName,
  *     is true if it's a file.
  */
 DirectoryModel.prototype.doesExist = function(entry, name, callback) {
-  function onParentFound(parentEntry) {
+  var onParentFound = function(parentEntry) {
     util.resolvePath(parentEntry, name,
         function(foundEntry) {
           callback(true, foundEntry.isFile);
         },
         callback.bind(window, false));
-  }
+  };
 
   entry.getParent(onParentFound, callback.bind(window, false));
 };
@@ -640,27 +691,36 @@ DirectoryModel.prototype.createDirectory = function(name, successCallback,
  * Changes directory. Causes 'directory-change' event.
  *
  * @param {string} path New current directory path.
+ * @param {function()=} opt_errorCallback Executed if the change directory
+ * failed.
  */
-DirectoryModel.prototype.changeDirectory = function(path) {
+DirectoryModel.prototype.changeDirectory = function(path, opt_errorCallback) {
+  if (PathUtil.isSpecialSearchRoot(path)) {
+    this.specialSearch(path, '');
+    return;
+  }
+
   this.resolveDirectory(path, function(directoryEntry) {
     this.changeDirectoryEntry_(false, directoryEntry);
   }.bind(this), function(error) {
     console.error('Error changing directory to ' + path + ': ', error);
+    if (opt_errorCallback)
+      opt_errorCallback();
   });
 };
 
 /**
- * Resolves absolute directory path. Handles GData stub.
+ * Resolves absolute directory path. Handles Drive stub.
  * @param {string} path Path to the directory.
  * @param {function(DirectoryEntry} successCallback Success callback.
  * @param {function(FileError} errorCallback Error callback.
  */
 DirectoryModel.prototype.resolveDirectory = function(path, successCallback,
                                                      errorCallback) {
-  if (PathUtil.getRootType(path) == RootType.GDATA) {
-    if (!this.isGDataMounted_()) {
-      if (path == DirectoryModel.fakeGDataEntry_.fullPath)
-        successCallback(DirectoryModel.fakeGDataEntry_);
+  if (PathUtil.getRootType(path) == RootType.DRIVE) {
+    if (!this.isDriveMounted()) {
+      if (path == DirectoryModel.fakeDriveEntry_.fullPath)
+        successCallback(DirectoryModel.fakeDriveEntry_);
       else  // Subdirectory.
         errorCallback({ code: FileError.NOT_FOUND_ERR });
       return;
@@ -677,74 +737,22 @@ DirectoryModel.prototype.resolveDirectory = function(path, successCallback,
 };
 
 /**
- * @private
- * @return {Entry} Directory entry of the root selected in rootsList.
- */
-DirectoryModel.prototype.getSelectedRootDirEntry_ = function() {
-  return this.rootsList_.item(this.rootsListSelection_.selectedIndex);
-};
-
-/**
- * Handler before root item change.
- * @param {Event} event The event.
- * @private
- */
-DirectoryModel.prototype.onBeforeRootChange_ = function(event) {
-  if (event.changes.length == 1 && !event.changes[0].selected)
-    event.preventDefault();
-};
-
-/**
- * Handler for root item being clicked.
- * @private
- * @param {Event} event The event.
- */
-DirectoryModel.prototype.onRootChange_ = function(event) {
-  var newRootDir = this.getSelectedRootDirEntry_();
-  if (newRootDir)
-    this.changeRoot(newRootDir.fullPath);
-};
-
-/**
- * Changes directory. If path points to a root (except current one)
- * then directory changed to the last used one for the root.
- *
- * @param {string} path New current directory path or new root.
- */
-DirectoryModel.prototype.changeRoot = function(path) {
-  if ((!DirectoryModel.isMountableRoot(path) ||
-       this.volumeManager_.isMounted(path)) &&
-      this.getCurrentRootPath() == path)
-    return;
-  if (this.currentDirByRoot_[path]) {
-    this.resolveDirectory(
-        this.currentDirByRoot_[path],
-        this.changeDirectoryEntry_.bind(this, false),
-        this.changeDirectory.bind(this, path));
-  } else {
-    this.changeDirectory(path);
-  }
-};
-
-/**
- * @private
  * @param {DirectoryEntry} dirEntry The absolute path to the new directory.
- * @param {function} opt_callback Executed if the directory loads successfully.
+ * @param {function=} opt_callback Executed if the directory loads successfully.
+ * @private
  */
 DirectoryModel.prototype.changeDirectoryEntrySilent_ = function(dirEntry,
                                                                 opt_callback) {
-  function onScanComplete() {
+  var onScanComplete = function() {
     if (opt_callback)
       opt_callback();
     // For tests that open the dialog to empty directories, everything
     // is loaded at this point.
     chrome.test.sendMessage('directory-change-complete');
-  }
+  };
   this.clearAndScan_(new DirectoryContentsBasic(this.currentFileListContext_,
                                                 dirEntry),
                      onScanComplete.bind(this));
-  this.updateRootsListSelection_();
-  this.currentDirByRoot_[this.getCurrentRootPath()] = dirEntry.fullPath;
 };
 
 /**
@@ -754,22 +762,22 @@ DirectoryModel.prototype.changeDirectoryEntrySilent_ = function(dirEntry,
  * Dispatches the 'directory-changed' event when the directory is successfully
  * changed.
  *
- * @private
  * @param {boolean} initial True if it comes from setupPath and
  *                          false if caused by an user action.
  * @param {DirectoryEntry} dirEntry The absolute path to the new directory.
- * @param {function} opt_callback Executed if the directory loads successfully.
+ * @param {function=} opt_callback Executed if the directory loads successfully.
+ * @private
  */
 DirectoryModel.prototype.changeDirectoryEntry_ = function(initial, dirEntry,
                                                           opt_callback) {
-  if (dirEntry == DirectoryModel.fakeGDataEntry_ &&
-      this.volumeManager_.getGDataStatus() ==
-          VolumeManager.GDataStatus.UNMOUNTED) {
-    this.volumeManager_.mountGData(function() {}, function() {});
+  if (dirEntry == DirectoryModel.fakeDriveEntry_ &&
+      this.volumeManager_.getDriveStatus() ==
+          VolumeManager.DriveStatus.UNMOUNTED) {
+    this.volumeManager_.mountDrive(function() {}, function() {});
   }
 
-  this.clearSearch_();
   var previous = this.currentDirContents_.getDirectoryEntry();
+  this.clearSearch_();
   this.changeDirectoryEntrySilent_(dirEntry, opt_callback);
 
   var e = new cr.Event('directory-changed');
@@ -805,7 +813,7 @@ DirectoryModel.prototype.createDirectoryChangeTracker = function() {
       if (this.active_) {
         this.dm_.removeEventListener('directory-changed',
                                      this.onDirectoryChange_);
-        active_ = false;
+        this.active_ = false;
       }
     },
 
@@ -824,7 +832,7 @@ DirectoryModel.prototype.createDirectoryChangeTracker = function() {
  * Change the state of the model to reflect the specified path (either a
  * file or directory).
  *
- * @param {string} path The root path to use
+ * @param {string} path The root path to use.
  * @param {function=} opt_pathResolveCallback Invoked as soon as the path has
  *     been resolved, and called with the base and leaf portions of the path
  *     name, and a flag indicating if the entry exists. Will be called even
@@ -836,41 +844,41 @@ DirectoryModel.prototype.setupPath = function(path, opt_pathResolveCallback) {
   tracker.start();
 
   var self = this;
-  function resolveCallback(directoryPath, fileName, exists) {
+  var resolveCallback = function(directoryPath, fileName, exists) {
     tracker.stop();
     if (!opt_pathResolveCallback)
       return;
     opt_pathResolveCallback(directoryPath, fileName,
                             exists && !tracker.hasChanged);
-  }
+  };
 
-  function changeDirectoryEntry(directoryEntry, initial, opt_callback) {
+  var changeDirectoryEntry = function(directoryEntry, initial, opt_callback) {
     tracker.stop();
     if (!tracker.hasChanged)
       self.changeDirectoryEntry_(initial, directoryEntry, opt_callback);
-  }
+  };
 
   var INITIAL = true;
   var EXISTS = true;
 
-  function changeToDefault() {
+  var changeToDefault = function(leafName) {
     var def = self.getDefaultDirectory();
     self.resolveDirectory(def, function(directoryEntry) {
-      resolveCallback(def, '', !EXISTS);
+      resolveCallback(def, leafName, !EXISTS);
       changeDirectoryEntry(directoryEntry, INITIAL);
     }, function(error) {
       console.error('Failed to resolve default directory: ' + def, error);
-      resolveCallback('/', '', !EXISTS);
+      resolveCallback('/', leafName, !EXISTS);
     });
-  }
+  };
 
-  function noParentDirectory(error) {
+  var noParentDirectory = function(leafName, error) {
     console.log('Can\'t resolve parent directory: ' + path, error);
-    changeToDefault();
-  }
+    changeToDefault(leafName);
+  };
 
   if (DirectoryModel.isSystemDirectory(path)) {
-    changeToDefault();
+    changeToDefault('');
     return;
   }
 
@@ -880,11 +888,12 @@ DirectoryModel.prototype.setupPath = function(path, opt_pathResolveCallback) {
   }, function(error) {
     // Usually, leaf does not exist, because it's just a suggested file name.
     var fileExists = error.code == FileError.TYPE_MISMATCH_ERR;
+    var nameDelimiter = path.lastIndexOf('/');
+    var parentDirectoryPath = path.substr(0, nameDelimiter);
+    var leafName = path.substr(nameDelimiter + 1);
     if (fileExists || error.code == FileError.NOT_FOUND_ERR) {
-      var nameDelimiter = path.lastIndexOf('/');
-      var parentDirectoryPath = path.substr(0, nameDelimiter);
       if (DirectoryModel.isSystemDirectory(parentDirectoryPath)) {
-        changeToDefault();
+        changeToDefault(leafName);
         return;
       }
       self.resolveDirectory(parentDirectoryPath,
@@ -899,11 +908,11 @@ DirectoryModel.prototype.setupPath = function(path, opt_pathResolveCallback) {
         // TODO(kaznacheev): Fix history.replaceState for the File Browser and
         // change !INITIAL to INITIAL. Passing |false| makes things
         // less ugly for now.
-      }, noParentDirectory);
+      }, noParentDirectory.bind(null, leafName));
     } else {
       // Unexpected errors.
       console.error('Directory resolving error: ', error);
-      changeToDefault();
+      changeToDefault(leafName);
     }
   });
 };
@@ -963,53 +972,55 @@ DirectoryModel.prototype.selectIndex = function(index) {
 
 /**
  * Get root entries asynchronously.
- * @private
  * @param {function(Array.<Entry>)} callback Called when roots are resolved.
+ * @private
  */
 DirectoryModel.prototype.resolveRoots_ = function(callback) {
   var groups = {
     downloads: null,
     archives: null,
     removables: null,
-    gdata: null
+    drive: null,
+    driveFakeRoots: null
   };
   var self = this;
 
   metrics.startInterval('Load.Roots');
-  function done() {
+  var done = function() {
     for (var i in groups)
       if (!groups[i])
         return;
 
     callback(groups.downloads.
-             concat(groups.gdata).
+             concat(groups.drive).
+             concat(groups.driveFakeRoots).
              concat(groups.archives).
              concat(groups.removables));
     metrics.recordInterval('Load.Roots');
-  }
+  };
 
-  function append(index, values, opt_error) {
+  var append = function(index, values, opt_error) {
     groups[index] = values;
     done();
-  }
+  };
 
-  function appendSingle(index, entry) {
+  var appendSingle = function(index, entry) {
     groups[index] = [entry];
     done();
-  }
+  };
 
-  function onSingleError(index, defaultValue, error) {
+  var onSingleError = function(index, defaultValue, error) {
     groups[index] = defaultValue || [];
     done();
     console.error('Error resolving root dir ', index, 'error: ', error);
-  }
+  };
 
   var root = this.root_;
-  function readSingle(dir, index, opt_defaultValue) {
+  var readSingle = function(dir, index, opt_defaultValue) {
     root.getDirectory(dir, { create: false },
                       appendSingle.bind(this, index),
                       onSingleError.bind(this, index, opt_defaultValue));
-  }
+  };
 
   readSingle(RootDirectory.DOWNLOADS.substring(1), 'downloads');
   util.readDirectory(root, RootDirectory.ARCHIVE.substring(1),
@@ -1017,15 +1028,21 @@ DirectoryModel.prototype.resolveRoots_ = function(callback) {
   util.readDirectory(root, RootDirectory.REMOVABLE.substring(1),
                      append.bind(this, 'removables'));
 
-  if (this.gDataEnabled_) {
-    var fake = [DirectoryModel.fakeGDataEntry_];
-    if (this.isGDataMounted_()) {
-      readSingle(RootDirectory.GDATA.substring(1), 'gdata', fake);
+  if (this.driveEnabled_) {
+    // TODO(haruki): Add fake special search entries.
+    // http://crbug.com/168742 http://crbug.com/168741 http://crbug.com/168739.
+    groups.driveFakeRoots = [];
+    var fake = [DirectoryModel.fakeDriveEntry_];
+    if (this.isDriveMounted()) {
+      readSingle(DirectoryModel.fakeDriveEntry_.fullPath, 'drive', fake);
     } else {
-      groups.gdata = fake;
+      groups.drive = fake;
+      done();
     }
   } else {
-    groups.gdata = [];
+    groups.driveFakeRoots = [];
+    groups.drive = [];
+    done();
   }
 };
 
@@ -1039,41 +1056,15 @@ DirectoryModel.prototype.updateRoots_ = function() {
     var dm = self.rootsList_;
     var args = [0, dm.length].concat(rootEntries);
     dm.splice.apply(dm, args);
-
-    self.updateRootsListSelection_();
   });
 };
 
 /**
- * Find roots list item by root path.
- *
- * @param {string} path Root path.
- * @return {number} Index of the item.
+ * @return {boolean} True if DRIVE is fully mounted.
  */
-DirectoryModel.prototype.findRootsListIndex = function(path) {
-  var roots = this.rootsList_;
-  for (var index = 0; index < roots.length; index++) {
-    if (roots.item(index).fullPath == path)
-      return index;
-  }
-  return -1;
-};
-
-/**
- * @private
- */
-DirectoryModel.prototype.updateRootsListSelection_ = function() {
-  var rootPath = this.getCurrentRootPath();
-  this.rootsListSelection_.selectedIndex = this.findRootsListIndex(rootPath);
-};
-
-/**
- * @return {boolean} True if GDATA is fully mounted.
- * @private
- */
-DirectoryModel.prototype.isGDataMounted_ = function() {
-  return this.volumeManager_.getGDataStatus() ==
-      VolumeManager.GDataStatus.MOUNTED;
+DirectoryModel.prototype.isDriveMounted = function() {
+  return this.volumeManager_.getDriveStatus() ==
+      VolumeManager.DriveStatus.MOUNTED;
 };
 
 /**
@@ -1092,38 +1083,78 @@ DirectoryModel.prototype.onMountChanged_ = function() {
 };
 
 /**
- * Handler for the VolumeManager's 'gdata-status-changed' event.
+ * Handler for the VolumeManager's 'drive-status-changed' event.
  * @private
  */
-DirectoryModel.prototype.onGDataStatusChanged_ = function() {
-  if (this.getCurrentRootType() != RootType.GDATA)
-     return;
-
-  var mounted = this.isGDataMounted_();
-  if (this.getCurrentDirEntry() == DirectoryModel.fakeGDataEntry_) {
-    if (mounted) {
-      // Change fake entry to real one and rescan.
-      function onGotDirectory(entry) {
-        if (this.getCurrentDirEntry() == DirectoryModel.fakeGDataEntry_) {
-          this.changeDirectoryEntrySilent_(entry);
-        }
+DirectoryModel.prototype.onDriveStatusChanged_ = function() {
+  var mounted = this.isDriveMounted();
+  if (mounted) {
+    // Change fake entry to real one and rescan.
+    var onGotDirectory = function(entry) {
+      this.updateRootEntry_(entry);
+      var currentDirEntry = this.getCurrentDirEntry();
+      if (currentDirEntry == DirectoryModel.fakeDriveEntry_) {
+        this.changeDirectoryEntrySilent_(entry);
+      } else if (PathUtil.isSpecialSearchRoot(currentDirEntry.fullPath)) {
+        this.rescan();
       }
-      this.root_.getDirectory(RootDirectory.GDATA, {},
-                              onGotDirectory.bind(this));
     }
-  } else if (!mounted) {
-    // Current entry unmounted. Replace with fake one.
-    if (this.getCurrentDirPath() == DirectoryModel.fakeGDataEntry_.fullPath) {
+    this.root_.getDirectory(
+        DirectoryModel.fakeDriveEntry_.fullPath, {},
+        onGotDirectory.bind(this));
+  } else {
+    var rootType = this.getCurrentRootType();
+    if (rootType != RootType.DRIVE && rootType != RootType.DRIVE_OFFLINE)
+      return;
+
+    // Current entry unmounted. Replace with fake drive one.
+    this.updateRootEntry_(DirectoryModel.fakeDriveEntry_);
+    if (this.getCurrentDirPath() == DirectoryModel.fakeDriveEntry_.fullPath) {
       // Replace silently and rescan.
-      this.changeDirectoryEntrySilent_(DirectoryModel.fakeGDataEntry_);
+      this.changeDirectoryEntrySilent_(DirectoryModel.fakeDriveEntry_);
     } else {
-      this.changeDirectoryEntry_(false, DirectoryModel.fakeGDataEntry_);
+      this.changeDirectoryEntry_(false, DirectoryModel.fakeDriveEntry_);
     }
   }
 };
 
 /**
- * @param {string} path Path
+ * Update the entry in the roots list model.
+ *
+ * @param {DirectoryEntry} entry New entry.
+ * @private
+ */
+DirectoryModel.prototype.updateRootEntry_ = function(entry) {
+  for (var i = 0; i != this.rootsList_.length; i++) {
+    if (this.rootsList_.item(i).fullPath == entry.fullPath) {
+      this.rootsList_.splice(i, 1, entry);
+      return;
+    }
+  }
+  console.error('Cannot find root: ' + entry.fullPath);
+};
+
+/**
+ * Finds the first entry in the roots list model which has the given root type.
+ *
+ * @param {RootType} rootType RootType of the desired root..
+ * @return {DirectoryEntry} Root entry for with the given root type.
+ * @private
+ */
+DirectoryModel.prototype.findRootEntryByType_ = function(rootType) {
+  var root;
+  for (var index = 0; index < this.rootsList_.length; index++) {
+    if (PathUtil.getRootType(this.rootsList_.item(index).fullPath) ==
+        rootType) {
+      root = this.rootsList_.item(index);
+      break;
+    }
+  }
+  return root;
+};
+
+/**
+ * @param {string} path Path.
  * @return {boolean} If current directory is system.
  */
 DirectoryModel.isSystemDirectory = function(path) {
@@ -1145,7 +1176,7 @@ DirectoryModel.isMountableRoot = function(path) {
       return false;
     case RootType.ARCHIVE:
     case RootType.REMOVABLE:
-    case RootType.GDATA:
+    case RootType.DRIVE:
       return true;
     default:
       throw new Error('Unknown root type!');
@@ -1154,13 +1185,13 @@ DirectoryModel.isMountableRoot = function(path) {
 
 /**
  * Performs search and displays results. The search type is dependent on the
- * current directory. If we are currently on gdata, server side content search
- * over gdata mount point. If the current directory is not on the gdata, file
+ * current directory. If we are currently on drive, server side content search
+ * over drive mount point. If the current directory is not on the drive, file
  * name search over current directory wil be performed.
  *
  * @param {string} query Query that will be searched for.
  * @param {function} onSearchRescan Function that will be called when the search
- *     directory is rescanned (i.e. search results are displayed)
+ *     directory is rescanned (i.e. search results are displayed).
  * @param {function} onClearSearch Function to be called when search state gets
  *     cleared.
  * TODO(olege): Change callbacks to events.
@@ -1168,6 +1199,11 @@ DirectoryModel.isMountableRoot = function(path) {
 DirectoryModel.prototype.search = function(query,
                                            onSearchRescan,
                                            onClearSearch) {
+  if (PathUtil.isSpecialSearchRoot(this.getCurrentDirPath())) {
+    this.specialSearch(this.getCurrentDirPath(), query);
+    return;
+  }
+
   query = query.trimLeft();
 
   this.clearSearch_();
@@ -1189,14 +1225,15 @@ DirectoryModel.prototype.search = function(query,
   this.addEventListener('scan-completed', this.onSearchCompleted_);
 
   // If we are offline, let's fallback to file name search inside dir.
-  if (this.getCurrentRootType() === RootType.GDATA && !this.isOffline()) {
-    // GData search is performed over the whole drive, so pass drive root as
+  if (this.getCurrentRootType() === RootType.DRIVE && !this.isDriveOffline()) {
+    // Drive search is performed over the whole drive, so pass drive root as
     // |directoryEntry|.
-    newDirContents = new DirectoryContentsGDataSearch(
+    newDirContents = new DirectoryContentsDriveSearch(
         this.currentFileListContext_,
-        this.getSelectedRootDirEntry_(),
+        this.getCurrentDirEntry(),
         this.currentDirContents_.getLastNonSearchDirectoryEntry(),
-        query);
+        query,
+        DirectoryContentsDriveSearch.SearchType.SEARCH_FULL);
   } else {
     newDirContents = new DirectoryContentsLocalSearch(
         this.currentFileListContext_, this.getCurrentDirEntry(), query);
@@ -1204,6 +1241,67 @@ DirectoryModel.prototype.search = function(query,
   this.clearAndScan_(newDirContents);
 };
 
+/**
+ * Performs special search and displays results. e.g. Drive files available
+ * offline, shared-with-me files, recently modified files.
+ * @param {string} path Path string representing special search. See fake
+ *     entries in PathUtil.RootDirectory.
+ * @param {string=} opt_query Query string used for the search.
+ */
+DirectoryModel.prototype.specialSearch = function(path, opt_query) {
+  // Any special search needs Drive mounted.
+  if (this.volumeManager_.getDriveStatus() ==
+        VolumeManager.DriveStatus.UNMOUNTED) {
+    this.volumeManager_.mountDrive(function() {}, function() {});
+  }
+
+  var query = opt_query || '';
+
+  this.clearSearch_();
+
+  this.onSearchCompleted_ = null;
+  this.onClearSearch_ = null;
+
+  var driveRoot = this.findRootEntryByType_(RootType.DRIVE);
+  if (!driveRoot || driveRoot == DirectoryModel.fakeDriveEntry_) {
+    // Drive root not available or not ready. onDriveStatusChanged_() handles
+    // rescan if necessary.
+    driveRoot = null;
+  }
+
+  var specialSearchType = PathUtil.getRootType(path);
+  var newDirContents;
+  var dirEntry;
+  if (specialSearchType == RootType.DRIVE_OFFLINE) {
+    newDirContents = new DirectoryContentsDriveOffline(
+        this.currentFileListContext_,
+        driveRoot,
+        DirectoryModel.fakeDriveOfflineEntry_,
+        query);
+    dirEntry = DirectoryModel.fakeDriveOfflineEntry_;
+  } else if (specialSearchType == RootType.DRIVE_SHARED_WITH_ME) {
+    newDirContents = new DirectoryContentsDriveSearch(
+        this.currentFileListContext_,
+        driveRoot,
+        this.currentDirContents_.getLastNonSearchDirectoryEntry(),
+        query,
+        DirectoryContentsDriveSearch.SearchType.SEARCH_SHARED_WITH_ME);
+    dirEntry = DirectoryModel.fakeDriveSharedWithMeEntry_;
+  } else {
+    // Unknown path.
+    this.changeDirectory(thid.getDefaultDirectory());
+    return;
+  }
+
+  var previous = this.currentDirContents_.getDirectoryEntry();
+  this.clearAndScan_(newDirContents);
+
+  var e = new cr.Event('directory-changed');
+  e.previousDirEntry = previous;
+  e.newDirEntry = dirEntry;
+  e.initial = false;
+  this.dispatchEvent(e);
+};
 
 /**
  * In case the search was active, remove listeners and send notifications on
@@ -1227,7 +1325,7 @@ DirectoryModel.prototype.clearSearch_ = function() {
 
 /**
  * @param {string} name Filter identifier.
- * @param {Function(Entry)} callback A filter — a function receiving an Entry,
+ * @param {function(Entry)} callback A filter — a function receiving an Entry,
  *     and returning bool.
  */
 DirectoryModel.prototype.addFilter = function(name, callback) {
@@ -1243,10 +1341,10 @@ DirectoryModel.prototype.removeFilter = function(name) {
 
 
 /**
- * @constructor
  * @param {DirectoryEntry} root Root entry.
  * @param {DirectoryModel} directoryModel Model to watch.
  * @param {VolumeManager} volumeManager Manager to watch.
+ * @constructor
  */
 function FileWatcher(root, directoryModel, volumeManager) {
   this.root_ = root;
@@ -1295,7 +1393,7 @@ FileWatcher.prototype.stop = function() {
  * @private
  */
 FileWatcher.prototype.onDirectoryChanged_ = function(event) {
-  if (encodeURI(event.directoryUrl) == this.watchedDirectoryEntry_.toURL())
+  if (event.directoryUrl == this.watchedDirectoryEntry_.toURL())
     this.onFileInWatchedDirectoryChanged();
 };
 
@@ -1313,8 +1411,8 @@ FileWatcher.prototype.onFileInWatchedDirectoryChanged = function() {
 FileWatcher.prototype.updateWatchedDirectory_ = function() {
   var current = this.watchedDirectoryEntry_;
   switch (this.dm_.getCurrentRootType()) {
-    case RootType.GDATA:
-      if (!this.vm_.isMounted(RootDirectory.GDATA))
+    case RootType.DRIVE:
+      if (!this.vm_.isMounted(RootDirectory.DRIVE))
         break;
     case RootType.DOWNLOADS:
     case RootType.REMOVABLE:

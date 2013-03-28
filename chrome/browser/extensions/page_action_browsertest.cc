@@ -7,9 +7,10 @@
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -73,7 +74,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, PageAction) {
 IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, PageActionInPageNavigation) {
   ASSERT_TRUE(test_server()->Start());
 
-  FilePath extension_path(test_data_dir_.AppendASCII("api_test")
+  base::FilePath extension_path(test_data_dir_.AppendASCII("api_test")
                                         .AppendASCII("page_action")
                                         .AppendASCII("hash_change"));
   ASSERT_TRUE(LoadExtension(extension_path));
@@ -98,7 +99,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, PageActionInPageNavigation) {
 IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, UnloadPageAction) {
   ASSERT_TRUE(test_server()->Start());
 
-  FilePath extension_path(test_data_dir_.AppendASCII("subscribe_page_action"));
+  base::FilePath extension_path(
+      test_data_dir_.AppendASCII("subscribe_page_action"));
   ASSERT_TRUE(LoadExtension(extension_path));
 
   // Navigation prompts the location bar to load page actions.
@@ -116,11 +118,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, UnloadPageAction) {
 IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, PageActionRefreshCrash) {
   base::TimeTicks start_time = base::TimeTicks::Now();
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
 
   size_t size_before = service->extensions()->size();
 
-  FilePath base_path = test_data_dir_.AppendASCII("browsertest")
+  base::FilePath base_path = test_data_dir_.AppendASCII("browsertest")
                                      .AppendASCII("crash_44415");
   // Load extension A.
   const Extension* extensionA = LoadExtension(base_path.AppendASCII("ExtA"));
@@ -171,10 +174,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, PageActionRefreshCrash) {
 IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, TitleLocalizationPageAction) {
   ASSERT_TRUE(test_server()->Start());
 
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
   const size_t size_before = service->extensions()->size();
 
-  FilePath extension_path(test_data_dir_.AppendASCII("browsertest")
+  base::FilePath extension_path(test_data_dir_.AppendASCII("browsertest")
                                         .AppendASCII("title_localized_pa"));
   const Extension* extension = LoadExtension(extension_path);
   ASSERT_TRUE(extension);
@@ -191,7 +195,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, TitleLocalizationPageAction) {
   EXPECT_STREQ(WideToUTF8(L"Hreggvi\u00F0ur is my name").c_str(),
                extension->name().c_str());
   int tab_id = ExtensionTabUtil::GetTabId(
-      chrome::GetActiveWebContents(browser()));
+      browser()->tab_strip_model()->GetActiveWebContents());
   EXPECT_STREQ(WideToUTF8(L"Hreggvi\u00F0ur").c_str(),
                ExtensionActionManager::Get(browser()->profile())->
                GetPageAction(*extension)->

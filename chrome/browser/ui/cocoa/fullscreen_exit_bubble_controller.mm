@@ -21,13 +21,12 @@
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/ui_strings.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 #include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
-#include "ui/base/accelerators/accelerator_cocoa.h"
+#include "ui/base/accelerators/platform_accelerator_cocoa.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
@@ -55,13 +54,14 @@ const float kHideDuration = 0.7;
 - (void)hideSoon;
 
 // Returns the Accelerator for the Toggle Fullscreen menu item.
-+ (ui::AcceleratorCocoa)acceleratorForToggleFullscreen;
++ (scoped_ptr<ui::PlatformAcceleratorCocoa>)acceleratorForToggleFullscreen;
 
 // Returns a string representation fit for display of
 // +acceleratorForToggleFullscreen.
 + (NSString*)keyCommandString;
 
-+ (NSString*)keyCombinationForAccelerator:(const ui::AcceleratorCocoa&)item;
++ (NSString*)keyCombinationForAccelerator:
+    (const ui::PlatformAcceleratorCocoa&)item;
 @end
 
 @implementation FullscreenExitBubbleController
@@ -96,13 +96,12 @@ const float kHideDuration = 0.7;
     [[self window] setIgnoresMouseEvents:YES];
 
   DCHECK(fullscreen_bubble::ShowButtonsForType(bubbleType_));
-  browser_->fullscreen_controller()->OnAcceptFullscreenPermission(
-      url_, bubbleType_);
+  browser_->fullscreen_controller()->OnAcceptFullscreenPermission();
 }
 
 - (void)deny:(id)sender {
   DCHECK(fullscreen_bubble::ShowButtonsForType(bubbleType_));
-  browser_->fullscreen_controller()->OnDenyFullscreenPermission(bubbleType_);
+  browser_->fullscreen_controller()->OnDenyFullscreenPermission();
 }
 
 - (void)showButtons:(BOOL)show {
@@ -152,7 +151,8 @@ const float kHideDuration = 0.7;
 - (BOOL) textView:(NSTextView*)textView
     clickedOnLink:(id)link
           atIndex:(NSUInteger)charIndex {
-  chrome::ExecuteCommand(browser_, IDC_FULLSCREEN);
+  browser_->fullscreen_controller()->
+      ExitTabOrBrowserFullscreenToPreviousState();
   return YES;
 }
 
@@ -183,7 +183,7 @@ const float kHideDuration = 0.7;
   [[infoBubble parentWindow] removeChildWindow:infoBubble];
   [hideAnimation_.get() stopAnimation];
   [hideTimer_ invalidate];
-  [infoBubble setDelayOnClose:NO];
+  [infoBubble setAllowedAnimations:info_bubble::kAnimateNone];
   [self close];
 }
 
@@ -265,34 +265,37 @@ const float kHideDuration = 0.7;
 // This looks at the Main Menu and determines what the user has set as the
 // key combination for quit. It then gets the modifiers and builds an object
 // to hold the data.
-+ (ui::AcceleratorCocoa)acceleratorForToggleFullscreen {
++ (scoped_ptr<ui::PlatformAcceleratorCocoa>)acceleratorForToggleFullscreen {
   NSMenu* mainMenu = [NSApp mainMenu];
   // Get the application menu (i.e. Chromium).
   for (NSMenuItem* menu in [mainMenu itemArray]) {
     for (NSMenuItem* item in [[menu submenu] itemArray]) {
       // Find the toggle presentation mode item.
       if ([item tag] == IDC_PRESENTATION_MODE) {
-        return ui::AcceleratorCocoa([item keyEquivalent],
-                                    [item keyEquivalentModifierMask]);
+        return scoped_ptr<ui::PlatformAcceleratorCocoa>(
+          new ui::PlatformAcceleratorCocoa([item keyEquivalent],
+                                           [item keyEquivalentModifierMask]));
       }
     }
   }
   // Default to Cmd+Shift+F.
-  return ui::AcceleratorCocoa(@"f", NSCommandKeyMask|NSShiftKeyMask);
+  return scoped_ptr<ui::PlatformAcceleratorCocoa>(
+      new ui::PlatformAcceleratorCocoa(@"f", NSCommandKeyMask|NSShiftKeyMask));
 }
 
 // This looks at the Main Menu and determines what the user has set as the
 // key combination for quit. It then gets the modifiers and builds a string
 // to display them.
 + (NSString*)keyCommandString {
-  ui::AcceleratorCocoa accelerator =
-      [[self class] acceleratorForToggleFullscreen];
-  return [[self class] keyCombinationForAccelerator:accelerator];
+  scoped_ptr<ui::PlatformAcceleratorCocoa> accelerator(
+      [[self class] acceleratorForToggleFullscreen]);
+  return [[self class] keyCombinationForAccelerator:*accelerator];
 }
 
-+ (NSString*)keyCombinationForAccelerator:(const ui::AcceleratorCocoa&)item {
++ (NSString*)keyCombinationForAccelerator:
+    (const ui::PlatformAcceleratorCocoa&)item {
   NSMutableString* string = [NSMutableString string];
-  NSUInteger modifiers = item.modifiers();
+  NSUInteger modifiers = item.modifier_mask();
 
   if (modifiers & NSCommandKeyMask)
     [string appendString:@"\u2318"];

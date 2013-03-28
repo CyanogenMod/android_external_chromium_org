@@ -15,17 +15,18 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/string_util.h"
 #include "base/tracked_objects.h"
 #include "base/values.h"
 #include "chrome/browser/metrics/tracking_synchronizer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/task_profiler/task_profiler_data_serializer.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
@@ -46,24 +47,28 @@ namespace {
 
 #ifdef USE_SOURCE_FILES_DIRECTLY
 
-class ProfilerWebUIDataSource : public ChromeURLDataManager::DataSource {
+class ProfilerWebUIDataSource : public content::URLDataSource {
  public:
-  ProfilerWebUIDataSource()
-      : DataSource(chrome::kChromeUIProfilerHost, MessageLoop::current()) {
+  ProfilerWebUIDataSource() {
   }
 
  protected:
-  // ChromeURLDataManager
+  // content::URLDataSource implementation.
+  virtual std::string GetSource() OVERRIDE {
+    return chrome::kChromeUIProfilerHost;
+  }
+
   virtual std::string GetMimeType(const std::string& path) const OVERRIDE {
     if (EndsWith(path, ".js", false))
       return "application/javascript";
     return "text/html";
   }
 
-  virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
-                                int request_id) OVERRIDE {
-    FilePath base_path;
+  virtual void StartDataRequest(
+      const std::string& path,
+      bool is_incognito,
+      const content::URLDataSource::GotDataCallback& callback) OVERRIDE {
+    base::FilePath base_path;
     PathService::Get(base::DIR_SOURCE_ROOT, &base_path);
     base_path = base_path.AppendASCII("chrome");
     base_path = base_path.AppendASCII("browser");
@@ -73,7 +78,7 @@ class ProfilerWebUIDataSource : public ChromeURLDataManager::DataSource {
     // If no resource was specified, default to profiler.html.
     std::string filename = path.empty() ? "profiler.html" : path;
 
-    FilePath file_path;
+    base::FilePath file_path;
     file_path = base_path.AppendASCII(filename);
 
     // Read the file synchronously and send it as the response.
@@ -84,26 +89,22 @@ class ProfilerWebUIDataSource : public ChromeURLDataManager::DataSource {
     scoped_refptr<base::RefCountedString> response =
         new base::RefCountedString();
     response->data() = file_contents;
-    SendResponse(request_id, response);
+    callback.Run(response);
   }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ProfilerWebUIDataSource);
 };
 
-ChromeURLDataManager::DataSource* CreateProfilerHTMLSource() {
-  return new ProfilerWebUIDataSource();
-}
-
 #else  // USE_SOURCE_FILES_DIRECTLY
 
-ChromeWebUIDataSource* CreateProfilerHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIProfilerHost);
+content::WebUIDataSource* CreateProfilerHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIProfilerHost);
 
-  source->set_json_path("strings.js");
-  source->add_resource_path("profiler.js", IDR_PROFILER_JS);
-  source->set_default_resource(IDR_PROFILER_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("profiler.js", IDR_PROFILER_JS);
+  source->SetDefaultResource(IDR_PROFILER_HTML);
   return source;
 }
 
@@ -155,7 +156,11 @@ ProfilerUI::ProfilerUI(content::WebUI* web_ui)
 
   // Set up the chrome://profiler/ source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, CreateProfilerHTMLSource());
+#if defined(USE_SOURCE_FILES_DIRECTLY)
+  content::URLDataSource::Add(profile, new ProfilerWebUIDataSource);
+#else
+  content::WebUIDataSource::Add(profile, CreateProfilerHTMLSource());
+#endif
 }
 
 ProfilerUI::~ProfilerUI() {
@@ -168,7 +173,7 @@ void ProfilerUI::GetData() {
 
 void ProfilerUI::ReceivedProfilerData(
     const tracked_objects::ProcessDataSnapshot& profiler_data,
-    content::ProcessType process_type) {
+    int process_type) {
   // Serialize the data to JSON.
   DictionaryValue json_data;
   task_profiler::TaskProfilerDataSerializer::ToValue(profiler_data,

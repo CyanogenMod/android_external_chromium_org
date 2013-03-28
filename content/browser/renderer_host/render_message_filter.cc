@@ -16,26 +16,30 @@
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
 #include "base/utf_string_conversions.h"
+#include "content/browser/browser_main_loop.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/dom_storage/dom_storage_context_impl.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/download/download_stats.h"
+#include "content/browser/gpu/gpu_data_manager_impl.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
+#include "content/browser/media/media_internals.h"
 #include "content/browser/plugin_process_host.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/ppapi_plugin_process_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
-#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/desktop_notification_messages.h"
+#include "content/common/media/media_param_traits.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/download_save_info.h"
-#include "content/public/browser/media_observer.h"
 #include "content/public/browser/plugin_service_filter.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/user_metrics.h"
@@ -44,12 +48,14 @@
 #include "content/public/common/url_constants.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_platform_file.h"
+#include "media/audio/audio_manager.h"
 #include "media/audio/audio_manager_base.h"
-#include "media/audio/audio_util.h"
+#include "media/audio/audio_parameters.h"
 #include "media/base/media_log_event.h"
 #include "net/base/io_buffer.h"
 #include "net/base/keygen_handler.h"
 #include "net/base/mime_util.h"
+#include "net/base/request_priority.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_cache.h"
@@ -65,12 +71,17 @@
 
 #if defined(OS_MACOSX)
 #include "content/common/mac/font_descriptor.h"
+#else
+#include "gpu/GLES2/gl2extchromium.h"
+#include "third_party/khronos/GLES2/gl2.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
 #endif
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
 #endif
 #if defined(OS_WIN)
 #include "content/browser/renderer_host/backing_store_win.h"
+#include "content/common/font_cache_dispatcher_win.h"
 #endif
 
 using net::CookieStore;
@@ -130,23 +141,24 @@ class OpenChannelToPpapiPluginCallback
   }
 
   virtual void GetPpapiChannelInfo(base::ProcessHandle* renderer_handle,
-                                   int* renderer_id) {
+                                   int* renderer_id) OVERRIDE {
     *renderer_handle = filter()->peer_handle();
     *renderer_id = filter()->render_process_id();
   }
 
   virtual void OnPpapiChannelOpened(const IPC::ChannelHandle& channel_handle,
-                                    int plugin_child_id) {
+                                    base::ProcessId plugin_pid,
+                                    int plugin_child_id) OVERRIDE {
     ViewHostMsg_OpenChannelToPepperPlugin::WriteReplyParams(
-        reply_msg(), channel_handle, plugin_child_id);
+        reply_msg(), channel_handle, plugin_pid, plugin_child_id);
     SendReplyAndDeleteThis();
   }
 
-  virtual bool OffTheRecord() {
+  virtual bool OffTheRecord() OVERRIDE {
     return filter()->OffTheRecord();
   }
 
-  virtual ResourceContext* GetResourceContext() {
+  virtual ResourceContext* GetResourceContext() OVERRIDE {
     return context_;
   }
 
@@ -168,20 +180,22 @@ class OpenChannelToPpapiBrokerCallback
   virtual ~OpenChannelToPpapiBrokerCallback() {}
 
   virtual void GetPpapiChannelInfo(base::ProcessHandle* renderer_handle,
-                                   int* renderer_id) {
+                                   int* renderer_id) OVERRIDE {
     *renderer_handle = filter_->peer_handle();
     *renderer_id = filter_->render_process_id();
   }
 
   virtual void OnPpapiChannelOpened(const IPC::ChannelHandle& channel_handle,
-                                    int /* plugin_child_id */) {
+                                    base::ProcessId plugin_pid,
+                                    int /* plugin_child_id */) OVERRIDE {
     filter_->Send(new ViewMsg_PpapiBrokerChannelCreated(routing_id_,
                                                         request_id_,
+                                                        plugin_pid,
                                                         channel_handle));
     delete this;
   }
 
-  virtual bool OffTheRecord() {
+  virtual bool OffTheRecord() OVERRIDE {
     return filter_->OffTheRecord();
   }
 
@@ -281,7 +295,7 @@ RenderMessageFilter::RenderMessageFilter(
     BrowserContext* browser_context,
     net::URLRequestContextGetter* request_context,
     RenderWidgetHelper* render_widget_helper,
-    MediaObserver* media_observer,
+    MediaInternals* media_internals,
     DOMStorageContextImpl* dom_storage_context)
     : resource_dispatcher_host_(ResourceDispatcherHostImpl::Get()),
       plugin_service_(plugin_service),
@@ -293,7 +307,7 @@ RenderMessageFilter::RenderMessageFilter(
       dom_storage_context_(dom_storage_context),
       render_process_id_(render_process_id),
       cpu_usage_(0),
-      media_observer_(media_observer) {
+      media_internals_(media_internals) {
   DCHECK(request_context_);
 
   render_widget_helper_->Init(render_process_id_, resource_dispatcher_host_);
@@ -307,6 +321,7 @@ RenderMessageFilter::~RenderMessageFilter() {
 
 void RenderMessageFilter::OnChannelClosing() {
   BrowserMessageFilter::OnChannelClosing();
+#if defined(ENABLE_PLUGINS)
   for (std::set<OpenChannelToNpapiPluginCallback*>::iterator it =
        plugin_host_clients_.begin(); it != plugin_host_clients_.end(); ++it) {
     OpenChannelToNpapiPluginCallback* client = *it;
@@ -321,6 +336,7 @@ void RenderMessageFilter::OnChannelClosing() {
     }
     client->Cancel();
   }
+#endif  // defined(ENABLE_PLUGINS)
   plugin_host_clients_.clear();
 }
 
@@ -341,11 +357,17 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
                                             bool* message_was_ok) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_EX(RenderMessageFilter, message, *message_was_ok)
+#if defined(OS_WIN)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_PreCacheFontCharacters,
+                        OnPreCacheFontCharacters)
+#endif
+    IPC_MESSAGE_HANDLER(ViewHostMsg_GetProcessMemorySizes,
+                        OnGetProcessMemorySizes)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GenerateRoutingID, OnGenerateRoutingID)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWindow, OnMsgCreateWindow)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWidget, OnMsgCreateWidget)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWindow, OnCreateWindow)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWidget, OnCreateWidget)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreateFullscreenWidget,
-                        OnMsgCreateFullscreenWidget)
+                        OnCreateFullscreenWidget)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCookie, OnSetCookie)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_GetCookies, OnGetCookies)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_GetRawCookies, OnGetRawCookies)
@@ -354,9 +376,10 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_LoadFont, OnLoadFont)
 #endif
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DownloadUrl, OnDownloadUrl)
+#if defined(ENABLE_PLUGINS)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_GetPlugins, OnGetPlugins)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetPluginInfo, OnGetPluginInfo)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DownloadUrl, OnDownloadUrl)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_OpenChannelToPlugin,
                                     OnOpenChannelToPlugin)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_OpenChannelToPepperPlugin,
@@ -367,6 +390,7 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
                         OnDidDeleteOutOfProcessPepperInstance)
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenChannelToPpapiBroker,
                         OnOpenChannelToPpapiBroker)
+#endif
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_UpdateRect,
         render_widget_helper_->DidReceiveBackingStoreMsg(message))
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
@@ -383,17 +407,13 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_Keygen, OnKeygen)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AsyncOpenFile, OnAsyncOpenFile)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetCPUUsage, OnGetCPUUsage)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetHardwareBufferSize,
-                        OnGetHardwareBufferSize)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetHardwareInputSampleRate,
-                        OnGetHardwareInputSampleRate)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetHardwareSampleRate,
-                        OnGetHardwareSampleRate)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetHardwareInputChannelLayout,
-                        OnGetHardwareInputChannelLayout)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_GetAudioHardwareConfig,
+                        OnGetAudioHardwareConfig)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetMonitorColorProfile,
                         OnGetMonitorColorProfile)
     IPC_MESSAGE_HANDLER(ViewHostMsg_MediaLogEvent, OnMediaLogEvent)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_Are3DAPIsBlocked, OnAre3DAPIsBlocked)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_DidLose3DContext, OnDidLose3DContext)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
@@ -418,7 +438,7 @@ bool RenderMessageFilter::OffTheRecord() const {
   return incognito_;
 }
 
-void RenderMessageFilter::OnMsgCreateWindow(
+void RenderMessageFilter::OnCreateWindow(
     const ViewHostMsg_CreateWindow_Params& params,
     int* route_id,
     int* surface_id,
@@ -426,8 +446,8 @@ void RenderMessageFilter::OnMsgCreateWindow(
   bool no_javascript_access;
   bool can_create_window =
       GetContentClient()->browser()->CanCreateWindow(
-          GURL(params.opener_url),
-          GURL(params.opener_security_origin),
+          params.opener_url,
+          params.opener_security_origin,
           params.window_container_type,
           resource_context_,
           render_process_id_,
@@ -453,19 +473,36 @@ void RenderMessageFilter::OnMsgCreateWindow(
                                          cloned_namespace);
 }
 
-void RenderMessageFilter::OnMsgCreateWidget(int opener_id,
-                                            WebKit::WebPopupType popup_type,
-                                            int* route_id,
-                                            int* surface_id) {
+void RenderMessageFilter::OnCreateWidget(int opener_id,
+                                         WebKit::WebPopupType popup_type,
+                                         int* route_id,
+                                         int* surface_id) {
   render_widget_helper_->CreateNewWidget(
       opener_id, popup_type, route_id, surface_id);
 }
 
-void RenderMessageFilter::OnMsgCreateFullscreenWidget(int opener_id,
-                                                      int* route_id,
-                                                      int* surface_id) {
+void RenderMessageFilter::OnCreateFullscreenWidget(int opener_id,
+                                                   int* route_id,
+                                                   int* surface_id) {
   render_widget_helper_->CreateNewFullscreenWidget(
       opener_id, route_id, surface_id);
+}
+
+void RenderMessageFilter::OnGetProcessMemorySizes(size_t* private_bytes,
+                                                  size_t* shared_bytes) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  using base::ProcessMetrics;
+#if !defined(OS_MACOSX) || defined(OS_IOS)
+  scoped_ptr<ProcessMetrics> metrics(ProcessMetrics::CreateProcessMetrics(
+      peer_handle()));
+#else
+  scoped_ptr<ProcessMetrics> metrics(ProcessMetrics::CreateProcessMetrics(
+      peer_handle(), content::BrowserChildProcessHost::GetPortProvider()));
+#endif
+  if (!metrics->GetMemoryBytes(private_bytes, shared_bytes)) {
+    *private_bytes = 0;
+    *shared_bytes = 0;
+  }
 }
 
 void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
@@ -474,7 +511,7 @@ void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
                                       const std::string& cookie) {
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanUseCookiesForOrigin(render_process_id_, url))
+  if (!policy->CanAccessCookiesForOrigin(render_process_id_, url))
     return;
 
   net::CookieOptions options;
@@ -494,7 +531,7 @@ void RenderMessageFilter::OnGetCookies(const GURL& url,
                                        IPC::Message* reply_msg) {
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanUseCookiesForOrigin(render_process_id_, url)) {
+  if (!policy->CanAccessCookiesForOrigin(render_process_id_, url)) {
     SendGetCookiesResponse(reply_msg, std::string());
     return;
   }
@@ -524,7 +561,7 @@ void RenderMessageFilter::OnGetRawCookies(
   // TODO(ananta) We need to support retreiving raw cookies from external
   // hosts.
   if (!policy->CanReadRawCookies(render_process_id_) ||
-      !policy->CanUseCookiesForOrigin(render_process_id_, url)) {
+      !policy->CanAccessCookiesForOrigin(render_process_id_, url)) {
     SendGetRawCookiesResponse(reply_msg, net::CookieList());
     return;
   }
@@ -544,7 +581,7 @@ void RenderMessageFilter::OnDeleteCookie(const GURL& url,
                                          const std::string& cookie_name) {
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanUseCookiesForOrigin(render_process_id_, url))
+  if (!policy->CanAccessCookiesForOrigin(render_process_id_, url))
     return;
 
   net::URLRequestContext* context = GetRequestContextForURL(url);
@@ -627,12 +664,12 @@ void RenderMessageFilter::GetPluginsCallback(
   for (size_t i = 0; i < all_plugins.size(); ++i) {
     // Copy because the filter can mutate.
     webkit::WebPluginInfo plugin(all_plugins[i]);
-    if (!filter || filter->ShouldUsePlugin(child_process_id,
-                                           routing_id,
-                                           resource_context_,
-                                           GURL(),
-                                           GURL(),
-                                           &plugin)) {
+    if (!filter || filter->IsPluginAvailable(child_process_id,
+                                             routing_id,
+                                             resource_context_,
+                                             GURL(),
+                                             GURL(),
+                                             &plugin)) {
       plugins.push_back(plugin);
     }
   }
@@ -671,17 +708,19 @@ void RenderMessageFilter::OnOpenChannelToPlugin(int routing_id,
 }
 
 void RenderMessageFilter::OnOpenChannelToPepperPlugin(
-    const FilePath& path,
+    const base::FilePath& path,
     IPC::Message* reply_msg) {
   plugin_service_->OpenChannelToPpapiPlugin(
-      path, profile_data_directory_, new OpenChannelToPpapiPluginCallback(
-          this, resource_context_, reply_msg));
+      render_process_id_,
+      path,
+      profile_data_directory_,
+      new OpenChannelToPpapiPluginCallback(this, resource_context_, reply_msg));
 }
 
 void RenderMessageFilter::OnDidCreateOutOfProcessPepperInstance(
     int plugin_child_id,
     int32 pp_instance,
-    int render_view_id,
+    PepperRendererInstanceData instance_data,
     bool is_external) {
   // It's important that we supply the render process ID ourselves based on the
   // channel the message arrived on. We use the
@@ -689,16 +728,18 @@ void RenderMessageFilter::OnDidCreateOutOfProcessPepperInstance(
   // mapping to decide how to handle messages received from the (untrusted)
   // plugin, so an exploited renderer must not be able to insert fake mappings
   // that may allow it access to other render processes.
+  DCHECK(instance_data.render_process_id == 0);
+  instance_data.render_process_id = render_process_id_;
   if (is_external) {
     // We provide the BrowserPpapiHost to the embedder, so it's safe to cast.
     BrowserPpapiHostImpl* host = static_cast<BrowserPpapiHostImpl*>(
         GetContentClient()->browser()->GetExternalBrowserPpapiHost(
             plugin_child_id));
     if (host)
-      host->AddInstanceForView(pp_instance, render_process_id_, render_view_id);
+      host->AddInstance(pp_instance, instance_data);
   } else {
     PpapiPluginProcessHost::DidCreateOutOfProcessInstance(
-        plugin_child_id, pp_instance, render_process_id_, render_view_id);
+        plugin_child_id, pp_instance, instance_data);
   }
 }
 
@@ -712,18 +753,21 @@ void RenderMessageFilter::OnDidDeleteOutOfProcessPepperInstance(
         GetContentClient()->browser()->GetExternalBrowserPpapiHost(
             plugin_child_id));
     if (host)
-      host->DeleteInstanceForView(pp_instance);
+      host->DeleteInstance(pp_instance);
   } else {
     PpapiPluginProcessHost::DidDeleteOutOfProcessInstance(
         plugin_child_id, pp_instance);
   }
 }
 
-void RenderMessageFilter::OnOpenChannelToPpapiBroker(int routing_id,
-                                                     int request_id,
-                                                     const FilePath& path) {
+void RenderMessageFilter::OnOpenChannelToPpapiBroker(
+    int routing_id,
+    int request_id,
+    const base::FilePath& path) {
   plugin_service_->OpenChannelToPpapiBroker(
-      path, new OpenChannelToPpapiBrokerCallback(this, routing_id, request_id));
+      render_process_id_,
+      path,
+      new OpenChannelToPpapiBrokerCallback(this, routing_id, request_id));
 }
 
 void RenderMessageFilter::OnGenerateRoutingID(int* route_id) {
@@ -740,25 +784,18 @@ void RenderMessageFilter::OnGetCPUUsage(int* cpu_usage) {
   *cpu_usage = cpu_usage_;
 }
 
-void RenderMessageFilter::OnGetHardwareBufferSize(uint32* buffer_size) {
-  *buffer_size = static_cast<uint32>(media::GetAudioHardwareBufferSize());
-}
+void RenderMessageFilter::OnGetAudioHardwareConfig(
+    media::AudioParameters* input_params,
+    media::AudioParameters* output_params) {
+  DCHECK(input_params);
+  DCHECK(output_params);
+  media::AudioManager* audio_manager = BrowserMainLoop::GetAudioManager();
+  *output_params = audio_manager->GetDefaultOutputStreamParameters();
 
-void RenderMessageFilter::OnGetHardwareInputSampleRate(int* sample_rate) {
   // TODO(henrika): add support for all available input devices.
-  *sample_rate = media::GetAudioInputHardwareSampleRate(
-      media::AudioManagerBase::kDefaultDeviceId);
-}
-
-void RenderMessageFilter::OnGetHardwareSampleRate(int* sample_rate) {
-  *sample_rate = media::GetAudioHardwareSampleRate();
-}
-
-void RenderMessageFilter::OnGetHardwareInputChannelLayout(
-    media::ChannelLayout* layout) {
-  // TODO(henrika): add support for all available input devices.
-  *layout = media::GetAudioInputHardwareChannelLayout(
-      media::AudioManagerBase::kDefaultDeviceId);
+  *input_params =
+      audio_manager->GetInputStreamParameters(
+          media::AudioManagerBase::kDefaultDeviceId);
 }
 
 void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
@@ -790,6 +827,7 @@ void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
       message.routing_id(),
       false,
       save_info.Pass(),
+      content::DownloadId::Invalid(),
       ResourceDispatcherHostImpl::DownloadStartedCallback());
 }
 
@@ -858,10 +896,17 @@ void RenderMessageFilter::OnCacheableMetadataAvailable(
       http_transaction_factory()->GetCache();
   DCHECK(cache);
 
+  // Use the same priority for the metadata write as for script
+  // resources (see defaultPriorityForResourceType() in WebKit's
+  // CachedResource.cpp). Note that WebURLRequest::PriorityMedium
+  // corresponds to net::LOW (see ConvertWebKitPriorityToNetPriority()
+  // in weburlloader_impl.cc).
+  const net::RequestPriority kPriority = net::LOW;
   scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(data.size()));
   memcpy(buf->data(), &data.front(), data.size());
   cache->WriteMetadata(
-      url, base::Time::FromDoubleT(expected_response_time), buf, data.size());
+      url, kPriority,
+      base::Time::FromDoubleT(expected_response_time), buf, data.size());
 }
 
 void RenderMessageFilter::OnKeygen(uint32 key_size_index,
@@ -923,7 +968,7 @@ void RenderMessageFilter::OnKeygenOnWorkerThread(
 }
 
 void RenderMessageFilter::OnAsyncOpenFile(const IPC::Message& msg,
-                                          const FilePath& path,
+                                          const base::FilePath& path,
                                           int flags,
                                           int message_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -942,7 +987,7 @@ void RenderMessageFilter::OnAsyncOpenFile(const IPC::Message& msg,
           path, flags, message_id, msg.routing_id()));
 }
 
-void RenderMessageFilter::AsyncOpenFileOnFileThread(const FilePath& path,
+void RenderMessageFilter::AsyncOpenFileOnFileThread(const base::FilePath& path,
                                                     int flags,
                                                     int message_id,
                                                     int routing_id) {
@@ -963,8 +1008,8 @@ void RenderMessageFilter::AsyncOpenFileOnFileThread(const FilePath& path,
 }
 
 void RenderMessageFilter::OnMediaLogEvent(const media::MediaLogEvent& event) {
-  if (media_observer_)
-    media_observer_->OnMediaEvent(render_process_id_, event);
+  if (media_internals_)
+    media_internals_->OnMediaEvent(render_process_id_, event);
 }
 
 void RenderMessageFilter::CheckPolicyForCookies(
@@ -1023,5 +1068,80 @@ void RenderMessageFilter::OnUpdateIsDelayed(const IPC::Message& msg) {
   // different message.
   render_widget_helper_->DidReceiveBackingStoreMsg(msg);
 }
+
+void RenderMessageFilter::OnAre3DAPIsBlocked(int render_view_id,
+                                             const GURL& top_origin_url,
+                                             ThreeDAPIType requester,
+                                             bool* blocked) {
+  *blocked = GpuDataManagerImpl::GetInstance()->Are3DAPIsBlocked(
+      top_origin_url, render_process_id_, render_view_id, requester);
+}
+
+void RenderMessageFilter::OnDidLose3DContext(
+    const GURL& top_origin_url,
+    ThreeDAPIType /* unused */,
+    int arb_robustness_status_code) {
+#if defined(OS_MACOSX)
+    // TODO(kbr): this file indirectly includes npapi.h, which on Mac
+    // OS pulls in the system OpenGL headers. For some
+    // not-yet-investigated reason this breaks the build with the 10.6
+    // SDK but not 10.7. For now work around this in a way compatible
+    // with the Khronos headers.
+#ifndef GL_GUILTY_CONTEXT_RESET_ARB
+#define GL_GUILTY_CONTEXT_RESET_ARB 0x8253
+#endif
+#ifndef GL_INNOCENT_CONTEXT_RESET_ARB
+#define GL_INNOCENT_CONTEXT_RESET_ARB 0x8254
+#endif
+#ifndef GL_UNKNOWN_CONTEXT_RESET_ARB
+#define GL_UNKNOWN_CONTEXT_RESET_ARB 0x8255
+#endif
+
+#endif
+  GpuDataManagerImpl::DomainGuilt guilt;
+  switch (arb_robustness_status_code) {
+    case GL_GUILTY_CONTEXT_RESET_ARB:
+      guilt = GpuDataManagerImpl::DOMAIN_GUILT_KNOWN;
+      break;
+    case GL_UNKNOWN_CONTEXT_RESET_ARB:
+      guilt = GpuDataManagerImpl::DOMAIN_GUILT_UNKNOWN;
+      break;
+    default:
+      // Ignore lost contexts known to be innocent.
+      return;
+  }
+
+  GpuDataManagerImpl::GetInstance()->BlockDomainFrom3DAPIs(
+      top_origin_url, guilt);
+}
+
+#if defined(OS_WIN)
+void RenderMessageFilter::OnPreCacheFontCharacters(const LOGFONT& font,
+                                                   const string16& str) {
+  // First, comments from FontCacheDispatcher::OnPreCacheFont do apply here too.
+  // Except that for True Type fonts,
+  // GetTextMetrics will not load the font in memory.
+  // The only way windows seem to load properly, it is to create a similar
+  // device (like the one in which we print), then do an ExtTextOut,
+  // as we do in the printing thread, which is sandboxed.
+  HDC hdc = CreateEnhMetaFile(NULL, NULL, NULL, NULL);
+  HFONT font_handle = CreateFontIndirect(&font);
+  DCHECK(NULL != font_handle);
+
+  HGDIOBJ old_font = SelectObject(hdc, font_handle);
+  DCHECK(NULL != old_font);
+
+  ExtTextOut(hdc, 0, 0, ETO_GLYPH_INDEX, 0, str.c_str(), str.length(), NULL);
+
+  SelectObject(hdc, old_font);
+  DeleteObject(font_handle);
+
+  HENHMETAFILE metafile = CloseEnhMetaFile(hdc);
+
+  if (metafile) {
+    DeleteEnhMetaFile(metafile);
+  }
+}
+#endif
 
 }  // namespace content

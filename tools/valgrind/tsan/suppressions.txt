@@ -93,6 +93,32 @@
   fun:PR_ExitMonitor
 }
 
+{
+  False positive on strncasecmp OOB read
+  ThreadSanitizer:Race
+  fun:__strncasecmp_l_ssse3
+  fun:base::strncasecmp
+}
+{
+  False positive on strcasecmp OOB read
+  ThreadSanitizer:Race
+  fun:__strcasecmp_l_ssse3
+  fun:base::strcasecmp
+}
+
+{
+  Benign race in get_nprocs, uses barriers
+  ThreadSanitizer:Race
+  fun:get_nprocs
+}
+
+{
+  False positives, glibc just uses internal atomics
+  ThreadSanitizer:Race
+  ...
+  fun:getaddrinfo
+}
+
 ############################
 # 1.2 Benign races in ICU
 {
@@ -260,6 +286,13 @@
   fun:_cairo_bentley_ottmann_tessellate_polygon
 }
 
+{
+  bug_177061
+  ThreadSanitizer:Race
+  ...
+  fun:*cairo*
+}
+
 # 2. intentional unit test errors, or stuff that is somehow a false positive
 ############################
 # 2.1 Data races in tests
@@ -353,54 +386,6 @@
   fun:tracked_objects::Births::*Birth*
 }
 
-{
-  bug_62694 [benign races in Histogram in CookieMonster]
-  ThreadSanitizer:Race
-  ...
-  fun:base::Histogram::*
-  fun:net::CookieMonster::*
-}
-
-{
-  bug_64185a [probably-benign races in Histogram in skia::ImageOperations]
-  ThreadSanitizer:Race
-  ...
-  fun:base::Histogram::*
-  fun:skia::ImageOperations::*
-}
-
-{
-  bug_64185b [probably-benign races in Histogram in skia::ImageOperations]
-  ThreadSanitizer:Race
-  ...
-  fun:base::Histogram::*
-  fun:HistogramSynchronizer::DeserializeHistogramList*
-}
-
-{
-   bug_104776 Benign race to initialize pointer with the same value again.
-   ThreadSanitizer:Race
-   fun:base::StatisticsRecorder::FindHistogram
-   fun:base::*Histogram::FactoryGet
-}
-
-{
-   bug_115987a [benign races in Histogram in SequencedWorkerPool]
-   ThreadSanitizer:Race
-   ...
-   fun:base::Histogram::*
-   fun:base::SequencedWorkerPool::*
-}
-
-# Histogram macros involve string comparison in debug mode.
-{
-   bug_115987b [benign races in Histogram in SequencedWorkerPool]
-   ThreadSanitizer:Race
-   ...
-   fun:std::operator==
-   fun:base::SequencedWorkerPool::*
-}
-
 # 3. Suppressions for real chromium bugs that are not yet fixed.
 ############################
 # Real races in Chromium
@@ -466,8 +451,8 @@
   ThreadSanitizer:Race
   fun:Replace_memcpy
   fun:memcpy
-  fun:Serialize
-  fun:UserScriptMaster::ScriptReloader::RunLoad
+  fun:extensions::Serialize
+  fun:extensions::UserScriptMaster::ScriptReloader::RunLoad
 }
 
 {
@@ -744,7 +729,7 @@
   bug_106196
   ThreadSanitizer:Race
   fun:tracked_objects::ThreadData::InitializeAndSetTrackingStatus
-  fun:ChildThread::OnSetProfilerStatus
+  fun:*ChildThread::OnSetProfilerStatus
   fun:DispatchToMethod
 }
 {
@@ -793,10 +778,12 @@
   fun:base::internal::RunnableAdapter::Run
 }
 {
-  bug_108411
+  bug_108539
   ThreadSanitizer:Race
-  ...
-  fun:pa_rtpoll_run
+  fun:tracked_objects::ThreadData::InitializeAndSetTrackingStatus
+  fun:tracked_objects::ThreadData::ShutdownSingleThreadedCleanup
+  fun:tracked_objects::TrackedObjectsTest::TrackedObjectsTest
+  fun:tracked_objects::TrackedObjectsTest_MinimalStartupShutdown_Test::TrackedObjectsTest_MinimalStartupShutdown_Test
 }
 {
   bug_112419
@@ -949,10 +936,10 @@
    fun:_vsnprintf_helper
 }
 {
-   bug_137973_a
-   ThreadSanitizer:Race
-   fun:media::Pipeline::OnVideoTimeUpdate
-   fun:base::internal::RunnableAdapter::Run
+  bug_137973_a
+  ThreadSanitizer:Race
+  fun:media::Pipeline::OnVideoTimeUpdate
+  fun:base::internal::RunnableAdapter::Run
 }
 {
   bug_137973_b
@@ -962,17 +949,11 @@
   fun:base::internal::RunnableAdapter::Run
 }
 {
-   bug_138691
-   ThreadSanitizer:Race
-   ...
-   fun:testing::internal::UntypedFunctionMockerBase::UntypedInvokeWith
-   fun:testing::internal::FunctionMockerBase::InvokeWith
-   fun:testing::internal::FunctionMocker::Invoke
-   fun:browser_sync::NewNonFrontendDataTypeControllerMock::RecordUnrecoverableError
-   fun:browser_sync::::NewNonFrontendDataTypeControllerFake::RecordUnrecoverableError
-   fun:browser_sync::NonFrontendDataTypeController::StartFailed
-   fun:browser_sync::NewNonFrontendDataTypeController::StartAssociationWithSharedChangeProcessor
-   fun:base::internal::RunnableAdapter::Run
+  bug_137973_c
+  ThreadSanitizer:Race
+  fun:media::Pipeline::SetState
+  fun:media::Pipeline::SeekTask
+  fun:base::internal::RunnableAdapter::Run
 }
 {
   bug_144894
@@ -989,13 +970,143 @@
   fun:media::PipelineIntegrationTest_MediaSource_ConfigChange_WebM_Test::TestBody
 }
 {
-   bug_151499
+  bug_172292
+  ThreadSanitizer:Race
+  fun:testing::internal::CmpHelperGE
+  fun:ThreadWatcherTest_MultipleThreadsResponding_Test::TestBody
+  fun:testing::internal::HandleSehExceptionsInMethodIfSupported
+}
+{
+  bug_172297
+  ThreadSanitizer:Race
+  fun:CustomThreadWatcher::UpdateState
+  fun:*
+  fun:base::internal::RunnableAdapter::Run
+}
+{
+  bug_172306
+  ThreadSanitizer:Race
+  fun:ThreadWatcher::OnPongMessage
+  fun:CustomThreadWatcher::OnPongMessage
+  fun:base::internal::RunnableAdapter::Run
+}
+{
+  bug_175467
+  ThreadSanitizer:Race
+  fun:_getstream
+  fun:_getstream
+  fun:_wfsopen
+  fun:_wfsopen
+  fun:file_util::OpenFile
+  fun:file_util::OpenFile
+  fun:file_util::OpenFile
+  fun:file_util::OpenFile
+  fun:components::VisitedLinkMaster::InitFromFile
+  fun:components::VisitedLinkMaster::InitFromFile
+  fun:components::VisitedLinkMaster::InitFromFile
+  fun:components::VisitedLinkMaster::Init
+  fun:components::VisitedLinkEventsTest::SetUp
+  fun:testing::internal::HandleExceptionsInMethodIfSupported
+}
+{
+  bug_66835a
+  ThreadSanitizer:Race
+  fun:getenv
+  fun:::EnvironmentImpl::GetVarImpl
+  fun:::EnvironmentImpl::GetVar
+  fun:ShellIntegrationLinux::GetDesktopName
+  fun:::GetIsDefaultWebClient
+  fun:ShellIntegration::GetDefaultBrowser
+  fun:::RecordDefaultBrowserUMAStat
+  fun:base::internal::RunnableAdapter::Run
+}
+{
+  bug_66835b
+  ThreadSanitizer:Race
+  fun:__add_to_environ
+  fun:g_setenv
+  ...
+  fun:giop_init
+  fun:CORBA_ORB_init
+  fun:gconf_orb_get
+  ...
+  fun:gconf_activate_server
+  ...
+  fun:gconf_engine_get_fuller
+  fun:gconf_engine_get_entry
+  ...
+  fun:GConfTitlebarListener::GConfTitlebarListener
+  fun:DefaultSingletonTraits::New
+  fun:Singleton::get
+  fun:GConfTitlebarListener::GetInstance
+  fun:BrowserTitlebar::Init
+  fun:BrowserWindowGtk::InitWidgets
+  fun:BrowserWindowGtk::Init
+  fun:BrowserWindow::CreateBrowserWindow
+  fun:::CreateBrowserWindow
+  fun:Browser::Browser
+  fun:StartupBrowserCreatorImpl::OpenTabsInBrowser
+  fun:StartupBrowserCreatorImpl::ProcessSpecifiedURLs
+  fun:StartupBrowserCreatorImpl::ProcessStartupURLs
+  fun:StartupBrowserCreatorImpl::ProcessLaunchURLs
+  fun:StartupBrowserCreatorImpl::Launch
+}
+{
+   bug_178433a
    ThreadSanitizer:Race
-   fun:std::vector::size
-   fun:testing::internal::UntypedFunctionMockerBase::UntypedInvokeWith
-   fun:testing::internal::FunctionMockerBase::InvokeWith
-   fun:testing::internal::FunctionMocker::Invoke
-   fun:safe_browsing::::MockSafeBrowsingService::MatchCsdWhitelistUrl
-   fun:safe_browsing::ClientSideDetectionHost::ShouldClassifyUrlRequest::CheckCsdWhitelist
-   fun:base::internal::RunnableAdapter::Run
+   fun:scoped_refptr::operator->
+   fun:base::WaitableEvent::Signal
+   fun:base::debug::TraceSamplingThread::ThreadMain
+   fun:base::::ThreadFunc
+}
+{
+   bug_178433b
+   ThreadSanitizer:Race
+   fun:base::internal::scoped_ptr_impl::get
+   ...
+   fun:base::debug::TraceSamplingThread::ThreadMain
+}
+{
+   bug_222601a
+   ThreadSanitizer:Race
+   fun:XFixesFindDisplay
+   fun:XFixesQueryExtension
+   fun:media::::ScreenCapturerLinux::Init
+}
+{
+   bug_222601b
+   ThreadSanitizer:Race
+   fun:XextFindDisplay
+   ...
+   fun:XShmQueryVersion
+   fun:media::XServerPixelBuffer::InitShm
+   fun:media::XServerPixelBuffer::Init
+   fun:media::::ScreenCapturerLinux::Init
+}
+{
+   bug_222601c
+   ThreadSanitizer:Race
+   fun:XextAddDisplay
+   ...
+   fun:media::XServerPixelBuffer::InitShm
+   fun:media::XServerPixelBuffer::Init
+   fun:media::::ScreenCapturerLinux::Init
+}
+{
+   bug_222684a
+   ThreadSanitizer:Race
+   ...
+   fun:WebCore::shouldTreatAsUniqueOrigin
+   fun:WebCore::SecurityOrigin::create
+   fun:WebCore::SecurityOrigin::createFromString
+   fun:WebKit::WebSecurityOrigin::createFromString
+}
+{
+   bug_222684b
+   ThreadSanitizer:Race
+   ...
+   fun:WebCore::SecurityOrigin::SecurityOrigin
+   fun:WebCore::SecurityOrigin::create
+   fun:WebCore::SecurityOrigin::createFromString
+   fun:WebKit::WebSecurityOrigin::createFromString
 }

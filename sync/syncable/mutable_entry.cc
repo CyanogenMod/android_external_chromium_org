@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,22 +12,16 @@
 #include "sync/syncable/syncable-inl.h"
 #include "sync/syncable/syncable_changes_version.h"
 #include "sync/syncable/syncable_util.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 
 using std::string;
 
 namespace syncer {
 namespace syncable {
 
-MutableEntry::MutableEntry(WriteTransaction* trans, Create,
-                           const Id& parent_id, const string& name)
-    : Entry(trans),
-      write_transaction_(trans) {
-  Init(trans, parent_id, name);
-}
-
-
-void MutableEntry::Init(WriteTransaction* trans, const Id& parent_id,
+void MutableEntry::Init(WriteTransaction* trans,
+                        ModelType model_type,
+                        const Id& parent_id,
                         const string& name) {
   scoped_ptr<EntryKernel> kernel(new EntryKernel);
   kernel_ = NULL;
@@ -43,9 +37,15 @@ void MutableEntry::Init(WriteTransaction* trans, const Id& parent_id,
   // We match the database defaults here
   kernel->put(BASE_VERSION, CHANGES_VERSION);
   kernel->put(SERVER_ORDINAL_IN_PARENT, NodeOrdinal::CreateInitialOrdinal());
-  if (!trans->directory()->InsertEntry(trans, kernel.get())) {
-    return; // We failed inserting, nothing more to do.
-  }
+
+  // Normally the SPECIFICS setting code is wrapped in logic to deal with
+  // unknown fields and encryption.  Since all we want to do here is ensure that
+  // GetModelType() returns a correct value from the very beginning, these
+  // few lines are sufficient.
+  sync_pb::EntitySpecifics specifics;
+  AddDefaultFieldValue(model_type, &specifics);
+  kernel->put(SPECIFICS, specifics);
+
   // Because this entry is new, it was originally deleted.
   kernel->put(IS_DEL, true);
   trans->SaveOriginal(kernel.get());
@@ -53,6 +53,18 @@ void MutableEntry::Init(WriteTransaction* trans, const Id& parent_id,
 
   // Now swap the pointers.
   kernel_ = kernel.release();
+}
+
+MutableEntry::MutableEntry(WriteTransaction* trans,
+                           Create,
+                           ModelType model_type,
+                           const Id& parent_id,
+                           const string& name)
+    : Entry(trans),
+      write_transaction_(trans) {
+  Init(trans, model_type, parent_id, name);
+  bool insert_result = trans->directory()->InsertEntry(trans, kernel_);
+  DCHECK(insert_result);
 }
 
 MutableEntry::MutableEntry(WriteTransaction* trans, CreateNewUpdateItem,
@@ -273,10 +285,22 @@ bool MutableEntry::Put(ProtoField field,
 bool MutableEntry::Put(BitField field, bool value) {
   DCHECK(kernel_);
   write_transaction_->SaveOriginal(kernel_);
-  if (kernel_->ref(field) != value) {
+  bool old_value = kernel_->ref(field);
+  if (old_value != value) {
     kernel_->put(field, value);
     kernel_->mark_dirty(GetDirtyIndexHelper());
   }
+
+  // Update delete journal for existence status change on server side here
+  // instead of in PutIsDel() because IS_DEL may not be updated due to
+  // early returns when processing updates. And because
+  // UpdateDeleteJournalForServerDelete() checks for SERVER_IS_DEL, it has
+  // to be called on sync thread.
+  if (field == SERVER_IS_DEL) {
+    dir()->delete_journal()->UpdateDeleteJournalForServerDelete(
+        write_transaction(), old_value, *kernel_);
+  }
+
   return true;
 }
 
@@ -389,7 +413,7 @@ bool MutableEntry::PutPredecessor(const Id& predecessor_id) {
     }
     if (predecessor.Get(PARENT_ID) != Get(PARENT_ID))
       return false;
-    successor_id = predecessor.Get(NEXT_ID);
+    successor_id = predecessor.GetSuccessorId();
     predecessor.Put(NEXT_ID, Get(ID));
   } else {
     syncable::Directory* dir = trans()->directory();

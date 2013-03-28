@@ -6,12 +6,14 @@
 
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/extensions/window_controller_list.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -32,23 +34,9 @@ void ExtensionFunctionDeleteTraits::Destruct(const ExtensionFunction* x) {
 }
 
 UIThreadExtensionFunction::RenderViewHostTracker::RenderViewHostTracker(
-    UIThreadExtensionFunction* function,
-    RenderViewHost* render_view_host)
-    : content::RenderViewHostObserver(render_view_host),
+    UIThreadExtensionFunction* function)
+    : content::RenderViewHostObserver(function->render_view_host()),
       function_(function) {
-  registrar_.Add(this,
-                 content::NOTIFICATION_RENDER_VIEW_HOST_DELETED,
-                 content::Source<RenderViewHost>(function->render_view_host()));
-}
-
-void UIThreadExtensionFunction::RenderViewHostTracker::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  CHECK(type == content::NOTIFICATION_RENDER_VIEW_HOST_DELETED);
-  CHECK(content::Source<RenderViewHost>(source).ptr() ==
-        function_->render_view_host());
-  function_->SetRenderViewHost(NULL);
 }
 
 void UIThreadExtensionFunction::RenderViewHostTracker::RenderViewHostDestroyed(
@@ -56,6 +44,8 @@ void UIThreadExtensionFunction::RenderViewHostTracker::RenderViewHostDestroyed(
   // Overidding the default behavior of RenderViewHostObserver which is to
   // delete this. In our case, we'll be deleted when the
   // UIThreadExtensionFunction that contains us goes away.
+
+  function_->SetRenderViewHost(NULL);
 }
 
 bool UIThreadExtensionFunction::RenderViewHostTracker::OnMessageReceived(
@@ -70,7 +60,8 @@ ExtensionFunction::ExtensionFunction()
       include_incognito_(false),
       user_gesture_(false),
       args_(NULL),
-      bad_message_(false) {
+      bad_message_(false),
+      histogram_value_(extensions::functions::UNKNOWN) {
 }
 
 ExtensionFunction::~ExtensionFunction() {
@@ -116,6 +107,9 @@ void ExtensionFunction::SetError(const std::string& error) {
 }
 
 void ExtensionFunction::Run() {
+  UMA_HISTOGRAM_ENUMERATION("Extensions.FunctionCalls", histogram_value(),
+                            extensions::functions::ENUM_BOUNDARY);
+
   if (!RunImpl())
     SendResponse(false);
 }
@@ -186,8 +180,7 @@ void UIThreadExtensionFunction::Destruct() const {
 void UIThreadExtensionFunction::SetRenderViewHost(
     RenderViewHost* render_view_host) {
   render_view_host_ = render_view_host;
-  tracker_.reset(render_view_host ?
-      new RenderViewHostTracker(this, render_view_host) : NULL);
+  tracker_.reset(render_view_host ? new RenderViewHostTracker(this) : NULL);
 }
 
 // TODO(stevenjb): Replace this with GetExtensionWindowController().
@@ -207,11 +200,14 @@ Browser* UIThreadExtensionFunction::GetCurrentBrowser() {
   // is true, we will also search browsers in the incognito version of this
   // profile. Note that the profile may already be incognito, in which case
   // we will search the incognito version only, regardless of the value of
-  // |include_incognito|.
+  // |include_incognito|. Look only for browsers on the active desktop as it is
+  // preferable to pretend no browser is open then to return a browser on
+  // another desktop.
   if (render_view_host_) {
     Profile* profile = Profile::FromBrowserContext(
         render_view_host_->GetProcess()->GetBrowserContext());
-    Browser* browser = browser::FindAnyBrowser(profile, include_incognito_);
+    Browser* browser = chrome::FindAnyBrowser(profile, include_incognito_,
+                                              chrome::GetActiveDesktop());
     if (browser)
       return browser;
   }
@@ -283,6 +279,13 @@ void UIThreadExtensionFunction::SendResponse(bool success) {
                      render_view_host_->GetRoutingID(),
                      success);
   }
+}
+
+void UIThreadExtensionFunction::WriteToConsole(
+    content::ConsoleMessageLevel level,
+    const std::string& message) {
+  render_view_host_->Send(new ExtensionMsg_AddMessageToConsole(
+      render_view_host_->GetRoutingID(), level, message));
 }
 
 IOThreadExtensionFunction::IOThreadExtensionFunction()

@@ -11,11 +11,11 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
+#include "base/prefs/testing_pref_service.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "content/public/test/test_browser_thread.h"
 #include "net/proxy/proxy_config_service_common_unittest.h"
@@ -235,24 +235,24 @@ class ProxyConfigServiceImplTestBase : public TESTBASE {
       : ui_thread_(BrowserThread::UI, &loop_),
         io_thread_(BrowserThread::IO, &loop_) {}
 
-  virtual void Init(PrefService* pref_service) {
+  virtual void Init(TestingPrefServiceSimple* pref_service) {
     ASSERT_TRUE(pref_service);
     DBusThreadManager::Initialize();
-    PrefProxyConfigTrackerImpl::RegisterPrefs(pref_service);
-    ProxyConfigServiceImpl::RegisterPrefs(pref_service);
-    proxy_config_service_.reset(new ChromeProxyConfigService(NULL, true));
+    PrefProxyConfigTrackerImpl::RegisterPrefs(pref_service->registry());
+    ProxyConfigServiceImpl::RegisterPrefs(pref_service->registry());
+    proxy_config_service_.reset(new ChromeProxyConfigService(NULL));
     config_service_impl_.reset(new ProxyConfigServiceImpl(pref_service));
     config_service_impl_->SetChromeProxyConfigService(
         proxy_config_service_.get());
     // SetChromeProxyConfigService triggers update of initial prefs proxy
     // config by tracker to chrome proxy config service, so flush all pending
     // tasks so that tests start fresh.
-    loop_.RunAllPending();
+    loop_.RunUntilIdle();
   }
 
   virtual void TearDown() {
     config_service_impl_->DetachFromPrefService();
-    loop_.RunAllPending();
+    loop_.RunUntilIdle();
     config_service_impl_.reset();
     proxy_config_service_.reset();
     DBusThreadManager::Shutdown();
@@ -315,7 +315,7 @@ class ProxyConfigServiceImplTestBase : public TESTBASE {
       net::ProxyConfig* config) {
     *config = net::ProxyConfig();
     // Let message loop process all messages.
-    loop_.RunAllPending();
+    loop_.RunUntilIdle();
     // Calls ChromeProIOGetProxyConfig (which is called from
     // ProxyConfigService::GetLatestProxyConfig), running on faked IO thread.
     return proxy_config_service_->GetLatestProxyConfig(config);
@@ -340,12 +340,12 @@ class ProxyConfigServiceImplTest
     Init(&pref_service_);
   }
 
-  TestingPrefService pref_service_;
+  TestingPrefServiceSimple pref_service_;
 };
 
 TEST_F(ProxyConfigServiceImplTest, NetworkProxy) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
-    SCOPED_TRACE(StringPrintf("Test[%" PRIuS "] %s", i,
+    SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "] %s", i,
                               tests[i].description.c_str()));
 
     ProxyConfigServiceImpl::ProxyConfig test_config;
@@ -363,7 +363,7 @@ TEST_F(ProxyConfigServiceImplTest, NetworkProxy) {
 
 TEST_F(ProxyConfigServiceImplTest, ModifyFromUI) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
-    SCOPED_TRACE(StringPrintf("Test[%" PRIuS "] %s", i,
+    SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "] %s", i,
                               tests[i].description.c_str()));
 
     // Init with direct.
@@ -484,7 +484,7 @@ TEST_F(ProxyConfigServiceImplTest, DynamicPrefsOverride) {
     const TestParams& recommended_params = tests[proxies[i][1]];
     const TestParams& network_params = tests[proxies[i][2]];
 
-    SCOPED_TRACE(StringPrintf(
+    SCOPED_TRACE(base::StringPrintf(
         "Test[%" PRIuS "] managed=[%s], recommended=[%s], network=[%s]", i,
         managed_params.description.c_str(),
         recommended_params.description.c_str(),

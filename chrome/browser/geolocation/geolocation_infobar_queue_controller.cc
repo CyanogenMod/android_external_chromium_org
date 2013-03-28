@@ -4,12 +4,11 @@
 
 #include "chrome/browser/geolocation/geolocation_infobar_queue_controller.h"
 
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/geolocation/geolocation_confirm_infobar_delegate.h"
-#include "chrome/browser/geolocation/geolocation_confirm_infobar_delegate_factory.h"
 #include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -26,10 +25,10 @@
 
 namespace {
 
-InfoBarTabHelper* GetInfoBarHelper(const GeolocationPermissionRequestID& id) {
+InfoBarService* GetInfoBarService(const GeolocationPermissionRequestID& id) {
   content::WebContents* web_contents =
       tab_util::GetWebContentsByID(id.render_process_id(), id.render_view_id());
-  return web_contents ? InfoBarTabHelper::FromWebContents(web_contents) : NULL;
+  return web_contents ? InfoBarService::FromWebContents(web_contents) : NULL;
 }
 
 }
@@ -51,9 +50,7 @@ class GeolocationInfoBarQueueController::PendingInfoBarRequest {
   const GeolocationPermissionRequestID& id() const { return id_; }
   const GURL& requesting_frame() const { return requesting_frame_; }
   bool has_infobar_delegate() const { return !!infobar_delegate_; }
-  GeolocationConfirmInfoBarDelegate* infobar_delegate() {
-      return infobar_delegate_;
-  }
+  InfoBarDelegate* infobar_delegate() { return infobar_delegate_; }
 
   void RunCallback(bool allowed);
   void CreateInfoBarDelegate(GeolocationInfoBarQueueController* controller,
@@ -64,7 +61,7 @@ class GeolocationInfoBarQueueController::PendingInfoBarRequest {
   GURL requesting_frame_;
   GURL embedder_;
   PermissionDecidedCallback callback_;
-  GeolocationConfirmInfoBarDelegate* infobar_delegate_;
+  InfoBarDelegate* infobar_delegate_;
 
   // Purposefully do not disable copying, as this is stored in STL containers.
 };
@@ -99,8 +96,8 @@ void GeolocationInfoBarQueueController::PendingInfoBarRequest::RunCallback(
 void GeolocationInfoBarQueueController::PendingInfoBarRequest::
     CreateInfoBarDelegate(GeolocationInfoBarQueueController* controller,
                           const std::string& display_languages) {
-  infobar_delegate_ = GeolocationConfirmInfoBarDelegateFactory::Create(
-      GetInfoBarHelper(id_), controller, id_, requesting_frame_,
+  infobar_delegate_ = GeolocationConfirmInfoBarDelegate::Create(
+      GetInfoBarService(id_), controller, id_, requesting_frame_,
       display_languages);
 
 }
@@ -143,7 +140,7 @@ void GeolocationInfoBarQueueController::CancelInfoBarRequest(
        i != pending_infobar_requests_.end(); ++i) {
     if (i->id().Equals(id)) {
       if (i->has_infobar_delegate())
-        GetInfoBarHelper(id)->RemoveInfoBar(i->infobar_delegate());
+        GetInfoBarService(id)->RemoveInfoBar(i->infobar_delegate());
       else
         pending_infobar_requests_.erase(i);
       return;
@@ -159,16 +156,8 @@ void GeolocationInfoBarQueueController::OnPermissionSet(
     bool allowed) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-  if (update_content_setting) {
-    ContentSetting content_setting =
-        allowed ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_BLOCK;
-    profile_->GetHostContentSettingsMap()->SetContentSetting(
-        ContentSettingsPattern::FromURLNoWildcard(requesting_frame.GetOrigin()),
-        ContentSettingsPattern::FromURLNoWildcard(embedder.GetOrigin()),
-        CONTENT_SETTINGS_TYPE_GEOLOCATION,
-        std::string(),
-        content_setting);
-  }
+  if (update_content_setting)
+    UpdateContentSetting(requesting_frame, embedder, allowed);
 
   // Cancel this request first, then notify listeners.  TODO(pkasting): Why
   // is this order important?
@@ -201,7 +190,7 @@ void GeolocationInfoBarQueueController::OnPermissionSet(
   // Remove all InfoBars for the same |requesting_frame| and |embedder|.
   for (PendingInfoBarRequests::iterator i = infobars_to_remove.begin();
        i != infobars_to_remove.end(); ++i)
-    GetInfoBarHelper(i->id())->RemoveInfoBar(i->infobar_delegate());
+    GetInfoBarService(i->id())->RemoveInfoBar(i->infobar_delegate());
 
   // Send out the permission notifications.
   for (PendingInfoBarRequests::iterator i = requests_to_notify.begin();
@@ -227,7 +216,7 @@ void GeolocationInfoBarQueueController::Observe(
       content::Details<InfoBarRemovedDetails>(details)->first;
   for (PendingInfoBarRequests::iterator i = pending_infobar_requests_.begin();
        i != pending_infobar_requests_.end(); ++i) {
-    GeolocationConfirmInfoBarDelegate* confirm_delegate = i->infobar_delegate();
+    InfoBarDelegate* confirm_delegate = i->infobar_delegate();
     if (confirm_delegate == delegate) {
       GeolocationPermissionRequestID id(i->id());
       pending_infobar_requests_.erase(i);
@@ -252,14 +241,14 @@ void GeolocationInfoBarQueueController::ShowQueuedInfoBarForTab(
     const GeolocationPermissionRequestID& id) {
   DCHECK(!AlreadyShowingInfoBarForTab(id));
 
-  InfoBarTabHelper* helper = GetInfoBarHelper(id);
-  if (!helper) {
+  InfoBarService* infobar_service = GetInfoBarService(id);
+  if (!infobar_service) {
     // We can get here for example during tab shutdown, when the
-    // InfoBarTabHelper is removing all existing infobars, thus calling back to
-    // Observe().  In this case the helper still exists, and is supplied as the
+    // InfoBarService is removing all existing infobars, thus calling back to
+    // Observe().  In this case the service still exists, and is supplied as the
     // source of the notification we observed, but is no longer accessible from
     // its WebContents.  In this case we should just go ahead and cancel further
-    // infobars for this tab instead of trying to access the helper.
+    // infobars for this tab instead of trying to access the service.
     ClearPendingInfoBarRequestsForTab(id);
     return;
   }
@@ -267,15 +256,14 @@ void GeolocationInfoBarQueueController::ShowQueuedInfoBarForTab(
   for (PendingInfoBarRequests::iterator i = pending_infobar_requests_.begin();
        i != pending_infobar_requests_.end(); ++i) {
     if (i->id().IsForSameTabAs(id) && !i->has_infobar_delegate()) {
-      RegisterForInfoBarNotifications(helper);
+      RegisterForInfoBarNotifications(infobar_service);
       i->CreateInfoBarDelegate(
           this, profile_->GetPrefs()->GetString(prefs::kAcceptLanguages));
-      helper->AddInfoBar(i->infobar_delegate());
       return;
     }
   }
 
-  UnregisterForInfoBarNotifications(helper);
+  UnregisterForInfoBarNotifications(infobar_service);
 }
 
 void GeolocationInfoBarQueueController::ClearPendingInfoBarRequestsForTab(
@@ -290,23 +278,44 @@ void GeolocationInfoBarQueueController::ClearPendingInfoBarRequestsForTab(
 }
 
 void GeolocationInfoBarQueueController::RegisterForInfoBarNotifications(
-    InfoBarTabHelper* helper) {
+    InfoBarService* infobar_service) {
   if (!registrar_.IsRegistered(
       this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
-      content::Source<InfoBarTabHelper>(helper))) {
+      content::Source<InfoBarService>(infobar_service))) {
     registrar_.Add(this,
                    chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
-                   content::Source<InfoBarTabHelper>(helper));
+                   content::Source<InfoBarService>(infobar_service));
   }
 }
 
 void GeolocationInfoBarQueueController::UnregisterForInfoBarNotifications(
-    InfoBarTabHelper* helper) {
+    InfoBarService* infobar_service) {
   if (registrar_.IsRegistered(
       this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
-      content::Source<InfoBarTabHelper>(helper))) {
+      content::Source<InfoBarService>(infobar_service))) {
     registrar_.Remove(this,
                       chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
-                      content::Source<InfoBarTabHelper>(helper));
+                      content::Source<InfoBarService>(infobar_service));
   }
+}
+
+void GeolocationInfoBarQueueController::UpdateContentSetting(
+    const GURL& requesting_frame,
+    const GURL& embedder,
+    bool allowed) {
+  if (requesting_frame.GetOrigin().SchemeIsFile()) {
+    // Chrome can be launched with --disable-web-security which allows
+    // geolocation requests from file:// URLs. We don't want to store these
+    // in the host content settings map.
+    return;
+  }
+
+  ContentSetting content_setting =
+      allowed ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_BLOCK;
+  profile_->GetHostContentSettingsMap()->SetContentSetting(
+      ContentSettingsPattern::FromURLNoWildcard(requesting_frame.GetOrigin()),
+      ContentSettingsPattern::FromURLNoWildcard(embedder.GetOrigin()),
+      CONTENT_SETTINGS_TYPE_GEOLOCATION,
+      std::string(),
+      content_setting);
 }

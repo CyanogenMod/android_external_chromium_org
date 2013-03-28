@@ -14,6 +14,10 @@
 #include "chrome/browser/sync/glue/data_type_error_handler.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 
+namespace base {
+class RefCountedMemory;
+}
+
 namespace syncer {
 class WriteNode;
 class WriteTransaction;
@@ -89,13 +93,14 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
                                  const BookmarkNode* bookmark_node,
                                  BookmarkModel* model);
 
-  // Applies the favicon data in |icon_bytes_vector| to |bookmark_node|.
+  // Applies the 1x favicon |bitmap_data| and |icon_url| to |bookmark_node|.
   // |profile| is the profile that contains the HistoryService and BookmarkModel
   // for the bookmark in question.
   static void ApplyBookmarkFavicon(
       const BookmarkNode* bookmark_node,
       Profile* profile,
-      const std::vector<unsigned char>& icon_bytes_vector);
+      const GURL& icon_url,
+      const scoped_refptr<base::RefCountedMemory>& bitmap_data);
 
   // Sets the favicon of the given sync node from the given bookmark node.
   static void SetSyncNodeFavicon(const BookmarkNode* bookmark_node,
@@ -160,10 +165,10 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
                                        BookmarkModel* model,
                                        syncer::WriteNode* dst);
 
-  // Helper function to encode a bookmark's favicon into a PNG byte vector.
+  // Helper function to encode a bookmark's favicon into raw PNG data.
   static void EncodeFavicon(const BookmarkNode* src,
                             BookmarkModel* model,
-                            std::vector<unsigned char>* dst);
+                            scoped_refptr<base::RefCountedMemory>* dst);
 
   // Remove the sync node corresponding to |node|.  It shouldn't have
   // any children.

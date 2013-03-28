@@ -13,8 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "chrome/browser/extensions/crx_installer_error.h"
-#include "chrome/browser/extensions/image_loading_tracker.h"
-#include "chrome/common/extensions/url_pattern.h"
+#include "extensions/common/url_pattern.h"
 #include "google_apis/gaia/oauth2_mint_token_flow.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image.h"
@@ -32,6 +31,7 @@ class DictionaryValue;
 }  // namespace base
 
 namespace content {
+class PageNavigator;
 class WebContents;
 }
 
@@ -39,12 +39,14 @@ namespace extensions {
 class BundleInstaller;
 class Extension;
 class ExtensionWebstorePrivateApiTest;
+class MockGetAuthTokenFunction;
 class PermissionSet;
 }  // namespace extensions
 
 // Displays all the UI around extension installation.
-class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
-                               public OAuth2MintTokenFlow::Delegate {
+class ExtensionInstallPrompt
+    : public OAuth2MintTokenFlow::Delegate,
+      public base::SupportsWeakPtr<ExtensionInstallPrompt> {
  public:
   enum PromptType {
     UNSET_PROMPT_TYPE = -1,
@@ -54,6 +56,7 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
     RE_ENABLE_PROMPT,
     PERMISSIONS_PROMPT,
     EXTERNAL_INSTALL_PROMPT,
+    POST_INSTALL_PERMISSIONS_PROMPT,
     NUM_PROMPT_TYPES
   };
 
@@ -63,7 +66,7 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
   // that logic.
   class Prompt {
    public:
-    Prompt(Profile* profile, PromptType type);
+    explicit Prompt(PromptType type);
     ~Prompt();
 
     void SetPermissions(const std::vector<string16>& permissions);
@@ -71,6 +74,7 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
                                       double average_rating,
                                       int rating_count);
     void SetOAuthIssueAdvice(const IssueAdviceInfo& issue_advice);
+    void SetUserNameFromProfile(Profile* profile);
 
     PromptType type() const { return type_; }
     void set_type(PromptType type) { type_ = type; }
@@ -78,6 +82,8 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
     // Getters for UI element labels.
     string16 GetDialogTitle() const;
     string16 GetHeading() const;
+    int GetDialogButtons() const;
+    bool HasAcceptButtonLabel() const;
     string16 GetAcceptButtonLabel() const;
     bool HasAbortButtonLabel() const;
     string16 GetAbortButtonLabel() const;
@@ -117,6 +123,7 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
 
    private:
     PromptType type_;
+
     // Permissions that are being requested (may not be all of an extension's
     // permissions if only additional ones are being requested)
     std::vector<string16> permissions_;
@@ -124,6 +131,9 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
     // Descriptions and details for OAuth2 permissions to display to the user.
     // These correspond to permission scopes.
     IssueAdviceInfo oauth_issue_advice_;
+
+    // User name to be used in Oauth heading label.
+    string16 oauth_user_name_;
 
     // The extension or bundle being installed.
     const extensions::Extension* extension_;
@@ -139,8 +149,6 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
     // Range is kMinExtensionRating to kMaxExtensionRating
     double average_rating_;
     int rating_count_;
-
-    Profile* profile_;
   };
 
   static const int kMinExtensionRating = 0;
@@ -159,7 +167,23 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
     virtual ~Delegate() {}
   };
 
-  typedef base::Callback<void(content::WebContents* parent_web_contents,
+  // Parameters to show a prompt dialog. Two sets of the
+  // parameters are supported: either use a parent WebContents or use a
+  // parent NativeWindow + a PageNavigator.
+  struct ShowParams {
+    explicit ShowParams(content::WebContents* contents);
+    ShowParams(gfx::NativeWindow window, content::PageNavigator* navigator);
+
+    // Parent web contents of the install UI dialog. This can be NULL.
+    content::WebContents* parent_web_contents;
+
+    // NativeWindow parent and navigator. If initialized using a parent web
+    // contents, these are derived from it.
+    gfx::NativeWindow parent_window;
+    content::PageNavigator* navigator;
+  };
+
+  typedef base::Callback<void(const ExtensionInstallPrompt::ShowParams&,
                               ExtensionInstallPrompt::Delegate*,
                               const ExtensionInstallPrompt::Prompt&)>
       ShowDialogCallback;
@@ -180,11 +204,21 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
 
   // Creates a prompt with a parent web content.
   explicit ExtensionInstallPrompt(content::WebContents* contents);
+
+  // Creates a prompt with a profile, a native window and a page navigator.
+  ExtensionInstallPrompt(Profile* profile,
+                         gfx::NativeWindow native_window,
+                         content::PageNavigator* navigator);
+
   virtual ~ExtensionInstallPrompt();
 
   ExtensionInstallUI* install_ui() const { return install_ui_.get(); }
 
   bool record_oauth2_grant() const { return record_oauth2_grant_; }
+
+  content::WebContents* parent_web_contents() const {
+    return show_params_.parent_web_contents;
+  }
 
   // This is called by the bundle installer to verify whether the bundle
   // should be installed.
@@ -253,6 +287,13 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
                                   const extensions::Extension* extension,
                                   const IssueAdviceInfo& issue_advice);
 
+  // This is called by the app handler launcher to review what permissions the
+  // extension or app currently has.
+  //
+  // This *WILL* call Abort() on |delegate|.
+  virtual void ReviewPermissions(Delegate* delegate,
+                                 const extensions::Extension* extension);
+
   // Installation was successful. This is declared virtual for testing.
   virtual void OnInstallSuccess(const extensions::Extension* extension,
                                 SkBitmap* icon);
@@ -260,15 +301,10 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
   // Installation failed. This is declared virtual for testing.
   virtual void OnInstallFailure(const extensions::CrxInstallerError& error);
 
-  // ImageLoadingTracker::Observer:
-  virtual void OnImageLoaded(const gfx::Image& image,
-                             const std::string& extension_id,
-                             int index) OVERRIDE;
-
  protected:
   friend class extensions::ExtensionWebstorePrivateApiTest;
-  friend class WebstoreStandaloneInstallUnpackFailureTest;
-  friend class MockGetAuthTokenFunction;
+  friend class extensions::MockGetAuthTokenFunction;
+  friend class WebstoreStartupInstallUnpackFailureTest;
 
   // Whether or not we should record the oauth2 grant upon successful install.
   bool record_oauth2_grant_;
@@ -279,6 +315,9 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
   // Sets the icon that will be used in any UI. If |icon| is NULL, or contains
   // an empty bitmap, then a default icon will be used instead.
   void SetIcon(const SkBitmap* icon);
+
+  // ImageLoader callback.
+  void OnImageLoaded(const gfx::Image& image);
 
   // Starts the process of showing a confirmation UI, which is split into two.
   // 1) Set off a 'load icon' task.
@@ -297,7 +336,6 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
   // Shows the actual UI (the icon should already be loaded).
   void ShowConfirmation();
 
-  content::WebContents* parent_web_contents_;
   MessageLoop* ui_loop_;
 
   // The extensions installation icon.
@@ -316,20 +354,16 @@ class ExtensionInstallPrompt : public ImageLoadingTracker::Observer,
   // The object responsible for doing the UI specific actions.
   scoped_ptr<ExtensionInstallUI> install_ui_;
 
+  // Parameters to show the confirmation UI.
+  ShowParams show_params_;
+
   // The delegate we will call Proceed/Abort on after confirmation UI.
   Delegate* delegate_;
 
   // A pre-filled prompt.
   Prompt prompt_;
 
-  // The type of prompt we are going to show.
-  PromptType prompt_type_;
-
   scoped_ptr<OAuth2MintTokenFlow> token_flow_;
-
-  // Keeps track of extension images being loaded on the File thread for the
-  // purpose of showing the install UI.
-  ImageLoadingTracker tracker_;
 
   // Used to show the confirm dialog.
   ShowDialogCallback show_dialog_callback_;

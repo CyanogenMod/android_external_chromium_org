@@ -8,8 +8,20 @@
 // included file but that's all right since any javascript file should start
 // with a copyright comment anyway.
 
+
+//<include src="../../../../../../ui/webui/resources/js/cr.js"/>
+//<include src="../../../../../../ui/webui/resources/js/cr/event_target.js"/>
+
+(function() {
+// 'strict mode' is invoked for this scope.
+
 //<include src="../util.js"/>
 //<include src="../file_type.js"/>
+//<include src="../volume_manager.js">
+//<include src="../metadata/metadata_cache.js"/>
+
 //<include src="media_controls.js"/>
 //<include src="audio_player.js"/>
-//<include src="../metadata/metadata_cache.js"/>
+//<include src="player_testapi.js"/>
+
+})();

@@ -54,10 +54,6 @@ SkColor COLORREFToSkColor(COLORREF color) {
 }
 
 COLORREF SkColorToCOLORREF(SkColor color) {
-  // Currently, Alpha is always 255 or the color is 0 so there is no need to
-  // demultiply the channels. If this DCHECK() is ever hit, the full
-  // (SkColorGetX(color) * 255 / a) will have to be added in the conversion.
-  SkASSERT((0xFF == SkColorGetA(color)) || (0 == color));
 #ifndef _MSC_VER
   return RGB(SkColorGetR(color), SkColorGetG(color), SkColorGetB(color));
 #else

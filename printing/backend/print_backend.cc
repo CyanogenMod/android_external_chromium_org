@@ -6,8 +6,8 @@
 
 #include <algorithm>
 
+#include "third_party/icu/public/common/unicode/uchar.h"
 #include "ui/base/text/text_elider.h"
-#include "unicode/uchar.h"
 
 namespace {
 
@@ -25,7 +25,7 @@ PrinterBasicInfo::PrinterBasicInfo()
 PrinterBasicInfo::~PrinterBasicInfo() {}
 
 PrinterSemanticCapsAndDefaults::PrinterSemanticCapsAndDefaults()
-    : color_capable(false),
+    : color_changeable(false),
       duplex_capable(false),
       color_default(false),
       duplex_default(UNKNOWN_DUPLEX_MODE) {}

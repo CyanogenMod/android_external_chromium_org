@@ -96,7 +96,7 @@ and a <a href="#popups">popup</a>.
 <p>To set the icon,
   use the <b>default_icon</b> field of <b>browser_action</b>
   in the <a href="#manifest">manifest</a>,
-  or call the <a href="#method-setIcon">setIcon()</a> method.
+  or call the $ref:browserAction.setIcon method.
   </p>
 
 <p>To properly display icon when screen pixel density (ratio
@@ -113,7 +113,7 @@ and a <a href="#popups">popup</a>.
 To set the tooltip,
 use the <b>default_title</b> field of <b>browser_action</b>
 in the <a href="#manifest">manifest</a>,
-or call the <a href="#method-setTitle">setTitle()</a> method.
+or call the $ref:browserAction.setTitle method.
 You can specify locale-specific strings for the <b>default_title</b> field;
 see <a href="i18n.html">Internationalization</a> for details.
 </p>
@@ -132,8 +132,8 @@ see <a href="i18n.html">Internationalization</a> for details.
 
 <p>
 Set the text and color of the badge using
-<a href="#method-setBadgeText">setBadgeText()</a> and
-<a href="#method-setBadgeBackgroundColor">setBadgeBackgroundColor()</a>,
+$ref:browserAction.setBadgeText and
+$ref:browserAction.setBadgeBackgroundColor,
 respectively.
 
 </p>
@@ -152,7 +152,7 @@ To add a popup to your browser action,
 create an HTML file with the popup's contents.
 Specify the HTML file in the <b>default_popup</b> field of <b>browser_action</b>
 in the <a href="#manifest">manifest</a>, or call the
-<a href="#method-setPopup">setPopup()</a> method.
+$ref:browserAction.setPopup method.
 </p>
 
 <h2 id="tips">Tips</h2>
@@ -171,7 +171,7 @@ in the <a href="#manifest">manifest</a>, or call the
     Browser action icons should seem a little bigger
     and heavier than page action icons.
   <li><b>Don't</b> attempt to mimic
-    Google Chrome's monochrome "wrench" icon.
+    Google Chrome's monochrome menu icon.
     That doesn't work well with themes, and anyway,
     extensions should stand out a little.
   <li><b>Do</b> use alpha transparency

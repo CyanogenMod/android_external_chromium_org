@@ -310,7 +310,7 @@ void GLES2InterfaceStub::ShaderBinary(
     const void* /* binary */, GLsizei /* length */) {
 }
 void GLES2InterfaceStub::ShaderSource(
-    GLuint /* shader */, GLsizei /* count */, const char** /* str */,
+    GLuint /* shader */, GLsizei /* count */, const GLchar* const* /* str */,
     const GLint* /* length */) {
 }
 void GLES2InterfaceStub::StencilFunc(
@@ -520,6 +520,13 @@ GLboolean GLES2InterfaceStub::EnableFeatureCHROMIUM(
     const char* /* feature */) {
   return 0;
 }
+void* GLES2InterfaceStub::MapBufferCHROMIUM(
+    GLuint /* target */, GLenum /* access */) {
+  return 0;
+}
+GLboolean GLES2InterfaceStub::UnmapBufferCHROMIUM(GLuint /* target */) {
+  return 0;
+}
 void* GLES2InterfaceStub::MapBufferSubDataCHROMIUM(
     GLuint /* target */, GLintptr /* offset */, GLsizeiptr /* size */,
     GLenum /* access */) {
@@ -601,6 +608,37 @@ void GLES2InterfaceStub::BindTexImage2DCHROMIUM(
 }
 void GLES2InterfaceStub::ReleaseTexImage2DCHROMIUM(
     GLenum /* target */, GLint /* imageId */) {
+}
+void GLES2InterfaceStub::TraceBeginCHROMIUM(const char* /* name */) {
+}
+void GLES2InterfaceStub::TraceEndCHROMIUM() {
+}
+void GLES2InterfaceStub::AsyncTexSubImage2DCHROMIUM(
+    GLenum /* target */, GLint /* level */, GLint /* xoffset */,
+    GLint /* yoffset */, GLsizei /* width */, GLsizei /* height */,
+    GLenum /* format */, GLenum /* type */, const void* /* data */) {
+}
+void GLES2InterfaceStub::AsyncTexImage2DCHROMIUM(
+    GLenum /* target */, GLint /* level */, GLint /* internalformat */,
+    GLsizei /* width */, GLsizei /* height */, GLint /* border */,
+    GLenum /* format */, GLenum /* type */, const void* /* pixels */) {
+}
+void GLES2InterfaceStub::WaitAsyncTexImage2DCHROMIUM(GLenum /* target */) {
+}
+void GLES2InterfaceStub::DiscardFramebufferEXT(
+    GLenum /* target */, GLsizei /* count */,
+    const GLenum* /* attachments */) {
+}
+void GLES2InterfaceStub::LoseContextCHROMIUM(
+    GLenum /* current */, GLenum /* other */) {
+}
+GLuint GLES2InterfaceStub::InsertSyncPointCHROMIUM() {
+  return 0;
+}
+void GLES2InterfaceStub::WaitSyncPointCHROMIUM(GLuint /* sync_point */) {
+}
+void GLES2InterfaceStub::DrawBuffersEXT(
+    GLsizei /* count */, const GLenum* /* bufs */) {
 }
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_STUB_IMPL_AUTOGEN_H_
 

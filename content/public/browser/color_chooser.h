@@ -9,7 +9,6 @@
 
 namespace content {
 
-class RenderViewHost;
 class WebContents;
 
 // Abstraction object for color choosers for each platform.
@@ -18,7 +17,8 @@ class ColorChooser {
   static ColorChooser* Create(int identifier,
                               WebContents* web_contents,
                               SkColor initial_color);
-  ColorChooser(int identifier) : identifier_(identifier) {}
+
+  explicit ColorChooser(int identifier) : identifier_(identifier) {}
   virtual ~ColorChooser() {}
 
   // Returns a unique identifier for this chooser.  Identifiers are unique
@@ -37,10 +37,10 @@ class ColorChooser {
   // Sets the selected color.
   virtual void SetSelectedColor(SkColor color) = 0;
 
-private:
+ private:
   int identifier_;
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_PUBLIC_BROWSER_COLOR_CHOOSER_H_

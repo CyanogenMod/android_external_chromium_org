@@ -8,28 +8,27 @@
 #include <map>
 #include <queue>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/pickle.h"
 #include "base/shared_memory.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
-#include "ipc/ipc_channel.h"
-#include "ipc/ipc_message.h"
+#include "ipc/ipc_listener.h"
+#include "ppapi/proxy/handle_converter.h"
 
 struct NaClDesc;
 struct NaClImcTypedMsgHdr;
 struct PP_Size;
 
 namespace IPC {
-class Message;
-}
-
-namespace nacl {
-class DescWrapper;
+class Channel;
+struct ChannelHandle;
 }
 
 namespace ppapi {
@@ -127,11 +126,7 @@ class NaClIPCAdapter : public base::RefCountedThreadSafe<NaClIPCAdapter>,
     // to be received by the plugin.
     std::queue< scoped_refptr<RewrittenMessage> > to_be_received_;
 
-    // When we send a synchronous message (from untrusted to trusted), we store
-    // its type here, so that later we can associate the reply with its type
-    // and potentially translate handles in the message.
-    typedef std::map<int, uint32> PendingSyncMsgMap;
-    PendingSyncMsgMap pending_sync_msgs_;
+    ppapi::proxy::HandleConverter handle_converter_;
 
     // Data that we've queued from the plugin to send, but doesn't consist of a
     // full message yet. The calling code can break apart the message into

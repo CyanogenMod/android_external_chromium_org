@@ -12,7 +12,7 @@
 #include "base/utf_string_conversions.h"
 #include "ppapi/shared_impl/api_id.h"
 #include "ppapi/shared_impl/id_assignment.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
@@ -45,10 +45,10 @@ void GetAllContainersForModule(PluginModule* module,
     containers->insert((*i)->container());
 }
 
-WebConsoleMessage::Level LogLevelToWebLogLevel(PP_LogLevel_Dev level) {
+WebConsoleMessage::Level LogLevelToWebLogLevel(PP_LogLevel level) {
   switch (level) {
     case PP_LOGLEVEL_TIP:
-      return WebConsoleMessage::LevelTip;
+      return WebConsoleMessage::LevelDebug;
     case PP_LOGLEVEL_LOG:
       return WebConsoleMessage::LevelLog;
     case PP_LOGLEVEL_WARNING:
@@ -59,7 +59,7 @@ WebConsoleMessage::Level LogLevelToWebLogLevel(PP_LogLevel_Dev level) {
   }
 }
 
-WebConsoleMessage MakeLogMessage(PP_LogLevel_Dev level,
+WebConsoleMessage MakeLogMessage(PP_LogLevel level,
                                  const std::string& source,
                                  const std::string& message) {
   std::string result = source;
@@ -79,8 +79,9 @@ HostGlobals::HostGlobals() : ::ppapi::PpapiGlobals() {
   host_globals_ = this;
 }
 
-HostGlobals::HostGlobals(::ppapi::PpapiGlobals::ForTest for_test)
-    : ::ppapi::PpapiGlobals(for_test) {
+HostGlobals::HostGlobals(
+    ::ppapi::PpapiGlobals::PerThreadForTest per_thread_for_test)
+    : ::ppapi::PpapiGlobals(per_thread_for_test) {
   DCHECK(!host_globals_);
 }
 
@@ -141,7 +142,7 @@ base::Lock* HostGlobals::GetProxyLock() {
 }
 
 void HostGlobals::LogWithSource(PP_Instance instance,
-                                PP_LogLevel_Dev level,
+                                PP_LogLevel level,
                                 const std::string& source,
                                 const std::string& value) {
   PluginInstance* instance_object = HostGlobals::Get()->GetInstance(instance);
@@ -154,7 +155,7 @@ void HostGlobals::LogWithSource(PP_Instance instance,
 }
 
 void HostGlobals::BroadcastLogWithSource(PP_Module pp_module,
-                                         PP_LogLevel_Dev level,
+                                         PP_LogLevel level,
                                          const std::string& source,
                                          const std::string& value) {
   // Get the unique containers associated with the broadcast. This prevents us

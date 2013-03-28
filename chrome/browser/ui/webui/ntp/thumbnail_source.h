@@ -5,11 +5,12 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_NTP_THUMBNAIL_SOURCE_H_
 #define CHROME_BROWSER_UI_WEBUI_NTP_THUMBNAIL_SOURCE_H_
 
+#include <map>
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
+#include "content/public/browser/url_data_source.h"
 
 class Profile;
 
@@ -23,26 +24,24 @@ class ThumbnailService;
 
 // ThumbnailSource is the gateway between network-level chrome: requests for
 // thumbnails and the history/top-sites backend that serves these.
-class ThumbnailSource : public ChromeURLDataManager::DataSource {
+class ThumbnailSource : public content::URLDataSource {
  public:
   explicit ThumbnailSource(Profile* profile);
 
-  // Called when the network layer has requested a resource underneath
-  // the path we registered.
-  virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
-                                int request_id) OVERRIDE;
-
+  // content::URLDataSource implementation.
+  virtual std::string GetSource() OVERRIDE;
+  virtual void StartDataRequest(
+      const std::string& path,
+      bool is_incognito,
+      const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string& path) const OVERRIDE;
-
   virtual MessageLoop* MessageLoopForRequestPath(
       const std::string& path) const OVERRIDE;
+  virtual bool ShouldServiceRequest(
+      const net::URLRequest* request) const OVERRIDE;
 
  private:
   virtual ~ThumbnailSource();
-
-  // Send the default thumbnail when we are missing a real one.
-  void SendDefaultThumbnail(int request_id);
 
   // Raw PNG representation of the thumbnail to show when the thumbnail
   // database doesn't have a thumbnail for a webpage.
@@ -50,6 +49,17 @@ class ThumbnailSource : public ChromeURLDataManager::DataSource {
 
   // ThumbnailService.
   scoped_refptr<thumbnails::ThumbnailService> thumbnail_service_;
+
+  // Transient mappings from an ID-based path to an URL-based path.
+  // The key is an ID-string, the value is a URL string.
+  // Mappings are added in ShouldServiceRequest() and erased once
+  // the request is serviced in StartDataRequest().
+  // TODO(dhollowa): Consider passing the |request| object through
+  // to the StartDataRequest() call.
+  mutable std::map<std::string, std::string> id_to_url_map_;
+
+  // Only used when servicing requests on the UI thread.
+  Profile* const profile_;
 
   DISALLOW_COPY_AND_ASSIGN(ThumbnailSource);
 };

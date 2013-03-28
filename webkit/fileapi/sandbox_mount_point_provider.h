@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -29,8 +29,15 @@ namespace quota {
 class QuotaManagerProxy;
 }
 
+namespace sync_file_system {
+class CannedSyncableFileSystem;
+class SyncableFileSystemOperation;
+}
+
 namespace fileapi {
 
+class AsyncFileUtilAdapter;
+class FileSystemUsageCache;
 class LocalFileSystemOperation;
 class ObfuscatedFileUtil;
 class SandboxQuotaObserver;
@@ -44,9 +51,6 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
     : public FileSystemMountPointProvider,
       public FileSystemQuotaUtil {
  public:
-  using FileSystemMountPointProvider::ValidateFileSystemCallback;
-  using FileSystemMountPointProvider::DeleteFileSystemCallback;
-
   // Origin enumerator interface.
   // An instance of this interface is assumed to be called on the file thread.
   class OriginEnumerator {
@@ -60,13 +64,8 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
     virtual bool HasFileSystemType(FileSystemType type) const = 0;
   };
 
-  // The legacy [pre-obfuscation] FileSystem directory name, kept around for
-  // migration and migration testing.
-  static const FilePath::CharType kOldFileSystemDirectory[];
   // The FileSystem directory name.
-  static const FilePath::CharType kNewFileSystemDirectory[];
-  // Where we move the old filesystem directory if migration fails.
-  static const FilePath::CharType kRenamedOldFileSystemDirectory[];
+  static const base::FilePath::CharType kFileSystemDirectory[];
 
   static bool CanHandleType(FileSystemType type);
 
@@ -75,7 +74,7 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
   SandboxMountPointProvider(
       quota::QuotaManagerProxy* quota_manager_proxy,
       base::SequencedTaskRunner* file_task_runner,
-      const FilePath& profile_path,
+      const base::FilePath& profile_path,
       const FileSystemOptions& file_system_options);
   virtual ~SandboxMountPointProvider();
 
@@ -85,16 +84,14 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
       FileSystemType type,
       bool create,
       const ValidateFileSystemCallback& callback) OVERRIDE;
-  virtual FilePath GetFileSystemRootPathOnFileThread(
-      const GURL& origin_url,
-      FileSystemType type,
-      const FilePath& virtual_path,
+  virtual base::FilePath GetFileSystemRootPathOnFileThread(
+      const FileSystemURL& url,
       bool create) OVERRIDE;
-  virtual bool IsAccessAllowed(const FileSystemURL& url) OVERRIDE;
-  virtual bool IsRestrictedFileName(const FilePath& filename) const OVERRIDE;
   virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) OVERRIDE;
-  virtual FilePath GetPathForPermissionsCheck(const FilePath& virtual_path)
-      const OVERRIDE;
+  virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
+  virtual FilePermissionPolicy GetPermissionPolicy(
+      const FileSystemURL& url,
+      int permissions) const OVERRIDE;
   virtual FileSystemOperation* CreateFileSystemOperation(
       const FileSystemURL& url,
       FileSystemContext* context,
@@ -115,13 +112,9 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
       FileSystemContext* context,
       const DeleteFileSystemCallback& callback) OVERRIDE;
 
-  FilePath old_base_path() const;
-  FilePath new_base_path() const;
-  FilePath renamed_old_base_path() const;
-
   // Returns an origin enumerator of this provider.
   // This method can only be called on the file thread.
-  OriginEnumerator* CreateOriginEnumerator() const;
+  OriginEnumerator* CreateOriginEnumerator();
 
   // Gets a base directory path of the sandboxed filesystem that is
   // specified by |origin_url| and |type|.
@@ -129,10 +122,10 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
   // the 'unique' part.)
   // Returns an empty path if the given type is invalid.
   // This method can only be called on the file thread.
-  FilePath GetBaseDirectoryForOriginAndType(
+  base::FilePath GetBaseDirectoryForOriginAndType(
       const GURL& origin_url,
       FileSystemType type,
-      bool create) const;
+      bool create);
 
   // Deletes the data on the origin and reports the amount of deleted data
   // to the quota manager via |proxy|.
@@ -175,37 +168,55 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
 
  private:
   friend class SandboxQuotaObserver;
+  friend class LocalFileSystemTestOriginHelper;
+  friend class SandboxMountPointProviderMigrationTest;
+  friend class SandboxMountPointProviderOriginEnumeratorTest;
+
+  // Temporarily allowing them to access enable_sync_directory_operation_
+  friend class ObfuscatedFileUtil;
+  friend class sync_file_system::CannedSyncableFileSystem;
+  friend class sync_file_system::SyncableFileSystemOperation;
 
   // Returns a path to the usage cache file.
-  FilePath GetUsageCachePathForOriginAndType(
+  base::FilePath GetUsageCachePathForOriginAndType(
       const GURL& origin_url,
-      FileSystemType type) const;
+      FileSystemType type);
 
   // Returns a path to the usage cache file (static version).
-  static FilePath GetUsageCachePathForOriginAndType(
+  static base::FilePath GetUsageCachePathForOriginAndType(
       ObfuscatedFileUtil* sandbox_file_util,
       const GURL& origin_url,
       FileSystemType type,
       base::PlatformFileError* error_out);
 
-  FilePath OldCreateFileSystemRootPath(
-      const GURL& origin_url, FileSystemType type);
-
   // Returns true if the given |url|'s scheme is allowed to access
   // filesystem.
   bool IsAllowedScheme(const GURL& url) const;
 
-  friend class LocalFileSystemTestOriginHelper;
-  friend class SandboxMountPointProviderMigrationTest;
-  friend class SandboxMountPointProviderOriginEnumeratorTest;
+  // Enables or disables directory operations in Syncable FileSystem.
+  void set_enable_sync_directory_operation(bool flag) {
+    enable_sync_directory_operation_ = flag;
+  }
+
+  bool is_sync_directory_operation_enabled() const {
+    return enable_sync_directory_operation_;
+  }
+
+  ObfuscatedFileUtil* sandbox_sync_file_util();
+
+  FileSystemUsageCache* usage_cache() {
+    return file_system_usage_cache_.get();
+  }
 
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
 
-  const FilePath profile_path_;
+  const base::FilePath profile_path_;
 
   FileSystemOptions file_system_options_;
 
-  scoped_ptr<ObfuscatedFileUtil> sandbox_file_util_;
+  scoped_ptr<AsyncFileUtilAdapter> sandbox_file_util_;
+
+  scoped_ptr<FileSystemUsageCache> file_system_usage_cache_;
 
   scoped_ptr<SandboxQuotaObserver> quota_observer_;
 
@@ -221,6 +232,14 @@ class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
   ChangeObserverList syncable_change_observers_;
 
   base::Time next_release_time_for_open_filesystem_stat_;
+
+  // Indicates if we allow directory operations in syncable file system
+  // or not. This flag is disabled by default but can be overridden by
+  // a command-line switch (--enable-sync-directory-operations) or by
+  // calling set_enable_sync_directory_operation().
+  // This flag should be used only for testing and should go away when
+  // we fully support directory operations. (http://crbug.com/161442)
+  bool enable_sync_directory_operation_;
 
   base::WeakPtrFactory<SandboxMountPointProvider> weak_factory_;
 

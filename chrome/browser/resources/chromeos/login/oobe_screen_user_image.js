@@ -39,9 +39,6 @@ cr.define('oobe', function() {
    */
   UserImageScreen.register = function(lazyInit) {
     var screen = $('user-image');
-    var isWebRTC = document.documentElement.getAttribute('camera') == 'webrtc';
-    UserImageScreen.prototype = isWebRTC ? UserImageScreenWebRTCProto :
-        UserImageScreenOldProto;
     if (lazyInit) {
       screen.__proto__ = UserImageScreen.prototype;
       screen.deferredDecorate = function() {
@@ -53,7 +50,7 @@ cr.define('oobe', function() {
     Oobe.getInstance().registerScreen(screen);
   };
 
-  var UserImageScreenOldProto = {
+  UserImageScreen.prototype = {
     __proto__: HTMLDivElement.prototype,
 
     /**
@@ -63,314 +60,15 @@ cr.define('oobe', function() {
      */
     selectedUserImage_: -1,
 
-    /** @inheritDoc */
-    decorate: function(element) {
-      var imageGrid = $('user-image-grid');
-      UserImagesGrid.decorate(imageGrid);
-
-      imageGrid.previewElement = $('user-image-preview');
-
-      imageGrid.addEventListener('select',
-                                 this.handleSelect_.bind(this));
-      imageGrid.addEventListener('activate',
-                                 this.handleImageActivated_.bind(this));
-
-      // Whether a button image is selected.
-      this.buttonImageSelected_ = false;
-
-      // Photo image data (if present).
-      this.photoImage_ = null;
-
-      // Profile image data (if present).
-      this.profileImage_ = imageGrid.addItem(
-          ButtonImages.PROFILE_PICTURE,
-          localStrings.getString('profilePhoto'),
-          undefined,
-          undefined,
-          function(el) {  // Custom decorator for Profile image element.
-            var spinner = el.ownerDocument.createElement('div');
-            spinner.className = 'spinner';
-            var spinnerBg = el.ownerDocument.createElement('div');
-            spinnerBg.className = 'spinner-bg';
-            spinnerBg.appendChild(spinner);
-            el.appendChild(spinnerBg);
-            el.id = 'profile-image';
-          });
-      this.profileImageUrl_ = this.profileImage_.url;
-      // True if a non-default profile image has been successfully loaded.
-      this.profileImagePresent_ = false;
-
-      // Initialize profile image state.
-      this.profileImageSelected = false;
-      this.profileImageLoading = true;
-
-      this.updateLocalizedContent();
-
-      chrome.send('getImages');
-    },
-
-    /**
-     * Header text of the screen.
-     * @type {string}
-     */
-    get header() {
-      return localStrings.getString('userImageScreenTitle');
-    },
-
-    /**
-     * Buttons in oobe wizard's button strip.
-     * @type {array} Array of Buttons.
-     */
-    get buttons() {
-      var okButton = this.ownerDocument.createElement('button');
-      okButton.id = 'ok-button';
-      okButton.textContent = localStrings.getString('okButtonText');
-      okButton.addEventListener('click', this.acceptImage_.bind(this));
-      return [okButton];
-    },
-
-    /**
-     * The caption to use for the Profile image preview.
-     * @type {string}
-     */
-    get profileImageCaption() {
-      return this.profileImageCaption_;
-    },
-    set profileImageCaption(value) {
-      this.profileImageCaption_ = value;
-      this.updateCaption_();
-    },
-
-    /**
-     * True if the Profile image is being loaded.
-     * @type {boolean}
-     */
-    get profileImageLoading() {
-      return this.profileImageLoading_;
-    },
-    set profileImageLoading(value) {
-      this.profileImageLoading_ = value;
-      $('user-image-screen-main').classList[
-          value ? 'add' : 'remove']('profile-image-loading');
-      this.updateProfileImageCaption_();
-    },
-
-    /**
-     * True when a default image is selected (including button images).
-     * @type {boolean}
-     */
-    set defaultImageSelected(value) {
-      $('user-image-preview').classList[
-          value ? 'add' : 'remove']('default-image');
-    },
-
-    /**
-     * True when the profile image is selected.
-     * @type {boolean}
-     */
-    get profileImageSelected() {
-      return this.profileImageSelected_;
-    },
-    set profileImageSelected(value) {
-      this.profileImageSelected_ = value;
-      this.updateCaption_();
-    },
-
-    /**
-     * Handles "Take photo" button activation.
-     * @private
-     */
-    handleTakePhoto_: function() {
-      chrome.send('takePhoto');
-    },
-
-    /**
-     * Handles image activation (by pressing Enter).
-     * @private
-     */
-    handleImageActivated_: function() {
-      switch ($('user-image-grid').selectedItemUrl) {
-        case ButtonImages.TAKE_PHOTO:
-          this.handleTakePhoto_();
-          break;
-        default:
-          this.acceptImage_();
-          break;
-      }
-    },
-
-    /**
-     * Handles selection change.
-     * @private
-     */
-    handleSelect_: function() {
-      var selectedItem = $('user-image-grid').selectedItem;
-      if (selectedItem === null)
-        return;
-
-      // Update preview image URL.
-      var url = selectedItem.url;
-      $('user-image-preview-img').src = url;
-
-      // Update current selection type.
-      this.defaultImageSelected = /^chrome:\/\/theme\//.test(url);
-      // Cannot compare this.profileImage_ itself because it is updated
-      // by setProfileImage_ after the selection event is fired programmaticaly.
-      this.profileImageSelected = url == this.profileImageUrl_;
-      this.buttonImageSelected_ = ButtonImageUrls.indexOf(url) != -1;
-
-      if (ButtonImageUrls.indexOf(url) == -1) {
-        // Non-button image is selected.
-        $('ok-button').disabled = false;
-        chrome.send('selectImage', [url]);
-      } else {
-        $('ok-button').disabled = true;
-      }
-    },
-
-    /**
-     * Event handler that is invoked just before the screen is shown.
-     * @param {object} data Screen init payload.
-     */
-    onBeforeShow: function(data) {
-      Oobe.getInstance().headerHidden = true;
-      $('user-image-grid').updateAndFocus();
-      chrome.send('onUserImageScreenShown');
-    },
-
-    /**
-     * Accepts currently selected image, if possible.
-     * @private
-     */
-    acceptImage_: function() {
-      var okButton = $('ok-button');
-      if (!okButton.disabled) {
-        // This ensures that #ok-button won't be re-enabled again.
-        $('user-image-grid').disabled = true;
-        okButton.disabled = true;
-        chrome.send('onUserImageAccepted');
-      }
-    },
-
-    /**
-     * Notifies about camera presence change.
-     * @param {boolean} present Whether a camera is present or not.
-     * @private
-     */
-    setCameraPresent_: function(present) {
-      var imageGrid = $('user-image-grid');
-      if (present && !this.takePhotoButton_) {
-        this.takePhotoButton_ = imageGrid.addItem(
-            ButtonImages.TAKE_PHOTO,
-            localStrings.getString('takePhoto'),
-            this.handleTakePhoto_.bind(this),
-            0);
-      } else if (!present && this.takePhotoButton_) {
-        imageGrid.removeItem(this.takePhotoButton_);
-        this.takePhotoButton_ = null;
-      }
-    },
-
-    /**
-     * Adds or updates image with user photo and sets it as preview.
-     * @param {string} photoUrl Image encoded as data URL.
-     * @private
-     */
-    setUserPhoto_: function(photoUrl) {
-      var imageGrid = $('user-image-grid');
-      if (this.photoImage_)
-        this.photoImage_ = imageGrid.updateItem(this.photoImage_, photoUrl);
-      else
-        this.photoImage_ = imageGrid.addItem(photoUrl, undefined, undefined, 1);
-      imageGrid.selectedItem = this.photoImage_;
-      imageGrid.focus();
-    },
-
-    /**
-     * Updates user profile image.
-     * @param {?string} imageUrl Image encoded as data URL. If null, user has
-     *     the default profile image, which we don't want to show.
-     * @private
-     */
-    setProfileImage_: function(imageUrl) {
-      this.profileImageLoading = false;
-      if (imageUrl !== null) {
-        this.profileImagePresent_ = true;
-        this.profileImageUrl_ = imageUrl;
-        this.profileImage_ =
-            $('user-image-grid').updateItem(this.profileImage_, imageUrl);
-      }
-    },
-
-    /**
-     * Appends default images to the image grid. Should only be called once.
-     * @param {Array.<{url: string, author: string, website: string,
-     *     title: string}>} images An array of default images data,
-     * including URL, title, author and website.
-     * @private
-     */
-    setDefaultImages_: function(imagesData) {
-      var imageGrid = $('user-image-grid');
-      for (var i = 0, data; data = imagesData[i]; i++) {
-        imageGrid.addItem(data.url, data.title);
-      }
-      this.classList.remove('loading');
-    },
-
-    /**
-     * Selects user image with the given URL.
-     * @param {string} url URL of the image to select.
-     * @private
-     */
-    setSelectedImage_: function(url) {
-      var imageGrid = $('user-image-grid');
-      imageGrid.selectedItemUrl = url;
-      imageGrid.focus();
-    },
-
-    /**
-     * Updates the image preview caption.
-     * @private
-     */
-    updateCaption_: function() {
-      $('user-image-preview-caption').textContent =
-          this.profileImageSelected ? this.profileImageCaption : '';
-    },
-
-    /**
-     * Updates localized content of the screen that is not updated via template.
-     */
-    updateLocalizedContent: function() {
-      this.updateProfileImageCaption_();
-    },
-
-    /**
-     * Updates profile image caption.
-     * @private
-     */
-    updateProfileImageCaption_: function() {
-      this.profileImageCaption = localStrings.getString(
-        this.profileImageLoading_ ? 'profilePhotoLoading' : 'profilePhoto');
-    }
-  };
-
-  var UserImageScreenWebRTCProto = {
-    __proto__: HTMLDivElement.prototype,
-
-    /**
-     * Currently selected user image index (take photo button is with zero
-     * index).
-     * @type {number}
-     */
-    selectedUserImage_: -1,
-
-    /** @inheritDoc */
+    /** @override */
     decorate: function(element) {
       var imageGrid = $('user-image-grid');
       UserImagesGrid.decorate(imageGrid);
 
       // Preview image will track the selected item's URL.
       var previewElement = $('user-image-preview');
+      previewElement.oncontextmenu = function(e) { e.preventDefault(); };
+
       imageGrid.previewElement = previewElement;
       imageGrid.selectionType = 'default';
 
@@ -378,16 +76,20 @@ cr.define('oobe', function() {
                                  this.handleSelect_.bind(this));
       imageGrid.addEventListener('activate',
                                  this.handleImageActivated_.bind(this));
+      imageGrid.addEventListener('phototaken',
+                                 this.handlePhotoTaken_.bind(this));
+      imageGrid.addEventListener('photoupdated',
+                                 this.handlePhotoUpdated_.bind(this));
 
       // Set the title for camera item in the grid.
       imageGrid.setCameraTitles(
-          localStrings.getString('takePhoto'),
-          localStrings.getString('capturedPhoto'));
+          loadTimeData.getString('takePhoto'),
+          loadTimeData.getString('photoFromCamera'));
 
       // Profile image data (if present).
       this.profileImage_ = imageGrid.addItem(
           ButtonImages.PROFILE_PICTURE,  // Image URL.
-          localStrings.getString('profilePhoto'),  // Title.
+          loadTimeData.getString('profilePhoto'),  // Title.
           undefined,  // Click handler.
           undefined,  // Position.
           function(el) {  // Custom decorator for Profile image element.
@@ -402,13 +104,10 @@ cr.define('oobe', function() {
       this.profileImage_.type = 'profile';
       this.profileImageLoading = true;
 
-      // Add camera stream element.
-      imageGrid.cameraImage = null;
-
       $('take-photo').addEventListener(
           'click', this.handleTakePhoto_.bind(this));
       $('discard-photo').addEventListener(
-          'click', imageGrid.discardPhoto.bind(imageGrid));
+          'click', this.handleDiscardPhoto_.bind(this));
 
       // Toggle 'animation' class for the duration of WebKit transition.
       $('flip-photo').addEventListener(
@@ -417,6 +116,10 @@ cr.define('oobe', function() {
             imageGrid.flipPhoto = !imageGrid.flipPhoto;
           });
       $('user-image-stream-crop').addEventListener(
+          'webkitTransitionEnd', function(e) {
+            previewElement.classList.remove('animation');
+          });
+      $('user-image-preview-img').addEventListener(
           'webkitTransitionEnd', function(e) {
             previewElement.classList.remove('animation');
           });
@@ -431,7 +134,7 @@ cr.define('oobe', function() {
      * @type {string}
      */
     get header() {
-      return localStrings.getString('userImageScreenTitle');
+      return loadTimeData.getString('userImageScreenTitle');
     },
 
     /**
@@ -441,7 +144,7 @@ cr.define('oobe', function() {
     get buttons() {
       var okButton = this.ownerDocument.createElement('button');
       okButton.id = 'ok-button';
-      okButton.textContent = localStrings.getString('okButtonText');
+      okButton.textContent = loadTimeData.getString('okButtonText');
       okButton.addEventListener('click', this.acceptImage_.bind(this));
       return [okButton];
     },
@@ -499,21 +202,19 @@ cr.define('oobe', function() {
         $('ok-button').disabled = true;
       } else {
         $('ok-button').disabled = false;
-        chrome.send('selectImage', [imageGrid.selectedItemUrl]);
+        chrome.send('selectImage',
+                    [imageGrid.selectedItemUrl, imageGrid.selectionType]);
       }
       // Start/stop camera on (de)selection.
       if (!imageGrid.inProgramSelection &&
           imageGrid.selectionType != e.oldSelectionType) {
         if (imageGrid.selectionType == 'camera') {
           // Programmatic selection of camera item is done in
-          // checkCameraPresence callback where streaming is started by itself.
-          imageGrid.checkCameraPresence(
-              function() {  // When present.
+          // startCamera callback where streaming is started by itself.
+          imageGrid.startCamera(
+              function() {
                 // Start capture if camera is still the selected item.
                 return imageGrid.selectedItem == imageGrid.cameraImage;
-              },
-              function() {  // When absent.
-                return true;  // Check again after some time.
               });
         } else {
           imageGrid.stopCamera();
@@ -533,9 +234,53 @@ cr.define('oobe', function() {
      * Handle photo capture from the live camera stream.
      */
     handleTakePhoto_: function(e) {
-      $('user-image-grid').takePhoto(function(photoURL) {
-        chrome.send('photoTaken', [photoURL]);
-      });
+      $('user-image-grid').takePhoto();
+    },
+
+    /**
+     * Handle photo captured event.
+     * @param {cr.Event} e Event with 'dataURL' property containing a data URL.
+     */
+    handlePhotoTaken_: function(e) {
+      chrome.send('photoTaken', [e.dataURL]);
+      this.announceAccessibleMessage_(
+          loadTimeData.getString('photoCaptureAccessibleText'));
+    },
+
+    /**
+     * Handle photo updated event.
+     * @param {cr.Event} e Event with 'dataURL' property containing a data URL.
+     */
+    handlePhotoUpdated_: function(e) {
+      chrome.send('photoTaken', [e.dataURL]);
+    },
+
+    /**
+     * Handle discarding the captured photo.
+     */
+    handleDiscardPhoto_: function(e) {
+      var imageGrid = $('user-image-grid');
+      imageGrid.discardPhoto();
+      this.announceAccessibleMessage_(
+          loadTimeData.getString('photoDiscardAccessibleText'));
+    },
+
+    /**
+     * Add an accessible message to the page that will be announced to
+     * users who have spoken feedback on, but will be invisible to all
+     * other users. It's removed right away so it doesn't clutter the DOM.
+     */
+    announceAccessibleMessage_: function(msg) {
+      var element = document.createElement('div');
+      element.setAttribute('aria-live', 'polite');
+      element.style.position = 'relative';
+      element.style.left = '-9999px';
+      element.style.height = '0px';
+      element.innerText = msg;
+      document.body.appendChild(element);
+      window.setTimeout(function() {
+        document.body.removeChild(element);
+      }, 0);
     },
 
     /**
@@ -546,21 +291,6 @@ cr.define('oobe', function() {
       Oobe.getInstance().headerHidden = true;
       var imageGrid = $('user-image-grid');
       imageGrid.updateAndFocus();
-      if (PRESELECT_CAMERA) {
-        // Check for camera presence and select it, if present.
-        imageGrid.checkCameraPresence(
-            function() {  // When present.
-              imageGrid.selectedItem = imageGrid.cameraImage;
-              return true;  // Start capture if ready.
-            },
-            function() {  // When absent.
-              return true;  // Check again after some time.
-            });
-      } else {
-        // Check continuously for camera presence but don't select it.
-        imageGrid.checkCameraPresence(function() { return false; },
-                                      function() { return true; });
-      }
       chrome.send('onUserImageScreenShown');
     },
 
@@ -597,6 +327,13 @@ cr.define('oobe', function() {
         this.profileImage_ =
             $('user-image-grid').updateItem(this.profileImage_, imageUrl);
       }
+    },
+
+    /**
+     * @param {boolean} present Whether camera is detected.
+     */
+    setCameraPresent_: function(present) {
+      $('user-image-grid').cameraPresent = present;
     },
 
     /**
@@ -649,7 +386,7 @@ cr.define('oobe', function() {
      * @private
      */
     updateProfileImageCaption_: function() {
-      this.profileImageCaption = localStrings.getString(
+      this.profileImageCaption = loadTimeData.getString(
         this.profileImageLoading_ ? 'profilePhotoLoading' : 'profilePhoto');
     }
   };
@@ -660,7 +397,6 @@ cr.define('oobe', function() {
     'setCameraPresent',
     'setProfileImage',
     'setSelectedImage',
-    'setUserPhoto',
   ].forEach(function(name) {
     UserImageScreen[name] = function(value) {
       $('user-image')[name + '_'](value);

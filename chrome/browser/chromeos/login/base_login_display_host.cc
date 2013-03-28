@@ -9,14 +9,17 @@
 #include "ash/shell_window_ids.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/prefs/pref_service.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/customization_document.h"
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/language_preferences.h"
@@ -29,11 +32,11 @@
 #include "chrome/browser/chromeos/login/webui_login_display_host.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/mobile_config.h"
+#include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/chromeos/system/timezone_settings.h"
-#include "chrome/browser/policy/auto_enrollment_client.h"
+#include "chrome/browser/managed_mode/managed_mode.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -42,8 +45,8 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/cros_system_api/window_manager/chromeos_wm_ipc_enums.h"
 #include "ui/aura/window.h"
+#include "ui/base/events/event_utils.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_element.h"
@@ -72,7 +75,7 @@ void DetermineAndSaveHardwareKeyboard(const std::string& locale,
     layout = oem_layout;
   } else {
     chromeos::input_method::InputMethodManager* manager =
-        chromeos::input_method::InputMethodManager::GetInstance();
+        chromeos::input_method::GetInputMethodManager();
     // Otherwise, determine the hardware keyboard from the locale.
     std::vector<std::string> input_method_ids;
     if (manager->GetInputMethodUtil()->GetInputMethodIdsFromLanguageCode(
@@ -236,6 +239,10 @@ void BaseLoginDisplayHost::StartSignInScreen() {
       kPolicyServiceInitializationDelayMilliseconds);
 }
 
+WizardController* BaseLoginDisplayHost::GetWizardController() {
+  return wizard_controller_.get();
+}
+
 void BaseLoginDisplayHost::ResumeSignInScreen() {
   // We only get here after a previous call the StartSignInScreen. That sign-in
   // was successful but was interrupted by an auto-enrollment execution; once
@@ -374,10 +381,17 @@ void ShowLoginWizard(const std::string& first_screen_name,
   if (browser_shutdown::IsTryingToQuit())
     return;
 
+  // Managed mode is defined as a machine-level setting so we have to reset it
+  // each time login screen is shown. See also http://crbug.com/167642
+  // TODO(nkostylev): Remove this call when managed mode scope is
+  // limited to user session.
+  if (ManagedMode::IsInManagedMode())
+    ManagedMode::LeaveManagedMode();
+
   VLOG(1) << "Showing OOBE screen: " << first_screen_name;
 
   chromeos::input_method::InputMethodManager* manager =
-      chromeos::input_method::InputMethodManager::GetInstance();
+      chromeos::input_method::GetInputMethodManager();
 
   // Set up keyboards. For example, when |locale| is "en-US", enable US qwerty
   // and US dvorak keyboard layouts.
@@ -401,6 +415,9 @@ void ShowLoginWizard(const std::string& first_screen_name,
     system::touchpad_settings::SetTapToClick(
         prefs->GetBoolean(prefs::kOwnerTapToClickEnabled));
   }
+
+  ui::SetNaturalScroll(CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kNaturalScrollDefault));
 
   gfx::Rect screen_bounds(chromeos::CalculateScreenBounds(size));
 
@@ -484,6 +501,7 @@ void ShowLoginWizard(const std::string& first_screen_name,
   chromeos::LoginUtils::Get()->PrewarmAuthentication();
   chromeos::DBusThreadManager::Get()->GetSessionManagerClient()
       ->EmitLoginPromptReady();
+  TRACE_EVENT0("chromeos", "ShowLoginWizard::EmitLoginPromptReady");
 
   // Set initial timezone if specified by customization.
   const std::string timezone_name = startup_manifest->initial_timezone();

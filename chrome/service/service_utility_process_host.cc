@@ -7,11 +7,11 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/process_util.h"
-#include "base/scoped_temp_dir.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_utility_messages.h"
@@ -24,11 +24,34 @@
 #include "ui/gfx/rect.h"
 
 #if defined(OS_WIN)
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/win/scoped_handle.h"
+#include "content/public/common/sandbox_init.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "printing/emf_win.h"
-#endif
+
+namespace {
+// NOTE: changes to this class need to be reviewed by the security team.
+class ServiceSandboxedProcessLauncherDelegate
+    : public content::SandboxedProcessLauncherDelegate {
+ public:
+  explicit ServiceSandboxedProcessLauncherDelegate(
+      const base::FilePath& exposed_dir)
+    : exposed_dir_(exposed_dir) {
+  }
+
+  virtual void PreSandbox(bool* disable_default_policy,
+                          base::FilePath* exposed_dir) OVERRIDE {
+    *exposed_dir = exposed_dir_;
+  }
+
+ private:
+  base::FilePath exposed_dir_;
+};
+}
+
+#endif  // OS_WIN
 
 using content::ChildProcessHost;
 
@@ -47,7 +70,7 @@ ServiceUtilityProcessHost::~ServiceUtilityProcessHost() {
 }
 
 bool ServiceUtilityProcessHost::StartRenderPDFPagesToMetafile(
-    const FilePath& pdf_path,
+    const base::FilePath& pdf_path,
     const printing::PdfRenderSettings& render_settings,
     const std::vector<printing::PageRange>& page_ranges) {
 #if !defined(OS_WIN)
@@ -56,7 +79,7 @@ bool ServiceUtilityProcessHost::StartRenderPDFPagesToMetafile(
   NOTIMPLEMENTED();
   return false;
 #else  // !defined(OS_WIN)
-  scratch_metafile_dir_.reset(new ScopedTempDir);
+  scratch_metafile_dir_.reset(new base::ScopedTempDir);
   if (!scratch_metafile_dir_->CreateUniqueTempDir())
     return false;
   if (!file_util::CreateTemporaryFileInDir(scratch_metafile_dir_->path(),
@@ -95,7 +118,7 @@ bool ServiceUtilityProcessHost::StartRenderPDFPagesToMetafile(
 
 bool ServiceUtilityProcessHost::StartGetPrinterCapsAndDefaults(
     const std::string& printer_name) {
-  FilePath exposed_path;
+  base::FilePath exposed_path;
   if (!StartProcess(true, exposed_path))
     return false;
   waiting_for_reply_ = true;
@@ -103,13 +126,14 @@ bool ServiceUtilityProcessHost::StartGetPrinterCapsAndDefaults(
       new ChromeUtilityMsg_GetPrinterCapsAndDefaults(printer_name));
 }
 
-bool ServiceUtilityProcessHost::StartProcess(bool no_sandbox,
-                                             const FilePath& exposed_dir) {
+bool ServiceUtilityProcessHost::StartProcess(
+    bool no_sandbox,
+    const base::FilePath& exposed_dir) {
   std::string channel_id = child_process_host_->CreateChannel();
   if (channel_id.empty())
     return false;
 
-  FilePath exe_path = GetUtilityProcessCmd();
+  base::FilePath exe_path = GetUtilityProcessCmd();
   if (exe_path.empty()) {
     NOTREACHED() << "Unable to get utility process binary name.";
     return false;
@@ -125,7 +149,7 @@ bool ServiceUtilityProcessHost::StartProcess(bool no_sandbox,
 
 bool ServiceUtilityProcessHost::Launch(CommandLine* cmd_line,
                                        bool no_sandbox,
-                                       const FilePath& exposed_dir) {
+                                       const base::FilePath& exposed_dir) {
 #if !defined(OS_WIN)
   // TODO(sanjeevr): Implement for non-Windows OSes.
   NOTIMPLEMENTED();
@@ -137,13 +161,14 @@ bool ServiceUtilityProcessHost::Launch(CommandLine* cmd_line,
     cmd_line->AppendSwitch(switches::kNoSandbox);
     base::LaunchProcess(*cmd_line, base::LaunchOptions(), &handle_);
   } else {
-    handle_ = content::StartProcessWithAccess(cmd_line, exposed_dir);
+    ServiceSandboxedProcessLauncherDelegate delegate(exposed_dir);
+    handle_ = content::StartSandboxedProcess(&delegate, cmd_line);
   }
   return (handle_ != base::kNullProcessHandle);
 #endif  // !defined(OS_WIN)
 }
 
-FilePath ServiceUtilityProcessHost::GetUtilityProcessCmd() {
+base::FilePath ServiceUtilityProcessHost::GetUtilityProcessCmd() {
 #if defined(OS_LINUX)
   int flags = ChildProcessHost::CHILD_ALLOW_SELF;
 #else
@@ -225,17 +250,17 @@ void ServiceUtilityProcessHost::OnGetPrinterCapsAndDefaultsFailed(
 }
 
 void ServiceUtilityProcessHost::Client::MetafileAvailable(
-    const FilePath& metafile_path,
+    const base::FilePath& metafile_path,
     int highest_rendered_page_number,
     double scale_factor) {
   // The metafile was created in a temp folder which needs to get deleted after
   // we have processed it.
-  ScopedTempDir scratch_metafile_dir;
+  base::ScopedTempDir scratch_metafile_dir;
   if (!scratch_metafile_dir.Set(metafile_path.DirName()))
     LOG(WARNING) << "Unable to set scratch metafile directory";
 #if defined(OS_WIN)
   // It's important that metafile is declared after scratch_metafile_dir so
-  // that the metafile destructor closes the file before the ScopedTempDir
+  // that the metafile destructor closes the file before the base::ScopedTempDir
   // destructor tries to remove the directory.
   printing::Emf metafile;
   if (!metafile.InitFromFile(metafile_path)) {

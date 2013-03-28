@@ -4,12 +4,9 @@
 
 #include "ppapi/proxy/ppp_input_event_proxy.h"
 
-#include <algorithm>
-
 #include "ppapi/c/ppp_input_event.h"
 #include "ppapi/proxy/host_dispatcher.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
-#include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/thunk/enter.h"
@@ -23,6 +20,7 @@ namespace proxy {
 
 namespace {
 
+#if !defined(OS_NACL)
 PP_Bool HandleInputEvent(PP_Instance instance, PP_Resource input_event) {
   EnterResourceNoLock<PPB_InputEvent_API> enter(input_event, false);
   if (enter.failed()) {
@@ -51,6 +49,10 @@ PP_Bool HandleInputEvent(PP_Instance instance, PP_Resource input_event) {
 static const PPP_InputEvent input_event_interface = {
   &HandleInputEvent
 };
+#else
+// The NaCl plugin doesn't need the host side interface - stub it out.
+static const PPP_InputEvent input_event_interface = {};
+#endif  // !defined(OS_NACL)
 
 InterfaceProxy* CreateInputEventProxy(Dispatcher* dispatcher) {
   return new PPP_InputEvent_Proxy(dispatcher);
@@ -83,6 +85,9 @@ const InterfaceProxy::Info* PPP_InputEvent_Proxy::GetInfo() {
 }
 
 bool PPP_InputEvent_Proxy::OnMessageReceived(const IPC::Message& msg) {
+  if (!dispatcher()->IsPlugin())
+    return false;
+
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PPP_InputEvent_Proxy, msg)
     IPC_MESSAGE_HANDLER(PpapiMsg_PPPInputEvent_HandleInputEvent,
@@ -101,7 +106,6 @@ void PPP_InputEvent_Proxy::OnMsgHandleInputEvent(PP_Instance instance,
   CallWhileUnlocked(ppp_input_event_impl_->HandleInputEvent,
                     instance,
                     resource->pp_resource());
-  HandleInputEventAck(instance, data.event_time_stamp);
 }
 
 void PPP_InputEvent_Proxy::OnMsgHandleFilteredInputEvent(
@@ -113,19 +117,6 @@ void PPP_InputEvent_Proxy::OnMsgHandleFilteredInputEvent(
   *result = CallWhileUnlocked(ppp_input_event_impl_->HandleInputEvent,
                               instance,
                               resource->pp_resource());
-  HandleInputEventAck(instance, data.event_time_stamp);
-}
-
-void PPP_InputEvent_Proxy::HandleInputEventAck(
-    PP_Instance instance, PP_TimeTicks timestamp) {
-  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance);
-  if (dispatcher) {
-    // Note that we're sending the message to the host PPB_InstanceProxy.
-    dispatcher->Send(new PpapiMsg_PPPInputEvent_HandleInputEvent_ACK(
-        API_ID_PPB_INSTANCE, instance, timestamp));
-  } else {
-    NOTREACHED();
-  }
 }
 
 }  // namespace proxy

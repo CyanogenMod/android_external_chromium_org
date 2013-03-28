@@ -5,19 +5,20 @@
 #include "android_webview/lib/main/aw_main_delegate.h"
 
 #include "android_webview/browser/aw_content_browser_client.h"
+#include "android_webview/common/aw_switches.h"
 #include "android_webview/lib/aw_browser_dependency_factory_impl.h"
+#include "android_webview/native/aw_geolocation_permission_context.h"
+#include "android_webview/native/aw_quota_manager_bridge_impl.h"
+#include "android_webview/native/aw_web_contents_view_delegate.h"
 #include "android_webview/renderer/aw_content_renderer_client.h"
-#include "base/lazy_instance.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/browser_main_runner.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/common/content_switches.h"
 
 namespace android_webview {
-
-base::LazyInstance<AwContentBrowserClient>
-    g_webview_content_browser_client = LAZY_INSTANCE_INITIALIZER;
-base::LazyInstance<AwContentRendererClient>
-    g_webview_content_renderer_client = LAZY_INSTANCE_INITIALIZER;
 
 AwMainDelegate::AwMainDelegate() {
 }
@@ -27,6 +28,10 @@ AwMainDelegate::~AwMainDelegate() {
 
 bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   content::SetContentClient(&content_client_);
+
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  // Set the command line to enable synchronous API compatibility.
+  command_line->AppendSwitch(switches::kEnableWebViewSynchronousAPIs);
 
   return false;
 }
@@ -66,12 +71,54 @@ void AwMainDelegate::ProcessExiting(const std::string& process_type) {
 
 content::ContentBrowserClient*
     AwMainDelegate::CreateContentBrowserClient() {
-  return &g_webview_content_browser_client.Get();
+  content_browser_client_.reset(new AwContentBrowserClient(this));
+  return content_browser_client_.get();
+}
+
+namespace {
+bool UIAndRendererCompositorThreadsMerged() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kMergeUIAndRendererCompositorThreads);
+}
+
+MessageLoop* GetRendererCompositorThreadOverrideLoop() {
+  if (!UIAndRendererCompositorThreadsMerged())
+    return NULL;
+
+  MessageLoop* rv = content::BrowserThread::UnsafeGetMessageLoopForThread(
+      content::BrowserThread::UI);
+  DCHECK(rv);
+  return rv;
+}
 }
 
 content::ContentRendererClient*
     AwMainDelegate::CreateContentRendererClient() {
-  return &g_webview_content_renderer_client.Get();
+  // Compositor input handling will be performed by the renderer host
+  // when UI and compositor threads are merged, so we disable client compositor
+  // input handling in this case.
+  const bool enable_client_compositor_input_handling =
+      !UIAndRendererCompositorThreadsMerged();
+  content_renderer_client_.reset(
+      new AwContentRendererClient(&GetRendererCompositorThreadOverrideLoop,
+                                  enable_client_compositor_input_handling));
+  return content_renderer_client_.get();
+}
+
+AwQuotaManagerBridge* AwMainDelegate::CreateAwQuotaManagerBridge(
+    AwBrowserContext* browser_context) {
+  return new AwQuotaManagerBridgeImpl(browser_context);
+}
+
+content::GeolocationPermissionContext*
+    AwMainDelegate::CreateGeolocationPermission(
+        AwBrowserContext* browser_context) {
+  return AwGeolocationPermissionContext::Create(browser_context);
+}
+
+content::WebContentsViewDelegate* AwMainDelegate::CreateViewDelegate(
+    content::WebContents* web_contents) {
+  return AwWebContentsViewDelegate::Create(web_contents);
 }
 
 }  // namespace android_webview

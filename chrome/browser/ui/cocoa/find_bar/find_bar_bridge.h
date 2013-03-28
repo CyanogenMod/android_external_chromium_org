@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
 
+class Browser;
 class FindBarController;
 
 // This class is included by find_bar_host_browsertest.cc, so it has to be
@@ -37,7 +38,7 @@ class FindBarCocoaController;
 class FindBarBridge : public FindBar,
                       public FindBarTesting {
  public:
-  FindBarBridge();
+  FindBarBridge(Browser* browser);
   virtual ~FindBarBridge();
 
   FindBarCocoaController* find_bar_cocoa_controller() {
@@ -63,6 +64,8 @@ class FindBarBridge : public FindBar,
   virtual void AudibleAlert() OVERRIDE;
   virtual bool IsFindBarVisible() OVERRIDE;
   virtual void RestoreSavedFocus() OVERRIDE;
+  virtual bool HasGlobalFindPasteboard() OVERRIDE;
+  virtual void UpdateFindBarForChangedWebContents() OVERRIDE;
   virtual void MoveWindowIfNecessary(const gfx::Rect& selection_rect,
                                      bool no_redraw) OVERRIDE;
 

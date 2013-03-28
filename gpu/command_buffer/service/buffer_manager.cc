@@ -7,81 +7,83 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
+#include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
+#include "ui/gl/gl_bindings.h"
 
 namespace gpu {
 namespace gles2 {
 
-BufferManager::BufferManager(MemoryTracker* memory_tracker)
-    : buffer_memory_tracker_(new MemoryTypeTracker(memory_tracker)),
+BufferManager::BufferManager(
+    MemoryTracker* memory_tracker,
+    FeatureInfo* feature_info)
+    : memory_tracker_(
+          new MemoryTypeTracker(memory_tracker, MemoryTracker::kManaged)),
+      feature_info_(feature_info),
       allow_buffers_on_multiple_targets_(false),
-      mem_represented_(0),
-      buffer_info_count_(0),
-      have_context_(true) {
-  UpdateMemRepresented();
+      buffer_count_(0),
+      have_context_(true),
+      use_client_side_arrays_for_stream_buffers_(
+          feature_info ? feature_info->workarounds(
+              ).use_client_side_arrays_for_stream_buffers : 0) {
 }
 
 BufferManager::~BufferManager() {
-  DCHECK(buffer_infos_.empty());
-  CHECK_EQ(buffer_info_count_, 0u);
+  DCHECK(buffers_.empty());
+  CHECK_EQ(buffer_count_, 0u);
 }
 
 void BufferManager::Destroy(bool have_context) {
   have_context_ = have_context;
-  buffer_infos_.clear();
-  DCHECK_EQ(0u, mem_represented_);
-  UpdateMemRepresented();
+  buffers_.clear();
+  DCHECK_EQ(0u, memory_tracker_->GetMemRepresented());
 }
 
-void BufferManager::UpdateMemRepresented() {
-  buffer_memory_tracker_->UpdateMemRepresented(mem_represented_);
-}
-
-void BufferManager::CreateBufferInfo(GLuint client_id, GLuint service_id) {
-  BufferInfo::Ref buffer(new BufferInfo(this, service_id));
-  std::pair<BufferInfoMap::iterator, bool> result =
-      buffer_infos_.insert(std::make_pair(client_id, buffer));
+void BufferManager::CreateBuffer(GLuint client_id, GLuint service_id) {
+  scoped_refptr<Buffer> buffer(new Buffer(this, service_id));
+  std::pair<BufferMap::iterator, bool> result =
+      buffers_.insert(std::make_pair(client_id, buffer));
   DCHECK(result.second);
 }
 
-BufferManager::BufferInfo* BufferManager::GetBufferInfo(
+Buffer* BufferManager::GetBuffer(
     GLuint client_id) {
-  BufferInfoMap::iterator it = buffer_infos_.find(client_id);
-  return it != buffer_infos_.end() ? it->second : NULL;
+  BufferMap::iterator it = buffers_.find(client_id);
+  return it != buffers_.end() ? it->second : NULL;
 }
 
-void BufferManager::RemoveBufferInfo(GLuint client_id) {
-  BufferInfoMap::iterator it = buffer_infos_.find(client_id);
-  if (it != buffer_infos_.end()) {
-    BufferInfo* buffer = it->second;
+void BufferManager::RemoveBuffer(GLuint client_id) {
+  BufferMap::iterator it = buffers_.find(client_id);
+  if (it != buffers_.end()) {
+    Buffer* buffer = it->second;
     buffer->MarkAsDeleted();
-    buffer_infos_.erase(it);
+    buffers_.erase(it);
   }
 }
 
-void BufferManager::StartTracking(BufferManager::BufferInfo* /* buffer */) {
-  ++buffer_info_count_;
+void BufferManager::StartTracking(Buffer* /* buffer */) {
+  ++buffer_count_;
 }
 
-void BufferManager::StopTracking(BufferManager::BufferInfo* buffer) {
-  mem_represented_ -= buffer->size();
-  --buffer_info_count_;
-  UpdateMemRepresented();
+void BufferManager::StopTracking(Buffer* buffer) {
+  memory_tracker_->TrackMemFree(buffer->size());
+  --buffer_count_;
 }
 
-BufferManager::BufferInfo::BufferInfo(BufferManager* manager, GLuint service_id)
+Buffer::Buffer(BufferManager* manager, GLuint service_id)
     : manager_(manager),
       deleted_(false),
       service_id_(service_id),
       target_(0),
       size_(0),
       usage_(GL_STATIC_DRAW),
-      shadowed_(false) {
+      shadowed_(false),
+      is_client_side_array_(false) {
   manager_->StartTracking(this);
 }
 
-BufferManager::BufferInfo::~BufferInfo() {
+Buffer::~Buffer() {
   if (manager_) {
     if (manager_->have_context_) {
       GLuint id = service_id();
@@ -92,21 +94,31 @@ BufferManager::BufferInfo::~BufferInfo() {
   }
 }
 
-void BufferManager::BufferInfo::SetInfo(
-    GLsizeiptr size, GLenum usage, bool shadow) {
+void Buffer::SetInfo(
+    GLsizeiptr size, GLenum usage, bool shadow, const GLvoid* data,
+    bool is_client_side_array) {
   usage_ = usage;
+  is_client_side_array_ = is_client_side_array;
   if (size != size_ || shadow != shadowed_) {
     shadowed_ = shadow;
     size_ = size;
     ClearCache();
     if (shadowed_) {
       shadow_.reset(new int8[size]);
+    } else {
+      shadow_.reset();
+    }
+  }
+  if (shadowed_) {
+    if (data) {
+      memcpy(shadow_.get(), data, size);
+    } else {
       memset(shadow_.get(), 0, size);
     }
   }
 }
 
-bool BufferManager::BufferInfo::CheckRange(
+bool Buffer::CheckRange(
     GLintptr offset, GLsizeiptr size) const {
   int32 end = 0;
   return offset >= 0 && size >= 0 &&
@@ -115,7 +127,7 @@ bool BufferManager::BufferInfo::CheckRange(
          SafeAddInt32(offset, size, &end) && end <= size_;
 }
 
-bool BufferManager::BufferInfo::SetRange(
+bool Buffer::SetRange(
     GLintptr offset, GLsizeiptr size, const GLvoid * data) {
   if (!CheckRange(offset, size)) {
     return false;
@@ -127,7 +139,7 @@ bool BufferManager::BufferInfo::SetRange(
   return true;
 }
 
-const void* BufferManager::BufferInfo::GetRange(
+const void* Buffer::GetRange(
     GLintptr offset, GLsizeiptr size) const {
   if (!shadowed_) {
     return NULL;
@@ -138,7 +150,7 @@ const void* BufferManager::BufferInfo::GetRange(
   return shadow_.get() + offset;
 }
 
-void BufferManager::BufferInfo::ClearCache() {
+void Buffer::ClearCache() {
   range_set_.clear();
 }
 
@@ -156,7 +168,7 @@ GLuint GetMaxValue(const void* data, GLuint offset, GLsizei count) {
   return max_value;
 }
 
-bool BufferManager::BufferInfo::GetMaxValueForRange(
+bool Buffer::GetMaxValueForRange(
     GLuint offset, GLsizei count, GLenum type, GLuint* max_value) {
   Range range(offset, count, type);
   RangeToMaxValueMap::iterator it = range_set_.find(range);
@@ -214,8 +226,8 @@ bool BufferManager::BufferInfo::GetMaxValueForRange(
 
 bool BufferManager::GetClientId(GLuint service_id, GLuint* client_id) const {
   // This doesn't need to be fast. It's only used during slow queries.
-  for (BufferInfoMap::const_iterator it = buffer_infos_.begin();
-       it != buffer_infos_.end(); ++it) {
+  for (BufferMap::const_iterator it = buffers_.begin();
+       it != buffers_.end(); ++it) {
     if (it->second->service_id() == service_id) {
       *client_id = it->first;
       return true;
@@ -224,25 +236,75 @@ bool BufferManager::GetClientId(GLuint service_id, GLuint* client_id) const {
   return false;
 }
 
-void BufferManager::SetInfo(
-    BufferManager::BufferInfo* info, GLsizeiptr size, GLenum usage) {
-  DCHECK(info);
-  mem_represented_ -= info->size();
-  info->SetInfo(size,
-                usage,
-                info->target() == GL_ELEMENT_ARRAY_BUFFER ||
-                allow_buffers_on_multiple_targets_);
-  mem_represented_ += info->size();
+bool BufferManager::IsUsageClientSideArray(GLenum usage) {
+  return usage == GL_STREAM_DRAW && use_client_side_arrays_for_stream_buffers_;
 }
 
-bool BufferManager::SetTarget(BufferManager::BufferInfo* info, GLenum target) {
+void BufferManager::SetInfo(
+    Buffer* buffer, GLsizeiptr size, GLenum usage, const GLvoid* data) {
+  DCHECK(buffer);
+  memory_tracker_->TrackMemFree(buffer->size());
+  bool is_client_side_array = IsUsageClientSideArray(usage);
+  bool shadow = buffer->target() == GL_ELEMENT_ARRAY_BUFFER ||
+                allow_buffers_on_multiple_targets_ ||
+                is_client_side_array;
+  buffer->SetInfo(size, usage, shadow, data, is_client_side_array);
+  memory_tracker_->TrackMemAlloc(buffer->size());
+}
+
+void BufferManager::DoBufferData(
+    GLES2Decoder* decoder,
+    Buffer* buffer,
+    GLsizeiptr size,
+    GLenum usage,
+    const GLvoid* data) {
+  // Clear the buffer to 0 if no initial data was passed in.
+  scoped_array<int8> zero;
+  if (!data) {
+    zero.reset(new int8[size]);
+    memset(zero.get(), 0, size);
+    data = zero.get();
+  }
+
+  GLESDECODER_COPY_REAL_GL_ERRORS_TO_WRAPPER(decoder, "glBufferData");
+  if (IsUsageClientSideArray(usage)) {
+    glBufferData(buffer->target(), 0, NULL, usage);
+  } else {
+    glBufferData(buffer->target(), size, data, usage);
+  }
+  GLenum error = GLESDECODER_PEEK_GL_ERROR(decoder, "glBufferData");
+  if (error == GL_NO_ERROR) {
+    SetInfo(buffer, size, usage, data);
+  } else {
+    SetInfo(buffer, 0, usage, NULL);
+  }
+}
+
+void BufferManager::DoBufferSubData(
+    GLES2Decoder* decoder,
+    Buffer* buffer,
+    GLintptr offset,
+    GLsizeiptr size,
+    const GLvoid* data) {
+  if (!buffer->SetRange(offset, size, data)) {
+    GLESDECODER_SET_GL_ERROR(
+        decoder, GL_INVALID_VALUE, "glBufferSubData", "out of range");
+    return;
+  }
+
+  if (!buffer->IsClientSideArray()) {
+    glBufferSubData(buffer->target(), offset, size, data);
+  }
+}
+
+bool BufferManager::SetTarget(Buffer* buffer, GLenum target) {
   // Check that we are not trying to bind it to a different target.
-  if (info->target() != 0 && info->target() != target &&
+  if (buffer->target() != 0 && buffer->target() != target &&
       !allow_buffers_on_multiple_targets_) {
     return false;
   }
-  if (info->target() == 0) {
-    info->set_target(target);
+  if (buffer->target() == 0) {
+    buffer->set_target(target);
   }
   return true;
 }

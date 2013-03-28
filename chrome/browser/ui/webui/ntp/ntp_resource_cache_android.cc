@@ -12,15 +12,15 @@
 #include "base/values.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/webui/jstemplate_builder.h"
+#include "ui/webui/web_ui_util.h"
 
 using content::BrowserThread;
 
@@ -50,13 +50,12 @@ base::RefCountedMemory* NTPResourceCache::GetNewTabCSS(bool is_incognito) {
 }
 
 void NTPResourceCache::Observe(int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
+                               const content::NotificationSource& source,
+                               const content::NotificationDetails& details) {
   // No notifications necessary in Android.
 }
 
-void NTPResourceCache::OnPreferenceChanged(PrefServiceBase* service,
-                                           const std::string& pref_name) {
+void NTPResourceCache::OnPreferenceChanged() {
   // No notifications necessary in Android.
 }
 
@@ -82,6 +81,8 @@ void NTPResourceCache::CreateNewTabHTML() {
           IDS_NEW_TAB_CONTEXT_MENU_OPEN_IN_INCOGNITO_TAB));
   localized_strings.SetString("elementremove",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_CONTEXT_MENU_REMOVE));
+  localized_strings.SetString("removeall",
+      l10n_util::GetStringUTF16(IDS_NEW_TAB_CONTEXT_MENU_REMOVE_ALL));
   localized_strings.SetString("bookmarkedit",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_CONTEXT_MENU_EDIT_BOOKMARK));
   localized_strings.SetString("bookmarkdelete",
@@ -101,7 +102,7 @@ void NTPResourceCache::CreateNewTabHTML() {
   localized_strings.SetString("bookmarkstitle",
       l10n_util::GetStringUTF16(IDS_ACCNAME_BOOKMARKS));
 
-  ChromeURLDataManager::DataSource::SetFontAndTextDirection(&localized_strings);
+  webui::SetFontAndTextDirection(&localized_strings);
 
   base::StringPiece new_tab_html(ResourceBundle::GetSharedInstance().
                                  GetRawDataResource(IDR_NEW_TAB_ANDROID_HTML));
@@ -113,7 +114,8 @@ void NTPResourceCache::CreateNewTabHTML() {
   string16 learnMoreLink = ASCIIToUTF16(
       google_util::AppendGoogleLocaleParam(GURL(new_tab_link)).spec());
   localized_strings.SetString("content",
-      l10n_util::GetStringFUTF16(IDS_NEW_TAB_OTR_MESSAGE, learnMoreLink));
+      l10n_util::GetStringFUTF16(
+          IDS_NEW_TAB_OTR_MESSAGE_MOBILE, learnMoreLink));
 
   // Load the new tab page appropriate for this build.
   std::string full_html;
@@ -121,7 +123,7 @@ void NTPResourceCache::CreateNewTabHTML() {
   // Inject the template data into the HTML so that it is available before any
   // layout is needed.
   std::string json_html;
-  jstemplate_builder::AppendJsonHtml(&localized_strings, &json_html);
+  webui::AppendJsonHtml(&localized_strings, &json_html);
 
   static const base::StringPiece template_data_placeholder(
       "<!-- template data placeholder -->");

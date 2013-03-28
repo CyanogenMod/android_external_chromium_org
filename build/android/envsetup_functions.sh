@@ -93,10 +93,6 @@ common_vars_defines() {
     export OFFICIAL_BUILD=1
     export CHROMIUM_BUILD="_google_chrome"
     export CHROME_BUILD_TYPE="_official"
-
-    # Used by chrome_version_info_posix.cc to display the channel name.
-    # Valid values: "unstable", "stable", "dev", "beta".
-    export CHROME_VERSION_EXTRA="beta"
   fi
 
   # The order file specifies the order of symbols in the .text section of the
@@ -111,6 +107,7 @@ common_vars_defines() {
   case "${TARGET_ARCH}" in
     "arm")
       DEFINES+=" arm_neon=0 armv7=1 arm_thumb=1 arm_fpu=vfpv3-d16"
+      DEFINES+=" arm_neon_optional=1"  # Enable dynamic NEON support.
       DEFINES+=" ${ORDER_DEFINES}"
       DEFINES+=" target_arch=arm"
       ;;
@@ -128,9 +125,6 @@ common_vars_defines() {
       print_usage
       return 1
   esac
-
-  DEFINES+=" android_gdbserver=${ANDROID_NDK_ROOT}/prebuilt/\
-android-${TARGET_ARCH}/gdbserver/gdbserver"
 }
 
 
@@ -140,8 +134,15 @@ android-${TARGET_ARCH}/gdbserver/gdbserver"
 common_gyp_vars() {
   export GYP_DEFINES="${DEFINES}"
 
-  # Set GYP_GENERATORS to make-android if it's currently unset or null.
-  export GYP_GENERATORS="${GYP_GENERATORS:-make-android}"
+  # Set GYP_GENERATORS to ninja if it's currently unset or null.
+  if [ -z "$GYP_GENERATORS" ]; then
+    echo "Defaulting GYP_GENERATORS to ninja."
+    GYP_GENERATORS=ninja
+  elif [ "$GYP_GENERATORS" != "ninja" ]; then
+    echo "Warning: GYP_GENERATORS set to '$GYP_GENERATORS'."
+    echo "Only GYP_GENERATORS=ninja has continuous coverage."
+  fi
+  export GYP_GENERATORS
 
   # Use our All target as the default
   export GYP_GENERATOR_FLAGS="${GYP_GENERATOR_FLAGS} default_target=All"
@@ -157,6 +158,8 @@ common_gyp_vars() {
 print_usage() {
   echo "usage: ${0##*/} [--target-arch=value] [--help]" >& 2
   echo "--target-arch=value     target CPU architecture (arm=default, x86)" >& 2
+  echo "--host-os=value         override host OS detection (linux, mac)" >&2
+  echo "--try-32bit-host        try building a 32-bit host architecture" >&2
   echo "--help                  this help" >& 2
 }
 
@@ -167,10 +170,18 @@ print_usage() {
 # --help          Prints out help message.
 ################################################################################
 process_options() {
+  host_os=$(uname -s | sed -e 's/Linux/linux/;s/Darwin/mac/')
+  try_32bit_host_build=
   while [[ $1 ]]; do
     case "$1" in
       --target-arch=*)
         target_arch="$(echo "$1" | sed 's/^[^=]*=//')"
+        ;;
+      --host-os=*)
+        host_os="$(echo "$1" | sed 's/^[^=]*=//')"
+        ;;
+      --try-32bit-host)
+        try_32bit_host_build=true
         ;;
       --help)
         print_usage
@@ -226,29 +237,6 @@ sdk_build_init() {
   unset ANDROID_TOOLCHAIN
 
   common_vars_defines
-
-  DEFINES+=" sdk_build=1"
-  # If we are building NDK/SDK, and in the upstream (open source) tree,
-  # define a special variable for bringup purposes.
-  case "${ANDROID_BUILD_TOP-undefined}" in
-    "undefined")
-      DEFINES+=" android_upstream_bringup=1"
-      ;;
-  esac
-
-  # Sets android specific directories to NOT_SDK_COMPLIANT.  This will allow
-  # android_gyp to generate make files, but will cause errors when (and only
-  # when) building targets that depend on these directories.
-  DEFINES+=" android_src='NOT_SDK_COMPLIANT'"
-  DEFINES+=" android_product_out=${CHROME_SRC}/out/android"
-  DEFINES+=" android_lib='NOT_SDK_COMPLIANT'"
-  DEFINES+=" android_static_lib='NOT_SDK_COMPLIANT'"
-  DEFINES+=" android_sdk=${ANDROID_SDK_ROOT}/${sdk_suffix}"
-  DEFINES+=" android_sdk_root=${ANDROID_SDK_ROOT}"
-  DEFINES+=" android_sdk_tools=${ANDROID_SDK_ROOT}/platform-tools"
-  DEFINES+=" android_sdk_version=${ANDROID_SDK_VERSION}"
-  DEFINES+=" android_toolchain=${ANDROID_TOOLCHAIN}"
-
   common_gyp_vars
 
   if [[ -n "$CHROME_ANDROID_BUILD_WEBVIEW" ]]; then
@@ -274,9 +262,6 @@ webview_build_init() {
   export ANDROID_SDK_ROOT=${ANDROID_BUILD_TOP}/prebuilts/sdk/\
 ${ANDROID_SDK_VERSION}
 
-  # For now, TARGET_ARCH is always ARM in this config.
-  TARGET_ARCH=arm
-
   common_vars_defines
 
   # We need to supply SDK paths relative to the top of the Android tree to make
@@ -285,15 +270,24 @@ ${ANDROID_SDK_VERSION}
   ANDROID_SDK=$(python -c \
       "import os.path; print os.path.relpath('${ANDROID_SDK_ROOT}', \
       '${ANDROID_BUILD_TOP}')")
-  ANDROID_SDK_TOOLS=$(python -c \
-      "import os.path; \
-      print os.path.relpath('${ANDROID_SDK_ROOT}/../tools/linux', \
-      '${ANDROID_BUILD_TOP}')")
+  case "${host_os}" in
+    "linux")
+      ANDROID_SDK_TOOLS=$(python -c \
+          "import os.path; \
+          print os.path.relpath('${ANDROID_SDK_ROOT}/../tools/linux', \
+          '${ANDROID_BUILD_TOP}')")
+      ;;
+    "mac")
+      ANDROID_SDK_TOOLS=$(python -c \
+          "import os.path; \
+          print os.path.relpath('${ANDROID_SDK_ROOT}/../tools/darwin', \
+          '${ANDROID_BUILD_TOP}')")
+      ;;
+  esac
+  DEFINES+=" android_webview_build=1"
+  # temporary until all uses of android_build_type are gone (crbug.com/184431)
   DEFINES+=" android_build_type=1"
-  DEFINES+=" sdk_build=0"
   DEFINES+=" android_src=\$(GYP_ABS_ANDROID_TOP_DIR)"
-  DEFINES+=" android_product_out=NOT_USED_ON_WEBVIEW"
-  DEFINES+=" android_upstream_bringup=1"
   DEFINES+=" android_sdk=\$(GYP_ABS_ANDROID_TOP_DIR)/${ANDROID_SDK}"
   DEFINES+=" android_sdk_root=\$(GYP_ABS_ANDROID_TOP_DIR)/${ANDROID_SDK}"
   DEFINES+=" android_sdk_tools=\$(GYP_ABS_ANDROID_TOP_DIR)/${ANDROID_SDK_TOOLS}"

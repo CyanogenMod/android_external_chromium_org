@@ -10,7 +10,7 @@
 #include "chrome/browser/shell_integration.h"
 
 class GURL;
-class PrefService;
+class PrefRegistrySimple;
 
 namespace base {
 class DictionaryValue;
@@ -66,7 +66,7 @@ class ExternalProtocolHandler {
   // Creates and runs a External Protocol dialog box.
   // |url| - The url of the request.
   // |render_process_host_id| and |routing_id| are used by
-  // tab_util::GetTabContentsByID to aquire the tab contents associated with
+  // tab_util::GetWebContentsByID to aquire the tab contents associated with
   // this dialog.
   // NOTE: There is a race between the Time of Check and the Time Of Use for
   //       the command line. Since the caller (web page) does not have access
@@ -78,7 +78,7 @@ class ExternalProtocolHandler {
                                         int routing_id);
 
   // Register the ExcludedSchemes preference.
-  static void RegisterPrefs(PrefService* prefs);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // Starts a url using the external protocol handler with the help
   // of shellexecute. Should only be called if the protocol is whitelisted

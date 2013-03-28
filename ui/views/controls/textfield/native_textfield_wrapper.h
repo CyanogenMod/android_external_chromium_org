@@ -7,18 +7,18 @@
 
 #include "base/string16.h"
 #include "base/i18n/rtl.h"
+#include "ui/base/range/range.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/selection_model.h"
+#include "ui/gfx/text_constants.h"
 #include "ui/views/views_export.h"
 
 namespace gfx {
 class Insets;
-class SelectionModel;
-struct StyleRange;
 }  // namespace gfx
 
 namespace ui {
 class KeyEvent;
-class Range;
 class TextInputClient;
 }  // namespace ui
 
@@ -45,6 +45,9 @@ class VIEWS_EXPORT NativeTextfieldWrapper {
   // text field.
   virtual void AppendText(const string16& text) = 0;
 
+  // Replaces the selected text with |text|.
+  virtual void ReplaceSelection(const string16& text) = 0;
+
   // Returns the text direction.
   virtual base::i18n::TextDirection GetTextDirection() const = 0;
 
@@ -63,14 +66,14 @@ class VIEWS_EXPORT NativeTextfieldWrapper {
   // by the Textfield.
   virtual void UpdateBorder() = 0;
 
+  // Updates the color of the border with the state desired by the Textfield.
+  virtual void UpdateBorderColor() = 0;
+
   // Updates the text color used when painting the native text field.
   virtual void UpdateTextColor() = 0;
 
   // Updates the background color used when painting the native text field.
   virtual void UpdateBackgroundColor() = 0;
-
-  // Updates the cursor color used when painting the native text field.
-  virtual void UpdateCursorColor() = 0;
 
   // Updates the read-only state of the native text field.
   virtual void UpdateReadOnly() = 0;
@@ -107,19 +110,23 @@ class VIEWS_EXPORT NativeTextfieldWrapper {
   virtual bool IsIMEComposing() const = 0;
 
   // Gets the selected range.
-  virtual void GetSelectedRange(ui::Range* range) const = 0;
+  virtual ui::Range GetSelectedRange() const = 0;
 
   // Selects the text given by |range|.
   virtual void SelectRange(const ui::Range& range) = 0;
 
   // Gets the selection model.
-  virtual void GetSelectionModel(gfx::SelectionModel* sel) const = 0;
+  virtual gfx::SelectionModel GetSelectionModel() const = 0;
 
   // Selects the text given by |sel|.
   virtual void SelectSelectionModel(const gfx::SelectionModel& sel) = 0;
 
   // Returns the currnet cursor position.
   virtual size_t GetCursorPosition() const = 0;
+
+  // Get or set whether or not the cursor is enabled.
+  virtual bool GetCursorEnabled() const = 0;
+  virtual void SetCursorEnabled(bool enabled) = 0;
 
   // Following methods are to forward key/focus related events to the
   // views wrapper so that TextfieldViews can handle key inputs without
@@ -141,18 +148,29 @@ class VIEWS_EXPORT NativeTextfieldWrapper {
   // support text input.
   virtual ui::TextInputClient* GetTextInputClient() = 0;
 
-  // Applies the |style| to the text specified by its range.
-  // See |Textfield::ApplyStyleRange| for detail.
-  virtual void ApplyStyleRange(const gfx::StyleRange& style) = 0;
+  // Set the text colors; see the corresponding Textfield functions for details.
+  virtual void SetColor(SkColor value) = 0;
+  virtual void ApplyColor(SkColor value, const ui::Range& range) = 0;
 
-  // Applies the default style to the textfield.
-  virtual void ApplyDefaultStyle() = 0;
+  // Set the text styles; see the corresponding Textfield functions for details.
+  virtual void SetStyle(gfx::TextStyle style, bool value) = 0;
+  virtual void ApplyStyle(gfx::TextStyle style,
+                          bool value,
+                          const ui::Range& range) = 0;
 
   // Clears Edit history.
   virtual void ClearEditHistory() = 0;
 
   // Get the height in pixels of the first font used in this textfield.
   virtual int GetFontHeight() = 0;
+
+  // Returns the baseline of the textfield. This should not take into account
+  // any insets.
+  virtual int GetTextfieldBaseline() const = 0;
+
+  // Performs the action associated with the specified command id. Not called
+  // ExecuteCommand to avoid name clash.
+  virtual void ExecuteTextCommand(int command_id) = 0;
 
   // Creates an appropriate NativeTextfieldWrapper for the platform.
   static NativeTextfieldWrapper* CreateWrapper(Textfield* field);

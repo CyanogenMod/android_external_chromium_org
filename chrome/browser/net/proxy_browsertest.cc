@@ -8,9 +8,8 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/login/login_prompt.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -52,6 +51,8 @@ class LoginPromptObserver : public content::NotificationObserver {
 
  private:
   bool auth_handled_;
+
+  DISALLOW_COPY_AND_ASSIGN(LoginPromptObserver);
 };
 
 class ProxyBrowserTest : public InProcessBrowserTest {
@@ -59,7 +60,7 @@ class ProxyBrowserTest : public InProcessBrowserTest {
   ProxyBrowserTest()
       : proxy_server_(net::TestServer::TYPE_BASIC_AUTH_PROXY,
                       net::TestServer::kLocalhost,
-                      FilePath()) {
+                      base::FilePath()) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -74,6 +75,10 @@ class ProxyBrowserTest : public InProcessBrowserTest {
 
  protected:
   net::TestServer proxy_server_;
+
+ private:
+
+  DISALLOW_COPY_AND_ASSIGN(ProxyBrowserTest);
 };
 
 #if defined(OS_CHROMEOS)
@@ -91,7 +96,8 @@ IN_PROC_BROWSER_TEST_F(ProxyBrowserTest, MAYBE_BasicAuthWSConnect) {
                             net::GetWebSocketTestDataDirectory());
   ASSERT_TRUE(ws_server.Start());
 
-  content::WebContents* tab = chrome::GetActiveWebContents(browser());
+  content::WebContents* tab =
+      browser()->tab_strip_model()->GetActiveWebContents();
   content::NavigationController* controller = &tab->GetController();
   content::NotificationRegistrar registrar;
   // The proxy server will request basic authentication.

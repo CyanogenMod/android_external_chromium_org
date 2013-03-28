@@ -12,14 +12,18 @@ namespace views {
 
 SlideOutView::SlideOutView()
     : gesture_scroll_amount_(0.f) {
-  SetPaintToLayer(true);
-  SetFillsBoundsOpaquely(false);
+  // If accelerated compositing is not available, this widget tracks the
+  // OnSlideOut event but does not render any visible changes.
+  if (get_use_acceleration_when_possible()) {
+    SetPaintToLayer(true);
+    SetFillsBoundsOpaquely(false);
+  }
 }
 
 SlideOutView::~SlideOutView() {
 }
 
-ui::EventResult SlideOutView::OnGestureEvent(ui::GestureEvent* event) {
+void SlideOutView::OnGestureEvent(ui::GestureEvent* event) {
   if (event->type() == ui::ET_SCROLL_FLING_START) {
     // The threshold for the fling velocity is computed empirically.
     // The unit is in pixels/second.
@@ -27,14 +31,15 @@ ui::EventResult SlideOutView::OnGestureEvent(ui::GestureEvent* event) {
     if (fabsf(event->details().velocity_x()) > kFlingThresholdForClose) {
       SlideOutAndClose(event->details().velocity_x() < 0 ? SLIDE_LEFT :
                        SLIDE_RIGHT);
-      return ui::ER_CONSUMED;
+      event->StopPropagation();
+      return;
     }
     RestoreVisualState();
-    return ui::ER_UNHANDLED;
+    return;
   }
 
   if (!event->IsScrollGestureEvent())
-    return ui::ER_UNHANDLED;
+    return;
 
   if (event->type() == ui::ET_GESTURE_SCROLL_BEGIN) {
     gesture_scroll_amount_ = 0.f;
@@ -42,25 +47,32 @@ ui::EventResult SlideOutView::OnGestureEvent(ui::GestureEvent* event) {
     // The scroll-update events include the incremental scroll amount.
     gesture_scroll_amount_ += event->details().scroll_x();
 
-    gfx::Transform transform;
-    transform.SetTranslateX(gesture_scroll_amount_);
-    layer()->SetTransform(transform);
-    layer()->SetOpacity(
-        1.f - std::min(fabsf(gesture_scroll_amount_) / width(), 1.f));
+    if (get_use_acceleration_when_possible()) {
+      gfx::Transform transform;
+      transform.Translate(gesture_scroll_amount_, 0.0);
+      layer()->SetTransform(transform);
+      layer()->SetOpacity(
+          1.f - std::min(fabsf(gesture_scroll_amount_) / width(), 1.f));
+    }
+
   } else if (event->type() == ui::ET_GESTURE_SCROLL_END) {
     const float kScrollRatioForClosingNotification = 0.5f;
     float scrolled_ratio = fabsf(gesture_scroll_amount_) / width();
     if (scrolled_ratio >= kScrollRatioForClosingNotification) {
       SlideOutAndClose(gesture_scroll_amount_ < 0 ? SLIDE_LEFT : SLIDE_RIGHT);
-      return ui::ER_CONSUMED;
+      event->StopPropagation();
+      return;
     }
     RestoreVisualState();
   }
 
-  return ui::ER_HANDLED;
+  event->SetHandled();
 }
 
 void SlideOutView::RestoreVisualState() {
+  if (!get_use_acceleration_when_possible())
+    return;
+
   // Restore the layer state.
   const int kSwipeRestoreDurationMS = 150;
   ui::ScopedLayerAnimationSettings settings(layer()->GetAnimator());
@@ -71,6 +83,11 @@ void SlideOutView::RestoreVisualState() {
 }
 
 void SlideOutView::SlideOutAndClose(SlideDirection direction) {
+  if (!get_use_acceleration_when_possible()) {
+    // No animations, so don't wait to fire the OnSlideOut event.
+    OnSlideOut();
+    return;
+  }
   const int kSwipeOutTotalDurationMS = 150;
   int swipe_out_duration = kSwipeOutTotalDurationMS * layer()->opacity();
   ui::ScopedLayerAnimationSettings settings(layer()->GetAnimator());
@@ -79,7 +96,7 @@ void SlideOutView::SlideOutAndClose(SlideDirection direction) {
   settings.AddObserver(this);
 
   gfx::Transform transform;
-  transform.SetTranslateX(direction == SLIDE_LEFT ? -width() : width());
+  transform.Translate(direction == SLIDE_LEFT ? -width() : width(), 0.0);
   layer()->SetTransform(transform);
   layer()->SetOpacity(0.f);
 }

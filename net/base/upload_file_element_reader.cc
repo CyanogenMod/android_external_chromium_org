@@ -8,7 +8,6 @@
 #include "base/file_util.h"
 #include "base/location.h"
 #include "base/task_runner_util.h"
-#include "base/threading/worker_pool.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -22,11 +21,12 @@ namespace {
 uint64 overriding_content_length = 0;
 
 // This function is used to implement Init().
-int InitInternal(const FilePath& path,
+template<typename FileStreamDeleter>
+int InitInternal(const base::FilePath& path,
                  uint64 range_offset,
                  uint64 range_length,
                  const base::Time& expected_modification_time,
-                 UploadFileElementReader::ScopedFileStreamPtr* out_file_stream,
+                 scoped_ptr<FileStream, FileStreamDeleter>* out_file_stream,
                  uint64* out_content_length) {
   scoped_ptr<FileStream> file_stream(new FileStream(NULL));
   int64 rv = file_stream->OpenSync(
@@ -80,61 +80,70 @@ int ReadInternal(scoped_refptr<IOBuffer> buf,
   const uint64 num_bytes_to_read =
       std::min(bytes_remaining, static_cast<uint64>(buf_length));
 
+  int result = 0;
   if (num_bytes_to_read > 0) {
-    int num_bytes_consumed = 0;
-    // file_stream is NULL if the target file is missing or not readable.
-    if (file_stream) {
-      num_bytes_consumed = file_stream->ReadSync(buf->data(),
-                                                 num_bytes_to_read);
-    }
-    if (num_bytes_consumed <= 0) {
-      // If there's less data to read than we initially observed, then
-      // pad with zero.  Otherwise the server will hang waiting for the
-      // rest of the data.
-      memset(buf->data(), 0, num_bytes_to_read);
-    }
+    DCHECK(file_stream);  // file_stream is non-null if content_length_ > 0.
+    result = file_stream->ReadSync(buf->data(), num_bytes_to_read);
+    if (result == 0)  // Reached end-of-file earlier than expected.
+      result = ERR_UPLOAD_FILE_CHANGED;
   }
-  return num_bytes_to_read;
+  return result;
 }
 
 }  // namespace
 
+UploadFileElementReader::FileStreamDeleter::FileStreamDeleter(
+    base::TaskRunner* task_runner) : task_runner_(task_runner) {
+  DCHECK(task_runner_);
+}
+
+UploadFileElementReader::FileStreamDeleter::~FileStreamDeleter() {}
+
 void UploadFileElementReader::FileStreamDeleter::operator() (
     FileStream* file_stream) const {
   if (file_stream) {
-    base::WorkerPool::PostTask(FROM_HERE,
-                               base::Bind(&base::DeletePointer<FileStream>,
-                                          file_stream),
-                               true /* task_is_slow */);
+    task_runner_->PostTask(FROM_HERE,
+                           base::Bind(&base::DeletePointer<FileStream>,
+                                      file_stream));
   }
 }
 
 UploadFileElementReader::UploadFileElementReader(
-    const FilePath& path,
+    base::TaskRunner* task_runner,
+    const base::FilePath& path,
     uint64 range_offset,
     uint64 range_length,
     const base::Time& expected_modification_time)
-    : path_(path),
+    : task_runner_(task_runner),
+      path_(path),
       range_offset_(range_offset),
       range_length_(range_length),
       expected_modification_time_(expected_modification_time),
+      file_stream_(NULL, FileStreamDeleter(task_runner_)),
       content_length_(0),
       bytes_remaining_(0),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+  DCHECK(task_runner_);
 }
 
 UploadFileElementReader::~UploadFileElementReader() {
 }
 
+const UploadFileElementReader* UploadFileElementReader::AsFileReader() const {
+  return this;
+}
+
 int UploadFileElementReader::Init(const CompletionCallback& callback) {
+  DCHECK(!callback.is_null());
   Reset();
 
-  ScopedFileStreamPtr* file_stream = new ScopedFileStreamPtr;
+  ScopedFileStreamPtr* file_stream =
+      new ScopedFileStreamPtr(NULL, FileStreamDeleter(task_runner_));
   uint64* content_length = new uint64;
   const bool posted = base::PostTaskAndReplyWithResult(
-      base::WorkerPool::GetTaskRunner(true /* task_is_slow */),
+      task_runner_,
       FROM_HERE,
-      base::Bind(&InitInternal,
+      base::Bind(&InitInternal<FileStreamDeleter>,
                  path_,
                  range_offset_,
                  range_length_,
@@ -148,18 +157,6 @@ int UploadFileElementReader::Init(const CompletionCallback& callback) {
                  callback));
   DCHECK(posted);
   return ERR_IO_PENDING;
-}
-
-int UploadFileElementReader::InitSync() {
-  Reset();
-
-  ScopedFileStreamPtr file_stream;
-  uint64 content_length = 0;
-  const int result = InitInternal(path_, range_offset_, range_length_,
-                                  expected_modification_time_,
-                                  &file_stream, &content_length);
-  OnInitCompleted(&file_stream, &content_length, CompletionCallback(), result);
-  return result;
 }
 
 uint64 UploadFileElementReader::GetContentLength() const {
@@ -185,7 +182,7 @@ int UploadFileElementReader::Read(IOBuffer* buf,
   // Pass the ownership of file_stream_ to the worker pool to safely perform
   // operation even when |this| is destructed before the read completes.
   const bool posted = base::PostTaskAndReplyWithResult(
-      base::WorkerPool::GetTaskRunner(true /* task_is_slow */),
+      task_runner_,
       FROM_HERE,
       base::Bind(&ReadInternal,
                  scoped_refptr<IOBuffer>(buf),
@@ -198,13 +195,6 @@ int UploadFileElementReader::Read(IOBuffer* buf,
                  callback));
   DCHECK(posted);
   return ERR_IO_PENDING;
-}
-
-int UploadFileElementReader::ReadSync(IOBuffer* buf, int buf_length) {
-  const int result = ReadInternal(buf, buf_length, BytesRemaining(),
-                                  file_stream_.get());
-  OnReadCompleted(file_stream_.Pass(), CompletionCallback(), result);
-  return result;
 }
 
 void UploadFileElementReader::Reset() {
@@ -231,8 +221,10 @@ void UploadFileElementReader::OnReadCompleted(
     const CompletionCallback& callback,
     int result) {
   file_stream_.swap(file_stream);
-  DCHECK_GE(static_cast<int>(bytes_remaining_), result);
-  bytes_remaining_ -= result;
+  if (result > 0) {
+    DCHECK_GE(bytes_remaining_, static_cast<uint64>(result));
+    bytes_remaining_ -= result;
+  }
   if (!callback.is_null())
     callback.Run(result);
 }
@@ -245,6 +237,54 @@ ScopedOverridingContentLengthForTests(uint64 value) {
 UploadFileElementReader::ScopedOverridingContentLengthForTests::
 ~ScopedOverridingContentLengthForTests() {
   overriding_content_length = 0;
+}
+
+UploadFileElementReaderSync::UploadFileElementReaderSync(
+    const base::FilePath& path,
+    uint64 range_offset,
+    uint64 range_length,
+    const base::Time& expected_modification_time)
+    : path_(path),
+      range_offset_(range_offset),
+      range_length_(range_length),
+      expected_modification_time_(expected_modification_time),
+      content_length_(0),
+      bytes_remaining_(0) {
+}
+
+UploadFileElementReaderSync::~UploadFileElementReaderSync() {
+}
+
+int UploadFileElementReaderSync::Init(const CompletionCallback& callback) {
+  bytes_remaining_ = 0;
+  content_length_ = 0;
+  file_stream_.reset();
+
+  const int result = InitInternal(path_, range_offset_, range_length_,
+                                  expected_modification_time_,
+                                  &file_stream_, &content_length_);
+  bytes_remaining_ = GetContentLength();
+  return result;
+}
+
+uint64 UploadFileElementReaderSync::GetContentLength() const {
+  return content_length_;
+}
+
+uint64 UploadFileElementReaderSync::BytesRemaining() const {
+  return bytes_remaining_;
+}
+
+int UploadFileElementReaderSync::Read(IOBuffer* buf,
+                                      int buf_length,
+                                      const CompletionCallback& callback) {
+  const int result = ReadInternal(buf, buf_length, BytesRemaining(),
+                                  file_stream_.get());
+  if (result > 0) {
+    DCHECK_GE(bytes_remaining_, static_cast<uint64>(result));
+    bytes_remaining_ -= result;
+  }
+  return result;
 }
 
 }  // namespace net

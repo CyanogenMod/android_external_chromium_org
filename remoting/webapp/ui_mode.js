@@ -21,7 +21,6 @@ var remoting = remoting || {};
 // 'home' state applies to all elements and can be removed.
 remoting.AppMode = {
   HOME: 'home',
-    UNAUTHENTICATED: 'home.auth',
     TOKEN_REFRESH_FAILED: 'home.token-refresh-failed',
     HOST: 'home.host',
       HOST_WAITING_FOR_CODE: 'home.host.waiting-for-code',
@@ -37,6 +36,7 @@ remoting.AppMode = {
       CLIENT_CONNECT_FAILED_ME2ME: 'home.client.connect-failed.me2me',
       CLIENT_SESSION_FINISHED_IT2ME: 'home.client.session-finished.it2me',
       CLIENT_SESSION_FINISHED_ME2ME: 'home.client.session-finished.me2me',
+      CLIENT_HOST_NEEDS_UPGRADE: 'home.client.host-needs-upgrade',
     HISTORY: 'home.history',
     CONFIRM_HOST_DELETE: 'home.confirm-host-delete',
     HOST_SETUP: 'home.host-setup',
@@ -133,33 +133,52 @@ remoting.getMajorMode = function() {
   return remoting.currentMode.split('.')[0];
 };
 
-remoting.showOrHideIt2MeUi = function() {
-  var visited = !!window.localStorage.getItem('it2me-visited');
-  document.getElementById('it2me-first-run').hidden = visited;
-  document.getElementById('it2me-content').hidden = !visited;
+/**
+ * Helper function for showing or hiding the infographic UI based on
+ * whether or not the user has already dismissed it.
+ *
+ * @param {string} mode
+ * @param {!Object} items
+ */
+remoting.showOrHideCallback = function(mode, items) {
+  // Get the first element of a dictionary or array, without needing to know
+  // the key.
+  /** @type {string} */
+  var key = Object.keys(items)[0];
+  var visited = !!items[key];
+  document.getElementById(mode + '-first-run').hidden = visited;
+  document.getElementById(mode + '-content').hidden = !visited;
+};
+
+remoting.showOrHideIT2MeUi = function() {
+  remoting.storage.local.get('it2me-visited',
+                             remoting.showOrHideCallback.bind(null, 'it2me'));
 };
 
 remoting.showOrHideMe2MeUi = function() {
-  var visited = !!window.localStorage.getItem('me2me-visited');
-  document.getElementById('me2me-first-run').hidden = visited;
-  document.getElementById('me2me-content').hidden = !visited;
+  remoting.storage.local.get('me2me-visited',
+                             remoting.showOrHideCallback.bind(null, 'me2me'));
 };
 
-remoting.showIt2MeUiAndSave = function() {
-  window.localStorage.setItem('it2me-visited', true);
-  remoting.showOrHideIt2MeUi();
+remoting.showIT2MeUiAndSave = function() {
+  var items = {};
+  items['it2me-visited'] = true;
+  remoting.storage.local.set(items);
+  remoting.showOrHideCallback('it2me', [true]);
 };
 
 remoting.showMe2MeUiAndSave = function() {
-  window.localStorage.setItem('me2me-visited', true);
-  remoting.showOrHideMe2MeUi();
+  var items = {};
+  items['me2me-visited'] = true;
+  remoting.storage.local.set(items);
+  remoting.showOrHideCallback('me2me', [true]);
 };
 
 remoting.resetInfographics = function() {
-  window.localStorage.removeItem('it2me-visited');
-  window.localStorage.removeItem('me2me-visited');
-  remoting.showOrHideIt2MeUi();
-  remoting.showOrHideMe2MeUi();
+  remoting.storage.local.remove('it2me-visited');
+  remoting.storage.local.remove('me2me-visited');
+  remoting.showOrHideCallback('it2me', [false]);
+  remoting.showOrHideCallback('me2me', [false]);
 }
 
 

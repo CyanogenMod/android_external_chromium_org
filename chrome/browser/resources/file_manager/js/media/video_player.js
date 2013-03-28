@@ -2,19 +2,42 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * Display error message.
- * @param {string} opt_message Message id.
+ * @param {string} message Message id.
  */
-function onError(opt_message) {
+function showErrorMessage(message) {
   var errorBanner = document.querySelector('#error');
   errorBanner.textContent =
-      loadTimeData.getString(opt_message || 'GALLERY_VIDEO_ERROR');
+      loadTimeData.getString(message);
   errorBanner.setAttribute('visible', 'true');
   if (util.platform.v2()) {
     // The window is hidden if the video has not loaded yet.
     chrome.app.window.current().show();
   }
+}
+
+/**
+ * Handles playback (decoder) errors.
+ */
+function onPlaybackError() {
+  showErrorMessage('GALLERY_VIDEO_DECODING_ERROR');
+  decodeErrorOccured = true;
+
+  // Disable inactivity watcher, and disable the ui, by hiding tools manually.
+  controls.inactivityWatcher.disabled = true;
+  document.querySelector('#video-player').setAttribute('disabled', 'true');
+
+  // Detach the video element, since it may be unreliable and reset stored
+  // current playback time.
+  controls.cleanup();
+  controls.clearState();
+
+  // Avoid reusing a video element.
+  video.parentNode.removeChild(video);
+  video = null;
 }
 
 /**
@@ -27,50 +50,68 @@ function FullWindowVideoControls(
     playerContainer, videoContainer, controlsContainer) {
   VideoControls.call(this,
       controlsContainer,
-      onError.bind(null, null),
+      onPlaybackError,
       function() { chrome.fileBrowserPrivate.toggleFullscreen() },
       videoContainer);
+
+  this.playerContainer_ = playerContainer;
 
   this.updateStyle();
   window.addEventListener('resize', this.updateStyle.bind(this));
 
   document.addEventListener('keydown', function(e) {
-    if (e.keyIdentifier == 'U+0020') {
+    if (e.keyIdentifier == 'U+0020') {  // Space
       this.togglePlayStateWithFeedback();
+      e.preventDefault();
+    }
+    if (e.keyIdentifier == 'U+001B') {  // Escape
+      chrome.fileBrowserPrivate.isFullscreen(function(enabled) {
+        if (enabled)
+          chrome.fileBrowserPrivate.toggleFullscreen();
+      });
       e.preventDefault();
     }
   }.bind(this));
 
+  util.disableBrowserShortcutKeys(document);
+
   videoContainer.addEventListener('click',
       this.togglePlayStateWithFeedback.bind(this));
 
-  var inactivityWatcher = new MouseInactivityWatcher(playerContainer);
-  inactivityWatcher.stopActivity();
+  this.inactivityWatcher_ = new MouseInactivityWatcher(playerContainer);
+  this.__defineGetter__('inactivityWatcher', function() {
+    return this.inactivityWatcher_;
+  });
+
+  this.inactivityWatcher_.check();
 }
 
 FullWindowVideoControls.prototype = { __proto__: VideoControls.prototype };
 
 /**
- * Save the current play state in the location hash so that it survives
- * the page reload.
+ * Save the current state so that it survives page/app reload.
  */
 FullWindowVideoControls.prototype.onPlayStateChanged = function() {
-  this.encodeStateIntoLocation();
+  this.encodeState();
 };
 
 /**
- * Restore the play state after the video is loaded.
+ * Restore the state after the video is loaded.
  */
 FullWindowVideoControls.prototype.restorePlayState = function() {
-  if (!this.decodeStateFromLocation()) {
+  if (!this.decodeState()) {
     VideoControls.prototype.restorePlayState.apply(this, arguments);
     this.play();
   }
 };
 
+// TODO(mtomasz): Convert it to class members: crbug.com/171191.
+var decodeErrorOccured;
+var video;
 var controls;
-
 var metadataCache;
+var volumeManager;
+var selectedItemFilesystemPath;
 
 /**
  * Initialize the video player window.
@@ -86,38 +127,70 @@ function loadVideoPlayer() {
        document.querySelector('#video-container'),
        document.querySelector('#controls'));
 
-    var video = document.querySelector('video');
-    controls.attachMedia(video);
-
     if (!util.platform.v2())
       window.addEventListener('unload', unload);
 
     metadataCache = MetadataCache.createFull();
+    volumeManager = VolumeManager.getInstance();
 
     // If the video player is starting before the first instance of the File
     // Manager then it does not have access to filesystem URLs. Request it now.
-    chrome.fileBrowserPrivate.requestLocalFileSystem(function() {
-      reload(window.launchData || { url: document.location.search.substr(1) });
-    });
+    chrome.fileBrowserPrivate.requestLocalFileSystem(reload);
+
+    volumeManager.addEventListener('externally-unmounted',
+                                   onExternallyUnmounted);
+
+    var reloadVideo = function(e) {
+      if (decodeErrorOccured) {
+        reload();
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('keydown', reloadVideo, true);
+    document.addEventListener('click', reloadVideo, true);
+
   });
+}
+
+/**
+ * Closes video player when a volume containing the played item is unmounted.
+ * @param {Event} event The unmount event.
+ */
+function onExternallyUnmounted(event) {
+  if (!selectedItemFilesystemPath)
+    return;
+  if (selectedItemFilesystemPath.indexOf(event.mountPath) == 0)
+    util.platform.closeWindow();
 }
 
 /**
  * Unload the player.
  */
 function unload() {
-  controls.savePosition();
+  controls.savePosition(true /* exiting */);
   controls.cleanup();
 }
 
 /**
  * Reload the player.
- * @param {Object} launchData Launch data.
  */
-function reload(launchData) {
-  var src = launchData.url;
+function reload() {
+  // Re-enable ui and hide error message if already displayed.
+  document.querySelector('#video-player').removeAttribute('disabled');
+  document.querySelector('#error').removeAttribute('visible');
+  controls.inactivityWatcher.disabled = false;
+  decodeErrorOccured = false;
+
+  var src;
+  if (window.appState) {
+    util.saveAppState();
+    src = window.appState.url;
+  } else {
+    src = document.location.search.substr(1);
+  }
   if (!src) {
-    onError();
+    showErrorMessage('GALLERY_VIDEO_ERROR');
     return;
   }
 
@@ -126,7 +199,7 @@ function reload(launchData) {
   metadataCache.get(src, 'streaming', function(streaming) {
     if (streaming && streaming.url) {
       if (!navigator.onLine) {
-        onError('GALLERY_VIDEO_OFFLINE');
+        showErrorMessage('GALLERY_VIDEO_OFFLINE');
         return;
       }
       src = streaming.url;
@@ -135,15 +208,19 @@ function reload(launchData) {
       console.log('Playing local file: ' + src);
     }
 
-    var video = document.querySelector('video');
+    // Detach the previous video element, if exists.
+    if (video) {
+      video.parentNode.removeChild(video);
+    }
+
+    video = document.createElement('video');
+    document.querySelector('#video-container').appendChild(video);
+    controls.attachMedia(video);
+
     video.src = src;
     video.load();
     if (util.platform.v2()) {
       video.addEventListener('loadedmetadata', function() {
-        var appWindow = chrome.app.window.current();
-        var oldWidth = appWindow.contentWindow.outerWidth;
-        var oldHeight = appWindow.contentWindow.outerHeight;
-
         // TODO: chrome.app.window soon will be able to resize the content area.
         // Until then use approximate title bar height.
         var TITLE_HEIGHT = 28;
@@ -163,13 +240,33 @@ function reload(launchData) {
             newHeight = newWidth / aspect + TITLE_HEIGHT;
           }
         }
+
+        var oldLeft = window.screenX;
+        var oldTop = window.screenY;
+        var oldWidth = window.outerWidth;
+        var oldHeight = window.outerHeight;
+
+        if (!oldWidth && !oldHeight) {
+          oldLeft = window.screen.availWidth / 2;
+          oldTop = window.screen.availHeight / 2;
+        }
+
+        var appWindow = chrome.app.window.current();
         appWindow.resizeTo(newWidth, newHeight);
-        appWindow.moveTo(
-            appWindow.contentWindow.screenX - (newWidth - oldWidth) / 2,
-            appWindow.contentWindow.screenY - (newHeight - oldHeight) / 2);
+        appWindow.moveTo(oldLeft - (newWidth - oldWidth) / 2,
+                         oldTop - (newHeight - oldHeight) / 2);
         appWindow.show();
       });
     }
+
+    // Resolve real filesystem path of the current video.
+    selectedItemFilesystemPath = null;
+    webkitResolveLocalFileSystemURL(src,
+      function(entry) {
+        var video = document.querySelector('video');
+        if (video.src != src) return;
+        selectedItemFilesystemPath = entry.fullPath;
+      });
   });
 }
 

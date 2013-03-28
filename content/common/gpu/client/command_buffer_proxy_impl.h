@@ -5,8 +5,6 @@
 #ifndef CONTENT_COMMON_GPU_CLIENT_COMMAND_BUFFER_PROXY_IMPL_H_
 #define CONTENT_COMMON_GPU_CLIENT_COMMAND_BUFFER_PROXY_IMPL_H_
 
-#if defined(ENABLE_GPU)
-
 #include <map>
 #include <queue>
 #include <string>
@@ -29,6 +27,10 @@ struct GPUCommandBufferConsoleMessage;
 
 namespace base {
 class SharedMemory;
+}
+
+namespace gpu {
+struct Mailbox;
 }
 
 namespace content {
@@ -72,20 +74,20 @@ class CommandBufferProxyImpl
   virtual bool Initialize() OVERRIDE;
   virtual State GetState() OVERRIDE;
   virtual State GetLastState() OVERRIDE;
+  virtual int32 GetLastToken() OVERRIDE;
   virtual void Flush(int32 put_offset) OVERRIDE;
   virtual State FlushSync(int32 put_offset, int32 last_known_get) OVERRIDE;
   virtual void SetGetBuffer(int32 shm_id) OVERRIDE;
   virtual void SetGetOffset(int32 get_offset) OVERRIDE;
-  virtual int32 CreateTransferBuffer(size_t size, int32 id_request) OVERRIDE;
-  virtual int32 RegisterTransferBuffer(base::SharedMemory* shared_memory,
-                                       size_t size,
-                                       int32 id_request) OVERRIDE;
+  virtual gpu::Buffer CreateTransferBuffer(size_t size,
+                                           int32* id) OVERRIDE;
   virtual void DestroyTransferBuffer(int32 id) OVERRIDE;
-  virtual gpu::Buffer GetTransferBuffer(int32 handle) OVERRIDE;
+  virtual gpu::Buffer GetTransferBuffer(int32 id) OVERRIDE;
   virtual void SetToken(int32 token) OVERRIDE;
   virtual void SetParseError(gpu::error::Error error) OVERRIDE;
   virtual void SetContextLostReason(
       gpu::error::ContextLostReason reason) OVERRIDE;
+  virtual uint32 InsertSyncPoint() OVERRIDE;
 
   void SetMemoryAllocationChangedCallback(
       const base::Callback<void(const GpuMemoryAllocationForRenderer&)>&
@@ -93,17 +95,6 @@ class CommandBufferProxyImpl
 
   bool DiscardBackbuffer();
   bool EnsureBackbuffer();
-
-  // Inserts a sync point, returning its ID. This is handled on the IO thread of
-  // the GPU process, and so should be relatively fast, but its effect is
-  // ordered wrt other messages (in particular, Flush). Sync point IDs are
-  // global and can be used for cross-channel synchronization.
-  uint32 InsertSyncPoint();
-
-  // Makes this command buffer wait on a sync point. This command buffer will be
-  // unscheduled until the command buffer that inserted that sync point reaches
-  // it, or gets destroyed.
-  void WaitSyncPoint(uint32);
 
   // Makes this command buffer invoke a task when a sync point is reached, or
   // the command buffer that inserted that sync point is destroyed.
@@ -114,11 +105,7 @@ class CommandBufferProxyImpl
   // GL_texture_mailbox_CHROMIUM. Unlike genMailboxCHROMIUM, this IPC is
   // handled only on the GPU process' IO thread, and so is not effectively
   // a finish.
-  bool GenerateMailboxNames(unsigned num, std::vector<std::string>* names);
-
-  // Set a task that will be invoked the next time the window becomes invalid
-  // and needs to be repainted. Takes ownership of task.
-  void SetNotifyRepaintTask(const base::Closure& callback);
+  bool GenerateMailboxNames(unsigned num, std::vector<gpu::Mailbox>* names);
 
   // Sends an IPC message with the new state of surface visibility.
   bool SetSurfaceVisible(bool visible);
@@ -148,7 +135,6 @@ class CommandBufferProxyImpl
 
   // Message handlers:
   void OnUpdateState(const gpu::CommandBuffer::State& state);
-  void OnNotifyRepaint();
   void OnDestroyed(gpu::error::ContextLostReason reason);
   void OnEchoAck();
   void OnConsoleMessage(const GPUCommandBufferConsoleMessage& message);
@@ -158,6 +144,12 @@ class CommandBufferProxyImpl
 
   // Try to read an updated copy of the state from shared memory.
   void TryUpdateState();
+
+  // The shared memory area used to update state.
+  gpu::CommandBufferSharedState* shared_state() const {
+    return reinterpret_cast<gpu::CommandBufferSharedState*>(
+        shared_state_shm_->memory());
+  }
 
   // Local cache of id to transfer buffer mapping.
   TransferBufferMap transfer_buffers_;
@@ -170,7 +162,7 @@ class CommandBufferProxyImpl
   State last_state_;
 
   // The shared memory area used to update state.
-  gpu::CommandBufferSharedState* shared_state_;
+  scoped_ptr<base::SharedMemory> shared_state_shm_;
 
   // |*this| is owned by |*channel_| and so is always outlived by it, so using a
   // raw pointer is ok.
@@ -181,8 +173,6 @@ class CommandBufferProxyImpl
 
   // Tasks to be invoked in echo responses.
   std::queue<base::Closure> echo_tasks_;
-
-  base::Closure notify_repaint_task_;
 
   base::Closure channel_error_callback_;
 
@@ -195,14 +185,9 @@ class CommandBufferProxyImpl
   uint32 next_signal_id_;
   SignalTaskMap signal_tasks_;
 
-  // ID of transfer buffer containing shared state.
-  int32 state_buffer_;
-
   DISALLOW_COPY_AND_ASSIGN(CommandBufferProxyImpl);
 };
 
 }  // namespace content
-
-#endif  // ENABLE_GPU
 
 #endif  // CONTENT_COMMON_GPU_CLIENT_COMMAND_BUFFER_PROXY_IMPL_H_

@@ -10,7 +10,12 @@
 #include <string>
 #include <utility>
 
+#include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "googleurl/src/gurl.h"
 #include "net/http/http_request_headers.h"
@@ -56,6 +61,7 @@ class ScopedURLFetcherFactory : public base::NonThreadSafe {
 // might want to use the FakeURLFetcher and FakeURLFetcherFactory classes
 // below.
 
+class TestURLFetcherFactory;
 class TestURLFetcher : public URLFetcher {
  public:
   // Interface for tests to intercept production code classes using URLFetcher.
@@ -82,6 +88,10 @@ class TestURLFetcher : public URLFetcher {
   // URLFetcher implementation
   virtual void SetUploadData(const std::string& upload_content_type,
                              const std::string& upload_content) OVERRIDE;
+  virtual void SetUploadFilePath(
+      const std::string& upload_content_type,
+      const base::FilePath& file_path,
+      scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
   virtual void SetChunkedUpload(
       const std::string& upload_content_type) OVERRIDE;
   // Overriden to cache the chunks uploaded. Caller can read back the uploaded
@@ -105,11 +115,12 @@ class TestURLFetcher : public URLFetcher {
       const CreateDataCallback& create_data_callback) OVERRIDE;
   virtual void SetStopOnRedirect(bool stop_on_redirect) OVERRIDE;
   virtual void SetAutomaticallyRetryOn5xx(bool retry) OVERRIDE;
-  virtual void SetMaxRetries(int max_retries) OVERRIDE;
-  virtual int GetMaxRetries() const OVERRIDE;
+  virtual void SetMaxRetriesOn5xx(int max_retries) OVERRIDE;
+  virtual int GetMaxRetriesOn5xx() const OVERRIDE;
   virtual base::TimeDelta GetBackoffDelay() const OVERRIDE;
+  virtual void SetAutomaticallyRetryOnNetworkChanges(int max_retries) OVERRIDE;
   virtual void SaveResponseToFileAtPath(
-      const FilePath& file_path,
+      const base::FilePath& file_path,
       scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
   virtual void SaveResponseToTemporaryFile(
       scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
@@ -126,20 +137,25 @@ class TestURLFetcher : public URLFetcher {
   virtual const URLRequestStatus& GetStatus() const OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
   virtual const ResponseCookies& GetCookies() const OVERRIDE;
-  virtual bool FileErrorOccurred(
-      base::PlatformFileError* out_error_code) const OVERRIDE;
+  virtual bool FileErrorOccurred(int* out_error_code) const OVERRIDE;
   virtual void ReceivedContentWasMalformed() OVERRIDE;
   // Override response access functions to return fake data.
   virtual bool GetResponseAsString(
       std::string* out_response_string) const OVERRIDE;
   virtual bool GetResponseAsFilePath(
-      bool take_ownership, FilePath* out_response_path) const OVERRIDE;
+      bool take_ownership, base::FilePath* out_response_path) const OVERRIDE;
+
+  // Sets owner of this class.  Set it to a non-NULL value if you want
+  // to automatically unregister this fetcher from the owning factory
+  // upon destruction.
+  void set_owner(TestURLFetcherFactory* owner) { owner_ = owner; }
 
   // Unique ID in our factory.
   int id() const { return id_; }
 
   // Returns the data uploaded on this URLFetcher.
   const std::string& upload_data() const { return upload_data_; }
+  const base::FilePath& upload_file_path() const { return upload_file_path_; }
 
   // Returns the chunks of data uploaded on this URLFetcher.
   const std::list<std::string>& upload_chunks() const { return chunks_; }
@@ -165,7 +181,7 @@ class TestURLFetcher : public URLFetcher {
   void SetResponseString(const std::string& response);
 
   // Set File data.
-  void SetResponseFilePath(const FilePath& path);
+  void SetResponseFilePath(const base::FilePath& path);
 
  private:
   enum ResponseDestinationType {
@@ -173,11 +189,13 @@ class TestURLFetcher : public URLFetcher {
     TEMP_FILE  // Write to a temp file
   };
 
+  TestURLFetcherFactory* owner_;
   const int id_;
   const GURL original_url_;
   URLFetcherDelegate* delegate_;
   DelegateForTests* delegate_for_tests_;
   std::string upload_data_;
+  base::FilePath upload_file_path_;
   std::list<std::string> chunks_;
   bool did_receive_last_chunk_;
 
@@ -192,7 +210,7 @@ class TestURLFetcher : public URLFetcher {
   ResponseCookies fake_cookies_;
   ResponseDestinationType fake_response_destination_;
   std::string fake_response_string_;
-  FilePath fake_response_file_path_;
+  base::FilePath fake_response_file_path_;
   bool fake_was_fetched_via_proxy_;
   scoped_refptr<HttpResponseHeaders> fake_response_headers_;
   HttpRequestHeaders fake_extra_request_headers_;
@@ -206,6 +224,8 @@ typedef TestURLFetcher::DelegateForTests TestURLFetcherDelegateForTests;
 
 // Simple URLFetcherFactory method that creates TestURLFetchers. All fetchers
 // are registered in a map by the id passed to the create method.
+// Optionally, a fetcher may be automatically unregistered from the map upon
+// its destruction.
 class TestURLFetcherFactory : public URLFetcherFactory,
                               public ScopedURLFetcherFactory {
  public:
@@ -220,12 +240,18 @@ class TestURLFetcherFactory : public URLFetcherFactory,
   TestURLFetcher* GetFetcherByID(int id) const;
   void RemoveFetcherFromMap(int id);
   void SetDelegateForTests(TestURLFetcherDelegateForTests* delegate_for_tests);
+  void set_remove_fetcher_on_delete(bool remove_fetcher_on_delete) {
+    remove_fetcher_on_delete_ = remove_fetcher_on_delete;
+  }
 
  private:
   // Maps from id passed to create to the returned URLFetcher.
   typedef std::map<int, TestURLFetcher*> Fetchers;
   Fetchers fetchers_;
   TestURLFetcherDelegateForTests* delegate_for_tests_;
+  // Whether to automatically unregister a fetcher from this factory upon its
+  // destruction, false by default.
+  bool remove_fetcher_on_delete_;
 
   DISALLOW_COPY_AND_ASSIGN(TestURLFetcherFactory);
 };
@@ -239,6 +265,47 @@ class TestURLFetcherFactory : public URLFetcherFactory,
 //
 // We assume that the thread that is calling Start() on the URLFetcher object
 // has a message loop running.
+
+// FakeURLFetcher can be used to create a URLFetcher that will emit a fake
+// response when started. This class can be used in place of an actual
+// URLFetcher.
+//
+// Example usage:
+//  FakeURLFetcher fake_fetcher("http://a.com", some_delegate,
+//                              "<html><body>hello world</body></html>",
+//                              true);
+//
+// // Will schedule a call to some_delegate->OnURLFetchComplete(&fake_fetcher).
+// fake_fetcher.Start();
+class FakeURLFetcher : public TestURLFetcher {
+ public:
+  // Normal URL fetcher constructor but also takes in a pre-baked response.
+  FakeURLFetcher(const GURL& url,
+                 URLFetcherDelegate* d,
+                 const std::string& response_data, bool success);
+
+  // Start the request.  This will call the given delegate asynchronously
+  // with the pre-baked response as parameter.
+  virtual void Start() OVERRIDE;
+
+  virtual const GURL& GetURL() const OVERRIDE;
+
+  virtual ~FakeURLFetcher();
+
+ private:
+  // This is the method which actually calls the delegate that is passed in the
+  // constructor.
+  void RunDelegate();
+
+  base::WeakPtrFactory<FakeURLFetcher> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeURLFetcher);
+};
+
+
+// FakeURLFetcherFactory is a factory for FakeURLFetcher objects. When
+// instantiated, it sets itself up as the default URLFetcherFactory. Fake
+// responses for given URLs can be set using SetFakeResponse.
 //
 // This class is not thread-safe.  You should not call SetFakeResponse or
 // ClearFakeResponse at the same time you call CreateURLFetcher.  However, it is
@@ -261,14 +328,38 @@ class TestURLFetcherFactory : public URLFetcherFactory,
 //
 //  SomeService service;
 //  service.Run();  // Will eventually request these two URLs.
-
 class FakeURLFetcherFactory : public URLFetcherFactory,
                               public ScopedURLFetcherFactory {
  public:
-  FakeURLFetcherFactory();
-  // FakeURLFetcherFactory that will delegate creating URLFetcher for unknown
-  // url to the given factory.
+  // Parameters to FakeURLFetcherCreator: url, delegate, response_data, success
+  // |url| URL for instantiated FakeURLFetcher
+  // |delegate| Delegate for FakeURLFetcher
+  // |response_data| response data for FakeURLFetcher
+  // |success| bool indicating response code. true = 200 and false = 500.
+  // These argument should by default be used in instantiating FakeURLFetcher
+  // as follows: new FakeURLFetcher(url, delegate, response_data, success)
+  typedef base::Callback<scoped_ptr<FakeURLFetcher>(
+      const GURL&,
+      URLFetcherDelegate*,
+      const std::string&,
+      bool)> FakeURLFetcherCreator;
+
+  // |default_factory|, which can be NULL, is a URLFetcherFactory that
+  // will be used to construct a URLFetcher in case the URL being created
+  // has no pre-baked response. If it is NULL, a URLFetcherImpl will be
+  // created in this case.
   explicit FakeURLFetcherFactory(URLFetcherFactory* default_factory);
+
+  // |default_factory|, which can be NULL, is a URLFetcherFactory that
+  // will be used to construct a URLFetcher in case the URL being created
+  // has no pre-baked response. If it is NULL, a URLFetcherImpl will be
+  // created in this case.
+  // |creator| is a callback that returns will be called to create a
+  // FakeURLFetcher if a response is found to a given URL. It can be
+  // set to MakeFakeURLFetcher.
+  FakeURLFetcherFactory(URLFetcherFactory* default_factory,
+                        const FakeURLFetcherCreator& creator);
+
   virtual ~FakeURLFetcherFactory();
 
   // If no fake response is set for the given URL this method will delegate the
@@ -293,10 +384,16 @@ class FakeURLFetcherFactory : public URLFetcherFactory,
   void ClearFakeResponses();
 
  private:
+  const FakeURLFetcherCreator creator_;
   typedef std::map<GURL, std::pair<std::string, bool> > FakeResponseMap;
   FakeResponseMap fake_responses_;
-  URLFetcherFactory* default_factory_;
+  URLFetcherFactory* const default_factory_;
 
+  static scoped_ptr<FakeURLFetcher> DefaultFakeURLFetcherCreator(
+      const GURL& url,
+      URLFetcherDelegate* delegate,
+      const std::string& response,
+      bool success);
   DISALLOW_COPY_AND_ASSIGN(FakeURLFetcherFactory);
 };
 

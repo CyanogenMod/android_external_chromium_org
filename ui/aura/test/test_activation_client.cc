@@ -4,6 +4,7 @@
 
 #include "ui/aura/test/test_activation_client.h"
 
+#include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/client/activation_delegate.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
@@ -14,7 +15,8 @@ namespace test {
 ////////////////////////////////////////////////////////////////////////////////
 // TestActivationClient, public:
 
-TestActivationClient::TestActivationClient(RootWindow* root_window) {
+TestActivationClient::TestActivationClient(RootWindow* root_window)
+    : last_active_(NULL) {
   client::SetActivationClient(root_window, this);
 }
 
@@ -29,36 +31,59 @@ TestActivationClient::~TestActivationClient() {
 
 void TestActivationClient::AddObserver(
     client::ActivationChangeObserver* observer) {
+  observers_.AddObserver(observer);
 }
 
 void TestActivationClient::RemoveObserver(
     client::ActivationChangeObserver* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 void TestActivationClient::ActivateWindow(Window* window) {
-  Window *last_active = GetActiveWindow();
+  Window* last_active = GetActiveWindow();
   if (last_active == window)
     return;
 
+  last_active_ = last_active;
   RemoveActiveWindow(window);
   active_windows_.push_back(window);
+  window->parent()->StackChildAtTop(window);
   window->AddObserver(this);
-  if (aura::client::GetActivationDelegate(window))
-    aura::client::GetActivationDelegate(window)->OnActivated();
 
-  if (last_active && aura::client::GetActivationDelegate(last_active))
-    aura::client::GetActivationDelegate(last_active)->OnLostActive();
+  FOR_EACH_OBSERVER(client::ActivationChangeObserver,
+                    observers_,
+                    OnWindowActivated(window, last_active));
+
+  aura::client::ActivationChangeObserver* observer =
+      aura::client::GetActivationChangeObserver(last_active);
+  if (observer)
+    observer->OnWindowActivated(window, last_active);
+  observer = aura::client::GetActivationChangeObserver(window);
+  if (observer)
+    observer->OnWindowActivated(window, last_active);
 }
 
 void TestActivationClient::DeactivateWindow(Window* window) {
-  if (aura::client::GetActivationDelegate(window))
-    aura::client::GetActivationDelegate(window)->OnLostActive();
+  aura::client::ActivationChangeObserver* observer =
+      aura::client::GetActivationChangeObserver(window);
+  if (observer)
+    observer->OnWindowActivated(NULL, window);
+  if (last_active_)
+    ActivateWindow(last_active_);
 }
 
 Window* TestActivationClient::GetActiveWindow() {
   if (active_windows_.empty())
     return NULL;
   return active_windows_.back();
+}
+
+Window* TestActivationClient::GetActivatableWindow(Window* window) {
+  return NULL;
+}
+
+Window* TestActivationClient::GetToplevelWindow(Window* window) {
+  return NULL;
 }
 
 bool TestActivationClient::OnWillFocusWindow(Window* window,
@@ -74,12 +99,17 @@ bool TestActivationClient::CanActivateWindow(Window* window) const {
 // TestActivationClient, WindowObserver implementation:
 
 void TestActivationClient::OnWindowDestroyed(Window* window) {
+  if (window == last_active_)
+    last_active_ = NULL;
+
   if (window == GetActiveWindow()) {
     window->RemoveObserver(this);
     active_windows_.pop_back();
     Window* next_active = GetActiveWindow();
-    if (next_active && aura::client::GetActivationDelegate(next_active))
-      aura::client::GetActivationDelegate(next_active)->OnActivated();
+    if (next_active && aura::client::GetActivationChangeObserver(next_active)) {
+      aura::client::GetActivationChangeObserver(next_active)->OnWindowActivated(
+          next_active, NULL);
+    }
     return;
   }
 

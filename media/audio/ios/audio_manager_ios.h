@@ -11,7 +11,6 @@
 namespace media {
 
 class PCMQueueInAudioInputStream;
-class PCMQueueOutAudioOutputStream;
 
 // iOS implementation of the AudioManager singleton. Supports only audio input.
 class MEDIA_EXPORT AudioManagerIOS : public AudioManagerBase {
@@ -25,6 +24,8 @@ class MEDIA_EXPORT AudioManagerIOS : public AudioManagerBase {
       const AudioParameters& params) OVERRIDE;
   virtual AudioInputStream* MakeAudioInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
+  virtual AudioParameters GetInputStreamParameters(
+      const std::string& device_id) OVERRIDE;
 
   // Implementation of AudioManagerBase.
   virtual AudioOutputStream* MakeLinearOutputStream(
@@ -41,12 +42,10 @@ class MEDIA_EXPORT AudioManagerIOS : public AudioManagerBase {
  protected:
   virtual ~AudioManagerIOS();
 
- private:
-  // Initializes the audio session if necessary. Safe to call multiple times.
-  // Returns a bool indicating whether the audio session has been successfully
-  // initialized (either in the current call or in a previous call).
-  bool InitAudioSession();
+  virtual AudioParameters GetPreferredOutputStreamParameters(
+      const AudioParameters& input_params) OVERRIDE;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(AudioManagerIOS);
 };
 

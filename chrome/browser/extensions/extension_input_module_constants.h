@@ -27,6 +27,8 @@ extern const char kIdKey[];
 extern const char kItemsKey[];
 extern const char kKeyKey[];
 extern const char kLabelKey[];
+extern const char kLengthKey[];
+extern const char kOffsetKey[];
 extern const char kPageSizeKey[];
 extern const char kParentIdKey[];
 extern const char kPropertiesKey[];
@@ -38,6 +40,9 @@ extern const char kStyleDoubleUnderline[];
 extern const char kStyleKey[];
 extern const char kStyleUnderline[];
 extern const char kTextKey[];
+extern const char kUsageBodyKey[];
+extern const char kUsageKey[];
+extern const char kUsageTitleKey[];
 extern const char kVerticalKey[];
 extern const char kVisibleKey[];
 

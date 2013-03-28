@@ -6,9 +6,11 @@
 
 #include "ash/shell.h"
 #include "ash/system/power/power_status_view.h"
+#include "ash/system/tray/actionable_view.h"
+#include "ash/system/tray/fixed_sized_image_view.h"
 #include "ash/system/tray/system_tray_delegate.h"
+#include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_constants.h"
-#include "ash/system/tray/tray_views.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "grit/ash_resources.h"
@@ -28,7 +30,7 @@ namespace internal {
 
 namespace tray {
 
-class SettingsDefaultView : public ash::internal::ActionableView {
+class SettingsDefaultView : public ActionableView {
  public:
   explicit SettingsDefaultView(user::LoginStatus status)
       : login_status_(status),
@@ -56,8 +58,8 @@ class SettingsDefaultView : public ash::internal::ActionableView {
       power_view_right_align = true;
     }
 
-    PowerSupplyStatus power_status =
-        ash::Shell::GetInstance()->tray_delegate()->GetPowerSupplyStatus();
+    PowerSupplyStatus power_status = ash::Shell::GetInstance()->
+        system_tray_delegate()->GetPowerSupplyStatus();
     if (power_status.battery_is_present) {
       power_status_view_ = new ash::internal::PowerStatusView(
           ash::internal::PowerStatusView::VIEW_DEFAULT, power_view_right_align);
@@ -69,8 +71,14 @@ class SettingsDefaultView : public ash::internal::ActionableView {
   virtual ~SettingsDefaultView() {}
 
   void UpdatePowerStatus(const PowerSupplyStatus& status) {
-    if (power_status_view_)
-      power_status_view_->UpdatePowerStatus(status);
+    if (!power_status_view_)
+      return;
+    power_status_view_->UpdatePowerStatus(status);
+    string16 accessible_name = label_ ?
+        label_->text() + ASCIIToUTF16(", ") +
+            power_status_view_->accessible_name() :
+        power_status_view_->accessible_name();
+    SetAccessibleName(accessible_name);
   }
 
   // Overridden from ash::internal::ActionableView.
@@ -79,7 +87,7 @@ class SettingsDefaultView : public ash::internal::ActionableView {
         login_status_ == user::LOGGED_IN_LOCKED)
       return false;
 
-    ash::Shell::GetInstance()->tray_delegate()->ShowSettings();
+    ash::Shell::GetInstance()->system_tray_delegate()->ShowSettings();
     return true;
   }
 
@@ -114,11 +122,15 @@ class SettingsDefaultView : public ash::internal::ActionableView {
 
 }  // namespace tray
 
-TraySettings::TraySettings()
-    : default_view_(NULL) {
+TraySettings::TraySettings(SystemTray* system_tray)
+    : SystemTrayItem(system_tray),
+      default_view_(NULL) {
+  Shell::GetInstance()->system_tray_notifier()->AddPowerStatusObserver(this);
 }
 
-TraySettings::~TraySettings() {}
+TraySettings::~TraySettings() {
+  Shell::GetInstance()->system_tray_notifier()->RemovePowerStatusObserver(this);
+}
 
 views::View* TraySettings::CreateTrayView(user::LoginStatus status) {
   return NULL;
@@ -126,7 +138,7 @@ views::View* TraySettings::CreateTrayView(user::LoginStatus status) {
 
 views::View* TraySettings::CreateDefaultView(user::LoginStatus status) {
   if ((status == user::LOGGED_IN_NONE || status == user::LOGGED_IN_LOCKED) &&
-      (!ash::Shell::GetInstance()->tray_delegate()->
+      (!ash::Shell::GetInstance()->system_tray_delegate()->
           GetPowerSupplyStatus().battery_is_present))
     return NULL;
 

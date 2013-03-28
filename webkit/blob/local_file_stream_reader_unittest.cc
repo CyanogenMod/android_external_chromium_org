@@ -6,12 +6,12 @@
 
 #include <string>
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/platform_file.h"
-#include "base/scoped_temp_dir.h"
 #include "base/threading/thread.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -75,13 +75,13 @@ class LocalFileStreamReaderTest : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     // Give another chance for deleted streams to perform Close.
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     file_thread_.Stop();
   }
 
  protected:
   LocalFileStreamReader* CreateFileReader(
-      const FilePath& path,
+      const base::FilePath& path,
       int64 initial_offset,
       const base::Time& expected_modification_time) {
     return new LocalFileStreamReader(
@@ -103,8 +103,8 @@ class LocalFileStreamReaderTest : public testing::Test {
     return file_thread_.message_loop_proxy().get();
   }
 
-  FilePath test_dir() const { return dir_.path(); }
-  FilePath test_path() const { return dir_.path().AppendASCII("test"); }
+  base::FilePath test_dir() const { return dir_.path(); }
+  base::FilePath test_path() const { return dir_.path().AppendASCII("test"); }
   base::Time test_file_modification_time() const {
     return test_file_modification_time_;
   }
@@ -118,12 +118,12 @@ class LocalFileStreamReaderTest : public testing::Test {
  private:
   MessageLoop message_loop_;
   base::Thread file_thread_;
-  ScopedTempDir dir_;
+  base::ScopedTempDir dir_;
   base::Time test_file_modification_time_;
 };
 
 TEST_F(LocalFileStreamReaderTest, NonExistent) {
-  FilePath nonexistent_path = test_dir().AppendASCII("nonexistent");
+  base::FilePath nonexistent_path = test_dir().AppendASCII("nonexistent");
   scoped_ptr<LocalFileStreamReader> reader(
       CreateFileReader(nonexistent_path, 0, base::Time()));
   int result = 0;
@@ -134,7 +134,7 @@ TEST_F(LocalFileStreamReaderTest, NonExistent) {
 }
 
 TEST_F(LocalFileStreamReaderTest, Empty) {
-  FilePath empty_path = test_dir().AppendASCII("empty");
+  base::FilePath empty_path = test_dir().AppendASCII("empty");
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   base::PlatformFile file = base::CreatePlatformFile(
       empty_path,

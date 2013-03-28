@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -17,6 +17,7 @@
 #include "base/observer_list.h"
 #include "base/threading/thread_checker.h"
 #include "jingle/notifier/listener/push_client_observer.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/notifier/invalidator.h"
 #include "sync/notifier/invalidator_registrar.h"
@@ -29,7 +30,7 @@ class PushClient;
 namespace syncer {
 
 // The channel to use for sync notifications.
-extern const char kSyncP2PNotificationChannel[];
+SYNC_EXPORT extern const char kSyncP2PNotificationChannel[];
 
 // The intended recipient(s) of a P2P notification.
 enum P2PNotificationTarget {
@@ -40,24 +41,23 @@ enum P2PNotificationTarget {
   LAST_NOTIFICATION_TARGET = NOTIFY_ALL
 };
 
-std::string P2PNotificationTargetToString(
+SYNC_EXPORT_PRIVATE std::string P2PNotificationTargetToString(
     P2PNotificationTarget target);
 
 // If |target_str| can't be parsed, assumes NOTIFY_SELF.
-P2PNotificationTarget P2PNotificationTargetFromString(
+SYNC_EXPORT_PRIVATE P2PNotificationTarget P2PNotificationTargetFromString(
     const std::string& target_str);
 
 // Helper notification data class that can be serialized to and
 // deserialized from a string.
-class P2PNotificationData {
+class SYNC_EXPORT_PRIVATE P2PNotificationData {
  public:
   // Initializes with an empty sender ID, target set to NOTIFY_SELF,
   // and empty changed types.
   P2PNotificationData();
   P2PNotificationData(const std::string& sender_id,
                       P2PNotificationTarget target,
-                      const ObjectIdInvalidationMap& invalidation_map,
-                      IncomingInvalidationSource source);
+                      const ObjectIdInvalidationMap& invalidation_map);
 
   ~P2PNotificationData();
 
@@ -65,8 +65,6 @@ class P2PNotificationData {
   bool IsTargeted(const std::string& id) const;
 
   const ObjectIdInvalidationMap& GetIdInvalidationMap() const;
-
-  IncomingInvalidationSource GetSource() const;
 
   bool Equals(const P2PNotificationData& other) const;
 
@@ -83,12 +81,11 @@ class P2PNotificationData {
   P2PNotificationTarget target_;
   // The invalidation map for the notification.
   ObjectIdInvalidationMap invalidation_map_;
-  // The source of the invalidation.
-  IncomingInvalidationSource source_;
 };
 
-class P2PInvalidator : public Invalidator,
-                       public notifier::PushClientObserver {
+class SYNC_EXPORT_PRIVATE P2PInvalidator
+    : public Invalidator,
+      public NON_EXPORTED_BASE(notifier::PushClientObserver) {
  public:
   // The |send_notification_target| parameter was added to allow us to send
   // self-notifications in some cases, but not others.  The value should be
@@ -105,9 +102,10 @@ class P2PInvalidator : public Invalidator,
   virtual void UpdateRegisteredIds(InvalidationHandler* handler,
                                    const ObjectIdSet& ids) OVERRIDE;
   virtual void UnregisterHandler(InvalidationHandler* handler) OVERRIDE;
+  virtual void Acknowledge(const invalidation::ObjectId& id,
+                           const AckHandle& ack_handle) OVERRIDE;
   virtual InvalidatorState GetInvalidatorState() const OVERRIDE;
   virtual void SetUniqueId(const std::string& unique_id) OVERRIDE;
-  virtual void SetStateDeprecated(const std::string& state) OVERRIDE;
   virtual void UpdateCredentials(
       const std::string& email, const std::string& token) OVERRIDE;
   virtual void SendInvalidation(

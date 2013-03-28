@@ -26,13 +26,8 @@ const char kRemotingService[] = "chromoting";
 const char kCloudPrintService[] = "cloudprint";
 
 // Service/scope names for device management (cloud-based policy) server.
-const char kDeviceManagementService[] = "mobilesync";
 const char kDeviceManagementServiceOAuth[] =
     "https://www.googleapis.com/auth/chromeosdevicemanagement";
-
-// OAuth scopes for chrome web store.
-const char kCWSNotificationScope[] =
-    "https://www.googleapis.com/auth/chromewebstore.notification";
 
 // Service for LSO endpoint of Google that exposes OAuth APIs.
 const char kLSOService[] = "lso";
@@ -44,7 +39,6 @@ const char kGaiaOAuthToken[] = "oauthToken";
 const char kGaiaOAuthSecret[] = "oauthSecret";
 const char kGaiaOAuthDuration[] = "3600";
 const char kGaiaOAuth2LoginRefreshToken[] = "oauth2LoginRefreshToken";
-const char kGaiaOAuth2LoginAccessToken[] = "oauth2LoginAccessToken";
 
 // Used to construct a channel ID for push messaging.
 const char kObfuscatedGaiaId[] = "obfuscatedGaiaId";

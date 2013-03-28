@@ -22,7 +22,7 @@ static const int kSampleRate = 48000;
 class AudioBusTest : public testing::Test {
  public:
   AudioBusTest() {}
-  ~AudioBusTest() {
+  virtual ~AudioBusTest() {
     for (size_t i = 0; i < data_.size(); ++i)
       base::AlignedFree(data_[i]);
   }
@@ -332,6 +332,28 @@ TEST_F(AudioBusTest, ToInterleaved) {
     ASSERT_EQ(memcmp(
         test_array, kTestVectorInt32, arraysize(kTestVectorInt32)), 0);
   }
+}
+
+// Verify ToInterleavedPartial() interleaves audio correctly.
+TEST_F(AudioBusTest, ToInterleavedPartial) {
+  // Only interleave the middle two frames in each channel.
+  static const int kPartialStart = 1;
+  static const int kPartialFrames = 2;
+  ASSERT_LE(kPartialStart + kPartialFrames, kTestVectorFrames);
+
+  scoped_ptr<AudioBus> expected = AudioBus::Create(
+      kTestVectorChannels, kTestVectorFrames);
+  for (int ch = 0; ch < kTestVectorChannels; ++ch) {
+    memcpy(expected->channel(ch), kTestVectorResult[ch],
+           kTestVectorFrames * sizeof(*expected->channel(ch)));
+  }
+
+  int16 test_array[arraysize(kTestVectorInt16)];
+  expected->ToInterleavedPartial(
+      kPartialStart, kPartialFrames, sizeof(*kTestVectorInt16), test_array);
+  ASSERT_EQ(memcmp(
+      test_array, kTestVectorInt16 + kPartialStart * kTestVectorChannels,
+      kPartialFrames * sizeof(*kTestVectorInt16) * kTestVectorChannels), 0);
 }
 
 }  // namespace media

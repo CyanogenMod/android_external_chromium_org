@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/browser_tab_contents.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/dock_info.h"
@@ -54,7 +55,8 @@ Browser* BrowserTabStripModelDelegate::CreateNewStripWithContents(
     dock_info.AdjustOtherWindowBounds();
 
   // Create an empty new browser window the same size as the old one.
-  Browser::CreateParams params(browser_->profile());
+  Browser::CreateParams params(browser_->profile(),
+                               browser_->host_desktop_type());
   params.initial_bounds = new_window_bounds;
   params.initial_show_state =
       maximize ? ui::SHOW_STATE_MAXIMIZED : ui::SHOW_STATE_NORMAL;
@@ -81,9 +83,15 @@ Browser* BrowserTabStripModelDelegate::CreateNewStripWithContents(
   return browser;
 }
 
+void BrowserTabStripModelDelegate::WillAddWebContents(
+    content::WebContents* contents) {
+  BrowserTabContents::AttachTabHelpers(contents);
+}
+
 int BrowserTabStripModelDelegate::GetDragActions() const {
   return TabStripModelDelegate::TAB_TEAROFF_ACTION |
-      (browser_->tab_count() > 1 ? TabStripModelDelegate::TAB_MOVE_ACTION : 0);
+      (browser_->tab_strip_model()->count() > 1
+          ? TabStripModelDelegate::TAB_MOVE_ACTION : 0);
 }
 
 bool BrowserTabStripModelDelegate::CanDuplicateContentsAt(int index) {
@@ -137,8 +145,9 @@ void BrowserTabStripModelDelegate::BookmarkAllTabs() {
   chrome::BookmarkAllTabs(browser_);
 }
 
-bool BrowserTabStripModelDelegate::CanRestoreTab() {
-  return chrome::CanRestoreTab(browser_);
+TabStripModelDelegate::RestoreTabType
+BrowserTabStripModelDelegate::GetRestoreTabType() {
+  return chrome::GetRestoreTabType(browser_);
 }
 
 void BrowserTabStripModelDelegate::RestoreTab() {

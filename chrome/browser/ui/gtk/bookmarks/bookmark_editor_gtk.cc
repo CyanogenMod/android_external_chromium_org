@@ -10,13 +10,14 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_expanded_state_tracker.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
@@ -25,6 +26,7 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
+#include "components/user_prefs/user_prefs.h"
 #include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -129,7 +131,7 @@ class BookmarkEditorGtk::ContextMenuController
   };
 
   // Overridden from ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdEnabled(int command_id) const {
+  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
     if (editor_ == NULL)
       return false;
 
@@ -143,16 +145,17 @@ class BookmarkEditorGtk::ContextMenuController
     return false;
   }
 
-  virtual bool IsCommandIdChecked(int command_id) const {
+  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
     return false;
   }
 
-  virtual bool GetAcceleratorForCommandId(int command_id,
-                                          ui::Accelerator* accelerator) {
+  virtual bool GetAcceleratorForCommandId(
+      int command_id,
+      ui::Accelerator* accelerator) OVERRIDE {
     return false;
   }
 
-  virtual void ExecuteCommand(int command_id) {
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
     if (!editor_)
       return;
 
@@ -357,7 +360,12 @@ void BookmarkEditorGtk::Init(GtkWindow* parent_window) {
   GtkWidget* table;
   if (details_.GetNodeType() != BookmarkNode::FOLDER) {
     url_entry_ = gtk_entry_new();
-    gtk_entry_set_text(GTK_ENTRY(url_entry_), url.spec().c_str());
+    PrefService* prefs = profile_ ?
+        components::UserPrefs::Get(profile_) :
+        NULL;
+    gtk_entry_set_text(
+        GTK_ENTRY(url_entry_),
+        UTF16ToUTF8(chrome::FormatBookmarkURLForDisplay(url, prefs)).c_str());
     g_signal_connect(url_entry_, "changed",
                      G_CALLBACK(OnEntryChangedThunk), this);
     gtk_entry_set_activates_default(GTK_ENTRY(url_entry_), TRUE);

@@ -10,6 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "sync/internal_api/public/sync_manager.h"
+#include "sync/internal_api/public/test/test_user_share.h"
 #include "sync/notifier/invalidator_registrar.h"
 
 namespace base {
@@ -53,9 +54,11 @@ class FakeSyncManager : public SyncManager {
   // called.
   ModelTypeSet GetAndResetEnabledTypes();
 
+  // Returns the types that have most recently received a refresh request.
+  ModelTypeSet GetLastRefreshRequestTypes();
+
   // Posts a method to invalidate the given IDs on the sync thread.
-  void Invalidate(const ObjectIdInvalidationMap& invalidation_map,
-                  IncomingInvalidationSource source);
+  void Invalidate(const ObjectIdInvalidationMap& invalidation_map);
 
   // Posts a method to update the invalidator state on the sync thread.
   void UpdateInvalidatorState(InvalidatorState state);
@@ -67,12 +70,11 @@ class FakeSyncManager : public SyncManager {
   // Note: we treat whatever message loop this is called from as the sync
   // loop for purposes of callbacks.
   virtual void Init(
-      const FilePath& database_location,
+      const base::FilePath& database_location,
       const WeakHandle<JsEventHandler>& event_handler,
       const std::string& sync_server_and_path,
       int sync_server_port,
       bool use_ssl,
-      const scoped_refptr<base::TaskRunner>& blocking_task_runner,
       scoped_ptr<HttpPostProviderFactory> post_factory,
       const std::vector<ModelSafeWorker*>& workers,
       ExtensionsActivityMonitor* extensions_activity_monitor,
@@ -100,11 +102,15 @@ class FakeSyncManager : public SyncManager {
       const ObjectIdSet& ids) OVERRIDE;
   virtual void UnregisterInvalidationHandler(
       InvalidationHandler* handler) OVERRIDE;
+  virtual void AcknowledgeInvalidation(
+      const invalidation::ObjectId& id,
+      const syncer::AckHandle& ack_handle) OVERRIDE;
   virtual void StartSyncingNormally(
       const ModelSafeRoutingInfo& routing_info) OVERRIDE;
   virtual void ConfigureSyncer(
       ConfigureReason reason,
       ModelTypeSet types_to_config,
+      ModelTypeSet failed_types,
       const ModelSafeRoutingInfo& new_routing_info,
       const base::Closure& ready_task,
       const base::Closure& retry_task) OVERRIDE;
@@ -115,14 +121,15 @@ class FakeSyncManager : public SyncManager {
   virtual void StopSyncingForShutdown(const base::Closure& callback) OVERRIDE;
   virtual void ShutdownOnSyncThread() OVERRIDE;
   virtual UserShare* GetUserShare() OVERRIDE;
+  virtual const std::string cache_guid() OVERRIDE;
   virtual bool ReceivedExperiment(Experiments* experiments) OVERRIDE;
   virtual bool HasUnsyncedItems() OVERRIDE;
   virtual SyncEncryptionHandler* GetEncryptionHandler() OVERRIDE;
+  virtual void RefreshTypes(ModelTypeSet types) OVERRIDE;
 
  private:
   void InvalidateOnSyncThread(
-      const ObjectIdInvalidationMap& invalidation_map,
-      IncomingInvalidationSource source);
+      const ObjectIdInvalidationMap& invalidation_map);
   void UpdateInvalidatorStateOnSyncThread(InvalidatorState state);
 
   scoped_refptr<base::SequencedTaskRunner> sync_task_runner_;
@@ -147,7 +154,12 @@ class FakeSyncManager : public SyncManager {
   // Faked invalidator state.
   InvalidatorRegistrar registrar_;
 
+  // The types for which a refresh was most recently requested.
+  ModelTypeSet last_refresh_request_types_;
+
   scoped_ptr<FakeSyncEncryptionHandler> fake_encryption_handler_;
+
+  TestUserShare test_user_share_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeSyncManager);
 };

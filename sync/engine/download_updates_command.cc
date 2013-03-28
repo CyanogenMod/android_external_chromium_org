@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/syncable/directory.h"
 #include "sync/syncable/nigori_handler.h"
-#include "sync/syncable/read_transaction.h"
+#include "sync/syncable/syncable_read_transaction.h"
 
 using sync_pb::DebugInfo;
 
@@ -33,19 +33,19 @@ SyncerError HandleGetEncryptionKeyResponse(
     const sync_pb::ClientToServerResponse& update_response,
     syncable::Directory* dir) {
   bool success = false;
-  if (!update_response.get_updates().has_encryption_key()) {
+  if (update_response.get_updates().encryption_keys_size() == 0) {
     LOG(ERROR) << "Failed to receive encryption key from server.";
     return SERVER_RESPONSE_VALIDATION_FAILED;
   }
   syncable::ReadTransaction trans(FROM_HERE, dir);
   syncable::NigoriHandler* nigori_handler = dir->GetNigoriHandler();
-  success = nigori_handler->SetKeystoreKey(
-      update_response.get_updates().encryption_key(),
+  success = nigori_handler->SetKeystoreKeys(
+      update_response.get_updates().encryption_keys(),
       &trans);
 
-  DVLOG(1) << "GetUpdates returned encryption key of length "
-           << update_response.get_updates().encryption_key().length()
-           << ". Nigori keystore key "
+  DVLOG(1) << "GetUpdates returned "
+           << update_response.get_updates().encryption_keys_size()
+           << "encryption keys. Nigori keystore key "
            << (success ? "" : "not ") << "updated.";
   return (success ? SYNCER_OK : SERVER_RESPONSE_VALIDATION_FAILED);
 }
@@ -68,7 +68,7 @@ SyncerError DownloadUpdatesCommand::ExecuteImpl(SyncSession* session) {
 
   // Request updates for all enabled types.
   const ModelTypeSet enabled_types =
-      GetRoutingInfoTypes(session->routing_info());
+      GetRoutingInfoTypes(session->context()->routing_info());
   DVLOG(1) << "Getting updates for types "
            << ModelTypeSetToString(enabled_types);
   DCHECK(!enabled_types.Empty());
@@ -77,6 +77,8 @@ SyncerError DownloadUpdatesCommand::ExecuteImpl(SyncSession* session) {
       session->source().types;
   for (ModelTypeSet::Iterator it = enabled_types.First();
        it.Good(); it.Inc()) {
+    if (ProxyTypes().Has(it.Get()))
+      continue;
     sync_pb::DataTypeProgressMarker* progress_marker =
         get_updates->add_from_progress_marker();
     dir->GetDownloadProgress(it.Get(), progress_marker);
@@ -138,7 +140,8 @@ SyncerError DownloadUpdatesCommand::ExecuteImpl(SyncSession* session) {
            << update_response.get_updates().changes_remaining()
            << " updates left on server.";
 
-  if (need_encryption_key) {
+  if (need_encryption_key ||
+      update_response.get_updates().encryption_keys_size() > 0) {
     status->set_last_get_key_result(
         HandleGetEncryptionKeyResponse(update_response, dir));
   }

@@ -6,7 +6,6 @@
 // settings page into a single file which will be flattened and served
 // as a single resource.
 <include src="preferences.js"></include>
-<include src="options_bubble.js"></include>
 <include src="controlled_setting.js"></include>
 <include src="deletable_item_list.js"></include>
 <include src="editable_text_field.js"></include>
@@ -16,7 +15,7 @@
 <include src="settings_dialog.js"></include>
 <if expr="pp_ifdef('chromeos')">
   <include src="../chromeos/user_images_grid.js"></include>
-  <include src="../shared/js/chromeos/ui_account_tweaks.js"></include>
+  <include src="../../../../ui/webui/resources/js/chromeos/ui_account_tweaks.js"></include>
   <include src="chromeos/change_picture_options.js"></include>
   <include src="chromeos/internet_detail_ip_address_field.js"></include>
   <include src="chromeos/internet_detail.js"></include>
@@ -30,15 +29,19 @@
   <include src="chromeos/accounts_user_list.js"></include>
   <include src="chromeos/accounts_user_name_edit.js"></include>
   <include src="chromeos/display_options.js"></include>
+  <include src="chromeos/display_overscan.js"></include>
   <include src="chromeos/keyboard_overlay.js"></include>
+  <include src="chromeos/kiosk_apps.js"></include>
   <include src="chromeos/pointer_overlay.js"></include>
   var AccountsOptions = options.AccountsOptions;
   var ChangePictureOptions = options.ChangePictureOptions;
   var DetailsInternetPage = options.internet.DetailsInternetPage;
   var DisplayOptions = options.DisplayOptions;
+  var DisplayOverscan = options.DisplayOverscan;
   var BluetoothOptions = options.BluetoothOptions;
   var BluetoothPairing = options.BluetoothPairing;
   var KeyboardOverlay = options.KeyboardOverlay;
+  var KioskAppsOverlay = options.KioskAppsOverlay;
   var PointerOverlay = options.PointerOverlay;
   var UIAccountTweaks = uiAccountTweaks.UIAccountTweaks;
 </if>
@@ -71,14 +74,19 @@
 <include src="content_settings_ui.js"></include>
 <include src="cookies_list.js"></include>
 <include src="cookies_view.js"></include>
-<include src="cookies_view_app.js"></include>
 <include src="factory_reset_overlay.js"></include>
+<include src="managed_user_settings.js"></include>
+<include src="managed_user_set_passphrase.js"></include>
 <include src="font_settings.js"></include>
 <include src="handler_options.js"></include>
 <include src="handler_options_list.js"></include>
 <include src="home_page_overlay.js"></include>
 <include src="import_data_overlay.js"></include>
 <include src="language_add_language_overlay.js"></include>
+<if expr="not is_macosx">
+  <include src="language_dictionary_overlay_word_list.js"></include>
+  <include src="language_dictionary_overlay.js"></include>
+</if>
 <include src="language_list.js"></include>
 <include src="language_options.js"></include>
 <include src="manage_profile_overlay.js"></include>
@@ -95,3 +103,6 @@
 <include src="../sync_setup_overlay.js"></include>
 <include src="../uber/uber_utils.js"></include>
 <include src="options.js"></include>
+<if expr="pp_ifdef('enable_settings_app')">
+  <include src="options_settings_app.js"></include>
+</if>

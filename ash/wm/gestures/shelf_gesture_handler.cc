@@ -5,18 +5,109 @@
 #include "ash/wm/gestures/shelf_gesture_handler.h"
 
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_types.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/wm/gestures/tray_gesture_handler.h"
-#include "ash/wm/shelf_layout_manager.h"
-#include "ash/wm/shelf_types.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/transform.h"
 #include "ui/views/widget/widget.h"
+
+namespace {
+
+// A ShelfResetHandler auto-hides the shelf as soon as the user interacts with
+// any non-shelf part of the system. The ShelfResetHandler manages its own
+// lifetime.
+class ShelfResetHandler : public ui::EventHandler,
+                          public ash::internal::ShelfLayoutManager::Observer {
+ public:
+  explicit ShelfResetHandler(ash::internal::ShelfLayoutManager* shelf)
+      : shelf_(shelf) {
+    shelf_->AddObserver(this);
+    ash::Shell::GetInstance()->AddPreTargetHandler(this);
+  }
+
+ private:
+  virtual ~ShelfResetHandler() {
+    ash::Shell::GetInstance()->RemovePreTargetHandler(this);
+    shelf_->RemoveObserver(this);
+  }
+
+  void ResetShelfState() {
+    shelf_->SetAutoHideBehavior(ash::SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
+    delete this;
+  }
+
+  bool ShelfIsEventTarget(const ui::Event& event) {
+    aura::Window* target = static_cast<aura::Window*>(event.target());
+    views::Widget* widget = shelf_->shelf_widget();
+    if (widget && widget->GetNativeWindow() == target)
+      return true;
+    widget = shelf_->shelf_widget()->status_area_widget();
+    if (widget && widget->GetNativeWindow() == target)
+      return true;
+    return false;
+  }
+
+  void DecideShelfVisibility(const gfx::Point& location) {
+    // For the rest of the mouse events, ignore if the event happens inside the
+    // shelf.
+    views::Widget* widget = shelf_->shelf_widget();
+    if (widget &&
+        widget->GetWindowBoundsInScreen().Contains(location)) {
+      return;
+    }
+
+    widget = shelf_->shelf_widget()->status_area_widget();
+    if (widget &&
+        widget->GetWindowBoundsInScreen().Contains(location)) {
+      return;
+    }
+
+    ResetShelfState();
+  }
+
+  // Overridden from ui::EventHandler:
+  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE {
+    if (!ShelfIsEventTarget(*event))
+      ResetShelfState();
+  }
+
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
+    // Ignore all mouse move events.
+    if (event->type() == ui::ET_MOUSE_PRESSED ||
+        event->type() == ui::ET_MOUSE_RELEASED) {
+      DecideShelfVisibility(event->root_location());
+    }
+  }
+
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE {
+    if (!ShelfIsEventTarget(*event))
+      DecideShelfVisibility(event->root_location());
+  }
+
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+    if (!ShelfIsEventTarget(*event))
+      DecideShelfVisibility(event->root_location());
+  }
+
+  // Overridden from ash::internal::ShelfLayoutManager::Observer:
+  virtual void WillDeleteShelf() OVERRIDE {
+    delete this;
+  }
+
+  ash::internal::ShelfLayoutManager* shelf_;
+
+  DISALLOW_COPY_AND_ASSIGN(ShelfResetHandler);
+};
+
+}  // namespace
 
 namespace ash {
 namespace internal {
@@ -42,7 +133,8 @@ bool ShelfGestureHandler::ProcessGestureEvent(const ui::GestureEvent& event) {
     return false;
 
   // TODO(oshima): Find the root window controller from event's location.
-  ShelfLayoutManager* shelf = Shell::GetPrimaryRootWindowController()->shelf();
+  ShelfLayoutManager* shelf =
+      Shell::GetPrimaryRootWindowController()->GetShelfLayoutManager();
   if (event.type() == ui::ET_GESTURE_SCROLL_BEGIN) {
     drag_in_progress_ = true;
     shelf->StartGestureDrag(event);
@@ -73,7 +165,11 @@ bool ShelfGestureHandler::ProcessGestureEvent(const ui::GestureEvent& event) {
       tray_handler_.reset();
     }
 
+    ShelfVisibilityState old_state = shelf->visibility_state();
     shelf->CompleteGestureDrag(event);
+    ShelfVisibilityState new_state = shelf->visibility_state();
+    if (new_state != old_state && new_state == SHELF_VISIBLE)
+      new ShelfResetHandler(shelf);
     return true;
   }
 

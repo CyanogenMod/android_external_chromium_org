@@ -5,20 +5,28 @@
 #ifndef UI_COMPOSITOR_COMPOSITOR_H_
 #define UI_COMPOSITOR_COMPOSITOR_H_
 
+#include <string>
+
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebLayer.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebLayerTreeView.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebLayerTreeViewClient.h"
+#include "base/time.h"
+#include "cc/trees/layer_tree_host_client.h"
 #include "ui/compositor/compositor_export.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/transform.h"
+#include "ui/gfx/vector2d.h"
 #include "ui/gl/gl_share_group.h"
 
 class SkBitmap;
+
+namespace cc {
+class ContextProvider;
+class Layer;
+class LayerTreeHost;
+}
 
 namespace gfx {
 class GLContext;
@@ -28,10 +36,15 @@ class Point;
 class Rect;
 }
 
+namespace WebKit {
+class WebGraphicsContext3D;
+}
+
 namespace ui {
 
 class Compositor;
 class CompositorObserver;
+class ContextProviderFromContextFactory;
 class Layer;
 class PostedSwapQueue;
 
@@ -52,12 +65,17 @@ class COMPOSITOR_EXPORT ContextFactory {
   // Creates an output surface for the given compositor. The factory may keep
   // per-compositor data (e.g. a shared context), that needs to be cleaned up
   // by calling RemoveCompositor when the compositor gets destroyed.
-  virtual WebKit::WebCompositorOutputSurface* CreateOutputSurface(
+  virtual cc::OutputSurface* CreateOutputSurface(
       Compositor* compositor) = 0;
 
   // Creates a context used for offscreen rendering. This context can be shared
   // with all compositors.
   virtual WebKit::WebGraphicsContext3D* CreateOffscreenContext() = 0;
+
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForMainThread() = 0;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForCompositorThread() = 0;
 
   // Destroys per-compositor data.
   virtual void RemoveCompositor(Compositor* compositor) = 0;
@@ -70,25 +88,53 @@ class COMPOSITOR_EXPORT DefaultContextFactory : public ContextFactory {
   virtual ~DefaultContextFactory();
 
   // ContextFactory implementation
-  virtual WebKit::WebCompositorOutputSurface* CreateOutputSurface(
+  virtual cc::OutputSurface* CreateOutputSurface(
       Compositor* compositor) OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* CreateOffscreenContext() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForMainThread() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForCompositorThread() OVERRIDE;
   virtual void RemoveCompositor(Compositor* compositor) OVERRIDE;
 
   bool Initialize();
-
-  void set_share_group(gfx::GLShareGroup* share_group) {
-    share_group_ = share_group;
-  }
 
  private:
   WebKit::WebGraphicsContext3D* CreateContextCommon(
       Compositor* compositor,
       bool offscreen);
 
-  scoped_refptr<gfx::GLShareGroup> share_group_;
+  scoped_refptr<ContextProviderFromContextFactory>
+      offscreen_contexts_main_thread_;
+  scoped_refptr<ContextProviderFromContextFactory>
+      offscreen_contexts_compositor_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(DefaultContextFactory);
+};
+
+// The factory that creates test contexts.
+class COMPOSITOR_EXPORT TestContextFactory : public ContextFactory {
+ public:
+  TestContextFactory();
+  virtual ~TestContextFactory();
+
+  // ContextFactory implementation
+  virtual cc::OutputSurface* CreateOutputSurface(
+      Compositor* compositor) OVERRIDE;
+  virtual WebKit::WebGraphicsContext3D* CreateOffscreenContext() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForMainThread() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForCompositorThread() OVERRIDE;
+  virtual void RemoveCompositor(Compositor* compositor) OVERRIDE;
+
+ private:
+  scoped_refptr<ContextProviderFromContextFactory>
+      offscreen_contexts_main_thread_;
+  scoped_refptr<ContextProviderFromContextFactory>
+      offscreen_contexts_compositor_thread_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestContextFactory);
 };
 
 // Texture provide an abstraction over the external texture that can be passed
@@ -104,14 +150,22 @@ class COMPOSITOR_EXPORT Texture : public base::RefCounted<Texture> {
   virtual unsigned int PrepareTexture() = 0;
   virtual WebKit::WebGraphicsContext3D* HostContext3D() = 0;
 
+  // Replaces the texture with the texture from the specified mailbox.
+  virtual void Consume(const std::string& mailbox_name,
+                       const gfx::Size& new_size) {}
+
+  // Moves the texture into the mailbox and returns the mailbox name.
+  // The texture must have been previously consumed from a mailbox.
+  virtual std::string Produce();
+
  protected:
   virtual ~Texture();
+  gfx::Size size_;  // in pixel
 
  private:
   friend class base::RefCounted<Texture>;
 
   bool flipped_;
-  gfx::Size size_;  // in pixel
   float device_scale_factor_;
 
   DISALLOW_COPY_AND_ASSIGN(Texture);
@@ -159,7 +213,8 @@ class COMPOSITOR_EXPORT CompositorLock
 // appropriately transformed texture for each transformed view in the widget's
 // view hierarchy.
 class COMPOSITOR_EXPORT Compositor
-    : NON_EXPORTED_BASE(public WebKit::WebLayerTreeViewClient) {
+    : NON_EXPORTED_BASE(public cc::LayerTreeHostClient),
+      public base::SupportsWeakPtr<Compositor> {
  public:
   Compositor(CompositorDelegate* delegate,
              gfx::AcceleratedWidget widget);
@@ -235,17 +290,29 @@ class COMPOSITOR_EXPORT Compositor
   // Signals swap has aborted (e.g. lost context).
   void OnSwapBuffersAborted();
 
-  // WebLayerTreeViewClient implementation.
-  virtual void updateAnimations(double frameBeginTime);
-  virtual void layout();
-  virtual void applyScrollAndScale(const WebKit::WebSize& scrollDelta,
-                                   float scaleFactor);
-  virtual WebKit::WebCompositorOutputSurface* createOutputSurface();
-  virtual void didRecreateOutputSurface(bool success);
-  virtual void didCommit();
-  virtual void didCommitAndDrawFrame();
-  virtual void didCompleteSwapBuffers();
-  virtual void scheduleComposite();
+  void OnUpdateVSyncParameters(base::TimeTicks timebase,
+                               base::TimeDelta interval);
+
+  // LayerTreeHostClient implementation.
+  virtual void WillBeginFrame() OVERRIDE {}
+  virtual void DidBeginFrame() OVERRIDE {}
+  virtual void Animate(double frame_begin_time) OVERRIDE {}
+  virtual void Layout() OVERRIDE;
+  virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
+                                   float page_scale) OVERRIDE {}
+  virtual scoped_ptr<cc::OutputSurface>
+      CreateOutputSurface() OVERRIDE;
+  virtual void DidRecreateOutputSurface(bool success) OVERRIDE {}
+  virtual scoped_ptr<cc::InputHandler> CreateInputHandler() OVERRIDE;
+  virtual void WillCommit() OVERRIDE {}
+  virtual void DidCommit() OVERRIDE;
+  virtual void DidCommitAndDrawFrame() OVERRIDE;
+  virtual void DidCompleteSwapBuffers() OVERRIDE;
+  virtual void ScheduleComposite() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForMainThread() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForCompositorThread() OVERRIDE;
 
   int last_started_frame() { return last_started_frame_; }
   int last_ended_frame() { return last_ended_frame_; }
@@ -274,8 +341,8 @@ class COMPOSITOR_EXPORT Compositor
   ObserverList<CompositorObserver> observer_list_;
 
   gfx::AcceleratedWidget widget_;
-  scoped_ptr<WebKit::WebLayer> root_web_layer_;
-  scoped_ptr<WebKit::WebLayerTreeView> host_;
+  scoped_refptr<cc::Layer> root_web_layer_;
+  scoped_ptr<cc::LayerTreeHost> host_;
 
   // Used to verify that we have at most one draw swap in flight.
   scoped_ptr<PostedSwapQueue> posted_swaps_;

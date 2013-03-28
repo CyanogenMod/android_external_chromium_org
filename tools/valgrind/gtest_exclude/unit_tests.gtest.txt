@@ -24,10 +24,17 @@ SignedSettingsTest.StorePolicyNoPolicyData
 # Flaky and not very interesting under Valgrind http://crbug.com/93027
 ProcessWatcherTest.ImmediateTermination
 
-# Timing out all over the place. Disabling for now. http://crbug.com/149712
-AppNotificationManagerTest.*
-AppNotificationManagerSyncTest.*
 # Timing out all over the place. Disabling for now. http://crbug.com/149715
 ExtensionWebRequestTest.*
 # Timing out all over the place. Disabling for now. http://crbug.com/149882
 NativeMessagingTest.*
+
+# Timing out all over the place. Disabling for now. http://crbug.com/164589
+StorageInfoProviderTest.*
+
+# Crashing. http://crbug.com/222681
+MergeSessionLoadPageTest.*
+
+# Speculative disabling to see if it stops unit_tests hangs.
+# http://crbug.com/180467
+TopSitesTest.CreateTopSitesThenHistory

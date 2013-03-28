@@ -9,6 +9,7 @@
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/input_method/input_method_whitelist.h"
 #include "chrome/browser/chromeos/input_method/mock_xkeyboard.h"
+#include "chromeos/ime/mock_input_method_delegate.h"
 
 namespace chromeos {
 namespace input_method {
@@ -26,9 +27,10 @@ class MockInputMethodManager : public InputMethodManager {
   virtual void RemoveObserver(InputMethodManager::Observer* observer) OVERRIDE;
   virtual void RemoveCandidateWindowObserver(
       InputMethodManager::CandidateWindowObserver* observer) OVERRIDE;
-  virtual void SetState(State new_state) OVERRIDE;
-  virtual InputMethodDescriptors* GetSupportedInputMethods() const OVERRIDE;
-  virtual InputMethodDescriptors* GetActiveInputMethods() const OVERRIDE;
+  virtual scoped_ptr<InputMethodDescriptors>
+      GetSupportedInputMethods() const OVERRIDE;
+  virtual scoped_ptr<InputMethodDescriptors>
+      GetActiveInputMethods() const OVERRIDE;
   virtual size_t GetNumActiveInputMethods() const OVERRIDE;
   virtual void EnableLayouts(const std::string& language_code,
                              const std::string& initial_layout) OVERRIDE;
@@ -64,17 +66,20 @@ class MockInputMethodManager : public InputMethodManager {
     current_input_method_id_ = input_method_id;
   }
 
+  // Set values that will be provided to the InputMethodUtil.
+  void set_application_locale(const std::string& value);
+  void set_hardware_keyboard_layout(const std::string& value);
+
   // TODO(yusukes): Add more variables for counting the numbers of the API calls
   int add_observer_count_;
   int remove_observer_count_;
-  int set_state_count_;
-  State last_state_;
 
  private:
   // The value GetCurrentInputMethod().id() will return.
   std::string current_input_method_id_;
 
   InputMethodWhitelist whitelist_;
+  MockInputMethodDelegate delegate_;  // used by util_
   InputMethodUtil util_;
   MockXKeyboard xkeyboard_;
 

@@ -27,12 +27,34 @@ TextureDefinition::LevelInfo::LevelInfo(GLenum target,
       cleared(cleared) {
 }
 
+TextureDefinition::LevelInfo::LevelInfo()
+    : target(0),
+      internal_format(0),
+      width(0),
+      height(0),
+      depth(0),
+      border(0),
+      format(0),
+      type(0),
+      cleared(true) {
+}
+
 TextureDefinition::TextureDefinition(GLenum target,
                                      GLuint service_id,
+                                     GLenum min_filter,
+                                     GLenum mag_filter,
+                                     GLenum wrap_s,
+                                     GLenum wrap_t,
+                                     GLenum usage,
                                      bool immutable,
                                      const LevelInfos& level_infos)
     : target_(target),
       service_id_(service_id),
+      min_filter_(min_filter),
+      mag_filter_(mag_filter),
+      wrap_s_(wrap_s),
+      wrap_t_(wrap_t),
+      usage_(usage),
       immutable_(immutable),
       level_infos_(level_infos) {
 }

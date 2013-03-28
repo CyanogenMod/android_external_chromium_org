@@ -40,7 +40,7 @@ BaseScrollBar::BaseScrollBar(bool horizontal, BaseScrollBarThumb* thumb)
       thumb_(thumb),
       contents_size_(0),
       contents_scroll_offset_(0),
-      thumb_track_state_(CustomButton::BS_NORMAL),
+      thumb_track_state_(CustomButton::STATE_NORMAL),
       last_scroll_amount_(SCROLL_NONE),
       ALLOW_THIS_IN_INITIALIZER_LIST(repeater_(
           base::Bind(&BaseScrollBar::TrackClicked, base::Unretained(this)))),
@@ -99,14 +99,28 @@ void BaseScrollBar::ScrollToThumbPosition(int thumb_position,
   SchedulePaint();
 }
 
-void BaseScrollBar::ScrollByContentsOffset(int contents_offset) {
+bool BaseScrollBar::ScrollByContentsOffset(int contents_offset) {
+  int old_offset = contents_scroll_offset_;
   contents_scroll_offset_ -= contents_offset;
   if (contents_scroll_offset_ < GetMinPosition()) {
     contents_scroll_offset_ = GetMinPosition();
   } else if (contents_scroll_offset_ > GetMaxPosition()) {
     contents_scroll_offset_ = GetMaxPosition();
   }
+  if (old_offset == contents_scroll_offset_)
+    return false;
+
   ScrollContentsToOffset();
+  return true;
+}
+
+void BaseScrollBar::OnThumbStateChanged(CustomButton::ButtonState old_state,
+                                        CustomButton::ButtonState new_state) {
+  if (old_state == CustomButton::STATE_PRESSED &&
+      new_state == CustomButton::STATE_NORMAL &&
+      GetThumbTrackState() == CustomButton::STATE_HOVERED) {
+    SetThumbTrackState(CustomButton::STATE_NORMAL);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -119,11 +133,21 @@ bool BaseScrollBar::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 void BaseScrollBar::OnMouseReleased(const ui::MouseEvent& event) {
-  OnMouseCaptureLost();
+  SetState(HitTestPoint(event.location()) ?
+           CustomButton::STATE_HOVERED : CustomButton::STATE_NORMAL);
 }
 
 void BaseScrollBar::OnMouseCaptureLost() {
-  ResetState();
+  SetState(CustomButton::STATE_NORMAL);
+}
+
+void BaseScrollBar::OnMouseEntered(const ui::MouseEvent& event) {
+  SetThumbTrackState(CustomButton::STATE_HOVERED);
+}
+
+void BaseScrollBar::OnMouseExited(const ui::MouseEvent& event) {
+  if (GetThumbTrackState() == CustomButton::STATE_HOVERED)
+    SetState(CustomButton::STATE_NORMAL);
 }
 
 bool BaseScrollBar::OnKeyPressed(const ui::KeyEvent& event) {
@@ -172,7 +196,7 @@ bool BaseScrollBar::OnMouseWheel(const ui::MouseWheelEvent& event) {
   return true;
 }
 
-ui::EventResult BaseScrollBar::OnGestureEvent(ui::GestureEvent* event) {
+void BaseScrollBar::OnGestureEvent(ui::GestureEvent* event) {
   // If a fling is in progress, then stop the fling for any incoming gesture
   // event (except for the GESTURE_END event that is generated at the end of the
   // fling).
@@ -184,31 +208,37 @@ ui::EventResult BaseScrollBar::OnGestureEvent(ui::GestureEvent* event) {
 
   if (event->type() == ui::ET_GESTURE_TAP_DOWN) {
     ProcessPressEvent(*event);
-    return ui::ER_CONSUMED;
+    event->SetHandled();
+    return;
   }
 
   if (event->type() == ui::ET_GESTURE_LONG_PRESS) {
     // For a long-press, the repeater started in tap-down should continue. So
     // return early.
-    return ui::ER_UNHANDLED;
+    return;
   }
 
-  ResetState();
+  SetState(CustomButton::STATE_NORMAL);
 
   if (event->type() == ui::ET_GESTURE_TAP) {
     // TAP_DOWN would have already scrolled some amount. So scrolling again on
     // TAP is not necessary.
-    return ui::ER_CONSUMED;
+    event->SetHandled();
+    return;
   }
 
   if (event->type() == ui::ET_GESTURE_SCROLL_BEGIN ||
-      event->type() == ui::ET_GESTURE_SCROLL_END)
-    return ui::ER_CONSUMED;
+      event->type() == ui::ET_GESTURE_SCROLL_END) {
+    event->SetHandled();
+    return;
+  }
 
   if (event->type() == ui::ET_GESTURE_SCROLL_UPDATE) {
-    ScrollByContentsOffset(IsHorizontal() ? event->details().scroll_x() :
-                                            event->details().scroll_y());
-    return ui::ER_CONSUMED;
+    if (ScrollByContentsOffset(IsHorizontal() ? event->details().scroll_x() :
+                                                event->details().scroll_y())) {
+      event->SetHandled();
+    }
+    return;
   }
 
   if (event->type() == ui::ET_SCROLL_FLING_START) {
@@ -217,20 +247,16 @@ ui::EventResult BaseScrollBar::OnGestureEvent(ui::GestureEvent* event) {
     scroll_animator_->Start(
         IsHorizontal() ?  event->details().velocity_x() : 0.f,
         IsHorizontal() ? 0.f : event->details().velocity_y());
-    return ui::ER_CONSUMED;
+    event->SetHandled();
   }
-
-  return ui::ER_UNHANDLED;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // BaseScrollBar, ScrollDelegate implementation:
 
-void BaseScrollBar::OnScroll(float dx, float dy) {
-  if (IsHorizontal())
-    ScrollByContentsOffset(dx);
-  else
-    ScrollByContentsOffset(dy);
+bool BaseScrollBar::OnScroll(float dx, float dy) {
+  return IsHorizontal() ? ScrollByContentsOffset(dx) :
+                          ScrollByContentsOffset(dy);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -398,17 +424,16 @@ int BaseScrollBar::GetScrollIncrement(bool is_page, bool is_positive) {
   return controller()->GetScrollIncrement(this, is_page, is_positive);
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // BaseScrollBar, private:
 
 void BaseScrollBar::ProcessPressEvent(const ui::LocatedEvent& event) {
-  SetThumbTrackState(CustomButton::BS_PUSHED);
+  SetThumbTrackState(CustomButton::STATE_PRESSED);
   gfx::Rect thumb_bounds = thumb_->bounds();
   if (IsHorizontal()) {
-    if (event.x() < thumb_bounds.x()) {
+    if (GetMirroredXInView(event.x()) < thumb_bounds.x()) {
       last_scroll_amount_ = SCROLL_PREV_PAGE;
-    } else if (event.x() > thumb_bounds.right()) {
+    } else if (GetMirroredXInView(event.x()) > thumb_bounds.right()) {
       last_scroll_amount_ = SCROLL_NEXT_PAGE;
     }
   } else {
@@ -422,8 +447,8 @@ void BaseScrollBar::ProcessPressEvent(const ui::LocatedEvent& event) {
   repeater_.Start();
 }
 
-void BaseScrollBar::ResetState() {
-  SetThumbTrackState(CustomButton::BS_NORMAL);
+void BaseScrollBar::SetState(CustomButton::ButtonState state) {
+  SetThumbTrackState(state);
   repeater_.Stop();
 }
 

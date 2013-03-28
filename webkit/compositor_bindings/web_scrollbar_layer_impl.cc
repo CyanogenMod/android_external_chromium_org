@@ -2,41 +2,37 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "web_scrollbar_layer_impl.h"
+#include "webkit/compositor_bindings/web_scrollbar_layer_impl.h"
 
-#include "cc/scrollbar_layer.h"
-#include "web_layer_impl.h"
+#include "cc/layers/scrollbar_layer.h"
+#include "webkit/compositor_bindings/web_layer_impl.h"
+#include "webkit/compositor_bindings/web_to_ccscrollbar_theme_painter_adapter.h"
 
 using cc::ScrollbarLayer;
+using cc::ScrollbarThemePainter;
+using WebKit::WebScrollbarThemePainter;
 
-namespace WebKit {
+namespace webkit {
 
-WebScrollbarLayer* WebScrollbarLayer::create(WebScrollbar* scrollbar, WebScrollbarThemePainter painter, WebScrollbarThemeGeometry* geometry)
-{
-    return new WebScrollbarLayerImpl(scrollbar, painter, geometry);
+WebScrollbarLayerImpl::WebScrollbarLayerImpl(
+    WebKit::WebScrollbar* scrollbar,
+    WebKit::WebScrollbarThemePainter painter,
+    WebKit::WebScrollbarThemeGeometry* geometry)
+    : layer_(new WebLayerImpl(ScrollbarLayer::Create(
+          make_scoped_ptr(scrollbar),
+          WebToCCScrollbarThemePainterAdapter::Create(
+              make_scoped_ptr(new WebScrollbarThemePainter(painter)))
+              .PassAs<ScrollbarThemePainter>(),
+          make_scoped_ptr(geometry),
+          0))) {}
+
+WebScrollbarLayerImpl::~WebScrollbarLayerImpl() {}
+
+WebKit::WebLayer* WebScrollbarLayerImpl::layer() { return layer_.get(); }
+
+void WebScrollbarLayerImpl::setScrollLayer(WebKit::WebLayer* layer) {
+  int id = layer ? static_cast<WebLayerImpl*>(layer)->layer()->id() : 0;
+  static_cast<ScrollbarLayer*>(layer_->layer())->SetScrollLayerId(id);
 }
 
-
-WebScrollbarLayerImpl::WebScrollbarLayerImpl(WebScrollbar* scrollbar, WebScrollbarThemePainter painter, WebScrollbarThemeGeometry* geometry)
-    : m_layer(new WebLayerImpl(ScrollbarLayer::create(make_scoped_ptr(scrollbar), painter, make_scoped_ptr(geometry), 0)))
-{
-}
-
-WebScrollbarLayerImpl::~WebScrollbarLayerImpl()
-{
-}
-
-WebLayer* WebScrollbarLayerImpl::layer()
-{
-    return m_layer.get();
-}
-
-void WebScrollbarLayerImpl::setScrollLayer(WebLayer* layer)
-{
-    int id = layer ? static_cast<WebLayerImpl*>(layer)->layer()->id() : 0;
-    static_cast<ScrollbarLayer*>(m_layer->layer())->setScrollLayerId(id);
-}
-
-
-
-} // namespace WebKit
+}  // namespace webkit

@@ -4,12 +4,16 @@
 
 #include "android_webview/browser/aw_content_browser_client.h"
 
+#include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/aw_browser_main_parts.h"
+#include "android_webview/browser/aw_contents_client_bridge_base.h"
 #include "android_webview/browser/aw_cookie_access_policy.h"
 #include "android_webview/browser/aw_quota_permission_context.h"
+#include "android_webview/browser/jni_dependency_factory.h"
 #include "android_webview/browser/net_disk_cache_remover.h"
 #include "android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.h"
 #include "android_webview/common/url_constants.h"
+#include "base/android/locale_utils.h"
 #include "base/base_paths_android.h"
 #include "base/path_service.h"
 #include "content/public/browser/access_token_store.h"
@@ -18,39 +22,65 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/url_constants.h"
 #include "grit/ui_resources.h"
+#include "net/android/network_library.h"
+#include "net/ssl/ssl_info.h"
 #include "ui/base/resource/resource_bundle.h"
 
 namespace {
 
-class DummyAccessTokenStore : public content::AccessTokenStore {
+class AwAccessTokenStore : public content::AccessTokenStore {
  public:
-  DummyAccessTokenStore() { }
+  AwAccessTokenStore() { }
 
+  // content::AccessTokenStore implementation
   virtual void LoadAccessTokens(
-      const LoadAccessTokensCallbackType& request) OVERRIDE { }
+      const LoadAccessTokensCallbackType& request) OVERRIDE {
+    AccessTokenStore::AccessTokenSet access_token_set;
+    // AccessTokenSet and net::URLRequestContextGetter not used on Android,
+    // but Run needs to be called to finish the geolocation setup.
+    request.Run(access_token_set, NULL);
+  }
+  virtual void SaveAccessToken(const GURL& server_url,
+                               const string16& access_token) OVERRIDE { }
 
  private:
-  virtual ~DummyAccessTokenStore() { }
+  virtual ~AwAccessTokenStore() { }
 
-  virtual void SaveAccessToken(
-      const GURL& server_url, const string16& access_token) OVERRIDE { }
-
-  DISALLOW_COPY_AND_ASSIGN(DummyAccessTokenStore);
+  DISALLOW_COPY_AND_ASSIGN(AwAccessTokenStore);
 };
 
 }
 
 namespace android_webview {
 
-AwContentBrowserClient::AwContentBrowserClient() {
-  FilePath user_data_dir;
+// static
+AwContentBrowserClient* AwContentBrowserClient::FromContentBrowserClient(
+    content::ContentBrowserClient* client) {
+  return static_cast<AwContentBrowserClient*>(client);
+}
+
+AwContentBrowserClient::AwContentBrowserClient(
+    JniDependencyFactory* native_factory)
+    : native_factory_(native_factory) {
+  base::FilePath user_data_dir;
   if (!PathService::Get(base::DIR_ANDROID_APP_DATA, &user_data_dir)) {
     NOTREACHED() << "Failed to get app data directory for Android WebView";
   }
-  browser_context_.reset(new AwBrowserContext(user_data_dir));
+  browser_context_.reset(
+      new AwBrowserContext(user_data_dir, native_factory_));
 }
 
 AwContentBrowserClient::~AwContentBrowserClient() {
+}
+
+void AwContentBrowserClient::AddCertificate(net::URLRequest* request,
+                                            net::CertificateMimeType cert_type,
+                                            const void* cert_data,
+                                            size_t cert_size,
+                                            int render_process_id,
+                                            int render_view_id) {
+  if (cert_size > 0)
+    net::android::StoreCertificate(cert_type, cert_data, cert_size);
 }
 
 AwBrowserContext* AwContentBrowserClient::GetAwBrowserContext() {
@@ -60,6 +90,12 @@ AwBrowserContext* AwContentBrowserClient::GetAwBrowserContext() {
 content::BrowserMainParts* AwContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams& parameters) {
   return new AwBrowserMainParts(browser_context_.get());
+}
+
+content::WebContentsViewDelegate*
+AwContentBrowserClient::GetWebContentsViewDelegate(
+    content::WebContents* web_contents) {
+  return native_factory_->CreateViewDelegate(web_contents);
 }
 
 void AwContentBrowserClient::RenderProcessHostCreated(
@@ -79,10 +115,27 @@ void AwContentBrowserClient::RenderProcessHostCreated(
       host->GetID(), chrome::kFileScheme);
 }
 
+net::URLRequestContextGetter*
+AwContentBrowserClient::CreateRequestContext(
+    content::BrowserContext* browser_context,
+    content::ProtocolHandlerMap* protocol_handlers) {
+  DCHECK(browser_context_.get() == browser_context);
+  return browser_context_->CreateRequestContext(protocol_handlers);
+}
+
+net::URLRequestContextGetter*
+AwContentBrowserClient::CreateRequestContextForStoragePartition(
+    content::BrowserContext* browser_context,
+    const base::FilePath& partition_path,
+    bool in_memory,
+    content::ProtocolHandlerMap* protocol_handlers) {
+  DCHECK(browser_context_.get() == browser_context);
+  return browser_context_->CreateRequestContextForStoragePartition(
+      partition_path, in_memory, protocol_handlers);
+}
+
 std::string AwContentBrowserClient::GetCanonicalEncodingNameByAliasName(
     const std::string& alias_name) {
-  // TODO(boliu): Call to icu here? Compotentize character_encoding.cc?
-  NOTIMPLEMENTED();
   return alias_name;
 }
 
@@ -93,16 +146,20 @@ void AwContentBrowserClient::AppendExtraCommandLineSwitches(
 }
 
 std::string AwContentBrowserClient::GetApplicationLocale() {
-  // TODO(boliu): Read Android system locale.
-  NOTIMPLEMENTED();
-  return "en-US";
+  return base::android::GetDefaultLocale();
 }
 
 std::string AwContentBrowserClient::GetAcceptLangs(
     content::BrowserContext* context) {
-  // TODO(boliu): Read Android system locale.
-  NOTIMPLEMENTED();
-  return "en-GB,en-US,en";
+  // Start with the currnet locale.
+  std::string langs = GetApplicationLocale();
+
+  // If we're not en-US, add in en-US which will be
+  // used with a lower q-value.
+  if (StringToLowerASCII(langs) != "en-us") {
+    langs += ",en-US";
+  }
+  return langs;
 }
 
 gfx::ImageSkia* AwContentBrowserClient::GetDefaultFavicon() {
@@ -114,9 +171,9 @@ gfx::ImageSkia* AwContentBrowserClient::GetDefaultFavicon() {
 bool AwContentBrowserClient::AllowAppCache(const GURL& manifest_url,
                            const GURL& first_party,
                            content::ResourceContext* context) {
-  // TODO(boliu): Implement this to power WebSettings.SetAppCacheEnabled.
-  NOTIMPLEMENTED();
-  return false;
+  // WebView doesn't have a per-site policy for locally stored data,
+  // instead AppCache can be disabled for individual WebViews.
+  return true;
 }
 
 
@@ -183,27 +240,26 @@ AwContentBrowserClient::CreateQuotaPermissionContext() {
   return new AwQuotaPermissionContext;
 }
 
-void AwContentBrowserClient::OpenItem(const FilePath& path) {
-  NOTREACHED() << "Android WebView does not use chromium downloads";
-}
-
-void AwContentBrowserClient::ShowItemInFolder(const FilePath& path) {
-  NOTREACHED() << "Android WebView does not use chromium downloads";
-}
-
 void AwContentBrowserClient::AllowCertificateError(
     int render_process_id,
     int render_view_id,
     int cert_error,
     const net::SSLInfo& ssl_info,
     const GURL& request_url,
+    ResourceType::Type resource_type,
     bool overridable,
     bool strict_enforcement,
     const base::Callback<void(bool)>& callback,
     bool* cancel_request) {
-  // TODO(boliu): Implement this to power WebViewClient.onReceivedSslError.
-  NOTIMPLEMENTED();
-  *cancel_request = true;
+
+  AwContentsClientBridgeBase* client =
+      AwContentsClientBridgeBase::FromID(render_process_id, render_view_id);
+  if (client) {
+    client->AllowCertificateError(cert_error, ssl_info.cert, request_url,
+                                  callback, cancel_request);
+  } else {
+    *cancel_request = true;
+  }
 }
 
 WebKit::WebNotificationPresenter::Permission
@@ -237,10 +293,17 @@ bool AwContentBrowserClient::CanCreateWindow(
     content::ResourceContext* context,
     int render_process_id,
     bool* no_javascript_access) {
-  // TODO(boliu): Implement this to power SupportMultipleWindow.
-  NOTIMPLEMENTED();
-  *no_javascript_access = false;
-  return false;
+  // We unconditionally allow popup windows at this stage and will give
+  // the embedder the opporunity to handle displaying of the popup in
+  // WebContentsDelegate::AddContents (via the
+  // AwContentsClient.onCreateWindow callback).
+  // Note that if the embedder has blocked support for creating popup
+  // windows through AwSettings, then we won't get to this point as
+  // the popup creation will have been blocked at the WebKit level.
+  if (no_javascript_access) {
+    *no_javascript_access = false;
+  }
+  return true;
 }
 
 std::string AwContentBrowserClient::GetWorkerProcessTitle(const GURL& url,
@@ -260,8 +323,7 @@ net::NetLog* AwContentBrowserClient::GetNetLog() {
 }
 
 content::AccessTokenStore* AwContentBrowserClient::CreateAccessTokenStore() {
-  // TODO(boliu): Implement as part of geolocation code.
-  return new DummyAccessTokenStore();
+  return new AwAccessTokenStore();
 }
 
 bool AwContentBrowserClient::IsFastShutdownPossible() {
@@ -294,9 +356,13 @@ void AwContentBrowserClient::ClearCookies(content::RenderViewHost* rvh) {
   NOTIMPLEMENTED();
 }
 
-FilePath AwContentBrowserClient::GetDefaultDownloadDirectory() {
-  NOTREACHED() << "Android WebView does not use chromium downloads";
-  return FilePath();
+base::FilePath AwContentBrowserClient::GetDefaultDownloadDirectory() {
+  // Android WebView does not currently use the Chromium downloads system.
+  // Download requests are cancelled immedately when recognized; see
+  // AwResourceDispatcherHost::CreateResourceHandlerForDownload. However the
+  // download system still tries to start up and calls this before recognizing
+  // the request has been cancelled.
+  return base::FilePath();
 }
 
 std::string AwContentBrowserClient::GetDefaultDownloadName() {

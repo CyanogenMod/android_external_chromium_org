@@ -84,6 +84,12 @@ gpu::CommandBuffer::State PpapiCommandBufferProxy::GetLastState() {
   return last_state_;
 }
 
+int32 PpapiCommandBufferProxy::GetLastToken() {
+  // Note: The locking command buffer wrapper does not take a global lock before
+  // calling this function.
+  return last_state_.token;
+}
+
 void PpapiCommandBufferProxy::Flush(int32 put_offset) {
   if (last_state_.error != gpu::error::kNoError)
     return;
@@ -129,26 +135,22 @@ void PpapiCommandBufferProxy::SetGetOffset(int32 get_offset) {
   NOTREACHED();
 }
 
-int32 PpapiCommandBufferProxy::CreateTransferBuffer(
-    size_t size,
-    int32 id_request) {
-  if (last_state_.error == gpu::error::kNoError) {
-    int32 id;
-    if (Send(new PpapiHostMsg_PPBGraphics3D_CreateTransferBuffer(
-             ppapi::API_ID_PPB_GRAPHICS_3D, resource_, size, &id))) {
-      return id;
-    }
-  }
-  return -1;
-}
+gpu::Buffer PpapiCommandBufferProxy::CreateTransferBuffer(size_t size,
+                                                          int32* id) {
+  *id = -1;
 
-int32 PpapiCommandBufferProxy::RegisterTransferBuffer(
-    base::SharedMemory* shared_memory,
-    size_t size,
-    int32 id_request) {
-  // Not implemented in proxy.
-  NOTREACHED();
-  return -1;
+  if (last_state_.error != gpu::error::kNoError)
+    return gpu::Buffer();
+
+  if (!Send(new PpapiHostMsg_PPBGraphics3D_CreateTransferBuffer(
+            ppapi::API_ID_PPB_GRAPHICS_3D, resource_, size, id))) {
+    return gpu::Buffer();
+  }
+
+  if ((*id) <= 0)
+    return gpu::Buffer();
+
+  return GetTransferBuffer(*id);
 }
 
 void PpapiCommandBufferProxy::DestroyTransferBuffer(int32 id) {
@@ -222,6 +224,15 @@ void PpapiCommandBufferProxy::SetParseError(gpu::error::Error error) {
 void PpapiCommandBufferProxy::SetContextLostReason(
     gpu::error::ContextLostReason reason) {
   NOTREACHED();
+}
+
+uint32 PpapiCommandBufferProxy::InsertSyncPoint() {
+  uint32 sync_point = 0;
+  if (last_state_.error == gpu::error::kNoError) {
+    Send(new PpapiHostMsg_PPBGraphics3D_InsertSyncPoint(
+         ppapi::API_ID_PPB_GRAPHICS_3D, resource_, &sync_point));
+  }
+  return sync_point;
 }
 
 bool PpapiCommandBufferProxy::Send(IPC::Message* msg) {

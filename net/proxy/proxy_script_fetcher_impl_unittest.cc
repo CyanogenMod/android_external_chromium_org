@@ -6,20 +6,20 @@
 
 #include <string>
 
-#include "base/file_path.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/utf_string_conversions.h"
-#include "net/base/mock_cert_verifier.h"
-#include "net/base/mock_host_resolver.h"
-#include "net/base/net_util.h"
 #include "net/base/load_flags.h"
-#include "net/base/ssl_config_service_defaults.h"
+#include "net/base/mock_cert_verifier.h"
+#include "net/base/net_util.h"
 #include "net/base/test_completion_callback.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/test_server.h"
 #include "net/url_request/url_request_context_storage.h"
 #include "net/url_request/url_request_file_job.h"
@@ -36,36 +36,12 @@ namespace net {
 
 namespace {
 
-const FilePath::CharType kDocRoot[] =
+const base::FilePath::CharType kDocRoot[] =
     FILE_PATH_LITERAL("net/data/proxy_script_fetcher_unittest");
 
 struct FetchResult {
   int code;
   string16 text;
-};
-
-// CheckNoRevocationFlagSetInterceptor causes a test failure if a request is
-// seen that doesn't set a load flag to bypass revocation checking.
-class CheckNoRevocationFlagSetInterceptor :
-    public URLRequestJobFactory::Interceptor {
- public:
-  virtual URLRequestJob* MaybeIntercept(
-      URLRequest* request, NetworkDelegate* network_delegate) const OVERRIDE {
-    EXPECT_TRUE(request->load_flags() & LOAD_DISABLE_CERT_REVOCATION_CHECKING);
-    return NULL;
-  }
-
-  virtual URLRequestJob* MaybeInterceptRedirect(
-      const GURL& location,
-      URLRequest* request,
-      NetworkDelegate* network_delegate) const OVERRIDE {
-    return NULL;
-  }
-
-  virtual URLRequestJob* MaybeInterceptResponse(
-      URLRequest* request, NetworkDelegate* network_delegate) const OVERRIDE {
-    return NULL;
-  }
 };
 
 // A non-mock URL request which can access http:// and file:// urls.
@@ -90,10 +66,7 @@ class RequestContext : public URLRequestContext {
     storage_.set_http_transaction_factory(new HttpCache(
         network_session,
         HttpCache::DefaultBackend::InMemory(0)));
-    url_request_job_factory_.reset(new URLRequestJobFactoryImpl);
-    set_job_factory(url_request_job_factory_.get());
-    url_request_job_factory_->AddInterceptor(
-        new CheckNoRevocationFlagSetInterceptor);
+    storage_.set_job_factory(new URLRequestJobFactoryImpl());
   }
 
   virtual ~RequestContext() {
@@ -101,12 +74,11 @@ class RequestContext : public URLRequestContext {
 
  private:
   URLRequestContextStorage storage_;
-  scoped_ptr<URLRequestJobFactory> url_request_job_factory_;
 };
 
 // Get a file:// url relative to net/data/proxy/proxy_script_fetcher_unittest.
 GURL GetTestFileUrl(const std::string& relpath) {
-  FilePath path;
+  base::FilePath path;
   PathService::Get(base::DIR_SOURCE_ROOT, &path);
   path = path.AppendASCII("net");
   path = path.AppendASCII("data");
@@ -116,7 +88,9 @@ GURL GetTestFileUrl(const std::string& relpath) {
 }
 
 // Really simple NetworkDelegate so we can allow local file access on ChromeOS
-// without introducing layering violations.
+// without introducing layering violations.  Also causes a test failure if a
+// request is seen that doesn't set a load flag to bypass revocation checking.
+
 class BasicNetworkDelegate : public NetworkDelegate {
  public:
   BasicNetworkDelegate() {}
@@ -126,6 +100,7 @@ class BasicNetworkDelegate : public NetworkDelegate {
   virtual int OnBeforeURLRequest(URLRequest* request,
                                  const CompletionCallback& callback,
                                  GURL* new_url) OVERRIDE {
+    EXPECT_TRUE(request->load_flags() & LOAD_DISABLE_CERT_REVOCATION_CHECKING);
     return OK;
   }
 
@@ -182,7 +157,7 @@ class BasicNetworkDelegate : public NetworkDelegate {
   }
 
   virtual bool OnCanAccessFile(const net::URLRequest& request,
-                               const FilePath& path) const OVERRIDE {
+                               const base::FilePath& path) const OVERRIDE {
     return true;
   }
   virtual bool OnCanThrottleRequest(const URLRequest& request) const OVERRIDE {
@@ -209,7 +184,7 @@ class ProxyScriptFetcherImplTest : public PlatformTest {
   ProxyScriptFetcherImplTest()
       : test_server_(TestServer::TYPE_HTTP,
                      net::TestServer::kLocalhost,
-                     FilePath(kDocRoot)) {
+                     base::FilePath(kDocRoot)) {
     context_.set_network_delegate(&network_delegate_);
   }
 
@@ -319,6 +294,7 @@ TEST_F(ProxyScriptFetcherImplTest, ContentDisposition) {
   EXPECT_EQ(ASCIIToUTF16("-downloadable.pac-\n"), text);
 }
 
+// Verifies that PAC scripts are not being cached.
 TEST_F(ProxyScriptFetcherImplTest, NoCache) {
   ASSERT_TRUE(test_server_.Start());
 
@@ -335,18 +311,27 @@ TEST_F(ProxyScriptFetcherImplTest, NoCache) {
     EXPECT_EQ(ASCIIToUTF16("-cacheable_1hr.pac-\n"), text);
   }
 
-  // Now kill the HTTP server.
+  // Kill the HTTP server.
   ASSERT_TRUE(test_server_.Stop());
 
-  // Try to fetch the file again -- if should fail, since the server is not
-  // running anymore. (If it were instead being loaded from cache, we would
-  // get a success.
+  // Try to fetch the file again. Since the server is not running anymore, the
+  // call should fail, thus indicating that the file was not fetched from the
+  // local cache.
   {
     string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());
     EXPECT_EQ(ERR_IO_PENDING, result);
+
+#if defined(OS_ANDROID)
+    // On Android platform, the tests are run on the device while the server
+    // runs on the host machine. After killing the server, port forwarder
+    // running on the device is still active, which produces error message
+    // "Connection reset by peer" rather than "Connection refused".
+    EXPECT_EQ(ERR_CONNECTION_RESET, callback.WaitForResult());
+#else
     EXPECT_EQ(ERR_CONNECTION_REFUSED, callback.WaitForResult());
+#endif
   }
 }
 

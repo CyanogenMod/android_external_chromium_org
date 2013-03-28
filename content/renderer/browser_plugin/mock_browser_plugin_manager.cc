@@ -4,12 +4,17 @@
 
 #include "content/renderer/browser_plugin/mock_browser_plugin_manager.h"
 
-#include "ipc/ipc_message.h"
+#include "base/message_loop.h"
+#include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/renderer/browser_plugin/mock_browser_plugin.h"
+#include "ipc/ipc_message.h"
 
 namespace content {
 
-MockBrowserPluginManager::MockBrowserPluginManager() {
+MockBrowserPluginManager::MockBrowserPluginManager(
+    RenderViewImpl* render_view)
+    : BrowserPluginManager(render_view),
+      browser_plugin_counter_(0) {
 }
 
 MockBrowserPluginManager::~MockBrowserPluginManager() {
@@ -19,18 +24,24 @@ BrowserPlugin* MockBrowserPluginManager::CreateBrowserPlugin(
     RenderViewImpl* render_view,
     WebKit::WebFrame* frame,
     const WebKit::WebPluginParams& params) {
-  return new MockBrowserPlugin(browser_plugin_counter_++,
-                           render_view,
-                           frame,
-                           params);
+  return new MockBrowserPlugin(render_view, frame, params);
 }
 
-void MockBrowserPluginManager::Cleanup() {
-  IDMap<BrowserPlugin>::iterator iter(&instances_);
-  while (!iter.IsAtEnd()) {
-    iter.GetCurrentValue()->Cleanup();
-    iter.Advance();
-  }
+void MockBrowserPluginManager::AllocateInstanceID(
+    BrowserPlugin* browser_plugin) {
+  int instance_id = ++browser_plugin_counter_;
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&MockBrowserPluginManager::AllocateInstanceIDACK,
+                 this,
+                 base::Unretained(browser_plugin),
+                 instance_id));
+}
+
+void MockBrowserPluginManager::AllocateInstanceIDACK(
+    BrowserPlugin* browser_plugin,
+    int instance_id) {
+  browser_plugin->SetInstanceID(instance_id, true);
 }
 
 bool MockBrowserPluginManager::Send(IPC::Message* msg) {
@@ -50,13 +61,13 @@ bool MockBrowserPluginManager::Send(IPC::Message* msg) {
       reply_deserializer_.reset(
           static_cast<IPC::SyncMessage*>(msg)->GetReplyDeserializer());
     }
-    OnControlMessageReceived(*msg);
+    OnMessageReceived(*msg);
   }
   delete msg;
   return true;
 }
 
-bool MockBrowserPluginManager::OnControlMessageReceived(
+bool MockBrowserPluginManager::OnMessageReceived(
     const IPC::Message& message) {
   // Save the message in the sink.
   sink_.OnMessageReceived(message);

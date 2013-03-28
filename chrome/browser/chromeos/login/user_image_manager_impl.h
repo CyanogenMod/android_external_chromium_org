@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,10 @@
 class ProfileDownloader;
 class UserImage;
 
+namespace base {
+class FilePath;
+}
+
 namespace chromeos {
 
 class UserImageManagerImpl : public UserImageManager,
@@ -32,13 +36,14 @@ class UserImageManagerImpl : public UserImageManager,
   virtual ~UserImageManagerImpl();
   virtual void LoadUserImages(const UserList& users) OVERRIDE;
   virtual void UserLoggedIn(const std::string& email,
-                            bool user_is_new) OVERRIDE;
+                            bool user_is_new,
+                            bool user_is_local) OVERRIDE;
   virtual void SaveUserDefaultImageIndex(const std::string& username,
                                          int image_index) OVERRIDE;
   virtual void SaveUserImage(const std::string& username,
                              const UserImage& user_image) OVERRIDE;
   virtual void SaveUserImageFromFile(const std::string& username,
-                                     const FilePath& path) OVERRIDE;
+                                     const base::FilePath& path) OVERRIDE;
   virtual void SaveUserImageFromProfileImage(
       const std::string& username) OVERRIDE;
   virtual void DeleteUserImage(const std::string& username) OVERRIDE;
@@ -49,7 +54,7 @@ class UserImageManagerImpl : public UserImageManager,
   friend class UserImageManagerTest;
 
   // Non-const for testing purposes.
-  static long user_image_migration_delay_ms;
+  static int user_image_migration_delay_sec;
 
   // ProfileDownloaderDelegate implementation:
   virtual bool NeedsProfilePicture() const OVERRIDE;
@@ -57,10 +62,12 @@ class UserImageManagerImpl : public UserImageManager,
   virtual Profile* GetBrowserProfile() OVERRIDE;
   virtual std::string GetCachedPictureURL() const OVERRIDE;
   virtual void OnProfileDownloadSuccess(ProfileDownloader* downloader) OVERRIDE;
-  virtual void OnProfileDownloadFailure(ProfileDownloader* downloader) OVERRIDE;
+  virtual void OnProfileDownloadFailure(
+      ProfileDownloader* downloader,
+      ProfileDownloaderDelegate::FailureReason reason) OVERRIDE;
 
   // Returns image filepath for the given user.
-  FilePath GetImagePathForUser(const std::string& username);
+  base::FilePath GetImagePathForUser(const std::string& username);
 
   // Sets one of the default images for the specified user and saves this
   // setting in local state.
@@ -87,7 +94,7 @@ class UserImageManagerImpl : public UserImageManager,
   // Local State on UI thread.
   void SaveImageToFile(const std::string& username,
                        const UserImage& user_image,
-                       const FilePath& image_path,
+                       const base::FilePath& image_path,
                        int image_index,
                        const GURL& image_url);
 
@@ -102,7 +109,7 @@ class UserImageManagerImpl : public UserImageManager,
 
   // Saves |image| to the specified |image_path|. Runs on FILE thread.
   bool SaveBitmapToFile(const UserImage& user_image,
-                        const FilePath& image_path);
+                        const base::FilePath& image_path);
 
   // Initializes |downloaded_profile_image_| with the picture of the logged-in
   // user.
@@ -116,6 +123,9 @@ class UserImageManagerImpl : public UserImageManager,
 
   // Scheduled call for downloading profile data.
   void DownloadProfileDataScheduled();
+
+  // Delayed call to retry downloading profile data.
+  void DownloadProfileDataRetry(bool download_image);
 
   // Migrates image info for the current user and deletes the old image, if any.
   void MigrateUserImage();

@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/string16.h"
 #include "base/stringprintf.h"
@@ -12,8 +12,7 @@
 #include "chrome/browser/automation/automation_tab_helper.h"
 #include "chrome/browser/automation/mock_tab_event_observer.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
@@ -90,11 +89,10 @@ class AutomationTabHelperBrowserTest : public InProcessBrowserTest {
   void RunTestCaseInJavaScript(int test_case_number, bool wait_for_response) {
     std::string script = base::StringPrintf("runTestCase(%d);",
                                             test_case_number);
-    content::RenderViewHost* host =
-        chrome::GetActiveWebContents(browser())->GetRenderViewHost();
+    content::RenderViewHost* host = browser()->tab_strip_model()->
+        GetActiveWebContents()->GetRenderViewHost();
     if (wait_for_response) {
-      ASSERT_TRUE(content::ExecuteJavaScript(
-          host, L"", ASCIIToWide(script)));
+      ASSERT_TRUE(content::ExecuteScript(host, script));
     } else {
       script += "window.domAutomationController.setAutomationId(0);"
                 "window.domAutomationController.send(0);";
@@ -105,11 +103,11 @@ class AutomationTabHelperBrowserTest : public InProcessBrowserTest {
   // Returns the |AutomationTabHelper| for the first browser's first tab.
   AutomationTabHelper* tab_helper() {
     return AutomationTabHelper::FromWebContents(
-        chrome::GetWebContentsAt(browser(), 0));
+        browser()->tab_strip_model()->GetWebContentsAt(0));
   }
 
  protected:
-  FilePath test_data_dir_;
+  base::FilePath test_data_dir_;
 };
 
 IN_PROC_BROWSER_TEST_F(AutomationTabHelperBrowserTest, FormSubmission) {
@@ -213,5 +211,5 @@ IN_PROC_BROWSER_TEST_F(AutomationTabHelperBrowserTest,
   EXPECT_CALL(mock_tab_observer, OnFirstPendingLoad(_));
   EXPECT_CALL(mock_tab_observer, OnNoMorePendingLoads(_));
 
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUICrashURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kChromeUICrashURL));
 }

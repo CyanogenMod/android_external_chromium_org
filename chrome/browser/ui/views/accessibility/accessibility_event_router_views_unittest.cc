@@ -29,6 +29,7 @@
 #endif
 
 #if defined(USE_AURA)
+#include "ui/aura/root_window.h"
 #include "ui/aura/test/aura_test_helper.h"
 #endif
 
@@ -74,7 +75,7 @@ class ViewWithNameAndRole : public views::View {
         role_(role) {
   }
 
-  void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE {
+  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE {
     views::View::GetAccessibleState(state);
     state->name = name_;
     state->role = role_;
@@ -113,7 +114,7 @@ class AccessibilityEventRouterViewsTest
     // The Widget's FocusManager is deleted using DeleteSoon - this
     // forces it to be deleted now, so we don't have any memory leaks
     // when this method exits.
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
 
 #if defined(OS_WIN)
     ole_initializer_.reset();
@@ -121,8 +122,14 @@ class AccessibilityEventRouterViewsTest
   }
 
   views::Widget* CreateWindowWithContents(views::View* contents) {
-    return views::Widget::CreateWindowWithBounds(
+    gfx::NativeView context = NULL;
+#if defined(USE_AURA)
+    context = aura_test_helper_->root_window();
+#endif
+
+    return views::Widget::CreateWindowWithContextAndBounds(
         new AccessibilityWindowDelegate(contents),
+        context,
         gfx::Rect(0, 0, 500, 500));
   }
 
@@ -131,7 +138,7 @@ class AccessibilityEventRouterViewsTest
   // ACCESSIBILITY_CONTROL_FOCUSED event.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details) {
+                       const content::NotificationDetails& details) OVERRIDE {
     ASSERT_EQ(type, chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED);
     const AccessibilityControlInfo* info =
         content::Details<const AccessibilityControlInfo>(details).ptr();

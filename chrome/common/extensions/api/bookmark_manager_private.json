@@ -6,7 +6,6 @@
   {
     "namespace": "bookmarkManagerPrivate",
     "nodoc": true,
-    "dependencies": [ "bookmarks" ],
     "types": [
       {
         "id": "BookmarkNodeDataElement",
@@ -220,6 +219,13 @@
             {"name": "result", "type": "boolean"}
           ]}
         ]
+      },
+      {
+        "name": "recordLaunch",
+        "type": "function",
+        "description": "",
+        "nodoc": "true",
+        "parameters": []
       }
     ],
     "events": [

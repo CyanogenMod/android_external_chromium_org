@@ -13,6 +13,7 @@
 class BookmarkMenuBridge;
 class Browser;
 @class MenuTrackedRootView;
+class RecentTabsMenuModelDelegate;
 @class ToolbarController;
 @class WrenchMenuButtonViewController;
 class WrenchMenuModel;
@@ -39,6 +40,10 @@ class ZoomLevelObserver;
   // The model, rebuilt each time the |-menuNeedsUpdate:|.
   scoped_ptr<WrenchMenuModel> wrenchMenuModel_;
 
+  // Used to update icons in the recent tabs menu. This must be declared after
+  // |wrenchMenuModel_| so that it gets deleted first.
+  scoped_ptr<RecentTabsMenuModelDelegate> recentTabsMenuModelDelegate_;
+
   // A shim NSViewController that loads the buttons from the NIB because ObjC
   // doesn't have multiple inheritance as this class is a MenuController.
   scoped_nsobject<WrenchMenuButtonViewController> buttonViewController_;
@@ -64,6 +69,10 @@ class ZoomLevelObserver;
 
 // Returns the weak reference to the WrenchMenuModel.
 - (WrenchMenuModel*)wrenchMenuModel;
+
+// Creates a RecentTabsMenuModelDelegate instance which will take care of
+// updating the recent tabs submenu.
+- (void)updateRecentTabsSubmenu;
 
 @end
 

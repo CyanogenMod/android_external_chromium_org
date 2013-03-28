@@ -86,6 +86,7 @@
                 },
                 'mac_bundle_resources': [
                   '<(ios_unittest_info_plist_path)',
+                  '<(DEPTH)/testing/gtest_ios/Default-568h@2x.png',
                 ],
                 'mac_bundle_resources!': [
                   '<(ios_unittest_info_plist_path)',
@@ -128,14 +129,19 @@
           # own implementation but we must opt in to it.
           'defines': [
             'GTEST_USE_OWN_TR1_TUPLE=1',
+            # GTEST_USE_OWN_TR1_TUPLE only works if GTEST_HAS_TR1_TUPLE is set.
+            # gtest r625 made it so that GTEST_HAS_TR1_TUPLE is set to 0
+            # automatically on android, so it has to be set explicitly here.
+            'GTEST_HAS_TR1_TUPLE=1',
           ],
           'direct_dependent_settings': {
             'defines': [
               'GTEST_USE_OWN_TR1_TUPLE=1',
+              'GTEST_HAS_TR1_TUPLE=1',
             ],
           },
         }],
-        ['OS=="win" and MSVS_VERSION=="2012"', {
+        ['OS=="win" and (MSVS_VERSION=="2012" or MSVS_VERSION=="2012e")', {
           'defines': [
             '_VARIADIC_MAX=10',
           ],

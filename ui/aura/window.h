@@ -16,6 +16,7 @@
 #include "base/string16.h"
 #include "ui/aura/aura_export.h"
 #include "ui/aura/client/window_types.h"
+#include "ui/aura/window_observer.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/events/event_target.h"
 #include "ui/base/gestures/gesture_types.h"
@@ -33,14 +34,13 @@ class Transform;
 }
 
 namespace ui {
+class EventHandler;
 class Layer;
 class Texture;
 }
 
 namespace aura {
 
-class EventFilter;
-class FocusManager;
 class LayoutManager;
 class RootWindow;
 class WindowDelegate;
@@ -49,6 +49,10 @@ class WindowObserver;
 // Defined in window_property.h (which we do not include)
 template<typename T>
 struct WindowProperty;
+
+namespace test {
+class WindowTestApi;
+}
 
 // Aura window implementation. Interesting events are sent to the
 // WindowDelegate.
@@ -59,21 +63,6 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
                            public ui::GestureConsumer {
  public:
   typedef std::vector<Window*> Windows;
-
-  class AURA_EXPORT TestApi {
-   public:
-    explicit TestApi(Window* window);
-
-    bool OwnsLayer() const;
-    bool ContainsMouse();
-
-   private:
-    TestApi();
-
-    Window* window_;
-
-    DISALLOW_COPY_AND_ASSIGN(TestApi);
-  };
 
   explicit Window(WindowDelegate* delegate);
   virtual ~Window();
@@ -171,9 +160,12 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Assigns a new external texture to the window's layer.
   void SetExternalTexture(ui::Texture* texture);
 
-  // Sets the parent window of the window. If NULL, the window is parented to
-  // the root window.
-  void SetParent(Window* parent);
+  // Places this window per |root_window|'s stacking client. The final location
+  // may be a RootWindow other than the one passed in. |root_window| may not be
+  // NULL. |bounds_in_screen| may be empty; it is more optional context that
+  // may, but isn't necessarily used.
+  void SetDefaultParentByRootWindow(RootWindow* root_window,
+                                    const gfx::Rect& bounds_in_screen);
 
   // Stacks the specified child of this Window at the front of the z-order.
   void StackChildAtTop(Window* child);
@@ -230,9 +222,11 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Returns the cursor for the specified point, in window coordinates.
   gfx::NativeCursor GetCursor(const gfx::Point& point) const;
 
-  // Window takes ownership of the EventFilter.
-  void SetEventFilter(EventFilter* event_filter);
-  EventFilter* event_filter() { return event_filter_.get(); }
+  // Sets an 'event filter' for the window. An 'event filter' for a Window is
+  // a pre-target event handler, where the window owns the handler. A window
+  // can have only one such event filter. Setting a new filter removes and
+  // destroys any previously installed filter.
+  void SetEventFilter(ui::EventHandler* event_filter);
 
   // Add/remove observer.
   void AddObserver(WindowObserver* observer);
@@ -305,11 +299,6 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Returns true if the Window can receive events.
   virtual bool CanReceiveEvents() const;
 
-  // Returns the FocusManager for the Window, which may be attached to a parent
-  // Window. Can return NULL if the Window has no FocusManager.
-  virtual FocusManager* GetFocusManager();
-  virtual const FocusManager* GetFocusManager() const;
-
   // Does a capture on the window. This does nothing if the window isn't showing
   // (VISIBILITY_SHOWN) or isn't contained in a valid window hierarchy.
   void SetCapture();
@@ -359,6 +348,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
 #endif
 
  private:
+  friend class test::WindowTestApi;
   friend class LayoutManager;
 
   // Used when stacking windows.
@@ -421,6 +411,34 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   void NotifyRemovingFromRootWindow();
   void NotifyAddedToRootWindow();
 
+  // Methods implementing hierarchy change notifications. See WindowObserver for
+  // more details.
+  void NotifyWindowHierarchyChange(
+      const WindowObserver::HierarchyChangeParams& params);
+  // Notifies this window and its child hierarchy.
+  void NotifyWindowHierarchyChangeDown(
+      const WindowObserver::HierarchyChangeParams& params);
+  // Notifies this window and its parent hierarchy.
+  void NotifyWindowHierarchyChangeUp(
+      const WindowObserver::HierarchyChangeParams& params);
+  // Notifies this window's observers.
+  void NotifyWindowHierarchyChangeAtReceiver(
+      const WindowObserver::HierarchyChangeParams& params);
+
+  // Methods implementing visibility change notifications. See WindowObserver
+  // for more details.
+  void NotifyWindowVisibilityChanged(aura::Window* target, bool visible);
+  // Notifies this window's observers. Returns false if |this| was deleted
+  // during the call (by an observer), otherwise true.
+  bool NotifyWindowVisibilityChangedAtReceiver(aura::Window* target,
+                                               bool visible);
+  // Notifies this window and its child hierarchy. Returns false if
+  // |this| was deleted during the call (by an observer), otherwise
+  // true.
+  bool NotifyWindowVisibilityChangedDown(aura::Window* target, bool visible);
+  // Notifies this window and its parent hierarchy.
+  void NotifyWindowVisibilityChangedUp(aura::Window* target, bool visible);
+
   // Invoked from the closure returned by PrepareForLayerBoundsChange() after
   // the bounds of the layer has changed. |old_bounds| is the previous bounds of
   // the layer, and |contained_mouse| is true if the mouse was previously within
@@ -432,7 +450,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE;
 
   // Overridden from ui::EventTarget:
-  virtual bool CanAcceptEvents() OVERRIDE;
+  virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
   virtual EventTarget* GetParentTarget() OVERRIDE;
 
   // Updates the layer name with a name based on the window's name and id.
@@ -473,7 +491,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Whether layer is initialized as non-opaque.
   bool transparent_;
 
-  scoped_ptr<EventFilter> event_filter_;
+  scoped_ptr<ui::EventHandler> event_filter_;
   scoped_ptr<LayoutManager> layout_manager_;
 
   void* user_data_;

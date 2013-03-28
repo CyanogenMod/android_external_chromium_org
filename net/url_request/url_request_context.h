@@ -19,11 +19,11 @@
 #include "base/threading/non_thread_safe.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
-#include "net/base/ssl_config_service.h"
-#include "net/base/transport_security_state.h"
+#include "net/ftp/ftp_auth_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
-#include "net/ftp/ftp_auth_cache.h"
+#include "net/http/transport_security_state.h"
+#include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request.h"
 
 namespace net {
@@ -178,8 +178,6 @@ class NET_EXPORT URLRequestContext
   // Legacy accessors that delegate to http_user_agent_settings_.
   // TODO(pauljensen): Remove after all clients are updated to directly access
   // http_user_agent_settings_.
-  // Gets the value of 'Accept-Charset' header field.
-  std::string GetAcceptCharset() const;
   // Gets the value of 'Accept-Language' header field.
   std::string GetAcceptLanguage() const;
   // Gets the UA string to use for the given URL.  Pass an invalid URL (such as
@@ -209,7 +207,7 @@ class NET_EXPORT URLRequestContext
   void AssertNoURLRequests() const;
 
   // Get the underlying |HttpUserAgentSettings| implementation that provides
-  // the HTTP Accept-Language, Accept-Charset and User-Agent header values.
+  // the HTTP Accept-Language and User-Agent header values.
   const HttpUserAgentSettings* http_user_agent_settings() const {
     return http_user_agent_settings_;
   }
@@ -242,9 +240,6 @@ class NET_EXPORT URLRequestContext
 #if !defined(DISABLE_FTP_SUPPORT)
   scoped_ptr<FtpAuthCache> ftp_auth_cache_;
 #endif
-  // The charset of the referrer where this request comes from. It's not
-  // used in communication with a server but is used to construct a suggested
-  // filename for file download.
   HttpTransactionFactory* http_transaction_factory_;
   FtpTransactionFactory* ftp_transaction_factory_;
   const URLRequestJobFactory* job_factory_;

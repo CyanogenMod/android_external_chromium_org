@@ -6,6 +6,7 @@
 
 #include "base/message_loop.h"
 #include "base/values.h"
+#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_condition.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api_helpers.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -79,10 +80,7 @@ TEST(WebRequestActionTest, CreateActionSet) {
   incorrect_action.SetString(keys::kInstanceTypeKey, kUnknownActionType);
 
   // Test success.
-  linked_ptr<json_schema_compiler::any::Any> action1 = make_linked_ptr(
-      new json_schema_compiler::any::Any);
-  action1->Init(correct_action);
-  input.push_back(action1);
+  input.push_back(linked_ptr<base::Value>(correct_action.DeepCopy()));
   error.clear();
   result = WebRequestActionSet::Create(input, &error, &bad_message);
   EXPECT_TRUE(error.empty()) << error;
@@ -94,10 +92,7 @@ TEST(WebRequestActionTest, CreateActionSet) {
   EXPECT_EQ(10, result->GetMinimumPriority());
 
   // Test failure.
-  linked_ptr<json_schema_compiler::any::Any> action2 = make_linked_ptr(
-      new json_schema_compiler::any::Any);
-  action2->Init(incorrect_action);
-  input.push_back(action2);
+  input.push_back(linked_ptr<base::Value>(incorrect_action.DeepCopy()));
   error.clear();
   result = WebRequestActionSet::Create(input, &error, &bad_message);
   EXPECT_NE("", error);
@@ -123,7 +118,7 @@ TEST(WebRequestActionTest, PerlToRe2Style) {
 TEST(WebRequestActionTest, TestPermissions) {
   // Necessary for TestURLRequest.
   MessageLoop message_loop(MessageLoop::TYPE_IO);
-  TestURLRequestContext context;
+  net::TestURLRequestContext context;
 
   std::string error;
   bool bad_message = false;
@@ -134,32 +129,30 @@ TEST(WebRequestActionTest, TestPermissions) {
   redirect.SetString(keys::kInstanceTypeKey, keys::kRedirectRequestType);
   redirect.SetString(keys::kRedirectUrlKey, "http://www.foobar.com");
 
-  linked_ptr<json_schema_compiler::any::Any> action = make_linked_ptr(
-      new json_schema_compiler::any::Any);
-  action->Init(redirect);
   WebRequestActionSet::AnyVector actions;
-  actions.push_back(action);
+  actions.push_back(linked_ptr<base::Value>(redirect.DeepCopy()));
 
   action_set = WebRequestActionSet::Create(actions, &error, &bad_message);
   EXPECT_EQ("", error);
   EXPECT_FALSE(bad_message);
-  ASSERT_TRUE(action.get());
 
   // Check that redirect works on regular URLs but not on protected URLs.
-  TestURLRequest regular_request(GURL("http://test.com"), NULL, &context);
-  std::list<LinkedPtrEventResponseDelta> deltas =
-      action_set->CreateDeltas(
-          NULL, "ext1",
-          WebRequestRule::RequestData(&regular_request, ON_BEFORE_REQUEST),
-          false, base::Time());
+  net::TestURLRequest regular_request(
+      GURL("http://test.com"), NULL, &context, NULL);
+  std::list<LinkedPtrEventResponseDelta> deltas;
+  WebRequestData request_data(&regular_request, ON_BEFORE_REQUEST);
+  WebRequestAction::ApplyInfo apply_info = {
+    NULL, request_data, false, &deltas
+  };
+  action_set->Apply("ext1", base::Time(), &apply_info);
   EXPECT_EQ(1u, deltas.size());
 
-  TestURLRequest protected_request(GURL("http://clients1.google.com"),
-                                   NULL, &context);
-  deltas = action_set->CreateDeltas(
-      NULL, "ext1",
-      WebRequestRule::RequestData(&protected_request, ON_BEFORE_REQUEST),
-      false, base::Time());
+  net::TestURLRequest protected_request(GURL("http://clients1.google.com"),
+                                        NULL, &context, NULL);
+  deltas.clear();
+  request_data = WebRequestData(&protected_request, ON_BEFORE_REQUEST);
+  // Note that we just updated the request_data reference in apply_info.
+  action_set->Apply("ext1", base::Time(), &apply_info);
   EXPECT_EQ(0u, deltas.size());
 }
 

@@ -101,6 +101,18 @@ Var::Var(const std::string& utf8_str) {
   is_managed_ = true;
 }
 
+
+Var::Var(const PP_Var& var) {
+  var_ = var;
+  is_managed_ = true;
+  if (NeedsRefcounting(var_)) {
+    if (has_interface<PPB_Var_1_0>())
+      get_interface<PPB_Var_1_0>()->AddRef(var_);
+    else
+      var_.type = PP_VARTYPE_NULL;
+  }
+}
+
 Var::Var(const Var& other) {
   var_ = other.var_;
   is_managed_ = true;
@@ -229,10 +241,16 @@ std::string Var::DebugString() const {
       str.append("...");
     }
     snprintf(buf, sizeof(buf), format, str.c_str());
-  } else if (is_array_buffer()) {
-    snprintf(buf, sizeof(buf), "Var(ARRAY_BUFFER)");
   } else if (is_object()) {
     snprintf(buf, sizeof(buf), "Var(OBJECT)");
+  } else if (is_array()) {
+    snprintf(buf, sizeof(buf), "Var(ARRAY)");
+  } else if (is_dictionary()) {
+    snprintf(buf, sizeof(buf), "Var(DICTIONARY)");
+  } else if (is_array_buffer()) {
+    snprintf(buf, sizeof(buf), "Var(ARRAY_BUFFER)");
+  } else {
+    buf[0] = '\0';
   }
   return buf;
 }

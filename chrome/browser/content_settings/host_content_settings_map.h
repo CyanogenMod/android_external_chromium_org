@@ -14,8 +14,8 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/synchronization/lock.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/threading/platform_thread.h"
 #include "base/tuple.h"
 #include "chrome/browser/content_settings/content_settings_observer.h"
 #include "chrome/common/content_settings.h"
@@ -33,6 +33,7 @@ class ProviderInterface;
 class ExtensionService;
 class GURL;
 class PrefService;
+class PrefRegistrySyncable;
 
 class HostContentSettingsMap
     : public content_settings::Observer,
@@ -47,8 +48,7 @@ class HostContentSettingsMap
     NUM_PROVIDER_TYPES,
   };
 
-  HostContentSettingsMap(PrefService* prefs,
-                         bool incognito);
+  HostContentSettingsMap(PrefService* prefs, bool incognito);
 
 #if defined(ENABLE_EXTENSIONS)
   // In some cases, the ExtensionService is not available at the time the
@@ -57,7 +57,7 @@ class HostContentSettingsMap
   void RegisterExtensionService(ExtensionService* extension_service);
 #endif
 
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
   // Returns the default setting for a particular content type. If |provider_id|
   // is not NULL, the id of the provider which provided the default setting is
@@ -230,17 +230,32 @@ class HostContentSettingsMap
       ContentSettingsForOneType* settings,
       bool incognito) const;
 
+  // Call UsedContentSettingsProviders() whenever you access
+  // content_settings_providers_ (apart from initialization and
+  // teardown), so that we can DCHECK in RegisterExtensionService that
+  // it is not being called too late.
+  void UsedContentSettingsProviders() const;
+
+#ifndef NDEBUG
+  // This starts as the thread ID of the thread that constructs this
+  // object, and remains until used by a different thread, at which
+  // point it is set to base::kInvalidThreadId. This allows us to
+  // DCHECK on unsafe usage of content_settings_providers_ (they
+  // should be set up on a single thread, after which they are
+  // immutable).
+  mutable base::PlatformThreadId used_from_thread_id_;
+#endif
+
   // Weak; owned by the Profile.
   PrefService* prefs_;
 
   // Whether this settings map is for an OTR session.
   bool is_off_the_record_;
 
-  // Content setting providers.
+  // Content setting providers. This is only modified at construction
+  // time and by RegisterExtensionService, both of which should happen
+  // before any other uses of it.
   ProviderMap content_settings_providers_;
-
-  // Used around accesses to the following objects to guarantee thread safety.
-  mutable base::Lock lock_;
 
   DISALLOW_COPY_AND_ASSIGN(HostContentSettingsMap);
 };

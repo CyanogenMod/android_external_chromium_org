@@ -8,6 +8,7 @@
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -81,7 +82,7 @@ SpeechRecognitionBubbleImages::SpeechRecognitionBubbleImages() {
   empty_spinner.allocPixels();
   empty_spinner.eraseRGB(255, 255, 255);
   // |empty_spinner| has solid color. Pixel doubling a solid color is ok.
-  warm_up_.push_back(gfx::ImageSkia(empty_spinner));
+  warm_up_.push_back(gfx::ImageSkia::CreateFrom1xBitmap(empty_spinner));
 
   for (gfx::Rect src_rect(frame_size, frame_size);
        src_rect.x() < spinner_image->width();
@@ -136,10 +137,12 @@ SpeechRecognitionBubble* SpeechRecognitionBubble::Create(
 SpeechRecognitionBubbleBase::SpeechRecognitionBubbleBase(
     WebContents* web_contents)
     : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      animation_step_(0),
       display_mode_(DISPLAY_MODE_RECORDING),
       web_contents_(web_contents),
       scale_factor_(ui::SCALE_FACTOR_NONE) {
-  gfx::NativeView view = web_contents_ ? web_contents_->GetNativeView() : NULL;
+  gfx::NativeView view =
+      web_contents_ ? web_contents_->GetView()->GetNativeView() : NULL;
   gfx::Screen* screen = gfx::Screen::GetScreenFor(view);
   gfx::Display display = screen->GetDisplayNearestWindow(view);
   scale_factor_ = ui::GetScaleFactorFromScale(
@@ -236,7 +239,7 @@ void SpeechRecognitionBubbleBase::DrawVolumeOverlay(SkCanvas* canvas,
       image.GetRepresentation(scale_factor_).sk_bitmap(), 0, 0);
   buffer_canvas.restore();
   SkPaint multiply_paint;
-  multiply_paint.setXfermode(SkXfermode::Create(SkXfermode::kMultiply_Mode));
+  multiply_paint.setXfermode(SkXfermode::Create(SkXfermode::kModulate_Mode));
   buffer_canvas.drawBitmap(
       g_images.Get().mic_mask()->GetRepresentation(scale_factor_).sk_bitmap(),
       -clip_right, 0, &multiply_paint);

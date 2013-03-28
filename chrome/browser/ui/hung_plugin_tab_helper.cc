@@ -10,10 +10,10 @@
 #include "base/process_util.h"
 #include "base/rand_util.h"
 #include "build/build_config.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/common/chrome_process_type.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
@@ -36,7 +36,7 @@
 #include "chrome/browser/hang_monitor/hang_crash_dump_win.h"
 #endif
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(HungPluginTabHelper)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(HungPluginTabHelper);
 
 namespace {
 
@@ -123,13 +123,14 @@ void KillPluginOnIOThread(int child_id) {
 
 }  // namespace
 
-class HungPluginTabHelper::InfoBarDelegate : public ConfirmInfoBarDelegate {
+class HungPluginInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  InfoBarDelegate(HungPluginTabHelper* helper,
-                  InfoBarTabHelper* infobar_helper,
-                  int plugin_child_id,
-                  const string16& plugin_name);
-  virtual ~InfoBarDelegate();
+  // Creates a hung plugin delegate and adds it to |infobar_service|.  Returns
+  // the delegate if it was successfully added.
+  static HungPluginInfoBarDelegate* Create(InfoBarService* infobar_service,
+                                           HungPluginTabHelper* helper,
+                                           int plugin_child_id,
+                                           const string16& plugin_name);
 
   // ConfirmInfoBarDelegate:
   virtual gfx::Image* GetIcon() const OVERRIDE;
@@ -139,6 +140,12 @@ class HungPluginTabHelper::InfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual bool Accept() OVERRIDE;
 
  private:
+  HungPluginInfoBarDelegate(HungPluginTabHelper* helper,
+                            InfoBarService* infobar_service,
+                            int plugin_child_id,
+                            const string16& plugin_name);
+  virtual ~HungPluginInfoBarDelegate();
+
   HungPluginTabHelper* helper_;
   int plugin_child_id_;
 
@@ -147,12 +154,23 @@ class HungPluginTabHelper::InfoBarDelegate : public ConfirmInfoBarDelegate {
   gfx::Image* icon_;
 };
 
-HungPluginTabHelper::InfoBarDelegate::InfoBarDelegate(
+// static
+HungPluginInfoBarDelegate* HungPluginInfoBarDelegate::Create(
+    InfoBarService* infobar_service,
     HungPluginTabHelper* helper,
-    InfoBarTabHelper* infobar_helper,
+    int plugin_child_id,
+    const string16& plugin_name) {
+  return static_cast<HungPluginInfoBarDelegate*>(infobar_service->AddInfoBar(
+      scoped_ptr<InfoBarDelegate>(new HungPluginInfoBarDelegate(
+          helper, infobar_service, plugin_child_id, plugin_name))));
+}
+
+HungPluginInfoBarDelegate::HungPluginInfoBarDelegate(
+    HungPluginTabHelper* helper,
+    InfoBarService* infobar_service,
     int plugin_child_id,
     const string16& plugin_name)
-    : ConfirmInfoBarDelegate(infobar_helper),
+    : ConfirmInfoBarDelegate(infobar_service),
       helper_(helper),
       plugin_child_id_(plugin_child_id) {
   message_ = l10n_util::GetStringFUTF16(IDS_BROWSER_HANGMONITOR_PLUGIN_INFOBAR,
@@ -163,34 +181,33 @@ HungPluginTabHelper::InfoBarDelegate::InfoBarDelegate(
       IDR_INFOBAR_PLUGIN_CRASHED);
 }
 
-HungPluginTabHelper::InfoBarDelegate::~InfoBarDelegate() {
+HungPluginInfoBarDelegate::~HungPluginInfoBarDelegate() {
 }
 
-gfx::Image* HungPluginTabHelper::InfoBarDelegate::GetIcon() const {
+gfx::Image* HungPluginInfoBarDelegate::GetIcon() const {
   return icon_;
 }
 
-string16 HungPluginTabHelper::InfoBarDelegate::GetMessageText() const {
+string16 HungPluginInfoBarDelegate::GetMessageText() const {
   return message_;
 }
 
-int HungPluginTabHelper::InfoBarDelegate::GetButtons() const {
+int HungPluginInfoBarDelegate::GetButtons() const {
   return BUTTON_OK;
 }
 
-string16 HungPluginTabHelper::InfoBarDelegate::GetButtonLabel(
-    InfoBarButton button) const {
+string16 HungPluginInfoBarDelegate::GetButtonLabel(InfoBarButton button) const {
   return button_text_;
 }
 
-bool HungPluginTabHelper::InfoBarDelegate::Accept() {
+bool HungPluginInfoBarDelegate::Accept() {
   helper_->KillPlugin(plugin_child_id_);
   return true;
 }
 
 // -----------------------------------------------------------------------------
 
-HungPluginTabHelper::PluginState::PluginState(const FilePath& p,
+HungPluginTabHelper::PluginState::PluginState(const base::FilePath& p,
                                               const string16& n)
     : path(p),
       name(n),
@@ -213,13 +230,14 @@ HungPluginTabHelper::HungPluginTabHelper(content::WebContents* contents)
 HungPluginTabHelper::~HungPluginTabHelper() {
 }
 
-void HungPluginTabHelper::PluginCrashed(const FilePath& plugin_path) {
+void HungPluginTabHelper::PluginCrashed(const base::FilePath& plugin_path,
+                                        base::ProcessId plugin_pid) {
   // TODO(brettw) ideally this would take the child process ID. When we do this
   // for NaCl plugins, we'll want to know exactly which process it was since
   // the path won't be useful.
-  InfoBarTabHelper* infobar_helper =
-      InfoBarTabHelper::FromWebContents(web_contents());
-  if (!infobar_helper)
+  InfoBarService* infobar_service =
+      InfoBarService::FromWebContents(web_contents());
+  if (!infobar_service)
     return;
 
   // For now, just do a brute-force search to see if we have this plugin. Since
@@ -228,19 +246,20 @@ void HungPluginTabHelper::PluginCrashed(const FilePath& plugin_path) {
        i != hung_plugins_.end(); ++i) {
     if (i->second->path == plugin_path) {
       if (i->second->info_bar)
-        infobar_helper->RemoveInfoBar(i->second->info_bar);
+        infobar_service->RemoveInfoBar(i->second->info_bar);
       hung_plugins_.erase(i);
       break;
     }
   }
 }
 
-void HungPluginTabHelper::PluginHungStatusChanged(int plugin_child_id,
-                                                  const FilePath& plugin_path,
-                                                  bool is_hung) {
-  InfoBarTabHelper* infobar_helper =
-      InfoBarTabHelper::FromWebContents(web_contents());
-  if (!infobar_helper)
+void HungPluginTabHelper::PluginHungStatusChanged(
+    int plugin_child_id,
+    const base::FilePath& plugin_path,
+    bool is_hung) {
+  InfoBarService* infobar_service =
+      InfoBarService::FromWebContents(web_contents());
+  if (!infobar_service)
     return;
 
   PluginStateMap::iterator found = hung_plugins_.find(plugin_child_id);
@@ -248,7 +267,7 @@ void HungPluginTabHelper::PluginHungStatusChanged(int plugin_child_id,
     if (!is_hung) {
       // Hung plugin became un-hung, close the infobar and delete our info.
       if (found->second->info_bar)
-        infobar_helper->RemoveInfoBar(found->second->info_bar);
+        infobar_service->RemoveInfoBar(found->second->info_bar);
       hung_plugins_.erase(found);
     }
     return;
@@ -275,7 +294,7 @@ void HungPluginTabHelper::Observe(
   //
   // TODO(pkasting): This comment will be incorrect and should be removed once
   // InfoBars own their delegates.
-  ::InfoBarDelegate* delegate =
+  InfoBarDelegate* delegate =
       content::Details<InfoBarRemovedDetails>(details)->first;
 
   for (PluginStateMap::iterator i = hung_plugins_.begin();
@@ -358,25 +377,25 @@ void HungPluginTabHelper::OnReshowTimer(int child_id) {
 }
 
 void HungPluginTabHelper::ShowBar(int child_id, PluginState* state) {
-  InfoBarTabHelper* infobar_helper =
-      InfoBarTabHelper::FromWebContents(web_contents());
-  if (!infobar_helper)
+  InfoBarService* infobar_service =
+      InfoBarService::FromWebContents(web_contents());
+  if (!infobar_service)
     return;
 
   DCHECK(!state->info_bar);
-  state->info_bar = new InfoBarDelegate(this, infobar_helper,
-                                        child_id, state->name);
-  infobar_helper->AddInfoBar(state->info_bar);
+  state->info_bar =
+      HungPluginInfoBarDelegate::Create(infobar_service, this, child_id,
+                                        state->name);
 }
 
 void HungPluginTabHelper::CloseBar(PluginState* state) {
-  InfoBarTabHelper* infobar_helper =
-      InfoBarTabHelper::FromWebContents(web_contents());
-  if (!infobar_helper)
+  InfoBarService* infobar_service =
+      InfoBarService::FromWebContents(web_contents());
+  if (!infobar_service)
     return;
 
   if (state->info_bar) {
-    infobar_helper->RemoveInfoBar(state->info_bar);
+    infobar_service->RemoveInfoBar(state->info_bar);
     state->info_bar = NULL;
   }
 }

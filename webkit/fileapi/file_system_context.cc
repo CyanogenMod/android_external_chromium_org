@@ -5,10 +5,10 @@
 #include "webkit/fileapi/file_system_context.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/stl_util.h"
 #include "base/single_thread_task_runner.h"
 #include "googleurl/src/gurl.h"
+#include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_system_file_util.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_options.h"
@@ -18,6 +18,7 @@
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/isolated_context.h"
 #include "webkit/fileapi/isolated_mount_point_provider.h"
+#include "webkit/fileapi/mount_points.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/fileapi/syncable/local_file_change_tracker.h"
 #include "webkit/fileapi/syncable/local_file_sync_context.h"
@@ -54,9 +55,10 @@ void DidOpenFileSystem(
 
 FileSystemContext::FileSystemContext(
     scoped_ptr<FileSystemTaskRunners> task_runners,
+    ExternalMountPoints* external_mount_points,
     quota::SpecialStoragePolicy* special_storage_policy,
     quota::QuotaManagerProxy* quota_manager_proxy,
-    const FilePath& partition_path,
+    const base::FilePath& partition_path,
     const FileSystemOptions& options)
     : task_runners_(task_runners.Pass()),
       quota_manager_proxy_(quota_manager_proxy),
@@ -67,6 +69,7 @@ FileSystemContext::FileSystemContext(
               partition_path,
               options)),
       isolated_provider_(new IsolatedMountPointProvider(partition_path)),
+      external_mount_points_(external_mount_points),
       partition_path_(partition_path) {
   DCHECK(task_runners_.get());
 
@@ -74,10 +77,20 @@ FileSystemContext::FileSystemContext(
     quota_manager_proxy->RegisterClient(CreateQuotaClient(
             this, options.is_incognito()));
   }
+
 #if defined(OS_CHROMEOS)
+  DCHECK(external_mount_points);
   external_provider_.reset(
-      new chromeos::CrosMountPointProvider(special_storage_policy));
+      new chromeos::CrosMountPointProvider(
+          special_storage_policy,
+          external_mount_points,
+          ExternalMountPoints::GetSystemInstance()));
 #endif
+
+  if (external_mount_points)
+    url_crackers_.push_back(external_mount_points);
+  url_crackers_.push_back(ExternalMountPoints::GetSystemInstance());
+  url_crackers_.push_back(IsolatedContext::GetInstance());
 }
 
 bool FileSystemContext::DeleteDataForOriginOnFileThread(
@@ -111,13 +124,13 @@ FileSystemContext::GetQuotaUtil(FileSystemType type) const {
   return mount_point_provider->GetQuotaUtil();
 }
 
-FileSystemFileUtil* FileSystemContext::GetFileUtil(
+AsyncFileUtil* FileSystemContext::GetAsyncFileUtil(
     FileSystemType type) const {
   FileSystemMountPointProvider* mount_point_provider =
       GetMountPointProvider(type);
   if (!mount_point_provider)
     return NULL;
-  return mount_point_provider->GetFileUtil(type);
+  return mount_point_provider->GetAsyncFileUtil(type);
 }
 
 FileSystemMountPointProvider* FileSystemContext::GetMountPointProvider(
@@ -137,6 +150,7 @@ FileSystemMountPointProvider* FileSystemContext::GetMountPointProvider(
     case kFileSystemTypeDeviceMedia:
       return isolated_provider_.get();
     case kFileSystemTypeNativeLocal:
+    case kFileSystemTypeNativeForPlatformApp:
 #if defined(OS_CHROMEOS)
       return external_provider_.get();
 #else
@@ -211,7 +225,8 @@ void FileSystemContext::OpenSyncableFileSystem(
 
   DCHECK(type == kFileSystemTypeSyncable);
 
-  GURL root_url = GetSyncableFileSystemRootURI(origin_url, mount_name);
+  GURL root_url = sync_file_system::GetSyncableFileSystemRootURI(
+      origin_url, mount_name);
   std::string name = GetFileSystemName(origin_url, kFileSystemTypeSyncable);
 
   FileSystemMountPointProvider* mount_point_provider =
@@ -238,12 +253,13 @@ void FileSystemContext::DeleteFileSystem(
 }
 
 FileSystemOperation* FileSystemContext::CreateFileSystemOperation(
-    const FileSystemURL& url, PlatformFileError* error_code) {
+    const FileSystemURL& url, base::PlatformFileError* error_code) {
   if (!url.is_valid()) {
     if (error_code)
       *error_code = base::PLATFORM_FILE_ERROR_INVALID_URL;
     return NULL;
   }
+
   FileSystemMountPointProvider* mount_point_provider =
       GetMountPointProvider(url.type());
   if (!mount_point_provider) {
@@ -252,7 +268,7 @@ FileSystemOperation* FileSystemContext::CreateFileSystemOperation(
     return NULL;
   }
 
-  PlatformFileError fs_error = base::PLATFORM_FILE_OK;
+  base::PlatformFileError fs_error = base::PLATFORM_FILE_OK;
   FileSystemOperation* operation =
       mount_point_provider->CreateFileSystemOperation(url, this, &fs_error);
 
@@ -284,7 +300,7 @@ void FileSystemContext::RegisterMountPointProvider(
 }
 
 void FileSystemContext::SetLocalFileChangeTracker(
-    scoped_ptr<LocalFileChangeTracker> tracker) {
+    scoped_ptr<sync_file_system::LocalFileChangeTracker> tracker) {
   DCHECK(!change_tracker_.get());
   DCHECK(tracker.get());
   change_tracker_ = tracker.Pass();
@@ -297,8 +313,19 @@ void FileSystemContext::SetLocalFileChangeTracker(
 }
 
 void FileSystemContext::set_sync_context(
-    LocalFileSyncContext* sync_context) {
+    sync_file_system::LocalFileSyncContext* sync_context) {
   sync_context_ = sync_context;
+}
+
+FileSystemURL FileSystemContext::CrackURL(const GURL& url) const {
+  return CrackFileSystemURL(FileSystemURL(url));
+}
+
+FileSystemURL FileSystemContext::CreateCrackedFileSystemURL(
+    const GURL& origin,
+    FileSystemType type,
+    const base::FilePath& path) const {
+  return CrackFileSystemURL(FileSystemURL(origin, type, path));
 }
 
 FileSystemContext::~FileSystemContext() {
@@ -314,6 +341,42 @@ void FileSystemContext::DeleteOnCorrectThread() const {
   STLDeleteContainerPairSecondPointers(provider_map_.begin(),
                                        provider_map_.end());
   delete this;
+}
+
+FileSystemURL FileSystemContext::CrackFileSystemURL(
+    const FileSystemURL& url) const {
+  if (!url.is_valid())
+    return FileSystemURL();
+
+  // The returned value in case there is no crackers which can crack the url.
+  // This is valid situation for non isolated/external file systems.
+  FileSystemURL current = url;
+
+  // File system may be mounted multiple times (e.g., an isolated filesystem on
+  // top of an external filesystem). Hence cracking needs to be iterated.
+  for (;;) {
+    FileSystemURL cracked = current;
+    for (size_t i = 0; i < url_crackers_.size(); ++i) {
+      if (!url_crackers_[i]->HandlesFileSystemMountType(current.type()))
+        continue;
+      cracked = url_crackers_[i]->CrackFileSystemURL(current);
+      if (cracked.is_valid())
+        break;
+    }
+    if (cracked == current)
+      break;
+    current = cracked;
+  }
+  return current;
+}
+
+FileSystemFileUtil* FileSystemContext::GetFileUtil(
+    FileSystemType type) const {
+  FileSystemMountPointProvider* mount_point_provider =
+      GetMountPointProvider(type);
+  if (!mount_point_provider)
+    return NULL;
+  return mount_point_provider->GetFileUtil(type);
 }
 
 }  // namespace fileapi

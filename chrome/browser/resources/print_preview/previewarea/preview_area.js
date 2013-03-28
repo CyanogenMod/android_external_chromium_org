@@ -409,7 +409,8 @@ cr.define('print_preview', function() {
       }
       this.plugin_ = document.createElement('embed');
       // NOTE: The plugin's 'id' field must be set to 'pdf-viewer' since
-      // chrome/renderer/print_web_view_helper.cc actually references it.
+      // chrome/renderer/printing/print_web_view_helper.cc actually references
+      // it.
       this.plugin_.setAttribute('id', 'pdf-viewer');
       this.plugin_.setAttribute('class', 'preview-area-plugin');
       this.plugin_.setAttribute(
@@ -519,6 +520,10 @@ cr.define('print_preview', function() {
      * @private
      */
     onPreviewGenerationFail_: function() {
+      if (this.loadingTimeout_) {
+        clearTimeout(this.loadingTimeout_);
+        this.loadingTimeout_ = null;
+      }
       this.showMessage_(PreviewArea.MessageId_.PREVIEW_FAILED);
       cr.dispatchSimpleEvent(
           this, PreviewArea.EventType.PREVIEW_GENERATION_FAIL);

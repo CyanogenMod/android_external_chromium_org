@@ -400,7 +400,7 @@ void AutomationProxyCacheEntry::RemoveDelegate(LaunchDelegate* delegate,
       *was_last_delegate = true;
 
       // Process pending notifications.
-      thread_->message_loop()->RunAllPending();
+      thread_->message_loop()->RunUntilIdle();
 
       // Take down the proxy since we no longer have any clients.
       // Make sure we only do this once all pending messages have been cleared.
@@ -695,7 +695,7 @@ bool ChromeFrameAutomationClient::InitiateNavigation(
     // referrer to be dropped or something worse.
     GURL referrer_gurl(referrer.c_str());
     if (!chrome_launch_params_) {
-      FilePath profile_path;
+      base::FilePath profile_path;
       chrome_launch_params_ = new ChromeFrameLaunchParams(parsed_url,
           referrer_gurl, profile_path, L"", SimpleResourceLoader::GetLanguage(),
           false, false, route_all_top_level_navigations_,

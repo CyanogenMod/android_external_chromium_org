@@ -13,9 +13,17 @@
 #include "webkit/base/data_element.h"
 #include "webkit/glue/webkit_glue_export.h"
 
+namespace base {
+class FilePath;
+class TaskRunner;
+}
+
+namespace fileapi {
+class FileSystemContext;
+}
+
 namespace net {
-class UploadData;
-class UploadElement;
+class UploadDataStream;
 }
 
 namespace webkit_blob {
@@ -35,18 +43,22 @@ class WEBKIT_GLUE_EXPORT ResourceRequestBody
   ResourceRequestBody();
 
   void AppendBytes(const char* bytes, int bytes_len);
-  void AppendFileRange(const FilePath& file_path,
+  void AppendFileRange(const base::FilePath& file_path,
                        uint64 offset, uint64 length,
                        const base::Time& expected_modification_time);
   void AppendBlob(const GURL& blob_url);
   void AppendFileSystemFileRange(const GURL& url, uint64 offset, uint64 length,
                                  const base::Time& expected_modification_time);
 
-  // Creates a new UploadData from this request body. This also resolves
-  // any blob references using given |blob_controller|.
-  // TODO(kinuko): Clean up this hack.
-  net::UploadData* ResolveElementsAndCreateUploadData(
-      webkit_blob::BlobStorageController* blob_controller);
+  // Creates a new UploadDataStream from this request body. This also resolves
+  // any blob references using given |blob_controller|. |file_system_context| is
+  // used to create FileStreamReader for files with filesystem URLs.
+  // |file_task_runner| is used to perform file operations when the data gets
+  // uploaded.
+  net::UploadDataStream* ResolveElementsAndCreateUploadDataStream(
+      webkit_blob::BlobStorageController* blob_controller,
+      fileapi::FileSystemContext* file_system_context,
+      base::TaskRunner* file_task_runner);
 
   const std::vector<Element>* elements() const { return &elements_; }
   std::vector<Element>* elements_mutable() { return &elements_; }

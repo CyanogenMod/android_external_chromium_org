@@ -127,7 +127,7 @@ void PrintSystemTaskProxy::GetPrinterCapabilities(
 
   printing::PrinterSemanticCapsAndDefaults info;
   if (!print_backend_->GetPrinterSemanticCapsAndDefaults(printer_name, &info)) {
-    VLOG(1) << "Failed to get capabilities for " << printer_name;
+    LOG(WARNING) << "Failed to get capabilities for " << printer_name;
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
         base::Bind(&PrintSystemTaskProxy::SendFailedToGetPrinterCapabilities,
@@ -137,7 +137,7 @@ void PrintSystemTaskProxy::GetPrinterCapabilities(
 
   DictionaryValue settings_info;
   settings_info.SetString(kPrinterId, printer_name);
-  settings_info.SetBoolean(kDisableColorOption, !info.color_capable);
+  settings_info.SetBoolean(kDisableColorOption, !info.color_changeable);
   settings_info.SetBoolean(printing::kSettingSetColorAsDefault,
                            info.color_default);
   // TODO(gene): Make new capabilities format for Print Preview

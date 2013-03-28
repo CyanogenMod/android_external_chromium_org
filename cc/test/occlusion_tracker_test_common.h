@@ -5,31 +5,46 @@
 #ifndef CC_TEST_OCCLUSION_TRACKER_TEST_COMMON_H_
 #define CC_TEST_OCCLUSION_TRACKER_TEST_COMMON_H_
 
-#include "cc/occlusion_tracker.h"
-#include "cc/render_surface.h"
-#include "cc/render_surface_impl.h"
+#include "cc/layers/render_surface.h"
+#include "cc/layers/render_surface_impl.h"
+#include "cc/trees/occlusion_tracker.h"
 
-namespace WebKitTests {
+namespace cc {
 
 // A subclass to expose the total current occlusion.
-template<typename LayerType, typename RenderSurfaceType>
-class TestOcclusionTrackerBase : public cc::OcclusionTrackerBase<LayerType, RenderSurfaceType> {
-public:
-    TestOcclusionTrackerBase(gfx::Rect screenScissorRect, bool recordMetricsForFrame = false)
-        : cc::OcclusionTrackerBase<LayerType, RenderSurfaceType>(screenScissorRect, recordMetricsForFrame)
-    {
-    }
+template <typename LayerType, typename RenderSurfaceType>
+class TestOcclusionTrackerBase :
+    public OcclusionTrackerBase<LayerType, RenderSurfaceType> {
+ public:
+  TestOcclusionTrackerBase(gfx::Rect screen_scissor_rect,
+                           bool record_metrics_for_frame)
+      : OcclusionTrackerBase<LayerType, RenderSurfaceType>(
+            screen_scissor_rect,
+            record_metrics_for_frame) {}
 
-    cc::Region occlusionInScreenSpace() const { return cc::OcclusionTrackerBase<LayerType, RenderSurfaceType>::m_stack.back().occlusionInScreen; }
-    cc::Region occlusionInTargetSurface() const { return cc::OcclusionTrackerBase<LayerType, RenderSurfaceType>::m_stack.back().occlusionInTarget; }
+  Region occlusion_from_inside_target() const {
+    return OcclusionTrackerBase<LayerType, RenderSurfaceType>::stack_.back().
+        occlusion_from_inside_target;
+  }
+  Region occlusion_from_outside_target() const {
+    return OcclusionTrackerBase<LayerType, RenderSurfaceType>::stack_.back().
+        occlusion_from_outside_target;
+  }
 
-    void setOcclusionInScreenSpace(const cc::Region& region) { cc::OcclusionTrackerBase<LayerType, RenderSurfaceType>::m_stack.back().occlusionInScreen = region; }
-    void setOcclusionInTargetSurface(const cc::Region& region) { cc::OcclusionTrackerBase<LayerType, RenderSurfaceType>::m_stack.back().occlusionInTarget = region; }
+  void set_occlusion_from_outside_target(const Region& region) {
+    OcclusionTrackerBase<LayerType, RenderSurfaceType>::stack_.back().
+        occlusion_from_outside_target = region;
+  }
+  void set_occlusion_from_inside_target(const Region& region) {
+    OcclusionTrackerBase<LayerType, RenderSurfaceType>::stack_.back().
+        occlusion_from_inside_target = region;
+  }
 };
 
-typedef TestOcclusionTrackerBase<cc::Layer, cc::RenderSurface> TestOcclusionTracker;
-typedef TestOcclusionTrackerBase<cc::LayerImpl, cc::RenderSurfaceImpl> TestOcclusionTrackerImpl;
+typedef TestOcclusionTrackerBase<Layer, RenderSurface> TestOcclusionTracker;
+typedef TestOcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>
+    TestOcclusionTrackerImpl;
 
-}
+}  // namespace cc
 
 #endif  // CC_TEST_OCCLUSION_TRACKER_TEST_COMMON_H_

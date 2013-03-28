@@ -4,35 +4,36 @@
 
 #include "chrome/browser/first_run/first_run.h"
 
+#include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
-#include <windows.h>
 
+#include "base/callback.h"
 #include "base/environment.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/threading/sequenced_worker_pool.h"
+#include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/metro.h"
 #include "base/win/object_watcher.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/first_run/first_run_import_observer.h"
 #include "chrome/browser/first_run/first_run_internal.h"
 #include "chrome/browser/importer/importer_host.h"
 #include "chrome/browser/importer/importer_list.h"
 #include "chrome/browser/importer/importer_progress_dialog.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/process_singleton.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
@@ -45,6 +46,7 @@
 #include "chrome/installer/util/master_preferences_constants.h"
 #include "chrome/installer/util/shell_util.h"
 #include "chrome/installer/util/util_constants.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "google_update/google_update_idl.h"
@@ -59,61 +61,18 @@
 
 namespace {
 
-// Helper class that performs delayed first-run tasks that need more of the
-// chrome infrastructure to be up and running before they can be attempted.
-class FirstRunDelayedTasks : public content::NotificationObserver {
- public:
-  enum Tasks {
-    NO_TASK,
-    INSTALL_EXTENSIONS
-  };
-
-  explicit FirstRunDelayedTasks(Tasks task) {
-    if (task == INSTALL_EXTENSIONS) {
-      registrar_.Add(this, chrome::NOTIFICATION_EXTENSIONS_READY,
-                     content::NotificationService::AllSources());
-    }
-    registrar_.Add(this, chrome::NOTIFICATION_BROWSER_CLOSED,
-                   content::NotificationService::AllSources());
-  }
-
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-    // After processing the notification we always delete ourselves.
-    if (type == chrome::NOTIFICATION_EXTENSIONS_READY) {
-      DoExtensionWork(
-          content::Source<Profile>(source).ptr()->GetExtensionService());
-    }
-    delete this;
-  }
-
- private:
-  // Private ctor forces it to be created only in the heap.
-  ~FirstRunDelayedTasks() {}
-
-  // The extension work is to basically trigger an extension update check.
-  // If the extension specified in the master pref is older than the live
-  // extension it will get updated which is the same as get it installed.
-  void DoExtensionWork(ExtensionService* service) {
-    if (service)
-      service->updater()->CheckNow();
-  }
-
-  content::NotificationRegistrar registrar_;
-};
-
 // Launches the setup exe with the given parameter/value on the command-line.
 // For non-metro Windows, it waits for its termination, returns its exit code
 // in |*ret_code|, and returns true if the exit code is valid.
 // For metro Windows, it launches setup via ShellExecuteEx and returns in order
 // to bounce the user back to the desktop, then returns immediately.
-bool LaunchSetupForEula(const FilePath::StringType& value, int* ret_code) {
-  FilePath exe_dir;
+bool LaunchSetupForEula(const base::FilePath::StringType& value,
+                        int* ret_code) {
+  base::FilePath exe_dir;
   if (!PathService::Get(base::DIR_MODULE, &exe_dir))
     return false;
   exe_dir = exe_dir.Append(installer::kInstallerDir);
-  FilePath exe_path = exe_dir.Append(installer::kSetupExe);
+  base::FilePath exe_path = exe_dir.Append(installer::kSetupExe);
   base::ProcessHandle ph;
 
   CommandLine cl(CommandLine::NO_PROGRAM);
@@ -153,11 +112,23 @@ bool LaunchSetupForEula(const FilePath::StringType& value, int* ret_code) {
   }
 }
 
-bool GetEULASentinelFilePath(FilePath* path) {
-  return InstallUtil::GetSentinelFilePath(
-      installer::kEULASentinelFile,
-      BrowserDistribution::GetDistribution(),
-      path);
+// Populates |path| with the path to |file| in the sentinel directory. This is
+// the application directory for user-level installs, and the default user data
+// dir for system-level installs. Returns false on error.
+bool GetSentinelFilePath(const wchar_t* file, base::FilePath* path) {
+  base::FilePath exe_path;
+  if (!PathService::Get(base::DIR_EXE, &exe_path))
+    return false;
+  if (InstallUtil::IsPerUserInstall(exe_path.value().c_str()))
+    *path = exe_path;
+  else if (!PathService::Get(chrome::DIR_USER_DATA, path))
+    return false;
+  *path = path->Append(file);
+  return true;
+}
+
+bool GetEULASentinelFilePath(base::FilePath* path) {
+  return GetSentinelFilePath(installer::kEULASentinelFile, path);
 }
 
 // Returns true if the EULA is required but has not been accepted by this user.
@@ -167,7 +138,7 @@ bool IsEULANotAccepted(installer::MasterPreferences* install_prefs) {
   bool value = false;
   if (install_prefs->GetBool(installer::master_preferences::kRequireEula,
           &value) && value) {
-    FilePath eula_sentinel;
+    base::FilePath eula_sentinel;
     // Be conservative and show the EULA if the path to the sentinel can't be
     // determined.
     if (!GetEULASentinelFilePath(&eula_sentinel) ||
@@ -180,7 +151,7 @@ bool IsEULANotAccepted(installer::MasterPreferences* install_prefs) {
 
 // Writes the EULA to a temporary file, returned in |*eula_path|, and returns
 // true if successful.
-bool WriteEULAtoTempFile(FilePath* eula_path) {
+bool WriteEULAtoTempFile(base::FilePath* eula_path) {
   std::string terms = l10n_util::GetStringUTF8(IDS_TERMS_HTML);
   if (terms.empty())
     return false;
@@ -195,61 +166,12 @@ bool WriteEULAtoTempFile(FilePath* eula_path) {
 // Creates the sentinel indicating that the EULA was required and has been
 // accepted.
 bool CreateEULASentinel() {
-  FilePath eula_sentinel;
+  base::FilePath eula_sentinel;
   if (!GetEULASentinelFilePath(&eula_sentinel))
     return false;
 
   return (file_util::CreateDirectory(eula_sentinel.DirName()) &&
           file_util::WriteFile(eula_sentinel, "", 0) != -1);
-}
-
-// Shows the EULA dialog if required. Returns true if the EULA is accepted,
-// returns false if the EULA has not been accepted, in which case the browser
-// should exit.
-bool ShowPostInstallEULAIfNeeded(installer::MasterPreferences* install_prefs) {
-  if (IsEULANotAccepted(install_prefs)) {
-    // Show the post-installation EULA. This is done by setup.exe and the
-    // result determines if we continue or not. We wait here until the user
-    // dismisses the dialog.
-
-    // The actual eula text is in a resource in chrome. We extract it to
-    // a text file so setup.exe can use it as an inner frame.
-    FilePath inner_html;
-    if (WriteEULAtoTempFile(&inner_html)) {
-      int retcode = 0;
-      if (!LaunchSetupForEula(inner_html.value(), &retcode) ||
-          (retcode != installer::EULA_ACCEPTED &&
-           retcode != installer::EULA_ACCEPTED_OPT_IN)) {
-        LOG(WARNING) << "EULA flow requires fast exit.";
-        return false;
-      }
-      CreateEULASentinel();
-
-      if (retcode == installer::EULA_ACCEPTED) {
-        VLOG(1) << "EULA : no collection";
-        GoogleUpdateSettings::SetCollectStatsConsent(false);
-      } else if (retcode == installer::EULA_ACCEPTED_OPT_IN) {
-        VLOG(1) << "EULA : collection consent";
-        GoogleUpdateSettings::SetCollectStatsConsent(true);
-      }
-    }
-  }
-  return true;
-}
-
-// Installs a task to do an extensions update check once the extensions system
-// is running.
-void DoDelayedInstallExtensions() {
-  new FirstRunDelayedTasks(FirstRunDelayedTasks::INSTALL_EXTENSIONS);
-}
-
-void DoDelayedInstallExtensionsIfNeeded(
-    installer::MasterPreferences* install_prefs) {
-  DictionaryValue* extensions = 0;
-  if (install_prefs->GetExtensionsBlock(&extensions)) {
-    VLOG(1) << "Extensions block found in master preferences";
-    DoDelayedInstallExtensions();
-  }
 }
 
 // This class is used by first_run::ImportSettings to determine when the import
@@ -399,14 +321,21 @@ int ImportFromBrowser(Profile* profile,
 bool ImportSettingsWin(Profile* profile,
                        int importer_type,
                        int items_to_import,
-                       const FilePath& import_bookmarks_path,
+                       const base::FilePath& import_bookmarks_path,
                        bool skip_first_run_ui) {
   if (!items_to_import && import_bookmarks_path.empty()) {
     return true;
   }
 
   const CommandLine& cmdline = *CommandLine::ForCurrentProcess();
-  CommandLine import_cmd(cmdline.GetProgram());
+  base::FilePath chrome_exe(cmdline.GetProgram());
+  // |chrome_exe| cannot be a relative path as chrome.exe already changed its
+  // CWD in LoadChromeWithDirectory(), making the relative path used on the
+  // command-line invalid. The base name is sufficient given chrome.exe is in
+  // the CWD.
+  if (!chrome_exe.IsAbsolute())
+    chrome_exe = chrome_exe.BaseName();
+  CommandLine import_cmd(chrome_exe);
 
   const char* kSwitchNames[] = {
     switches::kUserDataDir,
@@ -414,6 +343,10 @@ bool ImportSettingsWin(Profile* profile,
     switches::kCountry,
   };
   import_cmd.CopySwitchesFrom(cmdline, kSwitchNames, arraysize(kSwitchNames));
+
+  // Allow tests to introduce additional switches.
+  import_cmd.AppendArguments(first_run::GetExtraArgumentsForImportProcess(),
+                             false);
 
   // Since ImportSettings is called before the local state is stored on disk
   // we pass the language as an argument.  GetApplicationLocale checks the
@@ -458,6 +391,24 @@ bool ImportSettingsWin(Profile* profile,
 namespace first_run {
 namespace internal {
 
+void DoPostImportPlatformSpecificTasks() {
+  // Trigger the Active Setup command for system-level Chromes to finish
+  // configuring this user's install (e.g. per-user shortcuts).
+  // Delay the task slightly to give Chrome launch I/O priority while also
+  // making sure shortcuts are created promptly to avoid annoying the user by
+  // re-creating shortcuts he previously deleted.
+  static const int64 kTiggerActiveSetupDelaySeconds = 5;
+  base::FilePath chrome_exe;
+  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
+    NOTREACHED();
+  } else if (!InstallUtil::IsPerUserInstall(chrome_exe.value().c_str())) {
+    content::BrowserThread::GetBlockingPool()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&InstallUtil::TriggerActiveSetupCommand),
+        base::TimeDelta::FromSeconds(kTiggerActiveSetupDelaySeconds));
+  }
+}
+
 bool ImportSettings(Profile* profile,
                     scoped_refptr<ImporterHost> importer_host,
                     scoped_refptr<ImporterList> importer_list,
@@ -466,15 +417,12 @@ bool ImportSettings(Profile* profile,
       profile,
       importer_list->GetSourceProfileAt(0).importer_type,
       items_to_import,
-      FilePath(),
+      base::FilePath(),
       false);
 }
 
-bool GetFirstRunSentinelFilePath(FilePath* path) {
-  return InstallUtil::GetSentinelFilePath(
-      chrome::kFirstRunSentinel,
-      BrowserDistribution::GetDistribution(),
-      path);
+bool GetFirstRunSentinelFilePath(base::FilePath* path) {
+  return GetSentinelFilePath(chrome::kFirstRunSentinel, path);
 }
 
 void SetImportPreferencesAndLaunchImport(
@@ -505,46 +453,50 @@ void SetImportPreferencesAndLaunchImport(
     // the importer process and blocks until done or until it fails.
     scoped_refptr<ImporterList> importer_list(new ImporterList(NULL));
     importer_list->DetectSourceProfilesHack();
-    if (!ImportSettingsWin(NULL,
-          importer_list->GetSourceProfileAt(0).importer_type,
-          out_prefs->do_import_items,
-          FilePath::FromWStringHack(UTF8ToWide(import_bookmarks_path)), true)) {
+    if (!ImportSettingsWin(
+        NULL, importer_list->GetSourceProfileAt(0).importer_type,
+        out_prefs->do_import_items, base::FilePath::FromWStringHack(UTF8ToWide(
+                                        import_bookmarks_path)), true)) {
       LOG(WARNING) << "silent import failed";
     }
   }
+}
+
+bool ShowPostInstallEULAIfNeeded(installer::MasterPreferences* install_prefs) {
+  if (IsEULANotAccepted(install_prefs)) {
+    // Show the post-installation EULA. This is done by setup.exe and the
+    // result determines if we continue or not. We wait here until the user
+    // dismisses the dialog.
+
+    // The actual eula text is in a resource in chrome. We extract it to
+    // a text file so setup.exe can use it as an inner frame.
+    base::FilePath inner_html;
+    if (WriteEULAtoTempFile(&inner_html)) {
+      int retcode = 0;
+      if (!LaunchSetupForEula(inner_html.value(), &retcode) ||
+          (retcode != installer::EULA_ACCEPTED &&
+           retcode != installer::EULA_ACCEPTED_OPT_IN)) {
+        LOG(WARNING) << "EULA flow requires fast exit.";
+        return false;
+      }
+      CreateEULASentinel();
+
+      if (retcode == installer::EULA_ACCEPTED) {
+        VLOG(1) << "EULA : no collection";
+        GoogleUpdateSettings::SetCollectStatsConsent(false);
+      } else if (retcode == installer::EULA_ACCEPTED_OPT_IN) {
+        VLOG(1) << "EULA : collection consent";
+        GoogleUpdateSettings::SetCollectStatsConsent(true);
+      }
+    }
+  }
+  return true;
 }
 
 }  // namespace internal
 }  // namespace first_run
 
 namespace first_run {
-
-void AutoImport(
-    Profile* profile,
-    bool homepage_defined,
-    int import_items,
-    int dont_import_items,
-    bool make_chrome_default,
-    ProcessSingleton* process_singleton) {
-#if !defined(USE_AURA)
-  // We need to avoid dispatching new tabs when we are importing because
-  // that will lead to data corruption or a crash. Because there is no UI for
-  // the import process, we pass NULL as the window to bring to the foreground
-  // when a CopyData message comes in; this causes the message to be silently
-  // discarded, which is the correct behavior during the import process.
-  process_singleton->Lock(NULL);
-
-  scoped_refptr<ImporterHost> importer_host;
-  importer_host = new ImporterHost;
-
-  internal::AutoImportPlatformCommon(importer_host, profile, homepage_defined,
-                                     import_items, dont_import_items,
-                                     make_chrome_default);
-
-  process_singleton->Unlock();
-  CreateSentinel();
-#endif  // !defined(USE_AURA)
-}
 
 int ImportNow(Profile* profile, const CommandLine& cmdline) {
   int return_code = internal::ImportBookmarkFromFileIfNeeded(profile, cmdline);
@@ -556,58 +508,12 @@ int ImportNow(Profile* profile, const CommandLine& cmdline) {
   return return_code;
 }
 
-FilePath MasterPrefsPath() {
+base::FilePath MasterPrefsPath() {
   // The standard location of the master prefs is next to the chrome binary.
-  FilePath master_prefs;
+  base::FilePath master_prefs;
   if (!PathService::Get(base::DIR_EXE, &master_prefs))
-    return FilePath();
+    return base::FilePath();
   return master_prefs.AppendASCII(installer::kDefaultMasterPrefs);
-}
-
-ProcessMasterPreferencesResult ProcessMasterPreferences(
-    const FilePath& user_data_dir,
-    MasterPrefs* out_prefs) {
-  DCHECK(!user_data_dir.empty());
-
-  FilePath master_prefs_path;
-  scoped_ptr<installer::MasterPreferences>
-      install_prefs(internal::LoadMasterPrefs(&master_prefs_path));
-  if (!install_prefs.get())
-    return SHOW_FIRST_RUN;
-
-  out_prefs->new_tabs = install_prefs->GetFirstRunTabs();
-
-  internal::SetRLZPref(out_prefs, install_prefs.get());
-
-  if (!ShowPostInstallEULAIfNeeded(install_prefs.get()))
-    return EULA_EXIT_NOW;
-
-  if (!internal::CopyPrefFile(user_data_dir, master_prefs_path))
-    return SHOW_FIRST_RUN;
-
-  DoDelayedInstallExtensionsIfNeeded(install_prefs.get());
-
-  internal::SetupMasterPrefsFromInstallPrefs(out_prefs,
-      install_prefs.get());
-
-  // TODO(mirandac): Refactor skip-first-run-ui process into regular first run
-  // import process.  http://crbug.com/49647
-  // Note we are skipping all other master preferences if skip-first-run-ui
-  // is *not* specified. (That is, we continue only if skipping first run ui.)
-  if (!internal::SkipFirstRunUI(install_prefs.get()))
-    return SHOW_FIRST_RUN;
-
-  // We need to be able to create the first run sentinel or else we cannot
-  // proceed because ImportSettings will launch the importer process which
-  // would end up here if the sentinel is not present.
-  if (!CreateSentinel())
-    return SKIP_FIRST_RUN;
-
-  internal::SetShowWelcomePagePrefIfNeeded(install_prefs.get());
-  internal::SetImportPreferencesAndLaunchImport(out_prefs, install_prefs.get());
-  internal::SetDefaultBrowser(install_prefs.get());
-
-  return SKIP_FIRST_RUN;
 }
 
 }  // namespace first_run

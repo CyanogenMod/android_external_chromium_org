@@ -82,7 +82,7 @@
               'dependencies': [
                 '../ppapi/native_client/native_client.gyp:nacl_irt',
                 '../ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:pnacl_irt_shim',
-                '../ppapi/native_client/native_client.gyp:nacl_ipc_irt',
+                '../ppapi/native_client/src/untrusted/pnacl_support_extension/pnacl_support_extension.gyp:pnacl_support_extension',
               ],
             }],
           ],
@@ -94,7 +94,7 @@
         },
       ],
       'conditions': [
-        ['OS=="win"', {
+        ['OS=="win" and target_arch=="ia32"', {
           'targets': [
             {
               'target_name': 'nacl_win64',
@@ -153,7 +153,7 @@
               ],
               'sources': [
                 'nacl/nacl_helper_linux.cc',
-                '../base/posix/unix_domain_socket.cc',
+                '../base/posix/unix_domain_socket_linux.cc',
                 '../chrome/common/nacl_messages.cc',
                 '../chrome/common/nacl_types.cc',
                 '../content/common/child_process_sandbox_support_impl_shm_linux.cc',

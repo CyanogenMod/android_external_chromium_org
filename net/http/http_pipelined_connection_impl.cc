@@ -174,7 +174,6 @@ int HttpPipelinedConnectionImpl::SendRequest(
     int pipeline_id,
     const std::string& request_line,
     const HttpRequestHeaders& headers,
-    UploadDataStream* request_body,
     HttpResponseInfo* response,
     const CompletionCallback& callback) {
   CHECK(ContainsKey(stream_info_map_, pipeline_id));
@@ -187,7 +186,6 @@ int HttpPipelinedConnectionImpl::SendRequest(
   send_request->pipeline_id = pipeline_id;
   send_request->request_line = request_line;
   send_request->headers = headers;
-  send_request->request_body = request_body;
   send_request->response = response;
   send_request->callback = callback;
   pending_send_request_queue_.push(send_request);
@@ -277,7 +275,6 @@ int HttpPipelinedConnectionImpl::DoSendActiveRequest(int result) {
   int rv = stream_info_map_[active_send_request_->pipeline_id].parser->
       SendRequest(active_send_request_->request_line,
                   active_send_request_->headers,
-                  active_send_request_->request_body,
                   active_send_request_->response,
                   base::Bind(&HttpPipelinedConnectionImpl::OnSendIOCallback,
                              base::Unretained(this)));
@@ -644,11 +641,6 @@ bool HttpPipelinedConnectionImpl::CanFindEndOfResponse(int pipeline_id) const {
       CanFindEndOfResponse();
 }
 
-bool HttpPipelinedConnectionImpl::IsMoreDataBuffered(int pipeline_id) const {
-  CHECK(ContainsKey(stream_info_map_, pipeline_id));
-  return read_buf_->offset() != 0;
-}
-
 bool HttpPipelinedConnectionImpl::IsConnectionReused(int pipeline_id) const {
   CHECK(ContainsKey(stream_info_map_, pipeline_id));
   if (pipeline_id > 1) {
@@ -662,6 +654,12 @@ bool HttpPipelinedConnectionImpl::IsConnectionReused(int pipeline_id) const {
 void HttpPipelinedConnectionImpl::SetConnectionReused(int pipeline_id) {
   CHECK(ContainsKey(stream_info_map_, pipeline_id));
   connection_->set_is_reused(true);
+}
+
+bool HttpPipelinedConnectionImpl::GetLoadTimingInfo(
+    int pipeline_id, LoadTimingInfo* load_timing_info) const {
+  return connection_->GetLoadTimingInfo(IsConnectionReused(pipeline_id),
+                                        load_timing_info);
 }
 
 void HttpPipelinedConnectionImpl::GetSSLInfo(int pipeline_id,
@@ -705,6 +703,7 @@ void HttpPipelinedConnectionImpl::CheckHeadersForPipelineCompatibility(
       // Collect metrics to see if this code is useful.
       case ERR_ABORTED:
       case ERR_INTERNET_DISCONNECTED:
+      case ERR_NETWORK_CHANGED:
         // These errors are no fault of the server.
         break;
 
@@ -826,7 +825,6 @@ NextProto HttpPipelinedConnectionImpl::protocol_negotiated()
 
 HttpPipelinedConnectionImpl::PendingSendRequest::PendingSendRequest()
     : pipeline_id(0),
-      request_body(NULL),
       response(NULL) {
 }
 

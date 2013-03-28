@@ -6,7 +6,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "webkit/glue/webcursor.h"
-#include "webkit/tools/test_shell/test_shell_test.h"
 
 using WebKit::WebCursorInfo;
 
@@ -21,6 +20,8 @@ TEST(WebCursorTest, OKCursorSerialization) {
   // X & Y
   ok_custom_pickle.WriteInt(1);
   ok_custom_pickle.WriteInt(1);
+  // Scale
+  ok_custom_pickle.WriteFloat(1.0);
   // Data len including enough data for a 1x1 image.
   ok_custom_pickle.WriteInt(4);
   ok_custom_pickle.WriteUInt32(0);
@@ -48,6 +49,8 @@ TEST(WebCursorTest, BrokenCursorSerialization) {
   // X & Y
   short_custom_pickle.WriteInt(1);
   short_custom_pickle.WriteInt(1);
+  // Scale
+  short_custom_pickle.WriteFloat(1.0);
   // Data len not including enough data for a 1x1 image.
   short_custom_pickle.WriteInt(3);
   short_custom_pickle.WriteUInt32(0);
@@ -64,6 +67,8 @@ TEST(WebCursorTest, BrokenCursorSerialization) {
   static const int kTooBigSize = 4096 + 1;
   large_custom_pickle.WriteInt(kTooBigSize);
   large_custom_pickle.WriteInt(1);
+  // Scale
+  large_custom_pickle.WriteFloat(1.0);
   // Data len including enough data for a 4097x1 image.
   large_custom_pickle.WriteInt(kTooBigSize * 4);
   for (int i = 0; i < kTooBigSize; ++i)
@@ -80,6 +85,8 @@ TEST(WebCursorTest, BrokenCursorSerialization) {
   // X & Y
   neg_custom_pickle.WriteInt(-1);
   neg_custom_pickle.WriteInt(-1);
+  // Scale
+  neg_custom_pickle.WriteFloat(1.0);
   // Data len including enough data for a 1x1 image.
   neg_custom_pickle.WriteInt(4);
   neg_custom_pickle.WriteUInt32(0);
@@ -87,9 +94,47 @@ TEST(WebCursorTest, BrokenCursorSerialization) {
   neg_custom_pickle.WriteUInt32(0);
   iter = PickleIterator(neg_custom_pickle);
   EXPECT_FALSE(custom_cursor.Deserialize(&iter));
+
+  // This custom cursor uses zero scale.
+  Pickle scale_zero_custom_pickle;
+  // Type and hotspots.
+  scale_zero_custom_pickle.WriteInt(WebCursorInfo::TypeCustom);
+  scale_zero_custom_pickle.WriteInt(0);
+  scale_zero_custom_pickle.WriteInt(0);
+  // X & Y
+  scale_zero_custom_pickle.WriteInt(1);
+  scale_zero_custom_pickle.WriteInt(1);
+  // Scale
+  scale_zero_custom_pickle.WriteFloat(0);
+  // Data len including enough data for a 1x1 image.
+  scale_zero_custom_pickle.WriteInt(4);
+  scale_zero_custom_pickle.WriteUInt32(0);
+  // Custom Windows message.
+  scale_zero_custom_pickle.WriteUInt32(0);
+  iter = PickleIterator(scale_zero_custom_pickle);
+  EXPECT_FALSE(custom_cursor.Deserialize(&iter));
+
+  // This custom cursor uses tiny scale.
+  Pickle scale_tiny_custom_pickle;
+  // Type and hotspots.
+  scale_tiny_custom_pickle.WriteInt(WebCursorInfo::TypeCustom);
+  scale_tiny_custom_pickle.WriteInt(0);
+  scale_tiny_custom_pickle.WriteInt(0);
+  // X & Y
+  scale_tiny_custom_pickle.WriteInt(1);
+  scale_tiny_custom_pickle.WriteInt(1);
+  // Scale
+  scale_tiny_custom_pickle.WriteFloat(0.001f);
+  // Data len including enough data for a 1x1 image.
+  scale_tiny_custom_pickle.WriteInt(4);
+  scale_tiny_custom_pickle.WriteUInt32(0);
+  // Custom Windows message.
+  scale_tiny_custom_pickle.WriteUInt32(0);
+  iter = PickleIterator(scale_tiny_custom_pickle);
+  EXPECT_FALSE(custom_cursor.Deserialize(&iter));
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
 TEST(WebCursorTest, WindowsCursorConversion) {
   WebCursor custom_cursor;
   Pickle win32_custom_pickle;
@@ -115,6 +160,8 @@ TEST(WebCursorTest, ClampHotspot) {
   // X & Y
   ok_custom_pickle.WriteInt(2);
   ok_custom_pickle.WriteInt(2);
+  // Scale
+  ok_custom_pickle.WriteFloat(1.0);
   // Data len including enough data for a 2x2 image.
   ok_custom_pickle.WriteInt(4 * 4);
   for (size_t i = 0; i < 4; i++)
@@ -147,6 +194,8 @@ TEST(WebCursorTest, EmptyImage) {
   // X & Y are empty
   broken_cursor_pickle.WriteInt(0);
   broken_cursor_pickle.WriteInt(0);
+  // Scale
+  broken_cursor_pickle.WriteFloat(1.0);
   // No data for the image since the size is 0.
   broken_cursor_pickle.WriteInt(0);
   // Custom Windows message.
@@ -162,5 +211,34 @@ TEST(WebCursorTest, EmptyImage) {
   // method; the relevant GDK methods take NULL as a request to use the default
   // cursor.
   EXPECT_EQ(NULL, custom_cursor.GetCustomCursor());
+#endif
+}
+
+TEST(WebCursorTest, Scale2) {
+  WebCursor custom_cursor;
+  // This is a valid custom cursor.
+  Pickle ok_custom_pickle;
+  // Type and hotspots.
+  ok_custom_pickle.WriteInt(WebCursorInfo::TypeCustom);
+  ok_custom_pickle.WriteInt(0);
+  ok_custom_pickle.WriteInt(0);
+  // X & Y
+  ok_custom_pickle.WriteInt(1);
+  ok_custom_pickle.WriteInt(1);
+  // Scale - 2 image pixels per UI pixel.
+  ok_custom_pickle.WriteFloat(2.0);
+  // Data len including enough data for a 1x1 image.
+  ok_custom_pickle.WriteInt(4);
+  ok_custom_pickle.WriteUInt32(0);
+  // Custom Windows message.
+  ok_custom_pickle.WriteUInt32(0);
+  PickleIterator iter(ok_custom_pickle);
+  EXPECT_TRUE(custom_cursor.Deserialize(&iter));
+
+#if defined(TOOLKIT_GTK)
+  // On GTK+ using platforms, we should get a real native GdkCursor object back
+  // (and the memory used should automatically be freed by the WebCursor object
+  // for valgrind tests).
+  EXPECT_TRUE(custom_cursor.GetCustomCursor());
 #endif
 }

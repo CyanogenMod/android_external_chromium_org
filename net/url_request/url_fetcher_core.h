@@ -11,12 +11,10 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/debug/stack_trace.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "base/timer.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/host_port_pair.h"
@@ -33,6 +31,8 @@ namespace net {
 class HttpResponseHeaders;
 class IOBuffer;
 class URLFetcherDelegate;
+class URLFetcherFileWriter;
+class URLFetcherResponseWriter;
 class URLRequestContextGetter;
 class URLRequestThrottlerEntryInterface;
 
@@ -63,6 +63,9 @@ class URLFetcherCore
   // content and set |content| to the data to upload.
   void SetUploadData(const std::string& upload_content_type,
                      const std::string& upload_content);
+  void SetUploadFilePath(const std::string& upload_content_type,
+                         const base::FilePath& file_path,
+                         scoped_refptr<base::TaskRunner> file_task_runner);
   void SetChunkedUpload(const std::string& upload_content_type);
   // Adds a block of data to be uploaded in a POST body. This can only be
   // called after Start().
@@ -86,11 +89,12 @@ class URLFetcherCore
       const URLFetcher::CreateDataCallback& create_data_callback);
   void SetStopOnRedirect(bool stop_on_redirect);
   void SetAutomaticallyRetryOn5xx(bool retry);
-  void SetMaxRetries(int max_retries);
-  int GetMaxRetries() const;
+  void SetMaxRetriesOn5xx(int max_retries);
+  int GetMaxRetriesOn5xx() const;
   base::TimeDelta GetBackoffDelay() const;
+  void SetAutomaticallyRetryOnNetworkChanges(int max_retries);
   void SaveResponseToFileAtPath(
-      const FilePath& file_path,
+      const base::FilePath& file_path,
       scoped_refptr<base::TaskRunner> file_task_runner);
   void SaveResponseToTemporaryFile(
       scoped_refptr<base::TaskRunner> file_task_runner);
@@ -102,7 +106,7 @@ class URLFetcherCore
   const URLRequestStatus& GetStatus() const;
   int GetResponseCode() const;
   const ResponseCookies& GetCookies() const;
-  bool FileErrorOccurred(base::PlatformFileError* out_error_code) const;
+  bool FileErrorOccurred(int* out_error_code) const;
   // Reports that the received content was malformed (i.e. failed parsing
   // or validation).  This makes the throttling logic that does exponential
   // back-off when servers are having problems treat the current request as
@@ -112,7 +116,7 @@ class URLFetcherCore
   void ReceivedContentWasMalformed();
   bool GetResponseAsString(std::string* out_response_string) const;
   bool GetResponseAsFilePath(bool take_ownership,
-                             FilePath* out_response_path);
+                             base::FilePath* out_response_path);
 
   // Overridden from URLRequest::Delegate:
   virtual void OnReceivedRedirect(URLRequest* request,
@@ -121,11 +125,15 @@ class URLFetcherCore
   virtual void OnResponseStarted(URLRequest* request) OVERRIDE;
   virtual void OnReadCompleted(URLRequest* request,
                                int bytes_read) OVERRIDE;
+  virtual void OnCertificateRequested(
+      URLRequest* request,
+      SSLCertRequestInfo* cert_request_info) OVERRIDE;
 
   URLFetcherDelegate* delegate() const { return delegate_; }
   static void CancelAll();
   static int GetNumFetcherCores();
   static void SetEnableInterceptionForTests(bool enabled);
+  static void SetIgnoreCertificateRequests(bool ignored);
 
  private:
   friend class base::RefCountedThreadSafe<URLFetcherCore>;
@@ -157,109 +165,19 @@ class URLFetcherCore
     DISALLOW_COPY_AND_ASSIGN(Registry);
   };
 
-  // Class FileWriter encapsulates all state involved in writing
-  // response bytes to a file. It is only used if
-  // |URLFetcherCore::response_destination_| == TEMP_FILE ||
-  // |URLFetcherCore::response_destination_| == PERMANENT_FILE.  Each
-  // instance of FileWriter is owned by a URLFetcherCore, which
-  // manages its lifetime and never transfers ownership. All file operations
-  // happen on |file_task_runner_|.
-  class FileWriter {
-   public:
-    FileWriter(URLFetcherCore* core,
-               scoped_refptr<base::TaskRunner> file_task_runner);
-    ~FileWriter();
-
-    void CreateFileAtPath(const FilePath& file_path);
-    void CreateTempFile();
-
-    // Record |num_bytes_| response bytes in |core_->buffer_| to the file.
-    void WriteBuffer(int num_bytes);
-
-    // Called when a write has been done.  Continues writing if there are
-    // any more bytes to write.  Otherwise, initiates a read in core_.
-    void ContinueWrite(base::PlatformFileError error_code, int bytes_written);
-
-    // Drop ownership of the file at |file_path_|.
-    // This class will not delete it or write to it again.
-    void DisownFile();
-
-    // Close the file if it is open.
-    void CloseFileAndCompleteRequest();
-
-    // Close the file if it is open and then delete it.
-    void CloseAndDeleteFile();
-
-    const FilePath& file_path() const { return file_path_; }
-    int64 total_bytes_written() { return total_bytes_written_; }
-    base::PlatformFileError error_code() const { return error_code_; }
-
-   private:
-    // Callback which gets the result of a permanent file creation.
-    void DidCreateFile(const FilePath& file_path,
-                       base::PlatformFileError error_code,
-                       base::PassPlatformFile file_handle,
-                       bool created);
-    // Callback which gets the result of a temporary file creation.
-    void DidCreateTempFile(base::PlatformFileError error_code,
-                           base::PassPlatformFile file_handle,
-                           const FilePath& file_path);
-    // This method is used to implement DidCreateFile and DidCreateTempFile.
-    void DidCreateFileInternal(const FilePath& file_path,
-                               base::PlatformFileError error_code,
-                               base::PassPlatformFile file_handle);
-
-    // Callback which gets the result of closing the file.
-    void DidCloseFile(base::PlatformFileError error);
-
-    // Callback which gets the result of closing the file. Deletes the file if
-    // it has been created.
-    void DeleteFile(base::PlatformFileError error_code);
-
-    // The URLFetcherCore which instantiated this class.
-    URLFetcherCore* core_;
-
-    // The last error encountered on a file operation.  base::PLATFORM_FILE_OK
-    // if no error occurred.
-    base::PlatformFileError error_code_;
-
-    // Callbacks are created for use with base::FileUtilProxy.
-    base::WeakPtrFactory<URLFetcherCore::FileWriter> weak_factory_;
-
-    // Task runner on which file operations should happen.
-    scoped_refptr<base::TaskRunner> file_task_runner_;
-
-    // Path to the file.  This path is empty when there is no file.
-    FilePath file_path_;
-
-    // Handle to the file.
-    base::PlatformFile file_handle_;
-
-    // We always append to the file.  Track the total number of bytes
-    // written, so that writes know the offset to give.
-    int64 total_bytes_written_;
-
-    // How many bytes did the last Write() try to write?  Needed so
-    // that if not all the bytes get written on a Write(), we can
-    // call Write() again with the rest.
-    int pending_bytes_;
-
-    // When writing, how many bytes from the buffer have been successfully
-    // written so far?
-    int buffer_offset_;
-  };
-
   virtual ~URLFetcherCore();
 
   // Wrapper functions that allow us to ensure actions happen on the right
   // thread.
   void StartOnIOThread();
   void StartURLRequest();
+  void DidInitializeWriter(int result);
   void StartURLRequestWhenAppropriate();
   void CancelURLRequest();
   void OnCompletedURLRequest(base::TimeDelta backoff_delay);
   void InformDelegateFetchIsComplete();
   void NotifyMalformedContent();
+  void DidFinishWriting(int result);
   void RetryOrCompleteUrlFetch();
 
   // Deletes the request, removes it from the registry, and removes the
@@ -273,12 +191,8 @@ class URLFetcherCore
   void CompleteAddingUploadDataChunk(const std::string& data,
                                      bool is_last_chunk);
 
-  // Store the response bytes in |buffer_| in the container indicated by
-  // |response_destination_|. Return true if the write has been
-  // done, and another read can overwrite |buffer_|.  If this function
-  // returns false, it will post a task that will read more bytes once the
-  // write is complete.
-  bool WriteBuffer(int num_bytes);
+  // Handles the result of WriteBuffer.
+  void DidWriteBuffer(int result);
 
   // Read response bytes from the request.
   void ReadResponse();
@@ -305,10 +219,10 @@ class URLFetcherCore
   scoped_refptr<base::SingleThreadTaskRunner> delegate_task_runner_;
                                      // Task runner for the creating thread.
   scoped_refptr<base::SingleThreadTaskRunner> network_task_runner_;
-                                     // Task runner for file access.
+                                     // Task runner for download file access.
   scoped_refptr<base::TaskRunner> file_task_runner_;
-                                     // Task runner for the thread
-                                     // on which file access happens.
+                                     // Task runner for upload file access.
+  scoped_refptr<base::TaskRunner> upload_file_task_runner_;
   scoped_ptr<URLRequest> request_;   // The actual request this wraps
   int load_flags_;                   // Flags for the load operation
   int response_code_;                // HTTP status code for the request
@@ -328,7 +242,9 @@ class URLFetcherCore
   bool was_fetched_via_proxy_;
   HostPortPair socket_address_;
 
+  bool upload_content_set_;          // SetUploadData has been called
   std::string upload_content_;       // HTTP POST payload
+  base::FilePath upload_file_path_;  // Path to file containing POST payload
   std::string upload_content_type_;  // MIME type of POST payload
   std::string referrer_;             // HTTP Referer header value
   bool is_chunked_upload_;           // True if using chunked transfer encoding
@@ -352,23 +268,23 @@ class URLFetcherCore
       original_url_throttler_entry_;
   scoped_refptr<URLRequestThrottlerEntryInterface> url_throttler_entry_;
 
-  // |num_retries_| indicates how many times we've failed to successfully
-  // fetch this URL.  Once this value exceeds the maximum number of retries
-  // specified by the owner URLFetcher instance, we'll give up.
-  int num_retries_;
-
   // True if the URLFetcher has been cancelled.
   bool was_cancelled_;
 
+  // Writer object to write response to the destination like file and string.
+  scoped_ptr<URLFetcherResponseWriter> response_writer_;
+
   // If writing results to a file, |file_writer_| will manage creation,
   // writing, and destruction of that file.
-  scoped_ptr<FileWriter> file_writer_;
+  // |file_writer_| points to the same object as |response_writer_| when writing
+  // response to a file, otherwise, |file_writer_| is NULL.
+  URLFetcherFileWriter* file_writer_;
 
   // Where should responses be saved?
   ResponseDestinationType response_destination_;
 
   // Path to the file where the response is written.
-  FilePath response_destination_file_path_;
+  base::FilePath response_destination_file_path_;
 
   // By default any server-initiated redirects are automatically followed.  If
   // this flag is set to true, however, a redirect will halt the fetch and call
@@ -384,10 +300,21 @@ class URLFetcherCore
   // re-execute the request, after the back-off delay has expired.
   // true by default.
   bool automatically_retry_on_5xx_;
-  // Maximum retries allowed.
-  int max_retries_;
+  // |num_retries_on_5xx_| indicates how many times we've failed to successfully
+  // fetch this URL due to 5xx responses.  Once this value exceeds the maximum
+  // number of retries specified by the owner URLFetcher instance,
+  // we'll give up.
+  int num_retries_on_5xx_;
+  // Maximum retries allowed when 5xx responses are received.
+  int max_retries_on_5xx_;
   // Back-off time delay. 0 by default.
   base::TimeDelta backoff_delay_;
+
+  // The number of retries that have been attempted due to ERR_NETWORK_CHANGED.
+  int num_retries_on_network_changes_;
+  // Maximum retries allowed when the request fails with ERR_NETWORK_CHANGED.
+  // 0 by default.
+  int max_retries_on_network_changes_;
 
   // Timer to poll the progress of uploading for POST and PUT requests.
   // When crbug.com/119629 is fixed, scoped_ptr is not necessary here.

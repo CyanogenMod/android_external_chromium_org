@@ -142,19 +142,27 @@ void SendMnemonic(WORD mnemonic_char, Modifier modifiers, bool extended,
   }
 }
 
-void MetroExit() {
-  if (globals.core_window == ::GetForegroundWindow()) {
+// Helper function to Exit metro chrome cleanly. If we are in the foreground
+// then we try and exit by sending an Alt+F4 key combination to the core
+// window which ensures that the chrome application tile does not show up in
+// the running metro apps list on the top left corner. We have seen cases
+// where this does work. To workaround that we invoke the
+// ICoreApplicationExit::Exit function in a background delayed task which
+// ensures that chrome exits.
+void MetroExit(bool send_alt_f4_mnemonic) {
+  if (send_alt_f4_mnemonic && globals.core_window == ::GetForegroundWindow()) {
     DVLOG(1) << "We are in the foreground. Exiting via Alt F4";
     SendMnemonic(VK_F4, ALT, false, false);
     DWORD core_window_process_id = 0;
     DWORD core_window_thread_id = GetWindowThreadProcessId(
         globals.core_window, &core_window_process_id);
     if (core_window_thread_id != ::GetCurrentThreadId()) {
-      // Sleep to give time to the core window thread to get this message.
-      Sleep(100);
+      globals.appview_msg_loop->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&MetroExit, false),
+        base::TimeDelta::FromMilliseconds(100));
     }
   } else {
-    DVLOG(1) << "We are not in the foreground. Exiting normally";
     globals.app_exit->Exit();
     globals.core_window = NULL;
   }
@@ -212,9 +220,9 @@ void AdjustFrameWindowStyleForMetro(HWND hwnd) {
 
   // Subclass the wndproc of the frame window, if it's not already there.
   if (::GetProp(hwnd, kChromeSubclassWindowProp) == NULL) {
-    WNDPROC old_chrome_proc = reinterpret_cast<WNDPROC>(
-        ::SetWindowLong(hwnd, GWL_WNDPROC,
-                        reinterpret_cast<long>(ChromeWindowProc)));
+    WNDPROC old_chrome_proc =
+        reinterpret_cast<WNDPROC>(::SetWindowLongPtr(
+            hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ChromeWindowProc)));
     ::SetProp(hwnd, kChromeSubclassWindowProp, old_chrome_proc);
   }
   AdjustToFitWindow(hwnd, SWP_FRAMECHANGED | SWP_NOACTIVATE);
@@ -251,8 +259,17 @@ void SetFrameWindowInternal(HWND hwnd) {
 
   globals.host_windows.push_front(std::make_pair(hwnd, window_scrolled_state));
 
-  if (new_window)
+  if (new_window) {
     AdjustFrameWindowStyleForMetro(hwnd);
+  } else {
+    DVLOG(1) << "Adjusting new top window to core window size";
+    AdjustToFitWindow(hwnd, 0);
+  }
+  if (globals.view->GetViewState() ==
+      winui::ViewManagement::ApplicationViewState_Snapped) {
+    DVLOG(1) << "Enabling Metro snap state on new window: " << hwnd;
+    ::PostMessageW(hwnd, WM_SYSCOMMAND, IDC_METRO_SNAP_ENABLE, 0);
+  }
 }
 
 void CloseFrameWindowInternal(HWND hwnd) {
@@ -269,7 +286,7 @@ void CloseFrameWindowInternal(HWND hwnd) {
   } else {
     // time to quit
     DVLOG(1) << "Last host window closed. Calling Exit().";
-    MetroExit();
+    MetroExit(true);
   }
 }
 
@@ -296,20 +313,6 @@ void FlipFrameWindowsInternal() {
 }
 
 }  // namespace
-
-HRESULT ChromeAppView::TileRequestCreateDone(
-    winfoundtn::IAsyncOperation<bool>* async,
-    AsyncStatus status) {
-  if (status == Completed) {
-    unsigned char result;
-    CheckHR(async->GetResults(&result));
-    DVLOG(1) << __FUNCTION__ << " result " << static_cast<int>(result);
-  } else {
-    LOG(ERROR) << __FUNCTION__ << " Unexpected async status " << status;
-  }
-
-  return S_OK;
-}
 
 void ChromeAppView::DisplayNotification(
     const ToastNotificationHandler::DesktopNotification& notification) {
@@ -410,6 +413,13 @@ void ChromeAppView::SetFullscreen(bool fullscreen) {
                      SW_INVALIDATE | SW_SCROLLCHILDREN);
     osk_offset_adjustment_ = 0;
   }
+}
+
+winui::ViewManagement::ApplicationViewState ChromeAppView::GetViewState() {
+  winui::ViewManagement::ApplicationViewState view_state =
+      winui::ViewManagement::ApplicationViewState_FullScreenLandscape;
+  app_view_->get_Value(&view_state);
+  return view_state;
 }
 
 void UnsnapHelper() {
@@ -627,13 +637,14 @@ DWORD WINAPI HostMainThreadProc(void*) {
   globals.metro_command_line_switches =
       winrt_utils::ReadArgumentsFromPinnedTaskbarShortcut();
 
-  globals.g_core_proc = reinterpret_cast<WNDPROC>(
-      ::SetWindowLong(globals.core_window, GWL_WNDPROC,
-                      reinterpret_cast<long>(ChromeAppView::CoreWindowProc)));
+  globals.g_core_proc =
+      reinterpret_cast<WNDPROC>(::SetWindowLongPtr(
+          globals.core_window, GWLP_WNDPROC,
+          reinterpret_cast<LONG_PTR>(ChromeAppView::CoreWindowProc)));
   DWORD exit_code = globals.host_main(globals.host_context);
 
   DVLOG(1) << "host thread done, exit_code=" << exit_code;
-  MetroExit();
+  MetroExit(true);
   return exit_code;
 }
 

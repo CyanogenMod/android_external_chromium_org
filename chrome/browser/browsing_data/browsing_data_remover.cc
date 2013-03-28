@@ -13,8 +13,7 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/platform_file.h"
-#include "chrome/browser/api/prefs/pref_member.h"
-#include "chrome/browser/autofill/personal_data_manager.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
@@ -23,7 +22,7 @@
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/nacl_host/nacl_browser.h"
@@ -43,10 +42,10 @@
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/webdata/web_data_service.h"
-#include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/autofill/browser/personal_data_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/download_manager.h"
@@ -55,13 +54,13 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "net/base/net_errors.h"
-#include "net/base/server_bound_cert_service.h"
-#include "net/base/server_bound_cert_store.h"
-#include "net/base/transport_security_state.h"
 #include "net/cookies/cookie_store.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/http/http_cache.h"
 #include "net/http/infinite_cache.h"
+#include "net/http/transport_security_state.h"
+#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/server_bound_cert_store.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "webkit/dom_storage/dom_storage_types.h"
@@ -199,6 +198,15 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
   remove_origin_ = origin;
   origin_set_mask_ = origin_set_mask;
 
+  PrefService* prefs = profile_->GetPrefs();
+  bool may_delete_history = prefs->GetBoolean(
+      prefs::kAllowDeletingBrowserHistory);
+
+  // All the UI entry points into the BrowsingDataRemover should be disabled,
+  // but this will fire if something was missed or added.
+  DCHECK(may_delete_history ||
+      (!(remove_mask & REMOVE_HISTORY) && !(remove_mask & REMOVE_DOWNLOADS)));
+
   if (origin_set_mask_ & BrowsingDataHelper::UNPROTECTED_WEB) {
     content::RecordAction(
         UserMetricsAction("ClearBrowsingData_MaskContainsUnprotectedWeb"));
@@ -219,7 +227,7 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
                                   BrowsingDataHelper::EXTENSION),
       forgotten_to_add_origin_mask_type);
 
-  if (remove_mask & REMOVE_HISTORY) {
+  if ((remove_mask & REMOVE_HISTORY) && may_delete_history) {
     HistoryService* history_service = HistoryServiceFactory::GetForProfile(
         profile_, Profile::EXPLICIT_ACCESS);
     if (history_service) {
@@ -229,21 +237,11 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
       content::RecordAction(UserMetricsAction("ClearBrowsingData_History"));
       waiting_for_clear_history_ = true;
 
-      // The HistoryService special-cases an end time of base::Time() to
-      // efficiently remove the whole history database. Support that here by
-      // passing base::Time() into HistoryService::ExpireHistoryBetween rather
-      // than base::Time::Max().
-      //
-      // TODO(sky?): Adjust HistoryService so that it understands Time::Max()
-      //     and deals well with non-max/non-null time periods: see
-      //     http://crbug.com/145680 for details.
-      base::Time history_end_ = delete_end_ == base::Time::Max() ?
-            base::Time() : delete_end_;
-      history_service->ExpireHistoryBetween(restrict_urls,
-          delete_begin_, history_end_,
-          &request_consumer_,
+      history_service->ExpireLocalAndRemoteHistoryBetween(
+          restrict_urls, delete_begin_, delete_end_,
           base::Bind(&BrowsingDataRemover::OnHistoryDeletionDone,
-                     base::Unretained(this)));
+                     base::Unretained(this)),
+          &history_task_tracker_);
     }
 
     // Need to clear the host cache and accumulated speculative data, as it also
@@ -312,7 +310,7 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
     }
   }
 
-  if (remove_mask & REMOVE_DOWNLOADS) {
+  if ((remove_mask & REMOVE_DOWNLOADS) && may_delete_history) {
     content::RecordAction(UserMetricsAction("ClearBrowsingData_Downloads"));
     DownloadManager* download_manager =
         BrowserContext::GetDownloadManager(profile_);
@@ -342,7 +340,7 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
                      base::Unretained(this), base::Unretained(rq_context)));
     }
 
-#if defined(ENABLE_SAFE_BROWSING)
+#if defined(FULL_SAFE_BROWSING) || defined(MOBILE_SAFE_BROWSING)
     // Clear the safebrowsing cookies only if time period is for "all time".  It
     // doesn't make sense to apply the time period of deleting in the last X
     // hours/days to the safebrowsing cookies since they aren't the result of
@@ -406,6 +404,7 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
                    base::Unretained(this)));
   }
 
+#if defined(ENABLE_PLUGINS)
   // Plugin is data not separated for protected and unprotected web origins. We
   // check the origin_set_mask_ to prevent unintended deletion.
   if (remove_mask & REMOVE_PLUGIN_DATA &&
@@ -417,8 +416,13 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
       plugin_data_remover_.reset(content::PluginDataRemover::Create(profile_));
     base::WaitableEvent* event =
         plugin_data_remover_->StartRemoving(delete_begin_);
-    watcher_.StartWatching(event, this);
+
+    base::WaitableEventWatcher::EventCallback watcher_callback =
+        base::Bind(&BrowsingDataRemover::OnWaitableEventSignaled,
+                   base::Unretained(this));
+    watcher_.StartWatching(event, watcher_callback);
   }
+#endif
 
   if (remove_mask & REMOVE_PASSWORDS) {
     content::RecordAction(UserMetricsAction("ClearBrowsingData_Passwords"));
@@ -432,8 +436,7 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
   if (remove_mask & REMOVE_FORM_DATA) {
     content::RecordAction(UserMetricsAction("ClearBrowsingData_Autofill"));
     scoped_refptr<WebDataService> web_data_service =
-        WebDataServiceFactory::GetForProfile(profile_,
-                                             Profile::EXPLICIT_ACCESS);
+        WebDataService::FromBrowserContext(profile_);
 
     if (web_data_service.get()) {
       waiting_for_clear_form_ = true;
@@ -488,6 +491,7 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
     }
   }
 
+#if defined(ENABLE_PLUGINS)
   if (remove_mask & REMOVE_CONTENT_LICENSES) {
     content::RecordAction(
         UserMetricsAction("ClearBrowsingData_ContentLicenses"));
@@ -500,6 +504,7 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
     deauthorize_content_licenses_request_id_ =
         pepper_flash_settings_manager_->DeauthorizeContentLicenses();
   }
+#endif
 
   // Always wipe accumulated network related data (TransportSecurityState and
   // HttpServerPropertiesManager data).
@@ -944,6 +949,7 @@ void BrowsingDataRemover::OnWaitableEventSignaled(
   NotifyAndDeleteIfDone();
 }
 
+#if defined(ENABLE_PLUGINS)
 void BrowsingDataRemover::OnDeauthorizeContentLicensesCompleted(
     uint32 request_id,
     bool /* success */) {
@@ -953,6 +959,7 @@ void BrowsingDataRemover::OnDeauthorizeContentLicensesCompleted(
   waiting_for_clear_content_licenses_ = false;
   NotifyAndDeleteIfDone();
 }
+#endif
 
 void BrowsingDataRemover::OnClearedCookies(int num_deleted) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -985,7 +992,19 @@ void BrowsingDataRemover::ClearServerBoundCertsOnIOThread(
   net::ServerBoundCertService* server_bound_cert_service =
       rq_context->GetURLRequestContext()->server_bound_cert_service();
   server_bound_cert_service->GetCertStore()->DeleteAllCreatedBetween(
-      delete_begin_, delete_end_);
+      delete_begin_, delete_end_,
+      base::Bind(&BrowsingDataRemover::OnClearedServerBoundCertsOnIOThread,
+                 base::Unretained(this), base::Unretained(rq_context)));
+}
+
+void BrowsingDataRemover::OnClearedServerBoundCertsOnIOThread(
+    net::URLRequestContextGetter* rq_context) {
+  // Need to close open SSL connections which may be using the channel ids we
+  // are deleting.
+  // TODO(mattm): http://crbug.com/166069 Make the server bound cert
+  // service/store have observers that can notify relevant things directly.
+  rq_context->GetURLRequestContext()->ssl_config_service()->
+      NotifySSLConfigChange();
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&BrowsingDataRemover::OnClearedServerBoundCerts,

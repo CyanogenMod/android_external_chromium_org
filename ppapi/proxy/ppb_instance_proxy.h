@@ -9,12 +9,12 @@
 
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
-#include "ppapi/c/pp_time.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/proxy_completion_callback_factory.h"
 #include "ppapi/shared_impl/host_resource.h"
 #include "ppapi/shared_impl/ppb_instance_shared.h"
+#include "ppapi/shared_impl/singleton_resource_id.h"
 #include "ppapi/thunk/ppb_instance_api.h"
 #include "ppapi/utility/completion_callback_factory.h"
 
@@ -49,6 +49,7 @@ class PPB_Instance_Proxy : public InterfaceProxy,
                                PP_Resource device) OVERRIDE;
   virtual PP_Bool IsFullFrame(PP_Instance instance) OVERRIDE;
   virtual const ViewData* GetViewData(PP_Instance instance) OVERRIDE;
+  virtual PP_Bool FlashIsFullscreen(PP_Instance instance) OVERRIDE;
   virtual PP_Var GetWindowObject(PP_Instance instance) OVERRIDE;
   virtual PP_Var GetOwnerElementObject(PP_Instance instance) OVERRIDE;
   virtual PP_Var ExecuteScript(PP_Instance instance,
@@ -64,25 +65,18 @@ class PPB_Instance_Proxy : public InterfaceProxy,
                                           PP_Bool final_result) OVERRIDE;
   virtual void SelectedFindResultChanged(PP_Instance instance,
                                          int32_t index) OVERRIDE;
-  virtual PP_Var GetFontFamilies(PP_Instance instance) OVERRIDE;
   virtual PP_Bool SetFullscreen(PP_Instance instance,
                                 PP_Bool fullscreen) OVERRIDE;
   virtual PP_Bool GetScreenSize(PP_Instance instance,
                                 PP_Size* size) OVERRIDE;
-  virtual thunk::PPB_Flash_API* GetFlashAPI() OVERRIDE;
-  virtual thunk::PPB_Flash_Functions_API* GetFlashFunctionsAPI(
-      PP_Instance instance) OVERRIDE;
-  virtual thunk::PPB_Flash_Clipboard_API* GetFlashClipboardAPI(
-      PP_Instance instance) OVERRIDE;
-  virtual thunk::PPB_Gamepad_API* GetGamepadAPI(PP_Instance instance) OVERRIDE;
+  virtual Resource* GetSingletonResource(PP_Instance instance,
+                                         SingletonResourceID id) OVERRIDE;
   virtual int32_t RequestInputEvents(PP_Instance instance,
                                      uint32_t event_classes) OVERRIDE;
   virtual int32_t RequestFilteringInputEvents(PP_Instance instance,
                                               uint32_t event_classes) OVERRIDE;
   virtual void ClearInputEventRequest(PP_Instance instance,
                                       uint32_t event_classes) OVERRIDE;
-  virtual void ClosePendingUserGesture(PP_Instance instance,
-                                       PP_TimeTicks timestamp) OVERRIDE;
   virtual void ZoomChanged(PP_Instance instance, double factor) OVERRIDE;
   virtual void ZoomLimitsChanged(PP_Instance instance,
                                  double minimum_factor,
@@ -129,7 +123,7 @@ class PPB_Instance_Proxy : public InterfaceProxy,
   virtual void KeyMessage(PP_Instance instance,
                           PP_Var key_system,
                           PP_Var session_id,
-                          PP_Resource message,
+                          PP_Var message,
                           PP_Var default_url) OVERRIDE;
   virtual void KeyError(PP_Instance instance,
                         PP_Var key_system,
@@ -166,8 +160,7 @@ class PPB_Instance_Proxy : public InterfaceProxy,
   void OnHostMsgGetOwnerElementObject(PP_Instance instance,
                                       SerializedVarReturnValue result);
   void OnHostMsgBindGraphics(PP_Instance instance,
-                             const ppapi::HostResource& device,
-                             PP_Bool* result);
+                             PP_Resource device);
   void OnHostMsgIsFullFrame(PP_Instance instance, PP_Bool* result);
   void OnHostMsgExecuteScript(PP_Instance instance,
                               SerializedVarReceiveInput script,
@@ -190,8 +183,6 @@ class PPB_Instance_Proxy : public InterfaceProxy,
                                    uint32_t event_classes);
   void OnHostMsgClearInputEvents(PP_Instance instance,
                                  uint32_t event_classes);
-  void OnMsgHandleInputEventAck(PP_Instance instance,
-                                PP_TimeTicks timestamp);
   void OnHostMsgPostMessage(PP_Instance instance,
                             SerializedVarReceiveInput message);
   void OnHostMsgLockMouse(PP_Instance instance);
@@ -236,7 +227,7 @@ class PPB_Instance_Proxy : public InterfaceProxy,
   virtual void OnHostMsgKeyMessage(PP_Instance instance,
                                    SerializedVarReceiveInput key_system,
                                    SerializedVarReceiveInput session_id,
-                                   PP_Resource message,
+                                   SerializedVarReceiveInput message,
                                    SerializedVarReceiveInput default_url);
   virtual void OnHostMsgKeyError(PP_Instance instance,
                                  SerializedVarReceiveInput key_system,

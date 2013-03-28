@@ -14,7 +14,10 @@
 
 class BrowserDistribution;
 class CommandLine;
+
+namespace base {
 class FilePath;
+}
 
 namespace installer {
 
@@ -54,11 +57,27 @@ void RemoveChromeLegacyRegistryKeys(BrowserDistribution* dist,
 installer::InstallStatus UninstallProduct(
     const InstallationState& original_state,
     const InstallerState& installer_state,
-    const FilePath& setup_path,
+    const base::FilePath& setup_path,
     const Product& dist,
     bool remove_all,
     bool force_uninstall,
     const CommandLine& cmd_line);
+
+// Cleans up the installation directory after all uninstall operations have
+// completed. Depending on what products are remaining, setup.exe and the
+// installer archive may be deleted. Empty directories will be pruned (or
+// scheduled for pruning after reboot, if necessary).
+//
+// original_state: The installation state of all products on the system.
+// installer_state: State associated with this operation.
+// cmd_line: CommandLine that contains information about the command that
+//           was used to launch current uninstaller.
+// uninstall_status: the uninstall status so far (may change during invocation).
+void CleanUpInstallationDirectoryAfterUninstall(
+    const InstallationState& original_state,
+    const InstallerState& installer_state,
+    const CommandLine& cmd_line,
+    installer::InstallStatus* uninstall_status);
 
 }  // namespace installer
 

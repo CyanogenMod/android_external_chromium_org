@@ -11,7 +11,7 @@ Notification::Notification(const GURL& origin_url,
                            const string16& display_source,
                            const string16& replace_id,
                            NotificationDelegate* delegate)
- : type_(ui::notifications::NOTIFICATION_TYPE_SIMPLE),
+ : type_(message_center::NOTIFICATION_TYPE_SIMPLE),
     origin_url_(origin_url),
     is_html_(true),
     content_url_(content_url),
@@ -28,7 +28,7 @@ Notification::Notification(const GURL& origin_url,
                            const string16& display_source,
                            const string16& replace_id,
                            NotificationDelegate* delegate)
-    : type_(ui::notifications::NOTIFICATION_TYPE_SIMPLE),
+    : type_(message_center::NOTIFICATION_TYPE_SIMPLE),
       origin_url_(origin_url),
       icon_url_(icon_url),
       is_html_(false),
@@ -42,7 +42,8 @@ Notification::Notification(const GURL& origin_url,
       icon_url, title, body, dir));
 }
 
-Notification::Notification(ui::notifications::NotificationType type,
+Notification::Notification(message_center::NotificationType type,
+                           const GURL& origin_url,
                            const GURL& icon_url,
                            const string16& title,
                            const string16& body,
@@ -52,7 +53,7 @@ Notification::Notification(ui::notifications::NotificationType type,
                            const DictionaryValue* optional_fields,
                            NotificationDelegate* delegate)
     : type_(type),
-      origin_url_(GURL()),
+      origin_url_(origin_url),
       icon_url_(icon_url),
       is_html_(false),
       title_(title),
@@ -63,17 +64,21 @@ Notification::Notification(ui::notifications::NotificationType type,
       delegate_(delegate) {
   if (optional_fields)
     optional_fields_.reset(optional_fields->DeepCopy());
+  // "Upconvert" the string parameters to a data: URL.  Some balloon views
+  // require content URL to render anything, so this serves as a backup.
+  content_url_ = GURL(DesktopNotificationService::CreateDataUrl(
+      icon_url, title, body, dir));
 }
 
 Notification::Notification(const GURL& origin_url,
-                           const gfx::ImageSkia& icon,
+                           const gfx::Image& icon,
                            const string16& title,
                            const string16& body,
                            WebKit::WebTextDirection dir,
                            const string16& display_source,
                            const string16& replace_id,
                            NotificationDelegate* delegate)
-    : type_(ui::notifications::NOTIFICATION_TYPE_SIMPLE),
+    : type_(message_center::NOTIFICATION_TYPE_SIMPLE),
       origin_url_(origin_url),
       icon_(icon),
       is_html_(false),

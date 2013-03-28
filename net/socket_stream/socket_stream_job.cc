@@ -5,9 +5,9 @@
 #include "net/socket_stream/socket_stream_job.h"
 
 #include "base/memory/singleton.h"
-#include "net/base/ssl_config_service.h"
-#include "net/base/transport_security_state.h"
+#include "net/http/transport_security_state.h"
 #include "net/socket_stream/socket_stream_job_manager.h"
+#include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request_context.h"
 
 namespace net {
@@ -29,7 +29,7 @@ SocketStreamJob* SocketStreamJob::CreateSocketStreamJob(
   TransportSecurityState::DomainState domain_state;
   if (url.scheme() == "ws" && sts && sts->GetDomainState(
           url.host(), SSLConfigService::IsSNIAvailable(ssl), &domain_state) &&
-      domain_state.ShouldRedirectHTTPToHTTPS()) {
+      domain_state.ShouldUpgradeToSSL()) {
     url_canon::Replacements<char> replacements;
     static const char kNewScheme[] = "wss";
     replacements.SetScheme(kNewScheme,

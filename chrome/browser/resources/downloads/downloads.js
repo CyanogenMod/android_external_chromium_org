@@ -23,18 +23,6 @@ function showInlineBlock(node, isShow) {
 }
 
 /**
- * Creates an element of a specified type with a specified class name.
- * @param {string} type The node type.
- * @param {string} className The class name to use.
- * @return {Element} The created element.
- */
-function createElementWithClassName(type, className) {
-  var elm = document.createElement(type);
-  elm.className = className;
-  return elm;
-}
-
-/**
  * Creates a link with a specified onclick handler and content.
  * @param {function()} onclick The onclick handler.
  * @param {string} value The link text.
@@ -322,11 +310,11 @@ function Download(download) {
   this.nodeControls_.appendChild(this.controlRetry_);
 
   // Pause/Resume are a toggle.
-  this.controlPause_ = createLink(this.togglePause_.bind(this),
+  this.controlPause_ = createLink(this.pause_.bind(this),
       loadTimeData.getString('control_pause'));
   this.nodeControls_.appendChild(this.controlPause_);
 
-  this.controlResume_ = createLink(this.togglePause_.bind(this),
+  this.controlResume_ = createLink(this.resume_.bind(this),
       loadTimeData.getString('control_resume'));
   this.nodeControls_.appendChild(this.controlResume_);
 
@@ -378,7 +366,8 @@ Download.DangerType = {
   DANGEROUS_FILE: 'DANGEROUS_FILE',
   DANGEROUS_URL: 'DANGEROUS_URL',
   DANGEROUS_CONTENT: 'DANGEROUS_CONTENT',
-  UNCOMMON_CONTENT: 'UNCOMMON_CONTENT'
+  UNCOMMON_CONTENT: 'UNCOMMON_CONTENT',
+  DANGEROUS_HOST: 'DANGEROUS_HOST'
 };
 
 /**
@@ -427,7 +416,8 @@ Download.prototype.update = function(download) {
                                                              this.fileName_);
     } else if (this.dangerType_ == Download.DangerType.DANGEROUS_URL) {
       this.dangerDesc_.textContent = loadTimeData.getString('danger_url_desc');
-    } else if (this.dangerType_ == Download.DangerType.DANGEROUS_CONTENT) {
+    } else if (this.dangerType_ == Download.DangerType.DANGEROUS_CONTENT ||
+               this.dangerType_ == Download.DangerType.DANGEROUS_HOST) {
       this.dangerDesc_.textContent = loadTimeData.getStringF(
           'danger_content_desc', this.fileName_);
     } else if (this.dangerType_ == Download.DangerType.UNCOMMON_CONTENT) {
@@ -499,7 +489,7 @@ Download.prototype.update = function(download) {
                  this.state_ == Download.States.COMPLETE &&
                      !this.fileExternallyRemoved_);
     }
-    showInline(this.controlRetry_, this.state_ == Download.States.CANCELLED);
+    showInline(this.controlRetry_, download.retry);
     this.controlRetry_.href = this.url_;
     showInline(this.controlPause_, this.state_ == Download.States.IN_PROGRESS);
     showInline(this.controlResume_, this.state_ == Download.States.PAUSED);
@@ -623,8 +613,18 @@ Download.prototype.show_ = function() {
  * @return {boolean} Returns false to prevent the default action.
  * @private
  */
-Download.prototype.togglePause_ = function() {
-  chrome.send('togglepause', [this.id_.toString()]);
+Download.prototype.pause_ = function() {
+  chrome.send('pause', [this.id_.toString()]);
+  return false;
+};
+
+/**
+ * Tells the backend to resume this download.
+ * @return {boolean} Returns false to prevent the default action.
+ * @private
+ */
+Download.prototype.resume_ = function() {
+  chrome.send('resume', [this.id_.toString()]);
   return false;
 };
 
@@ -661,11 +661,11 @@ var downloads, resultsTimeout;
  * on the download page. It is guaranteed that the updates in this array
  * are reflected to the download page in a FIFO order.
 */
-var fifo_results;
+var fifoResults;
 
 function load() {
   chrome.send('onPageLoaded');
-  fifo_results = new Array();
+  fifoResults = [];
   downloads = new Downloads();
   $('term').focus();
   setSearch('');
@@ -694,13 +694,13 @@ function load() {
 }
 
 function setSearch(searchText) {
-  fifo_results.length = 0;
+  fifoResults.length = 0;
   downloads.setSearchText(searchText);
   chrome.send('getDownloads', [searchText.toString()]);
 }
 
 function clearAll() {
-  fifo_results.length = 0;
+  fifoResults.length = 0;
   downloads.clear();
   downloads.setSearchText('');
   chrome.send('clearAll');
@@ -717,7 +717,7 @@ function downloadsList(results) {
   if (downloads && downloads.isUpdateNeeded(results)) {
     if (resultsTimeout)
       clearTimeout(resultsTimeout);
-    fifo_results.length = 0;
+    fifoResults.length = 0;
     downloads.clear();
     downloadUpdated(results);
   }
@@ -733,7 +733,7 @@ function downloadUpdated(results) {
   if (!downloads)
     return;
 
-  fifo_results = fifo_results.concat(results);
+  fifoResults = fifoResults.concat(results);
   tryDownloadUpdatedPeriodically();
 }
 
@@ -743,8 +743,8 @@ function downloadUpdated(results) {
  */
 function tryDownloadUpdatedPeriodically() {
   var start = Date.now();
-  while (fifo_results.length) {
-    var result = fifo_results.shift();
+  while (fifoResults.length) {
+    var result = fifoResults.shift();
     downloads.updated(result);
     // Do as much as we can in 50ms.
     if (Date.now() - start > 50) {

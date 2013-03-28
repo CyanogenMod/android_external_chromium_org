@@ -59,8 +59,8 @@ class MockRenderThread : public RenderThread {
   virtual void WidgetRestored() OVERRIDE;
   virtual void EnsureWebKitInitialized() OVERRIDE;
   virtual void RecordUserMetrics(const std::string& action) OVERRIDE;
-  virtual base::SharedMemoryHandle HostAllocateSharedMemoryBuffer(
-      uint32 buffer_size) OVERRIDE;
+  virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
+      size_t buffer_size) OVERRIDE;
   virtual void RegisterExtension(v8::Extension* extension) OVERRIDE;
   virtual void ScheduleIdleHandler(int64 initial_delay_ms) OVERRIDE;
   virtual void IdleHandler() OVERRIDE;
@@ -69,6 +69,7 @@ class MockRenderThread : public RenderThread {
       int64 idle_notification_delay_in_ms) OVERRIDE;
   virtual void ToggleWebKitSharedTimer(bool suspend) OVERRIDE;
   virtual void UpdateHistograms(int sequence_number) OVERRIDE;
+  virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
 #if defined(OS_WIN)
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
   virtual void ReleaseCachedFonts() OVERRIDE;
@@ -108,15 +109,15 @@ class MockRenderThread : public RenderThread {
   virtual bool OnMessageReceived(const IPC::Message& msg);
 
   // The Widget expects to be returned valid route_id.
-  void OnMsgCreateWidget(int opener_id,
-                         WebKit::WebPopupType popup_type,
-                         int* route_id,
-                         int* surface_id);
+  void OnCreateWidget(int opener_id,
+                      WebKit::WebPopupType popup_type,
+                      int* route_id,
+                      int* surface_id);
 
   // The View expects to be returned a valid route_id different from its own.
   // We do not keep track of the newly created widget in MockRenderThread,
   // so it must be cleaned up on its own.
-  void OnMsgCreateWindow(
+  void OnCreateWindow(
     const ViewHostMsg_CreateWindow_Params& params,
     int* route_id,
     int* surface_id,
@@ -140,7 +141,7 @@ class MockRenderThread : public RenderThread {
 
   // We only keep track of one Widget, we learn its pointer when it
   // adds a new route.  We do not keep track of Widgets created with
-  // OnMsgCreateWindow.
+  // OnCreateWindow.
   IPC::Listener* widget_;
 
   // Routing id that will be assigned to a CreateWindow Widget.

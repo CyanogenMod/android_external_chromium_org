@@ -8,27 +8,16 @@ NSString* kViewDidBecomeFirstResponder =
     @"Chromium.kViewDidBecomeFirstResponder";
 NSString* kSelectionDirection = @"Chromium.kSelectionDirection";
 
+const int kTrackingOptions = NSTrackingMouseMoved |
+                             NSTrackingMouseEnteredAndExited |
+                             NSTrackingActiveAlways;
+
 @implementation BaseView
 
-- (id)initWithFrame:(NSRect)frame {
-  self = [super initWithFrame:frame];
-  if (self) {
-    trackingArea_ =
-        [[NSTrackingArea alloc] initWithRect:frame
-                                     options:NSTrackingMouseMoved |
-                                             NSTrackingMouseEnteredAndExited |
-                                             NSTrackingActiveInActiveApp |
-                                             NSTrackingInVisibleRect
-                                       owner:self
-                                    userInfo:nil];
-    [self addTrackingArea:trackingArea_];
-  }
-  return self;
-}
-
 - (void)dealloc {
-  [self removeTrackingArea:trackingArea_];
-  [trackingArea_ release];
+  if (trackingArea_.get())
+    [self removeTrackingArea:trackingArea_.get()];
+  trackingArea_.reset(nil);
 
   [super dealloc];
 }
@@ -141,6 +130,21 @@ NSString* kSelectionDirection = @"Chromium.kSelectionDirection";
   NSRect new_rect(NSRectFromCGRect(rect.ToCGRect()));
   new_rect.origin.y = NSHeight([self bounds]) - NSMaxY(new_rect);
   return new_rect;
+}
+
+- (void)updateTrackingAreas {
+  [super updateTrackingAreas];
+
+  // NSTrackingInVisibleRect doesn't work correctly with Lion's window resizing,
+  // http://crbug.com/176725 / http://openradar.appspot.com/radar?id=2773401 .
+  // Tear down old tracking area and create a new one as workaround.
+  if (trackingArea_.get())
+    [self removeTrackingArea:trackingArea_.get()];
+  trackingArea_.reset([[CrTrackingArea alloc] initWithRect:[self frame]
+                                                   options:kTrackingOptions
+                                                     owner:self
+                                                  userInfo:nil]);
+  [self addTrackingArea:trackingArea_.get()];
 }
 
 @end

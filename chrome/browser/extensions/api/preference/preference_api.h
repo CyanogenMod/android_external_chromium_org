@@ -7,8 +7,9 @@
 
 #include <string>
 
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "content/public/browser/notification_observer.h"
 
@@ -20,23 +21,14 @@ class Value;
 
 namespace extensions {
 
-class PreferenceEventRouter : public PrefObserver {
+class PreferenceEventRouter {
  public:
   explicit PreferenceEventRouter(Profile* profile);
   virtual ~PreferenceEventRouter();
 
  private:
-  // PrefObserver implementation.
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
-
-  void OnPrefChanged(PrefServiceBase* pref_service,
+  void OnPrefChanged(PrefService* pref_service,
                      const std::string& pref_key);
-
-  // This method dispatches events to the extension message service.
-  void DispatchEvent(const std::string& extension_id,
-                     const std::string& event_name,
-                     const std::string& json_args);
 
   PrefChangeRegistrar registrar_;
   PrefChangeRegistrar incognito_registrar_;
@@ -45,6 +37,38 @@ class PreferenceEventRouter : public PrefObserver {
   Profile* profile_;
 
   DISALLOW_COPY_AND_ASSIGN(PreferenceEventRouter);
+};
+
+class PreferenceAPI : public ProfileKeyedAPI,
+                      public EventRouter::Observer {
+ public:
+  explicit PreferenceAPI(Profile* profile);
+  virtual ~PreferenceAPI();
+
+  // ProfileKeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
+
+  // ProfileKeyedAPI implementation.
+  static ProfileKeyedAPIFactory<PreferenceAPI>* GetFactoryInstance();
+
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
+
+ private:
+  friend class ProfileKeyedAPIFactory<PreferenceAPI>;
+
+  Profile* profile_;
+
+  // ProfileKeyedAPI implementation.
+  static const char* service_name() {
+    return "PreferenceAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
+
+  // Created lazily upon OnListenerAdded.
+  scoped_ptr<PreferenceEventRouter> preference_event_router_;
+
+  DISALLOW_COPY_AND_ASSIGN(PreferenceAPI);
 };
 
 class PrefTransformerInterface {
@@ -87,7 +111,7 @@ class PreferenceFunction : public SyncExtensionFunction {
 
 class GetPreferenceFunction : public PreferenceFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.get")
+  DECLARE_EXTENSION_FUNCTION("types.ChromeSetting.get", TYPES_CHROMESETTING_GET)
 
  protected:
   virtual ~GetPreferenceFunction();
@@ -98,7 +122,7 @@ class GetPreferenceFunction : public PreferenceFunction {
 
 class SetPreferenceFunction : public PreferenceFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.set")
+  DECLARE_EXTENSION_FUNCTION("types.ChromeSetting.set", TYPES_CHROMESETTING_SET)
 
  protected:
   virtual ~SetPreferenceFunction();
@@ -109,7 +133,8 @@ class SetPreferenceFunction : public PreferenceFunction {
 
 class ClearPreferenceFunction : public PreferenceFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.clear")
+  DECLARE_EXTENSION_FUNCTION("types.ChromeSetting.clear",
+                             TYPES_CHROMESETTING_CLEAR)
 
  protected:
   virtual ~ClearPreferenceFunction();

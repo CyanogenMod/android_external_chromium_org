@@ -14,6 +14,7 @@
 #include "chrome/browser/chromeos/drive/drive_system_service.h"
 #include "chrome/browser/chromeos/extensions/file_browser_private_api.h"
 #include "chrome/browser/google_apis/drive_service_interface.h"
+#include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
@@ -25,14 +26,15 @@
 #include "webkit/fileapi/file_system_url.h"
 #include "webkit/fileapi/file_system_util.h"
 
-namespace drive {
-
 using file_handler_util::FileTaskExecutor;
+using fileapi::FileSystemURL;
+
+namespace drive {
 
 DriveTaskExecutor::DriveTaskExecutor(Profile* profile,
                                      const std::string& app_id,
                                      const std::string& action_id)
-  : file_handler_util::FileTaskExecutor(profile, app_id),
+  : file_handler_util::FileTaskExecutor(profile, GURL(), "", app_id),
     action_id_(action_id),
     current_index_(0) {
   DCHECK("open-with" == action_id_);
@@ -42,15 +44,14 @@ DriveTaskExecutor::~DriveTaskExecutor() {
 }
 
 bool DriveTaskExecutor::ExecuteAndNotify(
-    const std::vector<GURL>& file_urls,
+    const std::vector<FileSystemURL>& file_urls,
     const file_handler_util::FileTaskFinishedCallback& done) {
-  std::vector<FilePath> raw_paths;
-  for (std::vector<GURL>::const_iterator iter = file_urls.begin();
-      iter != file_urls.end(); ++iter) {
-    fileapi::FileSystemURL url(*iter);
-    if (!url.is_valid() || url.type() != fileapi::kFileSystemTypeDrive)
+  std::vector<base::FilePath> raw_paths;
+  for (std::vector<FileSystemURL>::const_iterator url = file_urls.begin();
+       url != file_urls.end(); ++url) {
+    if (!url->is_valid() || url->type() != fileapi::kFileSystemTypeDrive)
       return false;
-    raw_paths.push_back(url.virtual_path());
+    raw_paths.push_back(url->virtual_path());
   }
 
   DriveSystemService* system_service =
@@ -63,7 +64,7 @@ bool DriveTaskExecutor::ExecuteAndNotify(
   // Reset the index, so we know when we're done.
   current_index_ = raw_paths.size();
 
-  for (std::vector<FilePath>::const_iterator iter = raw_paths.begin();
+  for (std::vector<base::FilePath>::const_iterator iter = raw_paths.begin();
       iter != raw_paths.end(); ++iter) {
     file_system->GetEntryInfoByPath(
         *iter,
@@ -105,7 +106,7 @@ void DriveTaskExecutor::OnFileEntryFetched(
   // current document entry for this document so we can get the
   // open-with-<app_id> urls from the document entry.
   drive_service->AuthorizeApp(
-      GURL(entry_proto->edit_url()),
+      entry_proto->resource_id(),
       extension_id(),  // really app_id
       base::Bind(&DriveTaskExecutor::OnAppAuthorized,
                  this,
@@ -115,7 +116,7 @@ void DriveTaskExecutor::OnFileEntryFetched(
 void DriveTaskExecutor::OnAppAuthorized(
     const std::string& resource_id,
     google_apis::GDataErrorCode error,
-    scoped_ptr<base::Value> feed_data) {
+    const GURL& open_link) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
   // If we aborted, then this will be zero.
@@ -130,30 +131,13 @@ void DriveTaskExecutor::OnAppAuthorized(
     return;
   }
 
-  // Yay!  We've got the feed data finally, and we can get the open-with URL.
-  GURL open_with_url;
-  base::ListValue* link_list = NULL;
-  feed_data->GetAsList(&link_list);
-  for (size_t i = 0; i < link_list->GetSize(); ++i) {
-    DictionaryValue* entry = NULL;
-    link_list->GetDictionary(i, &entry);
-    std::string app_id;
-    entry->GetString("app_id", &app_id);
-    if (app_id == extension_id()) {
-      std::string href;
-      entry->GetString("href", &href);
-      open_with_url = GURL(href);
-      break;
-    }
-  }
-
-  if (open_with_url.is_empty()) {
+  if (open_link.is_empty()) {
     Done(false);
     return;
   }
 
   Browser* browser = GetBrowser();
-  chrome::AddSelectedTabWithURL(browser, open_with_url,
+  chrome::AddSelectedTabWithURL(browser, open_link,
                                 content::PAGE_TRANSITION_LINK);
   // If the current browser is not tabbed then the new tab will be created
   // in a different browser. Make sure it is visible.

@@ -13,9 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/public/pref_observer.h"
-#include "chrome/browser/api/prefs/pref_member.h"
-#include "chrome/browser/extensions/image_loading_tracker.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
@@ -29,15 +27,18 @@ class ContentSettingDecoration;
 class EVBubbleDecoration;
 class KeywordHintDecoration;
 class LocationBarDecoration;
+class LocationBarViewMacBrowserTest;
 class LocationIconDecoration;
 class PageActionDecoration;
 class PlusDecoration;
 class Profile;
+class SearchTokenDecoration;
 class SelectedKeywordDecoration;
+class SeparatorDecoration;
 class StarDecoration;
 class ToolbarModel;
-class WebIntentsButtonDecoration;
 class ZoomDecoration;
+class ZoomDecorationTest;
 
 // A C++ bridge class that represents the location bar UI element to
 // the portable code.  Wires up an OmniboxViewMac instance to
@@ -46,8 +47,7 @@ class ZoomDecoration;
 class LocationBarViewMac : public LocationBar,
                            public LocationBarTesting,
                            public OmniboxEditController,
-                           public content::NotificationObserver,
-                           public PrefObserver {
+                           public content::NotificationObserver {
  public:
   LocationBarViewMac(AutocompleteTextField* field,
                      CommandUpdater* command_updater,
@@ -69,7 +69,6 @@ class LocationBarViewMac : public LocationBar,
   virtual void UpdateContentSettingsIcons() OVERRIDE;
   virtual void UpdatePageActions() OVERRIDE;
   virtual void InvalidatePageActions() OVERRIDE;
-  virtual void UpdateWebIntentsButton() OVERRIDE;
   virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE;
   virtual void SaveStateToContents(content::WebContents* contents) OVERRIDE;
   virtual void Revert() OVERRIDE;
@@ -131,9 +130,6 @@ class LocationBarViewMac : public LocationBar,
   // Re-draws |decoration| if it's already being displayed.
   void RedrawDecoration(LocationBarDecoration* decoration);
 
-  // Returns the current WebContents.
-  content::WebContents* GetWebContents() const;
-
   // Sets preview_enabled_ for the PageActionImageView associated with this
   // |page_action|. If |preview_enabled|, the location bar will display the
   // PageAction icon even if it has not been activated by the extension.
@@ -171,7 +167,7 @@ class LocationBarViewMac : public LocationBar,
   virtual gfx::Image GetFavicon() const OVERRIDE;
   virtual string16 GetTitle() const OVERRIDE;
   virtual InstantController* GetInstant() OVERRIDE;
-  virtual TabContents* GetTabContents() const OVERRIDE;
+  virtual content::WebContents* GetWebContents() const OVERRIDE;
 
   NSImage* GetKeywordImage(const string16& keyword);
 
@@ -183,13 +179,13 @@ class LocationBarViewMac : public LocationBar,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // PrefObserver:
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
-
   Browser* browser() const { return browser_; }
+  ToolbarModel* toolbar_model() const { return toolbar_model_; }
 
  private:
+  friend LocationBarViewMacBrowserTest;
+  friend ZoomDecorationTest;
+
   // Posts |notification| to the default notification center.
   void PostNotification(NSString* notification);
 
@@ -199,6 +195,8 @@ class LocationBarViewMac : public LocationBar,
   // Clear the page-action decorations.
   void DeletePageActionDecorations();
 
+  void OnEditBookmarksEnabledChanged();
+
   // Re-generate the page-action decorations from the profile's
   // extension service.
   void RefreshPageActionDecorations();
@@ -206,10 +204,6 @@ class LocationBarViewMac : public LocationBar,
   // Updates visibility of the content settings icons based on the current
   // tab contents state.
   bool RefreshContentSettingsDecorations();
-
-  // Updates visibility of the web intents button decoration based on the
-  // current tab contents state.
-  void RefreshWebIntentsButtonDecoration();
 
   void ShowFirstRunBubbleInternal();
 
@@ -224,6 +218,9 @@ class LocationBarViewMac : public LocationBar,
 
   // Ensures the plus decoration is visible or hidden, as required.
   void UpdatePlusDecorationVisibility();
+
+  // Gets the current search provider name.
+  string16 GetSearchProviderName() const;
 
   scoped_ptr<OmniboxViewMac> omnibox_view_;
 
@@ -242,8 +239,14 @@ class LocationBarViewMac : public LocationBar,
   // A decoration that shows an icon to the left of the address.
   scoped_ptr<LocationIconDecoration> location_icon_decoration_;
 
+  // A decoration that shows the search provider being used.
+  scoped_ptr<SearchTokenDecoration> search_token_decoration_;
+
   // A decoration that shows the keyword-search bubble on the left.
   scoped_ptr<SelectedKeywordDecoration> selected_keyword_decoration_;
+
+  // A decoration used to draw a separator between other decorations.
+  scoped_ptr<SeparatorDecoration> separator_decoration_;
 
   // A decoration that shows a lock icon and ev-cert label in a bubble
   // on the left.
@@ -270,10 +273,6 @@ class LocationBarViewMac : public LocationBar,
 
   // Keyword hint decoration displayed on the right-hand side.
   scoped_ptr<KeywordHintDecoration> keyword_hint_decoration_;
-
-  // A decoration that shows the web intents "use another service" button
-  // on the right.
-  scoped_ptr<WebIntentsButtonDecoration> web_intents_button_decoration_;
 
   Profile* profile_;
 

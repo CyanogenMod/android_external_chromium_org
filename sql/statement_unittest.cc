@@ -5,7 +5,7 @@
 #include <string>
 
 #include "base/file_util.h"
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -40,7 +40,7 @@ class SQLStatementTest : public testing::Test {
  public:
   SQLStatementTest() : error_(SQLITE_OK) {}
 
-  void SetUp() {
+  virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     ASSERT_TRUE(db_.Open(temp_dir_.path().AppendASCII("SQLStatementTest.db")));
     // The error delegate will set |error_| and |sql_text_| when any sqlite
@@ -48,7 +48,7 @@ class SQLStatementTest : public testing::Test {
     db_.set_error_delegate(new StatementErrorHandler(&error_, &sql_text_));
   }
 
-  void TearDown() {
+  virtual void TearDown() {
     // If any error happened the original sql statement can be found in
     // |sql_text_|.
     EXPECT_EQ(SQLITE_OK, error_);
@@ -65,7 +65,7 @@ class SQLStatementTest : public testing::Test {
   }
 
  private:
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   sql::Connection db_;
 
   // The error code of the most recent error.

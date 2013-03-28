@@ -7,11 +7,9 @@
 #include <cmath>
 #include <stdlib.h>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
-#include "base/string_tokenizer.h"
 #include "base/time.h"
 #include "ui/base/events/event.h"
 #include "ui/base/events/event_constants.h"
@@ -286,66 +284,21 @@ unsigned int ComputeTouchBitmask(const GesturePoint* points) {
 
 const float kFlingCurveNormalization = 1.0f / 1875.f;
 
-// TODO(rjkroege): Make this configurable from the config page.
-// Touchscreen fling acceleration is cubic function of four
-// parameters. These are empirically determined defaults.
-// Do not adjust the default values without empirical validation.
-static float fling_acceleration_curve_coefficients[4] = {
-    0.0166667f,
-    -0.0238095f,
-    0.0452381f,
-    0.8f
-};
-
-// Read 4 comma-separated floating point values from an environment
-// variable and use that to configure the fling acceleration curve.
-void ReadFlingVelocityScalingIfNecessary() {
-  static bool did_setup_scaling = false;
-  if (did_setup_scaling)
-    return;
-  did_setup_scaling = true;
-  char* pk = getenv("FLING_ACCELERATION_CURVE_COEFFICIENTS");
-  if (!pk)
-      return;
-  LOG(INFO) << "Attempting to configure fling from environment.\n";
-
-  unsigned coefficient_count = arraysize(fling_acceleration_curve_coefficients);
-  unsigned i = 0;
-  CStringTokenizer t(pk, pk + strlen(pk), ",");
-  while (t.GetNext() && i < coefficient_count) {
-    double d;
-    if (base::StringToDouble(t.token(), &d)) {
-      fling_acceleration_curve_coefficients[i++] = d;
-    } else {
-      LOG(WARNING)
-          << "BANDED_FLING_VELOCITY_ADJUSTMENT bad value: "
-          << t.token();
-    }
-  }
-}
-
-float SmoothFlingVelocityAdjustment(float velocity) {
-  ReadFlingVelocityScalingIfNecessary();
-  unsigned last_coefficient =
-      arraysize(fling_acceleration_curve_coefficients) - 1;
+float CalibrateFlingVelocity(float velocity) {
+  const unsigned last_coefficient =
+      GestureConfiguration::NumAccelParams - 1;
   float normalized_velocity = fabs(velocity * kFlingCurveNormalization);
   float nu = 0.0f, x = 1.f;
 
   for (int i = last_coefficient ; i >= 0; i--) {
-    nu += x * fling_acceleration_curve_coefficients[i];
+    float a = GestureConfiguration::fling_acceleration_curve_coefficients(i);
+    nu += x * a;
     x *= normalized_velocity;
   }
-  return nu * velocity;
-}
-
-// TODO(rjkroege): Provide a nicer means to turn this feature on/off.
-float CalibrateFlingVelocity(float velocity) {
- const float velocity_scaling  =
-    GestureConfiguration::touchscreen_fling_acceleration_adjustment();
-  if (velocity_scaling < 0.5f)
-    return SmoothFlingVelocityAdjustment(velocity);
+  if (velocity < 0.f)
+    return std::max(nu * velocity, -GestureConfiguration::fling_velocity_cap());
   else
-    return velocity_scaling * velocity;
+    return std::min(nu * velocity, GestureConfiguration::fling_velocity_cap());
 }
 
 }  // namespace
@@ -583,7 +536,9 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
 void GestureSequence::RecreateBoundingBox() {
   // TODO(sad): Recreating the bounding box at every touch-event is not very
   // efficient. This should be made better.
-  if (point_count_ == 1) {
+  if (point_count_ == 0) {
+    bounding_box_.SetRect(0, 0, 0, 0);
+  } else if (point_count_ == 1) {
     bounding_box_ = GetPointByPointId(0)->enclosing_rectangle();
   } else {
     int left = INT_MAX / 20, top = INT_MAX / 20;
@@ -723,16 +678,6 @@ void GestureSequence::AppendClickGestureEvent(const GesturePoint& point,
       1 << point.touch_id()));
 }
 
-void GestureSequence::AppendDoubleClickGestureEvent(const GesturePoint& point,
-                                                    Gestures* gestures) {
-  gestures->push_back(CreateGestureEvent(
-      GestureEventDetails(ui::ET_GESTURE_DOUBLE_TAP, 0, 0),
-      point.first_touch_position(),
-      flags_,
-      base::Time::FromDoubleT(point.last_touch_time()),
-      1 << point.touch_id()));
-}
-
 void GestureSequence::AppendScrollGestureBegin(const GesturePoint& point,
                                                const gfx::Point& location,
                                                Gestures* gestures) {
@@ -779,26 +724,24 @@ void GestureSequence::AppendScrollGestureEnd(const GesturePoint& point,
 
 void GestureSequence::AppendScrollGestureUpdate(GesturePoint& point,
                                                 Gestures* gestures) {
-  float dx, dy;
+  gfx::Vector2d d;
   gfx::Point location;
   if (point_count_ == 1) {
-    dx = point.x_delta();
-    dy = point.y_delta();
+    d = point.ScrollDelta();
     location = point.last_touch_position();
   } else {
     location = bounding_box_.CenterPoint();
-    dx = location.x() - latest_multi_scroll_update_location_.x();
-    dy = location.y() - latest_multi_scroll_update_location_.y();
+    d = location - latest_multi_scroll_update_location_;
     latest_multi_scroll_update_location_ = location;
   }
   if (scroll_type_ == ST_HORIZONTAL)
-    dy = 0;
+    d.set_y(0);
   else if (scroll_type_ == ST_VERTICAL)
-    dx = 0;
-  if (dx == 0 && dy == 0)
+    d.set_x(0);
+  if (d.IsZero())
     return;
 
-  GestureEventDetails details(ui::ET_GESTURE_SCROLL_UPDATE, dx, dy);
+  GestureEventDetails details(ui::ET_GESTURE_SCROLL_UPDATE, d.x(), d.y());
   details.SetScrollVelocity(
       scroll_type_ == ST_VERTICAL ? 0 : point.XVelocity(),
       scroll_type_ == ST_HORIZONTAL ? 0 : point.YVelocity());
@@ -880,8 +823,6 @@ bool GestureSequence::Click(const TouchEvent& event,
   if (point.IsInClickWindow(event)) {
     bool double_tap = point.IsInDoubleClickWindow(event);
     AppendClickGestureEvent(point, double_tap ? 2 : 1, gestures);
-    if (double_tap)
-      AppendDoubleClickGestureEvent(point, gestures);
     return true;
   } else if (point.IsInsideManhattanSquare(event) &&
       !GetLongPressTimer()->IsRunning()) {
@@ -894,9 +835,8 @@ bool GestureSequence::ScrollStart(const TouchEvent& event,
                                   GesturePoint& point,
                                   Gestures* gestures) {
   DCHECK(state_ == GS_PENDING_SYNTHETIC_CLICK);
-  if (point.IsInClickWindow(event) ||
-      !point.IsInScrollWindow(event) ||
-      !point.HasEnoughDataToEstablishRail())
+  if (!point.IsConsistentScrollingActionUnderway() &&
+      !point.IsInScrollWindow(event))
     return false;
   AppendScrollGestureBegin(point, point.first_touch_position(), gestures);
   if (point.IsInHorizontalRailWindow())
@@ -1115,8 +1055,8 @@ bool GestureSequence::MaybeSwipe(const TouchEvent& event,
 
   velocity_x = points_[i].XVelocity();
   velocity_y = points_[i].YVelocity();
-  sign_x = velocity_x < 0 ? -1 : 1;
-  sign_y = velocity_y < 0 ? -1 : 1;
+  sign_x = velocity_x < 0.f ? -1 : 1;
+  sign_y = velocity_y < 0.f ? -1 : 1;
 
   for (++i; i < kMaxGesturePoints; ++i) {
     if (!points_[i].in_use())

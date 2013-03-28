@@ -31,6 +31,13 @@ button:focus {
   display: none;
 }
 
+.action-choice h1 {
+  font-size: 14px;
+  font-weight: normal;
+  line-height: 1.5;
+  margin: 5px 3px;
+}
+
 /* The loading preview */
 
 .loading {
@@ -91,7 +98,6 @@ button:focus {
   -webkit-mask-image: -webkit-linear-gradient(right, rgba(0, 0, 0, 0) 0,
                                                      rgba(0, 0, 0, 1) 80px);
   display: -webkit-box;
-  height: 130px;
   position: relative;
   width: 100%;
 }
@@ -111,59 +117,74 @@ button:focus {
 
 .counter {
   color: #808080;
-  margin: 5px 0 20px 3px;
+  margin: 5px 3px;
   width: 100%;
 }
 
-.choices > div {
-  -webkit-box-align: center;
-  -webkit-box-orient: horizontal;
-  display: -webkit-box;
+.choices {
+  width: 100%;
 }
 
-.choices > div > * {
+/* Padding counterweights negative margins of items, thus eliminating scroll
+   bar when it's not needed. Max height is set to fit 8 items before showing
+   scroll bar. */
+#actions-list {
   display: block;
-  margin: 0 3px;
+  max-height: 328px;
+  outline: none;
+  overflow: auto;
+  padding: 1px 0;
+  position: relative;
 }
 
-.choices label {
-  background-position: 0 6px;
+#actions-list > li {
+  cursor: default;
+  list-style-type: none;
+}
+
+#actions-list > li > div {
+  background-position: 5px center;
   background-repeat: no-repeat;
-  height: 26px;
-  padding-left: 38px;
-  padding-top: 14px;
+  line-height: 39px;
+  padding-left: 43px;
 }
 
-.choices label[for=import-photos-to-drive] {
+#actions-list > [selected] {
+  background-color: #dedede;
+}
+
+#actions-list:focus > [selected] {
+  background-color: rgb(203, 219, 241);
+}
+
+#actions-list > [selected]:hover {
+  background-color: rgb(193, 211, 236);
+  border-color: hsl(214, 91%, 85%);
+}
+
+#actions-list > :hover {
+  background-color: #f1f1f1;
+  border-color: hsl(214, 91%, 85%);
+}
+
+#actions-list > li > div.disabled {
+  opacity: 0.5;
+}
+
+#actions-list > li > div.import-photos-to-drive {
   background-image: -webkit-image-set(
     url('../images/media/drive.png') 1x,
     url('../images/media/2x/drive.png') 2x);
 }
 
-.choices label[for=view-files] {
+#actions-list > li > div.view-files {
   background-image: -webkit-image-set(
     url('../images/icon32.png') 1x,
     url('../images/icon64.png') 2x);
 }
 
-.choices label[for=watch-single-video] {
+#actions-list > li > div.watch-single-video {
   background-image: -webkit-image-set(
     url('../images/media/watch.png') 1x,
     url('../images/media/2x/watch.png') 2x);
-}
-
-.footer {
-  -webkit-box-orient: horizontal;
-  -webkit-box-pack: end;
-  bottom: 0;
-  display: -webkit-box;
-  left: 0;
-  position: absolute;
-  right: 0;
-}
-
-.footer button {
-  height: 27px;
-  margin-left: 10px;
-  min-width: 80px;
 }

@@ -16,7 +16,7 @@ import os
 import sys
 import unittest
 import jni_generator
-from jni_generator import CalledByNative, NativeMethod, Param
+from jni_generator import CalledByNative, JniParams, NativeMethod, Param
 
 
 class TestGenerator(unittest.TestCase):
@@ -769,6 +769,36 @@ static bool RegisterNativesImpl(JNIEnv* env) {
     }
     @CalledByNativeUnchecked
     private void uncheckedCall(int iParam);
+
+    @CalledByNative
+    public byte[] returnByteArray();
+
+    @CalledByNative
+    public boolean[] returnBooleanArray();
+
+    @CalledByNative
+    public char[] returnCharArray();
+
+    @CalledByNative
+    public short[] returnShortArray();
+
+    @CalledByNative
+    public int[] returnIntArray();
+
+    @CalledByNative
+    public long[] returnLongArray();
+
+    @CalledByNative
+    public double[] returnDoubleArray();
+
+    @CalledByNative
+    public Object[] returnObjectArray();
+
+    @CalledByNative
+    public byte[][] returnArrayOfByteArray();
+
+    @CalledByNative
+    public Bitmap.CompressFormat getCompressFormat();
     """
     jni_generator.JniParams.SetFullyQualifiedClass('org/chromium/Foo')
     jni_generator.JniParams.ExtractImportsAndInnerClasses(test_data)
@@ -865,6 +895,116 @@ static bool RegisterNativesImpl(JNIEnv* env) {
             params=[Param(datatype='int', name='iParam')],
             env_call=('Void', ''),
             unchecked=True,
+        ),
+        CalledByNative(
+            return_type='byte[]',
+            system_class=False,
+            static=False,
+            name='returnByteArray',
+            method_id_var_name='returnByteArray',
+            java_class_name='',
+            params=[],
+            env_call=('Void', ''),
+            unchecked=False,
+        ),
+        CalledByNative(
+            return_type='boolean[]',
+            system_class=False,
+            static=False,
+            name='returnBooleanArray',
+            method_id_var_name='returnBooleanArray',
+            java_class_name='',
+            params=[],
+            env_call=('Void', ''),
+            unchecked=False,
+        ),
+        CalledByNative(
+            return_type='char[]',
+            system_class=False,
+            static=False,
+            name='returnCharArray',
+            method_id_var_name='returnCharArray',
+            java_class_name='',
+            params=[],
+            env_call=('Void', ''),
+            unchecked=False,
+        ),
+        CalledByNative(
+            return_type='short[]',
+            system_class=False,
+            static=False,
+            name='returnShortArray',
+            method_id_var_name='returnShortArray',
+            java_class_name='',
+            params=[],
+            env_call=('Void', ''),
+            unchecked=False,
+        ),
+        CalledByNative(
+            return_type='int[]',
+            system_class=False,
+            static=False,
+            name='returnIntArray',
+            method_id_var_name='returnIntArray',
+            java_class_name='',
+            params=[],
+            env_call=('Void', ''),
+            unchecked=False,
+        ),
+        CalledByNative(
+            return_type='long[]',
+            system_class=False,
+            static=False,
+            name='returnLongArray',
+            method_id_var_name='returnLongArray',
+            java_class_name='',
+            params=[],
+            env_call=('Void', ''),
+            unchecked=False,
+        ),
+        CalledByNative(
+            return_type='double[]',
+            system_class=False,
+            static=False,
+            name='returnDoubleArray',
+            method_id_var_name='returnDoubleArray',
+            java_class_name='',
+            params=[],
+            env_call=('Void', ''),
+            unchecked=False,
+        ),
+        CalledByNative(
+            return_type='Object[]',
+            system_class=False,
+            static=False,
+            name='returnObjectArray',
+            method_id_var_name='returnObjectArray',
+            java_class_name='',
+            params=[],
+            env_call=('Void', ''),
+            unchecked=False,
+        ),
+        CalledByNative(
+            return_type='byte[][]',
+            system_class=False,
+            static=False,
+            name='returnArrayOfByteArray',
+            method_id_var_name='returnArrayOfByteArray',
+            java_class_name='',
+            params=[],
+            env_call=('Void', ''),
+            unchecked=False,
+        ),
+        CalledByNative(
+            return_type='Bitmap.CompressFormat',
+            system_class=False,
+            static=False,
+            name='getCompressFormat',
+            method_id_var_name='getCompressFormat',
+            java_class_name='',
+            params=[],
+            env_call=('Void', ''),
+            unchecked=False,
         ),
     ]
     self.assertListEquals(golden_called_by_natives, called_by_natives)
@@ -1090,6 +1230,236 @@ static void Java_TestJni_uncheckedCall(JNIEnv* env, jobject obj, jint iParam) {
   env->CallVoidMethod(obj,
       method_id, iParam);
 
+}
+
+static base::subtle::AtomicWord g_TestJni_returnByteArray = 0;
+static ScopedJavaLocalRef<jbyteArray> Java_TestJni_returnByteArray(JNIEnv* env,
+    jobject obj) {
+  /* Must call RegisterNativesImpl()  */
+  DCHECK(g_TestJni_clazz);
+  jmethodID method_id =
+      base::android::MethodID::LazyGet<
+      base::android::MethodID::TYPE_INSTANCE>(
+      env, g_TestJni_clazz,
+      "returnByteArray",
+
+"("
+")"
+"[B",
+      &g_TestJni_returnByteArray);
+
+  jbyteArray ret =
+    static_cast<jbyteArray>(env->CallObjectMethod(obj,
+      method_id));
+  base::android::CheckException(env);
+  return ScopedJavaLocalRef<jbyteArray>(env, ret);
+}
+
+static base::subtle::AtomicWord g_TestJni_returnBooleanArray = 0;
+static ScopedJavaLocalRef<jbooleanArray> Java_TestJni_returnBooleanArray(JNIEnv*
+    env, jobject obj) {
+  /* Must call RegisterNativesImpl()  */
+  DCHECK(g_TestJni_clazz);
+  jmethodID method_id =
+      base::android::MethodID::LazyGet<
+      base::android::MethodID::TYPE_INSTANCE>(
+      env, g_TestJni_clazz,
+      "returnBooleanArray",
+
+"("
+")"
+"[Z",
+      &g_TestJni_returnBooleanArray);
+
+  jbooleanArray ret =
+    static_cast<jbooleanArray>(env->CallObjectMethod(obj,
+      method_id));
+  base::android::CheckException(env);
+  return ScopedJavaLocalRef<jbooleanArray>(env, ret);
+}
+
+static base::subtle::AtomicWord g_TestJni_returnCharArray = 0;
+static ScopedJavaLocalRef<jcharArray> Java_TestJni_returnCharArray(JNIEnv* env,
+    jobject obj) {
+  /* Must call RegisterNativesImpl()  */
+  DCHECK(g_TestJni_clazz);
+  jmethodID method_id =
+      base::android::MethodID::LazyGet<
+      base::android::MethodID::TYPE_INSTANCE>(
+      env, g_TestJni_clazz,
+      "returnCharArray",
+
+"("
+")"
+"[C",
+      &g_TestJni_returnCharArray);
+
+  jcharArray ret =
+    static_cast<jcharArray>(env->CallObjectMethod(obj,
+      method_id));
+  base::android::CheckException(env);
+  return ScopedJavaLocalRef<jcharArray>(env, ret);
+}
+
+static base::subtle::AtomicWord g_TestJni_returnShortArray = 0;
+static ScopedJavaLocalRef<jshortArray> Java_TestJni_returnShortArray(JNIEnv*
+    env, jobject obj) {
+  /* Must call RegisterNativesImpl()  */
+  DCHECK(g_TestJni_clazz);
+  jmethodID method_id =
+      base::android::MethodID::LazyGet<
+      base::android::MethodID::TYPE_INSTANCE>(
+      env, g_TestJni_clazz,
+      "returnShortArray",
+
+"("
+")"
+"[S",
+      &g_TestJni_returnShortArray);
+
+  jshortArray ret =
+    static_cast<jshortArray>(env->CallObjectMethod(obj,
+      method_id));
+  base::android::CheckException(env);
+  return ScopedJavaLocalRef<jshortArray>(env, ret);
+}
+
+static base::subtle::AtomicWord g_TestJni_returnIntArray = 0;
+static ScopedJavaLocalRef<jintArray> Java_TestJni_returnIntArray(JNIEnv* env,
+    jobject obj) {
+  /* Must call RegisterNativesImpl()  */
+  DCHECK(g_TestJni_clazz);
+  jmethodID method_id =
+      base::android::MethodID::LazyGet<
+      base::android::MethodID::TYPE_INSTANCE>(
+      env, g_TestJni_clazz,
+      "returnIntArray",
+
+"("
+")"
+"[I",
+      &g_TestJni_returnIntArray);
+
+  jintArray ret =
+    static_cast<jintArray>(env->CallObjectMethod(obj,
+      method_id));
+  base::android::CheckException(env);
+  return ScopedJavaLocalRef<jintArray>(env, ret);
+}
+
+static base::subtle::AtomicWord g_TestJni_returnLongArray = 0;
+static ScopedJavaLocalRef<jlongArray> Java_TestJni_returnLongArray(JNIEnv* env,
+    jobject obj) {
+  /* Must call RegisterNativesImpl()  */
+  DCHECK(g_TestJni_clazz);
+  jmethodID method_id =
+      base::android::MethodID::LazyGet<
+      base::android::MethodID::TYPE_INSTANCE>(
+      env, g_TestJni_clazz,
+      "returnLongArray",
+
+"("
+")"
+"[J",
+      &g_TestJni_returnLongArray);
+
+  jlongArray ret =
+    static_cast<jlongArray>(env->CallObjectMethod(obj,
+      method_id));
+  base::android::CheckException(env);
+  return ScopedJavaLocalRef<jlongArray>(env, ret);
+}
+
+static base::subtle::AtomicWord g_TestJni_returnDoubleArray = 0;
+static ScopedJavaLocalRef<jdoubleArray> Java_TestJni_returnDoubleArray(JNIEnv*
+    env, jobject obj) {
+  /* Must call RegisterNativesImpl()  */
+  DCHECK(g_TestJni_clazz);
+  jmethodID method_id =
+      base::android::MethodID::LazyGet<
+      base::android::MethodID::TYPE_INSTANCE>(
+      env, g_TestJni_clazz,
+      "returnDoubleArray",
+
+"("
+")"
+"[D",
+      &g_TestJni_returnDoubleArray);
+
+  jdoubleArray ret =
+    static_cast<jdoubleArray>(env->CallObjectMethod(obj,
+      method_id));
+  base::android::CheckException(env);
+  return ScopedJavaLocalRef<jdoubleArray>(env, ret);
+}
+
+static base::subtle::AtomicWord g_TestJni_returnObjectArray = 0;
+static ScopedJavaLocalRef<jobjectArray> Java_TestJni_returnObjectArray(JNIEnv*
+    env, jobject obj) {
+  /* Must call RegisterNativesImpl()  */
+  DCHECK(g_TestJni_clazz);
+  jmethodID method_id =
+      base::android::MethodID::LazyGet<
+      base::android::MethodID::TYPE_INSTANCE>(
+      env, g_TestJni_clazz,
+      "returnObjectArray",
+
+"("
+")"
+"[Ljava/lang/Object;",
+      &g_TestJni_returnObjectArray);
+
+  jobjectArray ret =
+    static_cast<jobjectArray>(env->CallObjectMethod(obj,
+      method_id));
+  base::android::CheckException(env);
+  return ScopedJavaLocalRef<jobjectArray>(env, ret);
+}
+
+static base::subtle::AtomicWord g_TestJni_returnArrayOfByteArray = 0;
+static ScopedJavaLocalRef<jobjectArray>
+Java_TestJni_returnArrayOfByteArray(JNIEnv* env, jobject obj) {
+  /* Must call RegisterNativesImpl()  */
+  DCHECK(g_TestJni_clazz);
+  jmethodID method_id =
+      base::android::MethodID::LazyGet<
+      base::android::MethodID::TYPE_INSTANCE>(
+      env, g_TestJni_clazz,
+      "returnArrayOfByteArray",
+
+"("
+")"
+"[[B",
+      &g_TestJni_returnArrayOfByteArray);
+
+  jobjectArray ret =
+    static_cast<jobjectArray>(env->CallObjectMethod(obj,
+      method_id));
+  base::android::CheckException(env);
+  return ScopedJavaLocalRef<jobjectArray>(env, ret);
+}
+
+static base::subtle::AtomicWord g_TestJni_getCompressFormat = 0;
+static ScopedJavaLocalRef<jobject> Java_TestJni_getCompressFormat(JNIEnv* env,
+    jobject obj) {
+  /* Must call RegisterNativesImpl()  */
+  DCHECK(g_TestJni_clazz);
+  jmethodID method_id =
+      base::android::MethodID::LazyGet<
+      base::android::MethodID::TYPE_INSTANCE>(
+      env, g_TestJni_clazz,
+      "getCompressFormat",
+
+"("
+")"
+"Landroid/graphics/Bitmap$CompressFormat;",
+      &g_TestJni_getCompressFormat);
+
+  jobject ret =
+    env->CallObjectMethod(obj,
+      method_id);
+  base::android::CheckException(env);
+  return ScopedJavaLocalRef<jobject>(env, ret);
 }
 
 // Step 3: RegisterNatives.
@@ -1503,7 +1873,9 @@ static bool RegisterNativesImpl(JNIEnv* env) {
 
   def testJniSelfDocumentingExample(self):
     script_dir = os.path.dirname(sys.argv[0])
-    content = file(os.path.join(script_dir, 'SampleForTests.java')).read()
+    content = file(os.path.join(script_dir,
+        'java/src/org/chromium/example/jni_generator/SampleForTests.java')
+        ).read()
     golden_content = file(os.path.join(script_dir,
                                        'golden_sample_for_tests_jni.h')).read()
     jni_from_java = jni_generator.JNIFromJavaSource(
@@ -1555,7 +1927,8 @@ import org.chromium.content.app.ContentMain;
 import org.chromium.content.browser.SandboxedProcessConnection;
 import org.chromium.content.common.ISandboxedProcessCallback;
 import org.chromium.content.common.ISandboxedProcessService;
-import org.chromium.content.common.SurfaceCallback;
+import org.chromium.content.common.WillNotRaise.AnException;
+import org.chromium.content.common.WillRaise.AnException;
 
 import static org.chromium.Bar.Zoo;
 
@@ -1577,6 +1950,17 @@ class Foo {
                     jni_generator.JniParams._inner_classes)
     self.assertTrue('Lorg/chromium/content/app/Foo$PasswordListObserver' in
                     jni_generator.JniParams._inner_classes)
+    self.assertEquals('Lorg/chromium/content/app/ContentMain$Inner;',
+                      jni_generator.JniParams.JavaToJni('ContentMain.Inner'))
+    self.assertRaises(SyntaxError,
+                      jni_generator.JniParams.JavaToJni,
+                      'AnException')
+
+  def testJniParamsJavaToJni(self):
+    self.assertTextEquals('I', JniParams.JavaToJni('int'))
+    self.assertTextEquals('[B', JniParams.JavaToJni('byte[]'))
+    self.assertTextEquals(
+        '[Ljava/nio/ByteBuffer;', JniParams.JavaToJni('java/nio/ByteBuffer[]'))
 
 
 if __name__ == '__main__':

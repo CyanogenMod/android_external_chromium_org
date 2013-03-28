@@ -1,16 +1,20 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/webui/constrained_web_dialog_delegate_base.h"
 
+#include <gdk/gdk.h>
+#include <gtk/gtk.h>
+
 #include "chrome/browser/ui/gtk/constrained_window_gtk.h"
-#include "chrome/browser/ui/gtk/tab_contents_container_gtk.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
+#include "ui/base/gtk/gtk_signal.h"
 #include "ui/gfx/size.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
@@ -19,19 +23,49 @@ using content::WebContents;
 using ui::WebDialogDelegate;
 using ui::WebDialogWebContentsDelegate;
 
-class ConstrainedWebDialogDelegateGtk : public ConstrainedWindowGtkDelegate,
-                                        public ConstrainedWebDialogDelegate {
+namespace {
+
+class ConstrainedWebDialogDelegateGtk
+    : public ConstrainedWebDialogDelegateBase {
  public:
   ConstrainedWebDialogDelegateGtk(
-      Profile* profile,
+      content::BrowserContext* browser_context,
+      WebDialogDelegate* delegate,
+      WebDialogWebContentsDelegate* tab_delegate)
+      : ConstrainedWebDialogDelegateBase(
+            browser_context, delegate, tab_delegate) {}
+
+  // WebDialogWebContentsDelegate interface.
+  virtual void CloseContents(WebContents* source) OVERRIDE {
+    gtk_widget_destroy(window_);
+  }
+
+  void set_window(GtkWidget* window) { window_ = window; }
+  GtkWidget* window() const { return window_; }
+
+ private:
+  GtkWidget* window_;
+
+  DISALLOW_COPY_AND_ASSIGN(ConstrainedWebDialogDelegateGtk);
+};
+
+void SetBackgroundColor(GtkWidget* widget, const GdkColor &color) {
+  gtk_widget_modify_base(widget, GTK_STATE_NORMAL, &color);
+  gtk_widget_modify_fg(widget, GTK_STATE_NORMAL, &color);
+  gtk_widget_modify_bg(widget, GTK_STATE_NORMAL, &color);
+}
+
+}  // namespace
+
+class ConstrainedWebDialogDelegateViewGtk
+    : public ConstrainedWebDialogDelegate {
+ public:
+  ConstrainedWebDialogDelegateViewGtk(
+      content::BrowserContext* browser_context,
       WebDialogDelegate* delegate,
       WebDialogWebContentsDelegate* tab_delegate);
 
-  virtual ~ConstrainedWebDialogDelegateGtk() {}
-
-  void set_window(ConstrainedWindow* window) {
-    return impl_->set_window(window);
-  }
+  virtual ~ConstrainedWebDialogDelegateViewGtk() {}
 
   // ConstrainedWebDialogDelegate interface
   virtual const WebDialogDelegate*
@@ -44,67 +78,78 @@ class ConstrainedWebDialogDelegateGtk : public ConstrainedWindowGtkDelegate,
   virtual void OnDialogCloseFromWebUI() OVERRIDE {
     return impl_->OnDialogCloseFromWebUI();
   }
-  virtual void ReleaseTabContentsOnDialogClose() OVERRIDE {
-    return impl_->ReleaseTabContentsOnDialogClose();
+  virtual void ReleaseWebContentsOnDialogClose() OVERRIDE {
+    return impl_->ReleaseWebContentsOnDialogClose();
   }
-  virtual ConstrainedWindow* window() OVERRIDE {
+  virtual NativeWebContentsModalDialog GetNativeDialog() OVERRIDE {
     return impl_->window();
   }
-  virtual TabContents* tab() OVERRIDE {
-    return impl_->tab();
+  virtual WebContents* GetWebContents() OVERRIDE {
+    return impl_->GetWebContents();
   }
 
-  // ConstrainedWindowGtkDelegate interface
-  virtual GtkWidget* GetWidgetRoot() OVERRIDE {
-    return tab_contents_container_.widget();
+  void SetWindow(GtkWidget* window) {
+    impl_->set_window(window);
   }
-  virtual GtkWidget* GetFocusWidget() OVERRIDE {
-    return tab()->web_contents()->GetContentNativeView();
-  }
-  virtual void DeleteDelegate() OVERRIDE {
-    if (!impl_->closed_via_webui())
-      GetWebDialogDelegate()->OnDialogClosed("");
-    delete this;
-  }
-  virtual bool GetBackgroundColor(GdkColor* color) OVERRIDE {
-    *color = ui::kGdkWhite;
-    return true;
+
+  GtkWidget* GetWindow() {
+    return impl_->window();
   }
 
  private:
-  scoped_ptr<ConstrainedWebDialogDelegateBase> impl_;
+  CHROMEGTK_CALLBACK_0(ConstrainedWebDialogDelegateViewGtk, void, OnDestroy);
 
-  TabContentsContainerGtk tab_contents_container_;
+  scoped_ptr<ConstrainedWebDialogDelegateGtk> impl_;
 
-  DISALLOW_COPY_AND_ASSIGN(ConstrainedWebDialogDelegateGtk);
+  DISALLOW_COPY_AND_ASSIGN(ConstrainedWebDialogDelegateViewGtk);
 };
 
-ConstrainedWebDialogDelegateGtk::ConstrainedWebDialogDelegateGtk(
-    Profile* profile,
+ConstrainedWebDialogDelegateViewGtk::ConstrainedWebDialogDelegateViewGtk(
+    content::BrowserContext* browser_context,
     WebDialogDelegate* delegate,
     WebDialogWebContentsDelegate* tab_delegate)
-    : impl_(new ConstrainedWebDialogDelegateBase(profile, delegate, tab_delegate)),
-      tab_contents_container_(NULL) {
-  tab_contents_container_.SetTab(tab());
-
+    : impl_(new ConstrainedWebDialogDelegateGtk(
+          browser_context,
+          delegate,
+          tab_delegate)) {
   gfx::Size dialog_size;
   delegate->GetDialogSize(&dialog_size);
-  gtk_widget_set_size_request(GTK_WIDGET(tab_contents_container_.widget()),
+  GtkWidget* contents =
+      GTK_WIDGET(GetWebContents()->GetView()->GetNativeView());
+  gtk_widget_set_size_request(contents,
                               dialog_size.width(),
                               dialog_size.height());
 
-  gtk_widget_show_all(GetWidgetRoot());
+  gtk_widget_show_all(contents);
+
+  g_signal_connect(contents, "destroy", G_CALLBACK(OnDestroyThunk), this);
+}
+
+void ConstrainedWebDialogDelegateViewGtk::OnDestroy(GtkWidget* widget) {
+  if (!impl_->closed_via_webui())
+    GetWebDialogDelegate()->OnDialogClosed("");
+  delete this;
 }
 
 ConstrainedWebDialogDelegate* CreateConstrainedWebDialog(
-      Profile* profile,
+      content::BrowserContext* browser_context,
       WebDialogDelegate* delegate,
       WebDialogWebContentsDelegate* tab_delegate,
       content::WebContents* web_contents) {
-  ConstrainedWebDialogDelegateGtk* constrained_delegate =
-      new ConstrainedWebDialogDelegateGtk(profile, delegate, tab_delegate);
-  ConstrainedWindow* constrained_window =
-      new ConstrainedWindowGtk(web_contents, constrained_delegate);
-  constrained_delegate->set_window(constrained_window);
+  ConstrainedWebDialogDelegateViewGtk* constrained_delegate =
+      new ConstrainedWebDialogDelegateViewGtk(
+          browser_context, delegate, tab_delegate);
+  GtkWidget* window =
+      CreateWebContentsModalDialogGtk(
+          constrained_delegate->GetWebContents()->GetView()->GetNativeView(),
+          constrained_delegate->GetWebContents()->GetView()->
+              GetContentNativeView());
+  SetBackgroundColor(window, ui::kGdkWhite);
+  constrained_delegate->SetWindow(window);
+
+  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+      WebContentsModalDialogManager::FromWebContents(web_contents);
+  web_contents_modal_dialog_manager->ShowDialog(window);
+
   return constrained_delegate;
 }

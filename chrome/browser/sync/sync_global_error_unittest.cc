@@ -39,14 +39,31 @@ class BrowserMock: public Browser {
 };
 #endif
 
-class LoginUIServiceMock: public LoginUIService {
+class FakeLoginUIService: public LoginUIService {
  public:
-  explicit LoginUIServiceMock() : LoginUIService(NULL) {}
-  MOCK_METHOD1(ShowLoginUI, void(Browser*));
+  FakeLoginUIService() : LoginUIService(NULL) {}
+};
+
+class FakeLoginUI : public LoginUIService::LoginUI {
+ public:
+  FakeLoginUI() : focus_ui_call_count_(0) {}
+
+  virtual ~FakeLoginUI() {}
+
+  int focus_ui_call_count() const { return focus_ui_call_count_; }
+
+ private:
+  // Overridden from LoginUIService::LoginUI:
+  virtual void FocusUI() OVERRIDE {
+    ++focus_ui_call_count_;
+  }
+  virtual void CloseUI() OVERRIDE {}
+
+  int focus_ui_call_count_;
 };
 
 ProfileKeyedService* BuildMockLoginUIService(Profile* profile) {
-  return new LoginUIServiceMock();
+  return new FakeLoginUIService();
 }
 
 // Same as BrowserWithTestWindowTest, but uses MockBrowser to test calls to
@@ -79,7 +96,7 @@ class SyncGlobalErrorTest : public BrowserWithTestWindowTest {
 // Utility function to test that SyncGlobalError behaves correct for the given
 // error condition.
 void VerifySyncGlobalErrorResult(NiceMock<ProfileSyncServiceMock>* service,
-                                 LoginUIServiceMock* login_ui_service,
+                                 FakeLoginUIService* login_ui_service,
                                  Browser* browser,
                                  SyncGlobalError* error,
                                  GoogleServiceAuthError::State error_state,
@@ -96,8 +113,7 @@ void VerifySyncGlobalErrorResult(NiceMock<ProfileSyncServiceMock>* service,
   // If there is an error then a wrench button badge, menu item, and bubble view
   // should be shown.
   EXPECT_EQ(error->HasBadge(), is_error);
-  EXPECT_EQ(error->HasMenuItem() || error->HasCustomizedSyncMenuItem(),
-            is_error);
+  EXPECT_EQ(error->HasMenuItem() || error->HasBadge(), is_error);
   EXPECT_EQ(error->HasBubbleView(), is_error);
 
   // If there is an error then labels should not be empty.
@@ -127,9 +143,10 @@ void VerifySyncGlobalErrorResult(NiceMock<ProfileSyncServiceMock>* service,
 #else
   // Test message handler.
   if (is_error) {
-    EXPECT_CALL(*login_ui_service, ShowLoginUI(browser));
+    FakeLoginUI* login_ui = static_cast<FakeLoginUI*>(
+        login_ui_service->current_login_ui());
     error->ExecuteMenuItem(browser);
-    EXPECT_CALL(*login_ui_service, ShowLoginUI(browser));
+    ASSERT_GT(login_ui->focus_ui_call_count(), 0);
     error->BubbleViewAcceptButtonPressed(browser);
     error->BubbleViewDidClose(browser);
   }
@@ -145,9 +162,11 @@ TEST_F(SyncGlobalErrorTest, PassphraseGlobalError) {
       ProfileSyncServiceMock::MakeSignedInTestingProfile());
   NiceMock<ProfileSyncServiceMock> service(profile.get());
   SigninManager* signin = SigninManagerFactory::GetForProfile(profile.get());
-  LoginUIServiceMock* login_ui_service = static_cast<LoginUIServiceMock*>(
+  FakeLoginUIService* login_ui_service = static_cast<FakeLoginUIService*>(
       LoginUIServiceFactory::GetInstance()->SetTestingFactoryAndUse(
           profile.get(), BuildMockLoginUIService));
+  FakeLoginUI login_ui;
+  login_ui_service->SetLoginUI(&login_ui);
   SyncGlobalError error(&service, signin);
 
   browser_sync::SyncBackendHost::Status status;
@@ -161,46 +180,4 @@ TEST_F(SyncGlobalErrorTest, PassphraseGlobalError) {
   VerifySyncGlobalErrorResult(
       &service, login_ui_service, browser(), &error,
       GoogleServiceAuthError::NONE, true, true);
-}
-
-// Test that SyncGlobalError shows an error for conditions that can be resolved
-// by the user and suppresses errors for conditions that  cannot be resolved by
-// the user.
-TEST_F(SyncGlobalErrorTest, AuthStateGlobalError) {
-  scoped_ptr<Profile> profile(
-      ProfileSyncServiceMock::MakeSignedInTestingProfile());
-  NiceMock<ProfileSyncServiceMock> service(profile.get());
-  SigninManager* signin = SigninManagerFactory::GetForProfile(profile.get());
-  LoginUIServiceMock* login_ui_service = static_cast<LoginUIServiceMock*>(
-      LoginUIServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-          profile.get(), BuildMockLoginUIService));
-  SyncGlobalError error(&service, signin);
-
-  browser_sync::SyncBackendHost::Status status;
-  EXPECT_CALL(service, QueryDetailedSyncStatus(_))
-              .WillRepeatedly(Return(false));
-
-  struct {
-    GoogleServiceAuthError::State error_state;
-    bool is_error;
-  } table[] = {
-    { GoogleServiceAuthError::NONE, false },
-    { GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS, true },
-    { GoogleServiceAuthError::USER_NOT_SIGNED_UP, true },
-    { GoogleServiceAuthError::CONNECTION_FAILED, false },
-    { GoogleServiceAuthError::CAPTCHA_REQUIRED, true },
-    { GoogleServiceAuthError::ACCOUNT_DELETED, true },
-    { GoogleServiceAuthError::ACCOUNT_DISABLED, true },
-    { GoogleServiceAuthError::SERVICE_UNAVAILABLE, true },
-    { GoogleServiceAuthError::TWO_FACTOR, true },
-    { GoogleServiceAuthError::REQUEST_CANCELED, true },
-    { GoogleServiceAuthError::HOSTED_NOT_ALLOWED, true },
-  };
-
-  for (size_t i = 0; i < sizeof(table)/sizeof(*table); ++i) {
-    VerifySyncGlobalErrorResult(&service, login_ui_service, browser(), &error,
-                                table[i].error_state, true, table[i].is_error);
-    VerifySyncGlobalErrorResult(&service, login_ui_service, browser(), &error,
-                                table[i].error_state, false, false);
-  }
 }

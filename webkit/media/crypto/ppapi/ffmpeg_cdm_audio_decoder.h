@@ -8,18 +8,28 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/time.h"
 #include "base/compiler_specific.h"
-#include "webkit/media/crypto/ppapi/content_decryption_module.h"
+#include "webkit/media/crypto/ppapi/cdm/content_decryption_module.h"
 
 struct AVCodecContext;
 struct AVFrame;
 
+namespace media {
+class AudioBus;
+class AudioTimestampHelper;
+}
+
 namespace webkit_media {
 
+// TODO(xhwang): This class is partially cloned from media::FFmpegAudioDecoder.
+// When media::FFmpegAudioDecoder is updated, it's a pain to keep this class
+// in sync with media::FFmpegAudioDecoder. We need a long term sustainable
+// solution for this. See http://crbug.com/169203
 class FFmpegCdmAudioDecoder {
  public:
-  explicit FFmpegCdmAudioDecoder(cdm::Allocator* allocator);
+  explicit FFmpegCdmAudioDecoder(cdm::Host* host);
   ~FFmpegCdmAudioDecoder();
   bool Initialize(const cdm::AudioDecoderConfig& config);
   void Deinitialize();
@@ -32,13 +42,16 @@ class FFmpegCdmAudioDecoder {
   // output in |decoded_frames| when output is available. Returns
   // |cdm::kNeedMoreData| when |compressed_frame| does not produce output.
   // Returns |cdm::kDecodeError| when decoding fails.
+  //
+  // A null |compressed_buffer| will attempt to flush the decoder of any
+  // remaining frames. |compressed_buffer_size| and |timestamp| are ignored.
   cdm::Status DecodeBuffer(const uint8_t* compressed_buffer,
                            int32_t compressed_buffer_size,
                            int64_t timestamp,
                            cdm::AudioFrames* decoded_frames);
 
  private:
-  void ResetAudioTimingData();
+  void ResetTimestampState();
   void ReleaseFFmpegResources();
 
   base::TimeDelta GetNextOutputTimestamp() const;
@@ -47,7 +60,7 @@ class FFmpegCdmAudioDecoder {
 
   bool is_initialized_;
 
-  cdm::Allocator* const allocator_;
+  cdm::Host* const host_;
 
   // FFmpeg structures owned by this object.
   AVCodecContext* codec_context_;
@@ -56,12 +69,19 @@ class FFmpegCdmAudioDecoder {
   // Audio format.
   int bits_per_channel_;
   int samples_per_second_;
+  int channels_;
+
+  // AVSampleFormat initially requested; not Chrome's SampleFormat.
+  int av_sample_format_;
 
   // Used for computing output timestamps.
+  scoped_ptr<media::AudioTimestampHelper> output_timestamp_helper_;
   int bytes_per_frame_;
-  base::TimeDelta output_timestamp_base_;
-  int64_t total_frames_decoded_;
   base::TimeDelta last_input_timestamp_;
+
+  // We may need to convert the audio data coming out of FFmpeg from planar
+  // float to integer.
+  scoped_ptr<media::AudioBus> converter_bus_;
 
   // Number of output sample bytes to drop before generating output buffers.
   // This is required for handling negative timestamps when decoding Vorbis

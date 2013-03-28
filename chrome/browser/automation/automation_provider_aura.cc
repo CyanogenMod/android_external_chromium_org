@@ -4,14 +4,5 @@
 
 #include "chrome/browser/automation/automation_provider.h"
 
-void AutomationProvider::WindowSimulateDrag(
-    int handle,
-    const std::vector<gfx::Point>& drag_path,
-    int flags,
-    bool press_escape_en_route,
-    IPC::Message* reply_message) {
-}
-
 void AutomationProvider::PrintAsync(int tab_handle) {
 }
-

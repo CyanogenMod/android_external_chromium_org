@@ -16,6 +16,12 @@ namespace media {
 class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
  public:
   enum {
+    kFrameSizeAlignment = 16,
+    kFrameSizePadding = 16,
+    kFrameAddressAlignment = 32
+  };
+
+  enum {
     kMaxPlanes = 3,
 
     kRGBPlane = 0,
@@ -37,6 +43,9 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
     EMPTY = 9,  // An empty frame.
     I420 = 11,  // 12bpp YVU planar 1x1 Y, 2x2 UV samples.
     NATIVE_TEXTURE = 12,  // Native texture.  Pixel-format agnostic.
+#if defined(GOOGLE_TV)
+    HOLE = 13,  // Hole frame.
+#endif
   };
 
   // Creates a new frame in system memory with given parameters. Buffers for
@@ -65,7 +74,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   typedef base::Callback<void(void*)> ReadPixelsCB;
 
   // Wraps a native texture of the given parameters with a VideoFrame.  When the
-  // frame is destroyed |no_longer_needed.Run()| will be called.
+  // frame is destroyed |no_longer_needed_cb.Run()| will be called.
   // |coded_size| is the width and height of the frame data in pixels.
   // |visible_rect| is the visible portion of |coded_size|, after cropping (if
   // any) is applied.
@@ -81,12 +90,29 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
       const gfx::Size& natural_size,
       base::TimeDelta timestamp,
       const ReadPixelsCB& read_pixels_cb,
-      const base::Closure& no_longer_needed);
+      const base::Closure& no_longer_needed_cb);
 
   // Read pixels from the native texture backing |*this| and write
   // them to |*pixels| as BGRA.  |pixels| must point to a buffer at
   // least as large as 4*visible_rect().width()*visible_rect().height().
   void ReadPixelsFromNativeTexture(void* pixels);
+
+  // Wraps external YUV data of the given parameters with a VideoFrame.
+  // The returned VideoFrame does not own the data passed in. When the frame
+  // is destroyed |no_longer_needed_cb.Run()| will be called.
+  static scoped_refptr<VideoFrame> WrapExternalYuvData(
+      Format format,
+      const gfx::Size& coded_size,
+      const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
+      int32 y_stride,
+      int32 u_stride,
+      int32 v_stride,
+      uint8* y_data,
+      uint8* u_data,
+      uint8* v_data,
+      base::TimeDelta timestamp,
+      const base::Closure& no_longer_needed_cb);
 
   // Creates a frame with format equals to VideoFrame::EMPTY, width, height,
   // and timestamp are all 0.
@@ -101,6 +127,13 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // Allocates YV12 frame based on |size|, and sets its data to the YUV
   // equivalent of RGB(0,0,0).
   static scoped_refptr<VideoFrame> CreateBlackFrame(const gfx::Size& size);
+
+#if defined(GOOGLE_TV)
+  // Allocates a hole frame.
+  static scoped_refptr<VideoFrame> CreateHoleFrame(const gfx::Size& size);
+#endif
+
+  static size_t NumPlanes(Format format);
 
   Format format() const { return format_; }
 
@@ -184,7 +217,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   uint32 texture_id_;
   uint32 texture_target_;
   ReadPixelsCB read_pixels_cb_;
-  base::Closure texture_no_longer_needed_;
+
+  base::Closure no_longer_needed_cb_;
 
   base::TimeDelta timestamp_;
 

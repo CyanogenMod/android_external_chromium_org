@@ -5,10 +5,11 @@
 #include "chrome/browser/ui/webui/options/media_galleries_handler.h"
 
 #include "base/bind.h"
-#include "base/string_number_conversions.h"
-#include "chrome/browser/media_gallery/media_file_system_registry.h"
-#include "chrome/browser/media_gallery/media_galleries_preferences.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/media_galleries/media_file_system_registry.h"
+#include "chrome/browser/media_galleries/media_galleries_preferences.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -29,6 +30,8 @@ MediaGalleriesHandler::MediaGalleriesHandler() {
 }
 
 MediaGalleriesHandler::~MediaGalleriesHandler() {
+  if (select_file_dialog_.get())
+    select_file_dialog_->ListenerDestroyed();
 }
 
 void MediaGalleriesHandler::GetLocalizedValues(DictionaryValue* values) {
@@ -52,7 +55,10 @@ void MediaGalleriesHandler::InitializePage() {
 
   if (pref_change_registrar_.IsEmpty()) {
     pref_change_registrar_.Init(profile->GetPrefs());
-    pref_change_registrar_.Add(prefs::kMediaGalleriesRememberedGalleries, this);
+    pref_change_registrar_.Add(
+        prefs::kMediaGalleriesRememberedGalleries,
+        base::Bind(&MediaGalleriesHandler::OnGalleriesChanged,
+                   base::Unretained(this)));
   }
 
   OnGalleriesChanged();
@@ -72,7 +78,7 @@ void MediaGalleriesHandler::RegisterMessages() {
 void MediaGalleriesHandler::OnGalleriesChanged() {
   Profile* profile = Profile::FromWebUI(web_ui());
   chrome::MediaGalleriesPreferences* preferences =
-      chrome::MediaFileSystemRegistry::GetInstance()->GetPreferences(profile);
+      g_browser_process->media_file_system_registry()->GetPreferences(profile);
 
   ListValue list;
   const MediaGalleriesPrefInfoMap& galleries = preferences->known_galleries();
@@ -94,17 +100,18 @@ void MediaGalleriesHandler::OnGalleriesChanged() {
 }
 
 void MediaGalleriesHandler::HandleAddNewGallery(const base::ListValue* args) {
-  ui::SelectFileDialog* dialog = ui::SelectFileDialog::Create(
+  select_file_dialog_ = ui::SelectFileDialog::Create(
       this,
       new ChromeSelectFilePolicy(web_ui()->GetWebContents()));
-  dialog->SelectFile(ui::SelectFileDialog::SELECT_FOLDER,
-                     string16(),  // TODO(estade): a name for the dialog?
-                     FilePath(),
-                     NULL, 0,
-                     FilePath::StringType(),
-                     web_ui()->GetWebContents()->GetView()->
-                         GetTopLevelNativeWindow(),
-                     NULL);
+  select_file_dialog_->SelectFile(
+      ui::SelectFileDialog::SELECT_FOLDER,
+      string16(),  // TODO(estade): a name for the dialog?
+      base::FilePath(),
+      NULL, 0,
+      base::FilePath::StringType(),
+      web_ui()->GetWebContents()->GetView()->
+          GetTopLevelNativeWindow(),
+      NULL);
 }
 
 void MediaGalleriesHandler::HandleForgetGallery(const base::ListValue* args) {
@@ -117,23 +124,18 @@ void MediaGalleriesHandler::HandleForgetGallery(const base::ListValue* args) {
   }
 
   chrome::MediaGalleriesPreferences* prefs =
-      chrome::MediaFileSystemRegistry::GetInstance()->GetPreferences(
+      g_browser_process->media_file_system_registry()->GetPreferences(
           Profile::FromWebUI(web_ui()));
   prefs->ForgetGalleryById(id);
 }
 
-void MediaGalleriesHandler::FileSelected(
-    const FilePath& path, int index, void* params) {
+void MediaGalleriesHandler::FileSelected(const base::FilePath& path,
+                                         int index,
+                                         void* params) {
   chrome::MediaGalleriesPreferences* prefs =
-      chrome::MediaFileSystemRegistry::GetInstance()->GetPreferences(
+      g_browser_process->media_file_system_registry()->GetPreferences(
           Profile::FromWebUI(web_ui()));
   prefs->AddGalleryByPath(path);
-}
-
-void MediaGalleriesHandler::OnPreferenceChanged(PrefServiceBase* service,
-                                                const std::string& pref_name) {
-  DCHECK_EQ(std::string(prefs::kMediaGalleriesRememberedGalleries), pref_name);
-  OnGalleriesChanged();
 }
 
 }  // namespace options

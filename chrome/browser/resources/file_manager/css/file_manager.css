@@ -14,6 +14,7 @@ html.col-resize * {
 body {
   -webkit-box-flex: 1;
   -webkit-box-orient: vertical;
+  -webkit-tap-highlight-color: transparent;
   -webkit-transition: opacity 70ms linear;
   -webkit-user-select: none;
   cursor: default;
@@ -30,52 +31,6 @@ body.loaded {
   /* Do not use display:none because list will calculate metrics incorrectly. */
   /*display: -webkit-box;*/
   opacity: 1;
-}
-
-button,
-input[type='button'],
-input[type='submit'],
-select {
-  -webkit-border-radius: 2px;
-  -webkit-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  -webkit-user-select: none;
-  background: -webkit-linear-gradient(#fafafa, #f4f4f4 40%, #e5e5e5);
-  border: 1px solid #aaa;
-  color: #444;
-  font-size: inherit;
-  margin-bottom: 0;
-  min-width: 4em;
-  padding: 3px 12px 3px 12px;
-}
-
-button:hover,
-input[type='button']:hover,
-input[type='submit']:hover,
-select:hover {
-  -webkit-box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  background: #ebebeb -webkit-linear-gradient(#fefefe, #f8f8f8 40%, #e9e9e9);
-  border-color: #999;
-  color: #222;
-}
-
-button:active,
-input[type='button']:active,
-input[type='submit']:active {
-  -webkit-box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
-  background: #ebebeb -webkit-linear-gradient(#f4f4f4, #efefef 40%, #dcdcdc);
-  color: #333;
-}
-
-button[disabled],
-input[type='button'][disabled],
-input[type='submit'][disabled],
-button[disabled]:hover,
-input[type='button'][disabled]:hover,
-input[type='submit'][disabled]:hover {
-  -webkit-box-shadow: none;
-  background: -webkit-linear-gradient(#fafafa, #f4f4f4 40%, #e5e5e5);
-  border-color: #aaa;
-  color: #888;
 }
 
 /* Drop opacity of selected rows to give a visual feedback on copy/cut
@@ -96,14 +51,19 @@ input[type='submit'][disabled]:hover {
 }
 
 #butter-bar {
+  -webkit-border-radius: 2px;
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
-  -webkit-transition: opacity 300ms;
+  -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  -webkit-transition: opacity 130ms;
   background-color: #e3e3e3;
+  border: 1px solid #d4d4d4;
+  border-top-width: 0;
   color: #222;
   display: -webkit-box;
+  margin-top: 2px;
   max-width: 340px;
-  min-width: 40px;
+  min-width: 200px;
   padding: 0 1em;
   pointer-events: auto;
   top: 1px;
@@ -117,10 +77,11 @@ input[type='submit'][disabled]:hover {
 }
 
 #butter-bar .content {
-  -webkit-box-flex: 1;
-  overflow: hidden;
-  padding-bottom: 4px;
-  padding-top: 4px;
+  -webkit-box-flex: 1.0;
+  -webkit-box-orient: block-axis;
+  -webkit-box-pack: center;
+  display: -webkit-box;
+  min-height: 35px;
 }
 
 #butter-bar .actions {
@@ -129,12 +90,12 @@ input[type='submit'][disabled]:hover {
   -webkit-box-pack: end;
   -webkit-margin-start: 6px;
   display: -webkit-box;
-  height: 20px;
 }
 
 #butter-bar .actions a {
+  color: rgb(17, 85, 204);
   cursor: pointer;
-  text-decoration: underline;
+  vertical-align: middle;
 }
 
 #butter-bar .actions a.x {
@@ -143,52 +104,27 @@ input[type='submit'][disabled]:hover {
     url('../images/files/ui/close_bar.png') 1x,
     url('../images/files/ui/2x/close_bar.png') 2x);
   display: inline-block;
-  height: 12px;
-  padding: 4px 2px;
-  width: 12px;
+  height: 35px;  /* #butter-bar .content's min-height. */
+  margin-right: -12px;
+  width: 35px;
 }
 
-#butter-bar .actions a:first-child {
-  margin-left: 2px;
-}
-
-#butter-bar .actions a:last-child {
-  margin-right: -2px;  /* Overlap the padding with butter-bar padding. */
+#butter-bar .actions a.x:first-child {
+  margin-left: -6px;
 }
 
 #butter-bar.error {
   background-color: rgba(221, 75, 57, 0.2);
-  border: 1px solid rgba(221, 75, 57, 0.5);
-  border-radius: 2px;
-  padding: 2px 1em;
 }
 
-.progress-bar {
-  -webkit-box-flex: 1;
-  border: 1px solid #999;
-  margin-bottom: 2px;
-  margin-top: 3px;
-  padding: 1px;
+#butter-bar .butter-message.single-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.progress-track {
-  -webkit-animation-duration: 800ms;
-  -webkit-animation-iteration-count: infinite;
-  -webkit-animation-name: bg;
-  -webkit-animation-timing-function: linear;
-  background-color: #ccc;
-  background-image: -webkit-linear-gradient(315deg, transparent,
-      transparent 33%, rgba(0, 0, 0, 0.12) 33%, rgba(0, 0, 0, 0.12) 66%,
-      transparent 66%, transparent);
-  background-position: 0 0;
-  background-repeat: repeat-x;
-  background-size: 16px 8px;
+#butter-bar .progress-track {
   height: 5px;
-}
-
-@-webkit-keyframes bg {
-  0% { background-position: 0 0; }
-  100% { background-position: -16px 0; }
 }
 
 /* The top title of the dialog. */
@@ -210,7 +146,7 @@ input[type='submit'][disabled]:hover {
   -webkit-box-align: stretch;
   -webkit-box-flex: 1;
   -webkit-box-orient: horizontal;
-  background-color: white;  /* Makes #drag-image-container invisible. */
+  background-color: white;  /* Makes #drag-container invisible. */
   display: -webkit-box;
   overflow: hidden;
   position: relative;
@@ -224,10 +160,13 @@ input[type='submit'][disabled]:hover {
   display: -webkit-box;
 }
 
-/* Roots list at the left. */
+/* Directory tree at the left. */
 .dialog-sidebar {
   -webkit-box-flex: 0;
   background-color: #e6e6e6;
+  display: -webkit-box;
+  max-width: 50%;
+  min-width: 45px;
   overflow: hidden;
   position: relative;
   width: 168px;
@@ -245,64 +184,95 @@ div.sidebar-splitter {
   z-index: 2;
 }
 
-/* Roots list at the left. */
-#roots-list {
+#directory-tree {
+  -webkit-box-orient: vertical;
   border-right: 1px solid rgb(170, 170, 170);
+  display: -webkit-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  width: 100%;
 }
 
-#roots-list > * {
+#directory-tree .tree-row {
   background-color: #e6e6e6;
   background-image: none;
   border: none;
-  height: 39px;
+  display: -webkit-box;
+  line-height: 39px;
   margin: 0;
-  padding: 0 5px;
+  padding: 0 3px;
 }
 
-#roots-list > :hover {
+/* For rows of subitems (non-top items) */
+#directory-tree .tree-children .tree-row {
+  line-height: 31px;
+}
+
+#directory-tree .tree-row > .expand-icon {
+  height: 37px;
+  left: 3px;
+  margin: -13px;
+  top: 0;
+  vertical-align: middle;
+  width: 37px;
+}
+
+#directory-tree .tree-row > .volume-icon {
+  background-position: center 2px;
+  background-repeat: no-repeat;
+  height: 24px;
+  vertical-align: middle;
+  width: 24px;
+}
+
+#directory-tree .tree-row > .label {
+  -webkit-box-flex: 1;
+  display: block;
+  margin: 0 3px;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+}
+
+#directory-tree .tree-row:hover {
   background-color: rgba(0, 0, 0, 0.05);
   border-color: rgba(0, 0, 0, 0.05);
 }
 
-#roots-list > .accepts,
-#roots-list > [lead][selected],
-#roots-list > [lead],
-#roots-list > [selected],
-#roots-list > [anchor] {
+#directory-tree .tree-item.accepts > .tree-row,
+#directory-tree .tree-row[lead][selected],
+#directory-tree .tree-row[lead],
+#directory-tree .tree-row[selected],
+#directory-tree .tree-row[anchor] {
   background-color: rgb(204, 204, 204);
 }
 
-#roots-list > .accepts:hover,
-#roots-list > [lead]:hover,
-#roots-list > [lead][selected]:hover,
-#roots-list > [selected]:hover,
-#roots-list > [anchor]:hover {
+#directory-tree:focus .tree-item.accepts > .tree-row,
+#directory-tree:focus .tree-row[lead][selected],
+#directory-tree:focus .tree-row[lead],
+#directory-tree:focus .tree-row[selected],
+#directory-tree:focus .tree-row[anchor] {
+  background-color: rgb(193, 209, 232);
+}
+
+#directory-tree .tree-item.accepts > .tree-row:hover,
+#directory-tree .tree-row[lead]:hover,
+#directory-tree .tree-row[lead][selected]:hover,
+#directory-tree .tree-row[selected]:hover,
+#directory-tree .tree-row[anchor]:hover {
   background-color: rgb(192, 192, 192);
 }
 
-#roots-list li.root-item {
-  -webkit-box-align: center;
-  display: -webkit-box;
-  line-height: 22px;  /* To accomodate for icons. */
-  padding-left: 11px;
+#directory-tree:hover .tree-item.accepts > .tree-row:hover,
+#directory-tree:hover .tree-row[lead]:hover,
+#directory-tree:hover .tree-row[lead][selected]:hover,
+#directory-tree:hover .tree-row[selected]:hover,
+#directory-tree:hover .tree-row[anchor]:hover {
+  background-color: rgb(177, 193, 216);
 }
 
-li.root-item > .root-label {
-  -webkit-box-flex: 1;
-  margin-right: 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.root-label {
-  -webkit-padding-start: 38px;
-  background-position: left center;
-  background-repeat: no-repeat;
-}
-
-div.root-eject {
-  -webkit-transition: opacity 70ms linear;
+#directory-tree .tree-row > div.root-eject {
+  /* The transition commented out to work around crbug.com/157813 */
+  /*-webkit-transition: opacity 70ms linear;*/
   background-image: -webkit-image-set(
     url('../images/files/ui/eject.png') 1x,
     url('../images/files/ui/2x/eject.png') 2x);
@@ -312,19 +282,22 @@ div.root-eject {
   height: 20px;
   margin-right: 6px;
   opacity: 0.7;
+  vertical-align: middle;
   width: 20px;
 }
 
-div.root-eject:hover {
+#directory-tree .tree-row > div.root-eject[hidden] {
+  /* [hidden] has alredy set in dialog.css, but it is overridden by the
+   * selector '.tree-item > .tree-row > * 'in tree.js, hence we need to
+   * override it again. */
+  display: none;
+}
+
+#directory-tree .tree-row > div.root-eject:hover {
   opacity: 1;
 }
 
-.root-item[selected] > div.root-eject:not(:hover),
-.root-item:hover > div.root-eject:not(:hover) {
-  opacity: 0.7;
-}
-
-.root-item[disabled] {
+#directory-tree .root-item[disabled] {
   opacity: 0.5;
   pointer-events: none;
 }
@@ -335,14 +308,11 @@ div.root-eject:hover {
   -webkit-box-orient: horizontal;
   -webkit-transition: all 180ms ease;
   display: -webkit-box;
-  margin-bottom: 7px;
-  margin-left: 0;
-  margin-right: 10px;
-  margin-top: 5px;
+  margin: 7px 7px 7px 0;
 }
 
-[maximized] .dialog-header {
-  -webkit-padding-end: 70px;
+body[maximized][type='full-page'] .dialog-header {
+  -webkit-padding-end: 75px;
 }
 
 /* Container for the detail and thumbnail list views. */
@@ -377,6 +347,7 @@ div.root-eject:hover {
 }
 
 .dialog-footer .progress-bar {
+  -webkit-box-flex: 1;
   -webkit-margin-end: 20px;
   -webkit-margin-start: 20px;
 }
@@ -402,11 +373,9 @@ div.root-eject:hover {
 }
 
 #search-breadcrumbs {
-  -webkit-margin-end: 5px;
-  -webkit-margin-start: 5px;
 }
 
-.breadcrumbs > [collapsed]:before {
+.breadcrumbs > [collapsed]::before {
   content: '...';
 }
 
@@ -541,20 +510,20 @@ div.root-eject:hover {
     url('../images/files/ui/2x/search_clear_pressed.png') 2x);
 }
 
-button#detail-view:before {
+button#detail-view::before {
   background-image: -webkit-image-set(
     url('../images/files/ui/view_list_black.png') 1x,
     url('../images/files/ui/2x/view_list_black.png') 2x);
 }
 
-button#thumbnail-view:before {
+button#thumbnail-view::before {
   background-image: -webkit-image-set(
     url('../images/files/ui/view_thumbs_black.png') 1x,
     url('../images/files/ui/2x/view_thumbs_black.png') 2x);
 }
 
-button#detail-view:before,
-button#thumbnail-view:before {
+button#detail-view::before,
+button#thumbnail-view::before {
   background-position: center;
   background-repeat: no-repeat;
   bottom: 0;
@@ -566,13 +535,13 @@ button#thumbnail-view:before {
   top: 0;
 }
 
-button#detail-view[disabled]:before,
-button#thumbnail-view[disabled]:before {
+button#detail-view[disabled]::before,
+button#thumbnail-view[disabled]::before {
   opacity: 0.75;
 }
 
-button#detail-view:hover:before,
-button#thumbnail-view:hover:before {
+button#detail-view:hover::before,
+button#thumbnail-view:hover::before {
   opacity: 1;
 }
 
@@ -591,8 +560,20 @@ button#detail-view:not([disabled]) {
 
 #list-container {
   -webkit-box-flex: 1;
+  -webkit-box-orient: vertical;
   display: -webkit-box;
   position: relative;
+}
+
+#detail-table {
+  -webkit-box-flex: 1;
+  -webkit-box-orient: vertical;
+  display: -webkit-box;
+}
+
+#detail-table > list,
+.thumbnail-grid {
+  -webkit-box-flex: 1;
 }
 
 .spinner {
@@ -653,7 +634,7 @@ button#detail-view:not([disabled]) {
 }
 
 /* Drive space warning banner. */
-.gdrive-space-warning {
+.volume-warning {
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
   -webkit-transition: height 70ms linear;
@@ -669,15 +650,15 @@ button#detail-view:not([disabled]) {
   position: relative;
 }
 
-.gdrive-space-warning[hidden] {
+.volume-warning[hidden] {
   border-top-width: 0;
   height: 0;
 }
 
-.gdrive-space-warning .gdrive-icon {
+.volume-warning .drive-icon {
   background-image: -webkit-image-set(
-    url('../images/files/ui/gdrive_logo.png') 1x,
-    url('../images/files/ui/2x/gdrive_logo.png') 2x);
+    url('../images/files/ui/drive_logo.png') 1x,
+    url('../images/files/ui/2x/drive_logo.png') 2x);
   background-position: center;
   background-repeat: no-repeat;
   background-size: 25px 22px;
@@ -685,7 +666,7 @@ button#detail-view:not([disabled]) {
   width: 50px;
 }
 
-.gdrive-space-warning .gdrive-text {
+.volume-warning .drive-text {
   margin-right: 11px;
 }
 
@@ -695,23 +676,7 @@ button#detail-view:not([disabled]) {
   width: 100%;
 }
 
-/* Common styles for the grid view and draggable thumbnails. */
-.thumbnail-item {
-  padding: 0;
-  position: relative;
-  text-align: center;
-}
-
-.thumbnail-frame {
-  bottom: 0;
-  left: 0;
-  overflow: hidden;
-  position: absolute;
-  right: 0;
-  top: 0;
-}
-
-.img-container {
+body[type='full-page'] .thumbnail-frame > .img-container {
   position: relative;
 }
 
@@ -726,9 +691,22 @@ body[type='full-page'] grid .filename-label > :hover {
 }
 
 body[type='full-page'] list .filename-label > :hover,
-.breadcrumb-path:not(.breadcrumb-last):hover {
+.breadcrumb-path:not(.breadcrumb-last):hover,
+.breadcrumb-path.accepts {
   color: rgb(17, 85, 204);
   text-decoration: underline;
+}
+
+.breadcrumb-path.accepts {
+  -webkit-animation: acceptsBlinkText 200ms linear 1s 3;
+}
+
+@-webkit-keyframes acceptsBlinkText {
+  0% {
+    color: white;
+  }
+  50% {
+  }
 }
 
 .img-container > img {
@@ -759,10 +737,11 @@ body[type='full-page'] list .filename-label > :hover,
    dialogs have three nicely aligned columns of thumbnails. */
 .thumbnail-grid .thumbnail-item {
   border: 2px solid transparent;  /* Selection will make the border visible. */
-  height: 182px;
   margin-left: 8px;
   margin-top: 7px;
-  width: 242px;
+  padding: 0;
+  position: relative;
+  text-align: center;
 }
 
 .thumbnail-grid .thumbnail-frame {
@@ -770,9 +749,15 @@ body[type='full-page'] list .filename-label > :hover,
     url('../images/files/ui/hashed_bg.gif') 1x,
     url('../images/files/ui/2x/hashed_bg.gif') 2x);
   border: 1px solid rgb(217, 217, 217);
+  height: 180px;
+  overflow: hidden;
+  padding-bottom: 30px;  /* .thumbnail-bottom height */
+  position: relative;
+  width: 240px;
 }
 
 .thumbnail-grid .thumbnail-item[selected] .thumbnail-frame,
+.thumbnail-grid .thumbnail-item.accepts .thumbnail-frame,
 .thumbnail-grid .thumbnail-item:hover .thumbnail-frame {
   border-color: white;
 }
@@ -804,10 +789,14 @@ body[type='full-page'] list .filename-label > :hover,
 /* In the full page mode we can afford to show thumbnails as large as 320x240
    with no downscaling. */
 body[type='full-page'] .thumbnail-grid .thumbnail-item {
-  height: 242px;
   margin-left: 21px;
   margin-top: 20px;
-  width: 322px;
+}
+
+body[type='full-page'] .thumbnail-grid .thumbnail-frame {
+  height: 240px;
+  padding-bottom: 34px;  /* .thumbnail-bottom height */
+  width: 320px;
 }
 
 body[type='full-page'] .thumbnail-grid .thumbnail-bottom {
@@ -840,11 +829,22 @@ body[type='full-page'] .thumbnail-grid .thumbnail-bottom {
 #list-container list > [selected],
 #list-container grid > [selected],
 #default-actions-list > [selected] {
-  background-color: rgb(203, 219, 241);
+  background-color: #dedede;
 }
 
 #list-container list > li.table-row[selected],
 #default-actions-list > li[selected] {
+  border-top: 1px solid #dedede;
+}
+
+#list-container list:focus > [selected],
+#list-container grid:focus > [selected],
+#default-actions-list:focus > [selected] {
+  background-color: rgb(203, 219, 241);
+}
+
+#list-container list:focus > li.table-row[selected],
+#default-actions-list:focus > li[selected] {
   border-top: 1px solid rgb(224, 233, 247);
 }
 
@@ -854,6 +854,7 @@ body[type='full-page'] .thumbnail-grid .thumbnail-bottom {
 #list-container grid > [selected]:hover,
 #default-actions-list > [selected]:hover {
   background-color: rgb(193, 211, 236);
+  border-color: hsl(214, 91%, 85%);
 }
 
 #list-container list > .accepts,
@@ -862,12 +863,28 @@ body[type='full-page'] .thumbnail-grid .thumbnail-bottom {
 #list-container grid > :hover,
 #default-actions-list > :hover {
   background-color: #f1f1f1;
+  border-color: hsl(214, 91%, 85%);
 }
 
 #list-container.nohover list > :not([selected]):hover,
-#list-container.nohover grid > :not([selected]):hover {
+#list-container.nohover grid > :not([selected]):hover,
+#list-container.nohover grid > .accepts {
   background-color: transparent;
   border-color: transparent;
+}
+
+#directory-tree .tree-item.accepts > .tree-row,
+#list-container list > .accepts,
+#list-container grid > .accepts {
+  -webkit-animation: acceptsBlink 200ms linear 1s 3;
+}
+
+@-webkit-keyframes acceptsBlink {
+  0% {
+    background-color: transparent;
+  }
+  50% {
+  }
 }
 
 .table-row-cell .filename-label,
@@ -889,14 +906,6 @@ body[type='full-page'] .thumbnail-grid .thumbnail-bottom {
 
 input.rename:focus {
   outline-color: rgb(77, 144, 254);
-}
-
-/* Elements that need to be LTR even in an RTL context, but should align
- * left. Display size in Hebrew is such a case.
- */
-html[dir='rtl'] .align-end-weakrtl {
-  direction: ltr;
-  text-align: left;
 }
 
 input.rename {
@@ -937,7 +946,7 @@ input.rename {
   display: -webkit-box;
   height: 61px;
   opacity: 1;
-  padding: 0 14px;
+  padding: 0 16px 0 7px;
   position: relative;
   z-index: 3;
 }
@@ -974,6 +983,7 @@ input.rename {
   background-size: 45px 45px;
   height: 45px;
   overflow: hidden;
+  position: relative;
   width: 45px;
 }
 
@@ -1063,7 +1073,7 @@ input.rename {
 
 /* Text label in a table header. */
 .table-header-label {
-  margin: 5px 10px 0 9px;
+  line-height: 27px;
 }
 
 .table-row-cell > * {
@@ -1090,13 +1100,11 @@ input.rename {
 }
 
 #select-all-checkbox {
-  -webkit-margin-end: 11px;
-  -webkit-margin-start: 1px;
+  -webkit-margin-end: 7px;
+  -webkit-margin-start: 2px;
   margin-bottom: 0;
   margin-top: 0;
-  /* 1px below text */
-  position: relative;
-  top: 1px;
+  vertical-align: middle;
 }
 
 #list-container li.table-row:hover .file-checkbox,
@@ -1141,16 +1149,8 @@ input.rename {
   -webkit-box-flex: 1;
 }
 
-.delete-button {
-  -webkit-margin-end: 8px;
-  -webkit-margin-start: 8px;
-}
-
-.delete-button[disabled] {
-  /* Copied colors from cr-button:disabled */
-  border-color: rgba(0, 0, 0, 0.2);
-  color: #999;
-  pointer-events: none;
+#delete-button[disabled] {
+  display: none;
 }
 
 .task-item {
@@ -1174,6 +1174,8 @@ input.rename {
 
 #preview-lines {
   -webkit-box-flex: 1;
+  -webkit-margin-end: 10px;
+  -webkit-margin-start: 10px;
   vertical-align: middle;
 }
 
@@ -1181,8 +1183,6 @@ input.rename {
 .preview-summary {
   color: #666;
   overflow: hidden;
-  padding-left: 5px;
-  padding-right: 5px;
   text-overflow: ellipsis;
   vertical-align: middle;
   white-space: nowrap;
@@ -1258,8 +1258,8 @@ body:not([type='saveas-file']) #filename-input-box {
 /* Dimmed items */
 
 body[type='folder'] .file,
-[gdata][connection='offline'] .dim-offline,
-[gdata][connection='metered'] .dim-metered {
+[drive][connection='offline'] .dim-offline,
+[drive][connection='metered'] .dim-metered {
   opacity: 0.4;
 }
 
@@ -1274,43 +1274,80 @@ body[type='folder'] .file,
   z-index: 100;
 }
 
+/* When the overlay pane is visible hide everything else so that the tab order
+  is not confused. */
+body[overlay-visible] > :not(.overlay-pane) {
+  display: none !important;
+}
+
 /* Invisible container for elements representing files while dragging. */
-#drag-image-container {
-  -webkit-box-orient: horizontal;
-  display: -webkit-box;
-  /* Only nodes in visible viewport will be rendered. */
+#drag-container {
   left: 0;
-  padding-left: 100px;
+  /* Hack for extra margins caused by setDragImage(). */
+  padding: 1000px 0 0 1000px;
   position: fixed;
   top: 0;
   z-index: -1;  /* below .dialog-container */
 }
 
-#drag-image-container > .thumbnail-item {
-  background-color: rgb(203, 219, 241);
-  border: 1px solid white; /* transparent white */
-  cursor: default;
-  display: inline-block;
-  height: 140px;
-  line-height: 20px;
-  margin: 0 0 0 -100px;
+#drag-container .drag-contents {
+  -webkit-border-radius: 3px;
+  -webkit-box-orient: horizontal;
+  -webkit-box-shadow: 0 2px 2px 0 rgba(0, 0, 0, .2);
+  -webkit-transition: opacity 200ms ease-in;
+  background-color: #fafafa;
+  border: 1px solid #bbb;
+  display: -webkit-box;
+  margin-bottom: 5px;
+  padding: 6px;
+}
+
+#drag-container .thumbnail-item {
+  -webkit-box-orient: horizontal;
+  display: -webkit-box;
+}
+
+#drag-container .img-container {
+  -webkit-box-flex: 0;
+  display: -webkit-box;
   overflow: hidden;
-  position: relative; /* to allow overlap */
-  white-space: pre;
-  width: 120px;
+  position: relative;
+}
+
+#drag-container .label {
+  -webkit-box-flex: 1;
+  font-weight: bold;
+  line-height: 24px;
+  max-width: 320px;
+  overflow: hidden;
+  padding: 0 5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#drag-container .drag-contents.drag-image-thumbnail  {
+  padding: 2px;
 }
 
 /* When changing these properties please preserve these conditions:
    1. width == height (so that the rotated thumbnail does not look off-center)
    2. width % 8 == 0 (to minimize rounding errors in the centering code) */
-#drag-image-container .img-container {
-  height: 112px;
-  margin: 4px;
-  width: 112px;
+#drag-container .img-container {
+  height: 64px;
+  width: 64px;
 }
 
 menu.file-context-menu {
   z-index: 4;
+}
+
+menu.chrome-menu {
+  min-width: 200px;
+}
+
+menu.chrome-menu hr {
+  color: transparent;
+  font-size: 0;
 }
 
 input.common.pin[type='checkbox']:checked::after {
@@ -1345,7 +1382,7 @@ div.shade[fadein] {
   opacity: 1;
 }
 
-/* Message panel for unmounted GData */
+/* Message panel for unmounted Drive */
 #unmounted-panel,
 #format-panel {
   bottom: 0;
@@ -1359,17 +1396,17 @@ div.shade[fadein] {
   top: 0;
 }
 
-.dialog-container[gdata='mounting'] #unmounted-panel,
-.dialog-container[gdata='error'] #unmounted-panel,
-.dialog-container[unformatted] #format-panel {
+body[drive='mounting'] .dialog-container #unmounted-panel,
+body[drive='error'] .dialog-container #unmounted-panel,
+body[unformatted] .dialog-container #format-panel {
   display: block;
 }
 
-.dialog-container[gdata='unmounted'] .filelist-panel,
-.dialog-container[gdata='mounting'] .filelist-panel,
-.dialog-container[gdata='error'] .filelist-panel,
-.dialog-container[unformatted] .filelist-panel {
-  /* Hide file list when GData is not mounted.
+body[drive='unmounted'] .dialog-container .filelist-panel,
+body[drive='mounting'] .dialog-container .filelist-panel,
+body[drive='error'] .dialog-container .filelist-panel,
+body[unformatted] .dialog-container .filelist-panel {
+  /* Hide file list when Drive is not mounted.
      Use opacity to avoid manual resizing.*/
   opacity: 0;
 }
@@ -1396,10 +1433,10 @@ div.shade[fadein] {
   width: 40px;
 }
 
-[unformatted] #format-panel > .error,
-[gdata='mounting'] #unmounted-panel > .loading,
-[gdata='mounting'] #unmounted-panel > .progress,
-[gdata='error'] #unmounted-panel > .error,
+body[unformatted] #format-panel > .error,
+body[drive='mounting'] #unmounted-panel > .loading,
+body[drive='mounting'] #unmounted-panel > .progress,
+body[drive='error'] #unmounted-panel > .error,
 #format-panel > #format-button,
 #unmounted-panel.retry-enabled > .retry,
 #unmounted-panel.retry-enabled > .learn-more {
@@ -1437,7 +1474,11 @@ body:not([ctrl-pressing]) [required_attr='ctrl-pressing'] {
   display: none;
 }
 
-#gdata-settings:before {
+body:not([drive]) [required_drive] {
+  display: none;
+}
+
+#gear-button::before {
   background-image: url('../images/files/ui/settings.svg');
   background-position: 20px center;
   background-repeat: no-repeat;
@@ -1450,36 +1491,19 @@ body:not([ctrl-pressing]) [required_attr='ctrl-pressing'] {
   top: 0;
 }
 
-#gdata-settings:hover:before {
+#gear-button:hover::before {
   opacity: 1;
 }
 
-
-#gdata-settings {
+#gear-button {
   overflow: hidden;
   text-align: left;
   width: 54px;
 }
 
-#gdata-settings span.disclosureindicator {
+#gear-button span.disclosureindicator {
   float: none;
   margin-left: 42px;
-}
-
-/* To animate the #gdata-settings element to invisibility we set every property
-  that affects its horizontal size to 0. */
-.dialog-container:not([gdata]) #gdata-settings {
-  border-color: transparent;  /* Changing only the color to preserve layout. */
-  border-left-width: 0;
-  border-right-width: 0;
-  margin: 0;
-  min-width: 0;
-  padding: 0;
-  width: 0;
-}
-
-.dialog-container:not([gdata]) #gdata-settings > * {
-  display: none;
 }
 
 .buttonbar > * {
@@ -1517,8 +1541,8 @@ body:not([ctrl-pressing]) [required_attr='ctrl-pressing'] {
   z-index: 15;
 }
 
-.tooltip:after,
-.tooltip:before {
+.tooltip::after,
+.tooltip::before {
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
   border-top: transparent;
@@ -1530,11 +1554,11 @@ body:not([ctrl-pressing]) [required_attr='ctrl-pressing'] {
   top: -5px;
 }
 
-.tooltip:after {
+.tooltip::after {
   border-bottom: 5px solid #2d2d2d;
 }
 
-.tooltip:before {
+.tooltip::before {
   border-bottom: 5px solid rgba(255, 255, 255, 0.5);
 }
 
@@ -1563,28 +1587,37 @@ body:not([ctrl-pressing]) [required_attr='ctrl-pressing'] {
   top: 28px;  /* Leave room for the file list header. */
 }
 
-.dialog-container:not([gdrive-welcome='page']) #no-search-results[show] {
+.dialog-container:not([drive-welcome='page']) #no-search-results[show] {
   display: block;
 }
 
-#gdata-space-info {
+#downloads-root-context-menu {
+  min-width: 250px;
+}
+
+#volume-space-info {
   -webkit-box-pack: justify;
   display: -webkit-box;
 }
 
-#gdata-space-info-label {
+#volume-space-info-label {
   display: block;
 }
 
-#gdata-space-info > div {
+#volume-space-info-label {
+  display: block;
+}
+
+#volume-space-info > div {
   -webkit-box-flex: 1;
   border: 1px solid rgb(192, 192, 192);
   display: block;
   height: 11px;
   margin: 8px 0 9px 10px;
+  min-width: 30px;
 }
 
-#gdata-space-info-bar[pending] {
+#volume-space-info-bar[pending] {
   -webkit-animation-duration: 800ms;
   -webkit-animation-iteration-count: infinite;
   -webkit-animation-name: bg;
@@ -1598,7 +1631,7 @@ body:not([ctrl-pressing]) [required_attr='ctrl-pressing'] {
   background-size: 16px 8px;
 }
 
-#gdata-space-info-bar {
+#volume-space-info-bar {
   background-color: rgb(192, 192, 192);
   border: 1px solid rgb(255, 255, 255);
   box-sizing: border-box;
@@ -1627,7 +1660,53 @@ button:focus {
   width: auto;
 }
 
-.gdrive-welcome-wrapper {
-  /* gdrive_welcome.css will override it once loaded. */
+.drive-welcome-wrapper {
+  /* drive_welcome.css will override it once loaded. */
   display: none;
+}
+
+list.autocomplete-suggestions {
+  -webkit-border-radius: 2px;
+  background-color: white;
+  border: 1px solid #aaa;
+  box-sizing: border-box;  /* To match the width with the search box's. */
+  min-height: 0;
+  position: fixed;
+  z-index: 3;
+}
+
+list.autocomplete-suggestions > li {
+  -webkit-border-radius: 0;
+  -webkit-box-align: center;
+  display: -webkit-box;
+  margin: 0;  /* To prevent vertical overflow. */
+  padding: 3px 0;
+}
+
+list.autocomplete-suggestions > li:hover {
+  background-color: white;
+  border: 1px solid white;
+}
+
+list.autocomplete-suggestions > li > div.detail-text {
+  -webkit-box-flex: 1;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+}
+
+list.autocomplete-suggestions > li > div[search-icon] {
+  background: -webkit-image-set(
+    url('../images/files/ui/icon_search.png') 1x,
+    url('../images/files/ui/2x/icon_search.png') 2x);
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+list.autocomplete-suggestions[hasElementFocus] > [selected],
+list.autocomplete-suggestions[hasElementFocus] > [lead],
+list.autocomplete-suggestions:not([hasElementFocus]) > [selected],
+list.autocomplete-suggestions:not([hasElementFocus]) > [lead] {
+  background-color: rgb(238, 238, 238);
+  background-image: none;
+  border: 1px solid white;
 }

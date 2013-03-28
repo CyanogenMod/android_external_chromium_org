@@ -64,7 +64,8 @@ class CONTENT_EXPORT RenderViewHostManager
     virtual void RenderViewGoneFromRenderManager(
         RenderViewHost* render_view_host) = 0;
     virtual void UpdateRenderViewSizeForRenderManager() = 0;
-    virtual void NotifySwappedFromRenderManager() = 0;
+    virtual void NotifySwappedFromRenderManager(
+        RenderViewHost* old_render_view_host) = 0;
     virtual NavigationControllerImpl&
         GetControllerForRenderManager() = 0;
 
@@ -140,6 +141,10 @@ class CONTENT_EXPORT RenderViewHostManager
                                    pending_and_current_web_ui_.get();
   }
 
+  // Sets the pending Web UI for the pending navigation, ensuring that the
+  // bindings are appropriate for the given NavigationEntry.
+  void SetPendingWebUI(const NavigationEntryImpl& entry);
+
   // Called when we want to instruct the renderer to navigate to the given
   // navigation entry. It may create a new RenderViewHost or re-use an existing
   // one. The RenderViewHost to navigate will be returned. Returns NULL if one
@@ -163,6 +168,9 @@ class CONTENT_EXPORT RenderViewHostManager
   // Called when a renderer's main frame navigates.
   void DidNavigateMainFrame(RenderViewHost* render_view_host);
 
+  // Called when a renderer sets its opener to null.
+  void DidDisownOpener(RenderViewHost* render_view_host);
+
   // Called when a renderer has navigated and when its frame tree is updated.
   void DidUpdateFrameTree(RenderViewHost* render_view_host);
 
@@ -172,11 +180,6 @@ class CONTENT_EXPORT RenderViewHostManager
   int CreateRenderView(SiteInstance* instance,
                        int opener_route_id,
                        bool swapped_out);
-
-  // Set the WebUI after committing a page load. This is useful for navigations
-  // initiated from a renderer, where we want to give the new renderer WebUI
-  // privileges from the originating renderer.
-  void SetWebUIPostCommit(WebUIImpl* web_ui);
 
   // Called when a provisional load on the given renderer is aborted.
   void RendererAbortedProvisionalLoad(RenderViewHost* render_view_host);
@@ -309,7 +312,8 @@ class CONTENT_EXPORT RenderViewHostManager
   scoped_ptr<WebUIImpl> pending_web_ui_;
   base::WeakPtr<WebUIImpl> pending_and_current_web_ui_;
 
-  // A map of site instance ID to swapped out RenderViewHosts.
+  // A map of site instance ID to swapped out RenderViewHosts.  This may include
+  // pending_render_view_host_ for navigations to existing entries.
   typedef base::hash_map<int32, RenderViewHostImpl*> RenderViewHostMap;
   RenderViewHostMap swapped_out_hosts_;
 

@@ -117,6 +117,7 @@ void FindBarController::ChangeWebContents(WebContents* contents) {
   }
 
   UpdateFindBarForCurrentResult();
+  find_bar_->UpdateFindBarForChangedWebContents();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -128,7 +129,7 @@ void FindBarController::Observe(int type,
   FindTabHelper* find_tab_helper =
       FindTabHelper::FromWebContents(web_contents_);
   if (type == chrome::NOTIFICATION_FIND_RESULT_AVAILABLE) {
-    // Don't update for notifications from TabContentses other than the one we
+    // Don't update for notifications from WebContentses other than the one we
     // are actively tracking.
     if (content::Source<WebContents>(source).ptr() == web_contents_) {
       UpdateFindBarForCurrentResult();
@@ -232,7 +233,12 @@ void FindBarController::UpdateFindBarForCurrentResult() {
 }
 
 void FindBarController::MaybeSetPrepopulateText() {
-#if !defined(OS_MACOSX)
+  // Having a per-tab find_string is not compatible with a global find
+  // pasteboard, so we always have the same find text in all find bars. This is
+  // done through the find pasteboard mechanism, so don't set the text here.
+  if (find_bar_->HasGlobalFindPasteboard())
+    return;
+
   // Find out what we should show in the find text box. Usually, this will be
   // the last search in this tab, but if no search has been issued in this tab
   // we use the last search string (from any tab).
@@ -253,9 +259,4 @@ void FindBarController::MaybeSetPrepopulateText() {
   // _first_ since the FindBarView checks its emptiness to see if it should
   // clear the result count display when there's nothing in the box.
   find_bar_->SetFindText(find_string);
-#else
-  // Having a per-tab find_string is not compatible with OS X's find pasteboard,
-  // so we always have the same find text in all find bars. This is done through
-  // the find pasteboard mechanism, so don't set the text here.
-#endif
 }

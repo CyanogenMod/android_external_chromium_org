@@ -8,6 +8,7 @@
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/render_process_host.h"
 
@@ -33,10 +34,11 @@ void ExtensionMessagePort::DispatchOnConnect(
       tab_json, source_extension_id, target_extension_id));
 }
 
-void ExtensionMessagePort::DispatchOnDisconnect(int source_port_id,
-                                                bool connection_error) {
+void ExtensionMessagePort::DispatchOnDisconnect(
+    int source_port_id,
+    const std::string& error_message) {
   process_->Send(new ExtensionMsg_DispatchOnDisconnect(
-      routing_id_, source_port_id, connection_error));
+      routing_id_, source_port_id, error_message));
 }
 
 void ExtensionMessagePort::DispatchOnMessage(const std::string& message,
@@ -51,7 +53,7 @@ void ExtensionMessagePort::IncrementLazyKeepaliveCount() {
   ExtensionProcessManager* pm =
       ExtensionSystem::Get(profile)->process_manager();
   ExtensionHost* host = pm->GetBackgroundHostForExtension(extension_id_);
-  if (host && host->extension()->has_lazy_background_page())
+  if (host && BackgroundInfo::HasLazyBackgroundPage(host->extension()))
     pm->IncrementLazyKeepaliveCount(host->extension());
 
   // Keep track of the background host, so when we decrement, we only do so if

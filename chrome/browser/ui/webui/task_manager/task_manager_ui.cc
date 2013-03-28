@@ -7,12 +7,11 @@
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/task_manager/task_manager.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/task_manager/task_manager_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/chromium_strings.h"
@@ -24,16 +23,16 @@ using content::WebContents;
 
 namespace {
 
-ChromeWebUIDataSource* CreateTaskManagerUIHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUITaskManagerHost);
-  source->set_use_json_js_format_v2();
+content::WebUIDataSource* CreateTaskManagerUIHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUITaskManagerHost);
+  source->SetUseJsonJSFormatV2();
 
   source->AddLocalizedString("closeWindow", IDS_CLOSE);
-  source->AddLocalizedString("title",IDS_TASK_MANAGER_TITLE);
+  source->AddLocalizedString("title", IDS_TASK_MANAGER_TITLE);
   source->AddLocalizedString("aboutMemoryLink",
                              IDS_TASK_MANAGER_ABOUT_MEMORY_LINK);
-  source->AddLocalizedString("killChromeOS", IDS_TASK_MANAGER_KILL_CHROMEOS);
+  source->AddLocalizedString("killButton", IDS_TASK_MANAGER_KILL);
   source->AddLocalizedString("processIDColumn",
                              IDS_TASK_MANAGER_PROCESS_ID_COLUMN);
   source->AddLocalizedString("taskColumn", IDS_TASK_MANAGER_TASK_COLUMN);
@@ -65,17 +64,16 @@ ChromeWebUIDataSource* CreateTaskManagerUIHTMLSource() {
       IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN);
   source->AddLocalizedString("inspect", IDS_TASK_MANAGER_INSPECT);
   source->AddLocalizedString("activate", IDS_TASK_MANAGER_ACTIVATE);
-  source->set_json_path("strings.js");
-  source->add_resource_path("main.js", IDR_TASK_MANAGER_JS);
-  source->add_resource_path("commands.js", IDR_TASK_MANAGER_COMMANDS_JS);
-  source->add_resource_path("defines.js", IDR_TASK_MANAGER_DEFINES_JS);
-  source->add_resource_path("includes.js", IDR_TASK_MANAGER_INCLUDES_JS);
-  source->add_resource_path("preload.js", IDR_TASK_MANAGER_PRELOAD_JS);
-  source->add_resource_path("measure_time.js",
-                            IDR_TASK_MANAGER_MEASURE_TIME_JS);
-  source->add_resource_path("measure_time_end.js",
-                            IDR_TASK_MANAGER_MEASURE_TIME_END_JS);
-  source->set_default_resource(IDR_TASK_MANAGER_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("main.js", IDR_TASK_MANAGER_JS);
+  source->AddResourcePath("commands.js", IDR_TASK_MANAGER_COMMANDS_JS);
+  source->AddResourcePath("defines.js", IDR_TASK_MANAGER_DEFINES_JS);
+  source->AddResourcePath("includes.js", IDR_TASK_MANAGER_INCLUDES_JS);
+  source->AddResourcePath("preload.js", IDR_TASK_MANAGER_PRELOAD_JS);
+  source->AddResourcePath("measure_time.js", IDR_TASK_MANAGER_MEASURE_TIME_JS);
+  source->AddResourcePath("measure_time_end.js",
+                          IDR_TASK_MANAGER_MEASURE_TIME_END_JS);
+  source->SetDefaultResource(IDR_TASK_MANAGER_HTML);
 
   return source;
 }
@@ -92,7 +90,7 @@ TaskManagerUI::TaskManagerUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   web_ui->AddMessageHandler(new TaskManagerHandler(TaskManager::GetInstance()));
 
   // Set up the chrome://taskmanager/ source.
-  ChromeWebUIDataSource* html_source = CreateTaskManagerUIHTMLSource();
+  content::WebUIDataSource* html_source = CreateTaskManagerUIHTMLSource();
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, html_source);
+  content::WebUIDataSource::Add(profile, html_source);
 }

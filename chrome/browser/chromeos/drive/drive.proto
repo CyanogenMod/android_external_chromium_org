@@ -6,6 +6,8 @@
 
 syntax = "proto2";
 
+option optimize_for = LITE_RUNTIME;
+
 package drive;
 
 // Represents base::PlatformFileInfo.
@@ -46,6 +48,14 @@ message DriveFileSpecificInfo {
   optional string share_url = 7;
 }
 
+message DriveDirectorySpecificInfo {
+  // The changestamp of this directory. This value can be larger than the
+  // changestamp of DriveResourceMetadata, if this directory was
+  // "fast-fetched". See crbug.com/178348 for details about the "fast-fetch"
+  // feature.
+  optional int64 changestamp = 1;
+}
+
 // Represents DriveEntry, DriveFile, and DriveDirectory without children.
 message DriveEntryProto {
   optional PlatformFileInfoProto file_info = 1;
@@ -53,7 +63,11 @@ message DriveEntryProto {
   optional string title = 3;
   optional string resource_id = 4;
   optional string edit_url = 5;
-  optional string content_url = 6;
+  // For a file, this is URL to download the file content. It is transient and
+  // can be stale. For a directory, this is URL to edit its contents on GData
+  // WAPI, or empty on Drive API v2. (Thus, this shouldn't be used for a
+  // directory.)
+  optional string download_url = 6;
   optional string parent_resource_id = 7;
   // For a file, this is "resumable-edit-media" URL, used to update an
   // existing file. For a directory, this is "resumable-create-media" URL,
@@ -68,6 +82,9 @@ message DriveEntryProto {
 
   // File specific information, such as MD5.
   optional DriveFileSpecificInfo file_specific_info = 9;
+
+  // Directory specific information, such as changestamp.
+  optional DriveDirectorySpecificInfo directory_specific_info = 13;
 }
 
 // Represents DriveDirectory. This message type is defined to keep children
@@ -91,8 +108,17 @@ message DriveRootDirectoryProto {
   optional int64 largest_changestamp = 4;
   // Monotonically increasing version number, which is changed when
   // incompatible change is made in the proto file.
-  // kProtoVersion in drive_files.h defines the current version.
+  // kProtoVersion in drive_resource_metadata.h defines the current version.
   optional int32 version = 3;
+}
+
+// Container for the header part of DriveResourceMetadata.
+message DriveResourceMetadataHeader {
+  // Monotonically increasing version number, which is changed when
+  // incompatible change is made to the DB format. kDBVersion in
+  // drive_resource_metadata_storage.h defines the current version.
+  optional int32 version = 1;
+  optional int64 largest_changestamp = 2;
 }
 
 // Message to store information of an existing cache file.

@@ -5,8 +5,8 @@
 #include "chrome/browser/first_run/first_run.h"
 
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/string_piece.h"
@@ -34,7 +34,7 @@ bool IsOrganicFirstRun() {
 
 // TODO(port): This is just a piece of the silent import functionality from
 // ImportSettings for Windows.  It would be nice to get the rest of it ported.
-bool ImportBookmarks(const FilePath& import_bookmarks_path) {
+bool ImportBookmarks(const base::FilePath& import_bookmarks_path) {
   const CommandLine& cmdline = *CommandLine::ForCurrentProcess();
   CommandLine import_cmd(cmdline.GetProgram());
 
@@ -68,41 +68,11 @@ bool ImportBookmarks(const FilePath& import_bookmarks_path) {
 
 namespace first_run {
 
-void AutoImport(
-    Profile* profile,
-    bool homepage_defined,
-    int import_items,
-    int dont_import_items,
-    bool make_chrome_default,
-    ProcessSingleton* process_singleton) {
-#if !defined(USE_AURA)
-  // We need to avoid dispatching new tabs when we are importing because
-  // that will lead to data corruption or a crash. Because there is no UI for
-  // the import process, we pass NULL as the window to bring to the foreground
-  // when a CopyData message comes in; this causes the message to be silently
-  // discarded, which is the correct behavior during the import process.
-  process_singleton->Lock(NULL);
-
-  scoped_refptr<ImporterHost> importer_host;
-  importer_host = new ImporterHost;
-
-  internal::AutoImportPlatformCommon(importer_host,
-                                     profile,
-                                     homepage_defined,
-                                     import_items,
-                                     dont_import_items,
-                                     make_chrome_default);
-
-  process_singleton->Unlock();
-  CreateSentinel();
-#endif  // !defined(USE_AURA)
-}
-
-FilePath MasterPrefsPath() {
+base::FilePath MasterPrefsPath() {
   // The standard location of the master prefs is next to the chrome binary.
-  FilePath master_prefs;
+  base::FilePath master_prefs;
   if (!PathService::Get(base::DIR_EXE, &master_prefs))
-    return FilePath();
+    return base::FilePath();
   return master_prefs.AppendASCII(installer::kDefaultMasterPrefs);
 }
 

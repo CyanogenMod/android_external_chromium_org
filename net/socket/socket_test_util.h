@@ -21,7 +21,6 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
-#include "net/base/ssl_config_service.h"
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_auth_controller.h"
 #include "net/http/http_proxy_client_socket_pool.h"
@@ -31,6 +30,7 @@
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/ssl_client_socket_pool.h"
 #include "net/socket/transport_client_socket_pool.h"
+#include "net/ssl/ssl_config_service.h"
 #include "net/udp/datagram_client_socket.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -508,6 +508,7 @@ class DeterministicSocketData
   bool stopped_;
   base::WeakPtr<DeterministicMockTCPClientSocket> socket_;
   bool print_debug_;
+  bool is_running_;
 };
 
 // Holds an array of SocketDataProvider elements.  As Mock{TCP,SSL}StreamSocket
@@ -590,8 +591,9 @@ class MockClientSocket : public SSLClientSocket {
   // Value returned by GetTLSUniqueChannelBinding().
   static const char kTlsUnique[];
 
-  // TODO(ajwong): Why do we need net::NetLog?
-  explicit MockClientSocket(net::NetLog* net_log);
+  // The BoundNetLog is needed to test LoadTimingInfo, which uses NetLog IDs as
+  // unique socket IDs.
+  explicit MockClientSocket(const BoundNetLog& net_log);
 
   // Socket implementation.
   virtual int Read(IOBuffer* buf, int buf_len,
@@ -841,6 +843,9 @@ class MockUDPClientSocket
   int read_offset_;
   MockRead read_data_;
   bool need_read_data_;
+
+  // Address of the "remote" peer we're connected to.
+  IPEndPoint peer_addr_;
 
   // While an asynchronous IO is pending, we save our user-buffer state.
   IOBuffer* pending_buf_;

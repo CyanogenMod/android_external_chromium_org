@@ -33,6 +33,15 @@ class SequencedTaskRunner;
 // To enforce ordering, get a unique sequence token from the pool and post all
 // tasks you want to order with the token. All tasks with the same token are
 // guaranteed to execute serially, though not necessarily on the same thread.
+// This means that:
+//
+//   - No two tasks with the same token will run at the same time.
+//
+//   - Given two tasks T1 and T2 with the same token such that T2 will
+//     run after T1, then T2 will start after T1 is destroyed.
+//
+//   - If T2 will run after T1, then all memory changes in T1 and T1's
+//     destruction will be visible to T2.
 //
 // Example:
 //   SequencedWorkerPool::SequenceToken token = pool.GetSequenceToken();
@@ -279,6 +288,7 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
 
   // Blocks until all pending tasks are complete. This should only be called in
   // unit tests when you want to validate something that should have happened.
+  // This will not flush delayed tasks; delayed tasks get deleted.
   //
   // Note that calling this will not prevent other threads from posting work to
   // the queue while the calling thread is waiting on Flush(). In this case,
@@ -295,7 +305,16 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
   // After this call, subsequent calls to post tasks will fail.
   //
   // Must be called from the same thread this object was constructed on.
-  void Shutdown();
+  void Shutdown() { Shutdown(0); }
+
+  // A variant that allows an arbitrary number of new blocking tasks to
+  // be posted during shutdown from within tasks that execute during shutdown.
+  // Only tasks designated as BLOCKING_SHUTDOWN will be allowed, and only if
+  // posted by tasks that are not designated as CONTINUE_ON_SHUTDOWN. Once
+  // the limit is reached, subsequent calls to post task fail in all cases.
+  //
+  // Must be called from the same thread this object was constructed on.
+  void Shutdown(int max_new_blocking_tasks_after_shutdown);
 
  protected:
   virtual ~SequencedWorkerPool();

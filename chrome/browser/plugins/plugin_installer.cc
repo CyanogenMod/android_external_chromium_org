@@ -14,8 +14,8 @@
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/plugins/plugin_installer_observer.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_id.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
@@ -55,6 +55,7 @@ void BeginDownload(
       render_view_host_routing_id,
       true,  // prefer_cache
       scoped_ptr<content::DownloadSaveInfo>(new content::DownloadSaveInfo()),
+      content::DownloadId::Invalid(),
       callback);
 
   if (error != net::OK) {

@@ -7,15 +7,12 @@
 #include "build/build_config.h"
 
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/worker_pool.h"
 #include "net/base/cert_verifier.h"
-#include "net/base/default_server_bound_cert_store.h"
-#include "net/base/host_resolver.h"
-#include "net/base/server_bound_cert_service.h"
-#include "net/base/ssl_config_service_defaults.h"
 #include "net/cookies/cookie_monster.h"
+#include "net/dns/host_resolver.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_network_session.h"
@@ -23,10 +20,13 @@
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/default_server_bound_cert_store.h"
+#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request_job_factory_impl.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
 #include "webkit/blob/blob_storage_controller.h"
 #include "webkit/blob/blob_url_request_job_factory.h"
 #include "webkit/fileapi/file_system_context.h"
@@ -40,12 +40,9 @@ class TestShellHttpUserAgentSettings : public net::HttpUserAgentSettings {
   TestShellHttpUserAgentSettings() {}
   virtual ~TestShellHttpUserAgentSettings() {}
 
-  // hard-code A-L and A-C for test shells
+  // Hard-code Accept-Language for test shells.
   virtual std::string GetAcceptLanguage() const OVERRIDE {
     return "en-us,en";
-  }
-  virtual std::string GetAcceptCharset() const OVERRIDE {
-    return "iso-8859-1,*,utf-8";
   }
 
   virtual std::string GetUserAgent(const GURL& url) const OVERRIDE {
@@ -58,11 +55,11 @@ class TestShellHttpUserAgentSettings : public net::HttpUserAgentSettings {
 
 TestShellRequestContext::TestShellRequestContext()
     : ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)) {
-  Init(FilePath(), net::HttpCache::NORMAL, false);
+  Init(base::FilePath(), net::HttpCache::NORMAL, false);
 }
 
 TestShellRequestContext::TestShellRequestContext(
-    const FilePath& cache_path,
+    const base::FilePath& cache_path,
     net::HttpCache::Mode cache_mode,
     bool no_proxy)
     : ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)) {
@@ -70,7 +67,7 @@ TestShellRequestContext::TestShellRequestContext(
 }
 
 void TestShellRequestContext::Init(
-    const FilePath& cache_path,
+    const base::FilePath& cache_path,
     net::HttpCache::Mode cache_mode,
     bool no_proxy) {
   storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
@@ -80,23 +77,10 @@ void TestShellRequestContext::Init(
 
   storage_.set_http_user_agent_settings(new TestShellHttpUserAgentSettings);
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-  // Use no proxy to avoid ProxyConfigServiceLinux.
-  // Enabling use of the ProxyConfigServiceLinux requires:
-  // -Calling from a thread with a TYPE_UI MessageLoop,
-  // -If at all possible, passing in a pointer to the IO thread's MessageLoop,
-  // -Keep in mind that proxy auto configuration is also
-  //  non-functional on linux in this context because of v8 threading
-  //  issues.
-  // TODO(port): rename "linux" to some nonspecific unix.
+  // Use no proxy; it's not needed for testing and just breaks things.
   scoped_ptr<net::ProxyConfigService> proxy_config_service(
       new net::ProxyConfigServiceFixed(net::ProxyConfig()));
-#else
-  // Use the system proxy settings.
-  scoped_ptr<net::ProxyConfigService> proxy_config_service(
-      net::ProxyService::CreateSystemProxyConfigService(
-          base::ThreadTaskRunnerHandle::Get(), NULL));
-#endif
+
   storage_.set_host_resolver(net::HostResolver::CreateDefaultResolver(NULL));
   storage_.set_cert_verifier(net::CertVerifier::CreateDefault());
   storage_.set_proxy_service(net::ProxyService::CreateUsingSystemProxyResolver(
@@ -135,9 +119,10 @@ void TestShellRequestContext::Init(
 
   blob_storage_controller_.reset(new webkit_blob::BlobStorageController());
   file_system_context_ = static_cast<SimpleFileSystem*>(
-      WebKit::webKitPlatformSupport()->fileSystem())->file_system_context();
+      WebKit::Platform::current()->fileSystem())->file_system_context();
 
-  net::URLRequestJobFactory* job_factory = new net::URLRequestJobFactoryImpl();
+  net::URLRequestJobFactoryImpl* job_factory =
+      new net::URLRequestJobFactoryImpl();
   job_factory->SetProtocolHandler(
       "blob",
       new webkit_blob::BlobProtocolHandler(

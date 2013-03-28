@@ -12,6 +12,8 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "ipc/ipc_message.h"
 #include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/accessibility/accessible_view_state.h"
@@ -82,6 +84,7 @@ void WebView::OnWebContentsFocused(content::WebContents* web_contents) {
 
 void WebView::SetPreferredSize(const gfx::Size& preferred_size) {
   preferred_size_ = preferred_size;
+  PreferredSizeChanged();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -120,7 +123,7 @@ bool WebView::IsFocusable() const {
 
 void WebView::OnFocus() {
   if (web_contents_)
-    web_contents_->Focus();
+    web_contents_->GetView()->Focus();
 }
 
 void WebView::AboutToRequestFocusFromTabTraversal(bool reverse) {
@@ -186,19 +189,19 @@ void WebView::AttachWebContents() {
   // Prevents attachment if the WebView isn't already in a Widget, or it's
   // already attached.
   if (!GetWidget() || !web_contents_ ||
-      wcv_holder_->native_view() == web_contents_->GetNativeView()) {
+      wcv_holder_->native_view() == web_contents_->GetView()->GetNativeView()) {
     return;
   }
 
   if (web_contents_) {
-    wcv_holder_->Attach(web_contents_->GetNativeView());
+    wcv_holder_->Attach(web_contents_->GetView()->GetNativeView());
 
     // The WebContentsView will not be focused automatically when it is
     // attached, so we need to pass on focus to it if the FocusManager thinks
     // the WebView is focused. Note that not every Widget has a focus manager.
     FocusManager* focus_manager = GetFocusManager();
     if (focus_manager && focus_manager->GetFocusedView() == this)
-      web_contents_->Focus();
+      web_contents_->GetView()->Focus();
 
     registrar_.Add(
         this,
@@ -210,6 +213,15 @@ void WebView::AttachWebContents() {
         content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
         content::Source<content::WebContents>(web_contents_));
   }
+
+#if defined(OS_WIN) && defined(USE_AURA)
+  content::RenderWidgetHostView* host_view =
+      web_contents_->GetRenderWidgetHostView();
+  if (host_view) {
+    host_view->SetParentNativeViewAccessible(
+        parent()->GetNativeViewAccessible());
+  }
+#endif
 }
 
 void WebView::DetachWebContents() {
@@ -223,7 +235,12 @@ void WebView::DetachWebContents() {
     //
     // Moving this out of here would also mean we wouldn't be potentially
     // calling member functions on a half-destroyed WebContents.
-    ShowWindow(web_contents_->GetNativeView(), SW_HIDE);
+    ShowWindow(web_contents_->GetView()->GetNativeView(), SW_HIDE);
+#elif defined(OS_WIN) && defined(USE_AURA)
+  content::RenderWidgetHostView* host_view =
+      web_contents_->GetRenderWidgetHostView();
+  if (host_view)
+    host_view->SetParentNativeViewAccessible(NULL);
 #endif
   }
   registrar_.RemoveAll();
@@ -232,7 +249,7 @@ void WebView::DetachWebContents() {
 void WebView::RenderViewHostChanged(content::RenderViewHost* old_host,
                                     content::RenderViewHost* new_host) {
   if (GetFocusManager()->GetFocusedView() == this)
-    web_contents_->Focus();
+    web_contents_->GetView()->Focus();
 }
 
 void WebView::WebContentsDestroyed(content::WebContents* web_contents) {
@@ -250,10 +267,9 @@ content::WebContents* WebView::CreateWebContents(
   }
 
   if (!contents) {
-    return content::WebContents::Create(browser_context,
-                                        site_instance,
-                                        MSG_ROUTING_NONE,
-                                        NULL);
+    content::WebContents::CreateParams create_params(
+        browser_context, site_instance);
+    return content::WebContents::Create(create_params);
   }
 
   return contents;

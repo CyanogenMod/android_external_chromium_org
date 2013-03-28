@@ -14,18 +14,17 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/eintr_wrapper.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/hash_tables.h"
 #include "base/linux_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
-#include "base/posix/unix_domain_socket.h"
+#include "base/posix/eintr_wrapper.h"
+#include "base/posix/unix_domain_socket_linux.h"
 #include "base/process_util.h"
 #include "base/rand_util.h"
 #include "base/sys_info.h"
 #include "build/build_config.h"
-#include "crypto/nss_util.h"
 #include "content/common/font_config_ipc_linux.h"
 #include "content/common/pepper_plugin_registry.h"
 #include "content/common/sandbox_linux.h"
@@ -35,10 +34,11 @@
 #include "content/public/common/sandbox_linux.h"
 #include "content/public/common/zygote_fork_delegate_linux.h"
 #include "content/zygote/zygote_linux.h"
+#include "crypto/nss_util.h"
 #include "sandbox/linux/services/libc_urandom_override.h"
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
-#include "skia/ext/SkFontHost_fontconfig_control.h"
-#include "unicode/timezone.h"
+#include "third_party/icu/public/i18n/unicode/timezone.h"
+#include "third_party/skia/include/ports/SkFontConfigInterface.h"
 
 #if defined(OS_LINUX)
 #include <sys/epoll.h>
@@ -275,9 +275,10 @@ static void PreSandboxInit() {
   // pre-sandbox init, but more likely this is just a build configuration error.
   #error Which SSL library are you using?
 #endif
-
+#if defined(ENABLE_PLUGINS)
   // Ensure access to the Pepper plugins before the sandbox is turned on.
   PepperPluginRegistry::PreloadModules();
+#endif
 }
 
 #if !defined(CHROMIUM_SELINUX)
@@ -367,8 +368,8 @@ static bool EnterSandbox(sandbox::SetuidSandboxClient* setuid_sandbox,
     return false;
 
   PreSandboxInit();
-  SkiaFontConfigSetImplementation(
-      new FontConfigIPC(Zygote::kMagicSandboxIPCDescriptor));
+  SkFontConfigInterface::SetGlobal(
+      new FontConfigIPC(Zygote::kMagicSandboxIPCDescriptor))->unref();
 
   if (setuid_sandbox->IsSuidSandboxChild()) {
     // Use the SUID sandbox.  This still allows the seccomp sandbox to
@@ -437,8 +438,8 @@ static bool EnterSandbox(sandbox::SetuidSandboxClient* setuid_sandbox,
     return false;
 
   PreSandboxInit();
-  SkiaFontConfigSetImplementation(
-      new FontConfigIPC(Zygote::kMagicSandboxIPCDescriptor));
+  SkFontConfigInterface::SetGlobal(
+      new FontConfigIPC(Zygote::kMagicSandboxIPCDescriptor)))->unref();
   return true;
 }
 
@@ -463,9 +464,7 @@ bool ZygoteMain(const MainFunctionParams& params,
 
   if (forkdelegate != NULL) {
     VLOG(1) << "ZygoteMain: initializing fork delegate";
-    forkdelegate->Init(setuid_sandbox->IsSuidSandboxChild(),
-                       Zygote::kBrowserDescriptor,
-                       Zygote::kMagicSandboxIPCDescriptor);
+    forkdelegate->Init(Zygote::kMagicSandboxIPCDescriptor);
   } else {
     VLOG(1) << "ZygoteMain: fork delegate is NULL";
   }

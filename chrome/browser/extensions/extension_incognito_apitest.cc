@@ -9,13 +9,13 @@
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
 
 using content::WebContents;
 
@@ -32,13 +32,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoNoScript) {
       browser()->profile(),
       test_server()->GetURL("files/extensions/test_file.html"));
 
-  WebContents* tab = chrome::GetActiveWebContents(otr_browser);
+  WebContents* tab = otr_browser->tab_strip_model()->GetActiveWebContents();
 
   // Verify the script didn't run.
   bool result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), L"",
-      L"window.domAutomationController.send(document.title == 'Unmodified')",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "window.domAutomationController.send(document.title == 'Unmodified')",
       &result));
   EXPECT_TRUE(result);
 }
@@ -67,13 +67,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoYesScript) {
       browser()->profile(),
       test_server()->GetURL("files/extensions/test_file.html"));
 
-  WebContents* tab = chrome::GetActiveWebContents(otr_browser);
+  WebContents* tab = otr_browser->tab_strip_model()->GetActiveWebContents();
 
   // Verify the script ran.
   bool result = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), L"",
-      L"window.domAutomationController.send(document.title == 'modified')",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "window.domAutomationController.send(document.title == 'modified')",
       &result));
   EXPECT_TRUE(result);
 }
@@ -88,7 +88,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_DontCreateIncognitoProfile) {
   ASSERT_FALSE(browser()->profile()->HasOffTheRecordProfile());
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 // http://crbug.com/120484
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, DISABLED_Incognito) {
 #else
@@ -174,7 +174,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, IncognitoDisabled) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 // http://crbug.com/104438.
 #define MAYBE_IncognitoPopup DISABLED_IncognitoPopup
 #else

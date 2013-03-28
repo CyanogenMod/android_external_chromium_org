@@ -11,10 +11,10 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_to_mobile_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_url.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/token_service.h"
@@ -25,13 +25,15 @@
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/cloud_print/cloud_print_helpers.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -118,7 +120,7 @@ std::string GetJSON(const ChromeToMobileService::JobData& data) {
     case ChromeToMobileService::IOS:
       // TODO(chenyu|msw): Currently only sends an alert; include the url here?
       json.SetString("aps.alert.body", "A print job is available");
-      json.SetString("aps.alert.loc-key", "IDS_CHROME_TO_DEVICE_SNAPSHOTS_IOS");
+      json.SetString("aps.alert.loc-key", "IDS_CHROME_TO_DEVICE_SNAPSHOTS");
       break;
     default:
       NOTREACHED() << "Unknown mobile_os " << data.mobile_os;
@@ -163,13 +165,14 @@ GURL GetSubmitURL(const GURL& cloud_print_url) {
 }
 
 // A callback to continue snapshot generation after creating the temp file.
-typedef base::Callback<void(const FilePath& path)> CreateSnapshotFileCallback;
+typedef base::Callback<void(const base::FilePath& path)>
+    CreateSnapshotFileCallback;
 
 // Create a temp file and post the callback on the UI thread with the results.
 // Call this as a BlockingPoolTask to avoid the FILE thread.
 void CreateSnapshotFile(CreateSnapshotFileCallback callback) {
   DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  FilePath file;
+  base::FilePath file;
   if (!file_util::CreateTemporaryFile(&file))
     file.clear();
   if (!content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
@@ -199,7 +202,7 @@ void ReadSnapshotFile(scoped_ptr<ChromeToMobileService::JobData> data,
 
 // Delete the snapshot file; DCHECK, but really ignore the result of the delete.
 // Call this as a BlockingPoolSequencedTask [after posting SubmitSnapshotFile].
-void DeleteSnapshotFile(const FilePath& snapshot) {
+void DeleteSnapshotFile(const base::FilePath& snapshot) {
   DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   bool success = file_util::Delete(snapshot, false);
   DCHECK(success);
@@ -237,8 +240,10 @@ bool ChromeToMobileService::UpdateAndGetCommandState(Browser* browser) {
     const ChromeToMobileService* service =
         ChromeToMobileServiceFactory::GetForProfile(browser->profile());
     DCHECK(!browser->profile()->IsOffTheRecord() || !service);
-    enabled = service && service->HasMobiles() &&
-        CanSendURL(chrome::GetActiveWebContents(browser)->GetURL());
+    enabled =
+        service && service->HasMobiles() &&
+        CanSendURL(
+            browser->tab_strip_model()->GetActiveWebContents()->GetURL());
   }
   browser->command_controller()->command_updater()->
       UpdateCommandEnabled(IDC_CHROME_TO_MOBILE_PAGE, enabled);
@@ -246,9 +251,9 @@ bool ChromeToMobileService::UpdateAndGetCommandState(Browser* browser) {
 }
 
 // static
-void ChromeToMobileService::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterListPref(prefs::kChromeToMobileDeviceList,
-                          PrefService::UNSYNCABLE_PREF);
+void ChromeToMobileService::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterListPref(prefs::kChromeToMobileDeviceList,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 ChromeToMobileService::ChromeToMobileService(Profile* profile)
@@ -306,7 +311,7 @@ void ChromeToMobileService::GenerateSnapshot(Browser* browser,
 }
 
 void ChromeToMobileService::SendToMobile(const base::DictionaryValue* mobile,
-                                         const FilePath& snapshot,
+                                         const base::FilePath& snapshot,
                                          Browser* browser,
                                          base::WeakPtr<Observer> observer) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
@@ -326,7 +331,8 @@ void ChromeToMobileService::SendToMobile(const base::DictionaryValue* mobile,
   data->mobile_os = (mobile_os.compare(kTypeAndroid) == 0) ? ANDROID : IOS;
   if (!mobile->GetString("id", &data->mobile_id))
     NOTREACHED();
-  content::WebContents* web_contents = chrome::GetActiveWebContents(browser);
+  content::WebContents* web_contents =
+      browser->tab_strip_model()->GetActiveWebContents();
   DCHECK(CanSendURL(web_contents->GetURL()));
   data->url = web_contents->GetURL();
   data->title = web_contents->GetTitle();
@@ -350,7 +356,7 @@ void ChromeToMobileService::SendToMobile(const base::DictionaryValue* mobile,
   }
 }
 
-void ChromeToMobileService::DeleteSnapshot(const FilePath& snapshot) {
+void ChromeToMobileService::DeleteSnapshot(const base::FilePath& snapshot) {
   DCHECK(snapshot.empty() || snapshots_.find(snapshot) != snapshots_.end());
   if (snapshots_.find(snapshot) != snapshots_.end()) {
     if (!snapshot.empty()) {
@@ -408,8 +414,7 @@ void ChromeToMobileService::Observe(
   TokenService::TokenAvailableDetails* token_details =
       content::Details<TokenService::TokenAvailableDetails>(details).ptr();
   // Invalidate the cloud print access token on Gaia login token updates.
-  if (token_details->service() == GaiaConstants::kGaiaOAuth2LoginRefreshToken ||
-      token_details->service() == GaiaConstants::kGaiaOAuth2LoginAccessToken)
+  if (token_details->service() == GaiaConstants::kGaiaOAuth2LoginRefreshToken)
     access_token_.clear();
 }
 
@@ -469,12 +474,21 @@ void ChromeToMobileService::OnInvalidatorStateChange(
 }
 
 void ChromeToMobileService::OnIncomingInvalidation(
-    const syncer::ObjectIdInvalidationMap& invalidation_map,
-    syncer::IncomingInvalidationSource source) {
+    const syncer::ObjectIdInvalidationMap& invalidation_map) {
   DCHECK_EQ(1U, invalidation_map.size());
   DCHECK_EQ(1U, invalidation_map.count(invalidation::ObjectId(
       ipc::invalidation::ObjectSource::CHROME_COMPONENTS,
       kSyncInvalidationObjectIdChromeToMobileDeviceList)));
+  // TODO(msw): Unit tests do not provide profiles; see http://crbug.com/122183
+  ProfileSyncService* profile_sync_service =
+      profile_ ? ProfileSyncServiceFactory::GetForProfile(profile_) : NULL;
+  if (profile_sync_service) {
+    // TODO(dcheng): Only acknowledge the invalidation once the device search
+    // has finished. http://crbug.com/156843.
+    profile_sync_service->AcknowledgeInvalidation(
+        invalidation_map.begin()->first,
+        invalidation_map.begin()->second.ack_handle);
+  }
   RequestDeviceSearch();
 }
 
@@ -490,24 +504,25 @@ void ChromeToMobileService::SetAccessTokenForTest(
 void ChromeToMobileService::SnapshotFileCreated(
     base::WeakPtr<Observer> observer,
     SessionID::id_type browser_id,
-    const FilePath& path) {
+    const base::FilePath& path) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   // Track the set of temporary files to be deleted later.
   snapshots_.insert(path);
 
   // Generate the snapshot and callback SnapshotGenerated, or signal failure.
-  Browser* browser = browser::FindBrowserWithID(browser_id);
-  if (!path.empty() && browser && chrome::GetActiveWebContents(browser)) {
-    chrome::GetActiveWebContents(browser)->GenerateMHTML(path,
+  Browser* browser = chrome::FindBrowserWithID(browser_id);
+  if (!path.empty() && browser &&
+      browser->tab_strip_model()->GetActiveWebContents()) {
+    browser->tab_strip_model()->GetActiveWebContents()->GenerateMHTML(path,
         base::Bind(&ChromeToMobileService::SnapshotGenerated,
                    weak_ptr_factory_.GetWeakPtr(), observer));
   } else {
-    SnapshotGenerated(observer, FilePath(), 0);
+    SnapshotGenerated(observer, base::FilePath(), 0);
   }
 }
 
 void ChromeToMobileService::SnapshotGenerated(base::WeakPtr<Observer> observer,
-                                              const FilePath& path,
+                                              const base::FilePath& path,
                                               int64 bytes) {
   LogMetric(bytes > 0 ? SNAPSHOT_GENERATED : SNAPSHOT_ERROR);
   if (observer.get())
@@ -529,7 +544,7 @@ void ChromeToMobileService::SnapshotFileRead(base::WeakPtr<Observer> observer,
 void ChromeToMobileService::InitRequest(net::URLFetcher* request) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   request->SetRequestContext(profile_->GetRequestContext());
-  request->SetMaxRetries(kMaxRetries);
+  request->SetMaxRetriesOn5xx(kMaxRetries);
   DCHECK(!access_token_.empty());
   request->SetExtraRequestHeaders("Authorization: OAuth " +
       access_token_ + "\r\n" + cloud_print::kChromeCloudPrintProxyHeader);

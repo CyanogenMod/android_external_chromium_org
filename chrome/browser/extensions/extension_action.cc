@@ -11,6 +11,7 @@
 #include "base/message_loop.h"
 #include "chrome/common/badge_util.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/icon_with_badge_image_source.h"
 #include "googleurl/src/gurl.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -23,48 +24,14 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/image/canvas_image_source.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_source.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
-#include "ui/gfx/image/image_skia_source.h"
 #include "ui/gfx/skbitmap_operations.h"
 
 namespace {
-
-// Different platforms need slightly different constants to look good.
-#if defined(OS_LINUX) && !defined(TOOLKIT_VIEWS)
-const float kTextSize = 9.0;
-const int kBottomMarginBrowserAction = 0;
-const int kBottomMarginPageAction = 2;
-const int kPadding = 2;
-const int kTopTextPadding = 0;
-#elif defined(OS_LINUX) && defined(TOOLKIT_VIEWS)
-const float kTextSize = 8.0;
-const int kBottomMarginBrowserAction = 5;
-const int kBottomMarginPageAction = 2;
-const int kPadding = 2;
-const int kTopTextPadding = 1;
-#elif defined(OS_MACOSX)
-const float kTextSize = 9.0;
-const int kBottomMarginBrowserAction = 5;
-const int kBottomMarginPageAction = 2;
-const int kPadding = 2;
-const int kTopTextPadding = 0;
-#else
-const float kTextSize = 10;
-const int kBottomMarginBrowserAction = 5;
-const int kBottomMarginPageAction = 2;
-const int kPadding = 2;
-// The padding between the top of the badge and the top of the text.
-const int kTopTextPadding = -1;
-#endif
-
-const int kBadgeHeight = 11;
-const int kMaxTextWidth = 23;
-// The minimum width for center-aligning the badge.
-const int kCenterAlignThreshold = 20;
 
 class GetAttentionImageSource : public gfx::ImageSkiaSource {
  public:
@@ -119,57 +86,6 @@ class AnimatedIconImageSource : public gfx::ImageSkiaSource {
 
   DISALLOW_COPY_AND_ASSIGN(AnimatedIconImageSource);
 };
-
-// CanvasImageSource for creating browser action icon with a badge.
-class ExtensionAction::IconWithBadgeImageSource
-    : public gfx::CanvasImageSource {
- public:
-  IconWithBadgeImageSource(const gfx::ImageSkia& icon,
-                           const gfx::Size& spacing,
-                           const std::string& text,
-                           const SkColor& text_color,
-                           const SkColor& background_color,
-                           extensions::Extension::ActionInfo::Type action_type)
-      : gfx::CanvasImageSource(icon.size(), false),
-        icon_(icon),
-        spacing_(spacing),
-        text_(text),
-        text_color_(text_color),
-        background_color_(background_color),
-        action_type_(action_type) {
-  }
-
-  virtual ~IconWithBadgeImageSource() {}
-
- private:
-  virtual void Draw(gfx::Canvas* canvas) OVERRIDE {
-    canvas->DrawImageInt(icon_, 0, 0, SkPaint());
-
-    gfx::Rect bounds(size_.width() + spacing_.width(),
-                     size_.height() + spacing_.height());
-
-    // Draw a badge on the provided browser action icon's canvas.
-    ExtensionAction::DoPaintBadge(canvas, bounds, text_, text_color_,
-                                  background_color_, size_.width(),
-                                  action_type_);
-  }
-
-  // Browser action icon image.
-  gfx::ImageSkia icon_;
-  // Extra spacing for badge compared to icon bounds.
-  gfx::Size spacing_;
-  // Text to be displayed on the badge.
-  std::string text_;
-  // Color of badge text.
-  SkColor text_color_;
-  // Color of the badge.
-  SkColor background_color_;
-  // Type of extension action this is for.
-  extensions::Extension::ActionInfo::Type action_type_;
-
-  DISALLOW_COPY_AND_ASSIGN(IconWithBadgeImageSource);
-};
-
 
 const int ExtensionAction::kDefaultTabId = -1;
 // 100ms animation at 50fps (so 5 animation frames in total).
@@ -244,15 +160,15 @@ ExtensionAction::IconAnimation::ScopedObserver::~ScopedObserver() {
 
 ExtensionAction::ExtensionAction(
     const std::string& extension_id,
-    extensions::Extension::ActionInfo::Type action_type,
-    const extensions::Extension::ActionInfo& manifest_data)
+    extensions::ActionInfo::Type action_type,
+    const extensions::ActionInfo& manifest_data)
     : extension_id_(extension_id),
       action_type_(action_type),
       has_changed_(false) {
   // Page/script actions are hidden/disabled by default, and browser actions are
   // visible/enabled by default.
   SetAppearance(kDefaultTabId,
-                action_type == extensions::Extension::ActionInfo::TYPE_BROWSER ?
+                action_type == extensions::ActionInfo::TYPE_BROWSER ?
                 ExtensionAction::ACTIVE : ExtensionAction::INVISIBLE);
   SetTitle(kDefaultTabId, manifest_data.default_title);
   SetPopupUrl(kDefaultTabId, manifest_data.default_popup_url);
@@ -269,7 +185,7 @@ ExtensionAction::~ExtensionAction() {
 scoped_ptr<ExtensionAction> ExtensionAction::CopyForTest() const {
   scoped_ptr<ExtensionAction> copy(
       new ExtensionAction(extension_id_, action_type_,
-                          extensions::Extension::ActionInfo()));
+                          extensions::ActionInfo()));
   copy->popup_url_ = popup_url_;
   copy->title_ = title_;
   copy->icon_ = icon_;
@@ -288,12 +204,15 @@ scoped_ptr<ExtensionAction> ExtensionAction::CopyForTest() const {
 
 // static
 int ExtensionAction::GetIconSizeForType(
-    extensions::Extension::ActionInfo::Type type) {
+    extensions::ActionInfo::Type type) {
   switch (type) {
-    case extensions::Extension::ActionInfo::TYPE_BROWSER:
-    case extensions::Extension::ActionInfo::TYPE_PAGE:
+    case extensions::ActionInfo::TYPE_BROWSER:
+    case extensions::ActionInfo::TYPE_PAGE:
+    case extensions::ActionInfo::TYPE_SYSTEM_INDICATOR:
+      // TODO(dewittj) Report the actual icon size of the system
+      // indicator.
       return extension_misc::EXTENSION_ICON_ACTION;
-    case extensions::Extension::ActionInfo::TYPE_SCRIPT_BADGE:
+    case extensions::ActionInfo::TYPE_SCRIPT_BADGE:
       return extension_misc::EXTENSION_ICON_BITTY;
     default:
       NOTREACHED();
@@ -347,11 +266,23 @@ bool ExtensionAction::SetAppearance(int tab_id, Appearance new_appearance) {
   // When showing a script badge for the first time on a web page, fade it in.
   // Other transitions happen instantly.
   if (old_appearance == INVISIBLE && tab_id != kDefaultTabId &&
-      action_type_ == extensions::Extension::ActionInfo::TYPE_SCRIPT_BADGE) {
+      action_type_ == extensions::ActionInfo::TYPE_SCRIPT_BADGE) {
     RunIconAnimation(tab_id);
   }
 
   return true;
+}
+
+void ExtensionAction::DeclarativeShow(int tab_id) {
+  DCHECK_NE(tab_id, kDefaultTabId);
+  ++declarative_show_count_[tab_id];  // Use default initialization to 0.
+}
+
+void ExtensionAction::UndoDeclarativeShow(int tab_id) {
+  int& show_count = declarative_show_count_[tab_id];
+  DCHECK_GT(show_count, 0);
+  if (--show_count == 0)
+    declarative_show_count_.erase(tab_id);
 }
 
 void ExtensionAction::ClearAllValuesForTab(int tab_id) {
@@ -362,13 +293,17 @@ void ExtensionAction::ClearAllValuesForTab(int tab_id) {
   badge_text_color_.erase(tab_id);
   badge_background_color_.erase(tab_id);
   appearance_.erase(tab_id);
+  // TODO(jyasskin): Erase the element from declarative_show_count_
+  // when the tab's closed.  There's a race between the
+  // PageActionController and the ContentRulesRegistry on navigation,
+  // which prevents me from cleaning everything up now.
   icon_animation_.erase(tab_id);
 }
 
 void ExtensionAction::PaintBadge(gfx::Canvas* canvas,
                                  const gfx::Rect& bounds,
                                  int tab_id) {
-  ExtensionAction::DoPaintBadge(
+  badge_util::PaintBadge(
       canvas,
       bounds,
       GetBadgeText(tab_id),
@@ -387,6 +322,7 @@ gfx::ImageSkia ExtensionAction::GetIconWithBadge(
 
   return gfx::ImageSkia(
       new IconWithBadgeImageSource(icon,
+                                   icon.size(),
                                    spacing,
                                    GetBadgeText(tab_id),
                                    GetBadgeTextColor(tab_id),
@@ -410,95 +346,6 @@ int ExtensionAction::GetIconWidth(int tab_id) const {
   // width.
   return ui::ResourceBundle::GetSharedInstance().GetImageNamed(
           IDR_EXTENSIONS_FAVICON).ToImageSkia()->width();
-}
-
-// static
-void ExtensionAction::DoPaintBadge(
-    gfx::Canvas* canvas,
-    const gfx::Rect& bounds,
-    const std::string& text,
-    const SkColor& text_color_in,
-    const SkColor& background_color_in,
-    int icon_width,
-    extensions::Extension::ActionInfo::Type action_type) {
-  if (text.empty())
-    return;
-
-  SkColor text_color = text_color_in;
-  if (SkColorGetA(text_color_in) == 0x00)
-    text_color = SK_ColorWHITE;
-
-  SkColor background_color = background_color_in;
-  if (SkColorGetA(background_color_in) == 0x00)
-      background_color = SkColorSetARGB(255, 218, 0, 24);
-
-  canvas->Save();
-
-  SkPaint* text_paint = badge_util::GetBadgeTextPaintSingleton();
-  text_paint->setTextSize(SkFloatToScalar(kTextSize));
-  text_paint->setColor(text_color);
-
-  // Calculate text width. We clamp it to a max size.
-  SkScalar sk_text_width = text_paint->measureText(text.c_str(), text.size());
-  int text_width = std::min(kMaxTextWidth, SkScalarFloor(sk_text_width));
-
-  // Calculate badge size. It is clamped to a min width just because it looks
-  // silly if it is too skinny.
-  int badge_width = text_width + kPadding * 2;
-  // Force the pixel width of badge to be either odd (if the icon width is odd)
-  // or even otherwise. If there is a mismatch you get http://crbug.com/26400.
-  if (icon_width != 0 && (badge_width % 2 != icon_width % 2))
-    badge_width += 1;
-  badge_width = std::max(kBadgeHeight, badge_width);
-
-  // Paint the badge background color in the right location. It is usually
-  // right-aligned, but it can also be center-aligned if it is large.
-  int rect_height = kBadgeHeight;
-  int bottom_margin =
-      action_type == extensions::Extension::ActionInfo::TYPE_BROWSER ?
-      kBottomMarginBrowserAction : kBottomMarginPageAction;
-  int rect_y = bounds.bottom() - bottom_margin - kBadgeHeight;
-  int rect_width = badge_width;
-  int rect_x = (badge_width >= kCenterAlignThreshold) ?
-      bounds.x() + (bounds.width() - badge_width) / 2 :
-      bounds.right() - badge_width;
-  gfx::Rect rect(rect_x, rect_y, rect_width, rect_height);
-
-  SkPaint rect_paint;
-  rect_paint.setStyle(SkPaint::kFill_Style);
-  rect_paint.setAntiAlias(true);
-  rect_paint.setColor(background_color);
-  canvas->DrawRoundRect(rect, 2, rect_paint);
-
-  // Overlay the gradient. It is stretchy, so we do this in three parts.
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  gfx::ImageSkia* gradient_left = rb.GetImageSkiaNamed(
-      IDR_BROWSER_ACTION_BADGE_LEFT);
-  gfx::ImageSkia* gradient_right = rb.GetImageSkiaNamed(
-      IDR_BROWSER_ACTION_BADGE_RIGHT);
-  gfx::ImageSkia* gradient_center = rb.GetImageSkiaNamed(
-      IDR_BROWSER_ACTION_BADGE_CENTER);
-
-  canvas->DrawImageInt(*gradient_left, rect.x(), rect.y());
-  canvas->TileImageInt(*gradient_center,
-      rect.x() + gradient_left->width(),
-      rect.y(),
-      rect.width() - gradient_left->width() - gradient_right->width(),
-      rect.height());
-  canvas->DrawImageInt(*gradient_right,
-      rect.right() - gradient_right->width(), rect.y());
-
-  // Finally, draw the text centered within the badge. We set a clip in case the
-  // text was too large.
-  rect.Inset(kPadding, 0);
-  canvas->ClipRect(rect);
-  canvas->sk_canvas()->drawText(
-      text.c_str(), text.size(),
-      SkFloatToScalar(rect.x() +
-                      static_cast<float>(rect.width() - text_width) / 2),
-      SkFloatToScalar(rect.y() + kTextSize + kTopTextPadding),
-      *text_paint);
-  canvas->Restore();
 }
 
 base::WeakPtr<ExtensionAction::IconAnimation> ExtensionAction::GetIconAnimation(
@@ -549,6 +396,6 @@ void ExtensionAction::RunIconAnimation(int tab_id) {
   // destroyed.
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&DestroyIconAnimation, base::Passed(icon_animation.Pass())),
+      base::Bind(&DestroyIconAnimation, base::Passed(&icon_animation)),
       base::TimeDelta::FromMilliseconds(kIconFadeInDurationMs * 2));
 }

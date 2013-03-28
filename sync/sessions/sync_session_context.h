@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "sync/base/sync_export.h"
 #include "sync/engine/sync_engine_event.h"
 #include "sync/engine/syncer_types.h"
 #include "sync/engine/traffic_recorder.h"
@@ -45,7 +46,7 @@ static const int kDefaultMaxCommitBatchSize = 25;
 namespace sessions {
 class TestScopedSessionEventListener;
 
-class SyncSessionContext {
+class SYNC_EXPORT_PRIVATE SyncSessionContext {
  public:
   SyncSessionContext(ServerConnectionManager* connection_manager,
                      syncable::Directory* directory,
@@ -55,7 +56,8 @@ class SyncSessionContext {
                      const std::vector<SyncEngineEventListener*>& listeners,
                      DebugInfoGetter* debug_info_getter,
                      TrafficRecorder* traffic_recorder,
-                     bool keystore_encryption_enabled);
+                     bool keystore_encryption_enabled,
+                     const std::string& invalidator_client_id);
 
   ~SyncSessionContext();
 
@@ -129,6 +131,10 @@ class SyncSessionContext {
     return client_status_;
   }
 
+  const std::string& invalidator_client_id() const {
+    return invalidator_client_id_;
+  }
+
  private:
   // Rather than force clients to set and null-out various context members, we
   // extend our encapsulation boundary to scoped helpers that take care of this
@@ -176,6 +182,12 @@ class SyncSessionContext {
   // we should attempt performing keystore encryption related work, false if
   // the experiment is not enabled.
   bool keystore_encryption_enabled_;
+
+  // This is a copy of the identifier the that the invalidations client used to
+  // register itself with the invalidations server during startup.  We need to
+  // provide this to the sync server when we make changes to enable it to
+  // prevent us from receiving notifications of changes we make ourselves.
+  const std::string invalidator_client_id_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncSessionContext);
 };

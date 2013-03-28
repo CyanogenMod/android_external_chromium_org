@@ -13,12 +13,16 @@
 #include "ipc/ipc_sender.h"
 
 class CommandLine;
+
+namespace base {
 class FilePath;
+}
 
 namespace content {
 
 class BrowserChildProcessHostDelegate;
 class ChildProcessHost;
+class SandboxedProcessLauncherDelegate;
 struct ChildProcessData;
 
 // This represents child processes of the browser process, i.e. plugins. They
@@ -26,17 +30,19 @@ struct ChildProcessData;
 class CONTENT_EXPORT BrowserChildProcessHost : public IPC::Sender {
  public:
   // Used to create a child process host. The delegate must outlive this object.
+  // |process_type| needs to be either an enum value from ProcessType or an
+  // embedder-defined value.
   static BrowserChildProcessHost* Create(
-      ProcessType type,
+      int process_type,
       BrowserChildProcessHostDelegate* delegate);
 
   virtual ~BrowserChildProcessHost() {}
 
   // Derived classes call this to launch the child process asynchronously.
-  // Takes ownership of |cmd_line|.
+  // Takes ownership of |cmd_line| and |delegate|.
   virtual void Launch(
 #if defined(OS_WIN)
-      const FilePath& exposed_dir,
+      SandboxedProcessLauncherDelegate* delegate,
 #elif defined(OS_POSIX)
       bool use_zygote,
       const base::EnvironmentVector& environ,

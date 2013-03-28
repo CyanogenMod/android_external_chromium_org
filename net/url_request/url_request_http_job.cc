@@ -26,8 +26,6 @@
 #include "net/base/net_util.h"
 #include "net/base/network_delegate.h"
 #include "net/base/sdch_manager.h"
-#include "net/base/ssl_cert_request_info.h"
-#include "net/base/ssl_config_service.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
@@ -38,6 +36,8 @@
 #include "net/http/http_transaction_delegate.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
+#include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_config_service.h"
 #include "net/url_request/fraudulent_certificate_reporter.h"
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request.h"
@@ -80,9 +80,10 @@ class URLRequestHttpJob::HttpFilterContext : public FilterContext {
 class URLRequestHttpJob::HttpTransactionDelegateImpl
     : public HttpTransactionDelegate {
  public:
-  explicit HttpTransactionDelegateImpl(URLRequest* request)
+  HttpTransactionDelegateImpl(
+      URLRequest* request, NetworkDelegate* network_delegate)
       : request_(request),
-        network_delegate_(request->context()->network_delegate()),
+        network_delegate_(network_delegate),
         cache_active_(false),
         network_active_(false) {
   }
@@ -210,8 +211,12 @@ URLRequestJob* URLRequestHttpJob::Factory(URLRequest* request,
   }
 
   GURL redirect_url;
-  if (request->GetHSTSRedirect(&redirect_url))
-    return new URLRequestRedirectJob(request, network_delegate, redirect_url);
+  if (request->GetHSTSRedirect(&redirect_url)) {
+    return new URLRequestRedirectJob(
+        request, network_delegate, redirect_url,
+        // Use status code 307 to preserve the method, so POST requests work.
+        URLRequestRedirectJob::REDIRECT_307_TEMPORARY_REDIRECT);
+  }
   return new URLRequestHttpJob(request,
                                network_delegate,
                                request->context()->http_user_agent_settings());
@@ -223,6 +228,7 @@ URLRequestHttpJob::URLRequestHttpJob(
     NetworkDelegate* network_delegate,
     const HttpUserAgentSettings* http_user_agent_settings)
     : URLRequestJob(request, network_delegate),
+      priority_(DEFAULT_PRIORITY),
       response_info_(NULL),
       response_cookies_save_index_(0),
       proxy_auth_state_(AUTH_STATE_DONT_NEED_AUTH),
@@ -253,13 +259,95 @@ URLRequestHttpJob::URLRequestHttpJob(
           base::Bind(&URLRequestHttpJob::OnHeadersReceivedCallback,
                      base::Unretained(this)))),
       awaiting_callback_(false),
-      http_transaction_delegate_(new HttpTransactionDelegateImpl(request)),
+      http_transaction_delegate_(new HttpTransactionDelegateImpl(
+          request, network_delegate)),
       http_user_agent_settings_(http_user_agent_settings) {
   URLRequestThrottlerManager* manager = request->context()->throttler_manager();
   if (manager)
     throttling_entry_ = manager->RegisterRequestUrl(request->url());
 
   ResetTimer();
+}
+
+URLRequestHttpJob::~URLRequestHttpJob() {
+  CHECK(!awaiting_callback_);
+
+  DCHECK(!sdch_test_control_ || !sdch_test_activated_);
+  if (!is_cached_content_) {
+    if (sdch_test_control_)
+      RecordPacketStats(FilterContext::SDCH_EXPERIMENT_HOLDBACK);
+    if (sdch_test_activated_)
+      RecordPacketStats(FilterContext::SDCH_EXPERIMENT_DECODE);
+  }
+  // Make sure SDCH filters are told to emit histogram data while
+  // filter_context_ is still alive.
+  DestroyFilters();
+
+  if (sdch_dictionary_url_.is_valid()) {
+    // Prior to reaching the destructor, request_ has been set to a NULL
+    // pointer, so request_->url() is no longer valid in the destructor, and we
+    // use an alternate copy |request_info_.url|.
+    SdchManager* manager = SdchManager::Global();
+    // To be extra safe, since this is a "different time" from when we decided
+    // to get the dictionary, we'll validate that an SdchManager is available.
+    // At shutdown time, care is taken to be sure that we don't delete this
+    // globally useful instance "too soon," so this check is just defensive
+    // coding to assure that IF the system is shutting down, we don't have any
+    // problem if the manager was deleted ahead of time.
+    if (manager)  // Defensive programming.
+      manager->FetchDictionary(request_info_.url, sdch_dictionary_url_);
+  }
+  DoneWithRequest(ABORTED);
+}
+
+void URLRequestHttpJob::SetPriority(RequestPriority priority) {
+  priority_ = priority;
+  if (transaction_)
+    transaction_->SetPriority(priority_);
+}
+
+void URLRequestHttpJob::Start() {
+  DCHECK(!transaction_.get());
+
+  // Ensure that we do not send username and password fields in the referrer.
+  GURL referrer(request_->GetSanitizedReferrer());
+
+  request_info_.url = request_->url();
+  request_info_.method = request_->method();
+  request_info_.load_flags = request_->load_flags();
+  request_info_.request_id = request_->identifier();
+
+  // Strip Referer from request_info_.extra_headers to prevent, e.g., plugins
+  // from overriding headers that are controlled using other means. Otherwise a
+  // plugin could set a referrer although sending the referrer is inhibited.
+  request_info_.extra_headers.RemoveHeader(HttpRequestHeaders::kReferer);
+
+  // Our consumer should have made sure that this is a safe referrer.  See for
+  // instance WebCore::FrameLoader::HideReferrer.
+  if (referrer.is_valid()) {
+    request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
+                                          referrer.spec());
+  }
+
+  request_info_.extra_headers.SetHeaderIfMissing(
+      HttpRequestHeaders::kUserAgent,
+      http_user_agent_settings_ ?
+          http_user_agent_settings_->GetUserAgent(request_->url()) :
+          EmptyString());
+
+  AddExtraHeaders();
+  AddCookieHeaderAndStart();
+}
+
+void URLRequestHttpJob::Kill() {
+  http_transaction_delegate_->OnDetachRequest();
+
+  if (!transaction_.get())
+    return;
+
+  weak_factory_.InvalidateWeakPtrs();
+  DestroyTransaction();
+  URLRequestJob::Kill();
 }
 
 void URLRequestHttpJob::NotifyHeadersComplete() {
@@ -331,8 +419,8 @@ void URLRequestHttpJob::DestroyTransaction() {
 }
 
 void URLRequestHttpJob::StartTransaction() {
-  if (request_->context()->network_delegate()) {
-    int rv = request_->context()->network_delegate()->NotifyBeforeSendHeaders(
+  if (network_delegate()) {
+    int rv = network_delegate()->NotifyBeforeSendHeaders(
         request_, notify_before_headers_sent_callback_,
         &request_info_.extra_headers);
     // If an extension blocks the request, we rely on the callback to
@@ -376,8 +464,8 @@ void URLRequestHttpJob::StartTransactionInternal() {
 
   int rv;
 
-  if (request_->context()->network_delegate()) {
-    request_->context()->network_delegate()->NotifySendHeaders(
+  if (network_delegate()) {
+    network_delegate()->NotifySendHeaders(
         request_, request_info_.extra_headers);
   }
 
@@ -388,7 +476,7 @@ void URLRequestHttpJob::StartTransactionInternal() {
     DCHECK(request_->context()->http_transaction_factory());
 
     rv = request_->context()->http_transaction_factory()->CreateTransaction(
-        &transaction_, http_transaction_delegate_.get());
+        priority_, &transaction_, http_transaction_delegate_.get());
     if (rv == OK) {
       if (!throttling_entry_ ||
           !throttling_entry_->ShouldRejectRequest(*request_)) {
@@ -478,20 +566,14 @@ void URLRequestHttpJob::AddExtraHeaders() {
   }
 
   if (http_user_agent_settings_) {
-    // Only add default Accept-Language and Accept-Charset if the request
-    // didn't have them specified.
+    // Only add default Accept-Language if the request didn't have it
+    // specified.
     std::string accept_language =
         http_user_agent_settings_->GetAcceptLanguage();
     if (!accept_language.empty()) {
       request_info_.extra_headers.SetHeaderIfMissing(
           HttpRequestHeaders::kAcceptLanguage,
           accept_language);
-    }
-    std::string accept_charset = http_user_agent_settings_->GetAcceptCharset();
-    if (!accept_charset.empty()) {
-      request_info_.extra_headers.SetHeaderIfMissing(
-          HttpRequestHeaders::kAcceptCharset,
-          accept_charset);
     }
   }
 }
@@ -514,7 +596,7 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
           base::Bind(&URLRequestHttpJob::CheckCookiePolicyAndLoad,
                      weak_factory_.GetWeakPtr()));
     } else {
-      DoLoadCookies();
+      CheckCookiePolicyAndLoad(CookieList());
     }
   } else {
     DoStartTransaction();
@@ -524,7 +606,7 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
 void URLRequestHttpJob::DoLoadCookies() {
   CookieOptions options;
   options.set_include_httponly();
-  request_->context()->cookie_store()->GetCookiesWithInfoAsync(
+  request_->context()->cookie_store()->GetCookiesWithOptionsAsync(
       request_->url(), options,
       base::Bind(&URLRequestHttpJob::OnCookiesLoaded,
                  weak_factory_.GetWeakPtr()));
@@ -538,9 +620,7 @@ void URLRequestHttpJob::CheckCookiePolicyAndLoad(
     DoStartTransaction();
 }
 
-void URLRequestHttpJob::OnCookiesLoaded(
-    const std::string& cookie_line,
-    const std::vector<net::CookieStore::CookieInfo>& cookie_infos) {
+void URLRequestHttpJob::OnCookiesLoaded(const std::string& cookie_line) {
   if (!cookie_line.empty()) {
     request_info_.extra_headers.SetHeader(
         HttpRequestHeaders::kCookie, cookie_line);
@@ -681,93 +761,50 @@ void URLRequestHttpJob::FetchResponseCookies(
 
 // NOTE: |ProcessStrictTransportSecurityHeader| and
 // |ProcessPublicKeyPinsHeader| have very similar structures, by design.
-// They manipulate different parts of |TransportSecurityState::DomainState|,
-// and they must remain complementary. If, in future changes here, there is
-// any conflict between their policies (such as in |domain_state.mode|), you
-// should resolve the conflict in favor of the more strict policy.
 void URLRequestHttpJob::ProcessStrictTransportSecurityHeader() {
   DCHECK(response_info_);
-
-  const URLRequestContext* ctx = request_->context();
+  TransportSecurityState* security_state =
+      request_->context()->transport_security_state();
   const SSLInfo& ssl_info = response_info_->ssl_info;
 
-  // Only accept strict transport security headers on HTTPS connections that
-  // have no certificate errors.
+  // Only accept HSTS headers on HTTPS connections that have no
+  // certificate errors.
   if (!ssl_info.is_valid() || IsCertStatusError(ssl_info.cert_status) ||
-      !ctx->transport_security_state()) {
+      !security_state)
     return;
-  }
-
-  TransportSecurityState* security_state = ctx->transport_security_state();
-  TransportSecurityState::DomainState domain_state;
-  const std::string& host = request_info_.url.host();
-
-  bool sni_available =
-      SSLConfigService::IsSNIAvailable(ctx->ssl_config_service());
-  if (!security_state->GetDomainState(host, sni_available, &domain_state))
-    // |GetDomainState| may have altered |domain_state| while searching. If
-    // not found, start with a fresh state.
-    domain_state.upgrade_mode =
-        TransportSecurityState::DomainState::MODE_FORCE_HTTPS;
-
-  HttpResponseHeaders* headers = GetResponseHeaders();
-  std::string value;
-  void* iter = NULL;
-  base::Time now = base::Time::Now();
 
   // http://tools.ietf.org/html/draft-ietf-websec-strict-transport-sec:
   //
   //   If a UA receives more than one STS header field in a HTTP response
   //   message over secure transport, then the UA MUST process only the
   //   first such header field.
-  bool seen_sts = false;
-  while (headers->EnumerateHeader(&iter, "Strict-Transport-Security", &value)) {
-    if (seen_sts)
-      return;
-    seen_sts = true;
-    TransportSecurityState::DomainState domain_state;
-    if (domain_state.ParseSTSHeader(now, value))
-      security_state->EnableHost(host, domain_state);
-  }
+  HttpResponseHeaders* headers = GetResponseHeaders();
+  std::string value;
+  if (headers->EnumerateHeader(NULL, "Strict-Transport-Security", &value))
+    security_state->AddHSTSHeader(request_info_.url.host(), value);
 }
 
 void URLRequestHttpJob::ProcessPublicKeyPinsHeader() {
   DCHECK(response_info_);
-
-  const URLRequestContext* ctx = request_->context();
+  TransportSecurityState* security_state =
+      request_->context()->transport_security_state();
   const SSLInfo& ssl_info = response_info_->ssl_info;
 
-  // Only accept public key pins headers on HTTPS connections that have no
+  // Only accept HPKP headers on HTTPS connections that have no
   // certificate errors.
   if (!ssl_info.is_valid() || IsCertStatusError(ssl_info.cert_status) ||
-      !ctx->transport_security_state()) {
+      !security_state)
     return;
-  }
 
-  TransportSecurityState* security_state = ctx->transport_security_state();
-  TransportSecurityState::DomainState domain_state;
-  const std::string& host = request_info_.url.host();
-
-  bool sni_available =
-      SSLConfigService::IsSNIAvailable(ctx->ssl_config_service());
-  if (!security_state->GetDomainState(host, sni_available, &domain_state))
-    // |GetDomainState| may have altered |domain_state| while searching. If
-    // not found, start with a fresh state.
-    domain_state.upgrade_mode =
-        TransportSecurityState::DomainState::MODE_DEFAULT;
-
+  // http://tools.ietf.org/html/draft-ietf-websec-key-pinning:
+  //
+  //   If a UA receives more than one PKP header field in an HTTP
+  //   response message over secure transport, then the UA MUST process
+  //   only the first such header field.
   HttpResponseHeaders* headers = GetResponseHeaders();
-  void* iter = NULL;
   std::string value;
-  base::Time now = base::Time::Now();
-
-  while (headers->EnumerateHeader(&iter, "Public-Key-Pins", &value)) {
-    // Note that ParsePinsHeader updates |domain_state| (iff the header parses
-    // correctly), but does not completely overwrite it. It just updates the
-    // dynamic pinning metadata.
-    if (domain_state.ParsePinsHeader(now, value, ssl_info))
-      security_state->EnableHost(host, domain_state);
-  }
+  if (headers->EnumerateHeader(NULL, "Public-Key-Pins", &value))
+    security_state->AddHPKPHeader(request_info_.url.host(), value, ssl_info);
 }
 
 void URLRequestHttpJob::OnStartCompleted(int result) {
@@ -803,18 +840,17 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
 
   if (result == OK) {
     scoped_refptr<HttpResponseHeaders> headers = GetResponseHeaders();
-    if (context->network_delegate()) {
+    if (network_delegate()) {
       // Note that |this| may not be deleted until
       // |on_headers_received_callback_| or
       // |NetworkDelegate::URLRequestDestroyed()| has been called.
-      int error = context->network_delegate()->
-          NotifyHeadersReceived(request_, on_headers_received_callback_,
-                                headers, &override_response_headers_);
+      int error = network_delegate()->NotifyHeadersReceived(
+          request_, on_headers_received_callback_,
+          headers, &override_response_headers_);
       if (error != net::OK) {
         if (error == net::ERR_IO_PENDING) {
           awaiting_callback_ = true;
-          request_->net_log().BeginEvent(
-              NetLog::TYPE_URL_REQUEST_BLOCKED_ON_DELEGATE);
+          SetBlockedOnDelegate();
         } else {
           std::string source("delegate");
           request_->net_log().AddEvent(NetLog::TYPE_CANCELLED,
@@ -833,12 +869,12 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
 
     TransportSecurityState::DomainState domain_state;
     const URLRequestContext* context = request_->context();
-    const bool fatal =
-        context->transport_security_state() &&
+    const bool fatal = context->transport_security_state() &&
         context->transport_security_state()->GetDomainState(
             request_info_.url.host(),
             SSLConfigService::IsSNIAvailable(context->ssl_config_service()),
-            &domain_state);
+            &domain_state) &&
+        domain_state.ShouldSSLErrorsBeFatal();
     NotifySSLCertificateError(transaction_->GetResponseInfo()->ssl_info, fatal);
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
     NotifyCertificateRequested(
@@ -849,7 +885,7 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
 }
 
 void URLRequestHttpJob::OnHeadersReceivedCallback(int result) {
-  request_->net_log().EndEvent(NetLog::TYPE_URL_REQUEST_BLOCKED_ON_DELEGATE);
+  SetUnblockedOnDelegate();
   awaiting_callback_ = false;
 
   // Check that there are no callbacks to already canceled requests.
@@ -894,60 +930,15 @@ void URLRequestHttpJob::RestartTransactionWithAuth(
   AddCookieHeaderAndStart();
 }
 
-void URLRequestHttpJob::SetUpload(UploadData* upload) {
+void URLRequestHttpJob::SetUpload(UploadDataStream* upload) {
   DCHECK(!transaction_.get()) << "cannot change once started";
-  request_info_.upload_data = upload;
+  request_info_.upload_data_stream = upload;
 }
 
 void URLRequestHttpJob::SetExtraRequestHeaders(
     const HttpRequestHeaders& headers) {
   DCHECK(!transaction_.get()) << "cannot change once started";
   request_info_.extra_headers.CopyFrom(headers);
-}
-
-void URLRequestHttpJob::Start() {
-  DCHECK(!transaction_.get());
-
-  // Ensure that we do not send username and password fields in the referrer.
-  GURL referrer(request_->GetSanitizedReferrer());
-
-  request_info_.url = request_->url();
-  request_info_.method = request_->method();
-  request_info_.load_flags = request_->load_flags();
-  request_info_.priority = request_->priority();
-  request_info_.request_id = request_->identifier();
-
-  // Strip Referer from request_info_.extra_headers to prevent, e.g., plugins
-  // from overriding headers that are controlled using other means. Otherwise a
-  // plugin could set a referrer although sending the referrer is inhibited.
-  request_info_.extra_headers.RemoveHeader(HttpRequestHeaders::kReferer);
-
-  // Our consumer should have made sure that this is a safe referrer.  See for
-  // instance WebCore::FrameLoader::HideReferrer.
-  if (referrer.is_valid()) {
-    request_info_.extra_headers.SetHeader(HttpRequestHeaders::kReferer,
-                                          referrer.spec());
-  }
-
-  request_info_.extra_headers.SetHeaderIfMissing(
-      HttpRequestHeaders::kUserAgent,
-      http_user_agent_settings_ ?
-          http_user_agent_settings_->GetUserAgent(request_->url()) :
-          EmptyString());
-
-  AddExtraHeaders();
-  AddCookieHeaderAndStart();
-}
-
-void URLRequestHttpJob::Kill() {
-  http_transaction_delegate_->OnDetachRequest();
-
-  if (!transaction_.get())
-    return;
-
-  weak_factory_.InvalidateWeakPtrs();
-  DestroyTransaction();
-  URLRequestJob::Kill();
 }
 
 LoadState URLRequestHttpJob::GetLoadState() const {
@@ -987,6 +978,12 @@ void URLRequestHttpJob::GetResponseInfo(HttpResponseInfo* info) {
     if (override_response_headers_)
       info->headers = override_response_headers_;
   }
+}
+
+void URLRequestHttpJob::GetLoadTimingInfo(
+    LoadTimingInfo* load_timing_info) const {
+  if (transaction_)
+    transaction_->GetLoadTimingInfo(load_timing_info);
 }
 
 bool URLRequestHttpJob::GetResponseCookies(std::vector<std::string>* cookies) {
@@ -1271,37 +1268,6 @@ HostPortPair URLRequestHttpJob::GetSocketAddress() const {
   return response_info_ ? response_info_->socket_address : HostPortPair();
 }
 
-URLRequestHttpJob::~URLRequestHttpJob() {
-  CHECK(!awaiting_callback_);
-
-  DCHECK(!sdch_test_control_ || !sdch_test_activated_);
-  if (!is_cached_content_) {
-    if (sdch_test_control_)
-      RecordPacketStats(FilterContext::SDCH_EXPERIMENT_HOLDBACK);
-    if (sdch_test_activated_)
-      RecordPacketStats(FilterContext::SDCH_EXPERIMENT_DECODE);
-  }
-  // Make sure SDCH filters are told to emit histogram data while
-  // filter_context_ is still alive.
-  DestroyFilters();
-
-  if (sdch_dictionary_url_.is_valid()) {
-    // Prior to reaching the destructor, request_ has been set to a NULL
-    // pointer, so request_->url() is no longer valid in the destructor, and we
-    // use an alternate copy |request_info_.url|.
-    SdchManager* manager = SdchManager::Global();
-    // To be extra safe, since this is a "different time" from when we decided
-    // to get the dictionary, we'll validate that an SdchManager is available.
-    // At shutdown time, care is taken to be sure that we don't delete this
-    // globally useful instance "too soon," so this check is just defensive
-    // coding to assure that IF the system is shutting down, we don't have any
-    // problem if the manager was deleted ahead of time.
-    if (manager)  // Defensive programming.
-      manager->FetchDictionary(request_info_.url, sdch_dictionary_url_);
-  }
-  DoneWithRequest(ABORTED);
-}
-
 void URLRequestHttpJob::RecordTimer() {
   if (request_creation_time_.is_null()) {
     NOTREACHED()
@@ -1546,6 +1512,41 @@ void URLRequestHttpJob::RecordPerfHistograms(CompletionCause reason) {
         UMA_HISTOGRAM_TIMES(
             base::FieldTrial::MakeName("Net.HttpJob.TotalTimeNotCached",
                                        "OverlappedReadImpact"),
+            total_time);
+      }
+    }
+  }
+
+  static const bool cache_sensitivity_analysis =
+      base::FieldTrialList::TrialExists("CacheSensitivityAnalysis");
+  if (cache_sensitivity_analysis) {
+    UMA_HISTOGRAM_TIMES(
+        base::FieldTrial::MakeName("Net.HttpJob.TotalTime",
+                                   "CacheSensitivityAnalysis"),
+        total_time);
+
+    if (reason == FINISHED) {
+      UMA_HISTOGRAM_TIMES(
+          base::FieldTrial::MakeName("Net.HttpJob.TotalTimeSuccess",
+                                     "CacheSensitivityAnalysis"),
+          total_time);
+    } else {
+      UMA_HISTOGRAM_TIMES(
+          base::FieldTrial::MakeName("Net.HttpJob.TotalTimeCancel",
+                                     "CacheSensitivityAnalysis"),
+          total_time);
+    }
+
+    if (response_info_) {
+      if (response_info_->was_cached) {
+        UMA_HISTOGRAM_TIMES(
+            base::FieldTrial::MakeName("Net.HttpJob.TotalTimeCached",
+                                       "CacheSensitivityAnalysis"),
+            total_time);
+      } else  {
+        UMA_HISTOGRAM_TIMES(
+            base::FieldTrial::MakeName("Net.HttpJob.TotalTimeNotCached",
+                                       "CacheSensitivityAnalysis"),
             total_time);
       }
     }

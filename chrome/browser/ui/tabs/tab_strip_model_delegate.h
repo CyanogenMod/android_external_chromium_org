@@ -39,6 +39,12 @@ class TabStripModelDelegate {
     TAB_TEAROFF_ACTION = 2
   };
 
+  enum RestoreTabType {
+    RESTORE_NONE,
+    RESTORE_TAB,
+    RESTORE_WINDOW
+  };
+
   virtual ~TabStripModelDelegate() {}
 
   // Adds what the delegate considers to be a blank tab to the model. An |index|
@@ -67,6 +73,11 @@ class TabStripModelDelegate {
       const DockInfo& dock_info,
       bool maximize) = 0;
 
+  // Notifies the delegate that the specified WebContents will be added to the
+  // tab strip (via insertion/appending/replacing existing) and allows it to do
+  // any preparation that it deems necessary.
+  virtual void WillAddWebContents(content::WebContents* contents) = 0;
+
   // Determines what drag actions are possible for the specified strip.
   virtual int GetDragActions() const = 0;
 
@@ -93,10 +104,10 @@ class TabStripModelDelegate {
   virtual bool RunUnloadListenerBeforeClosing(
       content::WebContents* contents) = 0;
 
-  // Returns true if a tab can be restored.
-  virtual bool CanRestoreTab() = 0;
+  // Returns the current tab restore type.
+  virtual RestoreTabType GetRestoreTabType() = 0;
 
-  // Restores the last closed tab if CanRestoreTab would return true.
+  // Restores the last closed tab unless tab restore type is none.
   virtual void RestoreTab() = 0;
 
   // Returns true if we should allow "bookmark all tabs" in this window; this is

@@ -8,7 +8,6 @@
 #include "ash/test/ash_test_base.h"
 #include "ash/test/cursor_manager_test_api.h"
 #include "ash/display/display_controller.h"
-#include "ash/wm/cursor_manager.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/gfx/display.h"
@@ -105,13 +104,12 @@ TEST_F(MouseCursorEventFilterTest, WarpMouseDifferentSizeDisplays) {
           display_controller()->default_display_layout().position);
 
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  aura::Env::GetInstance()->SetLastMouseLocation(*root_windows[1],
-                                                 gfx::Point(123, 123));
+  aura::Env::GetInstance()->set_last_mouse_location(gfx::Point(623, 123));
 
   // Touch the left edge of the secondary root window. Pointer should NOT warp
   // because 1px left of (0, 500) is outside the primary root window.
   bool is_warped = event_filter->WarpMouseCursorIfNecessary(root_windows[1],
-                                                          gfx::Point(0, 500));
+                                                            gfx::Point(0, 500));
   EXPECT_FALSE(is_warped);
   EXPECT_EQ("623,123",  // by 2px.
             aura::Env::GetInstance()->last_mouse_location().ToString());
@@ -125,6 +123,40 @@ TEST_F(MouseCursorEventFilterTest, WarpMouseDifferentSizeDisplays) {
             aura::Env::GetInstance()->last_mouse_location().ToString());
 }
 
+// Verifies if the mouse pointer correctly moves between displays with
+// different scale factors.
+TEST_F(MouseCursorEventFilterTest, WarpMouseDifferentScaleDisplays) {
+  UpdateDisplay("500x500,600x600*2");
+
+  MouseCursorEventFilter* event_filter =
+      Shell::GetInstance()->mouse_cursor_filter();
+  ASSERT_EQ(
+      DisplayLayout::RIGHT,
+      Shell::GetInstance()->
+          display_controller()->default_display_layout().position);
+
+  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Env::GetInstance()->set_last_mouse_location(gfx::Point(900, 123));
+
+  // This emulates the dragging back to the 2nd display, which has
+  // higher scale factor, by having 2nd display's root as target
+  // but have the edge of 1st display.
+  bool is_warped =
+      event_filter->WarpMouseCursorIfNecessary(root_windows[1],
+                                               gfx::Point(498, 123));
+  EXPECT_TRUE(is_warped);
+  EXPECT_EQ("502,123",
+            aura::Env::GetInstance()->last_mouse_location().ToString());
+
+  // Touch the edge of 2nd display again and make sure it warps to
+  // 1st dislay.
+  is_warped = event_filter->WarpMouseCursorIfNecessary(root_windows[1],
+                                                       gfx::Point(500, 123));
+  EXPECT_TRUE(is_warped);
+  EXPECT_EQ("496,123",
+            aura::Env::GetInstance()->last_mouse_location().ToString());
+}
+
 // Verifies if MouseCursorEventFilter::set_mouse_warp_mode() works as expected.
 TEST_F(MouseCursorEventFilterTest, SetMouseWarpModeFlag) {
   UpdateDisplay("500x500,500x500");
@@ -133,8 +165,7 @@ TEST_F(MouseCursorEventFilterTest, SetMouseWarpModeFlag) {
       Shell::GetInstance()->mouse_cursor_filter();
 
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
-  aura::Env::GetInstance()->SetLastMouseLocation(*root_windows[0],
-                                                 gfx::Point(1, 1));
+  aura::Env::GetInstance()->set_last_mouse_location(gfx::Point(1, 1));
 
   event_filter->set_mouse_warp_mode(MouseCursorEventFilter::WARP_NONE);
   bool is_warped = event_filter->WarpMouseCursorIfNecessary(root_windows[0],
@@ -290,13 +321,13 @@ TEST_F(MouseCursorEventFilterTest, CursorDeviceScaleFactor) {
   MouseCursorEventFilter* event_filter =
       Shell::GetInstance()->mouse_cursor_filter();
 
-  EXPECT_EQ(1.0f, cursor_test_api.GetDeviceScaleFactor());
+  EXPECT_EQ(1.0f, cursor_test_api.GetDisplay().device_scale_factor());
   event_filter->WarpMouseCursorIfNecessary(root_windows[0],
                                            gfx::Point(399, 200));
-  EXPECT_EQ(2.0f, cursor_test_api.GetDeviceScaleFactor());
+  EXPECT_EQ(2.0f, cursor_test_api.GetDisplay().device_scale_factor());
   event_filter->WarpMouseCursorIfNecessary(root_windows[1],
                                            gfx::Point(400, 200));
-  EXPECT_EQ(1.0f, cursor_test_api.GetDeviceScaleFactor());
+  EXPECT_EQ(1.0f, cursor_test_api.GetDisplay().device_scale_factor());
 }
 
 }  // namespace internal

@@ -26,8 +26,15 @@ namespace chromeos {
 class CHROMEOS_EXPORT CryptohomeClient {
  public:
   // A callback to handle AsyncCallStatus signals.
-  typedef base::Callback<void(int async_id, bool return_status, int return_code)
-                         > AsyncCallStatusHandler;
+  typedef base::Callback<void(int async_id,
+                              bool return_status,
+                              int return_code)>
+      AsyncCallStatusHandler;
+  // A callback to handle AsyncCallStatusWithData signals.
+  typedef base::Callback<void(int async_id,
+                              bool return_status,
+                              const std::string& data)>
+      AsyncCallStatusWithDataHandler;
   // A callback to handle responses of AsyncXXX methods.
   typedef base::Callback<void(int async_id)> AsyncMethodCallback;
   // A callback to handle responses of Pkcs11GetTpmTokenInfo method.
@@ -43,15 +50,16 @@ class CHROMEOS_EXPORT CryptohomeClient {
   static CryptohomeClient* Create(DBusClientImplementationType type,
                                   dbus::Bus* bus);
 
-  // Sets AsyncCallStatus signal handler.
+  // Sets AsyncCallStatus signal handlers.
   // |handler| is called when results for AsyncXXX methods are returned.
   // Cryptohome service will process the calls in a first-in-first-out manner
   // when they are made in parallel.
-  virtual void SetAsyncCallStatusHandler(
-      const AsyncCallStatusHandler& handler) = 0;
+  virtual void SetAsyncCallStatusHandlers(
+      const AsyncCallStatusHandler& handler,
+      const AsyncCallStatusWithDataHandler& data_handler) = 0;
 
-  // Resets AsyncCallStatus signal handler.
-  virtual void ResetAsyncCallStatusHandler() = 0;
+  // Resets AsyncCallStatus signal handlers.
+  virtual void ResetAsyncCallStatusHandlers() = 0;
 
   // Calls IsMounted method and returns true when the call succeeds.
   virtual void IsMounted(const BoolDBusMethodCallback& callback) = 0;
@@ -82,11 +90,19 @@ class CHROMEOS_EXPORT CryptohomeClient {
   // The original content of |salt| is lost.
   virtual bool GetSystemSalt(std::vector<uint8>* salt) = 0;
 
-  // Calls AsyncMount method.  |callback| is called after the method call
-  // succeeds.
+  // Calls GetSanitizedUsername method.  |callback| is called after the method
+  // call succeeds.
+  virtual void GetSanitizedUsername(
+      const std::string& username,
+      const StringDBusMethodCallback& callback) = 0;
+
+  // Calls the AsyncMount method to asynchronously mount the cryptohome for
+  // |username|, using |key| to unlock it. For supported |flags|, see the
+  // documentation of AsyncMethodCaller::AsyncMount().
+  // |callback| is called after the method call succeeds.
   virtual void AsyncMount(const std::string& username,
                           const std::string& key,
-                          const bool create_if_missing,
+                          int flags,
                           const AsyncMethodCallback& callback) = 0;
 
   // Calls AsyncMountGuest method.  |callback| is called after the method call
@@ -101,28 +117,41 @@ class CHROMEOS_EXPORT CryptohomeClient {
 
   // Calls TpmIsEnabled method and returns true when the call succeeds.
   // This method blocks until the call returns.
-  // TODO(hashimoto): Remove this method. crosbug.com/28500
+  // TODO(hashimoto): Remove this method. crbug.com/141006
   virtual bool CallTpmIsEnabledAndBlock(bool* enabled) = 0;
 
   // Calls TpmGetPassword method.
   virtual void TpmGetPassword(const StringDBusMethodCallback& callback) = 0;
 
+  // Calls TpmIsOwned method.
+  virtual void TpmIsOwned(const BoolDBusMethodCallback& callback) = 0;
+
   // Calls TpmIsOwned method and returns true when the call succeeds.
   // This method blocks until the call returns.
-  virtual bool TpmIsOwned(bool* owned) = 0;
+  // TODO(hashimoto): Remove this method. crbug.com/141012
+  virtual bool CallTpmIsOwnedAndBlock(bool* owned) = 0;
+
+  // Calls TpmIsBeingOwned method.
+  virtual void TpmIsBeingOwned(const BoolDBusMethodCallback& callback) = 0;
 
   // Calls TpmIsBeingOwned method and returns true when the call succeeds.
   // This method blocks until the call returns.
-  virtual bool TpmIsBeingOwned(bool* owning) = 0;
+  // TODO(hashimoto): Remove this method. crbug.com/141011
+  virtual bool CallTpmIsBeingOwnedAndBlock(bool* owning) = 0;
 
   // Calls TpmCanAttemptOwnership method.
   // This method tells the service that it is OK to attempt ownership.
   virtual void TpmCanAttemptOwnership(
       const VoidDBusMethodCallback& callback) = 0;
 
+  // Calls TpmClearStoredPasswordMethod.
+  virtual void TpmClearStoredPassword(
+      const VoidDBusMethodCallback& callback) = 0;
+
   // Calls TpmClearStoredPassword method and returns true when the call
   // succeeds.  This method blocks until the call returns.
-  virtual bool TpmClearStoredPassword() = 0;
+  // TODO(hashimoto): Remove this method. crbug.com/141010
+  virtual bool CallTpmClearStoredPasswordAndBlock() = 0;
 
   // Calls Pkcs11IsTpmTokenReady method.
   virtual void Pkcs11IsTpmTokenReady(
@@ -160,6 +189,51 @@ class CHROMEOS_EXPORT CryptohomeClient {
   // Calls InstallAttributesIsFirstInstall method and returns true when the call
   // succeeds. This method blocks until the call returns.
   virtual bool InstallAttributesIsFirstInstall(bool* is_first_install) = 0;
+
+  // Calls the TpmAttestationIsPrepared dbus method.  The callback is called
+  // when the operation completes.
+  virtual void TpmAttestationIsPrepared(
+        const BoolDBusMethodCallback& callback) = 0;
+
+  // Calls the TpmAttestationIsEnrolled dbus method.  The callback is called
+  // when the operation completes.
+  virtual void TpmAttestationIsEnrolled(
+        const BoolDBusMethodCallback& callback) = 0;
+
+  // Asynchronously creates an attestation enrollment request.  The callback
+  // will be called when the dbus call completes.  When the operation completes,
+  // the AsyncCallStatusWithDataHandler signal handler is called.  The data that
+  // is sent with the signal is an enrollment request to be sent to the Privacy
+  // CA.  The enrollment is completed by calling AsyncTpmAttestationEnroll.
+  virtual void AsyncTpmAttestationCreateEnrollRequest(
+      const AsyncMethodCallback& callback) = 0;
+
+  // Asynchronously finishes an attestation enrollment operation.  The callback
+  // will be called when the dbus call completes.  When the operation completes,
+  // the AsyncCallStatusHandler signal handler is called.  |pca_response| is the
+  // response to the enrollment request emitted by the Privacy CA.
+  virtual void AsyncTpmAttestationEnroll(
+      const std::string& pca_response,
+      const AsyncMethodCallback& callback) = 0;
+
+  // Asynchronously creates an attestation certificate request.  The callback
+  // will be called when the dbus call completes.  When the operation completes,
+  // the AsyncCallStatusWithDataHandler signal handler is called.  The data that
+  // is sent with the signal is a certificate request to be sent to the Privacy
+  // CA.  The certificate request is completed by calling
+  // AsyncTpmAttestationFinishCertRequest.
+  virtual void AsyncTpmAttestationCreateCertRequest(
+      bool is_cert_for_owner,
+      const AsyncMethodCallback& callback) = 0;
+
+  // Asynchronously finishes a certificate request operation.  The callback will
+  // be called when the dbus call completes.  When the operation completes, the
+  // AsyncCallStatusWithDataHandler signal handler is called.  The data that is
+  // sent with the signal is a certificate chain in PEM format.  |pca_response|
+  // is the response to the certificate request emitted by the Privacy CA.
+  virtual void AsyncTpmAttestationFinishCertRequest(
+      const std::string& pca_response,
+      const AsyncMethodCallback& callback) = 0;
 
  protected:
   // Create() should be used instead.

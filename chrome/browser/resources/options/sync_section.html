@@ -31,7 +31,7 @@
         <input id="enable-screen-lock" type="checkbox"
             pref="settings.enable_screen_lock">
         <span>
-          <label for=enable-screen-lock" i18n-content="enableScreenlock">
+          <label for="enable-screen-lock" i18n-content="enableScreenlock">
           </label>
           <span class="controlled-setting-indicator"
               pref="settings.enable_screen_lock">
@@ -44,7 +44,11 @@
 
   <div id="sync-buttons" class="settings-row">
     <button id="start-stop-sync" hidden></button>
-    <button id="customize-sync" i18n-content="customizeSync" hidden>
+    <span id="start-stop-sync-indicator"
+        class="controlled-setting-indicator" hidden>
+    </span>
+    <button id="customize-sync" i18n-content="customizeSync"
+        pref="sync.managed" hidden>
     </button>
 <if expr="pp_ifdef('chromeos')">
     <button id="manage-accounts-button"

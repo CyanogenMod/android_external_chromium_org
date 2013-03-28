@@ -153,37 +153,6 @@
   fun:BaseThreadInitThunk
 }
 {
-  bug_110514_a
-  ThreadSanitizer:Race
-  fun:memset
-  fun:_malloc_dbg
-  ...
-  fun:??2@YAPAXIABU_DebugHeapTag_t@std@@PADH@Z
-  fun:??0?$basic_streambuf@DU?$char_traits@D@std@@@std@@IAE@XZ
-}
-{
-  bug_110514_b
-  ThreadSanitizer:Race
-  fun:memset
-  fun:_malloc_dbg
-  ...
-  fun:??2@YAPAXIABU_DebugHeapTag_t@std@@PADH@Z
-  fun:?_Init@ios_base@std@@IAEXXZ
-}
-{
-  bug_110514_c
-  ThreadSanitizer:Race
-  fun:memset
-  fun:_free_dbg
-  ...
-  fun:??3@YAXPAX@Z
-  fun:??_V@YAXPAX@Z
-  fun:scoped_array::reset
-  fun:media::DataBuffer::DataBuffer
-  ...
-  fun:media::FFmpegAudioDecoder::DoDecodeBuffer
-}
-{
   bug_144928_a
   ThreadSanitizer:Race
   fun:google_breakpad::CrashGenerationServer::Handle*
@@ -202,7 +171,8 @@
   ThreadSanitizer:Race
   fun:google_breakpad::CrashGenerationServer::~CrashGenerationServer
   fun:google_breakpad::CrashGenerationServer::`scalar deleting destructor'
-  fun:scoped_ptr::~scoped_ptr
+  fun:base::DefaultDeleter*
+  fun:base::internal::scoped_ptr_impl::~scoped_ptr_impl
   fun:remoting::BreakpadWinDeathTest::~BreakpadWinDeathTest
   fun:remoting::BreakpadWinDeathTest_TestAccessViolation_Test::`scalar deleting destructor'
   fun:testing::Test::DeleteSelf_
@@ -235,13 +205,24 @@
   fun:_free_dbg
   fun:_aligned_free_dbg
   fun:_aligned_free
-  fun:media::VideoFrame::~VideoFrame
-  fun:media::VideoFrame::`scalar deleting destructor'
-  fun:base::RefCountedThreadSafe::DeleteInternal
-  fun:base::RefCountedThreadSafe::Release
-  fun:base::RefCountedThreadSafe::Release
-  fun:scoped_refptr::operator=
-  fun:media::VideoRendererBase::AttemptFlush_Locked
-  fun:media::VideoRendererBase::OnDecoderFlushDone
-  fun:base::internal::RunnableAdapter::Run
+}
+
+{
+  bug_157076_c
+  ThreadSanitizer:Race
+  fun:memset
+  fun:_heap_alloc_dbg_impl
+  fun:_nh_malloc_dbg_impl
+  fun:_nh_malloc_dbg
+  fun:_malloc_dbg
+  fun:_aligned_offset_malloc_dbg
+  fun:_aligned_malloc
+  fun:base::AlignedAlloc
+}
+
+{
+   bug_170334
+   ThreadSanitizer:Race
+   ...
+   fun:net::NetworkChangeNotifierWinTest::~NetworkChangeNotifierWinTest
 }

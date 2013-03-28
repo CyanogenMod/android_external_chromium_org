@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
 #include "googleurl/src/gurl.h"
@@ -47,7 +47,7 @@ class ShellIntegration {
   // flow. We will distinguish between two types of permissions here to avoid
   // forcing the user into UI interaction when this should not be done.
   enum DefaultWebClientSetPermission {
-    SET_DEFAULT_NOT_ALLOWED = 0,
+    SET_DEFAULT_NOT_ALLOWED,
     SET_DEFAULT_UNATTENDED,
     SET_DEFAULT_INTERACTIVE,
   };
@@ -59,21 +59,25 @@ class ShellIntegration {
   // client application for specific protocols.
   static DefaultWebClientSetPermission CanSetAsDefaultProtocolClient();
 
+  // Returns the path of the application to be launched given the protocol
+  // of the requested url. Returns an empty string on failure.
+  static std::string GetApplicationForProtocol(const GURL& url);
+
   // On Linux, it may not be possible to determine or set the default browser
   // on some desktop environments or configurations. So, we use this enum and
-  // not a plain bool. (Note however that if used like a bool, this enum will
-  // have reasonable behavior.)
+  // not a plain bool.
   enum DefaultWebClientState {
-    NOT_DEFAULT_WEB_CLIENT = 0,
-    IS_DEFAULT_WEB_CLIENT,
-    UNKNOWN_DEFAULT_WEB_CLIENT = -1
+    NOT_DEFAULT,
+    IS_DEFAULT,
+    UNKNOWN_DEFAULT,
+    NUM_DEFAULT_STATES
   };
 
   // Attempt to determine if this instance of Chrome is the default browser and
   // return the appropriate state. (Defined as being the handler for HTTP/HTTPS
   // protocols; we don't want to report "no" here if the user has simply chosen
   // to open HTML files in a text editor and FTP links with an FTP client.)
-  static DefaultWebClientState IsDefaultBrowser();
+  static DefaultWebClientState GetDefaultBrowser();
 
   // Returns true if Firefox is likely to be the default browser for the current
   // user. This method is very fast so it can be invoked in the UI thread.
@@ -93,20 +97,32 @@ class ShellIntegration {
     // and the launch url will be detected at start-up. In this case, |url|
     // is still used to generate the app id (windows app id, not chrome app id).
     std::string extension_id;
+    bool is_platform_app;
     string16 title;
     string16 description;
-    FilePath extension_path;
+    base::FilePath extension_path;
     gfx::Image favicon;
-    FilePath profile_path;
+    base::FilePath profile_path;
+  };
 
-    bool create_on_desktop;
-    bool create_in_applications_menu;
+  // Info about which locations to create app shortcuts in.
+  struct ShortcutLocations {
+    ShortcutLocations();
+
+    bool on_desktop;
+    bool in_applications_menu;
 
     // For Windows, this refers to quick launch bar prior to Win7. In Win7,
     // this means "pin to taskbar". For Mac/Linux, this could be used for
     // Mac dock or the gnome/kde application launcher. However, those are not
     // implemented yet.
-    bool create_in_quick_launch_bar;
+    bool in_quick_launch_bar;
+
+    // For Linux, this refers to a shortcut which the system knows about (for
+    // the purpose of identifying windows and giving them the correct
+    // title/icon), but which does not show up in menus or search results.
+    // Ignored if in_applications_menu == true.
+    bool hidden;
   };
 
   // Data that needs to be passed between the app launcher stub and Chrome.
@@ -126,7 +142,7 @@ class ShellIntegration {
   static CommandLine CommandLineArgsForLauncher(
       const GURL& url,
       const std::string& extension_app_id,
-      const FilePath& profile_path);
+      const base::FilePath& profile_path);
 
 #if defined(OS_WIN)
   // Generates an application user model ID (AppUserModelId) for a given app
@@ -137,25 +153,39 @@ class ShellIntegration {
   // Chrome installs), |app_name| should already be suffixed, this method will
   // then further suffix it with the profile id as described above.
   static string16 GetAppModelIdForProfile(const string16& app_name,
-                                          const FilePath& profile_path);
+                                          const base::FilePath& profile_path);
 
   // Generates an application user model ID (AppUserModelId) for Chromium by
   // calling GetAppModelIdForProfile() with ShellUtil::GetAppId() as app_name.
-  static string16 GetChromiumModelIdForProfile(const FilePath& profile_path);
+  static string16 GetChromiumModelIdForProfile(
+      const base::FilePath& profile_path);
 
   // Get the AppUserModelId for the App List, for the profile in |profile_path|.
-  static string16 GetAppListAppModelIdForProfile(const FilePath& profile_path);
+  static string16 GetAppListAppModelIdForProfile(
+      const base::FilePath& profile_path);
 
-  // Returns the path to the Chromium icon. This is used to specify the icon
-  // to use for the taskbar group on Win 7.
-  static string16 GetChromiumIconPath();
+  // Returns the location (path and index) of the Chromium icon, (e.g.,
+  // "C:\path\to\chrome.exe,0"). This is used to specify the icon to use
+  // for the taskbar group on Win 7.
+  static string16 GetChromiumIconLocation();
 
   // Migrates existing chrome shortcuts by tagging them with correct app id.
   // see http://crbug.com/28104
   static void MigrateChromiumShortcuts();
 
+  // Migrates all shortcuts in |path| which point to |chrome_exe| such that they
+  // have the appropriate AppUserModelId. Also makes sure those shortcuts have
+  // the dual_mode property set if such is requested by |check_dual_mode|.
+  // Returns the number of shortcuts migrated.
+  // This method should not be called prior to Windows 7.
+  // This method is only public for the sake of tests and shouldn't be called
+  // externally otherwise.
+  static int MigrateShortcutsInPathInternal(const base::FilePath& chrome_exe,
+                                            const base::FilePath& path,
+                                            bool check_dual_mode);
+
   // Returns the path to the Start Menu shortcut for the given Chrome.
-  static FilePath GetStartMenuShortcut(const FilePath& chrome_exe);
+  static base::FilePath GetStartMenuShortcut(const base::FilePath& chrome_exe);
 #endif  // defined(OS_WIN)
 
   // The current default web client application UI state. This is used when

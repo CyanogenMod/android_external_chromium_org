@@ -9,6 +9,7 @@ import os.path
 import re
 import sys
 
+from json_parse import OrderedDict
 import schema_util
 
 # This file is a peer to json_schema.py. Each of these files understands a
@@ -70,7 +71,7 @@ def ProcessComment(comment):
   parent_comment = (parent_comment.strip().replace('\n\n', '<br/><br/>')
                                           .replace('\n', ''))
 
-  params = {}
+  params = OrderedDict()
   for (cur_param, next_param) in itertools.izip_longest(parameter_starts,
                                                         parameter_starts[1:]):
     param_name = cur_param.group(1)
@@ -87,7 +88,8 @@ def ProcessComment(comment):
 class Callspec(object):
   '''
   Given a Callspec node representing an IDL function declaration, converts into
-  a name/value pair where the value is a list of function parameters.
+  a tuple:
+      (name, list of function parameters, return type)
   '''
   def __init__(self, callspec_node, comment):
     self.node = callspec_node
@@ -95,12 +97,22 @@ class Callspec(object):
 
   def process(self, callbacks):
     parameters = []
+    return_type = None
+    if self.node.GetProperty('TYPEREF') not in ('void', None):
+      return_type = Typeref(self.node.GetProperty('TYPEREF'),
+                            self.node,
+                            {'name': self.node.GetName()}).process(callbacks)
+      # The IDL parser doesn't allow specifying return types as optional.
+      # Instead we infer any object return values to be optional.
+      # TODO(asargent): fix the IDL parser to support optional return types.
+      if return_type.get('type') == 'object' or '$ref' in return_type:
+        return_type['optional'] = True;
     for node in self.node.children:
       parameter = Param(node).process(callbacks)
       if parameter['name'] in self.comment:
         parameter['description'] = self.comment[parameter['name']]
       parameters.append(parameter)
-    return self.node.GetName(), parameters
+    return (self.node.GetName(), parameters, return_type)
 
 class Param(object):
   '''
@@ -124,7 +136,7 @@ class Dictionary(object):
     self.node = dictionary_node
 
   def process(self, callbacks):
-    properties = {}
+    properties = OrderedDict()
     for node in self.node.children:
       if node.cls == 'Member':
         k, v = Member(node).process(callbacks)
@@ -147,21 +159,34 @@ class Member(object):
     self.node = member_node
 
   def process(self, callbacks):
-    properties = {}
+    properties = OrderedDict()
     name = self.node.GetName()
-    for property_name in ('OPTIONAL', 'nodoc', 'nocompile'):
+    for property_name in ('OPTIONAL', 'nodoc', 'nocompile', 'nodart'):
       if self.node.GetProperty(property_name):
         properties[property_name.lower()] = True
+    for option_name, sanitizer in [
+        ('maxListeners', int),
+        ('supportsFilters', lambda s: s == 'true'),
+        ('supportsListeners', lambda s: s == 'true'),
+        ('supportsRules', lambda s: s == 'true')]:
+      if self.node.GetProperty(option_name):
+        if 'options' not in properties:
+          properties['options'] = {}
+        properties['options'][option_name] = sanitizer(self.node.GetProperty(
+          option_name))
     is_function = False
-    parameter_comments = {}
+    parameter_comments = OrderedDict()
     for node in self.node.children:
       if node.cls == 'Comment':
         (parent_comment, parameter_comments) = ProcessComment(node.GetName())
         properties['description'] = parent_comment
       elif node.cls == 'Callspec':
         is_function = True
-        name, parameters = Callspec(node, parameter_comments).process(callbacks)
+        name, parameters, return_type = (Callspec(node, parameter_comments)
+                                         .process(callbacks))
         properties['parameters'] = parameters
+        if return_type is not None:
+          properties['returns'] = return_type
     properties['name'] = name
     if is_function:
       properties['type'] = 'function'
@@ -183,7 +208,7 @@ class Typeref(object):
   function parameter, converts into a Python dictionary that the JSON schema
   compiler expects to see.
   '''
-  def __init__(self, typeref, parent, additional_properties={}):
+  def __init__(self, typeref, parent, additional_properties=OrderedDict()):
     self.typeref = typeref
     self.parent = parent
     self.additional_properties = additional_properties
@@ -200,7 +225,7 @@ class Typeref(object):
     for sibling in self.parent.GetChildren():
       if sibling.cls == 'Array' and sibling.GetName() == self.parent.GetName():
         properties['type'] = 'array'
-        properties['items'] = {}
+        properties['items'] = OrderedDict()
         properties = properties['items']
         break
 
@@ -217,7 +242,7 @@ class Typeref(object):
     elif self.typeref == 'object':
       properties['type'] = 'object'
       if 'additionalProperties' not in properties:
-        properties['additionalProperties'] = {}
+        properties['additionalProperties'] = OrderedDict()
       properties['additionalProperties']['type'] = 'any'
       instance_of = self.parent.GetProperty('instanceOf')
       if instance_of:
@@ -225,6 +250,12 @@ class Typeref(object):
     elif self.typeref == 'ArrayBuffer':
       properties['type'] = 'binary'
       properties['isInstanceOf'] = 'ArrayBuffer'
+    elif self.typeref == 'FileEntry':
+      properties['type'] = 'object'
+      properties['isInstanceOf'] = 'FileEntry'
+      if 'additionalProperties' not in properties:
+        properties['additionalProperties'] = OrderedDict()
+      properties['additionalProperties']['type'] = 'any'
     elif self.typeref is None:
       properties['type'] = 'function'
     else:
@@ -264,8 +295,9 @@ class Enum(object):
               'description': self.description,
               'type': 'string',
               'enum': enum}
-    if self.node.GetProperty('inline_doc'):
-      result['inline_doc'] = True
+    for property_name in ('inline_doc', 'nodoc'):
+      if self.node.GetProperty(property_name):
+        result[property_name] = True
     return result
 
 
@@ -283,7 +315,7 @@ class Namespace(object):
     self.events = []
     self.functions = []
     self.types = []
-    self.callbacks = {}
+    self.callbacks = OrderedDict()
     self.permissions = permissions or []
 
   def process(self):
@@ -352,7 +384,6 @@ class IDLSchema(object):
           continue
       else:
         sys.exit('Did not process %s %s' % (node.cls, node))
-    schema_util.PrefixSchemasWithNamespace(namespaces)
     return namespaces
 
 def Load(filename):

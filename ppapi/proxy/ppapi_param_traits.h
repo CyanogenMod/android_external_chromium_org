@@ -14,6 +14,7 @@
 #include "ppapi/c/pp_rect.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
+#include "ppapi/shared_impl/file_path.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "ppapi/shared_impl/ppb_file_ref_shared.h"
 
@@ -32,6 +33,7 @@ struct PPBFlash_DrawGlyphs_Params;
 struct PPBURLLoader_UpdateProgress_Params;
 struct SerializedDirEntry;
 struct SerializedFontDescription;
+struct SerializedTrueTypeFontDesc;
 class SerializedFlashMenu;
 class SerializedHandle;
 class SerializedVar;
@@ -116,6 +118,15 @@ struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::proxy::SerializedFontDescription> {
 };
 
 template<>
+struct PPAPI_PROXY_EXPORT
+    ParamTraits<ppapi::proxy::SerializedTrueTypeFontDesc> {
+  typedef ppapi::proxy::SerializedTrueTypeFontDesc param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template<>
 struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::proxy::SerializedHandle> {
   typedef ppapi::proxy::SerializedHandle param_type;
   static void Write(Message* m, const param_type& p);
@@ -166,6 +177,14 @@ struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::PpapiPermissions> {
 };
 
 #if !defined(OS_NACL) && !defined(NACL_WIN64)
+template <>
+struct ParamTraits<ppapi::PepperFilePath> {
+  typedef ppapi::PepperFilePath param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* p);
+  static void Log(const param_type& p, std::string* l);
+};
+
 template<>
 struct PPAPI_PROXY_EXPORT ParamTraits<ppapi::proxy::SerializedFlashMenu> {
   typedef ppapi::proxy::SerializedFlashMenu param_type;

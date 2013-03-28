@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,15 +9,16 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_proxy.h"
-#include "base/time.h"
+#include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
+#include "content/renderer/media/webrtc_audio_capturer.h"
+#include "content/renderer/media/webrtc_audio_device_not_impl.h"
 #include "content/renderer/media/webrtc_audio_renderer.h"
-#include "media/audio/audio_input_device.h"
+#include "media/base/audio_capturer_source.h"
 #include "media/base/audio_renderer_sink.h"
-#include "third_party/webrtc/modules/audio_device/include/audio_device.h"
 
 // A WebRtcAudioDeviceImpl instance implements the abstract interface
 // webrtc::AudioDeviceModule which makes it possible for a user (e.g. webrtc::
@@ -70,37 +71,6 @@
 //    Enables the adaptive analog mode of the AGC which ensures that a
 //    suitable microphone volume level will be set. This scheme will affect
 //    the actual microphone control slider.
-//
-// Media example:
-//
-// When the underlying audio layer wants data samples to be played out, the
-// AudioOutputDevice::RenderCallback() will be called, which in turn uses the
-// registered webrtc::AudioTransport callback and gets the data to be played
-// out from the webrtc::VoiceEngine.
-//
-// The picture below illustrates the media flow on the capture side where the
-// AudioInputDevice client acts as link between the renderer and browser
-// process:
-//
-//                   .------------------.            .----------------------.
-// (Native audio) => | AudioInputStream |-> OnData ->| AudioInputController |-.
-//                   .------------------.            .----------------------. |
-//                                                                            |
-//                               browser process                              |
-//   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - (*)
-//                               renderer process                             |
-//                                                                            |
-//      .-------------------------------.             .------------------.    |
-//  .---|    WebRtcAudioDeviceImpl      |<- Capture <-| AudioInputDevice | <--.
-//  |   .-------------------------------.             .------------------.
-//  |
-//  |                             .---------------------.
-//  .-> RecordedDataIsAvailable ->| webrtc::VoiceEngine | => (encode+transmit)
-//                                .---------------------.
-//
-//  (*) Using SyncSocket for inter-process synchronization with low latency.
-//      The actual data is transferred via SharedMemory. IPC is not involved
-//      in the actual media transfer.
 //
 // AGC overview:
 //
@@ -193,7 +163,11 @@
 //
 // Implementation notes:
 //
-//  - This class must be created on the main render thread.
+//  - This class must be created and destroyed on the main render thread and
+//    most methods are called on the same thread. However, some methods are
+//    also called on a Libjingle worker thread. RenderData is called on the
+//    AudioOutputDevice thread and CaptureData on the AudioInputDevice thread.
+//    To summarize: this class lives on four different threads.
 //  - The webrtc::AudioDeviceModule is reference counted.
 //  - AGC is only supported in combination with the WASAPI-based audio layer
 //    on Windows, i.e., it is not supported on Windows XP.
@@ -205,13 +179,15 @@
 
 namespace content {
 
+class WebRtcAudioCapturer;
 class WebRtcAudioRenderer;
 
-// TODO(xians): Move this interface to webrtc so that libjingle can own a
-// reference to the renderer object.
+// TODO(xians): Move the following two interfaces to webrtc so that
+// libjingle can own references to the renderer and capturer.
 class WebRtcAudioRendererSource {
  public:
   // Callback to get the rendered interleaved data.
+  // TODO(xians): Change uint8* to int16*.
   virtual void RenderData(uint8* audio_data,
                           int number_of_channels,
                           int number_of_frames,
@@ -221,56 +197,74 @@ class WebRtcAudioRendererSource {
   virtual void SetRenderFormat(const media::AudioParameters& params) = 0;
 
   // Callback to notify the client that the renderer is going away.
-  virtual void RemoveRenderer(content::WebRtcAudioRenderer* renderer) = 0;
+  virtual void RemoveAudioRenderer(WebRtcAudioRenderer* renderer) = 0;
 
  protected:
   virtual ~WebRtcAudioRendererSource() {}
 };
 
+class WebRtcAudioCapturerSink {
+ public:
+  // Callback to deliver the captured interleaved data.
+  virtual void CaptureData(const int16* audio_data,
+                           int number_of_channels,
+                           int number_of_frames,
+                           int audio_delay_milliseconds,
+                           double volume) = 0;
+
+  // Set the format for the capture audio parameters.
+  virtual void SetCaptureFormat(const media::AudioParameters& params) = 0;
+
+ protected:
+  virtual ~WebRtcAudioCapturerSink() {}
+};
+
+// Note that this class inherits from webrtc::AudioDeviceModule but due to
+// the high number of non-implemented methods, we move the cruft over to the
+// WebRtcAudioDeviceNotImpl.
 class CONTENT_EXPORT WebRtcAudioDeviceImpl
-    : NON_EXPORTED_BASE(public webrtc::AudioDeviceModule),
-      NON_EXPORTED_BASE(public media::AudioInputDevice::CaptureCallback),
-      NON_EXPORTED_BASE(public media::AudioInputDevice::CaptureEventHandler),
+    : NON_EXPORTED_BASE(public WebRtcAudioDeviceNotImpl),
+      NON_EXPORTED_BASE(public WebRtcAudioCapturerSink),
       NON_EXPORTED_BASE(public WebRtcAudioRendererSource) {
  public:
-  // Methods called on main render thread.
+  // Instances of this object are created on the main render thread.
   WebRtcAudioDeviceImpl();
 
   // webrtc::RefCountedModule implementation.
   // The creator must call AddRef() after construction and use Release()
   // to release the reference and delete this object.
+  // Called on the main render thread.
   virtual int32_t AddRef() OVERRIDE;
   virtual int32_t Release() OVERRIDE;
 
+  // WebRtcAudioCapturerSink implementation.
+
+  // Called on the AudioInputDevice worker thread.
+  virtual void CaptureData(const int16* audio_data,
+                           int number_of_channels,
+                           int number_of_frames,
+                           int audio_delay_milliseconds,
+                           double volume) OVERRIDE;
+
+  // Called on the main render thread.
+  virtual void SetCaptureFormat(const media::AudioParameters& params) OVERRIDE;
+
   // WebRtcAudioRendererSource implementation.
+
+  // Called on the AudioInputDevice worker thread.
   virtual void RenderData(uint8* audio_data,
                           int number_of_channels,
                           int number_of_frames,
                           int audio_delay_milliseconds) OVERRIDE;
+
+  // Called on the main render thread.
   virtual void SetRenderFormat(const media::AudioParameters& params) OVERRIDE;
-  virtual void RemoveRenderer(WebRtcAudioRenderer* renderer) OVERRIDE;
-
-  // AudioInputDevice::CaptureCallback implementation.
-  virtual void Capture(media::AudioBus* audio_bus,
-                       int audio_delay_milliseconds,
-                       double volume) OVERRIDE;
-  virtual void OnCaptureError() OVERRIDE;
-
-  // AudioInputDevice::CaptureEventHandler implementation.
-  virtual void OnDeviceStarted(const std::string& device_id) OVERRIDE;
-  virtual void OnDeviceStopped() OVERRIDE;
-
-  // webrtc::Module implementation.
-  virtual int32_t ChangeUniqueId(const int32_t id) OVERRIDE;
-  virtual int32_t TimeUntilNextProcess() OVERRIDE;
-  virtual int32_t Process() OVERRIDE;
+  virtual void RemoveAudioRenderer(WebRtcAudioRenderer* renderer) OVERRIDE;
 
   // webrtc::AudioDeviceModule implementation.
-  virtual int32_t ActiveAudioLayer(AudioLayer* audio_layer) const OVERRIDE;
-  virtual ErrorCode LastError() const OVERRIDE;
+  // All implemented methods are called on the main render thread unless
+  // anything else is stated.
 
-  virtual int32_t RegisterEventObserver(
-      webrtc::AudioDeviceObserver* event_callback) OVERRIDE;
   virtual int32_t RegisterAudioCallback(webrtc::AudioTransport* audio_callback)
       OVERRIDE;
 
@@ -278,28 +272,12 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   virtual int32_t Terminate() OVERRIDE;
   virtual bool Initialized() const OVERRIDE;
 
-  virtual int16_t PlayoutDevices() OVERRIDE;
-  virtual int16_t RecordingDevices() OVERRIDE;
-  virtual int32_t PlayoutDeviceName(uint16_t index,
-                                    char name[webrtc::kAdmMaxDeviceNameSize],
-                                    char guid[webrtc::kAdmMaxGuidSize])
-                                    OVERRIDE;
-  virtual int32_t RecordingDeviceName(uint16_t index,
-                                      char name[webrtc::kAdmMaxDeviceNameSize],
-                                      char guid[webrtc::kAdmMaxGuidSize])
-                                      OVERRIDE;
-  virtual int32_t SetPlayoutDevice(uint16_t index) OVERRIDE;
-  virtual int32_t SetPlayoutDevice(WindowsDeviceType device) OVERRIDE;
-  virtual int32_t SetRecordingDevice(uint16_t index) OVERRIDE;
-  virtual int32_t SetRecordingDevice(WindowsDeviceType device) OVERRIDE;
-
   virtual int32_t PlayoutIsAvailable(bool* available) OVERRIDE;
-  virtual int32_t InitPlayout() OVERRIDE;
   virtual bool PlayoutIsInitialized() const OVERRIDE;
   virtual int32_t RecordingIsAvailable(bool* available) OVERRIDE;
-  virtual int32_t InitRecording() OVERRIDE;
   virtual bool RecordingIsInitialized() const OVERRIDE;
 
+  // All Start/Stop methods are called on a libJingle worker thread.
   virtual int32_t StartPlayout() OVERRIDE;
   virtual int32_t StopPlayout() OVERRIDE;
   virtual bool Playing() const OVERRIDE;
@@ -307,89 +285,36 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   virtual int32_t StopRecording() OVERRIDE;
   virtual bool Recording() const OVERRIDE;
 
+  // Called on the main render thread and libJingle worker thread.
   virtual int32_t SetAGC(bool enable) OVERRIDE;
+
   virtual bool AGC() const OVERRIDE;
 
-  virtual int32_t SetWaveOutVolume(uint16_t volume_left,
-                                   uint16_t volume_right) OVERRIDE;
-  virtual int32_t WaveOutVolume(uint16_t* volume_left,
-                                uint16_t* volume_right) const OVERRIDE;
-
-  virtual int32_t SpeakerIsAvailable(bool* available) OVERRIDE;
-  virtual int32_t InitSpeaker() OVERRIDE;
-  virtual bool SpeakerIsInitialized() const OVERRIDE;
-  virtual int32_t MicrophoneIsAvailable(bool* available) OVERRIDE;
-  virtual int32_t InitMicrophone() OVERRIDE;
-  virtual bool MicrophoneIsInitialized() const OVERRIDE;
-
-  virtual int32_t SpeakerVolumeIsAvailable(bool* available) OVERRIDE;
-  virtual int32_t SetSpeakerVolume(uint32_t volume) OVERRIDE;
-  virtual int32_t SpeakerVolume(uint32_t* volume) const OVERRIDE;
-  virtual int32_t MaxSpeakerVolume(uint32_t* max_volume) const OVERRIDE;
-  virtual int32_t MinSpeakerVolume(uint32_t* min_volume) const OVERRIDE;
-  virtual int32_t SpeakerVolumeStepSize(uint16_t* step_size) const OVERRIDE;
-
-  virtual int32_t MicrophoneVolumeIsAvailable(bool* available) OVERRIDE;
+  // Called on the AudioInputDevice worker thread.
   virtual int32_t SetMicrophoneVolume(uint32_t volume) OVERRIDE;
+
+  // TODO(henrika): sort out calling thread once we start using this API.
   virtual int32_t MicrophoneVolume(uint32_t* volume) const OVERRIDE;
+
   virtual int32_t MaxMicrophoneVolume(uint32_t* max_volume) const OVERRIDE;
   virtual int32_t MinMicrophoneVolume(uint32_t* min_volume) const OVERRIDE;
-  virtual int32_t MicrophoneVolumeStepSize(uint16_t* step_size) const OVERRIDE;
-
-  virtual int32_t SpeakerMuteIsAvailable(bool* available) OVERRIDE;
-  virtual int32_t SetSpeakerMute(bool enable) OVERRIDE;
-  virtual int32_t SpeakerMute(bool* enabled) const OVERRIDE;
-
-  virtual int32_t MicrophoneMuteIsAvailable(bool* available) OVERRIDE;
-  virtual int32_t SetMicrophoneMute(bool enable) OVERRIDE;
-  virtual int32_t MicrophoneMute(bool* enabled) const OVERRIDE;
-
-  virtual int32_t MicrophoneBoostIsAvailable(bool* available) OVERRIDE;
-  virtual int32_t SetMicrophoneBoost(bool enable) OVERRIDE;
-  virtual int32_t MicrophoneBoost(bool* enabled) const OVERRIDE;
-
   virtual int32_t StereoPlayoutIsAvailable(bool* available) const OVERRIDE;
-  virtual int32_t SetStereoPlayout(bool enable) OVERRIDE;
-  virtual int32_t StereoPlayout(bool* enabled) const OVERRIDE;
   virtual int32_t StereoRecordingIsAvailable(bool* available) const OVERRIDE;
-  virtual int32_t SetStereoRecording(bool enable) OVERRIDE;
-  virtual int32_t StereoRecording(bool* enabled) const OVERRIDE;
-  virtual int32_t SetRecordingChannel(const ChannelType channel) OVERRIDE;
-  virtual int32_t RecordingChannel(ChannelType* channel) const OVERRIDE;
-
-  virtual int32_t SetPlayoutBuffer(
-      const BufferType type, uint16_t size_ms) OVERRIDE;
-  virtual int32_t PlayoutBuffer(
-      BufferType* type, uint16_t* size_ms) const OVERRIDE;
   virtual int32_t PlayoutDelay(uint16_t* delay_ms) const OVERRIDE;
   virtual int32_t RecordingDelay(uint16_t* delay_ms) const OVERRIDE;
-
-  virtual int32_t CPULoad(uint16_t* load) const OVERRIDE;
-
-  virtual int32_t StartRawOutputFileRecording(
-      const char pcm_file_name_utf8[webrtc::kAdmMaxFileNameSize]) OVERRIDE;
-  virtual int32_t StopRawOutputFileRecording() OVERRIDE;
-  virtual int32_t StartRawInputFileRecording(
-      const char pcm_file_name_utf8[webrtc::kAdmMaxFileNameSize]) OVERRIDE;
-  virtual int32_t StopRawInputFileRecording() OVERRIDE;
-
-  virtual int32_t SetRecordingSampleRate(
-      const uint32_t samples_per_sec) OVERRIDE;
   virtual int32_t RecordingSampleRate(uint32_t* samples_per_sec) const OVERRIDE;
-  virtual int32_t SetPlayoutSampleRate(const uint32_t samples_per_sec) OVERRIDE;
   virtual int32_t PlayoutSampleRate(uint32_t* samples_per_sec) const OVERRIDE;
 
-  virtual int32_t ResetAudioDevice() OVERRIDE;
-  virtual int32_t SetLoudspeakerStatus(bool enable) OVERRIDE;
-  virtual int32_t GetLoudspeakerStatus(bool* enabled) const OVERRIDE;
+  // Sets the |renderer_|, returns false if |renderer_| already exists.
+  // Called on the main renderer thread.
+  bool SetAudioRenderer(WebRtcAudioRenderer* renderer);
 
-  // Sets the session id.
-  void SetSessionId(int session_id);
-
-  // Sets the |renderer_|, returns false if |renderer_| has already existed.
-  bool SetRenderer(WebRtcAudioRenderer* renderer);
-
-  // Accessors.
+  const scoped_refptr<WebRtcAudioCapturer>& capturer() const {
+    return capturer_;
+  }
+  const scoped_refptr<WebRtcAudioRenderer>& renderer() const {
+    return renderer_;
+  }
   int input_buffer_size() const {
     return input_audio_parameters_.frames_per_buffer();
   }
@@ -408,27 +333,18 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   int output_sample_rate() const {
     return output_audio_parameters_.sample_rate();
   }
-  bool initialized() const { return initialized_; }
-  bool playing() const { return playing_; }
-  bool recording() const { return recording_; }
 
  private:
   // Make destructor private to ensure that we can only be deleted by Release().
   virtual ~WebRtcAudioDeviceImpl();
 
-  // Methods called on the main render thread ----------------------------------
-  // The following methods are tasks posted on the render thread that needs to
-  // be executed on that thread.
-  void InitOnRenderThread(int32_t* error, base::WaitableEvent* event);
+  // Used to DCHECK that we are called on the correct thread.
+  base::ThreadChecker thread_checker_;
 
   int ref_count_;
 
-  // Gives access to the message loop of the render thread on which this
-  // object is created.
-  scoped_refptr<base::MessageLoopProxy> render_loop_;
-
   // Provides access to the native audio input layer in the browser process.
-  scoped_refptr<media::AudioInputDevice> audio_input_device_;
+  scoped_refptr<WebRtcAudioCapturer> capturer_;
 
   // Provides access to the audio renderer in the browser process.
   scoped_refptr<WebRtcAudioRenderer> renderer_;
@@ -448,22 +364,9 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   // Cached value of the current audio delay on the output/renderer side.
   int output_delay_ms_;
 
-  // Buffers used for temporary storage during capture/render callbacks.
-  // Allocated during initialization to save stack.
-  scoped_array<int16> input_buffer_;
-
-  webrtc::AudioDeviceModule::ErrorCode last_error_;
-
-  base::TimeTicks last_process_time_;
-
-  // Id of the media session to be started, it tells which device to be used
-  // on the input/capture side.
-  int session_id_;
-
-  // Protects |recording_|, |output_delay_ms_|, |input_delay_ms_|, |renderer_|.
+  // Protects |recording_|, |output_delay_ms_|, |input_delay_ms_|, |renderer_|
+  // |recording_| and |microphone_volume_|.
   mutable base::Lock lock_;
-
-  int bytes_per_sample_;
 
   bool initialized_;
   bool playing_;
@@ -475,6 +378,10 @@ class CONTENT_EXPORT WebRtcAudioDeviceImpl
   // Used for histograms of total recording and playout times.
   base::Time start_capture_time_;
   base::Time start_render_time_;
+
+  // Stores latest microphone volume received in a CaptureData() callback.
+  // Range is [0, 255].
+  uint32_t microphone_volume_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcAudioDeviceImpl);
 };

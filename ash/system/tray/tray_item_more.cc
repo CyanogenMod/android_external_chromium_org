@@ -4,6 +4,7 @@
 
 #include "ash/system/tray/tray_item_more.h"
 
+#include "ash/system/tray/fixed_sized_image_view.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_views.h"
@@ -31,6 +32,7 @@ TrayItemMore::TrayItemMore(SystemTrayItem* owner, bool show_more)
   AddChildView(icon_);
 
   label_ = new views::Label;
+  label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   AddChildView(label_);
 
   if (show_more) {
@@ -70,7 +72,7 @@ bool TrayItemMore::PerformAction(const ui::Event& event) {
   if (!show_more_)
     return false;
 
-  owner_->TransitionDetailedView();
+  owner()->TransitionDetailedView();
   return true;
 }
 

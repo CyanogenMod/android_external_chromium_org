@@ -8,10 +8,14 @@
 
 #include "base/basictypes.h"
 #include "base/message_loop.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/testing_pref_service.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service.h"
 #include "content/public/test/test_browser_thread.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "googleurl/src/gurl.h"
+#include "net/url_request/url_request.h"
+#include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace policy {
@@ -66,30 +70,31 @@ class TestingURLBlacklistManager : public URLBlacklistManager {
 class URLBlacklistManagerTest : public testing::Test {
  protected:
   URLBlacklistManagerTest()
-      : ui_thread_(BrowserThread::UI, &loop_),
+      : loop_(MessageLoop::TYPE_IO),
+        ui_thread_(BrowserThread::UI, &loop_),
         file_thread_(BrowserThread::FILE, &loop_),
         io_thread_(BrowserThread::IO, &loop_) {
   }
 
   virtual void SetUp() OVERRIDE {
-    pref_service_.RegisterListPref(prefs::kUrlBlacklist);
-    pref_service_.RegisterListPref(prefs::kUrlWhitelist);
+    pref_service_.registry()->RegisterListPref(prefs::kUrlBlacklist);
+    pref_service_.registry()->RegisterListPref(prefs::kUrlWhitelist);
     blacklist_manager_.reset(
         new TestingURLBlacklistManager(&pref_service_));
-    loop_.RunAllPending();
+    loop_.RunUntilIdle();
   }
 
   virtual void TearDown() OVERRIDE {
     if (blacklist_manager_.get())
       blacklist_manager_->ShutdownOnUIThread();
-    loop_.RunAllPending();
+    loop_.RunUntilIdle();
     // Delete |blacklist_manager_| while |io_thread_| is mapping IO to
     // |loop_|.
     blacklist_manager_.reset();
   }
 
   MessageLoop loop_;
-  TestingPrefService pref_service_;
+  TestingPrefServiceSimple pref_service_;
   scoped_ptr<TestingURLBlacklistManager> blacklist_manager_;
 
  private:
@@ -181,7 +186,7 @@ TEST_F(URLBlacklistManagerTest, SingleUpdateForTwoPrefChanges) {
   whitelist->Append(new StringValue("mail.google.com"));
   pref_service_.SetManagedPref(prefs::kUrlBlacklist, blacklist);
   pref_service_.SetManagedPref(prefs::kUrlBlacklist, whitelist);
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 
   EXPECT_EQ(1, blacklist_manager_->update_called());
 }
@@ -193,7 +198,7 @@ TEST_F(URLBlacklistManagerTest, ShutdownWithPendingTask0) {
   blacklist_manager_->ShutdownOnUIThread();
   blacklist_manager_.reset();
   // Run the task after shutdown and deletion.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 TEST_F(URLBlacklistManagerTest, ShutdownWithPendingTask1) {
@@ -202,11 +207,11 @@ TEST_F(URLBlacklistManagerTest, ShutdownWithPendingTask1) {
   // Shutdown comes before the task is executed.
   blacklist_manager_->ShutdownOnUIThread();
   // Run the task after shutdown, but before deletion.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 
   EXPECT_EQ(0, blacklist_manager_->update_called());
   blacklist_manager_.reset();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 TEST_F(URLBlacklistManagerTest, ShutdownWithPendingTask2) {
@@ -217,7 +222,7 @@ TEST_F(URLBlacklistManagerTest, ShutdownWithPendingTask2) {
 
   EXPECT_FALSE(blacklist_manager_->set_blacklist_called());
   blacklist_manager_.reset();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 TEST_F(URLBlacklistManagerTest, HasStandardScheme) {
@@ -438,6 +443,32 @@ TEST_F(URLBlacklistManagerTest, BlockAllWithExceptions) {
   EXPECT_TRUE(blacklist.IsURLBlocked(GURL("https://very.safe/")));
   EXPECT_TRUE(blacklist.IsURLBlocked(GURL("http://very.safe/path")));
   EXPECT_FALSE(blacklist.IsURLBlocked(GURL("https://very.safe/path")));
+}
+
+TEST_F(URLBlacklistManagerTest, DontBlockResources) {
+  scoped_ptr<URLBlacklist> blacklist(new URLBlacklist());
+  scoped_ptr<base::ListValue> blocked(new base::ListValue);
+  blocked->Append(new base::StringValue("google.com"));
+  blacklist->Block(blocked.get());
+  blacklist_manager_->SetBlacklist(blacklist.Pass());
+  EXPECT_TRUE(blacklist_manager_->IsURLBlocked(GURL("http://google.com")));
+
+  net::TestURLRequestContext context;
+  net::URLRequest request(GURL("http://google.com"), NULL, &context);
+
+  // Background requests aren't filtered.
+  EXPECT_FALSE(blacklist_manager_->IsRequestBlocked(request));
+
+  // Main frames are filtered.
+  request.set_load_flags(net::LOAD_MAIN_FRAME);
+  EXPECT_TRUE(blacklist_manager_->IsRequestBlocked(request));
+
+  // Sync gets a free pass.
+  GURL sync_url(
+      GaiaUrls::GetInstance()->service_login_url() + "?service=chromiumsync");
+  net::URLRequest sync_request(sync_url, NULL, &context);
+  sync_request.set_load_flags(net::LOAD_MAIN_FRAME);
+  EXPECT_FALSE(blacklist_manager_->IsRequestBlocked(sync_request));
 }
 
 }  // namespace policy

@@ -42,11 +42,7 @@ SpeechRecognitionManager* SpeechRecognitionDispatcherHost::manager() {
   if (manager_for_tests_)
     return manager_for_tests_;
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableScriptedSpeech))
-    return SpeechRecognitionManager::GetInstance();
-
-  return NULL;
+  return SpeechRecognitionManager::GetInstance();
 }
 
 bool SpeechRecognitionDispatcherHost::OnMessageReceived(
@@ -165,14 +161,14 @@ void SpeechRecognitionDispatcherHost::OnRecognitionEnd(int session_id) {
                                       context.request_id));
 }
 
-void SpeechRecognitionDispatcherHost::OnRecognitionResult(
+void SpeechRecognitionDispatcherHost::OnRecognitionResults(
     int session_id,
-    const SpeechRecognitionResult& result) {
+    const SpeechRecognitionResults& results) {
   const SpeechRecognitionSessionContext& context =
       manager()->GetSessionContext(session_id);
   Send(new SpeechRecognitionMsg_ResultRetrieved(context.render_view_id,
                                                 context.request_id,
-                                                result));
+                                                results));
 }
 
 void SpeechRecognitionDispatcherHost::OnRecognitionError(

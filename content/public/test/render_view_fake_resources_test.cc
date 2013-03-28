@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "base/process.h"
+#include "base/run_loop.h"
 #include "base/shared_memory.h"
 #include "base/time.h"
 #include "content/common/resource_messages.h"
@@ -21,10 +22,10 @@
 #include "net/base/upload_data.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request_status.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "webkit/dom_storage/dom_storage_types.h"
 #include "webkit/glue/glue_serialize.h"
@@ -94,7 +95,7 @@ void RenderViewFakeResourcesTest::TearDown() {
 
   ASSERT_TRUE(channel_->Send(new ViewMsg_Close(kViewId)));
   do {
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     view_ = NULL;
     RenderView::ForEach(this);
   } while (view_);
@@ -172,7 +173,8 @@ void RenderViewFakeResourcesTest::OnRequestResource(
       message.routing_id(),
       request_id,
       handle,
-      body.size())));
+      body.size(),
+      0)));
 
   ASSERT_TRUE(channel_->Send(new ResourceMsg_DataReceived(
       message.routing_id(),

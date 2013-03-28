@@ -11,10 +11,12 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "base/string16.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/base/request_priority.h"
 #include "net/base/test_completion_callback.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/http/http_cache.h"
@@ -62,6 +64,9 @@ struct MockTransaction {
   int test_mode;
   MockTransactionHandler handler;
   net::CertStatus cert_status;
+  // Value returned by MockNetworkTransaction::Start (potentially
+  // asynchronously if |!(test_mode & TEST_MODE_SYNC_NET_START)|.)
+  net::Error return_code;
 };
 
 extern const MockTransaction kSimpleGET_Transaction;
@@ -104,7 +109,8 @@ class MockHttpRequest : public net::HttpRequestInfo {
 
 class TestTransactionConsumer {
  public:
-  explicit TestTransactionConsumer(net::HttpTransactionFactory* factory);
+  TestTransactionConsumer(net::RequestPriority priority,
+                          net::HttpTransactionFactory* factory);
   virtual ~TestTransactionConsumer();
 
   void Start(const net::HttpRequestInfo* request,
@@ -151,9 +157,12 @@ class MockNetworkLayer;
 // find data for the request URL.  It supports IO operations that complete
 // synchronously or asynchronously to help exercise different code paths in the
 // HttpCache implementation.
-class MockNetworkTransaction : public net::HttpTransaction {
+class MockNetworkTransaction
+    : public net::HttpTransaction,
+      public base::SupportsWeakPtr<MockNetworkTransaction> {
  public:
-  explicit MockNetworkTransaction(MockNetworkLayer* factory);
+  MockNetworkTransaction(net::RequestPriority priority,
+                         MockNetworkLayer* factory);
   virtual ~MockNetworkTransaction();
 
   virtual int Start(const net::HttpRequestInfo* request,
@@ -186,6 +195,13 @@ class MockNetworkTransaction : public net::HttpTransaction {
 
   virtual net::UploadProgress GetUploadProgress() const OVERRIDE;
 
+  virtual bool GetLoadTimingInfo(
+      net::LoadTimingInfo* load_timing_info) const OVERRIDE;
+
+  virtual void SetPriority(net::RequestPriority priority) OVERRIDE;
+
+  net::RequestPriority priority() const { return priority_; }
+
  private:
   void CallbackLater(const net::CompletionCallback& callback, int result);
   void RunCallback(const net::CompletionCallback& callback, int result);
@@ -195,6 +211,7 @@ class MockNetworkTransaction : public net::HttpTransaction {
   std::string data_;
   int data_cursor_;
   int test_mode_;
+  net::RequestPriority priority_;
   base::WeakPtr<MockNetworkLayer> transaction_factory_;
 };
 
@@ -208,8 +225,30 @@ class MockNetworkLayer : public net::HttpTransactionFactory,
   bool done_reading_called() const { return done_reading_called_; }
   void TransactionDoneReading();
 
+  // Returns the last priority passed to CreateTransaction, or
+  // DEFAULT_PRIORITY if it hasn't been called yet.
+  net::RequestPriority last_create_transaction_priority() const {
+    return last_create_transaction_priority_;
+  }
+
+  // Returns the last transaction created by
+  // CreateTransaction. Returns a NULL WeakPtr if one has not been
+  // created yet, or the last transaction has been destroyed, or
+  // ClearLastTransaction() has been called and a new transaction
+  // hasn't been created yet.
+  base::WeakPtr<MockNetworkTransaction> last_transaction() {
+    return last_transaction_;
+  }
+
+  // Makes last_transaction() return NULL until the next transaction
+  // is created.
+  void ClearLastTransaction() {
+    last_transaction_.reset();
+  }
+
   // net::HttpTransactionFactory:
   virtual int CreateTransaction(
+      net::RequestPriority priority,
       scoped_ptr<net::HttpTransaction>* trans,
       net::HttpTransactionDelegate* delegate) OVERRIDE;
   virtual net::HttpCache* GetCache() OVERRIDE;
@@ -218,6 +257,8 @@ class MockNetworkLayer : public net::HttpTransactionFactory,
  private:
   int transaction_count_;
   bool done_reading_called_;
+  net::RequestPriority last_create_transaction_priority_;
+  base::WeakPtr<MockNetworkTransaction> last_transaction_;
 };
 
 //-----------------------------------------------------------------------------

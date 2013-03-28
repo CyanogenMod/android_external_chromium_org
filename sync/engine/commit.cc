@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include "sync/engine/syncer_proto_util.h"
 #include "sync/sessions/sync_session.h"
 #include "sync/syncable/mutable_entry.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 
 namespace syncer {
 
@@ -61,20 +61,21 @@ void ClearSyncingBits(syncable::Directory* dir,
 // The ClientToServerMessage parameter is an output parameter which will contain
 // the commit message which should be sent to the server.  It is valid iff the
 // return value of this function is true.
-bool PrepareCommitMessage(sessions::SyncSession* session,
-                          sessions::OrderedCommitSet* commit_set,
-                          sync_pb::ClientToServerMessage* commit_message) {
+bool PrepareCommitMessage(
+    sessions::SyncSession* session,
+    sessions::OrderedCommitSet* commit_set,
+    sync_pb::ClientToServerMessage* commit_message,
+    ExtensionsActivityMonitor::Records* extensions_activity_buffer) {
   TRACE_EVENT0("sync", "PrepareCommitMessage");
 
   commit_set->Clear();
   commit_message->Clear();
 
   WriteTransaction trans(FROM_HERE, SYNCER, session->context()->directory());
-  sessions::ScopedSetSessionWriteTransaction set_trans(session, &trans);
 
   // Fetch the items to commit.
   const size_t batch_size = session->context()->max_commit_batch_size();
-  GetCommitIdsCommand get_commit_ids_command(batch_size, commit_set);
+  GetCommitIdsCommand get_commit_ids_command(&trans, batch_size, commit_set);
   get_commit_ids_command.Execute(session);
 
   DVLOG(1) << "Commit message will contain " << commit_set->Size() << " items.";
@@ -83,19 +84,30 @@ bool PrepareCommitMessage(sessions::SyncSession* session,
   }
 
   // Serialize the message.
-  BuildCommitCommand build_commit_command(*commit_set, commit_message);
+  BuildCommitCommand build_commit_command(&trans,
+                                          *commit_set,
+                                          commit_message,
+                                          extensions_activity_buffer);
   build_commit_command.Execute(session);
 
-  SetSyncingBits(session->write_transaction(), *commit_set);
+  SetSyncingBits(&trans, *commit_set);
   return true;
 }
 
 SyncerError BuildAndPostCommitsImpl(Syncer* syncer,
                                     sessions::SyncSession* session,
                                     sessions::OrderedCommitSet* commit_set) {
-  sync_pb::ClientToServerMessage commit_message;
-  while (!syncer->ExitRequested() &&
-         PrepareCommitMessage(session, commit_set, &commit_message)) {
+  while (!syncer->ExitRequested()) {
+    sync_pb::ClientToServerMessage commit_message;
+    ExtensionsActivityMonitor::Records extensions_activity_buffer;
+
+    if (!PrepareCommitMessage(session,
+                              commit_set,
+                              &commit_message,
+                              &extensions_activity_buffer)) {
+      break;
+    }
+
     sync_pb::ClientToServerResponse commit_response;
 
     DVLOG(1) << "Sending commit message.";
@@ -103,6 +115,9 @@ SyncerError BuildAndPostCommitsImpl(Syncer* syncer,
     const SyncerError post_result = SyncerProtoUtil::PostClientToServerMessage(
         &commit_message, &commit_response, session);
     TRACE_EVENT_END0("sync", "PostCommit");
+
+    // TODO(rlarocque): Put all the post-commit logic in one place.
+    // See crbug.com/196338.
 
     if (post_result != SYNCER_OK) {
       LOG(WARNING) << "Post commit failed";
@@ -130,6 +145,14 @@ SyncerError BuildAndPostCommitsImpl(Syncer* syncer,
         process_response_command.Execute(session);
     TRACE_EVENT_END0("sync", "ProcessCommitResponse");
 
+    // If the commit failed, return the data to the ExtensionsActivityMonitor.
+    if (session->status_controller().
+        model_neutral_state().num_successful_bookmark_commits == 0) {
+      ExtensionsActivityMonitor* extensions_activity_monitor =
+          session->context()->extensions_monitor();
+      extensions_activity_monitor->PutRecords(extensions_activity_buffer);
+    }
+
     if (processing_result != SYNCER_OK) {
       return processing_result;
     }
@@ -144,7 +167,7 @@ SyncerError BuildAndPostCommitsImpl(Syncer* syncer,
 
 SyncerError BuildAndPostCommits(Syncer* syncer,
                                 sessions::SyncSession* session) {
-  sessions::OrderedCommitSet commit_set(session->routing_info());
+  sessions::OrderedCommitSet commit_set(session->context()->routing_info());
   SyncerError result = BuildAndPostCommitsImpl(syncer, session, &commit_set);
   if (result != SYNCER_OK) {
     ClearSyncingBits(session->context()->directory(), commit_set);

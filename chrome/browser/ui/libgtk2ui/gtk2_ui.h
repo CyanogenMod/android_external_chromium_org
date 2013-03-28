@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,8 +11,8 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/ui/libgtk2ui/libgtk2ui_export.h"
 #include "chrome/browser/ui/libgtk2ui/owned_widget_gtk2.h"
-#include "ui/base/linux_ui.h"
 #include "ui/gfx/color_utils.h"
+#include "ui/linux_ui/linux_ui.h"
 
 typedef struct _GdkColor GdkColor;
 typedef struct _GtkStyle GtkStyle;
@@ -33,13 +33,16 @@ class Gtk2UI : public ui::LinuxUI {
   Gtk2UI();
   virtual ~Gtk2UI();
 
+  // ui::LinuxShellDialog:
+  virtual ui::SelectFileDialog* CreateSelectFileDialog(
+      ui::SelectFileDialog::Listener* listener,
+      ui::SelectFilePolicy* policy) const OVERRIDE;
+
   // ui::LinuxUI:
   virtual bool UseNativeTheme() const OVERRIDE;
   virtual gfx::Image* GetThemeImageNamed(int id) const OVERRIDE;
   virtual bool GetColor(int id, SkColor* color) const OVERRIDE;
-  virtual ui::SelectFileDialog* CreateSelectFileDialog(
-      ui::SelectFileDialog::Listener* listener,
-      ui::SelectFilePolicy* policy) const OVERRIDE;
+  virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
 
  private:
   typedef std::map<int, SkColor> ColorMap;
@@ -52,6 +55,10 @@ class Gtk2UI : public ui::LinuxUI {
   void GetScrollbarColors(GdkColor* thumb_active_color,
                           GdkColor* thumb_inactive_color,
                           GdkColor* track_color);
+
+  // Gets the name of the current icon theme and passes it to our low level XDG
+  // integration.
+  void SetXDGIconTheme();
 
   // Extracts colors and tints from the GTK theme, both for the
   // ThemeService interface and the colors we send to webkit.

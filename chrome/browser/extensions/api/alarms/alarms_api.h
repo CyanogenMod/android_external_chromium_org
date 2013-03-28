@@ -7,21 +7,30 @@
 
 #include "chrome/browser/extensions/extension_function.h"
 
+namespace base {
+class Clock;
+}  // namespace base
+
 namespace extensions {
 
 class AlarmsCreateFunction : public SyncExtensionFunction {
-  typedef base::Time (*TimeProvider)();
  public:
   AlarmsCreateFunction();
-  explicit AlarmsCreateFunction(TimeProvider now) : now_(now) {}
+  // Use |clock| instead of the default clock. Does not take ownership
+  // of |clock|. Used for testing.
+  explicit AlarmsCreateFunction(base::Clock* clock);
  protected:
-  virtual ~AlarmsCreateFunction() {}
+  virtual ~AlarmsCreateFunction();
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("alarms.create");
+  DECLARE_EXTENSION_FUNCTION("alarms.create", ALARMS_CREATE)
  private:
-  TimeProvider now_;
+  base::Clock* const clock_;
+  // Whether or not we own |clock_|. This is needed because we own it
+  // when we create it ourselves, but not when it's passed in for
+  // testing.
+  bool owns_clock_;
 };
 
 class AlarmsGetFunction : public SyncExtensionFunction {
@@ -30,7 +39,7 @@ class AlarmsGetFunction : public SyncExtensionFunction {
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("alarms.get");
+  DECLARE_EXTENSION_FUNCTION("alarms.get", ALARMS_GET)
 };
 
 class AlarmsGetAllFunction : public SyncExtensionFunction {
@@ -39,7 +48,7 @@ class AlarmsGetAllFunction : public SyncExtensionFunction {
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("alarms.getAll");
+  DECLARE_EXTENSION_FUNCTION("alarms.getAll", ALARMS_GETALL)
 };
 
 class AlarmsClearFunction : public SyncExtensionFunction {
@@ -48,7 +57,7 @@ class AlarmsClearFunction : public SyncExtensionFunction {
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("alarms.clear");
+  DECLARE_EXTENSION_FUNCTION("alarms.clear", ALARMS_CLEAR)
 };
 
 class AlarmsClearAllFunction : public SyncExtensionFunction {
@@ -57,7 +66,7 @@ class AlarmsClearAllFunction : public SyncExtensionFunction {
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("alarms.clearAll");
+  DECLARE_EXTENSION_FUNCTION("alarms.clearAll", ALARMS_CLEARALL)
 };
 
 } //  namespace extensions

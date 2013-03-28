@@ -10,13 +10,17 @@
 namespace media {
 
 // Android implemention of AudioManager.
-class AudioManagerAndroid : public AudioManagerBase {
+class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
  public:
   AudioManagerAndroid();
 
   // Implementation of AudioManager.
   virtual bool HasAudioOutputDevices() OVERRIDE;
   virtual bool HasAudioInputDevices() OVERRIDE;
+  virtual void GetAudioInputDeviceNames(media::AudioDeviceNames* device_names)
+      OVERRIDE;
+  virtual AudioParameters GetInputStreamParameters(
+      const std::string& device_id) OVERRIDE;
 
   // Implementation of AudioManagerBase.
   virtual AudioOutputStream* MakeLinearOutputStream(
@@ -30,6 +34,9 @@ class AudioManagerAndroid : public AudioManagerBase {
 
  protected:
   virtual ~AudioManagerAndroid();
+
+  virtual AudioParameters GetPreferredOutputStreamParameters(
+      const AudioParameters& input_params) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AudioManagerAndroid);

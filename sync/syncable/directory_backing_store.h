@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/threading/non_thread_safe.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/syncable/dir_open_result.h"
 #include "sync/syncable/directory.h"
@@ -22,6 +23,8 @@ class EntitySpecifics;
 
 namespace syncer {
 namespace syncable {
+
+SYNC_EXPORT_PRIVATE extern const int32 kCurrentDBVersion;
 
 struct ColumnSpec;
 typedef Directory::MetahandlesIndex MetahandlesIndex;
@@ -41,7 +44,7 @@ typedef Directory::MetahandlesIndex MetahandlesIndex;
 // This class is abstract so that we can extend it in interesting ways for use
 // in tests.  The concrete class used in non-test scenarios is
 // OnDiskDirectoryBackingStore.
-class DirectoryBackingStore : public base::NonThreadSafe {
+class SYNC_EXPORT_PRIVATE DirectoryBackingStore : public base::NonThreadSafe {
  public:
   explicit DirectoryBackingStore(const std::string& dir_name);
   virtual ~DirectoryBackingStore();
@@ -56,6 +59,7 @@ class DirectoryBackingStore : public base::NonThreadSafe {
   // NOTE: On success (return value of OPENED), the buckets are populated with
   // newly allocated items, meaning ownership is bestowed upon the caller.
   virtual DirOpenResult Load(MetahandlesIndex* entry_bucket,
+                             JournalIndex* delete_journals,
                              Directory::KernelLoadInfo* kernel_load_info) = 0;
 
   // Updates the on-disk store with the input |snapshot| as a database
@@ -79,10 +83,12 @@ class DirectoryBackingStore : public base::NonThreadSafe {
   bool CreateShareInfoTable(bool is_temporary);
 
   bool CreateShareInfoTableVersion71(bool is_temporary);
-  // Create 'metas' or 'temp_metas' depending on value of is_temporary.
+  // Create 'metas' or 'temp_metas' depending on value of is_temporary. Also
+  // create a 'deleted_metas' table using same schema.
   bool CreateMetasTable(bool is_temporary);
   bool CreateModelsTable();
   bool CreateV71ModelsTable();
+  bool CreateV75ModelsTable();
 
   // We don't need to load any synced and applied deleted entries, we can
   // in fact just purge them forever on startup.
@@ -92,10 +98,12 @@ class DirectoryBackingStore : public base::NonThreadSafe {
 
   // Load helpers for entries and attributes.
   bool LoadEntries(MetahandlesIndex* entry_bucket);
+  bool LoadDeleteJournals(JournalIndex* delete_journals);
   bool LoadInfo(Directory::KernelLoadInfo* info);
 
   // Save/update helpers for entries.  Return false if sqlite commit fails.
-  bool SaveEntryToDB(const EntryKernel& entry);
+  static bool SaveEntryToDB(sql::Statement* save_statement,
+                            const EntryKernel& entry);
   bool SaveNewEntryToDB(const EntryKernel& entry);
   bool UpdateEntryToDB(const EntryKernel& entry);
 
@@ -105,9 +113,13 @@ class DirectoryBackingStore : public base::NonThreadSafe {
   // Close save_dbhandle_.  Broken out for testing.
   void EndSave();
 
-  // Removes each entry whose metahandle is in |handles| from the database.
-  // Does synchronous I/O.  Returns false on error.
-  bool DeleteEntries(const MetahandleSet& handles);
+  enum EntryTable {
+    METAS_TABLE,
+    DELETE_JOURNAL_TABLE,
+  };
+  // Removes each entry whose metahandle is in |handles| from the table
+  // specified by |from| table. Does synchronous I/O.  Returns false on error.
+  bool DeleteEntries(EntryTable from, const MetahandleSet& handles);
 
   // Drop all tables in preparation for reinitialization.
   void DropAllTables();
@@ -158,14 +170,26 @@ class DirectoryBackingStore : public base::NonThreadSafe {
   bool MigrateVersion80To81();
   bool MigrateVersion81To82();
   bool MigrateVersion82To83();
+  bool MigrateVersion83To84();
+  bool MigrateVersion84To85();
 
   scoped_ptr<sql::Connection> db_;
-  sql::Statement save_entry_statement_;
+  sql::Statement save_meta_statment_;
+  sql::Statement save_delete_journal_statment_;
   std::string dir_name_;
 
   // Set to true if migration left some old columns around that need to be
   // discarded.
   bool needs_column_refresh_;
+
+ private:
+  // Helper function for loading entries from specified table.
+  template<class T>
+  bool LoadEntriesInternal(const std::string& table, T* bucket);
+
+  // Prepares |save_statement| for saving entries in |table|.
+  void PrepareSaveEntryStatement(EntryTable table,
+                                 sql::Statement* save_statement);
 
   DISALLOW_COPY_AND_ASSIGN(DirectoryBackingStore);
 };

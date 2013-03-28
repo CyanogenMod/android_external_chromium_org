@@ -10,12 +10,11 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/files/file_path.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/prefs/pref_service.h"
 #include "base/synchronization/lock.h"
 #include "chrome/browser/plugins/plugin_finder.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/refcounted_profile_keyed_service.h"
 
 class Profile;
@@ -34,8 +33,7 @@ class PluginList;
 // This class stores information about whether a plug-in or a plug-in group is
 // enabled or disabled.
 // Except where otherwise noted, it can be used on every thread.
-class PluginPrefs : public RefcountedProfileKeyedService,
-                    public PrefObserver {
+class PluginPrefs : public RefcountedProfileKeyedService {
  public:
   enum PolicyStatus {
     NO_POLICY = 0,  // Neither enabled or disabled by policy.
@@ -70,7 +68,7 @@ class PluginPrefs : public RefcountedProfileKeyedService,
   // then enabling/disabling the plug-in is ignored and |callback| is run
   // with 'false' passed to it. Otherwise the plug-in state is changed
   // and |callback| is run with 'true' passed to it.
-  void EnablePlugin(bool enable, const FilePath& file_path,
+  void EnablePlugin(bool enable, const base::FilePath& file_path,
                     const base::Callback<void(bool)>& callback);
 
   // Returns whether there is a policy enabling or disabling plug-ins of the
@@ -84,10 +82,6 @@ class PluginPrefs : public RefcountedProfileKeyedService,
 
   // RefCountedProfileKeyedBase method override.
   virtual void ShutdownOnUIThread() OVERRIDE;
-
-  // PrefObserver method override.
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
 
  private:
   friend class base::RefCountedThreadSafe<PluginPrefs>;
@@ -103,19 +97,21 @@ class PluginPrefs : public RefcountedProfileKeyedService,
 
     // Returns whether |plugin| is found. If |plugin| cannot be found,
     // |*enabled| won't be touched.
-    bool Get(const FilePath& plugin, bool* enabled) const;
-    void Set(const FilePath& plugin, bool enabled);
-    // It is similar to Set(), except that it does nothing if |plugin| needs to
-    // be converted to a different key.
-    void SetIgnorePseudoKey(const FilePath& plugin, bool enabled);
+    bool Get(const base::FilePath& plugin, bool* enabled) const;
+    void Set(const base::FilePath& plugin, bool enabled);
 
    private:
-    FilePath ConvertMapKey(const FilePath& plugin) const;
+    base::FilePath ConvertMapKey(const base::FilePath& plugin) const;
 
-    std::map<FilePath, bool> state_;
+    std::map<base::FilePath, bool> state_;
   };
 
   virtual ~PluginPrefs();
+
+  // Called to update one of the policy_xyz patterns below when a
+  // preference changes.
+  void UpdatePatternsAndNotify(std::set<string16>* patterns,
+                               const std::string& pref_name);
 
   // Allows unit tests to directly set enforced plug-in patterns.
   void SetPolicyEnforcedPluginPatterns(
@@ -133,7 +129,7 @@ class PluginPrefs : public RefcountedProfileKeyedService,
       const std::vector<webkit::WebPluginInfo>& plugins);
   void EnablePluginInternal(
       bool enabled,
-      const FilePath& path,
+      const base::FilePath& path,
       PluginFinder* plugin_finder,
       const base::Callback<void(bool)>& callback,
       const std::vector<webkit::WebPluginInfo>& plugins);

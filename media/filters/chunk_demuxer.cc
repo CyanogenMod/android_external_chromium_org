@@ -10,156 +10,16 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
-#include "base/logging.h"
 #include "base/message_loop_proxy.h"
-#include "base/string_util.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/video_decoder_config.h"
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
-#include "media/mp4/mp4_stream_parser.h"
-#endif
-#include "media/webm/webm_stream_parser.h"
+#include "media/filters/stream_parser_factory.h"
 
 using base::TimeDelta;
 
 namespace media {
 
-struct CodecInfo {
-  const char* pattern;
-  DemuxerStream::Type type;
-};
-
-typedef StreamParser* (*ParserFactoryFunction)(
-    const std::vector<std::string>& codecs);
-
-struct SupportedTypeInfo {
-  const char* type;
-  const ParserFactoryFunction factory_function;
-  const CodecInfo** codecs;
-};
-
-static const CodecInfo kVP8CodecInfo = { "vp8", DemuxerStream::VIDEO };
-static const CodecInfo kVorbisCodecInfo = { "vorbis", DemuxerStream::AUDIO };
-
-static const CodecInfo* kVideoWebMCodecs[] = {
-  &kVP8CodecInfo,
-  &kVorbisCodecInfo,
-  NULL
-};
-
-static const CodecInfo* kAudioWebMCodecs[] = {
-  &kVorbisCodecInfo,
-  NULL
-};
-
-static StreamParser* BuildWebMParser(const std::vector<std::string>& codecs) {
-  return new WebMStreamParser();
-}
-
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
-static const CodecInfo kH264CodecInfo = { "avc1.*", DemuxerStream::VIDEO };
-static const CodecInfo kAACCodecInfo = { "mp4a.40.*", DemuxerStream::AUDIO };
-
-static const CodecInfo* kVideoMP4Codecs[] = {
-  &kH264CodecInfo,
-  &kAACCodecInfo,
-  NULL
-};
-
-static const CodecInfo* kAudioMP4Codecs[] = {
-  &kAACCodecInfo,
-  NULL
-};
-
-// Mimetype codec string that indicates the content contains AAC SBR frames.
-static const char* kSBRCodecId = "mp4a.40.5";
-
-static StreamParser* BuildMP4Parser(const std::vector<std::string>& codecs) {
-  bool has_sbr = false;
-  for (size_t i = 0; i < codecs.size(); ++i) {
-    if (codecs[i] == kSBRCodecId) {
-      has_sbr = true;
-      break;
-    }
-  }
-
-  return new mp4::MP4StreamParser(has_sbr);
-}
-#endif
-
-static const SupportedTypeInfo kSupportedTypeInfo[] = {
-  { "video/webm", &BuildWebMParser, kVideoWebMCodecs },
-  { "audio/webm", &BuildWebMParser, kAudioWebMCodecs },
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
-  { "video/mp4", &BuildMP4Parser, kVideoMP4Codecs },
-  { "audio/mp4", &BuildMP4Parser, kAudioMP4Codecs },
-#endif
-};
-
-// Checks to see if the specified |type| and |codecs| list are supported.
-// Returns true if |type| and all codecs listed in |codecs| are supported.
-//         |factory_function| contains a function that can build a StreamParser
-//                            for this type.
-//         |has_audio| is true if an audio codec was specified.
-//         |has_video| is true if a video codec was specified.
-// Returns false otherwise. The values of |factory_function|, |has_audio|,
-//         and |has_video| are undefined.
-static bool IsSupported(const std::string& type,
-                        std::vector<std::string>& codecs,
-                        ParserFactoryFunction* factory_function,
-                        bool* has_audio,
-                        bool* has_video) {
-  *factory_function = NULL;
-  *has_audio = false;
-  *has_video = false;
-
-  // Search for the SupportedTypeInfo for |type|.
-  for (size_t i = 0; i < arraysize(kSupportedTypeInfo); ++i) {
-    const SupportedTypeInfo& type_info = kSupportedTypeInfo[i];
-    if (type == type_info.type) {
-      // Make sure all the codecs specified in |codecs| are
-      // in the supported type info.
-      for (size_t j = 0; j < codecs.size(); ++j) {
-        // Search the type info for a match.
-        bool found_codec = false;
-        DemuxerStream::Type codec_type = DemuxerStream::UNKNOWN;
-
-        for (int k = 0; type_info.codecs[k]; ++k) {
-          if (MatchPattern(codecs[j], type_info.codecs[k]->pattern)) {
-            found_codec = true;
-            codec_type = type_info.codecs[k]->type;
-            break;
-          }
-        }
-
-        if (!found_codec)
-          return false;
-
-        switch (codec_type) {
-          case DemuxerStream::AUDIO:
-            *has_audio = true;
-            break;
-          case DemuxerStream::VIDEO:
-            *has_video = true;
-            break;
-          default:
-            DVLOG(1) << "Unsupported codec type '"<< codec_type << "' for "
-                     << codecs[j];
-            return false;
-        }
-      }
-
-      *factory_function = type_info.factory_function;
-
-      // All codecs were supported by this |type|.
-      return true;
-    }
-  }
-
-  // |type| didn't match any of the supported types.
-  return false;
-}
 
 class ChunkDemuxerStream : public DemuxerStream {
  public:
@@ -167,8 +27,10 @@ class ChunkDemuxerStream : public DemuxerStream {
   typedef std::deque<ReadCB> ReadCBQueue;
   typedef std::deque<base::Closure> ClosureQueue;
 
-  explicit ChunkDemuxerStream(const AudioDecoderConfig& audio_config);
-  explicit ChunkDemuxerStream(const VideoDecoderConfig& video_config);
+  ChunkDemuxerStream(const AudioDecoderConfig& audio_config,
+                     const LogCB& log_cb);
+  ChunkDemuxerStream(const VideoDecoderConfig& video_config,
+                     const LogCB& log_cb);
 
   void StartWaitingForSeek();
   void Seek(TimeDelta time);
@@ -190,14 +52,16 @@ class ChunkDemuxerStream : public DemuxerStream {
   // Append() belong to a media segment that starts at |start_timestamp|.
   void OnNewMediaSegment(TimeDelta start_timestamp);
 
-  // Called when mid-stream config updates occur.
+  // Called when midstream config updates occur.
   // Returns true if the new config is accepted.
   // Returns false if the new config should trigger an error.
   bool UpdateAudioConfig(const AudioDecoderConfig& config);
   bool UpdateVideoConfig(const VideoDecoderConfig& config);
 
   void EndOfStream();
+  void CancelEndOfStream();
   bool CanEndOfStream() const;
+
   void Shutdown();
 
   // DemuxerStream methods.
@@ -248,18 +112,20 @@ class ChunkDemuxerStream : public DemuxerStream {
   DISALLOW_IMPLICIT_CONSTRUCTORS(ChunkDemuxerStream);
 };
 
-ChunkDemuxerStream::ChunkDemuxerStream(const AudioDecoderConfig& audio_config)
+ChunkDemuxerStream::ChunkDemuxerStream(const AudioDecoderConfig& audio_config,
+                                       const LogCB& log_cb)
     : type_(AUDIO),
       state_(RETURNING_DATA_FOR_READS),
       end_of_stream_(false) {
-  stream_.reset(new SourceBufferStream(audio_config));
+  stream_.reset(new SourceBufferStream(audio_config, log_cb));
 }
 
-ChunkDemuxerStream::ChunkDemuxerStream(const VideoDecoderConfig& video_config)
+ChunkDemuxerStream::ChunkDemuxerStream(const VideoDecoderConfig& video_config,
+                                       const LogCB& log_cb)
     : type_(VIDEO),
       state_(RETURNING_DATA_FOR_READS),
       end_of_stream_(false) {
-  stream_.reset(new SourceBufferStream(video_config));
+  stream_.reset(new SourceBufferStream(video_config, log_cb));
 }
 
 void ChunkDemuxerStream::StartWaitingForSeek() {
@@ -267,8 +133,6 @@ void ChunkDemuxerStream::StartWaitingForSeek() {
   ReadCBQueue read_cbs;
   {
     base::AutoLock auto_lock(lock_);
-    if (state_ != CANCELED)
-      end_of_stream_ = false;
     ChangeState_Locked(WAITING_FOR_SEEK);
     std::swap(read_cbs_, read_cbs);
   }
@@ -298,7 +162,6 @@ void ChunkDemuxerStream::CancelPendingSeek() {
   {
     base::AutoLock auto_lock(lock_);
     ChangeState_Locked(CANCELED);
-    end_of_stream_ = false;
     std::swap(read_cbs_, read_cbs);
   }
 
@@ -386,6 +249,12 @@ void ChunkDemuxerStream::EndOfStream() {
 
   for (ClosureQueue::iterator it = closures.begin(); it != closures.end(); ++it)
     it->Run();
+}
+
+void ChunkDemuxerStream::CancelEndOfStream() {
+  base::AutoLock auto_lock(lock_);
+  DCHECK(end_of_stream_);
+  end_of_stream_ = false;
 }
 
 bool ChunkDemuxerStream::CanEndOfStream() const {
@@ -507,6 +376,7 @@ bool ChunkDemuxerStream::GetNextBuffer_Locked(
           }
           return false;
         case SourceBufferStream::kConfigChange:
+          DVLOG(2) << "Config change reported to ChunkDemuxerStream.";
           *status = kConfigChanged;
           *buffer = NULL;
           return true;
@@ -533,11 +403,15 @@ bool ChunkDemuxerStream::GetNextBuffer_Locked(
 }
 
 ChunkDemuxer::ChunkDemuxer(const base::Closure& open_cb,
-                           const NeedKeyCB& need_key_cb)
+                           const NeedKeyCB& need_key_cb,
+                           const LogCB& log_cb)
     : state_(WAITING_FOR_INIT),
       host_(NULL),
       open_cb_(open_cb),
-      need_key_cb_(need_key_cb) {
+      need_key_cb_(need_key_cb),
+      log_cb_(log_cb),
+      duration_(kNoTimestamp()),
+      user_specified_duration_(-1) {
   DCHECK(!open_cb_.is_null());
   DCHECK(!need_key_cb_.is_null());
 }
@@ -546,6 +420,12 @@ void ChunkDemuxer::Initialize(DemuxerHost* host, const PipelineStatusCB& cb) {
   DVLOG(1) << "Init()";
 
   base::AutoLock auto_lock(lock_);
+
+  if (state_ == SHUTDOWN) {
+    base::MessageLoopProxy::current()->PostTask(FROM_HERE, base::Bind(
+        cb, DEMUXER_ERROR_COULD_NOT_OPEN));
+    return;
+  }
   DCHECK_EQ(state_, WAITING_FOR_INIT);
   host_ = host;
 
@@ -598,6 +478,7 @@ void ChunkDemuxer::OnAudioRendererDisabled() {
 // Demuxer implementation.
 scoped_refptr<DemuxerStream> ChunkDemuxer::GetStream(
     DemuxerStream::Type type) {
+  base::AutoLock auto_lock(lock_);
   if (type == DemuxerStream::VIDEO)
     return video_;
 
@@ -624,8 +505,6 @@ void ChunkDemuxer::StartWaitingForSeek() {
 
   if (video_)
     video_->StartWaitingForSeek();
-
-  ChangeState_Locked(INITIALIZED);
 }
 
 void ChunkDemuxer::CancelPendingSeek() {
@@ -640,9 +519,6 @@ void ChunkDemuxer::CancelPendingSeek() {
 
     if (video_)
       video_->CancelPendingSeek();
-
-    if (state_ == ENDED)
-      ChangeState_Locked(INITIALIZED);
   }
 
   if (!cb.is_null())
@@ -661,9 +537,12 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
 
   bool has_audio = false;
   bool has_video = false;
-  ParserFactoryFunction factory_function = NULL;
-  if (!IsSupported(type, codecs, &factory_function, &has_audio, &has_video))
-    return kNotSupported;
+  scoped_ptr<media::StreamParser> stream_parser(
+      StreamParserFactory::Create(type, codecs, log_cb_,
+                                  &has_audio, &has_video));
+
+  if (!stream_parser)
+    return ChunkDemuxer::kNotSupported;
 
   if ((has_audio && !source_id_audio_.empty()) ||
       (has_video && !source_id_video_.empty()))
@@ -684,9 +563,6 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
                           base::Unretained(this));
   }
 
-  scoped_ptr<StreamParser> stream_parser(factory_function(codecs));
-  CHECK(stream_parser.get());
-
   stream_parser->Init(
       base::Bind(&ChunkDemuxer::OnStreamParserInitDone, base::Unretained(this)),
       base::Bind(&ChunkDemuxer::OnNewConfigs, base::Unretained(this),
@@ -696,7 +572,8 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
       base::Bind(&ChunkDemuxer::OnNeedKey, base::Unretained(this)),
       base::Bind(&ChunkDemuxer::OnNewMediaSegment, base::Unretained(this), id),
       base::Bind(&ChunkDemuxer::OnEndOfMediaSegment,
-                 base::Unretained(this), id));
+                 base::Unretained(this), id),
+      log_cb_);
 
   stream_parser_map_[id] = stream_parser.release();
   SourceInfo info = { base::TimeDelta(), true };
@@ -706,8 +583,8 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
 }
 
 void ChunkDemuxer::RemoveId(const std::string& id) {
-  CHECK(IsValidId(id));
   base::AutoLock auto_lock(lock_);
+  CHECK(IsValidId(id));
 
   delete stream_parser_map_[id];
   stream_parser_map_.erase(id);
@@ -727,11 +604,10 @@ void ChunkDemuxer::RemoveId(const std::string& id) {
 }
 
 Ranges<TimeDelta> ChunkDemuxer::GetBufferedRanges(const std::string& id) const {
+  base::AutoLock auto_lock(lock_);
   DCHECK(!id.empty());
   DCHECK(IsValidId(id));
   DCHECK(id == source_id_audio_ || id == source_id_video_);
-
-  base::AutoLock auto_lock(lock_);
 
   if (id == source_id_audio_ && id != source_id_video_) {
     // Only include ranges that have been buffered in |audio_|
@@ -777,14 +653,12 @@ Ranges<TimeDelta> ChunkDemuxer::ComputeIntersection() const {
   return result;
 }
 
-bool ChunkDemuxer::AppendData(const std::string& id,
+void ChunkDemuxer::AppendData(const std::string& id,
                               const uint8* data,
                               size_t length) {
   DVLOG(1) << "AppendData(" << id << ", " << length << ")";
 
   DCHECK(!id.empty());
-  DCHECK(data);
-  DCHECK_GT(length, 0u);
 
   Ranges<TimeDelta> ranges;
 
@@ -795,12 +669,27 @@ bool ChunkDemuxer::AppendData(const std::string& id,
     // Capture if the SourceBuffer has a pending seek before we start parsing.
     bool old_seek_pending = IsSeekPending_Locked();
 
+    if (state_ == ENDED) {
+      ChangeState_Locked(INITIALIZED);
+
+      if (audio_)
+        audio_->CancelEndOfStream();
+
+      if (video_)
+        video_->CancelEndOfStream();
+    }
+
+    if (length == 0u)
+      return;
+
+    DCHECK(data);
+
     switch (state_) {
       case INITIALIZING:
         DCHECK(IsValidId(id));
         if (!stream_parser_map_[id]->Parse(data, length)) {
           ReportError_Locked(DEMUXER_ERROR_COULD_NOT_OPEN);
-          return true;
+          return;
         }
         break;
 
@@ -808,16 +697,19 @@ bool ChunkDemuxer::AppendData(const std::string& id,
         DCHECK(IsValidId(id));
         if (!stream_parser_map_[id]->Parse(data, length)) {
           ReportError_Locked(PIPELINE_ERROR_DECODE);
-          return true;
+          return;
         }
       } break;
 
+      case PARSE_ERROR:
+        DVLOG(1) << "AppendData(): Ignoring data after a parse error.";
+        return;
+
       case WAITING_FOR_INIT:
       case ENDED:
-      case PARSE_ERROR:
       case SHUTDOWN:
         DVLOG(1) << "AppendData(): called in unexpected state " << state_;
-        return false;
+        return;
     }
 
     // Check to see if data was appended at the pending seek point. This
@@ -834,35 +726,82 @@ bool ChunkDemuxer::AppendData(const std::string& id,
 
   if (!cb.is_null())
     cb.Run(PIPELINE_OK);
-
-  return true;
 }
 
 void ChunkDemuxer::Abort(const std::string& id) {
   DVLOG(1) << "Abort(" << id << ")";
+  base::AutoLock auto_lock(lock_);
   DCHECK(!id.empty());
   CHECK(IsValidId(id));
-
   stream_parser_map_[id]->Flush();
   source_info_map_[id].can_update_offset = true;
 }
 
-void ChunkDemuxer::SetDuration(base::TimeDelta duration) {
-  DVLOG(1) << "SetDuration(" << duration.InSecondsF() << ")";
+double ChunkDemuxer::GetDuration() {
+  base::AutoLock auto_lock(lock_);
+  return GetDuration_Locked();
+}
 
-  if (duration == duration_)
+double ChunkDemuxer::GetDuration_Locked() {
+  lock_.AssertAcquired();
+  if (duration_ == kNoTimestamp())
+    return std::numeric_limits<double>::quiet_NaN();
+
+  // Return positive infinity if the resource is unbounded.
+  // http://www.whatwg.org/specs/web-apps/current-work/multipage/video.html#dom-media-duration
+  if (duration_ == kInfiniteDuration())
+    return std::numeric_limits<double>::infinity();
+
+  if (user_specified_duration_ >= 0)
+    return user_specified_duration_;
+
+  return duration_.InSecondsF();
+}
+
+void ChunkDemuxer::SetDuration(double duration) {
+  base::AutoLock auto_lock(lock_);
+  DVLOG(1) << "SetDuration(" << duration << ")";
+  DCHECK_GE(duration, 0);
+
+  if (duration == GetDuration_Locked())
     return;
 
-  UpdateDuration(duration);
+  // Compute & bounds check the TimeDelta representation of duration.
+  // This can be different if the value of |duration| doesn't fit the range or
+  // precision of base::TimeDelta.
+  base::TimeDelta min_duration = base::TimeDelta::FromInternalValue(1);
+  base::TimeDelta max_duration =
+      base::TimeDelta::FromInternalValue(kint64max - 1);
+  double min_duration_in_seconds = min_duration.InSecondsF();
+  double max_duration_in_seconds = max_duration.InSecondsF();
+
+  base::TimeDelta duration_td;
+  if (duration == std::numeric_limits<double>::infinity()) {
+    duration_td = media::kInfiniteDuration();
+  } else if (duration < min_duration_in_seconds) {
+    duration_td = min_duration;
+  } else if (duration > max_duration_in_seconds) {
+    duration_td = max_duration;
+  } else {
+    duration_td = base::TimeDelta::FromMicroseconds(
+        duration * base::Time::kMicrosecondsPerSecond);
+  }
+
+  DCHECK(duration_td > base::TimeDelta());
+
+  user_specified_duration_ = duration;
+  duration_ = duration_td;
+  host_->SetDuration(duration_);
 
   if (audio_)
-    audio_->OnSetDuration(duration);
+    audio_->OnSetDuration(duration_);
 
   if (video_)
-    video_->OnSetDuration(duration);
+    video_->OnSetDuration(duration_);
 }
 
 bool ChunkDemuxer::SetTimestampOffset(const std::string& id, TimeDelta offset) {
+  base::AutoLock auto_lock(lock_);
   DVLOG(1) << "SetTimestampOffset(" << id << ", " << offset.InSecondsF() << ")";
   CHECK(IsValidId(id));
 
@@ -1007,7 +946,7 @@ void ChunkDemuxer::OnStreamParserInitDone(bool success, TimeDelta duration) {
     return;
   }
 
-  if (duration != base::TimeDelta() && duration_ == base::TimeDelta())
+  if (duration != base::TimeDelta() && duration_ == kNoTimestamp())
     UpdateDuration(duration);
 
   // Wait until all streams have initialized.
@@ -1021,7 +960,7 @@ void ChunkDemuxer::OnStreamParserInitDone(bool success, TimeDelta duration) {
   if (video_)
     video_->Seek(TimeDelta());
 
-  if (duration_ == TimeDelta())
+  if (duration_ == kNoTimestamp())
     duration_ = kInfiniteDuration();
 
   // The demuxer is now initialized after the |start_timestamp_| was set.
@@ -1046,13 +985,23 @@ bool ChunkDemuxer::OnNewConfigs(bool has_audio, bool has_video,
   // specified in AddId() or more configs after a stream is initialized.
   // Only allow a single audio config for now.
   if (has_audio != audio_config.IsValidConfig()) {
-    DVLOG(1) << "OnNewConfigs() : Got unexpected audio config.";
+    MEDIA_LOG(log_cb_)
+        << "Initialization segment"
+        << (audio_config.IsValidConfig() ? " has" : " does not have")
+        << " an audio track, but the mimetype"
+        << (has_audio ? " specifies" : " does not specify")
+        << " an audio codec.";
     return false;
   }
 
   // Only allow a single video config for now.
   if (has_video != video_config.IsValidConfig()) {
-    DVLOG(1) << "OnNewConfigs() : Got unexpected video config.";
+    MEDIA_LOG(log_cb_)
+        << "Initialization segment"
+        << (video_config.IsValidConfig() ? " has" : " does not have")
+        << " a video track, but the mimetype"
+        << (has_video ? " specifies" : " does not specify")
+        << " a video codec.";
     return false;
   }
 
@@ -1061,7 +1010,7 @@ bool ChunkDemuxer::OnNewConfigs(bool has_audio, bool has_video,
     if (audio_) {
       success &= audio_->UpdateAudioConfig(audio_config);
     } else {
-      audio_ = new ChunkDemuxerStream(audio_config);
+      audio_ = new ChunkDemuxerStream(audio_config, log_cb_);
     }
   }
 
@@ -1069,11 +1018,11 @@ bool ChunkDemuxer::OnNewConfigs(bool has_audio, bool has_video,
     if (video_) {
       success &= video_->UpdateVideoConfig(video_config);
     } else {
-      video_ = new ChunkDemuxerStream(video_config);
+      video_ = new ChunkDemuxerStream(video_config, log_cb_);
     }
   }
 
-  DVLOG(1) << "OnNewConfigs() : success " << success;
+  DVLOG(1) << "OnNewConfigs() : " << (success ? "success" : "failed");
   return success;
 }
 
@@ -1163,12 +1112,14 @@ void ChunkDemuxer::AdjustBufferTimestamps(
 }
 
 bool ChunkDemuxer::IsValidId(const std::string& source_id) const {
+  lock_.AssertAcquired();
   return source_info_map_.count(source_id) > 0u &&
       stream_parser_map_.count(source_id) > 0u;
 }
 
 void ChunkDemuxer::UpdateDuration(base::TimeDelta new_duration) {
   DCHECK(duration_ != new_duration);
+  user_specified_duration_ = -1;
   duration_ = new_duration;
   host_->SetDuration(new_duration);
 }

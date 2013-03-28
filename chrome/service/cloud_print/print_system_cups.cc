@@ -14,19 +14,19 @@
 #include <map>
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/child_process_logging.h"
-#include "chrome/service/cloud_print/cloud_print_consts.h"
+#include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/service/cloud_print/cloud_print_helpers.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
@@ -106,7 +106,7 @@ class PrintSystemCUPS : public PrintSystem {
 
   // Helper functions.
   PlatformJobId SpoolPrintJob(const std::string& print_ticket,
-                              const FilePath& print_data_file_path,
+                              const base::FilePath& print_data_file_path,
                               const std::string& print_data_mime_type,
                               const std::string& printer_name,
                               const std::string& job_title,
@@ -289,7 +289,8 @@ class PrinterWatcherCUPS
     return true;
   }
 
-  bool GetCurrentPrinterInfo(printing::PrinterBasicInfo* printer_info) {
+  virtual bool GetCurrentPrinterInfo(
+      printing::PrinterBasicInfo* printer_info) OVERRIDE {
     DCHECK(printer_info);
     return print_system_->GetPrinterInfo(printer_name_, printer_info);
   }
@@ -380,7 +381,7 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
 
   // PrintSystem::JobSpooler implementation.
   virtual bool Spool(const std::string& print_ticket,
-                     const FilePath& print_data_file_path,
+                     const base::FilePath& print_data_file_path,
                      const std::string& print_data_mime_type,
                      const std::string& printer_name,
                      const std::string& job_title,
@@ -562,13 +563,11 @@ bool PrintSystemCUPS::ParsePrintTicket(
   options->clear();
   DictionaryValue* ticket_dict =
       static_cast<DictionaryValue*>(ticket_value.get());
-  DictionaryValue::key_iterator it(ticket_dict->begin_keys());
-  for (; it != ticket_dict->end_keys(); ++it) {
-    const std::string& key = *it;
+  for (DictionaryValue::Iterator it(*ticket_dict); !it.IsAtEnd();
+       it.Advance()) {
     std::string value;
-    if (ticket_dict->GetString(key, &value)) {
-      (*options)[key] = value;
-    }
+    if (it.value().GetAsString(&value))
+      (*options)[it.key()] = value;
   }
 
   return true;
@@ -760,7 +759,7 @@ int PrintSystemCUPS::GetJobs(cups_job_t** jobs, const GURL& url,
 
 PlatformJobId PrintSystemCUPS::SpoolPrintJob(
     const std::string& print_ticket,
-    const FilePath& print_data_file_path,
+    const base::FilePath& print_data_file_path,
     const std::string& print_data_mime_type,
     const std::string& printer_name,
     const std::string& job_title,
@@ -786,7 +785,7 @@ PlatformJobId PrintSystemCUPS::SpoolPrintJob(
   DCHECK(res);  // If print ticket is invalid we still print using defaults.
 
   // Check if this is a dry run (test) job.
-  *dry_run = CloudPrintHelpers::IsDryRunJob(tags);
+  *dry_run = IsDryRunJob(tags);
   if (*dry_run) {
     VLOG(1) << "CP_CUPS: Dry run job spooled";
     return kDryRunJobId;

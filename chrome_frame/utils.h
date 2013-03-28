@@ -20,11 +20,14 @@
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/rect.h"
 
-class FilePath;
 class RegistryListPreferencesHolder;
 interface IBrowserService;
 interface IWebBrowser2;
 struct ContextMenuModel;
+
+namespace base {
+class FilePath;
+}
 
 // utils.h : Various utility functions and classes
 extern const char kGCFProtocol[];
@@ -207,7 +210,7 @@ IEVersion GetIEVersion();
 // hosted. Returns 0 if the current process is not IE or any other error occurs.
 uint32 GetIEMajorVersion();
 
-FilePath GetIETemporaryFilesFolder();
+base::FilePath GetIETemporaryFilesFolder();
 
 // Retrieves the file version from a module handle without extra round trips
 // to the disk (as happens with the regular GetFileVersionInfo API).
@@ -545,10 +548,6 @@ class NavigationConstraints;
 bool CanNavigate(const GURL& url,
                  NavigationConstraints* navigation_constraints);
 
-// Utility function that prevents the current module from ever being unloaded.
-// Call if you make irreversible patches.
-void PinModule();
-
 // Helper function to spin a message loop and dispatch messages while waiting
 // for a handle to be signaled.
 void WaitWithMessageLoop(HANDLE* handles, int count, DWORD timeout);
@@ -601,6 +600,6 @@ bool IncreaseWinInetConnections(DWORD connections);
 // Sets |profile_path| to the path for the Chrome Frame |profile_name|
 // profile.
 void GetChromeFrameProfilePath(const string16& profile_name,
-                               FilePath* profile_path);
+                               base::FilePath* profile_path);
 
 #endif  // CHROME_FRAME_UTILS_H_

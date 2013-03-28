@@ -11,8 +11,8 @@
 
 namespace content {
 
-class CONTENT_EXPORT BrowserThreadImpl
-    : public BrowserThread, public base::Thread {
+class CONTENT_EXPORT BrowserThreadImpl : public BrowserThread,
+                                         public base::Thread {
  public:
   // Construct a BrowserThreadImpl with the supplied identifier.  It is an error
   // to construct a BrowserThreadImpl that already exists.
@@ -56,6 +56,10 @@ class CONTENT_EXPORT BrowserThreadImpl
 
   // Common initialization code for the constructors.
   void Initialize();
+
+  // For testing.
+  friend class ContentTestSuiteBaseListener;
+  static void FlushThreadPoolHelper();
 
   // The identifier of this thread.  Only one thread can exist with a given
   // identifier at a given time.

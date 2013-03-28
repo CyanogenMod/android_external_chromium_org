@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "base/string16.h"
+#include "third_party/icu/public/i18n/unicode/coll.h"
 #include "ui/base/ui_export.h"
-#include "unicode/coll.h"
 
 namespace gfx {
 class ImageSkia;
@@ -97,15 +97,6 @@ struct UI_EXPORT TableColumn {
   };
 
   TableColumn();
-  TableColumn(int id, const string16& title,
-              Alignment alignment, int width);
-  TableColumn(int id, const string16& title,
-              Alignment alignment, int width, float percent);
-
-  // It's common (but not required) to use the title's IDS_* tag as the column
-  // id. In this case, the provided conveniences look up the title string on
-  // bahalf of the caller.
-  TableColumn(int id, Alignment alignment, int width);
   TableColumn(int id, Alignment alignment, int width, float percent);
 
   // A unique identifier for the column.

@@ -43,7 +43,7 @@ namespace ui {
 namespace {
 
 // Font sizes relative to base font.
-const int kSmallFontSizeDelta = -2;
+const int kSmallFontSizeDelta = -1;
 const int kMediumFontSizeDelta = 3;
 const int kLargeFontSizeDelta = 8;
 
@@ -54,54 +54,6 @@ const unsigned char kPngScaleChunkType[4] = { 'c', 's', 'C', 'l' };
 const unsigned char kPngDataChunkType[4] = { 'I', 'D', 'A', 'T' };
 
 ResourceBundle* g_shared_instance_ = NULL;
-
-bool ShouldHighlightMissingScaledResources() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kHighlightMissingScaledResources);
-}
-
-// A wrapper for PNGCodec::Decode that returns information about custom chunks.
-// For security reasons we can't alter PNGCodec to return this information. Our
-// PNG files are preprocessed by GRIT, and any special chunks should occur
-// immediately after the IHDR chunk.
-bool DecodePNG(const unsigned char* buf,
-               size_t size,
-               SkBitmap* bitmap,
-               bool* fell_back_to_1x) {
-  *fell_back_to_1x = false;
-
-  if (size < arraysize(kPngMagic) ||
-      memcmp(buf, kPngMagic, arraysize(kPngMagic)) != 0) {
-    // Data invalid or a JPEG.
-    return false;
-  }
-  size_t pos = arraysize(kPngMagic);
-
-  // Scan for custom chunks until we find one, find the IDAT chunk, or run out
-  // of chunks.
-  for (;;) {
-    if (size - pos < kPngChunkMetadataSize)
-      break;
-    uint32 length = 0;
-    net::ReadBigEndian(reinterpret_cast<const char*>(buf + pos), &length);
-    if (size - pos - kPngChunkMetadataSize < length)
-      break;
-    if (length == 0 && memcmp(buf + pos + sizeof(uint32), kPngScaleChunkType,
-                              arraysize(kPngScaleChunkType)) == 0) {
-      *fell_back_to_1x = true;
-      break;
-    }
-    if (memcmp(buf + pos + sizeof(uint32), kPngDataChunkType,
-               arraysize(kPngDataChunkType)) == 0) {
-      // Stop looking for custom chunks, any custom chunks should be before an
-      // IDAT chunk.
-      break;
-    }
-    pos += length + kPngChunkMetadataSize;
-  }
-  // Pass the data to the PNG decoder.
-  return gfx::PNGCodec::Decode(buf, size, bitmap);
-}
 
 }  // namespace
 
@@ -123,7 +75,7 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
       ui::ScaleFactor scale_factor) OVERRIDE {
     SkBitmap image;
     bool fell_back_to_1x = false;
-    bool found = rb_->LoadBitmap(resource_id_, scale_factor,
+    bool found = rb_->LoadBitmap(resource_id_, &scale_factor,
                                  &image, &fell_back_to_1x);
     if (!found)
       return gfx::ImageSkiaRep();
@@ -201,7 +153,7 @@ void ResourceBundle::InitSharedInstanceWithPakFile(
 }
 
 // static
-void ResourceBundle::InitSharedInstanceWithPakPath(const FilePath& path) {
+void ResourceBundle::InitSharedInstanceWithPakPath(const base::FilePath& path) {
   DCHECK(g_shared_instance_ == NULL) << "ResourceBundle initialized twice";
   g_shared_instance_ = new ResourceBundle(NULL);
 
@@ -232,12 +184,12 @@ bool ResourceBundle::LocaleDataPakExists(const std::string& locale) {
   return !GetLocaleFilePath(locale, true).empty();
 }
 
-void ResourceBundle::AddDataPackFromPath(const FilePath& path,
+void ResourceBundle::AddDataPackFromPath(const base::FilePath& path,
                                          ScaleFactor scale_factor) {
   AddDataPackFromPathInternal(path, scale_factor, false);
 }
 
-void ResourceBundle::AddOptionalDataPackFromPath(const FilePath& path,
+void ResourceBundle::AddOptionalDataPackFromPath(const base::FilePath& path,
                                          ScaleFactor scale_factor) {
   AddDataPackFromPathInternal(path, scale_factor, true);
 }
@@ -255,12 +207,12 @@ void ResourceBundle::AddDataPackFromFile(base::PlatformFile file,
 }
 
 #if !defined(OS_MACOSX)
-FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale,
-                                           bool test_file_exists) {
+base::FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale,
+                                                 bool test_file_exists) {
   if (app_locale.empty())
-    return FilePath();
+    return base::FilePath();
 
-  FilePath locale_file_path;
+  base::FilePath locale_file_path;
 
   PathService::Get(ui::DIR_LOCALES, &locale_file_path);
 
@@ -274,10 +226,10 @@ FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale,
 
   // Don't try to load empty values or values that are not absolute paths.
   if (locale_file_path.empty() || !locale_file_path.IsAbsolute())
-    return FilePath();
+    return base::FilePath();
 
   if (test_file_exists && !file_util::PathExists(locale_file_path))
-    return FilePath();
+    return base::FilePath();
 
   return locale_file_path;
 }
@@ -287,7 +239,7 @@ std::string ResourceBundle::LoadLocaleResources(
     const std::string& pref_locale) {
   DCHECK(!locale_resources_data_.get()) << "locale.pak already loaded";
   std::string app_locale = l10n_util::GetApplicationLocale(pref_locale);
-  FilePath locale_file_path = GetOverriddenPakPath();
+  base::FilePath locale_file_path = GetOverriddenPakPath();
   if (locale_file_path.empty()) {
     CommandLine* command_line = CommandLine::ForCurrentProcess();
     if (command_line->HasSwitch(switches::kLocalePak)) {
@@ -318,8 +270,8 @@ std::string ResourceBundle::LoadLocaleResources(
   return app_locale;
 }
 
-void ResourceBundle::LoadTestResources(const FilePath& path,
-                                       const FilePath& locale_path) {
+void ResourceBundle::LoadTestResources(const base::FilePath& path,
+                                       const base::FilePath& locale_path) {
   // Use the given resource pak for both common and localized resources.
   scoped_ptr<DataPack> data_pack(
       new DataPack(SCALE_FACTOR_100P));
@@ -339,11 +291,11 @@ void ResourceBundle::UnloadLocaleResources() {
   locale_resources_data_.reset();
 }
 
-void ResourceBundle::OverrideLocalePakForTest(const FilePath& pak_path) {
+void ResourceBundle::OverrideLocalePakForTest(const base::FilePath& pak_path) {
   overridden_pak_path_ = pak_path;
 }
 
-const FilePath& ResourceBundle::GetOverriddenPakPath() {
+const base::FilePath& ResourceBundle::GetOverriddenPakPath() {
   return overridden_pak_path_;
 }
 
@@ -375,14 +327,18 @@ gfx::Image& ResourceBundle::GetImageNamed(int resource_id) {
     DCHECK(!delegate_ && !data_packs_.empty()) <<
         "Missing call to SetResourcesDataDLL?";
 
-    // TODO(oshima): This should be GetPrimaryDisplay().device_scale_factor(),
-    // but GetPrimaryDisplay() crashes at startup.
-    ScaleFactor primary_scale_factor = SCALE_FACTOR_100P;
+    // TODO(oshima): Consider reading the image size from png IHDR chunk and
+    // skip decoding here and remove #ifdef below.
     // ResourceBundle::GetSharedInstance() is destroyed after the
     // BrowserMainLoop has finished running. |image_skia| is guaranteed to be
     // destroyed before the resource bundle is destroyed.
+#if defined(OS_CHROMEOS)
+    ui::ScaleFactor scale_factor_to_load = ui::GetMaxScaleFactor();
+#else
+    ui::ScaleFactor scale_factor_to_load = ui::SCALE_FACTOR_100P;
+#endif
     gfx::ImageSkia image_skia(new ResourceBundleImageSource(this, resource_id),
-                              primary_scale_factor);
+                              scale_factor_to_load);
     if (image_skia.isNull()) {
       LOG(WARNING) << "Unable to load image with id " << resource_id;
       NOTREACHED();  // Want to assert in debug mode.
@@ -452,7 +408,8 @@ base::StringPiece ResourceBundle::GetRawDataResourceForScale(
     }
   }
   for (size_t i = 0; i < data_packs_.size(); i++) {
-    if (data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_100P &&
+    if ((data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_100P ||
+         data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_NONE) &&
         data_packs_[i]->GetStringPiece(resource_id, &data))
       return data;
   }
@@ -516,6 +473,8 @@ const gfx::Font& ResourceBundle::GetFont(FontStyle style) {
       return *small_font_;
     case MediumFont:
       return *medium_font_;
+    case SmallBoldFont:
+      return *small_bold_font_;
     case MediumBoldFont:
       return *medium_bold_font_;
     case LargeFont:
@@ -549,14 +508,14 @@ void ResourceBundle::FreeImages() {
   images_.clear();
 }
 
-void ResourceBundle::AddDataPackFromPathInternal(const FilePath& path,
+void ResourceBundle::AddDataPackFromPathInternal(const base::FilePath& path,
                                                  ScaleFactor scale_factor,
                                                  bool optional) {
   // Do not pass an empty |path| value to this method. If the absolute path is
   // unknown pass just the pack file name.
   DCHECK(!path.empty());
 
-  FilePath pack_path = path;
+  base::FilePath pack_path = path;
   if (delegate_)
     pack_path = delegate_->GetPathForResourcePack(pack_path, scale_factor);
 
@@ -577,15 +536,6 @@ void ResourceBundle::AddDataPackFromPathInternal(const FilePath& path,
 void ResourceBundle::AddDataPack(DataPack* data_pack) {
   data_packs_.push_back(data_pack);
 
-#if defined(OS_CHROMEOS)
-  // When Chrome is running on desktop and force-device-scale-factor is not
-  // specified, use SCALE_FACTOR_100P as |max_scale_factor_|.
-  if (!base::chromeos::IsRunningOnChromeOS() &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kForceDeviceScaleFactor))
-    return;
-#endif
-
   if (GetScaleFactorScale(data_pack->GetScaleFactor()) >
       GetScaleFactorScale(max_scale_factor_))
     max_scale_factor_ = data_pack->GetScaleFactor();
@@ -598,6 +548,7 @@ void ResourceBundle::LoadFontsIfNecessary() {
       base_font_.reset(delegate_->GetFont(BaseFont).release());
       bold_font_.reset(delegate_->GetFont(BoldFont).release());
       small_font_.reset(delegate_->GetFont(SmallFont).release());
+      small_bold_font_.reset(delegate_->GetFont(SmallBoldFont).release());
       medium_font_.reset(delegate_->GetFont(MediumFont).release());
       medium_bold_font_.reset(delegate_->GetFont(MediumBoldFont).release());
       large_font_.reset(delegate_->GetFont(LargeFont).release());
@@ -616,6 +567,12 @@ void ResourceBundle::LoadFontsIfNecessary() {
     if (!small_font_.get()) {
       small_font_.reset(new gfx::Font());
       *small_font_ = base_font_->DeriveFont(kSmallFontSizeDelta);
+    }
+
+    if (!small_bold_font_.get()) {
+      small_bold_font_.reset(new gfx::Font());
+      *small_bold_font_ = base_font_->DeriveFont(
+          kSmallFontSizeDelta, base_font_->GetStyle() | gfx::Font::BOLD);
     }
 
     if (!medium_font_.get()) {
@@ -674,14 +631,23 @@ bool ResourceBundle::LoadBitmap(const ResourceHandle& data_handle,
 }
 
 bool ResourceBundle::LoadBitmap(int resource_id,
-                                ScaleFactor scale_factor,
+                                ScaleFactor* scale_factor,
                                 SkBitmap* bitmap,
                                 bool* fell_back_to_1x) const {
   DCHECK(fell_back_to_1x);
   for (size_t i = 0; i < data_packs_.size(); ++i) {
-    if (data_packs_[i]->GetScaleFactor() == scale_factor) {
-      if (LoadBitmap(*data_packs_[i], resource_id, bitmap, fell_back_to_1x))
-        return true;
+    // If the resource is in the package with SCALE_FACTOR_NONE, it
+    // can be used in any scale factor, but set 100P in ImageSkia so
+    // that it will be scaled property.
+    if (data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_NONE &&
+        LoadBitmap(*data_packs_[i], resource_id, bitmap, fell_back_to_1x)) {
+      *scale_factor = ui::SCALE_FACTOR_100P;
+      DCHECK(!*fell_back_to_1x);
+      return true;
+    }
+    if (data_packs_[i]->GetScaleFactor() == *scale_factor &&
+        LoadBitmap(*data_packs_[i], resource_id, bitmap, fell_back_to_1x)) {
+      return true;
     }
   }
   return false;
@@ -696,9 +662,58 @@ gfx::Image& ResourceBundle::GetEmptyImage() {
     bitmap.setConfig(SkBitmap::kARGB_8888_Config, 32, 32);
     bitmap.allocPixels();
     bitmap.eraseARGB(255, 255, 0, 0);
-    empty_image_ = gfx::Image(bitmap);
+    empty_image_ = gfx::Image::CreateFrom1xBitmap(bitmap);
   }
   return empty_image_;
+}
+
+// static
+bool ResourceBundle::ShouldHighlightMissingScaledResources() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kHighlightMissingScaledResources);
+}
+
+// static
+bool ResourceBundle::PNGContainsFallbackMarker(const unsigned char* buf,
+                               size_t size) {
+  if (size < arraysize(kPngMagic) ||
+      memcmp(buf, kPngMagic, arraysize(kPngMagic)) != 0) {
+    // Data invalid or a JPEG.
+    return false;
+  }
+  size_t pos = arraysize(kPngMagic);
+
+  // Scan for custom chunks until we find one, find the IDAT chunk, or run out
+  // of chunks.
+  for (;;) {
+    if (size - pos < kPngChunkMetadataSize)
+      break;
+    uint32 length = 0;
+    net::ReadBigEndian(reinterpret_cast<const char*>(buf + pos), &length);
+    if (size - pos - kPngChunkMetadataSize < length)
+      break;
+    if (length == 0 && memcmp(buf + pos + sizeof(uint32), kPngScaleChunkType,
+                              arraysize(kPngScaleChunkType)) == 0) {
+      return true;
+    }
+    if (memcmp(buf + pos + sizeof(uint32), kPngDataChunkType,
+               arraysize(kPngDataChunkType)) == 0) {
+      // Stop looking for custom chunks, any custom chunks should be before an
+      // IDAT chunk.
+      break;
+    }
+    pos += length + kPngChunkMetadataSize;
+  }
+  return false;
+}
+
+// static
+bool ResourceBundle::DecodePNG(const unsigned char* buf,
+                               size_t size,
+                               SkBitmap* bitmap,
+                               bool* fell_back_to_1x) {
+  *fell_back_to_1x = PNGContainsFallbackMarker(buf, size);
+  return gfx::PNGCodec::Decode(buf, size, bitmap);
 }
 
 }  // namespace ui

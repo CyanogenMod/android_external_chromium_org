@@ -24,8 +24,8 @@ class ActivationClient;
 }
 
 class ChromeLauncherController;
-class LauncherItemController;
 class ShellWindow;
+class ShellWindowLauncherItemController;
 
 // ShellWindowLauncherController observes the Shell Window registry and the
 // aura window manager. It handles adding and removing launcher items from
@@ -40,22 +40,28 @@ class ShellWindowLauncherController
 
   // Overridden from ShellWindowRegistry::Observer:
   virtual void OnShellWindowAdded(ShellWindow* shell_window) OVERRIDE;
+  virtual void OnShellWindowIconChanged(ShellWindow* shell_window) OVERRIDE;
   virtual void OnShellWindowRemoved(ShellWindow* shell_window) OVERRIDE;
 
   // Overriden from aura::WindowObserver:
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
   // Overriden from client::ActivationChangeObserver:
-  virtual void OnWindowActivated(aura::Window* active,
-                                 aura::Window* old_active) OVERRIDE;
+  virtual void OnWindowActivated(aura::Window* gained_active,
+                                 aura::Window* lost_active) OVERRIDE;
+
+  // Returns the number of running applications.
+  int NumberOfAppsRunning();
+
+  // Activate the application with the given index.
+  void ActivateAppAt(int index);
 
  private:
-  class AppLauncherItemController;
-
-  typedef std::map<std::string, AppLauncherItemController*> AppControllerMap;
+  typedef std::map<std::string, ShellWindowLauncherItemController*>
+      AppControllerMap;
   typedef std::map<aura::Window*, std::string> WindowToAppLauncherIdMap;
 
-  AppLauncherItemController* ControllerForWindow(aura::Window* window);
+  ShellWindowLauncherItemController* ControllerForWindow(aura::Window* window);
 
   ChromeLauncherController* owner_;
   extensions::ShellWindowRegistry* registry_;  // Unowned convenience pointer

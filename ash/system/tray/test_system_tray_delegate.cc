@@ -4,10 +4,15 @@
 
 #include "ash/system/tray/test_system_tray_delegate.h"
 
+#include <string>
+
 #include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "ash/volume_control_delegate.h"
 #include "base/utf_string_conversions.h"
 #include "base/message_loop.h"
+#include "base/string16.h"
+#include "base/time.h"
 
 namespace ash {
 namespace test {
@@ -80,8 +85,30 @@ const gfx::ImageSkia& TestSystemTrayDelegate::GetUserImage() const {
 }
 
 user::LoginStatus TestSystemTrayDelegate::GetUserLoginStatus() const {
-  return Shell::GetInstance()->IsScreenLocked() ? user::LOGGED_IN_LOCKED :
-      user::LOGGED_IN_USER;
+  // At new user image screen manager->IsUserLoggedIn() would return true
+  // but there's no browser session available yet so use SessionStarted().
+  if (!Shell::GetInstance()->delegate()->IsSessionStarted())
+    return ash::user::LOGGED_IN_NONE;
+  if (Shell::GetInstance()->IsScreenLocked())
+    return user::LOGGED_IN_LOCKED;
+  // TODO(nkostylev): Support LOGGED_IN_OWNER, LOGGED_IN_GUEST, LOGGED_IN_KIOSK,
+  //                  LOGGED_IN_PUBLIC.
+  return user::LOGGED_IN_USER;
+}
+
+bool TestSystemTrayDelegate::IsOobeCompleted() const {
+  return true;
+}
+
+void TestSystemTrayDelegate::ChangeProfilePicture() {
+}
+
+const std::string TestSystemTrayDelegate::GetEnterpriseDomain() const {
+  return std::string();
+}
+
+const string16 TestSystemTrayDelegate::GetEnterpriseMessage() const {
+  return string16();
 }
 
 bool TestSystemTrayDelegate::SystemShouldUpgrade() const {
@@ -123,6 +150,15 @@ void TestSystemTrayDelegate::ShowIMESettings() {
 void TestSystemTrayDelegate::ShowHelp() {
 }
 
+void TestSystemTrayDelegate::ShowAccessibilityHelp() {
+}
+
+void TestSystemTrayDelegate::ShowPublicAccountInfo() {
+}
+
+void TestSystemTrayDelegate::ShowEnterpriseInfo() {
+}
+
 void TestSystemTrayDelegate::ShutDown() {
   MessageLoop::current()->Quit();
 }
@@ -139,6 +175,12 @@ void TestSystemTrayDelegate::RequestRestart() {
 
 void TestSystemTrayDelegate::GetAvailableBluetoothDevices(
     BluetoothDeviceList* list) {
+}
+
+void TestSystemTrayDelegate::BluetoothStartDiscovering() {
+}
+
+void TestSystemTrayDelegate::BluetoothStopDiscovering() {
 }
 
 void TestSystemTrayDelegate::ToggleBluetoothConnection(
@@ -161,7 +203,7 @@ void TestSystemTrayDelegate::SwitchIME(const std::string& ime_id) {
 void TestSystemTrayDelegate::ActivateIMEProperty(const std::string& key) {
 }
 
-void TestSystemTrayDelegate::CancelDriveOperation(const FilePath&) {
+void TestSystemTrayDelegate::CancelDriveOperation(const base::FilePath&) {
 }
 
 void TestSystemTrayDelegate::GetDriveOperationStatusList(
@@ -267,6 +309,14 @@ bool TestSystemTrayDelegate::GetCellularCarrierInfo(std::string* carrier_id,
   return false;
 }
 
+bool TestSystemTrayDelegate::GetWifiScanning() {
+  return false;
+}
+
+bool TestSystemTrayDelegate::GetCellularInitializing() {
+  return false;
+}
+
 void TestSystemTrayDelegate::ShowCellularURL(const std::string& url) {
 }
 
@@ -281,6 +331,29 @@ VolumeControlDelegate* TestSystemTrayDelegate::GetVolumeControlDelegate()
 void TestSystemTrayDelegate::SetVolumeControlDelegate(
     scoped_ptr<VolumeControlDelegate> delegate) {
   volume_control_delegate_ = delegate.Pass();
+}
+
+bool TestSystemTrayDelegate::GetSessionStartTime(
+    base::TimeTicks* session_start_time) {
+  return false;
+}
+
+bool TestSystemTrayDelegate::GetSessionLengthLimit(
+     base::TimeDelta* session_length_limit) {
+  return false;
+}
+
+int TestSystemTrayDelegate::GetSystemTrayMenuWidth() {
+  // This is the default width for English languages.
+  return 300;
+}
+
+string16 TestSystemTrayDelegate::FormatTimeDuration(
+    const base::TimeDelta& delta) const {
+  return string16();
+}
+
+void TestSystemTrayDelegate::MaybeSpeak(const std::string& utterance) const {
 }
 
 }  // namespace test

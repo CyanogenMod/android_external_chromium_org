@@ -10,7 +10,7 @@
 #define WEBKIT_SUPPORT_TEST_MEDIA_STREAM_CLIENT_H_
 
 #include "base/callback_forward.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "webkit/media/media_stream_client.h"
 
 namespace webkit_media {
@@ -30,9 +30,6 @@ class TestMediaStreamClient : public webkit_media::MediaStreamClient {
       const GURL& url,
       const base::Closure& error_cb,
       const webkit_media::VideoFrameProvider::RepaintCB& repaint_cb) OVERRIDE;
-  virtual scoped_refptr<media::VideoDecoder> GetVideoDecoder(
-      const GURL& url,
-      media::MessageLoopFactory* message_loop_factory) OVERRIDE;
   virtual scoped_refptr<webkit_media::MediaStreamAudioRenderer>
       GetAudioRenderer(const GURL& url) OVERRIDE;
 };

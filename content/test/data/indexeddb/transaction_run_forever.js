@@ -2,7 +2,48 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-loopCount = 0;
+function test()
+{
+  // Do not use indexedDBTest() - need to specify the database name
+  var dbname = "doesnt-hang-test";
+
+  var request = indexedDB.deleteDatabase(dbname);
+  request.onerror = unexpectedErrorCallback;
+  request.onblocked = unexpectedBlockedCallback;
+  request.onsuccess = function() {
+    var request = indexedDB.open(dbname, 1);
+    request.onerror = unexpectedErrorCallback;
+    request.onblocked = unexpectedBlockedCallback;
+    request.onupgradeneeded = onUpgradeNeeded;
+    request.onsuccess = onOpenSuccess;
+  };
+}
+
+function onUpgradeNeeded()
+{
+  // We are now in a set version transaction.
+  debug('Creating object store.');
+  var db = event.target.result;
+  db.createObjectStore('store');
+}
+
+
+var objectStore;
+function onOpenSuccess()
+{
+  var db = event.target.result;
+
+  debug('Creating new transaction.');
+  var transaction = db.transaction('store', 'readwrite');
+  transaction.oncomplete = unexpectedCompleteCallback;
+  transaction.onabort = unexpectedAbortCallback;
+  objectStore = transaction.objectStore('store');
+
+  debug('Starting endless loop...');
+  endlessLoop();
+}
+
+var loopCount = 0;
 function endlessLoop()
 {
   var request = objectStore.get(0);
@@ -16,65 +57,4 @@ function endlessLoop()
     debug("Looping infinitely within a transaction.");
     done();
   }
-}
-
-function newTransactionComplete()
-{
-  debug('The transaction completed.');
-
-  var finalTransaction = db.transaction(['employees'],
-                                        'readonly');
-  finalTransaction.oncomplete = unexpectedCompleteCallback;
-  finalTransaction.onabort = unexpectedErrorCallback;
-
-  objectStore = finalTransaction.objectStore('employees');
-  endlessLoop();
-  endlessLoop(); // Make sure at least one is in flight at any time.
-}
-
-function onSetVersionComplete()
-{
-  debug('Creating new transaction.');
-  var newTransaction = db.transaction(['employees'], 'readwrite');
-  newTransaction.oncomplete = newTransactionComplete;
-  newTransaction.onabort = unexpectedAbortCallback;
-
-  var request = newTransaction.objectStore('employees').put(
-      {id: 0, name: 'John Doe', desk: 'LON-BEL-123'});
-  request.onerror = unexpectedErrorCallback;
-}
-
-function onSetVersion()
-{
-  // We are now in a set version transaction.
-  var setVersionTransaction = event.target.result;
-  setVersionTransaction.oncomplete = onSetVersionComplete;
-  setVersionTransaction.onerror = unexpectedErrorCallback;
-
-  debug('Creating object store.');
-  deleteAllObjectStores(db);
-  var objectStore = db.createObjectStore('employees', {keyPath: 'id'});
-}
-
-function setVersion()
-{
-  window.db = event.target.result;
-  var request = db.setVersion('1.0');
-  request.onsuccess = onSetVersion;
-  request.onerror = unexpectedErrorCallback;
-}
-
-function test()
-{
-  if ('webkitIndexedDB' in window) {
-    indexedDB = webkitIndexedDB;
-    IDBCursor = webkitIDBCursor;
-    IDBKeyRange = webkitIDBKeyRange;
-    IDBTransaction = webkitIDBTransaction;
-  }
-
-  debug('Connecting to indexedDB.');
-  var request = indexedDB.open('name');
-  request.onsuccess = setVersion;
-  request.onerror = unexpectedErrorCallback;
 }

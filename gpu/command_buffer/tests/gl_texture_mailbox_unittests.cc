@@ -4,6 +4,7 @@
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#include <GLES2/gl2extchromium.h>
 
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/tests/gl_manager.h"
@@ -26,6 +27,13 @@ uint32 ReadTexel(GLuint id, GLint x, GLint y) {
                          GL_TEXTURE_2D,
                          id,
                          0);
+  // Some drivers (NVidia/SGX) require texture settings to be a certain way or
+  // they won't report FRAMEBUFFER_COMPLETE.
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
   EXPECT_EQ(static_cast<GLenum>(GL_FRAMEBUFFER_COMPLETE),
             glCheckFramebufferStatus(GL_FRAMEBUFFER));
 
@@ -43,8 +51,10 @@ uint32 ReadTexel(GLuint id, GLint x, GLint y) {
 class GLTextureMailboxTest : public testing::Test {
  protected:
   virtual void SetUp() {
-    gl1_.Initialize(gfx::Size(4, 4));
-    gl2_.InitializeSharedMailbox(gfx::Size(4, 4), &gl1_);
+    gl1_.Initialize(GLManager::Options());
+    GLManager::Options options;
+    options.share_mailbox_manager = &gl1_;
+    gl2_.Initialize(options);
   }
 
   virtual void TearDown() {

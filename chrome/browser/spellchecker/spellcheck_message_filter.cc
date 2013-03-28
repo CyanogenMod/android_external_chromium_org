@@ -5,11 +5,11 @@
 #include "chrome/browser/spellchecker/spellcheck_message_filter.h"
 
 #include "base/bind.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
-#include "chrome/browser/spellchecker/spellcheck_host.h"
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
+#include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/browser/spellchecker/spelling_service_client.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_messages.h"
@@ -19,7 +19,8 @@
 using content::BrowserThread;
 
 SpellCheckMessageFilter::SpellCheckMessageFilter(int render_process_id)
-    : render_process_id_(render_process_id)
+    : render_process_id_(render_process_id),
+      client_(new SpellingServiceClient)
 #if !defined(OS_MACOSX)
       ,
       route_id_(0),
@@ -68,19 +69,16 @@ void SpellCheckMessageFilter::OnSpellCheckerRequestDictionary() {
   // generally only be called once per session, as after the first call, all
   // future renderers will be passed the initialization information on startup
   // (or when the dictionary changes in some way).
-  SpellCheckHost* spell_check_host =
-      SpellCheckFactory::GetHostForProfile(profile);
+  SpellcheckService* spellcheck_service =
+      SpellcheckServiceFactory::GetForProfile(profile);
 
-  if (spell_check_host) {
-    // The spellchecker initialization already started and finished; just send
-    // it to the renderer.
-    spell_check_host->InitForRenderer(host);
-  } else {
-    // We may have gotten multiple requests from different renderers. We don't
-    // want to initialize multiple times in this case, so we set |force| to
-    // false.
-    SpellCheckFactory::ReinitializeSpellCheckHost(profile, false);
-  }
+  DCHECK(spellcheck_service);
+  // The spellchecker initialization already started and finished; just send
+  // it to the renderer.
+  spellcheck_service->InitForRenderer(host);
+
+  // TODO(rlp): Ensure that we do not initialize the hunspell dictionary more
+  // than once if we get requests from different renderers.
 }
 
 void SpellCheckMessageFilter::OnNotifyChecked(const string16& word,
@@ -91,10 +89,11 @@ void SpellCheckMessageFilter::OnNotifyChecked(const string16& word,
     return;  // Teardown.
   // Delegates to SpellCheckHost which tracks the stats of our spellchecker.
   Profile* profile = Profile::FromBrowserContext(host->GetBrowserContext());
-  SpellCheckHost* spellcheck_host =
-      SpellCheckFactory::GetHostForProfile(profile);
-  if (spellcheck_host && spellcheck_host->GetMetrics())
-    spellcheck_host->GetMetrics()->RecordCheckedWordStats(word, misspelled);
+  SpellcheckService* spellcheck_service =
+      SpellcheckServiceFactory::GetForProfile(profile);
+  DCHECK(spellcheck_service);
+  if (spellcheck_service->GetMetrics())
+    spellcheck_service->GetMetrics()->RecordCheckedWordStats(word, misspelled);
 }
 
 #if !defined(OS_MACOSX)
@@ -105,18 +104,9 @@ void SpellCheckMessageFilter::OnCallSpellingService(
     const string16& text) {
   DCHECK(!text.empty());
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  if (!CallSpellingService(route_id, identifier, document_tag, text)) {
-    std::vector<SpellCheckResult> results;
-    Send(new SpellCheckMsg_RespondSpellingService(route_id,
-                                                  identifier,
-                                                  document_tag,
-                                                  false,
-                                                  text,
-                                                  results));
-    return;
-  }
   route_id_ = route_id;
   identifier_ = identifier;
+  CallSpellingService(document_tag, text);
 }
 
 void SpellCheckMessageFilter::OnTextCheckComplete(
@@ -130,25 +120,21 @@ void SpellCheckMessageFilter::OnTextCheckComplete(
                                                 success,
                                                 text,
                                                 results));
-  client_.reset();
 }
 
-bool SpellCheckMessageFilter::CallSpellingService(
-    int route_id,
-    int identifier,
-    int document_tag,
-    const string16& text) {
+// CallSpellingService always executes the callback OnTextCheckComplete.
+// (Which, in turn, sends a SpellCheckMsg_RespondSpellingService)
+void SpellCheckMessageFilter::CallSpellingService(int document_tag,
+                                                  const string16& text) {
+  Profile* profile = NULL;
   content::RenderProcessHost* host =
       content::RenderProcessHost::FromID(render_process_id_);
-  if (!host)
-    return false;
-  Profile* profile = Profile::FromBrowserContext(host->GetBrowserContext());
-  if (!profile->GetPrefs()->GetBoolean(prefs::kSpellCheckUseSpellingService))
-    return false;
-  client_.reset(new SpellingServiceClient);
-  return client_->RequestTextCheck(
-      profile, document_tag, SpellingServiceClient::SPELLCHECK, text,
-      base::Bind(&SpellCheckMessageFilter::OnTextCheckComplete,
-                 base::Unretained(this)));
+  if (host)
+    profile = Profile::FromBrowserContext(host->GetBrowserContext());
+
+  client_->RequestTextCheck(
+    profile, SpellingServiceClient::SPELLCHECK, text,
+    base::Bind(&SpellCheckMessageFilter::OnTextCheckComplete,
+               base::Unretained(this), document_tag));
 }
 #endif

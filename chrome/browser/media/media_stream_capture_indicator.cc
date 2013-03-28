@@ -7,39 +7,40 @@
 #include "base/bind.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/status_icons/status_icon.h"
 #include "chrome/browser/status_icons/status_tray.h"
 #include "chrome/browser/tab_contents/tab_util.h"
+#include "chrome/browser/ui/screen_capture_notification_ui.h"
+#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/invalidate_type.h"
-#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "content/public/common/media_stream_request.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image_skia.h"
 
 using content::BrowserThread;
 using content::WebContents;
 
 namespace {
 
-const extensions::Extension* GetExtension(int render_process_id,
-                                          int render_view_id) {
+const extensions::Extension* GetExtension(WebContents* web_contents) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  WebContents* web_contents = tab_util::GetWebContentsByID(
-      render_process_id, render_view_id);
   if (!web_contents)
     return NULL;
 
@@ -58,14 +59,13 @@ const extensions::Extension* GetExtension(int render_process_id,
 
 // Gets the security originator of the tab. It returns a string with no '/'
 // at the end to display in the UI.
-string16 GetSecurityOrigin(int render_process_id, int render_view_id) {
+string16 GetSecurityOrigin(WebContents* web_contents) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  WebContents* tab_content = tab_util::GetWebContentsByID(
-      render_process_id, render_view_id);
-  if (!tab_content)
+
+  if (!web_contents)
     return string16();
 
-  std::string security_origin = tab_content->GetURL().GetOrigin().spec();
+  std::string security_origin = web_contents->GetURL().GetOrigin().spec();
 
   // Remove the last character if it is a '/'.
   if (!security_origin.empty()) {
@@ -77,31 +77,28 @@ string16 GetSecurityOrigin(int render_process_id, int render_view_id) {
   return UTF8ToUTF16(security_origin);
 }
 
-string16 GetTitle(int render_process_id, int render_view_id) {
+string16 GetTitle(WebContents* web_contents) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  const extensions::Extension* extension =
-      GetExtension(render_process_id, render_view_id);
+  if (!web_contents)
+    return string16();
+
+  const extensions::Extension* const extension = GetExtension(web_contents);
   if (extension)
     return UTF8ToUTF16(extension->name());
 
-  WebContents* tab_content = tab_util::GetWebContentsByID(
-      render_process_id, render_view_id);
-  if (!tab_content)
-    return string16();
-
-  string16 tab_title = tab_content->GetTitle();
+  string16 tab_title = web_contents->GetTitle();
 
   if (tab_title.empty()) {
     // If the page's title is empty use its security originator.
-    tab_title = GetSecurityOrigin(render_process_id, render_view_id);
+    tab_title = GetSecurityOrigin(web_contents);
   } else {
     // If the page's title matches its URL, use its security originator.
     std::string languages =
         content::GetContentClient()->browser()->GetAcceptLangs(
-            tab_content->GetBrowserContext());
-    if (tab_title == net::FormatUrl(tab_content->GetURL(), languages))
-      tab_title = GetSecurityOrigin(render_process_id, render_view_id);
+            web_contents->GetBrowserContext());
+    if (tab_title == net::FormatUrl(web_contents->GetURL(), languages))
+      tab_title = GetSecurityOrigin(web_contents);
   }
 
   return tab_title;
@@ -109,15 +106,106 @@ string16 GetTitle(int render_process_id, int render_view_id) {
 
 }  // namespace
 
-MediaStreamCaptureIndicator::TabEquals::TabEquals(int render_process_id,
-                                                  int render_view_id)
-    : render_process_id_(render_process_id),
-      render_view_id_(render_view_id) {}
+// Stores usage counts for all the capture devices associated with a single
+// WebContents instance, and observes for the destruction of the WebContents
+// instance.
+class MediaStreamCaptureIndicator::WebContentsDeviceUsage
+    : protected content::WebContentsObserver {
+ public:
+  explicit WebContentsDeviceUsage(WebContents* web_contents);
 
-bool MediaStreamCaptureIndicator::TabEquals::operator() (
-    const MediaStreamCaptureIndicator::CaptureDeviceTab& tab) {
-    return (render_process_id_ == tab.render_process_id &&
-            render_view_id_ == tab.render_view_id);
+  bool IsWebContentsDestroyed() const { return web_contents() == NULL; }
+
+  bool IsCapturingAudio() const { return audio_ref_count_ > 0; }
+  bool IsCapturingVideo() const { return video_ref_count_ > 0; }
+  bool IsMirroring() const { return mirroring_ref_count_ > 0; }
+  bool IsCapturingScreen() const { return screen_capture_ref_count_ > 0; }
+  const base::Closure& StopScreenCaptureCallback() const {
+    return stop_screen_capture_callback_;
+  }
+
+  // Increment ref-counts up based on the type of each device provided. The
+  // return value is the message ID for the balloon body to show, or zero if the
+  // balloon should not be shown.
+  int AddDevices(const content::MediaStreamDevices& devices,
+                 const base::Closure& close_callback);
+
+  // Decrement ref-counts up based on the type of each device provided.
+  void RemoveDevices(const content::MediaStreamDevices& devices);
+
+ private:
+  int audio_ref_count_;
+  int video_ref_count_;
+  int mirroring_ref_count_;
+  int screen_capture_ref_count_;
+  base::Closure stop_screen_capture_callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebContentsDeviceUsage);
+};
+
+MediaStreamCaptureIndicator::WebContentsDeviceUsage::WebContentsDeviceUsage(
+    WebContents* web_contents)
+    : content::WebContentsObserver(web_contents),
+      audio_ref_count_(0),
+      video_ref_count_(0),
+      mirroring_ref_count_(0),
+      screen_capture_ref_count_(0) {
+}
+
+int MediaStreamCaptureIndicator::WebContentsDeviceUsage::AddDevices(
+    const content::MediaStreamDevices& devices,
+    const base::Closure& close_callback) {
+  bool incremented_audio_count = false;
+  bool incremented_video_count = false;
+  for (content::MediaStreamDevices::const_iterator it = devices.begin();
+       it != devices.end(); ++it) {
+    if (it->type == content::MEDIA_TAB_AUDIO_CAPTURE ||
+        it->type == content::MEDIA_TAB_VIDEO_CAPTURE) {
+      ++mirroring_ref_count_;
+    } else if (it->type == content::MEDIA_SCREEN_VIDEO_CAPTURE) {
+      ++screen_capture_ref_count_;
+      stop_screen_capture_callback_ = close_callback;
+    } else if (content::IsAudioMediaType(it->type)) {
+      ++audio_ref_count_;
+    } else if (content::IsVideoMediaType(it->type)) {
+      ++video_ref_count_;
+    } else {
+      NOTIMPLEMENTED();
+    }
+  }
+
+  if (incremented_audio_count && incremented_video_count)
+    return IDS_MEDIA_STREAM_STATUS_TRAY_BALLOON_BODY_AUDIO_AND_VIDEO;
+  else if (incremented_audio_count)
+    return IDS_MEDIA_STREAM_STATUS_TRAY_BALLOON_BODY_AUDIO_ONLY;
+  else if (incremented_video_count)
+    return IDS_MEDIA_STREAM_STATUS_TRAY_BALLOON_BODY_VIDEO_ONLY;
+  else
+    return 0;
+}
+
+void MediaStreamCaptureIndicator::WebContentsDeviceUsage::RemoveDevices(
+    const content::MediaStreamDevices& devices) {
+  for (content::MediaStreamDevices::const_iterator it = devices.begin();
+       it != devices.end(); ++it) {
+    if (it->type == content::MEDIA_TAB_AUDIO_CAPTURE ||
+        it->type == content::MEDIA_TAB_VIDEO_CAPTURE) {
+      --mirroring_ref_count_;
+    } else if (it->type == content::MEDIA_SCREEN_VIDEO_CAPTURE) {
+      --screen_capture_ref_count_;
+    } else if (content::IsAudioMediaType(it->type)) {
+      --audio_ref_count_;
+    } else if (content::IsVideoMediaType(it->type)) {
+      --video_ref_count_;
+    } else {
+      NOTIMPLEMENTED();
+    }
+  }
+
+  DCHECK_GE(audio_ref_count_, 0);
+  DCHECK_GE(video_ref_count_, 0);
+  DCHECK_GE(mirroring_ref_count_, 0);
+  DCHECK_GE(screen_capture_ref_count_, 0);
 }
 
 MediaStreamCaptureIndicator::MediaStreamCaptureIndicator()
@@ -125,12 +213,23 @@ MediaStreamCaptureIndicator::MediaStreamCaptureIndicator()
       mic_image_(NULL),
       camera_image_(NULL),
       balloon_image_(NULL),
-      request_index_(0) {
+      should_show_balloon_(false) {
 }
 
 MediaStreamCaptureIndicator::~MediaStreamCaptureIndicator() {
-  // The user is responsible for cleaning up by closing all the opened devices.
-  DCHECK(tabs_.empty());
+  // The user is responsible for cleaning up by reporting the closure of any
+  // opened devices.  However, there exists a race condition at shutdown: The UI
+  // thread may be stopped before CaptureDevicesClosed() posts the task to
+  // invoke DoDevicesClosedOnUIThread().  In this case, usage_map_ won't be
+  // empty like it should.
+  DCHECK(usage_map_.empty() ||
+         !BrowserThread::IsMessageLoopValid(BrowserThread::UI));
+
+  // Free any WebContentsDeviceUsage objects left over.
+  for (UsageMap::const_iterator it = usage_map_.begin(); it != usage_map_.end();
+       ++it) {
+    delete it->second;
+  }
 }
 
 bool MediaStreamCaptureIndicator::IsCommandIdChecked(
@@ -150,33 +249,34 @@ bool MediaStreamCaptureIndicator::GetAcceleratorForCommandId(
   return false;
 }
 
-void MediaStreamCaptureIndicator::ExecuteCommand(int command_id) {
+void MediaStreamCaptureIndicator::ExecuteCommand(int command_id,
+                                                 int event_flags) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(command_id >= IDC_MEDIA_CONTEXT_MEDIA_STREAM_CAPTURE_LIST_FIRST &&
-         command_id <= IDC_MEDIA_CONTEXT_MEDIA_STREAM_CAPTURE_LIST_LAST);
-  int index = command_id - IDC_MEDIA_CONTEXT_MEDIA_STREAM_CAPTURE_LIST_FIRST;
-  WebContents* web_content = tab_util::GetWebContentsByID(
-      tabs_[index].render_process_id, tabs_[index].render_view_id);
-  DCHECK(web_content);
-  if (!web_content) {
-    NOTREACHED();
-    return;
-  }
 
-  web_content->GetDelegate()->ActivateContents(web_content);
+  const int index =
+      command_id - IDC_MEDIA_CONTEXT_MEDIA_STREAM_CAPTURE_LIST_FIRST;
+  DCHECK_LE(0, index);
+  DCHECK_GT(static_cast<int>(command_targets_.size()), index);
+  WebContents* const web_contents = command_targets_[index];
+  UsageMap::const_iterator it = usage_map_.find(web_contents);
+  if (it == usage_map_.end() || it->second->IsWebContentsDestroyed())
+    return;
+  web_contents->GetDelegate()->ActivateContents(web_contents);
 }
 
 void MediaStreamCaptureIndicator::CaptureDevicesOpened(
     int render_process_id,
     int render_view_id,
-    const content::MediaStreamDevices& devices) {
+    const content::MediaStreamDevices& devices,
+    const base::Closure& close_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(!devices.empty());
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&MediaStreamCaptureIndicator::DoDevicesOpenedOnUIThread,
-                 this, render_process_id, render_view_id, devices));
+                 this, render_process_id, render_view_id, devices,
+                 close_callback));
 }
 
 void MediaStreamCaptureIndicator::CaptureDevicesClosed(
@@ -192,15 +292,42 @@ void MediaStreamCaptureIndicator::CaptureDevicesClosed(
                  this, render_process_id, render_view_id, devices));
 }
 
+
+bool MediaStreamCaptureIndicator::IsCapturingUserMedia(
+    int render_process_id, int render_view_id) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  WebContents* const web_contents =
+      LookUpByKnownAlias(render_process_id, render_view_id);
+  if (!web_contents)
+    return false;
+
+  UsageMap::const_iterator it = usage_map_.find(web_contents);
+  return (it != usage_map_.end() &&
+          (it->second->IsCapturingAudio() || it->second->IsCapturingVideo()));
+}
+
+bool MediaStreamCaptureIndicator::IsBeingMirrored(
+    int render_process_id, int render_view_id) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  WebContents* const web_contents =
+      LookUpByKnownAlias(render_process_id, render_view_id);
+  if (!web_contents)
+    return false;
+
+  UsageMap::const_iterator it = usage_map_.find(web_contents);
+  return it != usage_map_.end() && it->second->IsMirroring();
+}
+
 void MediaStreamCaptureIndicator::DoDevicesOpenedOnUIThread(
     int render_process_id,
     int render_view_id,
-    const content::MediaStreamDevices& devices) {
+    const content::MediaStreamDevices& devices,
+    const base::Closure& close_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  CreateStatusTray();
-
-  AddCaptureDeviceTab(render_process_id, render_view_id, devices);
+  AddCaptureDevices(render_process_id, render_view_id, devices, close_callback);
 }
 
 void MediaStreamCaptureIndicator::DoDevicesClosedOnUIThread(
@@ -209,10 +336,10 @@ void MediaStreamCaptureIndicator::DoDevicesClosedOnUIThread(
     const content::MediaStreamDevices& devices) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  RemoveCaptureDeviceTab(render_process_id, render_view_id, devices);
+  RemoveCaptureDevices(render_process_id, render_view_id, devices);
 }
 
-void MediaStreamCaptureIndicator::CreateStatusTray() {
+void MediaStreamCaptureIndicator::MaybeCreateStatusTrayIcon() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (status_icon_)
     return;
@@ -228,7 +355,6 @@ void MediaStreamCaptureIndicator::CreateStatusTray() {
   status_icon_ = status_tray->CreateStatusIcon();
 
   EnsureStatusTrayIconResources();
-  EnsureImageLoadingTracker();
 }
 
 void MediaStreamCaptureIndicator::EnsureStatusTrayIconResources() {
@@ -251,46 +377,38 @@ void MediaStreamCaptureIndicator::EnsureStatusTrayIconResources() {
 }
 
 void MediaStreamCaptureIndicator::ShowBalloon(
-    int render_process_id,
-    int render_view_id,
-    bool audio,
-    bool video) {
+    WebContents* web_contents, int balloon_body_message_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(audio || video);
+  DCHECK_NE(0, balloon_body_message_id);
 
-  int message_id = IDS_MEDIA_STREAM_STATUS_TRAY_BALLOON_BODY_AUDIO_AND_VIDEO;
-  if (audio && !video)
-    message_id = IDS_MEDIA_STREAM_STATUS_TRAY_BALLOON_BODY_AUDIO_ONLY;
-  else if (!audio && video)
-    message_id = IDS_MEDIA_STREAM_STATUS_TRAY_BALLOON_BODY_VIDEO_ONLY;
-
-  const extensions::Extension* extension =
-      GetExtension(render_process_id, render_view_id);
-  if (extension) {
-    pending_messages_[request_index_++] =
-        l10n_util::GetStringFUTF16(message_id,
-                                   UTF8ToUTF16(extension->name()));
-    tracker_->LoadImage(
-        extension,
-        extension->GetIconResource(32, ExtensionIconSet::MATCH_BIGGER),
-        gfx::Size(32, 32),
-        ImageLoadingTracker::CACHE);
+  // Only show the balloon for extensions.
+  const extensions::Extension* const extension = GetExtension(web_contents);
+  if (!extension) {
+    DVLOG(1) << "Balloon is shown only for extensions";
     return;
   }
 
-  string16 title = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
-  string16 body = l10n_util::GetStringFUTF16(message_id,
-      GetSecurityOrigin(render_process_id, render_view_id));
-  status_icon_->DisplayBalloon(*balloon_image_, title, body);
+  string16 message =
+      l10n_util::GetStringFUTF16(balloon_body_message_id,
+                                 UTF8ToUTF16(extension->name()));
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+
+  should_show_balloon_ = true;
+  extensions::ImageLoader::Get(profile)->LoadImageAsync(
+      extension,
+      extensions::IconsInfo::GetIconResource(
+          extension, 32, ExtensionIconSet::MATCH_BIGGER),
+      gfx::Size(32, 32),
+      base::Bind(&MediaStreamCaptureIndicator::OnImageLoaded,
+                 this, message));
 }
 
 void MediaStreamCaptureIndicator::OnImageLoaded(
-    const gfx::Image& image,
-    const std::string& extension_id,
-    int index) {
-  string16 message;
-  message.swap(pending_messages_[index]);
-  pending_messages_.erase(index);
+    const string16& message,
+    const gfx::Image& image) {
+  if (!should_show_balloon_ || !status_icon_)
+    return;
 
   const gfx::ImageSkia* image_skia = !image.IsEmpty() ? image.ToImageSkia() :
       ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
@@ -298,12 +416,11 @@ void MediaStreamCaptureIndicator::OnImageLoaded(
   status_icon_->DisplayBalloon(*image_skia, string16(), message);
 }
 
-void MediaStreamCaptureIndicator::Hide() {
+void MediaStreamCaptureIndicator::MaybeDestroyStatusTrayIcon() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(tabs_.empty());
 
-  // We have to destroy |tracker_| on the UI thread.
-  tracker_.reset();
+  // Make sure images that finish loading don't cause a balloon to be shown.
+  should_show_balloon_ = false;
 
   if (!status_icon_)
     return;
@@ -319,51 +436,85 @@ void MediaStreamCaptureIndicator::Hide() {
   }
 }
 
-void MediaStreamCaptureIndicator::UpdateStatusTrayIconContextMenu() {
+void MediaStreamCaptureIndicator::UpdateNotificationUserInterface() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   scoped_ptr<ui::SimpleMenuModel> menu(new ui::SimpleMenuModel(this));
 
   bool audio = false;
   bool video = false;
   int command_id = IDC_MEDIA_CONTEXT_MEDIA_STREAM_CAPTURE_LIST_FIRST;
-  for (CaptureDeviceTabs::iterator iter = tabs_.begin();
-       iter != tabs_.end();) {
-    string16 tab_title = GetTitle(iter->render_process_id,
-                                  iter->render_view_id);
-    if (tab_title.empty()) {
-      // Delete the entry since the tab has gone away.
-      iter = tabs_.erase(iter);
+  command_targets_.clear();
+
+  WebContents* screen_capturer = NULL;
+  base::Closure close_callback;
+
+  for (UsageMap::const_iterator iter = usage_map_.begin();
+       iter != usage_map_.end(); ++iter) {
+    // Check if any audio and video devices have been used.
+    const WebContentsDeviceUsage& usage = *iter->second;
+    WebContents* const web_contents = iter->first;
+    if (usage.IsWebContentsDestroyed()) {
+      // We only show the tray icon for extensions that have not been
+      // destroyed and are capturing audio or video.
       continue;
     }
 
-    // Check if any audio and video devices have been used.
-    audio = audio || iter->audio_ref_count > 0;
-    video = video || iter->video_ref_count > 0;
+    if (usage.IsCapturingScreen()) {
+      DCHECK(!screen_capturer);
+      screen_capturer = web_contents;
+      close_callback = usage.StopScreenCaptureCallback();
+    }
 
-    menu->AddItem(command_id, tab_title);
+    // Audio/video icon is shown only for extensions. For regular tabs, we show
+    // an indicator in the tab icon.
+    if (GetExtension(web_contents) &&
+        (usage.IsCapturingAudio() || usage.IsCapturingVideo())) {
+      audio = audio || usage.IsCapturingAudio();
+      video = video || usage.IsCapturingVideo();
 
-    // If reaching the maximum number, no more item will be added to the menu.
-    if (command_id == IDC_MEDIA_CONTEXT_MEDIA_STREAM_CAPTURE_LIST_LAST)
-      break;
+      command_targets_.push_back(web_contents);
+      menu->AddItem(command_id, GetTitle(web_contents));
 
-    ++command_id;
-    ++iter;
+      // If reaching the maximum number, no more item will be added to the menu.
+      if (command_id == IDC_MEDIA_CONTEXT_MEDIA_STREAM_CAPTURE_LIST_LAST)
+        break;
+      ++command_id;
+    }
   }
 
-  if (!audio && !video) {
-    Hide();
+  if (screen_capturer) {
+    if (!screen_capture_notification_) {
+      screen_capture_notification_ = ScreenCaptureNotificationUI::Create();
+      if (!screen_capture_notification_->Show(
+              base::Bind(&MediaStreamCaptureIndicator::OnStopScreenCapture,
+                         this, close_callback),
+              GetTitle(screen_capturer))) {
+        OnStopScreenCapture(close_callback);
+        screen_capture_notification_.reset();
+      }
+    }
+  } else {
+    screen_capture_notification_.reset();
+  }
+
+  if (command_targets_.empty()) {
+    MaybeDestroyStatusTrayIcon();
     return;
   }
 
   // The icon will take the ownership of the passed context menu.
-  status_icon_->SetContextMenu(menu.release());
-  UpdateStatusTrayIconDisplay(audio, video);
+  MaybeCreateStatusTrayIcon();
+  if (status_icon_) {
+    status_icon_->SetContextMenu(menu.release());
+    UpdateStatusTrayIconDisplay(audio, video);
+  }
 }
 
 void MediaStreamCaptureIndicator::UpdateStatusTrayIconDisplay(
     bool audio, bool video) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(audio || video);
+  DCHECK(status_icon_);
   int message_id = 0;
   if (audio && video) {
     message_id = IDS_MEDIA_STREAM_STATUS_TRAY_TEXT_AUDIO_AND_VIDEO;
@@ -380,101 +531,96 @@ void MediaStreamCaptureIndicator::UpdateStatusTrayIconDisplay(
       message_id, l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
 }
 
-void MediaStreamCaptureIndicator::AddCaptureDeviceTab(
+WebContents* MediaStreamCaptureIndicator::LookUpByKnownAlias(
+    int render_process_id, int render_view_id) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  WebContents* result =
+      tab_util::GetWebContentsByID(render_process_id, render_view_id);
+  if (!result) {
+    const RenderViewIDs key(render_process_id, render_view_id);
+    AliasMap::const_iterator it = aliases_.find(key);
+    if (it != aliases_.end())
+      result = it->second;
+  }
+  return result;
+}
+
+void MediaStreamCaptureIndicator::AddCaptureDevices(
+    int render_process_id,
+    int render_view_id,
+    const content::MediaStreamDevices& devices,
+    const base::Closure& close_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  WebContents* const web_contents =
+      LookUpByKnownAlias(render_process_id, render_view_id);
+  if (!web_contents)
+    return;
+
+  // Increase the usage ref-counts.
+  WebContentsDeviceUsage*& usage = usage_map_[web_contents];
+  if (!usage)
+    usage = new WebContentsDeviceUsage(web_contents);
+  const int balloon_body_message_id =
+      usage->AddDevices(devices, close_callback);
+
+  // Keep track of the IDs as a known alias to the WebContents instance.
+  const AliasMap::iterator insert_it = aliases_.insert(
+      make_pair(RenderViewIDs(render_process_id, render_view_id),
+                web_contents)).first;
+  DCHECK_EQ(web_contents, insert_it->second)
+      << "BUG: IDs refer to two different WebContents instances.";
+
+  web_contents->NotifyNavigationStateChanged(content::INVALIDATE_TYPE_TAB);
+
+  UpdateNotificationUserInterface();
+  if (balloon_body_message_id)
+    ShowBalloon(web_contents, balloon_body_message_id);
+}
+
+void MediaStreamCaptureIndicator::RemoveCaptureDevices(
     int render_process_id,
     int render_view_id,
     const content::MediaStreamDevices& devices) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  CaptureDeviceTabs::iterator iter = std::find_if(
-      tabs_.begin(), tabs_.end(), TabEquals(render_process_id, render_view_id));
-  if (iter == tabs_.end()) {
-    tabs_.push_back(CaptureDeviceTab(render_process_id, render_view_id));
-    iter = tabs_.end() - 1;
-  }
 
-  bool audio = false;
-  bool video = false;
-  content::MediaStreamDevices::const_iterator dev = devices.begin();
-  for (; dev != devices.end(); ++dev) {
-    if (content::IsAudioMediaType(dev->type)) {
-      ++iter->audio_ref_count;
-      audio = true;
-    } else if (content::IsVideoMediaType(dev->type)) {
-      ++iter->video_ref_count;
-      video = true;
-    } else {
-      NOTIMPLEMENTED();
-    }
-  }
+  WebContents* const web_contents =
+      LookUpByKnownAlias(render_process_id, render_view_id);
+  if (!web_contents)
+    return;
 
-  WebContents* web_contents = tab_util::GetWebContentsByID(
-      render_process_id, render_view_id);
-  if (web_contents)
+  // Decrease the usage ref-counts.
+  const UsageMap::iterator it = usage_map_.find(web_contents);
+  if (it == usage_map_.end()) {
+    DLOG(FATAL) << "BUG: Attempt to remove devices more than once.";
+    return;
+  }
+  WebContentsDeviceUsage* const usage = it->second;
+  usage->RemoveDevices(devices);
+
+  if (!usage->IsWebContentsDestroyed())
     web_contents->NotifyNavigationStateChanged(content::INVALIDATE_TYPE_TAB);
 
-  if (!status_icon_)
-    return;
-
-  UpdateStatusTrayIconContextMenu();
-
-  ShowBalloon(render_process_id, render_view_id, audio, video);
-}
-
-void MediaStreamCaptureIndicator::RemoveCaptureDeviceTab(
-    int render_process_id,
-    int render_view_id,
-    const content::MediaStreamDevices& devices) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  CaptureDeviceTabs::iterator iter = std::find_if(
-      tabs_.begin(), tabs_.end(), TabEquals(render_process_id, render_view_id));
-
-  if (iter != tabs_.end()) {
-    content::MediaStreamDevices::const_iterator dev = devices.begin();
-    for (; dev != devices.end(); ++dev) {
-      if (content::IsAudioMediaType(dev->type)) {
-        --iter->audio_ref_count;
-      } else if (content::IsVideoMediaType(dev->type)) {
-        --iter->video_ref_count;
-      } else {
-        NOTIMPLEMENTED();
-      }
-
-      DCHECK_GE(iter->audio_ref_count, 0);
-      DCHECK_GE(iter->video_ref_count, 0);
+  // Remove the usage and alias mappings if all the devices have been closed.
+  if (!usage->IsCapturingAudio() && !usage->IsCapturingVideo() &&
+      !usage->IsMirroring() && !usage->IsCapturingScreen()) {
+    for (AliasMap::iterator alias_it = aliases_.begin();
+         alias_it != aliases_.end(); ) {
+      if (alias_it->second == web_contents)
+        aliases_.erase(alias_it++);
+      else
+        ++alias_it;
     }
-
-    // Remove the tab if all the devices have been closed.
-    if (iter->audio_ref_count == 0 && iter->video_ref_count == 0)
-      tabs_.erase(iter);
+    delete usage;
+    usage_map_.erase(it);
   }
 
-  WebContents* web_contents = tab_util::GetWebContentsByID(
-      render_process_id, render_view_id);
-  if (web_contents)
-    web_contents->NotifyNavigationStateChanged(content::INVALIDATE_TYPE_TAB);
-
-  if (!status_icon_)
-    return;
-
-  UpdateStatusTrayIconContextMenu();
+  UpdateNotificationUserInterface();
 }
 
-bool MediaStreamCaptureIndicator::IsProcessCapturing(int render_process_id,
-                                                     int render_view_id) const {
+void MediaStreamCaptureIndicator::OnStopScreenCapture(
+    const base::Closure& stop) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  CaptureDeviceTabs::const_iterator iter = std::find_if(
-      tabs_.begin(), tabs_.end(), TabEquals(render_process_id, render_view_id));
-  if (iter == tabs_.end())
-    return false;
-  return (iter->audio_ref_count > 0 || iter->video_ref_count > 0);
-}
-
-void MediaStreamCaptureIndicator::EnsureImageLoadingTracker() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (tracker_.get())
-    return;
-
-  tracker_.reset(new ImageLoadingTracker(this));
-  pending_messages_.clear();
-  request_index_ = 0;
+  stop.Run();
 }

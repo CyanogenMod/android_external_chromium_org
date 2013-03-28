@@ -21,6 +21,7 @@
               4018,  # signed/unsigned mismatch in comparison
               4244,  # implicit conversion, possible loss of data
               4355,  # 'this' used in base member initializer list
+              4267,  # size_t to int truncation
             ],
             'defines!': [
               'WIN32_LEAN_AND_MEAN',  # Protobuf defines this itself.
@@ -67,6 +68,54 @@
             },
           ],
         }],
+        ['OS=="android"', {
+          'targets': [
+            {
+              'target_name': 'protobuf_lite_javalib',
+              'type' : 'none',
+              'dependencies': [
+                'protoc#host',
+              ],
+              'variables': {
+                'script_descriptors': './protobuf_lite_java_descriptor_proto.py',
+                'script_pom': './protobuf_lite_java_parse_pom.py',
+                'protoc': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)protoc<(EXECUTABLE_SUFFIX)',
+                # Variables needed by java.gypi below.
+                'java_out_dir': '<(PRODUCT_DIR)/java_proto/protobuf_lite_java_descriptor_proto',
+                'generated_src_dirs': ['<(java_out_dir)'],
+                'java_in_dir': 'java',
+                'maven_pom': '<(java_in_dir)/pom.xml',
+                'javac_includes': ['<!@(<(script_pom) <(maven_pom))'],
+                'additional_input_paths': [
+                  '<(java_out_dir)/com/google/protobuf/DescriptorProtos.java'
+                ],
+              },
+              'actions': [
+                {
+                  'action_name': 'protobuf_lite_java_gen_descriptor_proto',
+                  'inputs': [
+                    '<(script_descriptors)',
+                    '<(protoc)',
+                    'src/google/protobuf/descriptor.proto',
+                  ],
+                  'outputs': [
+                    '<(java_out_dir)/com/google/protobuf/DescriptorProtos.java',
+                  ],
+                  'action': [
+                    '<(script_descriptors)',
+                    '<(protoc)',
+                    '<(java_out_dir)',
+                    'src',
+                    'src/google/protobuf/descriptor.proto',
+                  ],
+                  'message': 'Generating descriptor protos for Java',
+                },
+              ],
+              # Now that we have generated DescriptorProtos.java, build jar.
+              'includes': ['../../build/java.gypi'],
+            },
+          ]
+        }],
       ],
       'targets': [
         # The "lite" lib is about 1/7th the size of the heavy lib,
@@ -79,72 +128,23 @@
         # to your .proto file.
         {
           'target_name': 'protobuf_lite',
-          'type': 'static_library',
+          'type': '<(component)',
           'toolsets': ['host', 'target'],
-          'sources': [
-            'src/google/protobuf/stubs/atomicops.h',
-            'src/google/protobuf/stubs/atomicops_internals_arm_gcc.h',
-            'src/google/protobuf/stubs/atomicops_internals_atomicword_compat.h',
-            'src/google/protobuf/stubs/atomicops_internals_macosx.h',
-            'src/google/protobuf/stubs/atomicops_internals_mips_gcc.h',
-            'src/google/protobuf/stubs/atomicops_internals_x86_gcc.cc',
-            'src/google/protobuf/stubs/atomicops_internals_x86_gcc.h',
-            'src/google/protobuf/stubs/atomicops_internals_x86_msvc.cc',
-            'src/google/protobuf/stubs/atomicops_internals_x86_msvc.h',
-            'src/google/protobuf/stubs/common.h',
-            'src/google/protobuf/stubs/once.h',
-            'src/google/protobuf/stubs/platform_macros.h',
-            'src/google/protobuf/extension_set.h',
-            'src/google/protobuf/generated_message_util.h',
-            'src/google/protobuf/message_lite.h',
-            'src/google/protobuf/repeated_field.h',
-            'src/google/protobuf/unknown_field_set.cc',
-            'src/google/protobuf/unknown_field_set.h',
-            'src/google/protobuf/wire_format_lite.h',
-            'src/google/protobuf/wire_format_lite_inl.h',
-            'src/google/protobuf/io/coded_stream.h',
-            'src/google/protobuf/io/zero_copy_stream.h',
-            'src/google/protobuf/io/zero_copy_stream_impl_lite.h',
-
-            'src/google/protobuf/stubs/common.cc',
-            'src/google/protobuf/stubs/once.cc',
-            'src/google/protobuf/stubs/hash.h',
-            'src/google/protobuf/stubs/map-util.h',
-            'src/google/protobuf/stubs/stl_util-inl.h',
-            'src/google/protobuf/extension_set.cc',
-            'src/google/protobuf/generated_message_util.cc',
-            'src/google/protobuf/message_lite.cc',
-            'src/google/protobuf/repeated_field.cc',
-            'src/google/protobuf/wire_format_lite.cc',
-            'src/google/protobuf/io/coded_stream.cc',
-            'src/google/protobuf/io/coded_stream_inl.h',
-            'src/google/protobuf/io/zero_copy_stream.cc',
-            'src/google/protobuf/io/zero_copy_stream_impl_lite.cc',
-            '<(config_h_dir)/config.h',
+          'includes': [
+            'protobuf_lite.gypi',
           ],
-          'include_dirs': [
-            '<(config_h_dir)',
-            'src',
-          ],
-          # This macro must be defined to suppress the use of dynamic_cast<>,
-          # which requires RTTI.
+          # Required for component builds. See http://crbug.com/172800.
           'defines': [
-            'GOOGLE_PROTOBUF_NO_RTTI',
-            'GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER',
+            'LIBPROTOBUF_EXPORTS',
+            'PROTOBUF_USE_DLLS',
           ],
-
           'direct_dependent_settings': {
-            'include_dirs': [
-              '<(config_h_dir)',
-              'src',
-            ],
             'defines': [
-              'GOOGLE_PROTOBUF_NO_RTTI',
-              'GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER',
+              'PROTOBUF_USE_DLLS',
             ],
           },
         },
-        # This is the full, heavy protobuf lib that's needed for c++ .proto's
+        # This is the full, heavy protobuf lib that's needed for c++ .protos
         # that don't specify the LITE_RUNTIME option.  The protocol
         # compiler itself (protoc) falls into that category.
         #
@@ -153,6 +153,9 @@
           'target_name': 'protobuf_full_do_not_use',
           'type': 'static_library',
           'toolsets': ['host','target'],
+          'includes': [
+            'protobuf_lite.gypi',
+          ],
           'sources': [
             'src/google/protobuf/descriptor.h',
             'src/google/protobuf/descriptor.pb.h',
@@ -197,12 +200,6 @@
             'src/google/protobuf/io/zero_copy_stream_impl.cc',
             'src/google/protobuf/compiler/importer.cc',
             'src/google/protobuf/compiler/parser.cc',
-          ],
-          'dependencies': [
-            'protobuf_lite',
-          ],
-          'export_dependent_settings': [
-            'protobuf_lite',
           ],
         },
         {
@@ -397,6 +394,8 @@
               '<!@(pkg-config --cflags protobuf)',
             ],
             'defines': [
+              'USE_SYSTEM_PROTOBUF',
+
               # This macro must be defined to suppress the use
               # of dynamic_cast<>, which requires RTTI.
               'GOOGLE_PROTOBUF_NO_RTTI',

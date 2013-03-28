@@ -22,11 +22,12 @@ const unsigned long kMaxLogicalDriveString = 4 * 26;
 class StorageInfoProviderWin : public StorageInfoProvider {
  public:
   StorageInfoProviderWin() {}
-  virtual ~StorageInfoProviderWin() {}
 
   virtual bool QueryInfo(StorageInfo* info) OVERRIDE;
   virtual bool QueryUnitInfo(const std::string& id,
                              StorageUnitInfo* info) OVERRIDE;
+ private:
+  virtual ~StorageInfoProviderWin() {}
 };
 
 bool StorageInfoProviderWin::QueryInfo(StorageInfo* info) {
@@ -84,7 +85,7 @@ bool StorageInfoProviderWin::QueryUnitInfo(const std::string& id,
   if (GetDiskFreeSpaceEx(drive.c_str(), NULL, &total_bytes, &free_bytes)) {
     info->id = id;
     info->type =
-        api::experimental_system_info_storage::FromStorageUnitTypeString(type);
+        api::experimental_system_info_storage::ParseStorageUnitType(type);
     info->capacity = static_cast<double>(total_bytes.QuadPart);
     info->available_capacity = static_cast<double>(free_bytes.QuadPart);
     return true;

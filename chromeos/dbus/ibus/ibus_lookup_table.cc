@@ -6,17 +6,17 @@
 
 #include <string>
 #include "base/logging.h"
-#include "dbus/message.h"
-#include "chromeos/dbus/ibus/ibus_text.h"
+#include "base/values.h"
 #include "chromeos/dbus/ibus/ibus_object.h"
+#include "chromeos/dbus/ibus/ibus_text.h"
+#include "dbus/message.h"
 
 namespace chromeos {
-// TODO(nona): Remove ibus namespace after complete libibus removal.
-namespace ibus {
 
 namespace {
 // The default entry number of a page in IBusLookupTable.
 const int kDefaultPageSize = 9;
+const char kShowWindowAtCompositionKey[] = "show_window_at_composition";
 }  // namespace
 
 void AppendIBusLookupTable(const IBusLookupTable& table,
@@ -24,6 +24,11 @@ void AppendIBusLookupTable(const IBusLookupTable& table,
   IBusObjectWriter ibus_lookup_table_writer("IBusLookupTable",
                                             "uubbiavav",
                                             writer);
+  scoped_ptr<base::Value> show_position(
+      base::Value::CreateBooleanValue(table.show_window_at_composition()));
+  ibus_lookup_table_writer.AddAttachment(kShowWindowAtCompositionKey,
+                                         *show_position.get());
+  ibus_lookup_table_writer.CloseHeader();
   ibus_lookup_table_writer.AppendUint32(table.page_size());
   ibus_lookup_table_writer.AppendUint32(table.cursor_position());
   ibus_lookup_table_writer.AppendBool(table.is_cursor_visible());
@@ -36,7 +41,12 @@ void AppendIBusLookupTable(const IBusLookupTable& table,
   bool have_labels = false;
   for (size_t i = 0; i < candidates.size(); ++i) {
     // Write candidate string as IBusText.
-    AppendStringAsIBusText(candidates[i].value, &text_writer);
+    IBusText text;
+    text.set_text(candidates[i].value);
+    text.set_annotation(candidates[i].annotation);
+    text.set_description_title(candidates[i].description_title);
+    text.set_description_body(candidates[i].description_body);
+    AppendIBusText(text, &text_writer);
     if (!candidates[i].label.empty())
       have_labels = true;
   }
@@ -60,46 +70,15 @@ void AppendIBusLookupTable(const IBusLookupTable& table,
 bool PopIBusLookupTable(dbus::MessageReader* reader, IBusLookupTable* table) {
   IBusObjectReader ibus_object_reader("IBusLookupTable", reader);
 
-  dbus::MessageReader attachment_reader(NULL);
-  if (!ibus_object_reader.InitWithAttachmentReader(&attachment_reader))
+  if (!ibus_object_reader.Init())
     return false;
 
-  while (attachment_reader.HasMoreData()) {
-    dbus::MessageReader dictionary_reader(NULL);
-    if (!attachment_reader.PopDictEntry(&dictionary_reader)) {
-      LOG(ERROR) << "Invalid attachment structure: "
-                 << "The attachment field is array of dictionary entry.";
-      return false;
-    }
-
-    std::string key;
-    if (!dictionary_reader.PopString(&key)) {
-      LOG(ERROR) << "Invalid attachement structure: "
-                 << "The 1st dictionary entry should be string.";
-      return false;
-    }
-    if (key != "show_window_at_composition")
-      continue;
-
-    dbus::MessageReader variant_reader(NULL);
-    if (!dictionary_reader.PopVariant(&variant_reader)) {
-      LOG(ERROR) << "Invalid attachment structure: "
-                 << "The 2nd dictionary entry shuold be variant.";
-      return false;
-    }
-
-    dbus::MessageReader sub_variant_reader(NULL);
-    if (!variant_reader.PopVariant(&sub_variant_reader)) {
-      LOG(ERROR) << "Invalid attachment structure: "
-                 << "The 2nd variant entry should contain variant.";
-      return false;
-    }
-
-    bool show_window_at_composition = false;
-    if (!sub_variant_reader.PopBool(&show_window_at_composition))
-      continue;  // Ignores other field.
-
-    table->set_show_window_at_composition(show_window_at_composition);
+  const base::Value* value =
+      ibus_object_reader.GetAttachment(kShowWindowAtCompositionKey);
+  if (value) {
+    bool show_window_at_composition;
+    if (value->GetAsBoolean(&show_window_at_composition))
+      table->set_show_window_at_composition(show_window_at_composition);
   }
 
   uint32 page_size = 0;
@@ -121,7 +100,7 @@ bool PopIBusLookupTable(dbus::MessageReader* reader, IBusLookupTable* table) {
   bool cursor_visible = true;
   if (!ibus_object_reader.PopBool(&cursor_visible)) {
     LOG(ERROR) << "Invalid variant structure[IBusLookupTable]: "
-               << "3rd arugment should be boolean.";
+               << "3rd argument should be boolean.";
     return false;
   }
   table->set_is_cursor_visible(cursor_visible);
@@ -136,11 +115,15 @@ bool PopIBusLookupTable(dbus::MessageReader* reader, IBusLookupTable* table) {
   int32 orientation = 0;
   if (!ibus_object_reader.PopInt32(&orientation)) {
     LOG(ERROR) << "Invalid variant structure[IBusLookupTable]: "
-               << "5th arguemnt should be int32.";
+               << "5th argument should be int32.";
     return false;
   }
+
+  // Original IBus spec has third orientation IBUS_ORIENTATION_SYSTEM but it
+  // was not supported in Chrome OS. Thus do not cast from integer to enum.
   table->set_orientation(
-      static_cast<IBusLookupTable::Orientation>(orientation));
+      orientation == IBusLookupTable::HORIZONTAL ?
+      IBusLookupTable::HORIZONTAL : IBusLookupTable::VERTICAL);
 
   dbus::MessageReader text_array_reader(NULL);
   if (!ibus_object_reader.PopArray(&text_array_reader)) {
@@ -151,7 +134,7 @@ bool PopIBusLookupTable(dbus::MessageReader* reader, IBusLookupTable* table) {
 
   std::vector<IBusLookupTable::Entry>* candidates = table->mutable_candidates();
   while (text_array_reader.HasMoreData()) {
-    ibus::IBusText candidate_text;
+    IBusText candidate_text;
     // The attributes in IBusText are not used in Chrome.
     if (!PopIBusText(&text_array_reader, &candidate_text)) {
       LOG(ERROR) << "Invalid variant structure[IBusLookupTable]: "
@@ -161,7 +144,8 @@ bool PopIBusLookupTable(dbus::MessageReader* reader, IBusLookupTable* table) {
     IBusLookupTable::Entry entry;
     entry.value = candidate_text.text();
     entry.annotation = candidate_text.annotation();
-    entry.description = candidate_text.description();
+    entry.description_title = candidate_text.description_title();
+    entry.description_body = candidate_text.description_body();
     candidates->push_back(entry);
   }
 
@@ -202,10 +186,43 @@ IBusLookupTable::IBusLookupTable()
     : page_size_(kDefaultPageSize),
       cursor_position_(0),
       is_cursor_visible_(true),
-      orientation_(IBUS_LOOKUP_TABLE_ORIENTATION_HORIZONTAL) {
+      orientation_(HORIZONTAL),
+      show_window_at_composition_(false) {
 }
 
 IBusLookupTable::~IBusLookupTable() {
+}
+
+bool IBusLookupTable::IsEqual(const IBusLookupTable& table) const {
+  if (page_size_ != table.page_size_ ||
+      cursor_position_ != table.cursor_position_ ||
+      is_cursor_visible_ != table.is_cursor_visible_ ||
+      orientation_ != table.orientation_ ||
+      show_window_at_composition_ != table.show_window_at_composition_ ||
+      candidates_.size() != table.candidates_.size())
+    return false;
+
+  for (size_t i = 0; i < candidates_.size(); ++i) {
+    const Entry& left = candidates_[i];
+    const Entry& right = table.candidates_[i];
+    if (left.value != right.value ||
+        left.label != right.label ||
+        left.annotation != right.annotation ||
+        left.description_title != right.description_title ||
+        left.description_body != right.description_body)
+      return false;
+  }
+  return true;
+}
+
+void IBusLookupTable::CopyFrom(const IBusLookupTable& table) {
+  page_size_ = table.page_size_;
+  cursor_position_ = table.cursor_position_;
+  is_cursor_visible_ = table.is_cursor_visible_;
+  orientation_ = table.orientation_;
+  show_window_at_composition_ = table.show_window_at_composition_;
+  candidates_.clear();
+  candidates_ = table.candidates_;
 }
 
 IBusLookupTable::Entry::Entry() {
@@ -214,5 +231,4 @@ IBusLookupTable::Entry::Entry() {
 IBusLookupTable::Entry::~Entry() {
 }
 
-}  // namespace ibus
 }  // namespace chromeos

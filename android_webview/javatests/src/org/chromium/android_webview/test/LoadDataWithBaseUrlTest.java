@@ -10,13 +10,13 @@ import android.test.suitebuilder.annotation.SmallTest;
 import org.chromium.android_webview.AndroidProtocolHandler;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.test.util.CommonResources;
+import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.test.util.UrlUtils;
-import org.chromium.content.browser.test.util.Criteria;
-import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.ContentSettings;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.LoadUrlParams;
+import org.chromium.content.browser.test.util.Criteria;
+import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.HistoryUtils;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.net.test.util.TestWebServer;
@@ -25,9 +25,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.util.concurrent.TimeUnit;
 
-public class LoadDataWithBaseUrlTest extends AndroidWebViewTestBase {
-
-    protected static int WAIT_TIMEOUT_SECONDS = 15;
+public class LoadDataWithBaseUrlTest extends AwTestBase {
 
     private TestAwContentsClient mContentsClient;
     private AwContents mAwContents;
@@ -216,8 +214,12 @@ public class LoadDataWithBaseUrlTest extends AndroidWebViewTestBase {
                 getInstrumentation(), mContentViewCore));
     }
 
+    /*
     @SmallTest
     @Feature({"AndroidWebView"})
+    http://crbug.com/173274
+    */
+    @DisabledTest
     public void testHistoryUrlNavigation() throws Throwable {
         TestWebServer webServer = null;
         try {
@@ -300,7 +302,6 @@ public class LoadDataWithBaseUrlTest extends AndroidWebViewTestBase {
             final String DATA_BASE_URL = "data:";
             final String NON_DATA_BASE_URL = "http://example.com";
 
-            AndroidProtocolHandler.setResourceContextForTesting(getInstrumentation().getContext());
             mAwContents.getSettings().setAllowFileAccess(false);
             String token = "" + System.currentTimeMillis();
             // All access to file://, including android_asset and android_res is blocked
@@ -340,7 +341,6 @@ public class LoadDataWithBaseUrlTest extends AndroidWebViewTestBase {
                   "file://" + imagePath + "?" + token));
         } finally {
           if (!tempImage.delete()) throw new AssertionError();
-          AndroidProtocolHandler.setResourceContextForTesting(null);
         }
     }
 }

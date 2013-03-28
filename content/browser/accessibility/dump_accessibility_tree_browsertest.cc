@@ -6,35 +6,45 @@
 #include <string>
 #include <vector>
 
+#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/string16.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
+#include "content/browser/accessibility/accessibility_tree_formatter.h"
 #include "content/browser/accessibility/browser_accessibility.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
-#include "content/browser/accessibility/dump_accessibility_tree_helper.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/port/browser/render_widget_host_view_port.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/test/test_utils.h"
+#include "content/shell/shell.h"
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
-#include "content/shell/shell.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace {
-  static const char kCommentToken = '#';
-  static const char* kMarkSkipFile = "#<skip";
-  static const char* kMarkEndOfFile = "<-- End-of-file -->";
-  static const char* kSignalDiff = "*";
-} // namespace
+// TODO(dmazzoni): Disabled accessibility tests on Win64. crbug.com/179717
+#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+#define MAYBE(x) DISABLED_##x
+#else
+#define MAYBE(x) x
+#endif
 
 namespace content {
+
+namespace {
+
+const char kCommentToken = '#';
+const char kMarkSkipFile[] = "#<skip";
+const char kMarkEndOfFile[] = "<-- End-of-file -->";
+const char kSignalDiff[] = "*";
+
+}  // namespace
+
+typedef AccessibilityTreeFormatter::Filter Filter;
 
 // This test takes a snapshot of the platform BrowserAccessibility tree and
 // tests it against an expected baseline.
@@ -74,36 +84,45 @@ class DumpAccessibilityTreeTest : public ContentBrowserTest {
     return diff_lines;
   }
 
-  void AddDefaultFilters(std::set<string16>* allow_filters,
-                         std::set<string16>* deny_filters) {
-    allow_filters->insert(ASCIIToUTF16("FOCUSABLE"));
-    allow_filters->insert(ASCIIToUTF16("READONLY"));
+  void AddDefaultFilters(std::vector<Filter>* filters) {
+    filters->push_back(Filter(ASCIIToUTF16("FOCUSABLE"), Filter::ALLOW));
+    filters->push_back(Filter(ASCIIToUTF16("READONLY"), Filter::ALLOW));
+    filters->push_back(Filter(ASCIIToUTF16("*=''"), Filter::DENY));
   }
 
   void ParseFilters(const std::string& test_html,
-                    std::set<string16>* allow_filters,
-                    std::set<string16>* deny_filters) {
+                    std::vector<Filter>* filters) {
     std::vector<std::string> lines;
     base::SplitString(test_html, '\n', &lines);
     for (std::vector<std::string>::const_iterator iter = lines.begin();
          iter != lines.end();
          ++iter) {
       const std::string& line = *iter;
-      const std::string& allow_str = helper_.GetAllowString();
-      const std::string& deny_str = helper_.GetDenyString();
-      if (StartsWithASCII(line, allow_str, true))
-        allow_filters->insert(UTF8ToUTF16(line.substr(allow_str.size())));
-      else if (StartsWithASCII(line, deny_str, true))
-        deny_filters->insert(UTF8ToUTF16(line.substr(deny_str.size())));
+      const std::string& allow_empty_str =
+          AccessibilityTreeFormatter::GetAllowEmptyString();
+      const std::string& allow_str =
+          AccessibilityTreeFormatter::GetAllowString();
+      const std::string& deny_str =
+          AccessibilityTreeFormatter::GetDenyString();
+      if (StartsWithASCII(line, allow_empty_str, true)) {
+        filters->push_back(
+          Filter(UTF8ToUTF16(line.substr(allow_empty_str.size())),
+                 Filter::ALLOW_EMPTY));
+      } else if (StartsWithASCII(line, allow_str, true)) {
+        filters->push_back(Filter(UTF8ToUTF16(line.substr(allow_str.size())),
+                                  Filter::ALLOW));
+      } else if (StartsWithASCII(line, deny_str, true)) {
+        filters->push_back(Filter(UTF8ToUTF16(line.substr(deny_str.size())),
+                                  Filter::DENY));
+      }
     }
   }
 
-  void RunTest(const FilePath::CharType* file_path);
-
-  DumpAccessibilityTreeHelper helper_;
+  void RunTest(const base::FilePath::CharType* file_path);
 };
 
-void DumpAccessibilityTreeTest::RunTest(const FilePath::CharType* file_path) {
+void DumpAccessibilityTreeTest::RunTest(
+    const base::FilePath::CharType* file_path) {
   NavigateToURL(shell(), GURL("about:blank"));
   RenderWidgetHostViewPort* host_view = static_cast<RenderWidgetHostViewPort*>(
       shell()->web_contents()->GetRenderWidgetHostView());
@@ -114,13 +133,14 @@ void DumpAccessibilityTreeTest::RunTest(const FilePath::CharType* file_path) {
   view_host->SetAccessibilityMode(AccessibilityModeComplete);
 
   // Setup test paths.
-  FilePath dir_test_data;
-  EXPECT_TRUE(PathService::Get(DIR_TEST_DATA, &dir_test_data));
-  FilePath test_path(dir_test_data.Append(FILE_PATH_LITERAL("accessibility")));
-  EXPECT_TRUE(file_util::PathExists(test_path))
+  base::FilePath dir_test_data;
+  ASSERT_TRUE(PathService::Get(DIR_TEST_DATA, &dir_test_data));
+  base::FilePath test_path(
+      dir_test_data.Append(FILE_PATH_LITERAL("accessibility")));
+  ASSERT_TRUE(file_util::PathExists(test_path))
       << test_path.LossyDisplayName();
 
-  FilePath html_file = test_path.Append(FilePath(file_path));
+  base::FilePath html_file = test_path.Append(base::FilePath(file_path));
   // Output the test path to help anyone who encounters a failure and needs
   // to know where to look.
   printf("Testing: %s\n", html_file.MaybeAsASCII().c_str());
@@ -128,21 +148,12 @@ void DumpAccessibilityTreeTest::RunTest(const FilePath::CharType* file_path) {
   std::string html_contents;
   file_util::ReadFileToString(html_file, &html_contents);
 
-  // Parse filters in the test file.
-  std::set<string16> allow_filters;
-  std::set<string16> deny_filters;
-  AddDefaultFilters(&allow_filters, &deny_filters);
-  ParseFilters(html_contents, &allow_filters, &deny_filters);
-  helper_.SetFilters(allow_filters, deny_filters);
-
   // Read the expected file.
   std::string expected_contents_raw;
-  FilePath expected_file =
-    FilePath(html_file.RemoveExtension().value() +
-             helper_.GetExpectedFileSuffix());
-  file_util::ReadFileToString(
-      expected_file,
-      &expected_contents_raw);
+  base::FilePath expected_file =
+    base::FilePath(html_file.RemoveExtension().value() +
+                   AccessibilityTreeFormatter::GetExpectedFileSuffix());
+  file_util::ReadFileToString(expected_file, &expected_contents_raw);
 
   // Tolerate Windows-style line endings (\r\n) in the expected file:
   // normalize by deleting all \r from the file (if any) to leave only \n.
@@ -155,23 +166,30 @@ void DumpAccessibilityTreeTest::RunTest(const FilePath::CharType* file_path) {
   }
 
   // Load the page.
-  WindowedNotificationObserver tree_updated_observer(
-      NOTIFICATION_ACCESSIBILITY_LOAD_COMPLETE,
-      NotificationService::AllSources());
   string16 html_contents16;
   html_contents16 = UTF8ToUTF16(html_contents);
   GURL url = GetTestUrl("accessibility",
                         html_file.BaseName().MaybeAsASCII().c_str());
+  scoped_refptr<MessageLoopRunner> loop_runner(new MessageLoopRunner);
+  view_host->SetAccessibilityLoadCompleteCallbackForTesting(
+      loop_runner->QuitClosure());
   NavigateToURL(shell(), url);
 
   // Wait for the tree.
-  tree_updated_observer.Wait();
+  loop_runner->Run();
+
+  AccessibilityTreeFormatter formatter(
+      host_view->GetBrowserAccessibilityManager()->GetRoot());
+
+  // Parse filters in the test file.
+  std::vector<Filter> filters;
+  AddDefaultFilters(&filters);
+  ParseFilters(html_contents, &filters);
+  formatter.SetFilters(filters);
 
   // Perform a diff (or write the initial baseline).
   string16 actual_contents_utf16;
-  helper_.DumpAccessibilityTree(
-      host_view->GetBrowserAccessibilityManager()->GetRoot(),
-      &actual_contents_utf16);
+  formatter.FormatAccessibilityTree(&actual_contents_utf16);
   std::string actual_contents = UTF16ToUTF8(actual_contents_utf16);
   std::vector<std::string> actual_lines, expected_lines;
   Tokenize(actual_contents, "\n", &actual_lines);
@@ -206,9 +224,9 @@ void DumpAccessibilityTreeTest::RunTest(const FilePath::CharType* file_path) {
   }
 
   if (!file_util::PathExists(expected_file)) {
-    FilePath actual_file =
-      FilePath(html_file.RemoveExtension().value() +
-               helper_.GetActualFileSuffix());
+    base::FilePath actual_file =
+        base::FilePath(html_file.RemoveExtension().value() +
+                       AccessibilityTreeFormatter::GetActualFileSuffix());
 
     EXPECT_TRUE(file_util::WriteFile(
         actual_file, actual_contents.c_str(), actual_contents.size()));
@@ -221,6 +239,10 @@ void DumpAccessibilityTreeTest::RunTest(const FilePath::CharType* file_path) {
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityA) {
   RunTest(FILE_PATH_LITERAL("a.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAddress) {
+  RunTest(FILE_PATH_LITERAL("address.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAName) {
@@ -236,26 +258,79 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
   RunTest(FILE_PATH_LITERAL("aria-application.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaAutocomplete) {
+  RunTest(FILE_PATH_LITERAL("aria-autocomplete.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaCombobox) {
   RunTest(FILE_PATH_LITERAL("aria-combobox.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaInvalid) {
+  RunTest(FILE_PATH_LITERAL("aria-invalid.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       MAYBE(AccessibilityAriaLevel)) {
+  RunTest(FILE_PATH_LITERAL("aria-level.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaMenu) {
   RunTest(FILE_PATH_LITERAL("aria-menu.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaMenuitemradio) {
+  RunTest(FILE_PATH_LITERAL("aria-menuitemradio.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaPressed) {
+  RunTest(FILE_PATH_LITERAL("aria-pressed.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaProgressbar) {
+  RunTest(FILE_PATH_LITERAL("aria-progressbar.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaToolbar) {
+  RunTest(FILE_PATH_LITERAL("toolbar.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaValueMin) {
+  RunTest(FILE_PATH_LITERAL("aria-valuemin.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaValueMax) {
+  RunTest(FILE_PATH_LITERAL("aria-valuemax.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityArticle) {
+  RunTest(FILE_PATH_LITERAL("article.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAWithImg) {
   RunTest(FILE_PATH_LITERAL("a-with-img.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityBdo) {
+  RunTest(FILE_PATH_LITERAL("bdo.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityBR) {
+  RunTest(FILE_PATH_LITERAL("br.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityButtonNameCalc) {
   RunTest(FILE_PATH_LITERAL("button-name-calc.html"));
 }
 
-// TODO(dmazzoni): rebaseline and enable after this WebKit change is rolled:
-// https://bugs.webkit.org/show_bug.cgi?id=96323
-IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
-                       DISABLED_AccessibilityCanvas) {
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityCanvas) {
   RunTest(FILE_PATH_LITERAL("canvas.html"));
 }
 
@@ -264,22 +339,21 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
   RunTest(FILE_PATH_LITERAL("checkbox-name-calc.html"));
 }
 
-// TODO(dimich): Started to fail in Chrome r149732 (crbug 140397)
-#if defined(OS_WIN)
-#define MAYBE_AccessibilityContenteditableDescendants \
-    DISABLED_AccessibilityContenteditableDescendants
-#else
-#define MAYBE_AccessibilityContenteditableDescendants \
-    AccessibilityContenteditableDescendants
-#endif
-
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityDiv) {
   RunTest(FILE_PATH_LITERAL("div.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityDl) {
+  RunTest(FILE_PATH_LITERAL("dl.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
-                       MAYBE_AccessibilityContenteditableDescendants) {
+                       AccessibilityContenteditableDescendants) {
   RunTest(FILE_PATH_LITERAL("contenteditable-descendants.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityEm) {
+  RunTest(FILE_PATH_LITERAL("em.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityFooter) {
@@ -290,8 +364,35 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityForm) {
   RunTest(FILE_PATH_LITERAL("form.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityHeading) {
+  RunTest(FILE_PATH_LITERAL("heading.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityHR) {
   RunTest(FILE_PATH_LITERAL("hr.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       MAYBE(AccessibilityIframeCoordinates)) {
+  RunTest(FILE_PATH_LITERAL("iframe-coordinates.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputButton) {
+  RunTest(FILE_PATH_LITERAL("input-button.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityInputButtonInMenu) {
+  RunTest(FILE_PATH_LITERAL("input-button-in-menu.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputColor) {
+  RunTest(FILE_PATH_LITERAL("input-color.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityInputImageButtonInMenu) {
+  RunTest(FILE_PATH_LITERAL("input-image-button-in-menu.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputRange) {
@@ -315,19 +416,37 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityP) {
   RunTest(FILE_PATH_LITERAL("p.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilitySelect) {
+  RunTest(FILE_PATH_LITERAL("select.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilitySpan) {
+  RunTest(FILE_PATH_LITERAL("span.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilitySpinButton) {
   RunTest(FILE_PATH_LITERAL("spinbutton.html"));
 }
 
-// TODO(dmazzoni): rebaseline and enable after this WebKit change is rolled:
-// https://bugs.webkit.org/show_bug.cgi?id=96323
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilitySvg) {
+  RunTest(FILE_PATH_LITERAL("svg.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityTab) {
+  RunTest(FILE_PATH_LITERAL("tab.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
-                       DISABLED_AccessibilityToggleButton) {
+                       AccessibilityToggleButton) {
   RunTest(FILE_PATH_LITERAL("togglebutton.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityUl) {
   RunTest(FILE_PATH_LITERAL("ul.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityWbr) {
+  RunTest(FILE_PATH_LITERAL("wbr.html"));
 }
 
 }  // namespace content

@@ -27,18 +27,24 @@ class JsonSchemaTest : public V8UnitTest {
     std::string code = ResourceBundle::GetSharedInstance().GetRawDataResource(
         IDR_JSON_SCHEMA_JS).as_string();
 
-    // json_schema.js expects to have requireNative() defined.
+    // json_schema.js expects to have require() and requireNative() defined.
     ExecuteScriptInContext(
         "function requireNative(id) {"
         "  return {"
         "    GetChromeHidden: function() { return {}; },"
+        "    CHECK: function(foo, bar) { return undefined; },"
+        "  };"
+        "}"
+        "function require(id) {"
+        "  return {"
+        "    loadTypeSchema: function(foo) { return undefined; },"
         "  };"
         "}",
         "test-code");
     ExecuteScriptInContext(code, kJsonSchema);
 
     // Add the test functions to the context.
-    FilePath test_js_file_path;
+    base::FilePath test_js_file_path;
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_js_file_path));
     test_js_file_path = test_js_file_path.AppendASCII("extensions");
     test_js_file_path = test_js_file_path.AppendASCII(kJsonSchemaTest);

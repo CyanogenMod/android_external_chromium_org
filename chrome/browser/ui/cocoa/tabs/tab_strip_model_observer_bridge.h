@@ -10,7 +10,6 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 
-class TabContents;
 class TabStripModel;
 
 namespace content {
@@ -36,18 +35,20 @@ class TabStripModelObserverBridge : public TabStripModelObserver {
                             int index) OVERRIDE;
   virtual void TabDetachedAt(content::WebContents* contents,
                              int index) OVERRIDE;
-  virtual void ActiveTabChanged(TabContents* old_contents,
-                                TabContents* new_contents,
+  virtual void TabDeactivated(content::WebContents* contents) OVERRIDE;
+  virtual void ActiveTabChanged(content::WebContents* old_contents,
+                                content::WebContents* new_contents,
                                 int index,
                                 bool user_gesture) OVERRIDE;
-  virtual void TabMoved(TabContents* contents,
+  virtual void TabMoved(content::WebContents* contents,
                         int from_index,
                         int to_index) OVERRIDE;
-  virtual void TabChangedAt(TabContents* contents, int index,
+  virtual void TabChangedAt(content::WebContents* contents,
+                            int index,
                             TabChangeType change_type) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int index) OVERRIDE;
   virtual void TabMiniStateChanged(content::WebContents* contents,
                                    int index) OVERRIDE;
@@ -70,6 +71,7 @@ class TabStripModelObserverBridge : public TabStripModelObserver {
                        atIndex:(NSInteger)index;
 - (void)tabDetachedWithContents:(content::WebContents*)contents
                         atIndex:(NSInteger)index;
+- (void)tabDeactivatedWithContents:(content::WebContents*)contents;
 - (void)activateTabWithContents:(content::WebContents*)newContents
                previousContents:(content::WebContents*)oldContents
                         atIndex:(NSInteger)index

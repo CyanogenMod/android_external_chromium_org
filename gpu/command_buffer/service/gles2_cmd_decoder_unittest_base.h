@@ -5,7 +5,6 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_BASE_H_
 #define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_BASE_H_
 
-#include "gpu/command_buffer/common/gl_mock.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
@@ -23,9 +22,12 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_context_stub.h"
 #include "ui/gl/gl_surface_stub.h"
+#include "ui/gl/gl_mock.h"
 
 namespace gpu {
 namespace gles2 {
+
+class MemoryTracker;
 
 class GLES2DecoderTestBase : public testing::Test {
  public:
@@ -96,29 +98,29 @@ class GLES2DecoderTestBase : public testing::Test {
     return group_->GetIdAllocator(namespace_id);
   }
 
-  BufferManager::BufferInfo* GetBufferInfo(GLuint service_id) {
-    return group_->buffer_manager()->GetBufferInfo(service_id);
+  Buffer* GetBuffer(GLuint service_id) {
+    return group_->buffer_manager()->GetBuffer(service_id);
   }
 
-  FramebufferManager::FramebufferInfo* GetFramebufferInfo(GLuint service_id) {
-    return group_->framebuffer_manager()->GetFramebufferInfo(service_id);
+  Framebuffer* GetFramebuffer(GLuint service_id) {
+    return group_->framebuffer_manager()->GetFramebuffer(service_id);
   }
 
-  RenderbufferManager::RenderbufferInfo* GetRenderbufferInfo(
+  Renderbuffer* GetRenderbuffer(
       GLuint service_id) {
-    return group_->renderbuffer_manager()->GetRenderbufferInfo(service_id);
+    return group_->renderbuffer_manager()->GetRenderbuffer(service_id);
   }
 
-  TextureManager::TextureInfo* GetTextureInfo(GLuint client_id) {
-    return group_->texture_manager()->GetTextureInfo(client_id);
+  Texture* GetTexture(GLuint client_id) {
+    return group_->texture_manager()->GetTexture(client_id);
   }
 
-  ShaderManager::ShaderInfo* GetShaderInfo(GLuint client_id) {
-    return group_->shader_manager()->GetShaderInfo(client_id);
+  Shader* GetShader(GLuint client_id) {
+    return group_->shader_manager()->GetShader(client_id);
   }
 
-  ProgramManager::ProgramInfo* GetProgramInfo(GLuint client_id) {
-    return group_->program_manager()->GetProgramInfo(client_id);
+  Program* GetProgram(GLuint client_id) {
+    return group_->program_manager()->GetProgram(client_id);
   }
 
   QueryManager::Query* GetQueryInfo(GLuint client_id) {
@@ -139,6 +141,10 @@ class GLES2DecoderTestBase : public testing::Test {
   void DoCreateShader(GLenum shader_type, GLuint client_id, GLuint service_id);
 
   void SetBucketAsCString(uint32 bucket_id, const char* str);
+
+  void set_memory_tracker(MemoryTracker* memory_tracker) {
+    memory_tracker_ = memory_tracker;
+  }
 
   void InitDecoder(
       const char* extensions,
@@ -183,7 +189,7 @@ class GLES2DecoderTestBase : public testing::Test {
   void ExpectEnableDisable(GLenum cap, bool enable);
 
   // Setups up a shader for testing glUniform.
-  void SetupShaderForUniform();
+  void SetupShaderForUniform(GLenum uniform_type);
   void SetupDefaultProgram();
   void SetupCubemapProgram();
   void SetupTexture();
@@ -466,7 +472,9 @@ class GLES2DecoderTestBase : public testing::Test {
   scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
   scoped_refptr<gfx::GLSurfaceStub> surface_;
   scoped_refptr<gfx::GLContextStub> context_;
+  scoped_ptr<GLES2Decoder> mock_decoder_;
   scoped_ptr<GLES2Decoder> decoder_;
+  MemoryTracker* memory_tracker_;
 
   GLuint client_buffer_id_;
   GLuint client_framebuffer_id_;
@@ -494,7 +502,7 @@ class GLES2DecoderTestBase : public testing::Test {
 
     virtual ~MockCommandBufferEngine();
 
-    virtual Buffer GetSharedMemoryBuffer(int32 shm_id) OVERRIDE;
+    virtual gpu::Buffer GetSharedMemoryBuffer(int32 shm_id) OVERRIDE;
 
     void ClearSharedMemory() {
       memset(data_.get(), kInitialMemoryValue, kSharedBufferSize);
@@ -512,14 +520,14 @@ class GLES2DecoderTestBase : public testing::Test {
 
    private:
     scoped_array<int8> data_;
-    Buffer valid_buffer_;
-    Buffer invalid_buffer_;
+    gpu::Buffer valid_buffer_;
+    gpu::Buffer invalid_buffer_;
   };
 
   void AddExpectationsForVertexAttribManager();
 
   scoped_ptr< ::testing::StrictMock<MockCommandBufferEngine> > engine_;
-  ContextGroup::Ref group_;
+  scoped_refptr<ContextGroup> group_;
 };
 
 class GLES2DecoderWithShaderTestBase : public GLES2DecoderTestBase {

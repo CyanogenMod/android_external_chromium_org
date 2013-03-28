@@ -12,15 +12,16 @@
 #include <unistd.h>
 
 #include "base/basictypes.h"
-#include "base/eintr_wrapper.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/test/multiprocess_test.h"
 #include "base/test/test_timeouts.h"
 #include "ipc/ipc_listener.h"
+#include "ipc/unix_domain_socket_util.h"
 #include "testing/multiprocess_func_list.h"
 
 namespace {
@@ -92,8 +93,6 @@ class IPCChannelPosixTestListener : public IPC::Listener {
   bool quit_only_on_message_;
 };
 
-}  // namespace
-
 class IPCChannelPosixTest : public base::MultiProcessTest {
  public:
   static void SetUpSocket(IPC::ChannelHandle *handle,
@@ -112,7 +111,7 @@ private:
 
 const std::string IPCChannelPosixTest::GetChannelDirName() {
 #if defined(OS_ANDROID)
-  FilePath tmp_dir;
+  base::FilePath tmp_dir;
   PathService::Get(base::DIR_CACHE, &tmp_dir);
   return tmp_dir.value();
 #else
@@ -147,7 +146,7 @@ void IPCChannelPosixTest::SetUpSocket(IPC::ChannelHandle *handle,
   struct sockaddr_un server_address = { 0 };
   memset(&server_address, 0, sizeof(server_address));
   server_address.sun_family = AF_UNIX;
-  int path_len = snprintf(server_address.sun_path, IPC::kMaxPipeNameLength,
+  int path_len = snprintf(server_address.sun_path, IPC::kMaxSocketNameLength,
                           "%s", name.c_str());
   DCHECK_EQ(static_cast<int>(name.length()), path_len);
   size_t server_address_len = offsetof(struct sockaddr_un,
@@ -157,8 +156,8 @@ void IPCChannelPosixTest::SetUpSocket(IPC::ChannelHandle *handle,
     // Only one server at a time. Cleanup garbage if it exists.
     unlink(name.c_str());
     // Make sure the path we need exists.
-    FilePath path(name);
-    FilePath dir_path = path.DirName();
+    base::FilePath path(name);
+    base::FilePath dir_path = path.DirName();
     ASSERT_TRUE(file_util::CreateDirectory(dir_path));
     ASSERT_GE(bind(socket_fd,
                    reinterpret_cast<struct sockaddr *>(&server_address),
@@ -313,7 +312,7 @@ TEST_F(IPCChannelPosixTest, BadChannelName) {
                              "future-proof_growth_strategies_Continually"
                              "pontificate_proactive_potentialities_before"
                              "leading-edge_processes";
-  EXPECT_GE(strlen(kTooLongName), IPC::kMaxPipeNameLength);
+  EXPECT_GE(strlen(kTooLongName), IPC::kMaxSocketNameLength);
   IPC::ChannelHandle handle2(kTooLongName);
   IPC::Channel channel2(handle2, IPC::Channel::MODE_NAMED_SERVER, NULL);
   EXPECT_FALSE(channel2.Connect());
@@ -379,7 +378,7 @@ TEST_F(IPCChannelPosixTest, IsNamedServerInitialized) {
   const std::string& connection_socket_name = GetConnectionSocketName();
   IPCChannelPosixTestListener listener(false);
   IPC::ChannelHandle chan_handle(connection_socket_name);
-  ASSERT_TRUE(file_util::Delete(FilePath(connection_socket_name), false));
+  ASSERT_TRUE(file_util::Delete(base::FilePath(connection_socket_name), false));
   ASSERT_FALSE(IPC::Channel::IsNamedServerInitialized(
       connection_socket_name));
   IPC::Channel channel(chan_handle, IPC::Channel::MODE_NAMED_SERVER, &listener);
@@ -425,3 +424,5 @@ MULTIPROCESS_TEST_MAIN(IPCChannelPosixFailConnectionProc) {
   }
   return 0;
 }
+
+}  // namespace

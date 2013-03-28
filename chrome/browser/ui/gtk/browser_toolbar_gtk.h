@@ -10,12 +10,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_observer.h"
-#include "chrome/browser/api/prefs/pref_member.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/command_observer.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
+#include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -44,8 +44,7 @@ class WebContents;
 class BrowserToolbarGtk : public CommandObserver,
                           public ui::AcceleratorProvider,
                           public MenuGtk::Delegate,
-                          public content::NotificationObserver,
-                          public PrefObserver {
+                          public content::NotificationObserver {
  public:
   BrowserToolbarGtk(Browser* browser, BrowserWindowGtk* window);
   virtual ~BrowserToolbarGtk();
@@ -106,10 +105,6 @@ class BrowserToolbarGtk : public CommandObserver,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // PrefObserver implementation.
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
-
   // Whether the wrench/hotdogs menu is currently visible to the user.
   bool IsWrenchMenuShowing() const;
 
@@ -118,8 +113,10 @@ class BrowserToolbarGtk : public CommandObserver,
                          bool should_restore_state);
 
  private:
+  void OnZoomLevelChanged(const content::HostZoomMap::ZoomLevelChange& host);
+
   // Connect/Disconnect signals for dragging a url onto the home button.
-  void SetUpDragForHomeButton(bool enable);
+  void SetUpDragForHomeButton();
 
   // Sets the top corners of the toolbar to rounded, or sets them to normal,
   // depending on the state of the browser window. Returns false if no action
@@ -149,9 +146,6 @@ class BrowserToolbarGtk : public CommandObserver,
   CHROMEGTK_CALLBACK_1(BrowserToolbarGtk, gboolean, OnWrenchMenuButtonExpose,
                        GdkEventExpose*);
 
-  // Updates preference-dependent state. |pref| may be NULL.
-  void NotifyPrefChanged(const std::string* pref);
-
   static void SetSyncMenuLabel(GtkWidget* widget, gpointer userdata);
 
   // Sometimes we only want to show the location w/o the toolbar buttons (e.g.,
@@ -160,6 +154,8 @@ class BrowserToolbarGtk : public CommandObserver,
 
   // Rebuilds the wrench menu.
   void RebuildWrenchMenu();
+
+  void UpdateShowHomeButton();
 
   // An event box that holds |toolbar_|. We need the toolbar to have its own
   // GdkWindow when we use the GTK drawing because otherwise the color from our
@@ -218,6 +214,7 @@ class BrowserToolbarGtk : public CommandObserver,
   StringPrefMember home_page_;
   BooleanPrefMember home_page_is_new_tab_page_;
 
+  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
   content::NotificationRegistrar registrar_;
 
   // A GtkEntry that isn't part of the hierarchy. We keep this for native

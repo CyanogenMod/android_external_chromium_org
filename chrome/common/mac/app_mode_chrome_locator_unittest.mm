@@ -6,10 +6,10 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "chrome/common/chrome_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -17,35 +17,35 @@ namespace {
 
 // Return the path to the Chrome/Chromium app bundle compiled along with the
 // test executable.
-void GetChromeBundlePath(FilePath* chrome_bundle) {
-  FilePath path;
+void GetChromeBundlePath(base::FilePath* chrome_bundle) {
+  base::FilePath path;
   PathService::Get(base::DIR_EXE, &path);
   path = path.Append(chrome::kBrowserProcessExecutableNameChromium);
-  path = path.ReplaceExtension(FilePath::StringType("app"));
+  path = path.ReplaceExtension(base::FilePath::StringType("app"));
   *chrome_bundle = path;
 }
 
 }  // namespace
 
 TEST(ChromeLocatorTest, FindBundle) {
-  FilePath finder_bundle_path;
+  base::FilePath finder_bundle_path;
   EXPECT_TRUE(
       app_mode::FindBundleById(@"com.apple.finder", &finder_bundle_path));
   EXPECT_TRUE(file_util::DirectoryExists(finder_bundle_path));
 }
 
 TEST(ChromeLocatorTest, FindNonExistentBundle) {
-  FilePath dummy;
+  base::FilePath dummy;
   EXPECT_FALSE(app_mode::FindBundleById(@"this.doesnt.exist", &dummy));
 }
 
 TEST(ChromeLocatorTest, GetNonExistentBundleInfo) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   string16 raw_version;
-  FilePath version_path;
-  FilePath framework_path;
+  base::FilePath version_path;
+  base::FilePath framework_path;
   EXPECT_FALSE(app_mode::GetChromeBundleInfo(temp_dir.path(),
       &raw_version, &version_path, &framework_path));
 }
@@ -53,13 +53,13 @@ TEST(ChromeLocatorTest, GetNonExistentBundleInfo) {
 TEST(ChromeLocatorTest, GetChromeBundleInfo) {
   using app_mode::GetChromeBundleInfo;
 
-  FilePath chrome_bundle_path;
+  base::FilePath chrome_bundle_path;
   GetChromeBundlePath(&chrome_bundle_path);
   ASSERT_TRUE(file_util::DirectoryExists(chrome_bundle_path));
 
   string16 raw_version;
-  FilePath version_path;
-  FilePath framework_path;
+  base::FilePath version_path;
+  base::FilePath framework_path;
   EXPECT_TRUE(GetChromeBundleInfo(chrome_bundle_path,
       &raw_version, &version_path, &framework_path));
   EXPECT_GT(raw_version.size(), 0U);

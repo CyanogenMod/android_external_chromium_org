@@ -163,9 +163,10 @@ const char kBinUrlList[] = "goog-badbinurl-shavar";
 const char kBinHashList[] = "goog-badbin-digestvar-disabled";
 const char kCsdWhiteList[] = "goog-csdwhite-sha256";
 const char kDownloadWhiteList[] = "goog-downloadwhite-digest256";
+const char kExtensionBlacklist[] = "goog-badcrxids-digestvar";
 
-int GetListId(const std::string& name) {
-  int id;
+ListType GetListId(const std::string& name) {
+  ListType id;
   if (name == safe_browsing_util::kMalwareList) {
     id = MALWARE;
   } else if (name == safe_browsing_util::kPhishingList) {
@@ -178,13 +179,15 @@ int GetListId(const std::string& name) {
     id = CSDWHITELIST;
   } else if (name == safe_browsing_util::kDownloadWhiteList) {
     id = DOWNLOADWHITELIST;
+  } else if (name == safe_browsing_util::kExtensionBlacklist) {
+    id = EXTENSIONBLACKLIST;
   } else {
     id = INVALID;
   }
   return id;
 }
 
-bool GetListName(int list_id, std::string* list) {
+bool GetListName(ListType list_id, std::string* list) {
   switch (list_id) {
     case MALWARE:
       *list = safe_browsing_util::kMalwareList;
@@ -203,6 +206,9 @@ bool GetListName(int list_id, std::string* list) {
       break;
     case DOWNLOADWHITELIST:
       *list = safe_browsing_util::kDownloadWhiteList;
+      break;
+    case EXTENSIONBLACKLIST:
+      *list = safe_browsing_util::kExtensionBlacklist;
       break;
     default:
       return false;
@@ -469,6 +475,10 @@ bool IsBadbinhashList(const std::string& list_name) {
   return list_name.compare(kBinHashList) == 0;
 }
 
+bool IsExtensionList(const std::string& list_name) {
+  return list_name.compare(kExtensionBlacklist) == 0;
+}
+
 GURL GeneratePhishingReportUrl(const std::string& report_page,
                                const std::string& url_to_report,
                                bool is_client_side_detection) {
@@ -490,13 +500,16 @@ GURL GeneratePhishingReportUrl(const std::string& report_page,
   return google_util::AppendGoogleLocaleParam(report_url);
 }
 
-void StringToSBFullHash(const std::string& hash_in, SBFullHash* hash_out) {
+SBFullHash StringToSBFullHash(const std::string& hash_in) {
   DCHECK_EQ(crypto::kSHA256Length, hash_in.size());
-  memcpy(hash_out->full_hash, hash_in.data(), crypto::kSHA256Length);
+  SBFullHash hash_out;
+  memcpy(hash_out.full_hash, hash_in.data(), crypto::kSHA256Length);
+  return hash_out;
 }
 
 std::string SBFullHashToString(const SBFullHash& hash) {
   DCHECK_EQ(crypto::kSHA256Length, sizeof(hash.full_hash));
   return std::string(hash.full_hash, sizeof(hash.full_hash));
 }
+
 }  // namespace safe_browsing_util

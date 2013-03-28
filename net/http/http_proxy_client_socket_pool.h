@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
@@ -20,6 +21,7 @@
 #include "net/socket/client_socket_pool_histograms.h"
 #include "net/socket/client_socket_pool.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/spdy/spdy_session.h"
 
 namespace net {
 
@@ -149,6 +151,7 @@ class HttpProxyConnectJob : public ConnectJob {
   // a standard net error code will be returned.
   virtual int ConnectInternal() OVERRIDE;
 
+  base::WeakPtrFactory<HttpProxyConnectJob> weak_ptr_factory_;
   scoped_refptr<HttpProxySocketParams> params_;
   TransportClientSocketPool* const transport_pool_;
   SSLClientSocketPool* const ssl_pool_;
@@ -164,7 +167,7 @@ class HttpProxyConnectJob : public ConnectJob {
 
   HttpResponseInfo error_response_info_;
 
-  scoped_refptr<SpdyStream> spdy_stream_;
+  SpdyStreamRequest spdy_stream_request_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpProxyConnectJob);
 };
@@ -204,7 +207,7 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
                              StreamSocket* socket,
                              int id) OVERRIDE;
 
-  virtual void Flush() OVERRIDE;
+  virtual void FlushWithError(int error) OVERRIDE;
 
   virtual bool IsStalled() const OVERRIDE;
 

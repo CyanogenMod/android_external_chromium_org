@@ -2,6 +2,7 @@ Name: Android Test runner script
 URL: http://source.android.com
 Version: 3.1.4
 License: Apache Version 2.0
+License File: NOT_SHIPPED
 Security Critical: no
 
 Description:
@@ -13,6 +14,8 @@ Local Modifications:
   suppressed.
 2. Changed error message handling in |StartInstrumentation| from |shortMsg| to
   |longMsg| to provide more information when debugging.
+3. Applied the patch file patch.diff to fix a race condition in
+  run_command.RunOnce.
 
 Here is the detail steps
 1. Checkout Android source code

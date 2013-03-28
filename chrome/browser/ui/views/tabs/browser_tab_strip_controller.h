@@ -7,28 +7,28 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/ui/tabs/hover_tab_selector.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
 
-class BaseTab;
 class Browser;
-class TabContents;
+class Tab;
 class TabStrip;
-class TabStripSelectionModel;
 struct TabRendererData;
 
 namespace content {
 class WebContents;
 }
 
+namespace ui {
+class ListSelectionModel;
+}
+
 // An implementation of TabStripController that sources data from the
-// TabContentses in a TabStripModel.
+// WebContentses in a TabStripModel.
 class BrowserTabStripController : public TabStripController,
-                                  public TabStripModelObserver,
-                                  public PrefObserver {
+                                  public TabStripModelObserver {
  public:
   BrowserTabStripController(Browser* browser, TabStripModel* model);
   virtual ~BrowserTabStripController();
@@ -38,13 +38,13 @@ class BrowserTabStripController : public TabStripController,
   TabStripModel* model() const { return model_; }
 
   bool IsCommandEnabledForTab(TabStripModel::ContextMenuCommand command_id,
-                              BaseTab* tab) const;
+                              Tab* tab) const;
   void ExecuteCommandForTab(TabStripModel::ContextMenuCommand command_id,
-                            BaseTab* tab);
-  bool IsTabPinned(BaseTab* tab) const;
+                            Tab* tab);
+  bool IsTabPinned(Tab* tab) const;
 
   // TabStripController implementation:
-  virtual const TabStripSelectionModel& GetSelectionModel() OVERRIDE;
+  virtual const ui::ListSelectionModel& GetSelectionModel() OVERRIDE;
   virtual int GetCount() const OVERRIDE;
   virtual bool IsValidIndex(int model_index) const OVERRIDE;
   virtual bool IsActiveTab(int model_index) const OVERRIDE;
@@ -57,7 +57,7 @@ class BrowserTabStripController : public TabStripController,
   virtual void ToggleSelected(int model_index) OVERRIDE;
   virtual void AddSelectionFromAnchorTo(int model_index) OVERRIDE;
   virtual void CloseTab(int model_index, CloseTabSource source) OVERRIDE;
-  virtual void ShowContextMenuForTab(BaseTab* tab,
+  virtual void ShowContextMenuForTab(Tab* tab,
                                      const gfx::Point& p) OVERRIDE;
   virtual void UpdateLoadingAnimations() OVERRIDE;
   virtual int HasAvailableDragActions() const OVERRIDE;
@@ -78,16 +78,16 @@ class BrowserTabStripController : public TabStripController,
                              int model_index) OVERRIDE;
   virtual void TabSelectionChanged(
       TabStripModel* tab_strip_model,
-      const TabStripSelectionModel& old_model) OVERRIDE;
-  virtual void TabMoved(TabContents* contents,
+      const ui::ListSelectionModel& old_model) OVERRIDE;
+  virtual void TabMoved(content::WebContents* contents,
                         int from_model_index,
                         int to_model_index) OVERRIDE;
-  virtual void TabChangedAt(TabContents* contents,
+  virtual void TabChangedAt(content::WebContents* contents,
                             int model_index,
                             TabChangeType change_type) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int model_index) OVERRIDE;
   virtual void TabPinnedStateChanged(content::WebContents* contents,
                                      int model_index) OVERRIDE;
@@ -95,10 +95,6 @@ class BrowserTabStripController : public TabStripController,
                                    int model_index) OVERRIDE;
   virtual void TabBlockedStateChanged(content::WebContents* contents,
                                       int model_index) OVERRIDE;
-
-  // PrefObserver implementation:
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
 
  protected:
   // The context in which SetTabRendererDataFromModel is being called.
@@ -127,10 +123,10 @@ class BrowserTabStripController : public TabStripController,
 
   void StartHighlightTabsForCommand(
       TabStripModel::ContextMenuCommand command_id,
-      BaseTab* tab);
+      Tab* tab);
   void StopHighlightTabsForCommand(
       TabStripModel::ContextMenuCommand command_id,
-      BaseTab* tab);
+      Tab* tab);
 
   // Adds a tab.
   void AddTab(content::WebContents* contents, int index, bool is_active);

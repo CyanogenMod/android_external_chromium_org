@@ -10,13 +10,13 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/scoped_observer.h"
+#include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
-#include "chrome/browser/extensions/extension_warning_set.h"
+#include "chrome/browser/extensions/extension_warning_service.h"
 #include "chrome/browser/extensions/requirements_checker.h"
-#include "chrome/common/extensions/extension_resource.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -24,15 +24,19 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "googleurl/src/gurl.h"
-#include "ui/base/dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 class ExtensionService;
-class FilePath;
-class PrefService;
+class PrefRegistrySyncable;
 
 namespace base {
 class DictionaryValue;
+class FilePath;
 class ListValue;
+}
+
+namespace content {
+class WebUIDataSource;
 }
 
 namespace extensions {
@@ -60,29 +64,31 @@ struct ExtensionPage {
 class ExtensionSettingsHandler
     : public content::WebUIMessageHandler,
       public content::NotificationObserver,
-      public PrefObserver,
       public content::WebContentsObserver,
       public ui::SelectFileDialog::Listener,
+      public ExtensionInstallPrompt::Delegate,
       public ExtensionUninstallDialog::Delegate,
-      public base::SupportsWeakPtr<ExtensionSettingsHandler>{
+      public extensions::ExtensionWarningService::Observer,
+      public base::SupportsWeakPtr<ExtensionSettingsHandler> {
  public:
   ExtensionSettingsHandler();
   virtual ~ExtensionSettingsHandler();
 
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
   // Extension Detail JSON Struct for page. |pages| is injected for unit
   // testing.
-  // Note: |warning_set| can be NULL in unit tests.
+  // Note: |warning_service| can be NULL in unit tests.
   base::DictionaryValue* CreateExtensionDetailValue(
       const extensions::Extension* extension,
       const std::vector<ExtensionPage>& pages,
-      const ExtensionWarningSet* warning_set);
+      const extensions::ExtensionWarningService* warning_service);
 
-  void GetLocalizedValues(base::DictionaryValue* localized_strings);
+  void GetLocalizedValues(content::WebUIDataSource* source);
 
-  // content::WebContentsObserver implementation, which reloads all unpacked
-  // extensions whenever chrome://extensions is reloaded.
+  // content::WebContentsObserver implementation.
+  virtual void RenderViewDeleted(
+      content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void NavigateToPendingEntry(
       const GURL& url,
       content::NavigationController::ReloadType reload_type) OVERRIDE;
@@ -98,10 +104,10 @@ class ExtensionSettingsHandler
   virtual void RegisterMessages() OVERRIDE;
 
   // SelectFileDialog::Listener implementation.
-  virtual void FileSelected(const FilePath& path,
+  virtual void FileSelected(const base::FilePath& path,
                             int index, void* params) OVERRIDE;
   virtual void MultiFilesSelected(
-      const std::vector<FilePath>& files, void* params) OVERRIDE;
+      const std::vector<base::FilePath>& files, void* params) OVERRIDE;
   virtual void FileSelectionCanceled(void* params) OVERRIDE {}
 
   // content::NotificationObserver implementation.
@@ -109,17 +115,27 @@ class ExtensionSettingsHandler
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // PrefObserver implementation.
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
-
   // ExtensionUninstallDialog::Delegate implementation, used for receiving
   // notification about uninstall confirmation dialog selections.
   virtual void ExtensionUninstallAccepted() OVERRIDE;
   virtual void ExtensionUninstallCanceled() OVERRIDE;
 
+  // extensions::ExtensionWarningService::Observer implementation.
+  virtual void ExtensionWarningsChanged() OVERRIDE;
+
+  // ExtensionInstallPrompt::Delegate implementation.
+  virtual void InstallUIProceed() OVERRIDE;
+  virtual void InstallUIAbort(bool user_initiated) OVERRIDE;
+
   // Helper method that reloads all unpacked extensions.
   void ReloadUnpackedExtensions();
+
+  // Callback for "setElevated" message.
+  void ManagedUserSetElevated(const base::ListValue* args);
+
+  // If the authentication of the managed user was successful,
+  // it gives this information back to the UI.
+  void PassphraseDialogCallback(bool success);
 
   // Callback for "requestExtensionsData" message.
   void HandleRequestExtensionsData(const base::ListValue* args);
@@ -129,6 +145,12 @@ class ExtensionSettingsHandler
 
   // Callback for "inspect" message.
   void HandleInspectMessage(const base::ListValue* args);
+
+  // Callback for "launch" message.
+  void HandleLaunchMessage(const ListValue* args);
+
+  // Callback for "restart" message.
+  void HandleRestartMessage(const ListValue* args);
 
   // Callback for "reload" message.
   void HandleReloadMessage(const base::ListValue* args);
@@ -147,6 +169,9 @@ class ExtensionSettingsHandler
 
   // Callback for "options" message.
   void HandleOptionsMessage(const base::ListValue* args);
+
+  // Callback for "permissions" message.
+  void HandlePermissionsMessage(const base::ListValue* args);
 
   // Callback for "showButton" message.
   void HandleShowButtonMessage(const base::ListValue* args);
@@ -200,7 +225,7 @@ class ExtensionSettingsHandler
 
   // Used to start the |load_extension_dialog_| in the last directory that was
   // loaded.
-  FilePath last_unpacked_directory_;
+  base::FilePath last_unpacked_directory_;
 
   // Used to show confirmation UI for uninstalling extensions in incognito mode.
   scoped_ptr<ExtensionUninstallDialog> extension_uninstall_dialog_;
@@ -213,7 +238,7 @@ class ExtensionSettingsHandler
   // notification.
   bool ignore_notifications_;
 
-  // The page may be refreshed in response to a RENDER_VIEW_HOST_DELETED,
+  // The page may be refreshed in response to a RenderViewHost being destroyed,
   // but the iteration over RenderViewHosts will include the host because the
   // notification is sent when it is in the process of being deleted (and before
   // it is removed from the process). Keep a pointer to it so we can exclude
@@ -229,12 +254,18 @@ class ExtensionSettingsHandler
   content::NotificationRegistrar registrar_;
 
   PrefChangeRegistrar pref_registrar_;
-  PrefChangeRegistrar local_state_pref_registrar_;
 
   // This will not be empty when a requirements check is in progress. Doing
   // another Check() before the previous one is complete will cause the first
   // one to abort.
   scoped_ptr<extensions::RequirementsChecker> requirements_checker_;
+
+  // The UI for showing what permissions the extension has.
+  scoped_ptr<ExtensionInstallPrompt> prompt_;
+
+  ScopedObserver<extensions::ExtensionWarningService,
+                 extensions::ExtensionWarningService::Observer>
+      warning_service_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionSettingsHandler);
 };

@@ -71,7 +71,7 @@ class ExtensionDiscoveryTest : public BrowserWithTestWindowTest {
  public:
   virtual void SetUp() {
     BrowserWithTestWindowTest::SetUp();
-    extension_ = utils::CreateEmptyExtensionWithLocation(Extension::LOAD);
+    extension_ = utils::CreateEmptyExtensionWithLocation(Manifest::UNPACKED);
   }
 
   // Runs a function and returns a pointer to a value, transferring ownership.
@@ -85,19 +85,6 @@ class ExtensionDiscoveryTest : public BrowserWithTestWindowTest {
   void RunFunction(UIThreadExtensionFunction* function,
                    const std::string& args) {
     scoped_ptr<base::Value> result(RunFunctionWithExtension(function, args));
-  }
-
-  // Runs a function without argumentsand ignores the return value.
-  void RunFunctionWithoutArguments(UIThreadExtensionFunction* function,
-                   const std::string& args) {
-    scoped_ptr<base::Value> result(RunFunctionWithExtension(function, args));
-  }
-
-  // Runs a function, expect an error, and return it in a string.
-  std::string RunFunctionAndReturnError(UIThreadExtensionFunction* function,
-                                        const std::string& args) {
-    function->set_extension(extension_.get());
-    return utils::RunFunctionAndReturnError(function, args, browser());
   }
 
   const std::string& GetExtensionId() const {

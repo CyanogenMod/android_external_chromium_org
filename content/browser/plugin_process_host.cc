@@ -15,8 +15,8 @@
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
@@ -51,6 +51,7 @@
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 #endif
@@ -73,6 +74,21 @@ void PluginProcessHost::OnPluginWindowDestroyed(HWND window, HWND parent) {
 void PluginProcessHost::AddWindow(HWND window) {
   plugin_parent_windows_set_.insert(window);
 }
+
+// NOTE: changes to this class need to be reviewed by the security team.
+class PluginSandboxedProcessLauncherDelegate
+    : public SandboxedProcessLauncherDelegate {
+ public:
+  PluginSandboxedProcessLauncherDelegate() {}
+  virtual ~PluginSandboxedProcessLauncherDelegate() {}
+
+  virtual void ShouldSandbox(bool* in_sandbox) OVERRIDE {
+    *in_sandbox = false;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(PluginSandboxedProcessLauncherDelegate);
+};
 
 #endif  // defined(OS_WIN)
 
@@ -167,7 +183,7 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
   int flags = ChildProcessHost::CHILD_NORMAL;
 #endif
 
-  FilePath exe_path = ChildProcessHost::GetChildPath(flags);
+  base::FilePath exe_path = ChildProcessHost::GetChildPath(flags);
   if (exe_path.empty())
     return false;
 
@@ -182,7 +198,6 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
   static const char* const kSwitchNames[] = {
     switches::kDisableBreakpad,
 #if defined(OS_MACOSX)
-    switches::kDisableCompositedCoreAnimationPlugins,
     switches::kDisableCoreAnimationPlugins,
     switches::kEnableSandboxLogging,
 #endif
@@ -238,7 +253,7 @@ bool PluginProcessHost::Init(const webkit::WebPluginInfo& info) {
 
   process_->Launch(
 #if defined(OS_WIN)
-      FilePath(),
+      new PluginSandboxedProcessLauncherDelegate,
 #elif defined(OS_POSIX)
       false,
       env,
@@ -342,7 +357,10 @@ void PluginProcessHost::CancelPendingRequestsForResourceContext(
 }
 
 void PluginProcessHost::OpenChannelToPlugin(Client* client) {
-  process_->Notify(NOTIFICATION_CHILD_INSTANCE_CREATED);
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&BrowserChildProcessHostImpl::NotifyProcessInstanceCreated,
+                 process_->GetData()));
   client->SetPluginInfo(info_);
   if (process_->GetHost()->IsChannelOpening()) {
     // The channel is already in the process of being opened.  Put

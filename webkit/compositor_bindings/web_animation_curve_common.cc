@@ -2,27 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "web_animation_curve_common.h"
+#include "webkit/compositor_bindings/web_animation_curve_common.h"
 
-#include "cc/timing_function.h"
+#include "cc/animation/timing_function.h"
 
-namespace WebKit {
+namespace webkit {
 
-scoped_ptr<cc::TimingFunction> createTimingFunction(WebAnimationCurve::TimingFunctionType type)
-{
-    switch (type) {
-    case WebAnimationCurve::TimingFunctionTypeEase:
-        return cc::EaseTimingFunction::create();
-    case WebAnimationCurve::TimingFunctionTypeEaseIn:
-        return cc::EaseInTimingFunction::create();
-    case WebAnimationCurve::TimingFunctionTypeEaseOut:
-        return cc::EaseOutTimingFunction::create();
-    case WebAnimationCurve::TimingFunctionTypeEaseInOut:
-        return cc::EaseInOutTimingFunction::create();
-    case WebAnimationCurve::TimingFunctionTypeLinear:
-        return scoped_ptr<cc::TimingFunction>();
-    }
-    return scoped_ptr<cc::TimingFunction>();
+scoped_ptr<cc::TimingFunction> CreateTimingFunction(
+    WebKit::WebAnimationCurve::TimingFunctionType type) {
+  switch (type) {
+    case WebKit::WebAnimationCurve::TimingFunctionTypeEase:
+      return cc::EaseTimingFunction::Create();
+    case WebKit::WebAnimationCurve::TimingFunctionTypeEaseIn:
+      return cc::EaseInTimingFunction::Create();
+    case WebKit::WebAnimationCurve::TimingFunctionTypeEaseOut:
+      return cc::EaseOutTimingFunction::Create();
+    case WebKit::WebAnimationCurve::TimingFunctionTypeEaseInOut:
+      return cc::EaseInOutTimingFunction::Create();
+    case WebKit::WebAnimationCurve::TimingFunctionTypeLinear:
+      return scoped_ptr<cc::TimingFunction>();
+  }
+  return scoped_ptr<cc::TimingFunction>();
 }
 
-} // namespace WebKit
+}  // namespace WebKit

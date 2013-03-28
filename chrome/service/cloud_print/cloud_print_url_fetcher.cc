@@ -6,8 +6,8 @@
 
 #include "base/stringprintf.h"
 #include "base/values.h"
+#include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/cloud_print/cloud_print_helpers.h"
-#include "chrome/service/cloud_print/cloud_print_consts.h"
 #include "chrome/service/cloud_print/cloud_print_helpers.h"
 #include "chrome/service/cloud_print/cloud_print_token_store.h"
 #include "chrome/service/net/service_url_request_context.h"
@@ -18,6 +18,29 @@
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
 
+namespace cloud_print {
+
+static CloudPrintURLFetcherFactory* g_factory = NULL;
+
+// virtual
+CloudPrintURLFetcherFactory::~CloudPrintURLFetcherFactory() {}
+
+// static
+CloudPrintURLFetcher* CloudPrintURLFetcher::Create() {
+  CloudPrintURLFetcherFactory* factory = CloudPrintURLFetcher::factory();
+  return factory ? factory->CreateCloudPrintURLFetcher() :
+      new CloudPrintURLFetcher;
+}
+
+// static
+CloudPrintURLFetcherFactory* CloudPrintURLFetcher::factory() {
+  return g_factory;
+}
+
+// static
+void CloudPrintURLFetcher::set_factory(CloudPrintURLFetcherFactory* factory) {
+  g_factory = factory;
+}
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcher::Delegate::HandleRawResponse(
@@ -121,15 +144,17 @@ void CloudPrintURLFetcher::OnURLFetchComplete(
       // response, we will retry (to handle the case where we got redirected
       // to a non-cloudprint-server URL eg. for authentication).
       bool succeeded = false;
-      DictionaryValue* response_dict = NULL;
-      cloud_print::ParseResponseJSON(data, &succeeded, &response_dict);
-      if (response_dict)
+      scoped_ptr<DictionaryValue> response_dict =
+          ParseResponseJSON(data, &succeeded);
+
+      if (response_dict) {
         action = delegate_->HandleJSONData(source,
                                            source->GetURL(),
-                                           response_dict,
+                                           response_dict.get(),
                                            succeeded);
-      else
+      } else {
         action = RETRY_REQUEST;
+      }
     }
   }
   // Retry the request if needed.
@@ -144,11 +169,11 @@ void CloudPrintURLFetcher::OnURLFetchComplete(
     // there is no reason to retry, request will never succeed.
     // In that case we should call OnRequestGiveUp() right away.
     if (source->GetResponseCode() == net::HTTP_UNSUPPORTED_MEDIA_TYPE)
-      num_retries_ = source->GetMaxRetries();
+      num_retries_ = source->GetMaxRetriesOn5xx();
 
     ++num_retries_;
-    if ((-1 != source->GetMaxRetries()) &&
-        (num_retries_ > source->GetMaxRetries())) {
+    if ((-1 != source->GetMaxRetriesOn5xx()) &&
+        (num_retries_ > source->GetMaxRetriesOn5xx())) {
       // Retry limit reached. Give up.
       delegate_->OnRequestGiveUp();
     } else {
@@ -173,11 +198,11 @@ void CloudPrintURLFetcher::StartRequestHelper(
   DCHECK(delegate);
   // Persist the additional headers in case we need to retry the request.
   additional_headers_ = additional_headers;
-  request_.reset(net::URLFetcher::Create(url, request_type, this));
+  request_.reset(net::URLFetcher::Create(0, url, request_type, this));
   request_->SetRequestContext(GetRequestContextGetter());
   // Since we implement our own retry logic, disable the retry in URLFetcher.
   request_->SetAutomaticallyRetryOn5xx(false);
-  request_->SetMaxRetries(max_retries);
+  request_->SetMaxRetriesOn5xx(max_retries);
   delegate_ = delegate;
   SetupRequestHeaders();
   request_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
@@ -193,7 +218,7 @@ void CloudPrintURLFetcher::SetupRequestHeaders() {
   std::string headers = delegate_->GetAuthHeader();
   if (!headers.empty())
     headers += "\r\n";
-  headers += cloud_print::kChromeCloudPrintProxyHeader;
+  headers += kChromeCloudPrintProxyHeader;
   if (!additional_headers_.empty()) {
     headers += "\r\n";
     headers += additional_headers_;
@@ -212,3 +237,5 @@ net::URLRequestContextGetter* CloudPrintURLFetcher::GetRequestContextGetter() {
   getter->set_user_agent(user_agent);
   return getter;
 }
+
+}  // namespace cloud_print

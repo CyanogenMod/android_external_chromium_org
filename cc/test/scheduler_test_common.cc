@@ -6,77 +6,45 @@
 
 #include "base/logging.h"
 
-namespace WebKitTests {
+namespace cc {
 
-void FakeTimeSourceClient::onTimerTick()
-{
-    m_tickCalled = true;
+void FakeTimeSourceClient::OnTimerTick() { tick_called_ = true; }
+
+FakeThread::FakeThread() { Reset(); }
+
+FakeThread::~FakeThread() {}
+
+void FakeThread::RunPendingTask() {
+  ASSERT_TRUE(pending_task_);
+  scoped_ptr<base::Closure> task = pending_task_.Pass();
+  task->Run();
 }
 
-FakeThread::FakeThread()
-{
-    reset();
+void FakeThread::PostTask(base::Closure cb) {
+  PostDelayedTask(cb, base::TimeDelta());
 }
 
-FakeThread::~FakeThread()
-{
+void FakeThread::PostDelayedTask(base::Closure cb, base::TimeDelta delay) {
+  if (run_pending_task_on_overwrite_ && HasPendingTask())
+    RunPendingTask();
+
+  ASSERT_FALSE(HasPendingTask());
+  pending_task_.reset(new base::Closure(cb));
+  pending_task_delay_ = delay.InMilliseconds();
 }
 
-void FakeThread::runPendingTask()
-{
-    ASSERT_TRUE(m_pendingTask);
-    scoped_ptr<base::Closure> task = m_pendingTask.Pass();
-    task->Run();
-}
+bool FakeThread::BelongsToCurrentThread() const { return true; }
 
-void FakeThread::postTask(base::Closure cb)
-{
-    postDelayedTask(cb, 0);
-}
+void FakeTimeSource::SetClient(TimeSourceClient* client) { client_ = client; }
 
-void FakeThread::postDelayedTask(base::Closure cb, long long delay)
-{
-    if (m_runPendingTaskOnOverwrite && hasPendingTask())
-        runPendingTask();
+void FakeTimeSource::SetActive(bool b) { active_ = b; }
 
-    ASSERT_FALSE(hasPendingTask());
-    m_pendingTask.reset(new base::Closure(cb));
-    m_pendingTaskDelay = delay;
-}
+bool FakeTimeSource::Active() const { return active_; }
 
-bool FakeThread::belongsToCurrentThread() const
-{
-    return true;
-}
+base::TimeTicks FakeTimeSource::LastTickTime() { return base::TimeTicks(); }
 
-void FakeTimeSource::setClient(cc::TimeSourceClient* client)
-{
-    m_client = client;
-}
+base::TimeTicks FakeTimeSource::NextTickTime() { return base::TimeTicks(); }
 
-void FakeTimeSource::setActive(bool b)
-{
-    m_active = b;
-}
+base::TimeTicks FakeDelayBasedTimeSource::Now() const { return now_; }
 
-bool FakeTimeSource::active() const
-{
-    return m_active;
-}
-
-base::TimeTicks FakeTimeSource::lastTickTime()
-{
-    return base::TimeTicks();
-}
-
-base::TimeTicks FakeTimeSource::nextTickTime()
-{
-    return base::TimeTicks();
-}
-
-base::TimeTicks FakeDelayBasedTimeSource::now() const
-{
-    return m_now;
-}
-
-}
+}  // namespace cc

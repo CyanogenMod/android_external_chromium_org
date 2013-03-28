@@ -26,7 +26,7 @@ public class JSUtils {
             final InstrumentationTestCase testCase,
             final AwContents awContents,
             final OnEvaluateJavaScriptResultHelper onEvaluateJavaScriptResultHelper,
-            final String linkId) throws Throwable {
+            final String linkId) throws Exception {
 
         Assert.assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
             @Override
@@ -51,7 +51,8 @@ public class JSUtils {
                     "var evObj = document.createEvent('Events'); " +
                     "evObj.initEvent('click', true, false); " +
                     "document.getElementById('" + linkId + "').dispatchEvent(evObj);" +
-                    "console.log('element with id [" + linkId + "] clicked');");
+                    "console.log('element with id [" + linkId + "] clicked');",
+                    null);
             }
         });
     }
@@ -59,19 +60,18 @@ public class JSUtils {
     public static String executeJavaScriptAndWaitForResult(
             InstrumentationTestCase testCase,
             final AwContents awContents,
-            OnEvaluateJavaScriptResultHelper onEvaluateJavaScriptResultHelper,
-            final String code) throws Throwable {
-        final AtomicInteger requestId = new AtomicInteger();
-        int currentCallCount = onEvaluateJavaScriptResultHelper.getCallCount();
+            final OnEvaluateJavaScriptResultHelper onEvaluateJavaScriptResultHelper,
+            final String code) throws Exception {
         testCase.getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
-                requestId.set(awContents.getContentViewCore().evaluateJavaScript(code));
+                onEvaluateJavaScriptResultHelper.evaluateJavaScript(
+                        awContents.getContentViewCore(), code);
             }
         });
-        onEvaluateJavaScriptResultHelper.waitForCallback(currentCallCount);
-        Assert.assertEquals("Response ID mismatch when evaluating JavaScript.",
-                requestId.get(), onEvaluateJavaScriptResultHelper.getId());
-        return onEvaluateJavaScriptResultHelper.getJsonResult();
+        onEvaluateJavaScriptResultHelper.waitUntilHasValue();
+        Assert.assertTrue("Failed to retrieve JavaScript evaluation results.",
+                onEvaluateJavaScriptResultHelper.hasValue());
+        return onEvaluateJavaScriptResultHelper.getJsonResultAndClear();
     }
 }

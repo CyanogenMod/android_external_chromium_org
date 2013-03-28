@@ -35,11 +35,13 @@ ResourcePrefetcher::ResourcePrefetcher(
     Delegate* delegate,
     const ResourcePrefetchPredictorConfig& config,
     const NavigationID& navigation_id,
+    PrefetchKeyType key_type,
     scoped_ptr<RequestVector> requests)
         : state_(INITIALIZED),
           delegate_(delegate),
           config_(config),
           navigation_id_(navigation_id),
+          key_type_(key_type),
           request_vector_(requests.Pass()) {
   CHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   DCHECK(request_vector_.get());
@@ -129,7 +131,7 @@ void ResourcePrefetcher::SendRequest(Request* request) {
   url_request->set_method("GET");
   url_request->set_first_party_for_cookies(navigation_id_.main_frame_url);
   url_request->set_referrer(navigation_id_.main_frame_url.spec());
-  url_request->set_priority(net::LOW);
+  url_request->SetPriority(net::LOW);
   StartURLRequest(url_request);
 }
 
@@ -168,18 +170,25 @@ void ResourcePrefetcher::ReadFullResponse(net::URLRequest* request) {
     status = request->Read(buffer, kResourceBufferSizeBytes, &bytes_read);
 
     if (status) {
-      if (request->status().error()) {
-        FinishRequest(request, Request::PREFETCH_STATUS_FAILED);
-        return;
-      } else if (bytes_read == 0) {
-        if (request->was_cached())
-          FinishRequest(request, Request::PREFETCH_STATUS_FROM_CACHE);
-        else
-          FinishRequest(request, Request::PREFETCH_STATUS_FROM_NETWORK);
-        return;
-      }
+      status = ShouldContinueReadingRequest(request, bytes_read);
+    } else if (request->status().error()) {
+      FinishRequest(request, Request::PREFETCH_STATUS_FAILED);
+      return;
     }
   }
+}
+
+bool ResourcePrefetcher::ShouldContinueReadingRequest(net::URLRequest* request,
+                                                      int bytes_read) {
+  if (bytes_read == 0) {  // When bytes_read == 0, no more data.
+    if (request->was_cached())
+      FinishRequest(request, Request::PREFETCH_STATUS_FROM_CACHE);
+    else
+      FinishRequest(request, Request::PREFETCH_STATUS_FROM_NETWORK);
+    return false;
+  }
+
+  return true;
 }
 
 void ResourcePrefetcher::OnReceivedRedirect(net::URLRequest* request,
@@ -211,6 +220,7 @@ void ResourcePrefetcher::OnResponseStarted(net::URLRequest* request) {
     return;
   }
 
+  // TODO(shishir): Do not read cached entries, or ones that are not cacheable.
   ReadFullResponse(request);
 }
 
@@ -221,7 +231,8 @@ void ResourcePrefetcher::OnReadCompleted(net::URLRequest* request,
     return;
   }
 
-  ReadFullResponse(request);
+  if (ShouldContinueReadingRequest(request, bytes_read))
+    ReadFullResponse(request);
 }
 
 }  // namespace predictors

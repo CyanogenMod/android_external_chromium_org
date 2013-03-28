@@ -7,12 +7,15 @@
 
 #include <string>
 
+#include "base/files/scoped_temp_dir.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/scoped_temp_dir.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest.h"
 
 class ExtensionPrefValueMap;
+class PrefRegistrySyncable;
 class PrefService;
+class PrefServiceSyncable;
 
 namespace base {
 class DictionaryValue;
@@ -20,6 +23,7 @@ class SequencedTaskRunner;
 }
 
 namespace extensions {
+class Extension;
 class ExtensionPrefs;
 
 // This is a test class intended to make it easier to work with ExtensionPrefs
@@ -33,9 +37,11 @@ class TestExtensionPrefs {
   const ExtensionPrefs& const_prefs() const {
       return *prefs_.get();
   }
-  PrefService* pref_service() { return pref_service_.get(); }
-  const FilePath& temp_dir() const { return temp_dir_.path(); }
-  const FilePath& extensions_dir() const { return extensions_dir_; }
+  PrefService* pref_service();
+  const scoped_refptr<PrefRegistrySyncable>& pref_registry();
+  void ResetPrefRegistry();
+  const base::FilePath& temp_dir() const { return temp_dir_.path(); }
+  const base::FilePath& extensions_dir() const { return extensions_dir_; }
 
   // This will cause the ExtensionPrefs to be deleted and recreated, based on
   // any existing backing file we had previously created.
@@ -51,13 +57,13 @@ class TestExtensionPrefs {
   // Similar to AddExtension, but takes a dictionary with manifest values.
   scoped_refptr<Extension> AddExtensionWithManifest(
       const base::DictionaryValue& manifest,
-      Extension::Location location);
+      Manifest::Location location);
 
   // Similar to AddExtension, but takes a dictionary with manifest values
   // and extension flags.
   scoped_refptr<Extension> AddExtensionWithManifestAndFlags(
       const base::DictionaryValue& manifest,
-      Extension::Location location,
+      Manifest::Location location,
       int extra_flags);
 
   // Similar to AddExtension, this adds a new test Extension. This is useful for
@@ -72,10 +78,11 @@ class TestExtensionPrefs {
   void set_extensions_disabled(bool extensions_disabled);
 
  protected:
-  ScopedTempDir temp_dir_;
-  FilePath preferences_file_;
-  FilePath extensions_dir_;
-  scoped_ptr<PrefService> pref_service_;
+  base::ScopedTempDir temp_dir_;
+  base::FilePath preferences_file_;
+  base::FilePath extensions_dir_;
+  scoped_refptr<PrefRegistrySyncable> pref_registry_;
+  scoped_ptr<PrefServiceSyncable> pref_service_;
   scoped_ptr<ExtensionPrefs> prefs_;
   scoped_ptr<ExtensionPrefValueMap> extension_pref_value_map_;
   const scoped_refptr<base::SequencedTaskRunner> task_runner_;

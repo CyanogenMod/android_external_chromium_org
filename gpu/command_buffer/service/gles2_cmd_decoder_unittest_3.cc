@@ -4,7 +4,6 @@
 
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 
-#include "gpu/command_buffer/common/gl_mock.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_unittest_base.h"
@@ -12,6 +11,7 @@
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gl/gl_mock.h"
 
 using ::gfx::MockGLInterface;
 using ::testing::_;
@@ -27,13 +27,44 @@ using ::testing::StrEq;
 namespace gpu {
 namespace gles2 {
 
+using namespace cmds;
+
 class GLES2DecoderTest3 : public GLES2DecoderTestBase {
  public:
   GLES2DecoderTest3() { }
 };
 
+TEST_F(GLES2DecoderTest3, TraceBeginCHROMIUM) {
+  const uint32 kBucketId = 123;
+  const char kName[] = "test_command";
+  SetBucketAsCString(kBucketId, kName);
+
+  TraceBeginCHROMIUM begin_cmd;
+  begin_cmd.Init(kBucketId);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(begin_cmd));
+}
+
+TEST_F(GLES2DecoderTest3, TraceEndCHROMIUM) {
+  // Test end fails if no begin.
+  TraceEndCHROMIUM end_cmd;
+  end_cmd.Init();
+  EXPECT_EQ(error::kNoError, ExecuteCmd(end_cmd));
+  EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
+
+  const uint32 kBucketId = 123;
+  const char kName[] = "test_command";
+  SetBucketAsCString(kBucketId, kName);
+
+  TraceBeginCHROMIUM begin_cmd;
+  begin_cmd.Init(kBucketId);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(begin_cmd));
+
+  end_cmd.Init();
+  EXPECT_EQ(error::kNoError, ExecuteCmd(end_cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
 #include "gpu/command_buffer/service/gles2_cmd_decoder_unittest_3_autogen.h"
 
 }  // namespace gles2
 }  // namespace gpu
-

@@ -6,9 +6,9 @@
 
 #include <cmath>
 
+#include "base/prefs/pref_service.h"
 #include "base/sys_string_conversions.h"
-#include "chrome/browser/debugger/devtools_window.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/spellchecker/spellcheck_platform_mac.h"
 #include "chrome/browser/ui/browser.h"
@@ -181,7 +181,7 @@ class SpellCheckRenderViewObserver : public content::RenderViewHostObserver {
   if (gotUnhandledWheelEvent_ &&
       [NSEvent isSwipeTrackingFromScrollEventsEnabled] &&
       [theEvent phase] == NSEventPhaseChanged) {
-    Browser* browser = browser::FindBrowserWithWindow([theEvent window]);
+    Browser* browser = chrome::FindBrowserWithWindow([theEvent window]);
     totalScrollDelta_.width += [theEvent scrollingDeltaX];
     totalScrollDelta_.height += [theEvent scrollingDeltaY];
 
@@ -262,7 +262,7 @@ class SpellCheckRenderViewObserver : public content::RenderViewHostObserver {
 
           // |gestureAmount| obeys -[NSEvent isDirectionInvertedFromDevice]
           // automatically.
-          Browser* browser = browser::FindBrowserWithWindow(
+          Browser* browser = chrome::FindBrowserWithWindow(
               historyOverlay.view.window);
           if (ended && browser) {
             if (goForward)
@@ -292,13 +292,15 @@ class SpellCheckRenderViewObserver : public content::RenderViewHostObserver {
     return YES;
   }
 
+  // TODO(groby): Clarify who sends this and if toggleContinuousSpellChecking:
+  // is still necessary.
   if (action == @selector(toggleContinuousSpellChecking:)) {
     if ([(id)item respondsToSelector:@selector(setState:)]) {
       content::RenderProcessHost* host = renderWidgetHost_->GetProcess();
       Profile* profile = Profile::FromBrowserContext(host->GetBrowserContext());
       DCHECK(profile);
       spellcheckChecked_ =
-          profile->GetPrefs()->GetBoolean(prefs::kEnableSpellCheck);
+          profile->GetPrefs()->GetBoolean(prefs::kEnableContinuousSpellcheck);
       NSCellStateValue checkedState =
           spellcheckChecked_ ? NSOnState : NSOffState;
       [(id)item setState:checkedState];
@@ -359,10 +361,8 @@ class SpellCheckRenderViewObserver : public content::RenderViewHostObserver {
   Profile* profile = Profile::FromBrowserContext(host->GetBrowserContext());
   DCHECK(profile);
   PrefService* pref = profile->GetPrefs();
-  pref->SetBoolean(prefs::kEnableSpellCheck,
-                   !pref->GetBoolean(prefs::kEnableSpellCheck));
-  renderWidgetHost_->Send(
-      new SpellCheckMsg_ToggleSpellCheck(renderWidgetHost_->GetRoutingID()));
+  pref->SetBoolean(prefs::kEnableContinuousSpellcheck,
+                   !pref->GetBoolean(prefs::kEnableContinuousSpellcheck));
 }
 
 - (void)spellCheckEnabled:(BOOL)enabled checked:(BOOL)checked {

@@ -7,8 +7,8 @@
 
 #include <string>
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "net/disk_cache/backend_impl.h"
 
 #ifdef WIN32
@@ -46,15 +46,15 @@ class CacheDumpWriter {
 // Writes data to a cache.
 class CacheDumper : public CacheDumpWriter {
  public:
-  explicit CacheDumper(disk_cache::Backend* cache) : cache_(cache) {}
+  explicit CacheDumper(disk_cache::Backend* cache);
 
   virtual int CreateEntry(const std::string& key, disk_cache::Entry** entry,
-                          const net::CompletionCallback& callback);
+                          const net::CompletionCallback& callback) OVERRIDE;
   virtual int WriteEntry(disk_cache::Entry* entry, int stream, int offset,
                          net::IOBuffer* buf, int buf_len,
-                         const net::CompletionCallback& callback);
+                         const net::CompletionCallback& callback) OVERRIDE;
   virtual void CloseEntry(disk_cache::Entry* entry, base::Time last_used,
-                          base::Time last_modified);
+                          base::Time last_modified) OVERRIDE;
 
  private:
   disk_cache::Backend* cache_;
@@ -63,23 +63,22 @@ class CacheDumper : public CacheDumpWriter {
 // Writes data to a disk.
 class DiskDumper : public CacheDumpWriter {
  public:
-  explicit DiskDumper(const FilePath& path) : path_(path), entry_(NULL) {
-    file_util::CreateDirectory(path);
-  }
+  explicit DiskDumper(const base::FilePath& path);
+
   virtual int CreateEntry(const std::string& key, disk_cache::Entry** entry,
-                          const net::CompletionCallback& callback);
+                          const net::CompletionCallback& callback) OVERRIDE;
   virtual int WriteEntry(disk_cache::Entry* entry, int stream, int offset,
                          net::IOBuffer* buf, int buf_len,
-                         const net::CompletionCallback& callback);
+                         const net::CompletionCallback& callback) OVERRIDE;
   virtual void CloseEntry(disk_cache::Entry* entry, base::Time last_used,
-                          base::Time last_modified);
+                          base::Time last_modified) OVERRIDE;
 
  private:
-  FilePath path_;
+  base::FilePath path_;
   // This is a bit of a hack.  As we get a CreateEntry, we coin the current
   // entry_path_ where we write that entry to disk.  Subsequent calls to
   // WriteEntry() utilize this path for writing to disk.
-  FilePath entry_path_;
+  base::FilePath entry_path_;
   std::string entry_url_;
 #ifdef WIN32_LARGE_FILENAME_SUPPORT
   HANDLE entry_;

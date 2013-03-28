@@ -8,19 +8,28 @@
 #include <vector>
 
 #include "base/string16.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
-#include "webkit/glue/window_open_disposition.h"
 
 class BookmarkNode;
 class Browser;
 class GURL;
+class PrefService;
 
 namespace content {
+class BrowserContext;
 class PageNavigator;
 class WebContents;
 }
 
 namespace chrome {
+
+// Number of bookmarks we'll open before prompting the user to see if they
+// really want to open all.
+//
+// NOTE: treat this as a const. It is not const so unit tests can change the
+// value.
+extern int num_bookmark_urls_before_prompting;
 
 // Opens all the bookmarks in |nodes| that are of type url and all the child
 // bookmarks that are of type url for folders in |nodes|. |initial_disposition|
@@ -29,13 +38,15 @@ namespace chrome {
 void OpenAll(gfx::NativeWindow parent,
              content::PageNavigator* navigator,
              const std::vector<const BookmarkNode*>& nodes,
-             WindowOpenDisposition initial_disposition);
+             WindowOpenDisposition initial_disposition,
+             content::BrowserContext* browser_context);
 
 // Convenience for OpenAll() with a single BookmarkNode.
 void OpenAll(gfx::NativeWindow parent,
              content::PageNavigator* navigator,
              const BookmarkNode* node,
-             WindowOpenDisposition initial_disposition);
+             WindowOpenDisposition initial_disposition,
+             content::BrowserContext* browser_context);
 
 // Asks the user before deleting a non-empty bookmark folder.
 bool ConfirmDeleteBookmarkNode(const BookmarkNode* node,
@@ -44,13 +55,30 @@ bool ConfirmDeleteBookmarkNode(const BookmarkNode* node,
 // Shows the bookmark all tabs dialog.
 void ShowBookmarkAllTabsDialog(Browser* browser);
 
-// Returns true if |selection| has at least one bookmark of type url.
+// Returns true if OpenAll() can open at least one bookmark of type url
+// in |selection|.
 bool HasBookmarkURLs(const std::vector<const BookmarkNode*>& selection);
+
+// Returns true if OpenAll() can open at least one bookmark of type url
+// in |selection| with incognito mode.
+bool HasBookmarkURLsAllowedInIncognitoMode(
+    const std::vector<const BookmarkNode*>& selection,
+    content::BrowserContext* browser_context);
 
 // Fills in the URL and title for a bookmark of |web_contents|.
 void GetURLAndTitleToBookmark(content::WebContents* web_contents,
                               GURL* url,
                               string16* title);
+
+// Toggles whether the bookmark bar is shown only on the new tab page or on
+// all tabs. This is a preference modifier, not a visual modifier.
+void ToggleBookmarkBarWhenVisible(content::BrowserContext* browser_context);
+
+// Returns a formatted version of |url| appropriate to display to a user with
+// the given |prefs|, which may be NULL.  When re-parsing this URL, clients
+// should call URLFixerUpper::FixupURL().
+string16 FormatBookmarkURLForDisplay(const GURL& url,
+                                     const PrefService* prefs);
 
 }  // namespace chrome
 

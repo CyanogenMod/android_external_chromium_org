@@ -5,13 +5,13 @@
 #include <map>
 
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/rlz/rlz_extension_api.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
 #include "rlz/lib/rlz_lib.h"
 
 #if (OS_WIN)
@@ -46,8 +46,8 @@ ExtensionFunction* MockRlzSendFinancialPingFunctionFactory() {
   return new MockRlzSendFinancialPingFunction();
 }
 
-// Mac is flaky - http://crbug.com/137834.
-#if defined(OS_MACOSX)
+// Mac is flaky - http://crbug.com/137834. ChromeOS is not supported yet.
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
 #define MAYBE_Rlz DISABLED_Rlz
 #else
 #define MAYBE_Rlz Rlz

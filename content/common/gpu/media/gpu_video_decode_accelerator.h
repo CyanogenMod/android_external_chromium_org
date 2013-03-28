@@ -26,9 +26,7 @@ class GpuVideoDecodeAccelerator
   // Each of the arguments to the constructor must outlive this object.
   // |stub->decoder()| will be made current around any operation that touches
   // the underlying VDA so that it can make GL calls safely.
-  GpuVideoDecodeAccelerator(IPC::Sender* sender,
-                            int32 host_route_id,
-                            GpuCommandBufferStub* stub);
+  GpuVideoDecodeAccelerator(int32 host_route_id, GpuCommandBufferStub* stub);
   virtual ~GpuVideoDecodeAccelerator();
 
   // IPC::Listener implementation.
@@ -61,7 +59,7 @@ class GpuVideoDecodeAccelerator
 
  private:
   // Handlers for IPC messages.
-  void OnDecode(base::SharedMemoryHandle handle, int32 id, int32 size);
+  void OnDecode(base::SharedMemoryHandle handle, int32 id, uint32 size);
   void OnAssignPictureBuffers(
       const std::vector<int32>& buffer_ids,
       const std::vector<uint32>& texture_ids,
@@ -71,9 +69,6 @@ class GpuVideoDecodeAccelerator
   void OnFlush();
   void OnReset();
   void OnDestroy();
-
-  // Pointer to the IPC message sender.
-  IPC::Sender* sender_;
 
   // Message to Send() when initialization is done.  Is only non-NULL during
   // initialization and is owned by the IPC channel underlying the
@@ -92,6 +87,9 @@ class GpuVideoDecodeAccelerator
   // Callback for making the relevant context current for GL calls.
   // Returns false if failed.
   base::Callback<bool(void)> make_context_current_;
+
+  // The texture target as requested by ProvidePictureBuffers().
+  uint32 texture_target_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(GpuVideoDecodeAccelerator);
 };

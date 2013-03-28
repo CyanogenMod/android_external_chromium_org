@@ -42,13 +42,14 @@ are <b>name</b> and <b>version</b>.
   "<a href="content_scripts.html">content_scripts</a>": [...],
   "<a href="../extensions/contentSecurityPolicy.html">content_security_policy</a>": "<em>policyString</em>",
   "<a href="fileBrowserHandler.html">file_browser_handlers</a>": [...],
+  "<a href="#file_handlers">file_handlers</a>": {...},
   "<a href="#homepage_url">homepage_url</a>": "http://<em>path/to/homepage</em>",
   "<a href="#incognito">incognito</a>": "spanning" <em>or</em> "split",
-  "<a href="#intents">intents</a>": {...}
   "<a href="#key">key</a>": "<em>publicKey</em>",
   "<a href="#minimum_chrome_version">minimum_chrome_version</a>": "<em>versionString</em>",
 
   "<a href="#nacl_modules">nacl_modules</a>": [...],
+  "<a href="#kiosk_enabled">kiosk_enabled</a>": true,
   "<a href="#offline_enabled">offline_enabled</a>": true,
   "<a href="omnibox.html">omnibox</a>": { "keyword": "<em>aString</em>" },
   "<a href="options.html">options_page</a>": "<em>aFile</em>.html",
@@ -75,7 +76,7 @@ see the <a href="#overview">Field summary</a>.
 <h3 id="app">app</h3>
 
 <p>
-Used by <a href="http://developer.chrome.com/trunk/apps/app_lifecycle.html#eventpage">packaged apps</a>
+Used by <a href="../apps/app_lifecycle.html#eventpage">packaged apps</a>
 to specify the app's background scripts.
 Also used by <a href="https://developers.google.com/chrome/apps/docs/developers_guide#live">hosted apps</a>
 to specify the URLs that the app uses.
@@ -106,6 +107,40 @@ the browser's extension management UI
 and the <a href="https://chrome.google.com/webstore">Chrome Web Store</a>.
 You can specify locale-specific strings for this field;
 see <a href="i18n.html">Internationalization</a> for details.
+</p>
+
+<h3 id="file_handlers">file_handlers</h3>
+
+<p>
+Used by <a href="../apps/app_lifecycle.html#eventpage">packaged apps</a>
+to specify what types of files the app can handle. An app can have multiple <code>file_handlers</code>, with each one having an identifier, a list of MIME types that can be handled, and
+a title. Here's an example of specifying file handlers:
+</p>
+
+<pre>
+"file_handlers": {
+  "text": {
+    "types": [
+      "text/*"
+    ],
+    "title": "Text editor"
+  },
+  "image": {
+    "types": [
+      "image/png",
+      "image/jpeg"
+    ],
+    "title": "Image editor"
+  }
+}
+</pre>
+
+<p>
+To handle files, apps also need to declare the $ref:fileSystem
+permission. Apps can then be passed files in the $ref:app.runtime.onLaunched
+event - either from the system
+file manager (currently supported on ChromeOS only) or by providing
+a path on the <a href="../apps/first_app.html#open">command line</a>.
 </p>
 
 <h3 id="homepage_url">homepage_url</h3>
@@ -206,65 +241,6 @@ into a remote server or persist settings locally, use <em>spanning</em>
 incognito behavior.
 </p>
 
-<h3 id="intents">intents</h3>
-
-<p>
-A dictionary that specifies all intent handlers provided by this extension or app. Each key in the dictionary specifies an action verb that is handled by this extension. The following example specifies two handlers for the action verb "<a href="http://webintents.org/share">http://webintents.org/share</a>".
-</p>
-
-<pre>
-{
-  "name": "test",
-  "version": "1",
-  "intents": {
-    "http://webintents.org/share": [
-      {
-        "type": ["text/uri-list"],
-        "href": "/services/sharelink.html",
-        "title" : "Sample Link Sharing Intent",
-        "disposition" : "inline"
-      },
-      {
-        "type": ["image/*"],
-        "href": "/services/shareimage.html",
-        "title" : "Sample Image Sharing Intent",
-        "disposition" : "window"
-      }
-    ]
-  }
-}
-</pre>
-
-<p>
-The value of "type" is an array of mime types that is supported by this handler. The "href" indicates the URL of the page that handles the intent. For hosted apps, these URLs must be within the allowed set of URLs. For extensions, all URLs are inside the extension and considered relative to the extension root URL.
-</p>
-
-<p>
-The "title" is displayed in the intent picker UI when the user initiates the action specific to the handler.
-</p>
-
-<p>
-The "disposition" is either "inline" or "window". Intents with "window" disposition will open a new tab when invoked. Intents with "inline" disposition will be displayed inside the intent picker when invoked.
-</p>
-
-<p>
-For more information on intents, refer to the <a href="http://dvcs.w3.org/hg/web-intents/raw-file/tip/spec/Overview.html">Web Intents specification</a> and <a href="http://www.webintents.org">webintents.org</a>.
-</p>
-
-<h4 id="content_types">Handling content types via intents</h4>
-
-<p>
-Web Intents can be registered as content type viewers. To do that, the action verb must be <a href="http://webintents.org/view">"http://webintents.org/view"</a>, and the content type must be a white-listed MIME type.
-</p>
-
-<table>
-  <tr>
-    <th>Whitelisted MIME types</th>
-  </tr>
-  <tr><td>application/rss+xml</td></tr>
-  <tr><td>application/atom+xml</td></tr>
-</table>
-
 <h3 id="key">key</h3>
 
 <p>
@@ -278,7 +254,7 @@ it is loaded during development.
 use this value. Instead, write your
 code so that the key value doesn't matter
 by using <a href="overview.html#relative-urls">relative paths</a>
-and <a href="extension.html#method-getURL">chrome.extension.getURL()</a>.
+and $ref:runtime.getURL.
 </p>
 
 <p>
@@ -379,6 +355,15 @@ without specifying "nacl_modules".
 Use "nacl_modules" only if you want the browser
 to use your Native Client module
 to display a particular type of content.
+</p>
+
+<h3 id="kiosk_enabled">kiosk_enabled</h3>
+
+<p>
+Whether the packaged app is designed to expected to work in ChromeOS kiosk mode.
+In kiosk mode, the platform app window will cover the entire surface of the
+display (forced full screen). The kiosk-enabled apps are expected to be designed
+with this constraint in mind.
 </p>
 
 <h3 id="offline_enabled">offline_enabled</h3>
@@ -550,9 +535,7 @@ etc.) as follows:
 <p>
 These resources would then be available in a webpage via the URL
 <code>chrome-extension://[PACKAGE ID]/[PATH]</code>, which can be generated with
-the <a href="extension.html#method-getURL">
-  <code>chrome.extension.getURL</code>
-</a> method. Whitelisted resources are served with appropriate
+the $ref:runtime.getURL method. Whitelisted resources are served with appropriate
 <a href="http://www.w3.org/TR/cors/">CORS</a> headers, so they're available via
 mechanisms like XHR.
 </p>

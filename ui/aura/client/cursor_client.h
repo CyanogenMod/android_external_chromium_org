@@ -5,8 +5,13 @@
 #ifndef UI_AURA_CLIENT_CURSOR_CLIENT_H_
 #define UI_AURA_CLIENT_CURSOR_CLIENT_H_
 
+#include "base/string16.h"
 #include "ui/aura/aura_export.h"
 #include "ui/gfx/native_widget_types.h"
+
+namespace gfx {
+class Display;
+}
 
 namespace aura {
 class Window;
@@ -18,23 +23,42 @@ class AURA_EXPORT CursorClient {
   // Notes that |window| has requested the change to |cursor|.
   virtual void SetCursor(gfx::NativeCursor cursor) = 0;
 
-  // Changes the visibility of the cursor.
-  virtual void ShowCursor(bool show) = 0;
+  // Shows the cursor. This does not take effect When mouse events are disabled.
+  virtual void ShowCursor() = 0;
+
+  // Hides the cursor. Mouse events keep being sent even when the cursor is
+  // invisible.
+  virtual void HideCursor() = 0;
 
   // Gets whether the cursor is visible.
   virtual bool IsCursorVisible() const = 0;
 
-  // Sets the device scale factor of the cursor.
-  virtual void SetDeviceScaleFactor(float device_scale_factor) = 0;
+  // Makes mouse events start being sent and shows the cursor if it was hidden
+  // with DisableMouseEvents.
+  virtual void EnableMouseEvents() = 0;
 
-  // Locks the cursor change. The cursor type and cursor visibility never change
-  // as long as lock is held by anyone.
+  // Makes mouse events stop being sent and hides the cursor if it is visible.
+  virtual void DisableMouseEvents() = 0;
+
+  // Returns true if mouse events are enabled.
+  virtual bool IsMouseEventsEnabled() const = 0;
+
+  // Sets the display for the cursor.
+  virtual void SetDisplay(const gfx::Display& display) = 0;
+
+  // Locks the cursor change. The cursor type, cursor visibility, and mouse
+  // events enable state never change as long as lock is held by anyone.
   virtual void LockCursor() = 0;
 
-  // Unlocks the cursor change. If all the locks are released, the cursor type
-  // and visibility are restored to the ones set by the lastest call of
-  // SetCursor and ShowCursor.
+  // Unlocks the cursor change. If all the locks are released, the cursor type,
+  // cursor visibility, and mouse events enable state are restored to the ones
+  // set by the lastest call of SetCursor, ShowCursor/HideCursor, and
+  // EnableMouseEvents/DisableMouseEvents.
   virtual void UnlockCursor() = 0;
+
+  // Used to pass the cursor resource module name to the cursor loader. This is
+  // typically used to load non system cursors.
+  virtual void SetCursorResourceModule(const string16& module_name) = 0;
 
  protected:
   virtual ~CursorClient() {}

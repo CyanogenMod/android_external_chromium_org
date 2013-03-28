@@ -6,15 +6,16 @@
 
 #include "ash/shell.h"
 #include "base/i18n/rtl.h"
+#include "base/prefs/pref_service.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/language_list.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
 #include "grit/generated_resources.h"
 #include "grit/platform_locale_settings.h"
@@ -157,7 +158,7 @@ void LanguageSwitchMenu::SwitchLanguageAndEnableKeyboardLayouts(
     // to the hardware keyboard layout since the input method currently in
     // use may not be supported by the new locale (3rd parameter).
     input_method::InputMethodManager* manager =
-        input_method::InputMethodManager::GetInstance();
+        input_method::GetInputMethodManager();
     manager->EnableLayouts(
         locale,
         manager->GetInputMethodUtil()->GetHardwareInputMethodId());
@@ -191,7 +192,7 @@ void LanguageSwitchMenu::OnMenuButtonClicked(views::View* source,
 ////////////////////////////////////////////////////////////////////////////////
 // views::MenuDelegate implementation.
 
-void LanguageSwitchMenu::ExecuteCommand(int command_id) {
+void LanguageSwitchMenu::ExecuteCommand(int command_id, int event_flags) {
   const std::string locale = language_list_->GetLocaleFromIndex(command_id);
   // Here, we should enable keyboard layouts associated with the locale so
   // that users can use those keyboard layouts on the login screen.

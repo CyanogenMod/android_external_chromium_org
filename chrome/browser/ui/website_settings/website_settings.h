@@ -10,7 +10,7 @@
 #include "base/time.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_types.h"
 #include "googleurl/src/gurl.h"
@@ -21,7 +21,7 @@ class CertStore;
 struct SSLStatus;
 }
 
-class InfoBarTabHelper;
+class InfoBarService;
 class HostContentSettingsMap;
 class Profile;
 class WebsiteSettingsUI;
@@ -51,8 +51,6 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
     SITE_IDENTITY_STATUS_CERT,
     // The website provided a valid EV certificate.
     SITE_IDENTITY_STATUS_EV_CERT,
-    // The website provided a valid DNSSEC certificate.
-    SITE_IDENTITY_STATUS_DNSSEC_CERT,
     // The website provided a valid certificate but no revocation check could be
     // performed.
     SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN,
@@ -71,7 +69,7 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
   WebsiteSettings(WebsiteSettingsUI* ui,
                   Profile* profile,
                   TabSpecificContentSettings* tab_specific_content_settings,
-                  InfoBarTabHelper* infobar_tab_helper,
+                  InfoBarService* infobar_service,
                   const GURL& url,
                   const content::SSLStatus& ssl,
                   content::CertStore* cert_store);
@@ -142,8 +140,8 @@ class WebsiteSettings : public TabSpecificContentSettings::SiteDataObserver {
   // information (identity, connection status, etc.).
   WebsiteSettingsUI* ui_;
 
-  // The infobar helper of the active tab.
-  InfoBarTabHelper* infobar_helper_;  // Owned by the active tab contents.
+  // The infobar service of the active tab.
+  InfoBarService* infobar_service_;  // Owned by the active tab contents.
 
   // The flag that controls whether an infobar is displayed after the website
   // settings UI is closed or not.

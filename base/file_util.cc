@@ -11,12 +11,14 @@
 
 #include <fstream>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
+
+using base::FilePath;
 
 namespace {
 
@@ -75,6 +77,18 @@ void InsertBeforeExtension(FilePath* path, const FilePath::StringType& suffix) {
   }
 
   value.insert(last_dot, suffix);
+}
+
+bool Move(const FilePath& from_path, const FilePath& to_path) {
+  if (from_path.ReferencesParent() || to_path.ReferencesParent())
+    return false;
+  return MoveUnsafe(from_path, to_path);
+}
+
+bool CopyFile(const FilePath& from_path, const FilePath& to_path) {
+  if (from_path.ReferencesParent() || to_path.ReferencesParent())
+    return false;
+  return CopyFileUnsafe(from_path, to_path);
 }
 
 bool ContentsEqual(const FilePath& filename1, const FilePath& filename2) {
@@ -152,6 +166,8 @@ bool TextContentsEqual(const FilePath& filename1, const FilePath& filename2) {
 }
 
 bool ReadFileToString(const FilePath& path, std::string* contents) {
+  if (path.ReferencesParent())
+    return false;
   FILE* file = OpenFile(path, "rb");
   if (!file) {
     return false;
@@ -262,7 +278,8 @@ int GetUniquePathNumber(
 
   FilePath new_path;
   for (int count = 1; count <= kMaxUniqueFiles; ++count) {
-    new_path = path.InsertBeforeExtensionASCII(StringPrintf(" (%d)", count));
+    new_path =
+        path.InsertBeforeExtensionASCII(base::StringPrintf(" (%d)", count));
     if (!PathExists(new_path) &&
         (!have_suffix || !PathExists(FilePath(new_path.value() + suffix)))) {
       return count;
@@ -332,56 +349,6 @@ int64 ComputeFilesSize(const FilePath& directory,
 #endif
   }
   return running_size;
-}
-
-///////////////////////////////////////////////
-// MemoryMappedFile
-
-MemoryMappedFile::~MemoryMappedFile() {
-  CloseHandles();
-}
-
-bool MemoryMappedFile::Initialize(const FilePath& file_name) {
-  if (IsValid())
-    return false;
-
-  if (!MapFileToMemory(file_name)) {
-    CloseHandles();
-    return false;
-  }
-
-  return true;
-}
-
-bool MemoryMappedFile::Initialize(base::PlatformFile file) {
-  if (IsValid())
-    return false;
-
-  file_ = file;
-
-  if (!MapFileToMemoryInternal()) {
-    CloseHandles();
-    return false;
-  }
-
-  return true;
-}
-
-bool MemoryMappedFile::IsValid() const {
-  return data_ != NULL;
-}
-
-bool MemoryMappedFile::MapFileToMemory(const FilePath& file_name) {
-  file_ = base::CreatePlatformFile(
-      file_name, base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
-      NULL, NULL);
-
-  if (file_ == base::kInvalidPlatformFileValue) {
-    DLOG(ERROR) << "Couldn't open " << file_name.value();
-    return false;
-  }
-
-  return MapFileToMemoryInternal();
 }
 
 ///////////////////////////////////////////////

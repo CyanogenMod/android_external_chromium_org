@@ -35,6 +35,15 @@ void BalloonCollectionBase::Remove(Balloon* balloon) {
   }
 }
 
+bool BalloonCollectionBase::DoesIdExist(const std::string& id) {
+  Balloons::iterator iter;
+  for (iter = balloons_.begin(); iter != balloons_.end(); ++iter) {
+    if ((*iter)->notification().notification_id() == id)
+      return true;
+  }
+  return false;
+}
+
 bool BalloonCollectionBase::CloseById(const std::string& id) {
   // Use a local list of balloons to close to avoid breaking
   // iterator changes on each close.
@@ -58,6 +67,21 @@ bool BalloonCollectionBase::CloseAllBySourceOrigin(
   Balloons::iterator iter;
   for (iter = balloons_.begin(); iter != balloons_.end(); ++iter) {
     if ((*iter)->notification().origin_url() == source_origin)
+      to_close.push_back(*iter);
+  }
+  for (iter = to_close.begin(); iter != to_close.end(); ++iter)
+    (*iter)->CloseByScript();
+
+  return !to_close.empty();
+}
+
+bool BalloonCollectionBase::CloseAllByProfile(Profile* profile) {
+  // Use a local list of balloons to close to avoid breaking
+  // iterator changes on each close.
+  Balloons to_close;
+  Balloons::iterator iter;
+  for (iter = balloons_.begin(); iter != balloons_.end(); ++iter) {
+    if ((*iter)->profile() == profile)
       to_close.push_back(*iter);
   }
   for (iter = to_close.begin(); iter != to_close.end(); ++iter)

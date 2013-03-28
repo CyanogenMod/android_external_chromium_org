@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,19 +7,22 @@
     # This library should build cleanly with the extra warnings turned on
     # for Chromium.
     'chromium_code': 1,
-    # The relative path of the cacheinvalidation proto files from 'src'.
-    # TODO(akalin): Add a RULE_INPUT_DIR predefined variable to gyp so
-    # we don't need this variable.
-    'proto_dir_relpath': 'google/cacheinvalidation',
-    # Where files generated from proto files are put.
-    'proto_in_dir': 'src/<(proto_dir_relpath)',
-    'proto_out_dir': '<(proto_dir_relpath)',
   },
   'targets': [
     # The C++ files generated from the cache invalidation protocol buffers.
     {
       'target_name': 'cacheinvalidation_proto_cpp',
       'type': 'static_library',
+      'variables': {
+        # The relative path of the cacheinvalidation proto files from this
+        # gyp-file.
+        # TODO(akalin): Add a RULE_INPUT_DIR predefined variable to gyp so
+        # we don't need this variable.
+        'proto_dir_relpath': 'google/cacheinvalidation',
+        # Where files generated from proto files are put.
+        'proto_in_dir': 'src/<(proto_dir_relpath)',
+        'proto_out_dir': '<(proto_dir_relpath)',
+      },
       'sources': [
         '<(proto_in_dir)/client.proto',
         '<(proto_in_dir)/client_gateway.proto',
@@ -33,6 +36,8 @@
           '<(proto_out_dir)',
         ],
       },
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [4267, ],
     },
     # The main cache invalidation library.  External clients should depend
     # only on this.
@@ -62,6 +67,8 @@
         'src/google/cacheinvalidation/impl/digest-store.h',
         'src/google/cacheinvalidation/impl/exponential-backoff-delay-generator.cc',
         'src/google/cacheinvalidation/impl/exponential-backoff-delay-generator.h',
+        'src/google/cacheinvalidation/impl/invalidation-client-core.cc',
+        'src/google/cacheinvalidation/impl/invalidation-client-core.h',
         'src/google/cacheinvalidation/impl/invalidation-client-factory.cc',
         'src/google/cacheinvalidation/impl/invalidation-client-impl.cc',
         'src/google/cacheinvalidation/impl/invalidation-client-impl.h',
@@ -119,6 +126,8 @@
       'export_dependent_settings': [
         '../../base/base.gyp:base',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [4267, ],
     },
     # Unittests for the cache invalidation library.
     # TODO(ghc): Write native tests and include them here.
@@ -163,6 +172,59 @@
           'sources': [
             'cacheinvalidation_unittests.isolate',
           ],
+        },
+      ],
+    }],
+    ['OS == "android"', {
+      'targets': [
+        {
+          'target_name': 'cacheinvalidation_proto_java',
+          'type': 'none',
+          'variables': {
+            'proto_in_dir': '../../third_party/cacheinvalidation/src/proto',
+          },
+          'sources': [
+            '<(proto_in_dir)/android_channel.proto',
+            '<(proto_in_dir)/android_listener.proto',
+            '<(proto_in_dir)/android_service.proto',
+            '<(proto_in_dir)/android_state.proto',
+            '<(proto_in_dir)/channel.proto',
+            '<(proto_in_dir)/channel_common.proto',
+            '<(proto_in_dir)/client.proto',
+            '<(proto_in_dir)/client_protocol.proto',
+            '<(proto_in_dir)/java_client.proto',
+            '<(proto_in_dir)/types.proto',
+          ],
+          'includes': [ '../../build/protoc_java.gypi' ],
+        },
+        {
+          'target_name': 'cacheinvalidation_javalib',
+          'type': 'none',
+          'dependencies': [
+            '../../third_party/android_tools/android_tools.gyp:android_gcm',
+            '../../third_party/guava/guava.gyp:guava_javalib',
+            'cacheinvalidation_aidl_javalib',
+            'cacheinvalidation_proto_java',
+          ],
+          'variables': {
+            'java_in_dir': '../../build/android/empty',
+            'additional_src_dirs': [ 'src/java/' ],
+          },
+          'includes': [ '../../build/java.gypi' ],
+        },
+        {
+          'target_name': 'cacheinvalidation_aidl_javalib',
+          'type': 'none',
+          'variables': {
+            # TODO(shashishekhar): aidl_interface_file should be made optional.
+            'aidl_interface_file':'<(android_sdk)/framework.aidl'
+          },
+          'sources': [
+            'src/java/com/google/ipc/invalidation/external/client/android/service/InvalidationService.aidl',
+            'src/java/com/google/ipc/invalidation/external/client/android/service/ListenerService.aidl',
+            'src/java/com/google/ipc/invalidation/testing/android/InvalidationTest.aidl',
+          ],
+          'includes': [ '../../build/java_aidl.gypi' ],
         },
       ],
     }],

@@ -37,7 +37,6 @@ PasswordModelAssociator::PasswordModelAssociator(
       expected_loop_(MessageLoop::current()),
       error_handler_(error_handler) {
   DCHECK(sync_service_);
-  DCHECK(password_store_);
 #if defined(OS_MACOSX)
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
 #else
@@ -47,7 +46,9 @@ PasswordModelAssociator::PasswordModelAssociator(
 
 PasswordModelAssociator::~PasswordModelAssociator() {}
 
-syncer::SyncError PasswordModelAssociator::AssociateModels() {
+syncer::SyncError PasswordModelAssociator::AssociateModels(
+    syncer::SyncMergeResult* local_merge_result,
+    syncer::SyncMergeResult* syncer_merge_result) {
   syncer::SyncError error;
   DCHECK(expected_loop_ == MessageLoop::current());
   {
@@ -189,7 +190,7 @@ bool PasswordModelAssociator::DeleteAllNodes(
       LOG(ERROR) << "Typed url node lookup failed.";
       return false;
     }
-    sync_node.Remove();
+    sync_node.Tombstone();
   }
 
   id_map_.clear();

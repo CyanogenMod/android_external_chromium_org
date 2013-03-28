@@ -129,6 +129,10 @@
             'capi_util.cc',
           ],
         }],
+        [ 'OS == "win"', {
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [4267, ],
+        }],
         [ 'use_openssl==1', {
             # TODO(joth): Use a glob to match exclude patterns once the
             #             OpenSSL file set is complete.
@@ -182,6 +186,9 @@
         'crypto_module_blocking_password_delegate.h',
         'cssm_init.cc',
         'cssm_init.h',
+        'curve25519.cc',
+        'curve25519.h',
+        'curve25519-donna.c',
         'ghash.cc',
         'ghash.h',
         'ec_private_key.h',
@@ -196,6 +203,8 @@
         'encryptor.h',
         'encryptor_nss.cc',
         'encryptor_openssl.cc',
+        'hkdf.cc',
+        'hkdf.h',
         'hmac_nss.cc',
         'hmac_openssl.cc',
         'mac_security_services_lock.cc',
@@ -256,10 +265,12 @@
         'run_all_unittests.cc',
 
         # Tests.
+        'curve25519_unittest.cc',
         'ec_private_key_unittest.cc',
         'ec_signature_creator_unittest.cc',
         'encryptor_unittest.cc',
         'ghash_unittest.cc',
+        'hkdf_unittest.cc',
         'hmac_unittest.cc',
         'nss_util_unittest.cc',
         'p224_unittest.cc',
@@ -319,6 +330,10 @@
             '../third_party/nss/nss.gyp:nspr',
           ],
         }],
+        [ 'OS == "win"', {
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [4267, ],
+        }],
         [ 'use_openssl==1', {
           'sources!': [
             'nss_util_unittest.cc',
@@ -330,7 +345,7 @@
     },
   ],
   'conditions': [
-    [ 'OS == "win"', {
+    ['OS == "win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'crypto_nacl_win64',

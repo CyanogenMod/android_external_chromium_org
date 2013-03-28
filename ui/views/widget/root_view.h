@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
+#include "ui/base/events/event_dispatcher.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/focus/focus_search.h"
 #include "ui/views/view.h"
@@ -37,7 +38,9 @@ namespace internal {
 //  TODO(beng): Clean up API further, make Widget a friend.
 //  TODO(sky): We don't really want to export this class.
 //
-class VIEWS_EXPORT RootView : public View, public FocusTraversable {
+class VIEWS_EXPORT RootView : public View,
+                              public FocusTraversable,
+                              public ui::EventDispatcherDelegate {
  public:
   static const char kViewClassName[];
 
@@ -61,10 +64,10 @@ class VIEWS_EXPORT RootView : public View, public FocusTraversable {
   // Process a key event. Send the event to the focused view and up the focus
   // path, and finally to the default keyboard handler, until someone consumes
   // it. Returns whether anyone consumed the event.
-  ui::EventResult DispatchKeyEvent(const ui::KeyEvent& event);
-  ui::EventResult DispatchScrollEvent(ui::ScrollEvent* event);
-  ui::EventResult DispatchTouchEvent(ui::TouchEvent* event);
-  virtual ui::EventResult DispatchGestureEvent(ui::GestureEvent* event);
+  void DispatchKeyEvent(ui::KeyEvent* event);
+  void DispatchScrollEvent(ui::ScrollEvent* event);
+  void DispatchTouchEvent(ui::TouchEvent* event);
+  virtual void DispatchGestureEvent(ui::GestureEvent* event);
 
   // Focus ---------------------------------------------------------------------
 
@@ -112,9 +115,9 @@ class VIEWS_EXPORT RootView : public View, public FocusTraversable {
   virtual void ViewHierarchyChanged(bool is_add, View* parent,
                                     View* child) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void CalculateOffsetToAncestorWithLayer(
-      gfx::Point* offset,
+  virtual gfx::Vector2d CalculateOffsetToAncestorWithLayer(
       ui::Layer** layer_parent) OVERRIDE;
+  virtual View::DragInfo* GetDragInfo() OVERRIDE;
 
  private:
   friend class View;
@@ -133,6 +136,19 @@ class VIEWS_EXPORT RootView : public View, public FocusTraversable {
   // in the current coordinate system (i.e. any necessary transformation should
   // be applied to the point prior to calling this).
   void SetMouseLocationAndFlags(const ui::MouseEvent& event);
+
+  void DispatchEventToTarget(View* target, ui::Event* event);
+
+  // |view| is the view receiving |event|. This function sends the event to all
+  // the Views up the hierarchy that has |notify_enter_exit_on_child_| flag
+  // turned on, but does not contain |sibling|.
+  void NotifyEnterExitOfDescendant(const ui::MouseEvent& event,
+                                   ui::EventType type,
+                                   View* view,
+                                   View* sibling);
+
+  // Overridden from ui::EventDispatcherDelegate:
+  virtual bool CanDispatchToTarget(ui::EventTarget* target) OVERRIDE;
 
   //////////////////////////////////////////////////////////////////////////////
 
@@ -187,6 +203,8 @@ class VIEWS_EXPORT RootView : public View, public FocusTraversable {
   // The View that contains this RootView. This is used when we have RootView
   // wrapped inside native components, and is used for the focus traversal.
   View* focus_traversable_parent_view_;
+
+  View* event_dispatch_target_;
 
   // Drag and drop -------------------------------------------------------------
 

@@ -15,8 +15,8 @@
 #include "base/win/scoped_com_initializer.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager_base.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/win/audio_low_latency_input_win.h"
+#include "media/audio/win/core_audio_util_win.h"
 #include "media/base/seekable_buffer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -42,7 +42,7 @@ class MockAudioInputCallback : public AudioInputStream::AudioInputCallback {
       const uint8* src, uint32 size,
       uint32 hardware_delay_bytes, double volume));
   MOCK_METHOD1(OnClose, void(AudioInputStream* stream));
-  MOCK_METHOD2(OnError, void(AudioInputStream* stream, int code));
+  MOCK_METHOD1(OnError, void(AudioInputStream* stream));
 };
 
 // This audio sink implementation should be used for manual tests only since
@@ -56,7 +56,7 @@ class WriteToFileAudioSink : public AudioInputStream::AudioInputCallback {
   explicit WriteToFileAudioSink(const char* file_name)
       : buffer_(0, kMaxBufferSize),
         bytes_to_write_(0) {
-    FilePath file_path;
+    base::FilePath file_path;
     EXPECT_TRUE(PathService::Get(base::DIR_EXE, &file_path));
     file_path = file_path.AppendASCII(file_name);
     binary_file_ = file_util::OpenFile(file_path, "wb");
@@ -98,7 +98,7 @@ class WriteToFileAudioSink : public AudioInputStream::AudioInputCallback {
   }
 
   virtual void OnClose(AudioInputStream* stream) {}
-  virtual void OnError(AudioInputStream* stream, int code) {}
+  virtual void OnError(AudioInputStream* stream) {}
 
  private:
   media::SeekableBuffer buffer_;
@@ -111,7 +111,7 @@ class WriteToFileAudioSink : public AudioInputStream::AudioInputCallback {
 // verify that we are not running on XP since the low-latency (WASAPI-
 // based) version requires Windows Vista or higher.
 static bool CanRunAudioTests(AudioManager* audio_man) {
-  if (!media::IsWASAPISupported()) {
+  if (!CoreAudioUtil::IsSupported()) {
     LOG(WARNING) << "This tests requires Windows Vista or higher.";
     return false;
   }

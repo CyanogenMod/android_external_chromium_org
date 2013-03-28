@@ -15,17 +15,16 @@
 #include "base/basictypes.h"
 #include "base/cancelable_callback.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/run_loop.h"
 #include "base/process_util.h"
-#include "base/time.h"
+#include "base/run_loop.h"
 #include "base/test/test_reg_util_win.h"
+#include "base/time.h"
 #include "base/time.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_comptr.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "chrome_frame/chrome_tab.h"
 #include "chrome_frame/test/simulate_input.h"
 #include "chrome_frame/test_utils.h"
@@ -37,8 +36,11 @@
 #define GMOCK_MUTANT_INCLUDE_LATE_OBJECT_BINDING
 #include "testing/gmock_mutant.h"
 
-class FilePath;
 interface IWebBrowser2;
+
+namespace base {
+class FilePath;
+}
 
 namespace chrome_frame_test {
 
@@ -46,7 +48,7 @@ int CloseVisibleWindowsOnAllThreads(HANDLE process);
 
 base::ProcessHandle LaunchIE(const std::wstring& url);
 base::ProcessHandle LaunchChrome(const std::wstring& url,
-                                 const FilePath& user_data_dir);
+                                 const base::FilePath& user_data_dir);
 
 // Attempts to close all open IE windows.
 // The return value is the number of windows closed.
@@ -54,6 +56,9 @@ base::ProcessHandle LaunchChrome(const std::wstring& url,
 // Since the caller might be running in either MTA or STA, the function does
 // not perform this initialization itself.
 int CloseAllIEWindows();
+
+// Saves a screen snapshot to the desktop and logs its location.
+bool TakeSnapshotAndLog();
 
 extern const wchar_t kIEImageName[];
 extern const wchar_t kIEBrokerImageName[];
@@ -237,27 +242,13 @@ class TimedMsgLoop {
     return !quit_loop_invoked_;
   }
 
-  void RunAllPending() {
-    loop_.RunAllPending();
+  void RunUntilIdle() {
+    loop_.RunUntilIdle();
   }
 
  private:
   static void SnapshotAndQuit() {
-    FilePath snapshot;
-    if (ui_test_utils::SaveScreenSnapshotToDesktop(&snapshot)) {
-      testing::UnitTest* unit_test = testing::UnitTest::GetInstance();
-      const testing::TestInfo* test_info = unit_test->current_test_info();
-      std::string name;
-      if (test_info != NULL) {
-        name.append(test_info->test_case_name())
-            .append(1, '.')
-            .append(test_info->name());
-      } else {
-        name = "unknown test";
-      }
-      LOG(ERROR) << name << " timed out. Screen snapshot saved to "
-                 << snapshot.value();
-    }
+    TakeSnapshotAndLog();
     MessageLoop::current()->Quit();
   }
 
@@ -286,7 +277,7 @@ HRESULT LaunchIEAsComServer(IWebBrowser2** web_browser);
 std::wstring GetExecutableAppPath(const std::wstring& file);
 
 // Returns the profile path to be used for IE. This varies as per version.
-FilePath GetProfilePathForIE();
+base::FilePath GetProfilePathForIE();
 
 // Returns the version of the exe passed in.
 std::wstring GetExeVersion(const std::wstring& exe_path);
@@ -295,10 +286,10 @@ std::wstring GetExeVersion(const std::wstring& exe_path);
 IEVersion GetInstalledIEVersion();
 
 // Returns the folder for CF test data.
-FilePath GetTestDataFolder();
+base::FilePath GetTestDataFolder();
 
 // Returns the folder for Selenium core.
-FilePath GetSeleniumTestFolder();
+base::FilePath GetSeleniumTestFolder();
 
 // Returns the path portion of the url.
 std::wstring GetPathFromUrl(const std::wstring& url);

@@ -16,7 +16,18 @@
 #include "net/cookies/parsed_cookie.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace net {
+
 namespace {
+
+const int kNumCookies = 20000;
+const char kCookieLine[] = "A  = \"b=;\\\"\"  ;secure;;;";
+const char kGoogleURL[] = "http://www.google.izzle";
+
+int CountInString(const std::string& str, char c) {
+  return std::count(str.begin(), str.end(), c);
+}
+
 class CookieMonsterTest : public testing::Test {
  public:
   CookieMonsterTest() : message_loop_(new MessageLoopForIO()) {}
@@ -24,35 +35,6 @@ class CookieMonsterTest : public testing::Test {
  private:
   scoped_ptr<MessageLoop> message_loop_;
 };
-}
-
-static const int kNumCookies = 20000;
-static const char kCookieLine[] = "A  = \"b=;\\\"\"  ;secure;;;";
-
-namespace net {
-
-TEST(ParsedCookieTest, TestParseCookies) {
-  std::string cookie(kCookieLine);
-  PerfTimeLogger timer("Parsed_cookie_parse_cookies");
-  for (int i = 0; i < kNumCookies; ++i) {
-    ParsedCookie pc(cookie);
-    EXPECT_TRUE(pc.IsValid());
-  }
-  timer.Done();
-}
-
-TEST(ParsedCookieTest, TestParseBigCookies) {
-  std::string cookie(3800, 'z');
-  cookie += kCookieLine;
-  PerfTimeLogger timer("Parsed_cookie_parse_big_cookies");
-  for (int i = 0; i < kNumCookies; ++i) {
-    ParsedCookie pc(cookie);
-    EXPECT_TRUE(pc.IsValid());
-  }
-  timer.Done();
-}
-
-static const GURL kUrlGoogle("http://www.google.izzle");
 
 class BaseCallback {
  public:
@@ -65,7 +47,7 @@ class BaseCallback {
     // Therefore, callbacks will actually always complete synchronously. If the
     // tests get more advanced we need to add other means of signaling
     // completion.
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     EXPECT_TRUE(has_run_);
     has_run_ = false;
   }
@@ -76,7 +58,6 @@ class BaseCallback {
 
   bool has_run_;
 };
-
 
 class SetCookieCallback  : public BaseCallback {
  public:
@@ -112,28 +93,28 @@ class GetCookiesCallback : public BaseCallback {
   net::CookieOptions options_;
 };
 
-class GetCookiesWithInfoCallback : public BaseCallback {
- public:
-  const std::string& GetCookiesWithInfo(CookieMonster* cm, const GURL& gurl) {
-    cm->GetCookiesWithInfoAsync(gurl, options_, base::Bind(
-        &GetCookiesWithInfoCallback::Run,
-        base::Unretained(this)));
-    WaitForCallback();
-    return cookies_;
+}  // namespace
+
+TEST(ParsedCookieTest, TestParseCookies) {
+  std::string cookie(kCookieLine);
+  PerfTimeLogger timer("Parsed_cookie_parse_cookies");
+  for (int i = 0; i < kNumCookies; ++i) {
+    ParsedCookie pc(cookie);
+    EXPECT_TRUE(pc.IsValid());
   }
+  timer.Done();
+}
 
- private:
-  void Run(
-    const std::string& cookie_line,
-    const std::vector<CookieStore::CookieInfo>& cookie_infos) {
-    cookies_ = cookie_line;
-    BaseCallback::Run();
+TEST(ParsedCookieTest, TestParseBigCookies) {
+  std::string cookie(3800, 'z');
+  cookie += kCookieLine;
+  PerfTimeLogger timer("Parsed_cookie_parse_big_cookies");
+  for (int i = 0; i < kNumCookies; ++i) {
+    ParsedCookie pc(cookie);
+    EXPECT_TRUE(pc.IsValid());
   }
-
-  std::string cookies_;
-  net::CookieOptions options_;
-};
-
+  timer.Done();
+}
 
 TEST_F(CookieMonsterTest, TestAddCookiesOnSingleHost) {
   scoped_refptr<CookieMonster> cm(new CookieMonster(NULL, NULL));
@@ -149,7 +130,7 @@ TEST_F(CookieMonsterTest, TestAddCookiesOnSingleHost) {
 
   for (std::vector<std::string>::const_iterator it = cookies.begin();
        it != cookies.end(); ++it) {
-    setCookieCallback.SetCookie(cm, kUrlGoogle, *it);
+    setCookieCallback.SetCookie(cm, GURL(kGoogleURL), *it);
   }
   timer.Done();
 
@@ -158,13 +139,13 @@ TEST_F(CookieMonsterTest, TestAddCookiesOnSingleHost) {
   PerfTimeLogger timer2("Cookie_monster_query_single_host");
   for (std::vector<std::string>::const_iterator it = cookies.begin();
        it != cookies.end(); ++it) {
-    getCookiesCallback.GetCookies(cm, kUrlGoogle);
+    getCookiesCallback.GetCookies(cm, GURL(kGoogleURL));
   }
   timer2.Done();
 
   PerfTimeLogger timer3("Cookie_monster_deleteall_single_host");
   cm->DeleteAllAsync(CookieMonster::DeleteCallback());
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   timer3.Done();
 }
 
@@ -197,36 +178,8 @@ TEST_F(CookieMonsterTest, TestAddCookieOnManyHosts) {
 
   PerfTimeLogger timer3("Cookie_monster_deleteall_many_hosts");
   cm->DeleteAllAsync(CookieMonster::DeleteCallback());
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   timer3.Done();
-}
-
-TEST_F(CookieMonsterTest, TestGetCookiesWithInfo) {
-  scoped_refptr<CookieMonster> cm(new CookieMonster(NULL, NULL));
-
-  std::vector<GURL> gurls;
-  for (int i = 0; i < kNumCookies; ++i)
-    gurls.push_back(GURL(base::StringPrintf("https://a%04d.izzle", i)));
-
-  SetCookieCallback setCookieCallback;
-
-  for (std::vector<GURL>::const_iterator it = gurls.begin();
-       it != gurls.end(); ++it) {
-    setCookieCallback.SetCookie(cm, *it, kCookieLine);
-  }
-
-  GetCookiesWithInfoCallback getCookiesCallback;
-
-  PerfTimeLogger timer("Cookie_monster_get_cookie_info");
-  for (std::vector<GURL>::const_iterator it = gurls.begin();
-       it != gurls.end(); ++it) {
-    getCookiesCallback.GetCookiesWithInfo(cm, *it);
-  }
-  timer.Done();
-}
-
-static int CountInString(const std::string& str, char c) {
-  return std::count(str.begin(), str.end(), c);
 }
 
 TEST_F(CookieMonsterTest, TestDomainTree) {
@@ -379,8 +332,8 @@ TEST_F(CookieMonsterTest, TestGCTimes) {
 
   const struct TestCase {
     const char* name;
-    int num_cookies;
-    int num_old_cookies;
+    size_t num_cookies;
+    size_t num_old_cookies;
   } test_cases[] = {
     {
       // A whole lot of recent cookies; gc shouldn't happen.
@@ -429,4 +382,4 @@ TEST_F(CookieMonsterTest, TestGCTimes) {
   }
 }
 
-}  // namespace
+}  // namespace net

@@ -13,14 +13,14 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/applescript/constants_applescript.h"
 #include "chrome/browser/ui/cocoa/applescript/error_applescript.h"
 #import "chrome/browser/ui/cocoa/applescript/tab_applescript.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
@@ -70,7 +70,8 @@
   }
 
   if ((self = [super init])) {
-    browser_ = new Browser(Browser::CreateParams(aProfile));
+    browser_ = new Browser(
+        Browser::CreateParams(aProfile, chrome::HOST_DESKTOP_TYPE_NATIVE));
     chrome::NewTab(browser_);
     browser_->window()->Show();
     scoped_nsobject<NSNumber> numID(
@@ -107,7 +108,7 @@
 
 - (NSNumber*)activeTabIndex {
   // Note: applescript is 1-based, that is lists begin with index 1.
-  int activeTabIndex = browser_->active_index() + 1;
+  int activeTabIndex = browser_->tab_strip_model()->active_index() + 1;
   if (!activeTabIndex) {
     return nil;
   }
@@ -117,8 +118,8 @@
 - (void)setActiveTabIndex:(NSNumber*)anActiveTabIndex {
   // Note: applescript is 1-based, that is lists begin with index 1.
   int atIndex = [anActiveTabIndex intValue] - 1;
-  if (atIndex >= 0 && atIndex < browser_->tab_count())
-    chrome::ActivateTabAt(browser_, atIndex, true);
+  if (atIndex >= 0 && atIndex < browser_->tab_strip_model()->count())
+    browser_->tab_strip_model()->ActivateTabAt(atIndex, true);
   else
     AppleScript::SetError(AppleScript::errInvalidTabIndex);
 }
@@ -139,21 +140,20 @@
 
 - (TabAppleScript*)activeTab {
   TabAppleScript* currentTab =
-      [[[TabAppleScript alloc]
-          initWithWebContents:chrome::GetActiveWebContents(browser_)]
-              autorelease];
+      [[[TabAppleScript alloc] initWithWebContents:
+          browser_->tab_strip_model()->GetActiveWebContents()] autorelease];
   [currentTab setContainer:self
                   property:AppleScript::kTabsProperty];
   return currentTab;
 }
 
 - (NSArray*)tabs {
-  NSMutableArray* tabs = [NSMutableArray
-      arrayWithCapacity:browser_->tab_count()];
+  TabStripModel* tabStrip = browser_->tab_strip_model();
+  NSMutableArray* tabs = [NSMutableArray arrayWithCapacity:tabStrip->count()];
 
-  for (int i = 0; i < browser_->tab_count(); ++i) {
+  for (int i = 0; i < tabStrip->count(); ++i) {
     // Check to see if tab is closing.
-    content::WebContents* webContents = chrome::GetWebContentsAt(browser_, i);
+    content::WebContents* webContents = tabStrip->GetWebContentsAt(i);
     if (webContents->IsBeingDestroyed()) {
       continue;
     }
@@ -175,12 +175,12 @@
 
   // Set how long it takes a tab to be created.
   base::TimeTicks newTabStartTime = base::TimeTicks::Now();
-  TabContents* contents = chrome::AddSelectedTabWithURL(
+  content::WebContents* contents = chrome::AddSelectedTabWithURL(
       browser_,
       GURL(chrome::kChromeUINewTabURL),
       content::PAGE_TRANSITION_TYPED);
-  contents->web_contents()->SetNewTabStartTime(newTabStartTime);
-  [aTab setWebContents:contents->web_contents()];
+  contents->SetNewTabStartTime(newTabStartTime);
+  [aTab setWebContents:contents];
 }
 
 - (void)insertInTabs:(TabAppleScript*)aTab atIndex:(int)index {
@@ -196,14 +196,16 @@
   params.disposition = NEW_FOREGROUND_TAB;
   params.tabstrip_index = index;
   chrome::Navigate(&params);
-  params.target_contents->web_contents()->SetNewTabStartTime(
-      newTabStartTime);
+  params.target_contents->SetNewTabStartTime(newTabStartTime);
 
-  [aTab setWebContents:params.target_contents->web_contents()];
+  [aTab setWebContents:params.target_contents];
 }
 
 - (void)removeFromTabsAtIndex:(int)index {
-  chrome::CloseWebContents(browser_, chrome::GetWebContentsAt(browser_, index));
+  if (index < 0 || index >= browser_->tab_strip_model()->count())
+    return;
+  browser_->tab_strip_model()->CloseWebContentsAt(
+      index, TabStripModel::CLOSE_CREATE_HISTORICAL_TAB);
 }
 
 - (NSNumber*)orderedIndex {
@@ -212,7 +214,7 @@
 
 - (void)setOrderedIndex:(NSNumber*)anIndex {
   int index = [anIndex intValue] - 1;
-  if (index < 0 || index >= (int)BrowserList::size()) {
+  if (index < 0 || index >= static_cast<int>(chrome::GetTotalBrowserCount())) {
     AppleScript::SetError(AppleScript::errWrongIndex);
     return;
   }
@@ -249,20 +251,20 @@
 - (NSNumber*)presenting {
   BOOL presentingValue = NO;
   if (browser_->window())
-    presentingValue = browser_->window()->InPresentationMode();
+    presentingValue = browser_->window()->IsFullscreenWithoutChrome();
   return [NSNumber numberWithBool:presentingValue];
 }
 
 - (void)handlesEnterPresentationMode:(NSScriptCommand*)command {
   if (browser_->window()) {
-    browser_->window()->EnterPresentationMode(
+    browser_->window()->EnterFullscreen(
         GURL(), FEB_TYPE_FULLSCREEN_EXIT_INSTRUCTION);
   }
 }
 
 - (void)handlesExitPresentationMode:(NSScriptCommand*)command {
   if (browser_->window())
-    browser_->window()->ExitPresentationMode();
+    browser_->window()->ExitFullscreen();
 }
 
 @end

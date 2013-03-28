@@ -13,7 +13,7 @@
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_database.h"
 #include "chrome/browser/history/url_database.h"
@@ -86,25 +86,32 @@ class AutocompleteActionPredictorTest : public testing::Test {
         ui_thread_(BrowserThread::UI, &loop_),
         db_thread_(BrowserThread::DB, &loop_),
         file_thread_(BrowserThread::FILE, &loop_),
-        predictor_(new AutocompleteActionPredictor(&profile_)) {
+        profile_(new TestingProfile()),
+        predictor_(new AutocompleteActionPredictor(profile_.get())) {
   }
 
-  void SetUp() {
+  virtual ~AutocompleteActionPredictorTest() {
+    predictor_.reset(NULL);
+    profile_.reset(NULL);
+    loop_.RunUntilIdle();
+  }
+
+  virtual void SetUp() {
     CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kPrerenderFromOmnibox,
         switches::kPrerenderFromOmniboxSwitchValueEnabled);
 
     predictor_->CreateLocalCachesFromDatabase();
-    profile_.CreateHistoryService(true, false);
-    profile_.BlockUntilHistoryProcessesPendingRequests();
+    profile_->CreateHistoryService(true, false);
+    profile_->BlockUntilHistoryProcessesPendingRequests();
 
     ASSERT_TRUE(predictor_->initialized_);
     ASSERT_TRUE(db_cache()->empty());
     ASSERT_TRUE(db_id_cache()->empty());
   }
 
-  void TearDown() {
-    profile_.DestroyHistoryService();
+  virtual void TearDown() {
+    profile_->DestroyHistoryService();
     predictor_->Shutdown();
   }
 
@@ -121,7 +128,7 @@ class AutocompleteActionPredictorTest : public testing::Test {
 
   history::URLID AddRowToHistory(const TestUrlInfo& test_row) {
     HistoryService* history =
-        HistoryServiceFactory::GetForProfile(&profile_,
+        HistoryServiceFactory::GetForProfile(profile_.get(),
                                              Profile::EXPLICIT_ACCESS);
     CHECK(history);
     history::URLDatabase* url_db = history->InMemoryDatabase();
@@ -155,8 +162,6 @@ class AutocompleteActionPredictorTest : public testing::Test {
   }
 
   std::string AddRow(const TestUrlInfo& test_row) {
-    AutocompleteActionPredictor::DBCacheKey key = { test_row.user_text,
-                                                    test_row.url };
     AutocompleteActionPredictorTable::Row row =
         CreateRowFromTestUrlInfo(test_row);
     predictor_->AddAndUpdateRows(
@@ -185,7 +190,7 @@ class AutocompleteActionPredictorTest : public testing::Test {
   void DeleteOldIdsFromCaches(
       std::vector<AutocompleteActionPredictorTable::Row::Id>* id_list) {
     HistoryService* history_service =
-        HistoryServiceFactory::GetForProfile(&profile_,
+        HistoryServiceFactory::GetForProfile(profile_.get(),
                                              Profile::EXPLICIT_ACCESS);
     ASSERT_TRUE(history_service);
 
@@ -195,7 +200,7 @@ class AutocompleteActionPredictorTest : public testing::Test {
     // Reset the predictor's |initialized_| flag for the life of this call,
     // since outside of testing this function is only supposed to be reached
     // before initialization is completed.
-    AutoReset<bool> initialized_reset(&predictor_->initialized_, false);
+    base::AutoReset<bool> initialized_reset(&predictor_->initialized_, false);
     predictor_->DeleteOldIdsFromCaches(url_db, id_list);
   }
 
@@ -213,7 +218,7 @@ class AutocompleteActionPredictorTest : public testing::Test {
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread db_thread_;
   content::TestBrowserThread file_thread_;
-  TestingProfile profile_;
+  scoped_ptr<TestingProfile> profile_;
   scoped_ptr<AutocompleteActionPredictor> predictor_;
 };
 

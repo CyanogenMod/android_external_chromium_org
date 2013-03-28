@@ -34,7 +34,9 @@ HttpBasicStream::HttpBasicStream(ClientSocketHandle* connection,
 HttpBasicStream::~HttpBasicStream() {}
 
 int HttpBasicStream::InitializeStream(
-    const HttpRequestInfo* request_info, const BoundNetLog& net_log,
+    const HttpRequestInfo* request_info,
+    RequestPriority priority,
+    const BoundNetLog& net_log,
     const CompletionCallback& callback) {
   DCHECK(!parser_.get());
   request_info_ = request_info;
@@ -46,7 +48,6 @@ int HttpBasicStream::InitializeStream(
 
 
 int HttpBasicStream::SendRequest(const HttpRequestHeaders& headers,
-                                 UploadDataStream* request_body,
                                  HttpResponseInfo* response,
                                  const CompletionCallback& callback) {
   DCHECK(parser_.get());
@@ -58,8 +59,7 @@ int HttpBasicStream::SendRequest(const HttpRequestHeaders& headers,
                                      request_info_->method.c_str(),
                                      path.c_str());
   response_ = response;
-  return parser_->SendRequest(request_line_, headers, request_body,
-                              response, callback);
+  return parser_->SendRequest(request_line_, headers, response, callback);
 }
 
 UploadProgress HttpBasicStream::GetUploadProgress() const {
@@ -85,7 +85,7 @@ void HttpBasicStream::Close(bool not_reusable) {
 
 HttpStream* HttpBasicStream::RenewStreamForAuth() {
   DCHECK(IsResponseBodyComplete());
-  DCHECK(!IsMoreDataBuffered());
+  DCHECK(!parser_->IsMoreDataBuffered());
   parser_.reset();
   return new HttpBasicStream(connection_.release(), NULL, using_proxy_);
 }
@@ -98,10 +98,6 @@ bool HttpBasicStream::CanFindEndOfResponse() const {
   return parser_->CanFindEndOfResponse();
 }
 
-bool HttpBasicStream::IsMoreDataBuffered() const {
-  return parser_->IsMoreDataBuffered();
-}
-
 bool HttpBasicStream::IsConnectionReused() const {
   return parser_->IsConnectionReused();
 }
@@ -112,6 +108,11 @@ void HttpBasicStream::SetConnectionReused() {
 
 bool HttpBasicStream::IsConnectionReusable() const {
   return parser_->IsConnectionReusable();
+}
+
+bool HttpBasicStream::GetLoadTimingInfo(
+    LoadTimingInfo* load_timing_info) const {
+  return connection_->GetLoadTimingInfo(IsConnectionReused(), load_timing_info);
 }
 
 void HttpBasicStream::GetSSLInfo(SSLInfo* ssl_info) {

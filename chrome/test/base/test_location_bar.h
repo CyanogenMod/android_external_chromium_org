@@ -9,7 +9,7 @@
 #include "base/string16.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "content/public/common/page_transition_types.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class TestLocationBar : public LocationBar {
  public:
@@ -39,7 +39,6 @@ class TestLocationBar : public LocationBar {
   virtual void UpdateContentSettingsIcons() OVERRIDE {}
   virtual void UpdatePageActions() OVERRIDE {}
   virtual void InvalidatePageActions() OVERRIDE {}
-  virtual void UpdateWebIntentsButton() OVERRIDE {}
   virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE {}
   virtual void SaveStateToContents(content::WebContents* contents) OVERRIDE {}
   virtual void Revert() OVERRIDE {}

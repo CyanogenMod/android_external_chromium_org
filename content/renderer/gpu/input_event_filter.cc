@@ -13,9 +13,10 @@ using WebKit::WebInputEvent;
 
 namespace content {
 
-InputEventFilter::InputEventFilter(IPC::Listener* main_listener,
-                                   base::MessageLoopProxy* target_loop,
-                                   const Handler& handler)
+InputEventFilter::InputEventFilter(
+    IPC::Listener* main_listener,
+    const scoped_refptr<base::MessageLoopProxy>& target_loop,
+    const Handler& handler)
     : main_loop_(base::MessageLoopProxy::current()),
       main_listener_(main_listener),
       sender_(NULL),
@@ -38,8 +39,7 @@ void InputEventFilter::RemoveRoute(int routing_id) {
 void InputEventFilter::DidHandleInputEvent() {
   DCHECK(target_loop_->BelongsToCurrentThread());
 
-  bool processed = true;
-  SendACK(messages_.front(), processed);
+  SendACK(messages_.front(), INPUT_EVENT_ACK_STATE_CONSUMED);
   messages_.pop();
 }
 
@@ -56,8 +56,7 @@ void InputEventFilter::DidNotHandleInputEvent(bool send_to_widget) {
                    this, messages_.front()));
   } else {
     TRACE_EVENT0("InputEventFilter::DidNotHandleInputEvent", "LeaveUnhandled");
-    bool processed = false;
-    SendACK(messages_.front(), processed);
+    SendACK(messages_.front(), INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
   }
   messages_.pop();
 }
@@ -85,10 +84,6 @@ bool InputEventFilter::OnMessageReceived(const IPC::Message& message) {
       return false;
   }
 
-  const WebInputEvent* event = CrackMessage(message);
-  if (event->type == WebInputEvent::Undefined)
-    return false;
-
   target_loop_->PostTask(
       FROM_HERE,
       base::Bind(&InputEventFilter::ForwardToHandler, this, message));
@@ -101,12 +96,9 @@ const WebInputEvent* InputEventFilter::CrackMessage(
   DCHECK(message.type() == ViewMsg_HandleInputEvent::ID);
 
   PickleIterator iter(message);
-  const char* data;
-  int data_length;
-  if (!message.ReadData(&iter, &data, &data_length))
-    return NULL;
-
-  return reinterpret_cast<const WebInputEvent*>(data);
+  const WebInputEvent* event = NULL;
+  IPC::ParamTraits<IPC::WebInputEventPointer>::Read(&message, &iter, &event);
+  return event;
 }
 
 InputEventFilter::~InputEventFilter() {
@@ -130,25 +122,28 @@ void InputEventFilter::ForwardToHandler(const IPC::Message& message) {
   handler_.Run(message.routing_id(), CrackMessage(message));
 }
 
-void InputEventFilter::SendACK(const IPC::Message& message, bool processed) {
+void InputEventFilter::SendACK(const IPC::Message& message,
+                               InputEventAckState ack_result) {
   DCHECK(target_loop_->BelongsToCurrentThread());
 
   io_loop_->PostTask(
       FROM_HERE,
       base::Bind(&InputEventFilter::SendACKOnIOThread, this,
-                 message.routing_id(), CrackMessage(message)->type, processed));
+                 message.routing_id(), CrackMessage(message)->type,
+                 ack_result));
 }
 
-void InputEventFilter::SendACKOnIOThread(int routing_id,
-                                         WebInputEvent::Type event_type,
-                                         bool processed) {
+void InputEventFilter::SendACKOnIOThread(
+    int routing_id,
+    WebInputEvent::Type event_type,
+    InputEventAckState ack_result) {
   DCHECK(io_loop_->BelongsToCurrentThread());
 
   if (!sender_)
     return;  // Filter was removed.
 
   sender_->Send(
-      new ViewHostMsg_HandleInputEvent_ACK(routing_id, event_type, processed));
+      new ViewHostMsg_HandleInputEvent_ACK(routing_id, event_type, ack_result));
 }
 
 }  // namespace content

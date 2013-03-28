@@ -23,6 +23,12 @@
 #include "ui/base/win/scoped_ole_initializer.h"
 #endif
 
+namespace aura {
+namespace test {
+class AuraTestHelper;
+}
+}
+
 namespace gfx {
 class Size;
 }
@@ -141,6 +147,10 @@ class ViewEventTestBase : public views::WidgetDelegate,
 
 #if defined(OS_WIN)
   ui::ScopedOleInitializer ole_initializer_;
+#endif
+
+#if defined(USE_AURA)
+  scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(ViewEventTestBase);

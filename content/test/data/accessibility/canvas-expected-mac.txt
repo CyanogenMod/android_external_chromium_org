@@ -1,7 +1,7 @@
-AXWebArea subrole=(null) title='' value=''
-    AXGroup subrole=(null) title='' value=''
-        AXImage subrole=(null) title='' value=''
-            AXStaticText subrole=(null) title='' value=''
-        AXGroup subrole=(null) title='' value=''
-            AXLink subrole=(null) title='' value=''
-                AXStaticText subrole=(null) title='' value=''
+AXWebArea
+    AXGroup
+        AXImage
+            AXStaticText value='Static fallback'
+        AXGroup
+            AXLink title='Interactive fallback'
+                AXStaticText value='Interactive fallback'

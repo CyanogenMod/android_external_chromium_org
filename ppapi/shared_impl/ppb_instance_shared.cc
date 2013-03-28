@@ -6,6 +6,8 @@
 
 #include <string>
 
+#include "base/debug/trace_event.h"
+#include "base/threading/platform_thread.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_input_event.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
@@ -23,13 +25,13 @@ PPB_Instance_Shared::~PPB_Instance_Shared() {
 }
 
 void PPB_Instance_Shared::Log(PP_Instance instance,
-                              PP_LogLevel_Dev level,
+                              PP_LogLevel level,
                               PP_Var value) {
   LogWithSource(instance, level, PP_MakeUndefined(), value);
 }
 
 void PPB_Instance_Shared::LogWithSource(PP_Instance instance,
-                                        PP_LogLevel_Dev level,
+                                        PP_LogLevel level,
                                         PP_Var source,
                                         PP_Var value) {
   // The source defaults to empty if it's not a string. The PpapiGlobals

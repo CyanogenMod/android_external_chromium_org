@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "jingle/notifier/base/const_communicator.h"
 #include "jingle/notifier/base/gaia_token_pre_xmpp_auth.h"
 #include "jingle/notifier/listener/xml_element_util.h"
@@ -137,6 +137,7 @@ void SingleLoginAttempt::OnError(buzz::XmppEngine::Error error, int subcode,
   }
 
   if (error == buzz::XmppEngine::ERROR_UNAUTHORIZED) {
+    DVLOG(1) << "Credentials rejected";
     delegate_->OnCredentialsRejected();
     return;
   }
@@ -148,7 +149,7 @@ void SingleLoginAttempt::OnError(buzz::XmppEngine::Error error, int subcode,
 
   ++current_settings_;
   if (current_settings_ == settings_list_.end()) {
-    VLOG(1) << "Could not connect to any XMPP server";
+    DVLOG(1) << "Could not connect to any XMPP server";
     delegate_->OnSettingsExhausted();
     return;
   }

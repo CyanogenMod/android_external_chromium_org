@@ -7,9 +7,9 @@
 
 #include "base/values.h"
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
-#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/ui/webui/ntp/android/partner_bookmarks_shim.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
 // The handler for Javascript messages related to the bookmarks.
@@ -58,6 +58,8 @@ class BookmarksHandler : public content::WebUIMessageHandler,
   void HandleGetBookmarks(const ListValue* args);
   // Callback for the "deleteBookmark" message.
   void HandleDeleteBookmark(const ListValue* args);
+  // Callback for the "editBookmark" message.
+  void HandleEditBookmark(const ListValue* args);
   // Callback for the "createHomeScreenBookmarkShortcut" message.  Used when
   // creating a shortcut on the home screen that should open the bookmark
   // specified in |args|.
@@ -99,7 +101,7 @@ class BookmarksHandler : public content::WebUIMessageHandler,
   bool extensive_changes_;
 
   // Used for loading bookmark node.
-  CancelableRequestConsumerTSimple<const BookmarkNode*> cancelable_consumer_;
+  CancelableTaskTracker cancelable_task_tracker_;
 
   // Generates the string encoded ID to be used by the NTP.
   std::string GetBookmarkIdForNtp(const BookmarkNode* node);
@@ -131,7 +133,7 @@ class BookmarksHandler : public content::WebUIMessageHandler,
   // Called once the favicon is loaded during creation of the bookmark shortcuts
   // and is available for use.
   void OnShortcutFaviconDataAvailable(
-      FaviconService::Handle handle,
+      const BookmarkNode* node,
       const history::FaviconBitmapResult& bitmap_result);
 
   DISALLOW_COPY_AND_ASSIGN(BookmarksHandler);

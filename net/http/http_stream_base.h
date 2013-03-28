@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
+#include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
 
 namespace net {
@@ -26,9 +27,9 @@ class HttpRequestHeaders;
 struct HttpRequestInfo;
 class HttpResponseInfo;
 class IOBuffer;
+struct LoadTimingInfo;
 class SSLCertRequestInfo;
 class SSLInfo;
-class UploadDataStream;
 
 class NET_EXPORT_PRIVATE HttpStreamBase {
  public:
@@ -36,8 +37,10 @@ class NET_EXPORT_PRIVATE HttpStreamBase {
   virtual ~HttpStreamBase() {}
 
   // Initialize stream.  Must be called before calling SendRequest().
+  // |request_info| must outlive the HttpStreamBase.
   // Returns a net error code, possibly ERR_IO_PENDING.
   virtual int InitializeStream(const HttpRequestInfo* request_info,
+                               RequestPriority priority,
                                const BoundNetLog& net_log,
                                const CompletionCallback& callback) = 0;
 
@@ -45,8 +48,8 @@ class NET_EXPORT_PRIVATE HttpStreamBase {
   // ERR_IO_PENDING is returned if the operation could not be completed
   // synchronously, in which case the result will be passed to the callback
   // when available. Returns OK on success.
+  // |response| must outlive the HttpStreamBase.
   virtual int SendRequest(const HttpRequestHeaders& request_headers,
-                          UploadDataStream* request_body,
                           HttpResponseInfo* response,
                           const CompletionCallback& callback) = 0;
 
@@ -91,6 +94,9 @@ class NET_EXPORT_PRIVATE HttpStreamBase {
   // the response headers indicate either chunked encoding or content length.
   // If neither is sent, the server must close the connection for us to detect
   // the end of the response.
+  // TODO(rch): Rename this method, so that it is clear why it exists
+  // particularly as it applies to QUIC and SPDY for which the end of the
+  // response is always findable.
   virtual bool CanFindEndOfResponse() const = 0;
 
   // A stream exists on top of a connection.  If the connection has been used
@@ -103,6 +109,17 @@ class NET_EXPORT_PRIVATE HttpStreamBase {
   // Checks whether the current state of the underlying connection
   // allows it to be reused.
   virtual bool IsConnectionReusable() const = 0;
+
+  // Populates the connection establishment part of |load_timing_info|, and
+  // socket ID.  |load_timing_info| must have all null times when called.
+  // Returns false and does nothing if there is no underlying connection, either
+  // because one has yet to be assigned to the stream, or because the underlying
+  // socket has been closed.
+  //
+  // In practice, this means that this function will always succeed any time
+  // between when the full headers have been received and the stream has been
+  // closed.
+  virtual bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const = 0;
 
   // Get the SSLInfo associated with this stream's connection.  This should
   // only be called for streams over SSL sockets, otherwise the behavior is

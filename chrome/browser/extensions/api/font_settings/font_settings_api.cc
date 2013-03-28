@@ -9,21 +9,23 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/json/json_writer.h"
-#include "base/stringprintf.h"
+#include "base/lazy_instance.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/preference/preference_helpers.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/api/font_settings.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/pref_names_util.h"
 #include "content/public/browser/font_list_async.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/error_utils.h"
 
 #if defined(OS_WIN)
 #include "ui/gfx/font.h"
@@ -65,9 +67,9 @@ std::string GetFontNamePrefPath(fonts::GenericFamily generic_family_enum,
   if (script.empty())
     script = prefs::kWebKitCommonScript;
   std::string generic_family = fonts::ToString(generic_family_enum);
-  return StringPrintf(kWebKitFontPrefFormat,
-                      generic_family.c_str(),
-                      script.c_str());
+  return base::StringPrintf(kWebKitFontPrefFormat,
+                            generic_family.c_str(),
+                            script.c_str());
 }
 
 // Returns the localized name of a font so that it can be matched within the
@@ -85,13 +87,14 @@ std::string MaybeGetLocalizedFontName(const std::string& font_name) {
 }
 
 // Registers |obs| to observe per-script font prefs under the path |map_name|.
-void RegisterFontFamilyMapObserver(PrefChangeRegistrar* registrar,
-                                   const char* map_name,
-                                   PrefObserver* obs) {
+void RegisterFontFamilyMapObserver(
+    PrefChangeRegistrar* registrar,
+    const char* map_name,
+    const PrefChangeRegistrar::NamedChangeCallback& callback) {
   for (size_t i = 0; i < prefs::kWebKitScriptsForFontFamilyMapsLength; ++i) {
     const char* script = prefs::kWebKitScriptsForFontFamilyMaps[i];
     std::string pref_name = base::StringPrintf("%s.%s", map_name, script);
-    registrar->Add(pref_name.c_str(), obs);
+    registrar->Add(pref_name.c_str(), callback);
   }
 }
 
@@ -111,20 +114,24 @@ FontSettingsEventRouter::FontSettingsEventRouter(
                    kOnMinimumFontSizeChanged,
                    kPixelSizeKey);
 
+  PrefChangeRegistrar::NamedChangeCallback callback =
+      base::Bind(&FontSettingsEventRouter::OnFontFamilyMapPrefChanged,
+                 base::Unretained(this));
   RegisterFontFamilyMapObserver(&registrar_,
-                                prefs::kWebKitStandardFontFamilyMap, this);
+                                prefs::kWebKitStandardFontFamilyMap, callback);
   RegisterFontFamilyMapObserver(&registrar_,
-                                prefs::kWebKitSerifFontFamilyMap, this);
+                                prefs::kWebKitSerifFontFamilyMap, callback);
   RegisterFontFamilyMapObserver(&registrar_,
-                                prefs::kWebKitSansSerifFontFamilyMap, this);
+                                prefs::kWebKitSansSerifFontFamilyMap, callback);
   RegisterFontFamilyMapObserver(&registrar_,
-                                prefs::kWebKitFixedFontFamilyMap, this);
+                                prefs::kWebKitFixedFontFamilyMap, callback);
   RegisterFontFamilyMapObserver(&registrar_,
-                                prefs::kWebKitCursiveFontFamilyMap, this);
+                                prefs::kWebKitCursiveFontFamilyMap, callback);
   RegisterFontFamilyMapObserver(&registrar_,
-                                prefs::kWebKitFantasyFontFamilyMap, this);
+                                prefs::kWebKitFantasyFontFamilyMap, callback);
   RegisterFontFamilyMapObserver(&registrar_,
-                                prefs::kWebKitPictographFontFamilyMap, this);
+                                prefs::kWebKitPictographFontFamilyMap,
+                                callback);
 }
 
 FontSettingsEventRouter::~FontSettingsEventRouter() {}
@@ -132,31 +139,19 @@ FontSettingsEventRouter::~FontSettingsEventRouter() {}
 void FontSettingsEventRouter::AddPrefToObserve(const char* pref_name,
                                                const char* event_name,
                                                const char* key) {
-  registrar_.Add(pref_name, this);
-  pref_event_map_[pref_name] = std::make_pair(event_name, key);
+  registrar_.Add(pref_name,
+                 base::Bind(&FontSettingsEventRouter::OnFontPrefChanged,
+                            base::Unretained(this),
+                            event_name, key));
 }
 
-void FontSettingsEventRouter::OnPreferenceChanged(
-    PrefServiceBase* pref_service,
+void FontSettingsEventRouter::OnFontFamilyMapPrefChanged(
     const std::string& pref_name) {
-  bool incognito = (pref_service != profile_->GetPrefs());
-  // We're only observing pref changes on the regular profile.
-  DCHECK(!incognito);
-
-  PrefEventMap::iterator iter = pref_event_map_.find(pref_name);
-  if (iter != pref_event_map_.end()) {
-    const std::string& event_name = iter->second.first;
-    const std::string& key = iter->second.second;
-    OnFontPrefChanged(pref_service, pref_name, event_name, key, incognito);
-    return;
-  }
-
   std::string generic_family;
   std::string script;
   if (pref_names_util::ParseFontNamePrefPath(pref_name, &generic_family,
                                              &script)) {
-    OnFontNamePrefChanged(pref_service, pref_name, generic_family, script,
-                          incognito);
+    OnFontNamePrefChanged(pref_name, generic_family, script);
     return;
   }
 
@@ -164,12 +159,10 @@ void FontSettingsEventRouter::OnPreferenceChanged(
 }
 
 void FontSettingsEventRouter::OnFontNamePrefChanged(
-    PrefServiceBase* pref_service,
     const std::string& pref_name,
     const std::string& generic_family,
-    const std::string& script,
-    bool incognito) {
-  const PrefServiceBase::Preference* pref = pref_service->FindPreference(
+    const std::string& script) {
+  const PrefService::Preference* pref = registrar_.prefs()->FindPreference(
       pref_name.c_str());
   CHECK(pref);
 
@@ -192,17 +185,15 @@ void FontSettingsEventRouter::OnFontNamePrefChanged(
       kOnFontChanged,
       &args,
       APIPermission::kFontSettings,
-      incognito,
+      false,
       pref_name);
 }
 
 void FontSettingsEventRouter::OnFontPrefChanged(
-    PrefServiceBase* pref_service,
-    const std::string& pref_name,
     const std::string& event_name,
     const std::string& key,
-    bool incognito) {
-  const PrefServiceBase::Preference* pref = pref_service->FindPreference(
+    const std::string& pref_name) {
+  const PrefService::Preference* pref = registrar_.prefs()->FindPreference(
       pref_name.c_str());
   CHECK(pref);
 
@@ -216,11 +207,26 @@ void FontSettingsEventRouter::OnFontPrefChanged(
       event_name,
       &args,
       APIPermission::kFontSettings,
-      incognito,
+      false,
       pref_name);
 }
 
-bool ClearFontFunction::RunImpl() {
+FontSettingsAPI::FontSettingsAPI(Profile* profile)
+    : font_settings_event_router_(new FontSettingsEventRouter(profile)) {
+}
+
+FontSettingsAPI::~FontSettingsAPI() {
+}
+
+static base::LazyInstance<ProfileKeyedAPIFactory<FontSettingsAPI> >
+g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+ProfileKeyedAPIFactory<FontSettingsAPI>* FontSettingsAPI::GetFactoryInstance() {
+  return &g_factory.Get();
+}
+
+bool FontSettingsClearFontFunction::RunImpl() {
   if (profile_->IsOffTheRecord()) {
     error_ = kSetFromIncognitoError;
     return false;
@@ -237,14 +243,15 @@ bool ClearFontFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(
       profile_->GetPrefs()->FindPreference(pref_path.c_str()));
 
-  ExtensionPrefs* prefs = profile_->GetExtensionService()->extension_prefs();
+  ExtensionPrefs* prefs = extensions::ExtensionSystem::Get(profile_)->
+      extension_service()->extension_prefs();
   prefs->RemoveExtensionControlledPref(extension_id(),
                                        pref_path.c_str(),
                                        kExtensionPrefsScopeRegular);
   return true;
 }
 
-bool GetFontFunction::RunImpl() {
+bool FontSettingsGetFontFunction::RunImpl() {
   scoped_ptr<fonts::GetFont::Params> params(
       fonts::GetFont::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -277,7 +284,7 @@ bool GetFontFunction::RunImpl() {
   return true;
 }
 
-bool SetFontFunction::RunImpl() {
+bool FontSettingsSetFontFunction::RunImpl() {
   if (profile_->IsOffTheRecord()) {
     error_ = kSetFromIncognitoError;
     return false;
@@ -294,7 +301,8 @@ bool SetFontFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(
       profile_->GetPrefs()->FindPreference(pref_path.c_str()));
 
-  ExtensionPrefs* prefs = profile_->GetExtensionService()->extension_prefs();
+  ExtensionPrefs* prefs = extensions::ExtensionSystem::Get(profile_)->
+      extension_service()->extension_prefs();
   prefs->SetExtensionControlledPref(
       extension_id(),
       pref_path.c_str(),
@@ -303,18 +311,19 @@ bool SetFontFunction::RunImpl() {
   return true;
 }
 
-bool GetFontListFunction::RunImpl() {
+bool FontSettingsGetFontListFunction::RunImpl() {
   content::GetFontListAsync(
-      Bind(&GetFontListFunction::FontListHasLoaded, this));
+      Bind(&FontSettingsGetFontListFunction::FontListHasLoaded, this));
   return true;
 }
 
-void GetFontListFunction::FontListHasLoaded(scoped_ptr<ListValue> list) {
+void FontSettingsGetFontListFunction::FontListHasLoaded(
+    scoped_ptr<ListValue> list) {
   bool success = CopyFontsToResult(list.get());
   SendResponse(success);
 }
 
-bool GetFontListFunction::CopyFontsToResult(ListValue* fonts) {
+bool FontSettingsGetFontListFunction::CopyFontsToResult(ListValue* fonts) {
   scoped_ptr<ListValue> result(new ListValue());
   for (ListValue::iterator it = fonts->begin(); it != fonts->end(); ++it) {
     ListValue* font_list_value;
@@ -351,7 +360,8 @@ bool ClearFontPrefExtensionFunction::RunImpl() {
     return false;
   }
 
-  ExtensionPrefs* prefs = profile_->GetExtensionService()->extension_prefs();
+  ExtensionPrefs* prefs = extensions::ExtensionSystem::Get(profile_)->
+      extension_service()->extension_prefs();
   prefs->RemoveExtensionControlledPref(extension_id(),
                                        GetPrefName(),
                                        kExtensionPrefsScopeRegular);
@@ -392,7 +402,8 @@ bool SetFontPrefExtensionFunction::RunImpl() {
   Value* value;
   EXTENSION_FUNCTION_VALIDATE(details->Get(GetKey(), &value));
 
-  ExtensionPrefs* prefs = profile_->GetExtensionService()->extension_prefs();
+  ExtensionPrefs* prefs = extensions::ExtensionSystem::Get(profile_)->
+      extension_service()->extension_prefs();
   prefs->SetExtensionControlledPref(extension_id(),
                                     GetPrefName(),
                                     kExtensionPrefsScopeRegular,
@@ -400,63 +411,63 @@ bool SetFontPrefExtensionFunction::RunImpl() {
   return true;
 }
 
-const char* ClearDefaultFontSizeFunction::GetPrefName() {
+const char* FontSettingsClearDefaultFontSizeFunction::GetPrefName() {
   return prefs::kWebKitDefaultFontSize;
 }
 
-const char* GetDefaultFontSizeFunction::GetPrefName() {
+const char* FontSettingsGetDefaultFontSizeFunction::GetPrefName() {
   return prefs::kWebKitDefaultFontSize;
 }
 
-const char* GetDefaultFontSizeFunction::GetKey() {
+const char* FontSettingsGetDefaultFontSizeFunction::GetKey() {
   return kPixelSizeKey;
 }
 
-const char* SetDefaultFontSizeFunction::GetPrefName() {
+const char* FontSettingsSetDefaultFontSizeFunction::GetPrefName() {
   return prefs::kWebKitDefaultFontSize;
 }
 
-const char* SetDefaultFontSizeFunction::GetKey() {
+const char* FontSettingsSetDefaultFontSizeFunction::GetKey() {
   return kPixelSizeKey;
 }
 
-const char* ClearDefaultFixedFontSizeFunction::GetPrefName() {
+const char* FontSettingsClearDefaultFixedFontSizeFunction::GetPrefName() {
   return prefs::kWebKitDefaultFixedFontSize;
 }
 
-const char* GetDefaultFixedFontSizeFunction::GetPrefName() {
+const char* FontSettingsGetDefaultFixedFontSizeFunction::GetPrefName() {
   return prefs::kWebKitDefaultFixedFontSize;
 }
 
-const char* GetDefaultFixedFontSizeFunction::GetKey() {
+const char* FontSettingsGetDefaultFixedFontSizeFunction::GetKey() {
   return kPixelSizeKey;
 }
 
-const char* SetDefaultFixedFontSizeFunction::GetPrefName() {
+const char* FontSettingsSetDefaultFixedFontSizeFunction::GetPrefName() {
   return prefs::kWebKitDefaultFixedFontSize;
 }
 
-const char* SetDefaultFixedFontSizeFunction::GetKey() {
+const char* FontSettingsSetDefaultFixedFontSizeFunction::GetKey() {
   return kPixelSizeKey;
 }
 
-const char* ClearMinimumFontSizeFunction::GetPrefName() {
+const char* FontSettingsClearMinimumFontSizeFunction::GetPrefName() {
   return prefs::kWebKitMinimumFontSize;
 }
 
-const char* GetMinimumFontSizeFunction::GetPrefName() {
+const char* FontSettingsGetMinimumFontSizeFunction::GetPrefName() {
   return prefs::kWebKitMinimumFontSize;
 }
 
-const char* GetMinimumFontSizeFunction::GetKey() {
+const char* FontSettingsGetMinimumFontSizeFunction::GetKey() {
   return kPixelSizeKey;
 }
 
-const char* SetMinimumFontSizeFunction::GetPrefName() {
+const char* FontSettingsSetMinimumFontSizeFunction::GetPrefName() {
   return prefs::kWebKitMinimumFontSize;
 }
 
-const char* SetMinimumFontSizeFunction::GetKey() {
+const char* FontSettingsSetMinimumFontSizeFunction::GetKey() {
   return kPixelSizeKey;
 }
 

@@ -17,6 +17,18 @@
 namespace views {
 namespace examples {
 
+namespace {
+
+ui::TableColumn TestTableColumn(int id, const std::string& title) {
+  ui::TableColumn column;
+  column.id = id;
+  column.title = ASCIIToUTF16(title.c_str());
+  column.sortable = true;
+  return column;
+}
+
+}  // namespace
+
 TableExample::TableExample() : ExampleBase("Table") , table_(NULL) {
 }
 
@@ -27,7 +39,6 @@ TableExample::~TableExample() {
 }
 
 void TableExample::CreateExampleView(View* container) {
-#if defined(OS_WIN) && !defined(USE_AURA)
   column1_visible_checkbox_ = new Checkbox(
       ASCIIToUTF16("Fruit column visible"));
   column1_visible_checkbox_->SetChecked(true);
@@ -44,23 +55,22 @@ void TableExample::CreateExampleView(View* container) {
       ASCIIToUTF16("Price column visible"));
   column4_visible_checkbox_->SetChecked(true);
   column4_visible_checkbox_->set_listener(this);
-#endif
 
   GridLayout* layout = new GridLayout(container);
   container->SetLayoutManager(layout);
 
   std::vector<ui::TableColumn> columns;
-  columns.push_back(ui::TableColumn(0, ASCIIToUTF16("Fruit"),
-                                    ui::TableColumn::LEFT, 100));
-#if defined(OS_WIN) && !defined(USE_AURA)
-  columns.push_back(ui::TableColumn(1, ASCIIToUTF16("Color"),
-                                    ui::TableColumn::LEFT, 100));
-  columns.push_back(ui::TableColumn(2, ASCIIToUTF16("Origin"),
-                                    ui::TableColumn::LEFT, 100));
-  columns.push_back(ui::TableColumn(3, ASCIIToUTF16("Price"),
-                                    ui::TableColumn::LEFT, 100));
-#endif
+  columns.push_back(TestTableColumn(0, "Fruit"));
+  columns[0].percent = 1;
+  columns.push_back(TestTableColumn(1, "Color"));
+  columns.push_back(TestTableColumn(2, "Origin"));
+  columns.push_back(TestTableColumn(3, "Price"));
+  columns.back().alignment = ui::TableColumn::RIGHT;
   table_ = new TableView(this, columns, ICON_AND_TEXT, true, true, true);
+  // TODO(sky): remove ifdef once we get rid of win32 table.
+#if defined(USE_AURA)
+  table_->SetGrouper(this);
+#endif
   table_->SetObserver(this);
   icon1_.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
   icon1_.allocPixels();
@@ -90,12 +100,10 @@ void TableExample::CreateExampleView(View* container) {
 
   layout->StartRow(0 /* no expand */, 1);
 
-#if defined(OS_WIN) && !defined(USE_AURA)
   layout->AddView(column1_visible_checkbox_);
   layout->AddView(column2_visible_checkbox_);
   layout->AddView(column3_visible_checkbox_);
   layout->AddView(column4_visible_checkbox_);
-#endif
 }
 
 int TableExample::RowCount() {
@@ -114,10 +122,24 @@ string16 TableExample::GetText(int row, int column_id) {
 }
 
 gfx::ImageSkia TableExample::GetIcon(int row) {
-  return row % 2 ? gfx::ImageSkia(icon1_) : gfx::ImageSkia(icon2_);
+  SkBitmap row_icon = row % 2 ? icon1_ : icon2_;
+  return gfx::ImageSkia::CreateFrom1xBitmap(row_icon);
 }
 
 void TableExample::SetObserver(ui::TableModelObserver* observer) {}
+
+void TableExample::GetGroupRange(int model_index, GroupRange* range) {
+  if (model_index < 2) {
+    range->start = 0;
+    range->length = 2;
+  } else if (model_index > 6) {
+    range->start = 7;
+    range->length = 3;
+  } else {
+    range->start = model_index;
+    range->length = 1;
+  }
+}
 
 void TableExample::OnSelectionChanged() {
   PrintStatus("Selected: %s",
@@ -133,12 +155,7 @@ void TableExample::OnMiddleClick() {}
 
 void TableExample::OnKeyDown(ui::KeyboardCode virtual_keycode) {}
 
-void TableExample::OnTableViewDelete(TableView* table_view) {}
-
-void TableExample::OnTableView2Delete(TableView2* table_view) {}
-
 void TableExample::ButtonPressed(Button* sender, const ui::Event& event) {
-#if defined(OS_WIN) && !defined(USE_AURA)
   int index = 0;
   bool show = true;
   if (sender == column1_visible_checkbox_) {
@@ -155,7 +172,6 @@ void TableExample::ButtonPressed(Button* sender, const ui::Event& event) {
     show = column4_visible_checkbox_->checked();
   }
   table_->SetColumnVisibility(index, show);
-#endif
 }
 
 }  // namespace examples

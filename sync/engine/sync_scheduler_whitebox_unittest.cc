@@ -53,7 +53,8 @@ class SyncSchedulerWhiteboxTest : public testing::Test {
             workers, &extensions_activity_monitor_,
             throttled_data_type_tracker_.get(),
             std::vector<SyncEngineEventListener*>(), NULL, NULL,
-            true  /* enable keystore encryption */));
+            true,  // enable keystore encryption
+            "fake_invalidator_client_id"));
     context_->set_notifications_enabled(true);
     context_->set_account_name("Test");
     scheduler_.reset(
@@ -92,8 +93,9 @@ class SyncSchedulerWhiteboxTest : public testing::Test {
   }
 
   SyncSchedulerImpl::JobProcessDecision DecideOnJob(
-      const SyncSessionJob& job) {
-    return scheduler_->DecideOnJob(job);
+      const SyncSessionJob& job,
+      SyncSchedulerImpl::JobPriority priority) {
+    return scheduler_->DecideOnJob(job, priority);
   }
 
   void InitializeSyncerOnNormalMode() {
@@ -105,8 +107,12 @@ class SyncSchedulerWhiteboxTest : public testing::Test {
       SyncSessionJob::Purpose purpose) {
     scoped_ptr<SyncSession> s(scheduler_->CreateSyncSession(SyncSourceInfo()));
     SyncSessionJob job(purpose, TimeTicks::Now(), s.Pass(),
-        ConfigurationParams(), FROM_HERE);
-    return DecideOnJob(job);
+        ConfigurationParams());
+    return DecideOnJob(job, SyncSchedulerImpl::NORMAL_PRIORITY);
+  }
+
+  bool ShouldPoll() {
+    return scheduler_->ShouldPoll();
   }
 
   SyncSessionContext* context() { return context_.get(); }
@@ -156,10 +162,11 @@ TEST_F(SyncSchedulerWhiteboxTest, SaveNudgeWhileTypeThrottled) {
   SyncSessionJob job(SyncSessionJob::NUDGE,
                      TimeTicks::Now(),
                      s.Pass(),
-                     ConfigurationParams(),
-                     FROM_HERE);
-  SyncSchedulerImpl::JobProcessDecision decision = DecideOnJob(job);
-  EXPECT_EQ(decision, SyncSchedulerImpl::SAVE);
+                     ConfigurationParams());
+  SyncSchedulerImpl::JobProcessDecision decision =
+      DecideOnJob(job, SyncSchedulerImpl::NORMAL_PRIORITY);
+  // TODO(tim): This shouldn't drop. Bug 177659.
+  EXPECT_EQ(decision, SyncSchedulerImpl::DROP);
 }
 
 TEST_F(SyncSchedulerWhiteboxTest, ContinueNudge) {
@@ -171,23 +178,27 @@ TEST_F(SyncSchedulerWhiteboxTest, ContinueNudge) {
   EXPECT_EQ(decision, SyncSchedulerImpl::CONTINUE);
 }
 
-TEST_F(SyncSchedulerWhiteboxTest, DropPoll) {
-  InitializeSyncerOnNormalMode();
-  SetMode(SyncScheduler::CONFIGURATION_MODE);
-
-  SyncSchedulerImpl::JobProcessDecision decision = CreateAndDecideJob(
-      SyncSessionJob::POLL);
-
-  EXPECT_EQ(decision, SyncSchedulerImpl::DROP);
-}
-
 TEST_F(SyncSchedulerWhiteboxTest, ContinuePoll) {
   InitializeSyncerOnNormalMode();
+  EXPECT_TRUE(ShouldPoll());
+}
 
-  SyncSchedulerImpl::JobProcessDecision decision = CreateAndDecideJob(
-      SyncSessionJob::POLL);
+TEST_F(SyncSchedulerWhiteboxTest, DropPollInConfigureMode) {
+  InitializeSyncerOnNormalMode();
+  SetMode(SyncScheduler::CONFIGURATION_MODE);
+  EXPECT_FALSE(ShouldPoll());
+}
 
-  EXPECT_EQ(decision, SyncSchedulerImpl::CONTINUE);
+TEST_F(SyncSchedulerWhiteboxTest, DropPollWhenThrottled) {
+  InitializeSyncerOnNormalMode();
+  SetWaitIntervalToThrottled();
+  EXPECT_FALSE(ShouldPoll());
+}
+
+TEST_F(SyncSchedulerWhiteboxTest, DropPollInBackoff) {
+  InitializeSyncerOnNormalMode();
+  SetWaitIntervalToExponentialBackoff();
+  EXPECT_FALSE(ShouldPoll());
 }
 
 TEST_F(SyncSchedulerWhiteboxTest, ContinueConfiguration) {
@@ -254,10 +265,10 @@ TEST_F(SyncSchedulerWhiteboxTest, ContinueCanaryJobConfig) {
 
   SyncSessionJob job(SyncSessionJob::CONFIGURATION,
                      TimeTicks::Now(), scoped_ptr<SyncSession>(),
-                     ConfigurationParams(), FROM_HERE);
+                     ConfigurationParams());
 
-  job.GrantCanaryPrivilege();
-  SyncSchedulerImpl::JobProcessDecision decision = DecideOnJob(job);
+  SyncSchedulerImpl::JobProcessDecision decision =
+      DecideOnJob(job, SyncSchedulerImpl::CANARY_PRIORITY);
 
   EXPECT_EQ(decision, SyncSchedulerImpl::CONTINUE);
 }

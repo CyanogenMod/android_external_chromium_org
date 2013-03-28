@@ -99,12 +99,12 @@ void CancelKeyRequest(PP_Instance instance, PP_Var session_id_arg) {
 void Decrypt(PP_Instance instance,
              PP_Resource encrypted_resource,
              const PP_EncryptedBlockInfo* encrypted_block_info) {
+  pp::Buffer_Dev encrypted_block(encrypted_resource);
+
   void* object =
       Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
   if (!object)
     return;
-
-  pp::Buffer_Dev encrypted_block(pp::PassRef(), encrypted_resource);
 
   static_cast<ContentDecryptor_Private*>(object)->Decrypt(
       encrypted_block,
@@ -115,12 +115,12 @@ void InitializeAudioDecoder(
     PP_Instance instance,
     const PP_AudioDecoderConfig* decoder_config,
     PP_Resource extra_data_resource) {
+  pp::Buffer_Dev extra_data_buffer(extra_data_resource);
+
   void* object =
       Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
   if (!object)
     return;
-
-  pp::Buffer_Dev extra_data_buffer(pp::PASS_REF, extra_data_resource);
 
   static_cast<ContentDecryptor_Private*>(object)->InitializeAudioDecoder(
       *decoder_config,
@@ -131,12 +131,12 @@ void InitializeVideoDecoder(
     PP_Instance instance,
     const PP_VideoDecoderConfig* decoder_config,
     PP_Resource extra_data_resource) {
+  pp::Buffer_Dev extra_data_buffer(extra_data_resource);
+
   void* object =
       Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
   if (!object)
     return;
-
-  pp::Buffer_Dev extra_data_buffer(pp::PASS_REF, extra_data_resource);
 
   static_cast<ContentDecryptor_Private*>(object)->InitializeVideoDecoder(
       *decoder_config,
@@ -170,12 +170,12 @@ void DecryptAndDecode(PP_Instance instance,
                       PP_DecryptorStreamType decoder_type,
                       PP_Resource encrypted_resource,
                       const PP_EncryptedBlockInfo* encrypted_block_info) {
+  pp::Buffer_Dev encrypted_buffer(encrypted_resource);
+
   void* object =
       Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
   if (!object)
     return;
-
-  pp::Buffer_Dev encrypted_buffer(pp::PassRef(), encrypted_resource);
 
   static_cast<ContentDecryptor_Private*>(object)->DecryptAndDecode(
       decoder_type,
@@ -244,7 +244,7 @@ void ContentDecryptor_Private::KeyAdded(const std::string& key_system,
 
 void ContentDecryptor_Private::KeyMessage(const std::string& key_system,
                                           const std::string& session_id,
-                                          pp::Buffer_Dev message,
+                                          pp::VarArrayBuffer message,
                                           const std::string& default_url) {
   if (has_interface<PPB_ContentDecryptor_Private>()) {
     pp::Var key_system_var(key_system);
@@ -254,7 +254,7 @@ void ContentDecryptor_Private::KeyMessage(const std::string& key_system,
         associated_instance_.pp_instance(),
         key_system_var.pp_var(),
         session_id_var.pp_var(),
-        message.pp_resource(),
+        message.pp_var(),
         default_url_var.pp_var());
   }
 }

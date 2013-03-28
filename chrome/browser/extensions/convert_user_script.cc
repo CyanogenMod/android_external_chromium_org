@@ -8,20 +8,21 @@
 #include <vector>
 
 #include "base/base64.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/user_script.h"
 #include "crypto/sha2.h"
+#include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
 
 namespace keys = extension_manifest_keys;
@@ -30,8 +31,8 @@ namespace values = extension_manifest_values;
 namespace extensions {
 
 scoped_refptr<Extension> ConvertUserScriptToExtension(
-    const FilePath& user_script_path, const GURL& original_url,
-    const FilePath& extensions_dir, string16* error) {
+    const base::FilePath& user_script_path, const GURL& original_url,
+    const base::FilePath& extensions_dir, string16* error) {
   std::string content;
   if (!file_util::ReadFileToString(user_script_path, &content)) {
     *error = ASCIIToUTF16("Could not read source file.");
@@ -50,14 +51,14 @@ scoped_refptr<Extension> ConvertUserScriptToExtension(
     return NULL;
   }
 
-  FilePath install_temp_dir =
+  base::FilePath install_temp_dir =
       extension_file_util::GetInstallTempDir(extensions_dir);
   if (install_temp_dir.empty()) {
     *error = ASCIIToUTF16("Could not get path to profile temporary directory.");
     return NULL;
   }
 
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   if (!temp_dir.CreateUniqueTempDirUnderPath(install_temp_dir)) {
     *error = ASCIIToUTF16("Could not create temporary directory.");
     return NULL;
@@ -155,8 +156,7 @@ scoped_refptr<Extension> ConvertUserScriptToExtension(
 
   root->Set(keys::kContentScripts, content_scripts);
 
-  FilePath manifest_path = temp_dir.path().Append(
-      Extension::kManifestFilename);
+  base::FilePath manifest_path = temp_dir.path().Append(kManifestFilename);
   JSONFileValueSerializer serializer(manifest_path);
   if (!serializer.Serialize(*root)) {
     *error = ASCIIToUTF16("Could not write JSON.");
@@ -175,7 +175,7 @@ scoped_refptr<Extension> ConvertUserScriptToExtension(
   std::string utf8_error;
   scoped_refptr<Extension> extension = Extension::Create(
       temp_dir.path(),
-      Extension::INTERNAL,
+      Manifest::INTERNAL,
       *root,
       Extension::NO_FLAGS,
       &utf8_error);

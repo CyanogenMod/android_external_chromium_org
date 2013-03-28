@@ -6,18 +6,18 @@
 #ifndef BASE_DEBUG_TRACE_EVENT_IMPL_H_
 #define BASE_DEBUG_TRACE_EVENT_IMPL_H_
 
-#include "build/build_config.h"
-
 #include <string>
 #include <vector>
 
 #include "base/callback.h"
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
 #include "base/string_util.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/thread.h"
 #include "base/timer.h"
 
 // Older style trace macros with explicit id and extra data
@@ -41,6 +41,8 @@ template <typename Type>
 struct StaticMemorySingletonTraits;
 
 namespace base {
+
+class WaitableEvent;
 
 namespace debug {
 
@@ -113,6 +115,20 @@ class BASE_EXPORT TraceEvent {
   unsigned char arg_types_[kTraceMaxNumArgs];
 };
 
+// TraceBuffer holds the events as they are collected.
+class BASE_EXPORT TraceBuffer {
+ public:
+  virtual ~TraceBuffer() {}
+
+  virtual void AddEvent(const TraceEvent& event) = 0;
+  virtual bool HasMoreEvents() const = 0;
+  virtual const TraceEvent& NextEvent() = 0;
+  virtual bool IsFull() const = 0;
+  virtual size_t CountEnabledByName(const unsigned char* category,
+                                    const std::string& event_name) const = 0;
+  virtual size_t Size() const = 0;
+  virtual const TraceEvent& GetEventAt(size_t index) const = 0;
+};
 
 // TraceResultBuffer collects and converts trace fragments returned by TraceLog
 // to JSON output.
@@ -157,6 +173,7 @@ class BASE_EXPORT TraceResultBuffer {
   bool append_comma_;
 };
 
+class TraceSamplingThread;
 
 class BASE_EXPORT TraceLog {
  public:
@@ -170,7 +187,24 @@ class BASE_EXPORT TraceLog {
     EVENT_WATCH_NOTIFICATION = 1 << 1
   };
 
+  // Options determines how the trace buffer stores data.
+  enum Options {
+    // Record until the trace buffer is full.
+    RECORD_UNTIL_FULL = 1 << 0,
+
+    // Record until the user ends the trace. The trace buffer is a fixed size
+    // and we use it as a ring buffer during recording.
+    RECORD_CONTINUOUSLY = 1 << 1,
+
+    // Enable the sampling profiler.
+    ENABLE_SAMPLING = 1 << 2
+  };
+
   static TraceLog* GetInstance();
+
+  // Convert the given string to trace options. Defaults to RECORD_UNTIL_FULL if
+  // the string does not provide valid options.
+  static Options TraceOptionsFromString(const std::string& str);
 
   // Get set of known categories. This can change as new code paths are reached.
   // The known categories are inserted into |categories|.
@@ -185,7 +219,8 @@ class BASE_EXPORT TraceLog {
   // Else if excluded_categories is non-empty, everything but those are traced.
   // Wildcards * and ? are supported (see MatchPattern in string_util.h).
   void SetEnabled(const std::vector<std::string>& included_categories,
-                  const std::vector<std::string>& excluded_categories);
+                  const std::vector<std::string>& excluded_categories,
+                  Options options);
 
   // |categories| is a comma-delimited list of category wildcards.
   // A category can have an optional '-' prefix to make it an excluded category.
@@ -195,22 +230,24 @@ class BASE_EXPORT TraceLog {
   // Example: SetEnabled("test_MyTest*");
   // Example: SetEnabled("test_MyTest*,test_OtherStuff");
   // Example: SetEnabled("-excluded_category1,-excluded_category2");
-  void SetEnabled(const std::string& categories);
+  void SetEnabled(const std::string& categories, Options options);
 
   // Retieves the categories set via a prior call to SetEnabled(). Only
   // meaningful if |IsEnabled()| is true.
   void GetEnabledTraceCategories(std::vector<std::string>* included_out,
                                  std::vector<std::string>* excluded_out);
 
+  Options trace_options() const { return trace_options_; }
+
   // Disable tracing for all categories.
   void SetDisabled();
   // Helper method to enable/disable tracing for all categories.
-  void SetEnabled(bool enabled);
-  bool IsEnabled() { return enabled_; }
+  void SetEnabled(bool enabled, Options options);
+  bool IsEnabled() { return !!enable_count_; }
 
 #if defined(OS_ANDROID)
-  static void InitATrace();
-  static bool IsATraceEnabled();
+  void StartATrace();
+  void StopATrace();
 #endif
 
   // Enabled state listeners give a callback when tracing is enabled or
@@ -242,6 +279,22 @@ class BASE_EXPORT TraceLog {
   typedef base::Callback<void(int)> NotificationCallback;
   void SetNotificationCallback(const NotificationCallback& cb);
 
+  // Not using base::Callback because of its limited by 7 parameteters.
+  // Also, using primitive type allows directly passsing callback from WebCore.
+  // WARNING: It is possible for the previously set callback to be called
+  // after a call to SetEventCallback() that replaces or clears the callback.
+  // This callback may be invoked on any thread.
+  typedef void (*EventCallback)(char phase,
+                                const unsigned char* category_enabled,
+                                const char* name,
+                                unsigned long long id,
+                                int num_args,
+                                const char* const arg_names[],
+                                const unsigned char arg_types[],
+                                const unsigned long long arg_values[],
+                                unsigned char flags);
+  void SetEventCallback(EventCallback cb);
+
   // Flush all collected events to the given output callback. The callback will
   // be called one or more times with IPC-bite-size chunks. The string format is
   // undefined. Use TraceResultBuffer to convert one or more trace strings to
@@ -255,24 +308,29 @@ class BASE_EXPORT TraceLog {
   static const char* GetCategoryName(const unsigned char* category_enabled);
 
   // Called by TRACE_EVENT* macros, don't call this directly.
-  // Returns the index in the internal vector of the event if it was added, or
-  //         -1 if the event was not added.
-  // On end events, the return value of the begin event can be specified along
-  // with a threshold in microseconds. If the elapsed time between begin and end
-  // is less than the threshold, the begin/end event pair is dropped.
   // If |copy| is set, |name|, |arg_name1| and |arg_name2| will be deep copied
   // into the event; see "Memory scoping note" and TRACE_EVENT_COPY_XXX above.
-  int AddTraceEvent(char phase,
-                    const unsigned char* category_enabled,
-                    const char* name,
-                    unsigned long long id,
-                    int num_args,
-                    const char** arg_names,
-                    const unsigned char* arg_types,
-                    const unsigned long long* arg_values,
-                    int threshold_begin_id,
-                    long long threshold,
-                    unsigned char flags);
+  void AddTraceEvent(char phase,
+                     const unsigned char* category_enabled,
+                     const char* name,
+                     unsigned long long id,
+                     int num_args,
+                     const char** arg_names,
+                     const unsigned char* arg_types,
+                     const unsigned long long* arg_values,
+                     unsigned char flags);
+  void AddTraceEventWithThreadIdAndTimestamp(
+      char phase,
+      const unsigned char* category_enabled,
+      const char* name,
+      unsigned long long id,
+      int thread_id,
+      const TimeTicks& timestamp,
+      int num_args,
+      const char** arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      unsigned char flags);
   static void AddTraceEventEtw(char phase,
                                const char* name,
                                const void* id,
@@ -296,6 +354,8 @@ class BASE_EXPORT TraceLog {
 
   // Exposed for unittesting:
 
+  void InstallWaitableEventForSamplingTesting(WaitableEvent* waitable_event);
+
   // Allows deleting our singleton instance.
   static void DeleteForTesting();
 
@@ -303,18 +363,32 @@ class BASE_EXPORT TraceLog {
   static void Resurrect();
 
   // Allow tests to inspect TraceEvents.
-  size_t GetEventsSize() const { return logged_events_.size(); }
+  size_t GetEventsSize() const { return logged_events_->Size(); }
   const TraceEvent& GetEventAt(size_t index) const {
-    DCHECK(index < logged_events_.size());
-    return logged_events_[index];
+    return logged_events_->GetEventAt(index);
   }
 
   void SetProcessID(int process_id);
+
+  // Allow setting an offset between the current TimeTicks time and the time
+  // that should be reported.
+  void SetTimeOffset(TimeDelta offset);
 
  private:
   // This allows constructor and destructor to be private and usable only
   // by the Singleton class.
   friend struct StaticMemorySingletonTraits<TraceLog>;
+
+  // The pointer returned from GetCategoryEnabledInternal() points to a value
+  // with zero or more of the following bits. Used in this class only.
+  // The TRACE_EVENT macros should only use the value as a bool.
+  enum CategoryEnabledFlags {
+    // Normal enabled flag for categories enabled with Enable().
+    CATEGORY_ENABLED = 1 << 0,
+    // On Android if ATrace is enabled, all categories will have this bit.
+    // Not used on other platforms.
+    ATRACE_ENABLED = 1 << 1
+  };
 
   // Helper class for managing notification_thread_count_ and running
   // notification callbacks. This is very similar to a reader-writer lock, but
@@ -348,20 +422,25 @@ class BASE_EXPORT TraceLog {
   void SendToATrace(char phase,
                     const char* category,
                     const char* name,
+                    unsigned long long id,
                     int num_args,
                     const char** arg_names,
                     const unsigned char* arg_types,
-                    const unsigned long long* arg_values);
-  void AddClockSyncMetadataEvents();
+                    const unsigned long long* arg_values,
+                    unsigned char flags);
+  static void ApplyATraceEnabledFlag(unsigned char* category_enabled);
 #endif
+
+  TraceBuffer* GetTraceBuffer();
 
   // TODO(nduca): switch to per-thread trace buffers to reduce thread
   // synchronization.
   // This lock protects TraceLog member accesses from arbitrary threads.
   Lock lock_;
-  bool enabled_;
+  int enable_count_;
   NotificationCallback notification_callback_;
-  std::vector<TraceEvent> logged_events_;
+  scoped_ptr<TraceBuffer> logged_events_;
+  EventCallback event_callback_;
   std::vector<std::string> included_categories_;
   std::vector<std::string> excluded_categories_;
   bool dispatching_to_observer_list_;
@@ -374,9 +453,17 @@ class BASE_EXPORT TraceLog {
 
   int process_id_;
 
+  TimeDelta time_offset_;
+
   // Allow tests to wake up when certain events occur.
   const unsigned char* watch_category_;
   std::string watch_event_name_;
+
+  Options trace_options_;
+
+  // Sampling thread handles.
+  scoped_ptr<TraceSamplingThread> sampling_thread_;
+  PlatformThreadHandle sampling_thread_handle_;
 
   DISALLOW_COPY_AND_ASSIGN(TraceLog);
 };

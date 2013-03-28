@@ -8,19 +8,22 @@
 #include "base/bind_helpers.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_resource.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/common/extension_resource.h"
 #include "googleurl/src/gurl.h"
 #include "grit/component_extension_resources_map.h"
 #include "grit/theme_resources.h"
@@ -56,14 +59,11 @@ SkBitmap* ToBitmap(const unsigned char* data, size_t size) {
 }  // namespace
 
 ExtensionIconSource::ExtensionIconSource(Profile* profile)
-    : DataSource(chrome::kChromeUIExtensionIconHost, MessageLoop::current()),
-      profile_(profile),
-      next_tracker_id_(0) {
-  tracker_.reset(new ImageLoadingTracker(this));
+    : profile_(profile) {
 }
 
 struct ExtensionIconSource::ExtensionIconRequest {
-  int request_id;
+  content::URLDataSource::GotDataCallback callback;
   const extensions::Extension* extension;
   bool grayscale;
   int size;
@@ -78,8 +78,10 @@ GURL ExtensionIconSource::GetIconURL(const extensions::Extension* extension,
                                      bool* exists) {
   if (exists)
     *exists = true;
-  if (exists && extension->GetIconURL(icon_size, match) == GURL())
+  if (exists && extensions::IconsInfo::GetIconURL(
+          extension, icon_size, match) == GURL()) {
     *exists = false;
+  }
 
   GURL icon_url(base::StringPrintf("%s%s/%d/%d%s",
                                    chrome::kChromeUIExtensionIconURL,
@@ -103,30 +105,40 @@ SkBitmap* ExtensionIconSource::LoadImageByResourceId(int resource_id) {
   return ToBitmap(data, contents.length());
 }
 
+std::string ExtensionIconSource::GetSource() {
+  return chrome::kChromeUIExtensionIconHost;
+}
+
 std::string ExtensionIconSource::GetMimeType(const std::string&) const {
   // We need to explicitly return a mime type, otherwise if the user tries to
   // drag the image they get no extension.
   return "image/png";
 }
 
-void ExtensionIconSource::StartDataRequest(const std::string& path,
-                                           bool is_incognito,
-                                           int request_id) {
+void ExtensionIconSource::StartDataRequest(
+    const std::string& path,
+    bool is_incognito,
+    const content::URLDataSource::GotDataCallback& callback) {
   // This is where everything gets started. First, parse the request and make
   // the request data available for later.
-  if (!ParseData(path, request_id)) {
-    SendDefaultResponse(request_id);
+  static int next_id = 0;
+  if (!ParseData(path, ++next_id, callback)) {
+    // If the request data cannot be parsed, request parameters will not be
+    // added to |request_map_|.
+    // Send back the default application icon (not resized or desaturated) as
+    // the default response.
+    callback.Run(BitmapToMemory(GetDefaultAppImage()));
     return;
   }
 
-  ExtensionIconRequest* request = GetData(request_id);
-  ExtensionResource icon =
-      request->extension->GetIconResource(request->size, request->match);
+  ExtensionIconRequest* request = GetData(next_id);
+  extensions::ExtensionResource icon = extensions::IconsInfo::GetIconResource(
+      request->extension, request->size, request->match);
 
   if (icon.relative_path().empty()) {
-    LoadIconFailed(request_id);
+    LoadIconFailed(next_id);
   } else {
-    LoadExtensionImage(icon, request_id);
+    LoadExtensionImage(icon, next_id);
   }
 }
 
@@ -154,13 +166,14 @@ const SkBitmap* ExtensionIconSource::GetDefaultExtensionImage() {
 void ExtensionIconSource::FinalizeImage(const SkBitmap* image,
                                         int request_id) {
   SkBitmap bitmap;
-  if (GetData(request_id)->grayscale)
+  ExtensionIconRequest* request = GetData(request_id);
+  if (request->grayscale)
     bitmap = DesaturateImage(image);
   else
     bitmap = *image;
 
+  request->callback.Run(BitmapToMemory(&bitmap));
   ClearData(request_id);
-  SendResponse(request_id, BitmapToMemory(&bitmap));
 }
 
 void ExtensionIconSource::LoadDefaultImage(int request_id) {
@@ -185,14 +198,14 @@ void ExtensionIconSource::LoadDefaultImage(int request_id) {
   FinalizeImage(&resized_image, request_id);
 }
 
-void ExtensionIconSource::LoadExtensionImage(const ExtensionResource& icon,
-                                             int request_id) {
+void ExtensionIconSource::LoadExtensionImage(
+    const extensions::ExtensionResource& icon,
+    int request_id) {
   ExtensionIconRequest* request = GetData(request_id);
-  tracker_map_[next_tracker_id_++] = request_id;
-  tracker_->LoadImage(request->extension,
-                      icon,
-                      gfx::Size(request->size, request->size),
-                      ImageLoadingTracker::DONT_CACHE);
+  extensions::ImageLoader::Get(profile_)->LoadImageAsync(
+      request->extension, icon,
+      gfx::Size(request->size, request->size),
+      base::Bind(&ExtensionIconSource::OnImageLoaded, AsWeakPtr(), request_id));
 }
 
 void ExtensionIconSource::LoadFaviconImage(int request_id) {
@@ -205,25 +218,18 @@ void ExtensionIconSource::LoadFaviconImage(int request_id) {
   }
 
   GURL favicon_url = GetData(request_id)->extension->GetFullLaunchURL();
-  FaviconService::Handle handle = favicon_service->GetRawFaviconForURL(
+  favicon_service->GetRawFaviconForURL(
       FaviconService::FaviconForURLParams(
-          profile_,
-          favicon_url,
-          history::FAVICON,
-          gfx::kFaviconSize,
-          &cancelable_consumer_),
+          profile_, favicon_url, history::FAVICON, gfx::kFaviconSize),
       ui::SCALE_FACTOR_100P,
       base::Bind(&ExtensionIconSource::OnFaviconDataAvailable,
-                 base::Unretained(this)));
-  cancelable_consumer_.SetClientData(favicon_service, handle, request_id);
+                 base::Unretained(this), request_id),
+      &cancelable_task_tracker_);
 }
 
 void ExtensionIconSource::OnFaviconDataAvailable(
-    FaviconService::Handle request_handle,
+    int request_id,
     const history::FaviconBitmapResult& bitmap_result) {
-  int request_id = cancelable_consumer_.GetClientData(
-      FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS),
-      request_handle);
   ExtensionIconRequest* request = GetData(request_id);
 
   // Fallback to the default icon if there wasn't a favicon.
@@ -235,20 +241,16 @@ void ExtensionIconSource::OnFaviconDataAvailable(
   if (!request->grayscale) {
     // If we don't need a grayscale image, then we can bypass FinalizeImage
     // to avoid unnecessary conversions.
+    request->callback.Run(bitmap_result.bitmap_data);
     ClearData(request_id);
-    SendResponse(request_id, bitmap_result.bitmap_data);
   } else {
     FinalizeImage(ToBitmap(bitmap_result.bitmap_data->front(),
                            bitmap_result.bitmap_data->size()), request_id);
   }
 }
 
-void ExtensionIconSource::OnImageLoaded(const gfx::Image& image,
-                                        const std::string& extension_id,
-                                        int index) {
-  int request_id = tracker_map_[index];
-  tracker_map_.erase(tracker_map_.find(index));
-
+void ExtensionIconSource::OnImageLoaded(int request_id,
+                                        const gfx::Image& image) {
   if (image.IsEmpty())
     LoadIconFailed(request_id);
   else
@@ -257,8 +259,8 @@ void ExtensionIconSource::OnImageLoaded(const gfx::Image& image,
 
 void ExtensionIconSource::LoadIconFailed(int request_id) {
   ExtensionIconRequest* request = GetData(request_id);
-  ExtensionResource icon =
-      request->extension->GetIconResource(request->size, request->match);
+  extensions::ExtensionResource icon = extensions::IconsInfo::GetIconResource(
+      request->extension, request->size, request->match);
 
   if (request->size == extension_misc::EXTENSION_ICON_BITTY)
     LoadFaviconImage(request_id);
@@ -266,8 +268,10 @@ void ExtensionIconSource::LoadIconFailed(int request_id) {
     LoadDefaultImage(request_id);
 }
 
-bool ExtensionIconSource::ParseData(const std::string& path,
-                                    int request_id) {
+bool ExtensionIconSource::ParseData(
+    const std::string& path,
+    int request_id,
+    const content::URLDataSource::GotDataCallback& callback) {
   // Extract the parameters from the path by lower casing and splitting.
   std::string path_lower = StringToLowerASCII(path);
   std::vector<std::string> path_parts;
@@ -283,7 +287,7 @@ bool ExtensionIconSource::ParseData(const std::string& path,
   int size;
   if (!base::StringToInt(size_param, &size))
     return false;
-  if (size <= 0)
+  if (size <= 0 || size > extension_misc::EXTENSION_ICON_GIGANTOR)
     return false;
 
   ExtensionIconSet::MatchType match_type;
@@ -298,31 +302,27 @@ bool ExtensionIconSource::ParseData(const std::string& path,
 
   std::string extension_id = path_parts.at(0);
   const extensions::Extension* extension =
-      profile_->GetExtensionService()->GetInstalledExtension(extension_id);
+      extensions::ExtensionSystem::Get(profile_)->extension_service()->
+          GetInstalledExtension(extension_id);
   if (!extension)
     return false;
 
   bool grayscale = path_lower.find("grayscale=true") != std::string::npos;
 
-  SetData(request_id, extension, grayscale, size, match_type);
+  SetData(request_id, callback, extension, grayscale, size, match_type);
 
   return true;
 }
 
-void ExtensionIconSource::SendDefaultResponse(int request_id) {
-  // We send back the default application icon (not resized or desaturated)
-  // as the default response, like when there is no data.
-  ClearData(request_id);
-  SendResponse(request_id, BitmapToMemory(GetDefaultAppImage()));
-}
-
-void ExtensionIconSource::SetData(int request_id,
-                                  const extensions::Extension* extension,
-                                  bool grayscale,
-                                  int size,
-                                  ExtensionIconSet::MatchType match) {
+void ExtensionIconSource::SetData(
+    int request_id,
+    const content::URLDataSource::GotDataCallback& callback,
+    const extensions::Extension* extension,
+    bool grayscale,
+    int size,
+    ExtensionIconSet::MatchType match) {
   ExtensionIconRequest* request = new ExtensionIconRequest();
-  request->request_id = request_id;
+  request->callback = callback;
   request->extension = extension;
   request->grayscale = grayscale;
   request->size = size;

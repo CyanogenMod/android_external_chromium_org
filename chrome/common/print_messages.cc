@@ -29,7 +29,8 @@ PrintMsg_Print_Params::PrintMsg_Print_Params()
     display_header_footer(false),
     date(),
     title(),
-    url() {
+    url(),
+    should_print_backgrounds(false) {
 }
 
 PrintMsg_Print_Params::~PrintMsg_Print_Params() {}
@@ -56,6 +57,7 @@ void PrintMsg_Print_Params::Reset() {
   date = string16();
   title = string16();
   url = string16();
+  should_print_backgrounds = false;
 }
 
 PrintMsg_PrintPages_Params::PrintMsg_PrintPages_Params()
@@ -68,3 +70,14 @@ void PrintMsg_PrintPages_Params::Reset() {
   params.Reset();
   pages = std::vector<int>();
 }
+
+PrintHostMsg_RequestPrintPreview_Params::
+    PrintHostMsg_RequestPrintPreview_Params()
+    : is_modifiable(false),
+      webnode_only(false),
+      has_selection(false),
+      selection_only(false) {
+}
+
+PrintHostMsg_RequestPrintPreview_Params::
+    ~PrintHostMsg_RequestPrintPreview_Params() {}

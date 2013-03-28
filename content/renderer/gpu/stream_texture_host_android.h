@@ -7,7 +7,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "content/common/android/surface_texture_peer.h"
-#include "ipc/ipc_channel.h"
+#include "ipc/ipc_listener.h"
 #include "ipc/ipc_message.h"
 
 namespace gfx {
@@ -41,8 +41,7 @@ class StreamTextureHost : public IPC::Listener {
 
   // Request the GPU process to create the surface texture and forward it
   // to the renderer process.
-  void EstablishPeer(SurfaceTexturePeer::SurfaceTextureTarget type,
-                     int32 primary_id, int32 secondary_id);
+  void EstablishPeer(int32 primary_id, int32 secondary_id);
 
   // IPC::Channel::Listener implementation:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

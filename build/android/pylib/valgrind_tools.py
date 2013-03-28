@@ -23,6 +23,7 @@ Call tool.CleanUpEnvironment().
 
 import os.path
 import sys
+from glob import glob
 
 from constants import CHROME_DIR
 
@@ -34,7 +35,7 @@ def SetChromeTimeoutScale(adb, scale):
     # Delete if scale is None/0.0/1.0 since the default timeout scale is 1.0
     adb.RunShellCommand('rm %s' % path)
   else:
-    adb.SetFileContents(path, '%f' % scale)
+    adb.SetProtectedFileContents(path, '%f' % scale)
 
 
 class BaseTool(object):
@@ -90,13 +91,20 @@ class AddressSanitizerTool(BaseTool):
   def __init__(self, adb):
     self._adb = adb
     self._wrap_properties = ['wrap.com.google.android.apps.ch',
-                             'wrap.org.chromium.native_test']
+                             'wrap.org.chromium.native_test',
+                             'wrap.org.chromium.content_shell',
+                             'wrap.org.chromium.chrome.testsh',
+                             'wrap.org.chromium.android_webvi']
+    # Configure AndroidCommands to run utils (such as md5sum_bin) under ASan.
+    # This is required because ASan is a compiler-based tool, and md5sum
+    # includes instrumented code from base.
+    adb.SetUtilWrapper(self.GetUtilWrapper())
 
   def CopyFiles(self):
     """Copies ASan tools to the device."""
-    files = ['tools/android/asan/asanwrapper.sh',
-             'third_party/llvm-build/Release+Asserts/lib/clang/3.2/lib/linux/' +
-                 'libclang_rt.asan-arm-android.so']
+    files = (['tools/android/asan/asanwrapper.sh'] +
+              glob('third_party/llvm-build/Release+Asserts/lib/clang/*/lib/'
+                   'linux/libclang_rt.asan-arm-android.so'))
     for f in files:
       self._adb.PushIfNeeded(os.path.join(CHROME_DIR, f),
                              os.path.join(AddressSanitizerTool.TMP_DIR,

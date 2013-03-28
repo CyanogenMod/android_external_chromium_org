@@ -477,12 +477,15 @@ sub parselicense($) {
         $license = "BSD-like $license";
     } elsif ($licensetext =~ /BSD terms apply/) {
         $license = "BSD-like $license";
+    } elsif ($licensetext =~ /subject to the BSD License/) {
+        # TODO(sbc): remove this case once we fix: http://crbug.com/177268
+        $license = "BSD-like $license";
     } elsif ($licensetext =~ /GOVERNED BY A BSD-STYLE SOURCE LICENSE/) {
         $license = "BSD-like $license";
     }
 
-    if ($licensetext =~ /Mozilla Public License Version ([^ ]+)/) {
-	$license = "MPL (v$1) $license";
+    if ($licensetext =~ /Mozilla Public License( Version|, v.) ([^ ]+[^. ])/) {
+	$license = "MPL (v$2) $license";
     }
 
     if ($licensetext =~ /Released under the terms of the Artistic License ([^ ]+)/) {
@@ -559,6 +562,10 @@ sub parselicense($) {
     }
 
     if ($licensetext =~ /under MIT license/) {
+        $license = "MIT/X11 (BSD like) $license";
+    }
+
+    if ($licensetext =~ /License MIT(-| )License/) {
         $license = "MIT/X11 (BSD like) $license";
     }
 

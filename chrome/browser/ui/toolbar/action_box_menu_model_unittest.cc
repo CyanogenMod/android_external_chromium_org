@@ -4,20 +4,19 @@
 
 #include "chrome/browser/ui/toolbar/action_box_menu_model.h"
 
+#include "base/prefs/testing_pref_service.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/chrome_to_mobile_service.h"
 #include "chrome/browser/chrome_to_mobile_service_factory.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
-#include "chrome/test/base/testing_pref_service.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "sync/notifier/invalidation_util.h"
@@ -41,7 +40,7 @@ class ActionBoxMenuModelTest : public BrowserWithTestWindowTest,
     return false;
   }
 
-  virtual void ExecuteCommand(int command_id) OVERRIDE {}
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {}
 
     // Don't handle accelerators.
   virtual bool GetAcceleratorForCommandId(
@@ -80,7 +79,7 @@ class ActionBoxMenuModelTest : public BrowserWithTestWindowTest,
   }
 
   void NavigateToLocalPage() {
-    AddTab(browser(), GURL("chrome://flags"));
+    AddTab(browser(), GURL("chrome://blank"));
   }
 
  private:
@@ -206,7 +205,7 @@ TEST_F(ActionBoxMenuModelTest, BookmarkedPage) {
                                                   true);
   // Set up bookmark model
   profile()->CreateBookmarkModel(true);
-  profile()->BlockUntilBookmarkModelLoaded();
+  ui_test_utils::WaitForBookmarkModelToLoad(profile());
 
   // Navigate to a url.
   GURL url1("http://www.google.com");

@@ -12,6 +12,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/notifications/balloon.h"
 #include "chrome/browser/notifications/balloon_collection.h"
+#include "chrome/browser/notifications/balloon_notification_ui_manager.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/notifications/notification.h"
@@ -21,11 +22,13 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -67,8 +70,14 @@ CornerSelectionMenuModel::~CornerSelectionMenuModel() {
 }
 
 bool CornerSelectionMenuModel::IsCommandIdChecked(int command_id) const {
+  // TODO(dimich): MessageCenter does not use this preference (yet?)
+  if (NotificationUIManager::DelegatesToMessageCenter())
+    return false;
+
   NotificationPrefsManager* prefs =
-      g_browser_process->notification_ui_manager()->prefs_manager();
+      static_cast<BalloonNotificationUIManager*>(
+          g_browser_process->notification_ui_manager())->prefs_manager();
+
   BalloonCollection::PositionPreference current =
       prefs->GetPositionPreference();
 
@@ -98,9 +107,14 @@ bool CornerSelectionMenuModel::GetAcceleratorForCommandId(
   return false;
 }
 
-void CornerSelectionMenuModel::ExecuteCommand(int command_id) {
+void CornerSelectionMenuModel::ExecuteCommand(int command_id, int event_flags) {
+  // TODO(dimich): MessageCenter does not use this preference (yet?)
+  if (NotificationUIManager::DelegatesToMessageCenter())
+    return;
+
   NotificationPrefsManager* prefs =
-      g_browser_process->notification_ui_manager()->prefs_manager();
+      static_cast<BalloonNotificationUIManager*>(
+          g_browser_process->notification_ui_manager())->prefs_manager();
 
   if (command_id == kCornerUpperLeft)
     prefs->SetPositionPreference(BalloonCollection::UPPER_LEFT);
@@ -122,7 +136,7 @@ NotificationOptionsMenuModel::NotificationOptionsMenuModel(Balloon* balloon)
   const Notification& notification = balloon->notification();
   const GURL& origin = notification.origin_url();
 
-  if (origin.SchemeIs(chrome::kExtensionScheme)) {
+  if (origin.SchemeIs(extensions::kExtensionScheme)) {
     ExtensionService* extension_service =
         balloon_->profile()->GetExtensionService();
     const extensions::Extension* extension =
@@ -174,7 +188,7 @@ string16 NotificationOptionsMenuModel::GetLabelForCommandId(int command_id)
 
     DesktopNotificationService* service =
         DesktopNotificationServiceFactory::GetForProfile(balloon_->profile());
-    if (origin.SchemeIs(chrome::kExtensionScheme)) {
+    if (origin.SchemeIs(extensions::kExtensionScheme)) {
       ExtensionService* extension_service =
           balloon_->profile()->GetExtensionService();
       const extensions::Extension* extension =
@@ -221,7 +235,8 @@ bool NotificationOptionsMenuModel::GetAcceleratorForCommandId(
   return false;
 }
 
-void NotificationOptionsMenuModel::ExecuteCommand(int command_id) {
+void NotificationOptionsMenuModel::ExecuteCommand(int command_id,
+                                                  int event_flags) {
   DesktopNotificationService* service =
       DesktopNotificationServiceFactory::GetForProfile(balloon_->profile());
   ExtensionService* extension_service =
@@ -249,11 +264,14 @@ void NotificationOptionsMenuModel::ExecuteCommand(int command_id) {
       break;
     }
     case kOpenContentSettingsCommand: {
-      Browser* browser = chrome::FindLastActiveWithProfile(balloon_->profile());
+      chrome::HostDesktopType active_desktop = chrome::GetActiveDesktop();
+      Browser* browser = chrome::FindLastActiveWithProfile(
+          balloon_->profile(), active_desktop);
       if (!browser) {
         // It is possible that there is no browser window (e.g. when there are
         // background pages, or for a chrome frame process on windows).
-        browser = new Browser(Browser::CreateParams(balloon_->profile()));
+        browser = new Browser(Browser::CreateParams(balloon_->profile(),
+                                                    active_desktop));
       }
       chrome::ShowContentSettings(browser, CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
       break;

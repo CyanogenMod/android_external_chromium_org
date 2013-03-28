@@ -14,14 +14,15 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/debug/crash_logging.h"
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/file_version_info.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/string16.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/win_util.h"
@@ -32,6 +33,7 @@
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/installer/util/google_chrome_sxs_distribution.h"
 #include "chrome/installer/util/google_update_settings.h"
@@ -103,6 +105,11 @@ static size_t g_printer_info_offset = 0;
 static size_t g_num_of_views_offset = 0;
 static size_t g_num_switches_offset = 0;
 static size_t g_switches_offset = 0;
+static size_t g_dynamic_keys_offset = 0;
+typedef std::map<std::string, google_breakpad::CustomInfoEntry*>
+    DynamicEntriesMap;
+DynamicEntriesMap* g_dynamic_entries = NULL;
+static size_t g_dynamic_entries_count = 0;
 
 // Maximum length for plugin path to include in plugin crash reports.
 const size_t kMaxPluginPathLength = 256;
@@ -306,7 +313,8 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
                                                  const std::wstring& type,
                                                  const std::wstring& channel) {
   scoped_ptr<FileVersionInfo>
-      version_info(FileVersionInfo::CreateFileVersionInfo(FilePath(exe_path)));
+      version_info(FileVersionInfo::CreateFileVersionInfo(
+          base::FilePath(exe_path)));
 
   std::wstring version, product;
   std::wstring special_build;
@@ -464,6 +472,19 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
         base::StringPrintf(L"experiment-chunk-%i", i).c_str(), L""));
   }
 
+  // Create space for dynamic ad-hoc keys. The names and values are set using
+  // the API defined in base/debug/crash_logging.h.
+  g_dynamic_entries_count = crash_keys::RegisterChromeCrashKeys();
+  g_dynamic_keys_offset = g_custom_entries->size();
+  for (size_t i = 0; i < g_dynamic_entries_count; ++i) {
+    // The names will be mutated as they are set. Un-numbered since these are
+    // merely placeholders. The name cannot be empty because Breakpad's
+    // HTTPUpload will interpret that as an invalid parameter.
+    g_custom_entries->push_back(
+        google_breakpad::CustomInfoEntry(L"unspecified-crash-key", L""));
+  }
+  g_dynamic_entries = new DynamicEntriesMap;
+
   static google_breakpad::CustomClientInfo custom_client_info;
   custom_client_info.entries = &g_custom_entries->front();
   custom_client_info.count = g_custom_entries->size();
@@ -488,9 +509,11 @@ bool DumpDoneCallbackWhenNoCrash(const wchar_t*, const wchar_t*, void*,
 bool DumpDoneCallback(const wchar_t*, const wchar_t*, void*,
                       EXCEPTION_POINTERS* ex_info,
                       MDRawAssertionInfo*, bool) {
-  // If the exception is because there was a problem loading a delay-loaded
-  // module, then show the user a dialog explaining the problem and then exit.
-  if (DelayLoadFailureExceptionMessageBox(ex_info))
+  // Check if the exception is one of the kind which would not be solved
+  // by simply restarting chrome. In this case we show a message box with
+  // and exit silently. Remember that chrome is in a crashed state so we
+  // can't show our own UI from this process.
+  if (HardErrorHandler(ex_info))
     return true;
 
   // We set CHROME_CRASHED env var. If the CHROME_RESTART is present.
@@ -663,6 +686,32 @@ extern "C" void __declspec(dllexport) __cdecl SetPrinterInfo(
 extern "C" void __declspec(dllexport) __cdecl SetNumberOfViews(
     int number_of_views) {
   SetIntegerValue(g_num_of_views_offset, number_of_views);
+}
+
+void SetCrashKeyValue(const base::StringPiece& key,
+                      const base::StringPiece& value) {
+  std::string key_string = key.as_string();
+
+  DynamicEntriesMap::iterator it = g_dynamic_entries->find(key_string);
+  google_breakpad::CustomInfoEntry* entry = NULL;
+  if (it == g_dynamic_entries->end()) {
+    if (g_dynamic_keys_offset >= g_dynamic_entries_count)
+      return;
+    entry = &(*g_custom_entries)[g_dynamic_keys_offset++];
+    g_dynamic_entries->insert(std::make_pair(key_string, entry));
+  } else {
+    entry = it->second;
+  }
+
+  entry->set(UTF8ToWide(key).data(), UTF8ToWide(value).data());
+}
+
+void ClearCrashKeyValue(const base::StringPiece& key) {
+  DynamicEntriesMap::iterator it = g_dynamic_entries->find(key.as_string());
+  if (it == g_dynamic_entries->end())
+    return;
+
+  it->second->set_value(NULL);
 }
 
 }  // namespace
@@ -866,8 +915,11 @@ void InitCrashReporter() {
   GoogleUpdateSettings::GetChromeChannelAndModifiers(!is_per_user_install,
                                                      &channel_string);
 
+  base::debug::SetCrashKeyReportingFunctions(
+      &SetCrashKeyValue, &ClearCrashKeyValue);
+
   google_breakpad::CustomClientInfo* custom_info =
-    GetCustomInfo(exe_path, process_type, channel_string);
+      GetCustomInfo(exe_path, process_type, channel_string);
 
   google_breakpad::ExceptionHandler::MinidumpCallback callback = NULL;
   LPTOP_LEVEL_EXCEPTION_FILTER default_filter = NULL;

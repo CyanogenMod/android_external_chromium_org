@@ -20,7 +20,7 @@
 #include "net/base/network_delegate.h"
 
 namespace base {
-class Histogram;
+class HistogramBase;
 }
 
 namespace net {
@@ -111,7 +111,8 @@ class LoadTimeStats {
 
   TabLoadStatsMap tab_load_stats_;
   RequestStatsMap request_stats_;
-  std::vector<base::Histogram*> histograms_[REQUEST_STATUS_MAX][HISTOGRAM_MAX];
+  std::vector<base::HistogramBase*>
+      histograms_[REQUEST_STATUS_MAX][HISTOGRAM_MAX];
   base::hash_set<const net::URLRequestContext*> main_request_contexts_;
 
   DISALLOW_COPY_AND_ASSIGN(LoadTimeStats);
@@ -132,6 +133,7 @@ class LoadTimeStatsTabHelper
       bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
+      bool is_iframe_srcdoc,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidStopLoading(
       content::RenderViewHost* render_view_host) OVERRIDE;

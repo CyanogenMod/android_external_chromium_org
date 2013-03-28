@@ -14,15 +14,19 @@
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_observer.h"
-#include "chrome/common/extensions/matcher/url_matcher.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "extensions/common/matcher/url_matcher.h"
 
 class GURL;
 class PrefService;
+class PrefRegistrySyncable;
 
 namespace base {
 class ListValue;
+}
+
+namespace net {
+class URLRequest;
 }
 
 namespace policy {
@@ -48,6 +52,9 @@ class URLBlacklist {
 
   // Returns true if the URL is blocked.
   bool IsURLBlocked(const GURL& url) const;
+
+  // Returns the number of items in the list.
+  size_t Size() const;
 
   // Returns true if the URL has a standard scheme. Only URLs with standard
   // schemes are filtered.
@@ -113,7 +120,7 @@ class URLBlacklist {
 // exists in UI, then a potential destruction on IO will come after any task
 // posted to IO from that method on UI. This is used to go through IO before
 // the actual update starts, and grab a WeakPtr.
-class URLBlacklistManager : public PrefObserver {
+class URLBlacklistManager {
  public:
   // Must be constructed on the UI thread.
   explicit URLBlacklistManager(PrefService* pref_service);
@@ -126,12 +133,19 @@ class URLBlacklistManager : public PrefObserver {
   // from the IO thread.
   bool IsURLBlocked(const GURL& url) const;
 
+  // Returns true if |request| is blocked by the current blacklist.
+  // Only main frame and sub frame requests may be blocked; other sub resources
+  // or background downloads (e.g. extensions updates, sync, etc) are not
+  // filtered. The sync signin page is also not filtered.
+  // Must be called from the IO thread.
+  bool IsRequestBlocked(const net::URLRequest& request) const;
+
   // Replaces the current blacklist. Must be called on the IO thread.
   // Virtual for testing.
   virtual void SetBlacklist(scoped_ptr<URLBlacklist> blacklist);
 
   // Registers the preferences related to blacklisting in the given PrefService.
-  static void RegisterPrefs(PrefService* pref_service);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
  protected:
   // Used to delay updating the blacklist while the preferences are
@@ -148,9 +162,6 @@ class URLBlacklistManager : public PrefObserver {
                   scoped_ptr<base::ListValue> allow);
 
  private:
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
-
   // ---------
   // UI thread
   // ---------

@@ -11,7 +11,7 @@
 #include "base/logging.h"
 #include "base/shared_memory.h"
 #include "build/build_config.h"
-#include "ipc/ipc_platform_file.h"
+#include "ppapi/c/dev/ppb_truetype_font_dev.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_point.h"
@@ -21,12 +21,14 @@
 
 class Pickle;
 struct PP_FontDescription_Dev;
+struct PP_BrowserFont_Trusted_Description;
 
 namespace ppapi {
 namespace proxy {
 
-// PP_FontDescript_Dev has to be redefined with a string in place of the PP_Var
-// used for the face name.
+// PP_FontDescription_Dev/PP_BrowserFontDescription (same definition, different
+// names) has to be redefined with a string in place of the PP_Var used for the
+// face name.
 struct PPAPI_PROXY_EXPORT SerializedFontDescription {
   SerializedFontDescription();
   ~SerializedFontDescription();
@@ -36,10 +38,14 @@ struct PPAPI_PROXY_EXPORT SerializedFontDescription {
   // The reference of |face| owned by the PP_FontDescription_Dev will be
   // unchanged and the caller is responsible for freeing it.
   void SetFromPPFontDescription(const PP_FontDescription_Dev& desc);
+  void SetFromPPBrowserFontDescription(
+      const PP_BrowserFont_Trusted_Description& desc);
 
   // Converts to a PP_FontDescription_Dev. The face name will have one ref
   // assigned to it. The caller is responsible for freeing it.
   void SetToPPFontDescription(PP_FontDescription_Dev* desc) const;
+  void SetToPPBrowserFontDescription(
+      PP_BrowserFont_Trusted_Description* desc) const;
 
   std::string face;
   int32_t family;
@@ -51,12 +57,36 @@ struct PPAPI_PROXY_EXPORT SerializedFontDescription {
   int32_t word_spacing;
 };
 
+struct PPAPI_PROXY_EXPORT SerializedTrueTypeFontDesc {
+  SerializedTrueTypeFontDesc();
+  ~SerializedTrueTypeFontDesc();
+
+  // Sets this to correspond to the contents of a PP_TrueTypeFontDesc_Dev.
+  //
+  // The reference count of the desc.family PP_Var will be unchanged and the
+  // caller is responsible for releasing it.
+  void SetFromPPTrueTypeFontDesc(const PP_TrueTypeFontDesc_Dev& desc);
+
+  // Converts this to a PP_FontDescription_Dev.
+  //
+  // The desc.family PP_Var will have one reference assigned to it. The caller
+  // is responsible for releasing it.
+  void CopyToPPTrueTypeFontDesc(PP_TrueTypeFontDesc_Dev* desc) const;
+
+  std::string family;
+  PP_TrueTypeFontFamily_Dev generic_family;
+  PP_TrueTypeFontStyle_Dev style;
+  PP_TrueTypeFontWeight_Dev weight;
+  PP_TrueTypeFontWidth_Dev width;
+  PP_TrueTypeFontCharset_Dev charset;
+};
+
 struct SerializedDirEntry {
   std::string name;
   bool is_dir;
 };
 
-struct PPBFlash_DrawGlyphs_Params {
+struct PPAPI_PROXY_EXPORT PPBFlash_DrawGlyphs_Params {
   PPBFlash_DrawGlyphs_Params();
   ~PPBFlash_DrawGlyphs_Params();
 
@@ -81,116 +111,6 @@ struct PPBURLLoader_UpdateProgress_Params {
   int64_t total_bytes_to_be_received;
 };
 
-struct PPPVideoCapture_Buffer {
-  ppapi::HostResource resource;
-  uint32_t size;
-  base::SharedMemoryHandle handle;
-};
-
-// We put all our handles in a unified structure to make it easy to translate
-// them in NaClIPCAdapter for use in NaCl.
-class PPAPI_PROXY_EXPORT SerializedHandle {
- public:
-  enum Type { INVALID, SHARED_MEMORY, SOCKET, CHANNEL_HANDLE };
-  struct Header {
-    Header() : type(INVALID), size(0) {}
-    Header(Type type_arg, uint32_t size_arg)
-        : type(type_arg), size(size_arg) {
-    }
-    Type type;
-    uint32_t size;
-  };
-
-  SerializedHandle();
-  // Create an invalid handle of the given type.
-  explicit SerializedHandle(Type type);
-
-  // Create a shared memory handle.
-  SerializedHandle(const base::SharedMemoryHandle& handle, uint32_t size);
-
-  // Create a socket or channel handle.
-  SerializedHandle(const Type type,
-                   const IPC::PlatformFileForTransit& descriptor);
-
-  Type type() const { return type_; }
-  bool is_shmem() const { return type_ == SHARED_MEMORY; }
-  bool is_socket() const { return type_ == SOCKET; }
-  bool is_channel_handle() const { return type_ == CHANNEL_HANDLE; }
-  const base::SharedMemoryHandle& shmem() const {
-    DCHECK(is_shmem());
-    return shm_handle_;
-  }
-  uint32_t size() const {
-    DCHECK(is_shmem());
-    return size_;
-  }
-  const IPC::PlatformFileForTransit& descriptor() const {
-    DCHECK(is_socket() || is_channel_handle());
-    return descriptor_;
-  }
-  void set_shmem(const base::SharedMemoryHandle& handle, uint32_t size) {
-    type_ = SHARED_MEMORY;
-    shm_handle_ = handle;
-    size_ = size;
-
-    descriptor_ = IPC::InvalidPlatformFileForTransit();
-  }
-  void set_socket(const IPC::PlatformFileForTransit& socket) {
-    type_ = SOCKET;
-    descriptor_ = socket;
-
-    shm_handle_ = base::SharedMemory::NULLHandle();
-    size_ = 0;
-  }
-  void set_channel_handle(const IPC::PlatformFileForTransit& descriptor) {
-    type_ = CHANNEL_HANDLE;
-
-    descriptor_ = descriptor;
-    shm_handle_ = base::SharedMemory::NULLHandle();
-    size_ = 0;
-  }
-  void set_null_shmem() {
-    set_shmem(base::SharedMemory::NULLHandle(), 0);
-  }
-  void set_null_socket() {
-    set_socket(IPC::InvalidPlatformFileForTransit());
-  }
-  void set_null_channel_handle() {
-    set_channel_handle(IPC::InvalidPlatformFileForTransit());
-  }
-  bool IsHandleValid() const;
-
-  Header header() const {
-    return Header(type_, size_);
-  }
-
-  // Closes the handle and sets it to invalid.
-  void Close();
-
-  // Write/Read a Header, which contains all the data except the handle. This
-  // allows us to write the handle in a platform-specific way, as is necessary
-  // in NaClIPCAdapter to share handles with NaCl from Windows.
-  static bool WriteHeader(const Header& hdr, Pickle* pickle);
-  static bool ReadHeader(PickleIterator* iter, Header* hdr);
-
- private:
-  // The kind of handle we're holding.
-  Type type_;
-
-  // We hold more members than we really need; we can't easily use a union,
-  // because we hold non-POD types. But these types are pretty light-weight. If
-  // we add more complex things later, we should come up with a more memory-
-  // efficient strategy.
-  // These are valid if type == SHARED_MEMORY.
-  base::SharedMemoryHandle shm_handle_;
-  uint32_t size_;
-
-  // This is valid if type == SOCKET || type == CHANNEL_HANDLE.
-  IPC::PlatformFileForTransit descriptor_;
-};
-
-// TODO(tomfinegan): This is identical to PPPVideoCapture_Buffer, maybe replace
-// both with a single type?
 struct PPPDecryptor_Buffer {
   ppapi::HostResource resource;
   uint32_t size;

@@ -12,34 +12,35 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 
 ExtensionInfoUI::ExtensionInfoUI(content::WebUI* web_ui, const GURL& url)
     : content::WebUIController(web_ui),
-      source_(new ChromeWebUIDataSource(chrome::kChromeUIExtensionInfoHost)) {
+      source_(content::WebUIDataSource::Create(
+          chrome::kChromeUIExtensionInfoHost)) {
   AddExtensionDataToSource(url.path().substr(1));
 
   source_->AddLocalizedString("isRunning",
                               IDS_EXTENSION_SCRIPT_POPUP_IS_RUNNING);
   source_->AddLocalizedString("lastUpdated",
                               IDS_EXTENSION_SCRIPT_POPUP_LAST_UPDATED);
-  source_->set_use_json_js_format_v2();
-  source_->set_json_path("strings.js");
+  source_->SetUseJsonJSFormatV2();
+  source_->SetJsonPath("strings.js");
 
-  source_->add_resource_path("extension_info.css", IDR_EXTENSION_INFO_CSS);
-  source_->add_resource_path("extension_info.js", IDR_EXTENSION_INFO_JS);
-  source_->set_default_resource(IDR_EXTENSION_INFO_HTML);
+  source_->AddResourcePath("extension_info.css", IDR_EXTENSION_INFO_CSS);
+  source_->AddResourcePath("extension_info.js", IDR_EXTENSION_INFO_JS);
+  source_->SetDefaultResource(IDR_EXTENSION_INFO_HTML);
 
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, source_);
+  content::WebUIDataSource::Add(profile, source_);
 }
 
 ExtensionInfoUI::~ExtensionInfoUI() {
@@ -60,7 +61,9 @@ void ExtensionInfoUI::AddExtensionDataToSource(
   if (!extension)
     return;
 
-  extension->GetBasicInfo(true, source_->localized_strings());
+  DictionaryValue extension_data;
+  extension->GetBasicInfo(true, &extension_data);
+  source_->AddLocalizedStrings(extension_data);
 
   // Set the icon URL.
   GURL icon =

@@ -7,13 +7,13 @@
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest.h"
@@ -21,52 +21,58 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
 
 using extensions::Extension;
 
 class ChromeAppAPITest : public ExtensionBrowserTest {
  protected:
-  bool IsAppInstalled() { return IsAppInstalled(L""); }
-  bool IsAppInstalled(const std::wstring& frame_xpath) {
-    std::wstring get_app_is_installed =
-        L"window.domAutomationController.send(window.chrome.app.isInstalled);";
+  bool IsAppInstalled() { return IsAppInstalled(""); }
+  bool IsAppInstalled(const char* frame_xpath) {
+    const char kGetAppIsInstalled[] =
+        "window.domAutomationController.send(window.chrome.app.isInstalled);";
     bool result;
     CHECK(
-        content::ExecuteJavaScriptAndExtractBool(
-            chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-            frame_xpath, get_app_is_installed, &result));
+        content::ExecuteScriptInFrameAndExtractBool(
+            browser()->tab_strip_model()->GetActiveWebContents(),
+            frame_xpath,
+            kGetAppIsInstalled,
+            &result));
     return result;
   }
 
-  std::string InstallState() { return InstallState(L""); }
-  std::string InstallState(const std::wstring& frame_xpath) {
-    std::wstring get_app_install_state =
-        L"window.chrome.app.installState("
-        L"function(s) { window.domAutomationController.send(s); });";
+  std::string InstallState() { return InstallState(""); }
+  std::string InstallState(const char* frame_xpath) {
+    const char kGetAppInstallState[] =
+        "window.chrome.app.installState("
+        "    function(s) { window.domAutomationController.send(s); });";
     std::string result;
     CHECK(
-        content::ExecuteJavaScriptAndExtractString(
-            chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-            frame_xpath, get_app_install_state, &result));
+        content::ExecuteScriptInFrameAndExtractString(
+            browser()->tab_strip_model()->GetActiveWebContents(),
+            frame_xpath,
+            kGetAppInstallState,
+            &result));
     return result;
   }
 
-  std::string RunningState() { return RunningState(L""); }
-  std::string RunningState(const std::wstring& frame_xpath) {
-    std::wstring get_app_install_state =
-        L"window.domAutomationController.send("
-        L"window.chrome.app.runningState());";
+  std::string RunningState() { return RunningState(""); }
+  std::string RunningState(const char* frame_xpath) {
+    const char kGetAppRunningState[] =
+        "window.domAutomationController.send("
+        "    window.chrome.app.runningState());";
     std::string result;
     CHECK(
-        content::ExecuteJavaScriptAndExtractString(
-            chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-            frame_xpath, get_app_install_state, &result));
+        content::ExecuteScriptInFrameAndExtractString(
+            browser()->tab_strip_model()->GetActiveWebContents(),
+            frame_xpath,
+            kGetAppRunningState,
+            &result));
     return result;
   }
 
  private:
-  virtual void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII(switches::kAppsCheckoutURL,
                                     "http://checkout.com:");
@@ -108,14 +114,15 @@ IN_PROC_BROWSER_TEST_F(ChromeAppAPITest, IsInstalled) {
   EXPECT_FALSE(IsAppInstalled());
 
   // Test that a non-app page returns null for chrome.app.getDetails().
-  std::wstring get_app_details =
-      L"window.domAutomationController.send("
-      L"    JSON.stringify(window.chrome.app.getDetails()));";
+  const char kGetAppDetails[] =
+      "window.domAutomationController.send("
+      "    JSON.stringify(window.chrome.app.getDetails()));";
   std::string result;
   ASSERT_TRUE(
-      content::ExecuteJavaScriptAndExtractString(
-          chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-          L"", get_app_details, &result));
+      content::ExecuteScriptAndExtractString(
+          browser()->tab_strip_model()->GetActiveWebContents(),
+          kGetAppDetails,
+          &result));
   EXPECT_EQ("null", result);
 
   // Check that an app page has chrome.app.isInstalled = true.
@@ -126,9 +133,10 @@ IN_PROC_BROWSER_TEST_F(ChromeAppAPITest, IsInstalled) {
   // chrome.app.getDetails().
   ui_test_utils::NavigateToURL(browser(), app_url);
   ASSERT_TRUE(
-      content::ExecuteJavaScriptAndExtractString(
-          chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-          L"", get_app_details, &result));
+      content::ExecuteScriptAndExtractString(
+          browser()->tab_strip_model()->GetActiveWebContents(),
+          kGetAppDetails,
+          &result));
   scoped_ptr<DictionaryValue> app_details(
       static_cast<DictionaryValue*>(base::JSONReader::Read(result)));
   // extension->manifest() does not contain the id.
@@ -139,21 +147,20 @@ IN_PROC_BROWSER_TEST_F(ChromeAppAPITest, IsInstalled) {
   // Try to change app.isInstalled.  Should silently fail, so
   // that isInstalled should have the initial value.
   ASSERT_TRUE(
-      content::ExecuteJavaScriptAndExtractString(
-          chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-          L"",
-          L"window.domAutomationController.send("
-          L"    function() {"
-          L"        var value = window.chrome.app.isInstalled;"
-          L"        window.chrome.app.isInstalled = !value;"
-          L"        if (window.chrome.app.isInstalled == value) {"
-          L"            return 'true';"
-          L"        } else {"
-          L"            return 'false';"
-          L"        }"
-          L"    }()"
-          L");",
-         &result));
+      content::ExecuteScriptAndExtractString(
+          browser()->tab_strip_model()->GetActiveWebContents(),
+          "window.domAutomationController.send("
+          "    function() {"
+          "        var value = window.chrome.app.isInstalled;"
+          "        window.chrome.app.isInstalled = !value;"
+          "        if (window.chrome.app.isInstalled == value) {"
+          "            return 'true';"
+          "        } else {"
+          "            return 'false';"
+          "        }"
+          "    }()"
+          ");",
+          &result));
 
   // Should not be able to alter window.chrome.app.isInstalled from javascript";
   EXPECT_EQ("true", result);
@@ -186,26 +193,28 @@ IN_PROC_BROWSER_TEST_F(ChromeAppAPITest, GetDetailsForFrame) {
 
   // Test that normal pages (even apps) cannot use getDetailsForFrame().
   ui_test_utils::NavigateToURL(browser(), app_url);
-  std::wstring test_unsuccessful_access =
-      L"window.domAutomationController.send(window.testUnsuccessfulAccess())";
+  const char kTestUnsuccessfulAccess[] =
+      "window.domAutomationController.send(window.testUnsuccessfulAccess())";
   bool result = false;
   ASSERT_TRUE(
-      content::ExecuteJavaScriptAndExtractBool(
-          chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-          L"", test_unsuccessful_access, &result));
+      content::ExecuteScriptAndExtractBool(
+          browser()->tab_strip_model()->GetActiveWebContents(),
+          kTestUnsuccessfulAccess,
+          &result));
   EXPECT_TRUE(result);
 
   // Test that checkout can use getDetailsForFrame() and that it works
   // correctly.
   ui_test_utils::NavigateToURL(browser(), checkout_url);
-  std::wstring get_details_for_frame =
-      L"window.domAutomationController.send("
-      L"    JSON.stringify(chrome.app.getDetailsForFrame(frames[0])))";
+  const char kGetDetailsForFrame[] =
+      "window.domAutomationController.send("
+      "    JSON.stringify(chrome.app.getDetailsForFrame(frames[0])))";
   std::string json;
   ASSERT_TRUE(
-      content::ExecuteJavaScriptAndExtractString(
-          chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
-          L"", get_details_for_frame, &json));
+      content::ExecuteScriptAndExtractString(
+          browser()->tab_strip_model()->GetActiveWebContents(),
+          kGetDetailsForFrame,
+          &json));
 
   scoped_ptr<DictionaryValue> app_details(
       static_cast<DictionaryValue*>(base::JSONReader::Read(json)));
@@ -276,9 +285,9 @@ IN_PROC_BROWSER_TEST_F(ChromeAppAPITest, InstallAndRunningState) {
   EXPECT_EQ("cannot_run", RunningState());
   EXPECT_FALSE(IsAppInstalled());
 
-  EXPECT_EQ("installed", InstallState(L"//html/iframe[1]"));
-  EXPECT_EQ("cannot_run", RunningState(L"//html/iframe[1]"));
-  EXPECT_FALSE(IsAppInstalled(L"//html/iframe[1]"));
+  EXPECT_EQ("installed", InstallState("//html/iframe[1]"));
+  EXPECT_EQ("cannot_run", RunningState("//html/iframe[1]"));
+  EXPECT_FALSE(IsAppInstalled("//html/iframe[1]"));
 
 }
 
@@ -304,7 +313,7 @@ IN_PROC_BROWSER_TEST_F(ChromeAppAPITest, InstallAndRunningStateFrame) {
   // within an app.
   ui_test_utils::NavigateToURL(browser(), app_url);
 
-  EXPECT_EQ("not_installed", InstallState(L"//html/iframe[1]"));
-  EXPECT_EQ("cannot_run", RunningState(L"//html/iframe[1]"));
-  EXPECT_FALSE(IsAppInstalled(L"//html/iframe[1]"));
+  EXPECT_EQ("not_installed", InstallState("//html/iframe[1]"));
+  EXPECT_EQ("cannot_run", RunningState("//html/iframe[1]"));
+  EXPECT_FALSE(IsAppInstalled("//html/iframe[1]"));
 }

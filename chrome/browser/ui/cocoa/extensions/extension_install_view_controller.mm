@@ -12,6 +12,8 @@
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/bundle_installer.h"
+#import "chrome/browser/ui/chrome_style.h"
+#import "chrome/browser/ui/cocoa/hyperlink_button_cell.h"
 #include "chrome/common/extensions/extension.h"
 #include "content/public/browser/page_navigator.h"
 #include "grit/generated_resources.h"
@@ -108,7 +110,7 @@ void AppendRatingStarsShim(const gfx::ImageSkia* skiaImage, void* data) {
 
 void DrawBulletInFrame(NSRect frame) {
   NSRect rect;
-  rect.size.width = std::min(NSWidth(frame), NSHeight(frame)) * 0.38;
+  rect.size.width = std::min(NSWidth(frame), NSHeight(frame)) * 0.25;
   rect.size.height = NSWidth(rect);
   rect.origin.x = frame.origin.x + (NSWidth(frame) - NSWidth(rect)) / 2.0;
   rect.origin.y = frame.origin.y + (NSHeight(frame) - NSHeight(rect)) / 2.0;
@@ -132,6 +134,7 @@ void DrawBulletInFrame(NSRect frame) {
 @synthesize ratingStars = ratingStars_;
 @synthesize ratingCountField = ratingCountField_;
 @synthesize userCountField = userCountField_;
+@synthesize storeLinkButton = storeLinkButton_;
 
 - (id)initWithNavigator:(content::PageNavigator*)navigator
                delegate:(ExtensionInstallPrompt::Delegate*)delegate
@@ -182,8 +185,15 @@ void DrawBulletInFrame(NSRect frame) {
 - (void)awakeFromNib {
   // Set control labels.
   [titleField_ setStringValue:base::SysUTF16ToNSString(prompt_->GetHeading())];
-  [okButton_ setTitle:base::SysUTF16ToNSString(
-      prompt_->GetAcceptButtonLabel())];
+  NSRect okButtonRect;
+  if (prompt_->HasAcceptButtonLabel()) {
+    [okButton_ setTitle:base::SysUTF16ToNSString(
+        prompt_->GetAcceptButtonLabel())];
+  } else {
+    [okButton_ removeFromSuperview];
+    okButtonRect = [okButton_ frame];
+    okButton_ = nil;
+  }
   [cancelButton_ setTitle:prompt_->HasAbortButtonLabel() ?
       base::SysUTF16ToNSString(prompt_->GetAbortButtonLabel()) :
       l10n_util::GetNSString(IDS_CANCEL)];
@@ -193,6 +203,9 @@ void DrawBulletInFrame(NSRect frame) {
         prompt_->GetRatingCount())];
     [userCountField_ setStringValue:base::SysUTF16ToNSString(
         prompt_->GetUserCount())];
+    [[storeLinkButton_ cell] setUnderlineOnHover:YES];
+    [[storeLinkButton_ cell] setTextColor:
+        gfx::SkColorToCalibratedNSColor(chrome_style::GetLinkColor())];
   }
 
   // The bundle install dialog has no icon.
@@ -211,11 +224,21 @@ void DrawBulletInFrame(NSRect frame) {
 
   // Resize |okButton_| and |cancelButton_| to fit the button labels, but keep
   // them right-aligned.
-  NSSize buttonDelta = [GTMUILocalizerAndLayoutTweaker sizeToFitView:okButton_];
-  if (buttonDelta.width) {
-    [okButton_ setFrame:NSOffsetRect([okButton_ frame], -buttonDelta.width, 0)];
-    [cancelButton_ setFrame:NSOffsetRect([cancelButton_ frame],
-                                         -buttonDelta.width, 0)];
+  NSSize buttonDelta;
+  if (okButton_) {
+    buttonDelta = [GTMUILocalizerAndLayoutTweaker sizeToFitView:okButton_];
+    if (buttonDelta.width) {
+      [okButton_ setFrame:NSOffsetRect([okButton_ frame],
+                                       -buttonDelta.width, 0)];
+      [cancelButton_ setFrame:NSOffsetRect([cancelButton_ frame],
+                                           -buttonDelta.width, 0)];
+    }
+  } else {
+    // Make |cancelButton_| right-aligned in the absence of |okButton_|.
+    NSRect cancelButtonRect = [cancelButton_ frame];
+    cancelButtonRect.origin.x =
+        NSMaxX(okButtonRect) - NSWidth(cancelButtonRect);
+    [cancelButton_ setFrame:cancelButtonRect];
   }
   buttonDelta = [GTMUILocalizerAndLayoutTweaker sizeToFitView:cancelButton_];
   if (buttonDelta.width) {
@@ -370,7 +393,7 @@ void DrawBulletInFrame(NSRect frame) {
   // Prevent reentrancy due to the frameOfCellAtColumn:row: call below.
   if (isComputingRowHeight_)
     return 1;
-  AutoReset<BOOL> reset(&isComputingRowHeight_, YES);
+  base::AutoReset<BOOL> reset(&isComputingRowHeight_, YES);
 
   NSCell* cell = [[[outlineView_ tableColumns] objectAtIndex:0] dataCell];
   [cell setStringValue:[item objectForKey:kTitleKey]];
@@ -394,9 +417,9 @@ void DrawBulletInFrame(NSRect frame) {
      forTableColumn:(NSTableColumn *)tableColumn
                item:(id)item {
   if ([[item objectForKey:kIsGroupItemKey] boolValue])
-    [cell setFont:[NSFont boldSystemFontOfSize:11.0]];
+    [cell setFont:[NSFont boldSystemFontOfSize:12.0]];
   else
-    [cell setFont:[NSFont systemFontOfSize:11.0]];
+    [cell setFont:[NSFont systemFontOfSize:12.0]];
 }
 
 - (void)outlineView:(NSOutlineView *)outlineView

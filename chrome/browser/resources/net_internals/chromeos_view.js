@@ -70,15 +70,15 @@ var CrosView = (function() {
   function setFileContent_(result) {
     fileContent = result;
     // Parse the JSON to get at the top level "Type" property.
-    var json_object;
+    var jsonObject;
     // Ignore any parse errors: they'll get handled in the C++ import code.
     try {
-      json_object = JSON.parse(fileContent);
+      jsonObject = JSON.parse(fileContent);
     } catch (error) {}
     // Check if file is encrypted.
-    if (json_object &&
-        json_object.hasOwnProperty('Type') &&
-        json_object.Type == 'EncryptedConfiguration') {
+    if (jsonObject &&
+        jsonObject.hasOwnProperty('Type') &&
+        jsonObject.Type == 'EncryptedConfiguration') {
       promptForPasscode_();
     } else {
       importONCFile_();
@@ -172,6 +172,9 @@ var CrosView = (function() {
     $(CrosView.DEBUG_CELLULAR_ID).addEventListener('click', function(event) {
         setNetworkDebugMode_('cellular');
     }, false);
+    $(CrosView.DEBUG_WIMAX_ID).addEventListener('click', function(event) {
+        setNetworkDebugMode_('wimax');
+    }, false);
     $(CrosView.DEBUG_NONE_ID).addEventListener('click', function(event) {
         setNetworkDebugMode_('none');
     }, false);
@@ -228,6 +231,7 @@ var CrosView = (function() {
   CrosView.DEBUG_WIFI_ID = 'chromeos-view-network-debugging-wifi';
   CrosView.DEBUG_ETHERNET_ID = 'chromeos-view-network-debugging-ethernet';
   CrosView.DEBUG_CELLULAR_ID = 'chromeos-view-network-debugging-cellular';
+  CrosView.DEBUG_WIMAX_ID = 'chromeos-view-network-debugging-wimax';
   CrosView.DEBUG_NONE_ID = 'chromeos-view-network-debugging-none';
   CrosView.DEBUG_STATUS_ID = 'chromeos-view-network-debugging-status';
 

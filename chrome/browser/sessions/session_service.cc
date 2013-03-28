@@ -13,7 +13,6 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
-#include "base/memory/scoped_vector.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
@@ -26,14 +25,16 @@
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/sessions/session_types.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/startup_metric_utils.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
@@ -82,29 +83,6 @@ static const SessionCommand::id_type kCommandSetActiveWindow = 20;
 static const int kWritesPerReset = 250;
 
 namespace {
-
-// The callback from GetLastSession is internally routed to SessionService
-// first and then the caller. This is done so that the SessionWindows can be
-// recreated from the SessionCommands and the SessionWindows passed to the
-// caller. The following class is used for this.
-class InternalSessionRequest
-    : public BaseSessionService::InternalGetCommandsRequest {
- public:
-  InternalSessionRequest(
-      const CallbackType& callback,
-      const SessionService::SessionCallback& real_callback)
-      : BaseSessionService::InternalGetCommandsRequest(callback),
-        real_callback(real_callback) {
-  }
-
-  // The callback supplied to GetLastSession.
-  SessionService::SessionCallback real_callback;
-
- private:
-  ~InternalSessionRequest() {}
-
-  DISALLOW_COPY_AND_ASSIGN(InternalSessionRequest);
-};
 
 // Various payload structures.
 struct ClosedPayload {
@@ -201,7 +179,7 @@ bool MigrateClosedPayload(const SessionCommand& command,
 // SessionService -------------------------------------------------------------
 
 SessionService::SessionService(Profile* profile)
-    : BaseSessionService(SESSION_RESTORE, profile, FilePath()),
+    : BaseSessionService(SESSION_RESTORE, profile, base::FilePath()),
       has_open_trackable_browsers_(false),
       move_on_new_browser_(false),
       save_delay_in_millis_(base::TimeDelta::FromMilliseconds(2500)),
@@ -211,7 +189,7 @@ SessionService::SessionService(Profile* profile)
   Init();
 }
 
-SessionService::SessionService(const FilePath& save_path)
+SessionService::SessionService(const base::FilePath& save_path)
     : BaseSessionService(SESSION_RESTORE, NULL, save_path),
       has_open_trackable_browsers_(false),
       move_on_new_browser_(false),
@@ -452,9 +430,8 @@ void SessionService::UpdateTabNavigation(
                                                    tab_id.id(), navigation));
 }
 
-void SessionService::TabRestored(TabContents* tab, bool pinned) {
-  SessionTabHelper* session_tab_helper =
-      SessionTabHelper::FromWebContents(tab->web_contents());
+void SessionService::TabRestored(WebContents* tab, bool pinned) {
+  SessionTabHelper* session_tab_helper = SessionTabHelper::FromWebContents(tab);
   if (!ShouldTrackChangesToWindow(session_tab_helper->window_id()))
     return;
 
@@ -501,15 +478,15 @@ void SessionService::SetTabUserAgentOverride(
       kCommandSetTabUserAgentOverride, tab_id.id(), user_agent_override));
 }
 
-SessionService::Handle SessionService::GetLastSession(
-    CancelableRequestConsumerBase* consumer,
-    const SessionCallback& callback) {
+CancelableTaskTracker::TaskId SessionService::GetLastSession(
+    const SessionCallback& callback,
+    CancelableTaskTracker* tracker) {
+  // OnGotSessionCommands maps the SessionCommands to browser state, then run
+  // the callback.
   return ScheduleGetLastSessionCommands(
-      new InternalSessionRequest(
-          base::Bind(&SessionService::OnGotSessionCommands,
-                     base::Unretained(this)),
-          callback),
-      consumer);
+      base::Bind(&SessionService::OnGotSessionCommands,
+                 base::Unretained(this), callback),
+      tracker);
 }
 
 void SessionService::Save() {
@@ -541,6 +518,10 @@ void SessionService::Init() {
       content::NotificationService::AllSources());
 
   BrowserList::AddObserver(this);
+}
+
+bool SessionService::processed_any_commands() {
+  return backend()->inited() || !pending_commands().empty();
 }
 
 bool SessionService::ShouldNewWindowStartSession() {
@@ -580,6 +561,7 @@ bool SessionService::RestoreIfNecessary(const std::vector<GURL>& urls_to_open,
     if (pref.type == SessionStartupPref::LAST) {
       SessionRestore::RestoreSession(
           profile(), browser,
+          browser ? browser->host_desktop_type() : chrome::GetActiveDesktop(),
           browser ? 0 : SessionRestore::ALWAYS_CREATE_TABBED_BROWSER,
           urls_to_open);
       return true;
@@ -854,17 +836,14 @@ SessionCommand* SessionService::CreateSetActiveWindowCommand(
 }
 
 void SessionService::OnGotSessionCommands(
-    Handle handle,
-    scoped_refptr<InternalGetCommandsRequest> request) {
-  if (request->canceled())
-    return;
-
+    const SessionCallback& callback,
+    ScopedVector<SessionCommand> commands) {
   ScopedVector<SessionWindow> valid_windows;
   SessionID::id_type active_window_id = 0;
+
   RestoreSessionFromCommands(
-      request->commands, &(valid_windows.get()), &active_window_id);
-  static_cast<InternalSessionRequest*>(request.get())->real_callback.Run(
-      request->handle(), &(valid_windows.get()), active_window_id);
+      commands.get(), &valid_windows.get(), &active_window_id);
+  callback.Run(valid_windows.Pass(), active_window_id);
 }
 
 void SessionService::RestoreSessionFromCommands(
@@ -1027,6 +1006,9 @@ bool SessionService::CreateTabsAndWindows(
   // If the file is corrupt (command with wrong size, or unknown command), we
   // still return true and attempt to restore what we we can.
   VLOG(1) << "CreateTabsAndWindows";
+
+  startup_metric_utils::ScopedSlowStartupUMA
+      scoped_timer("Startup.SlowStartupSessionServiceCreateTabsAndWindows");
 
   for (std::vector<SessionCommand*>::const_iterator i = data.begin();
        i != data.end(); ++i) {
@@ -1284,28 +1266,24 @@ bool SessionService::CreateTabsAndWindows(
   return true;
 }
 
-void SessionService::BuildCommandsForTab(
-    const SessionID& window_id,
-    TabContents* tab,
-    int index_in_window,
-    bool is_pinned,
-    std::vector<SessionCommand*>* commands,
-    IdToRange* tab_to_available_range) {
+void SessionService::BuildCommandsForTab(const SessionID& window_id,
+                                         WebContents* tab,
+                                         int index_in_window,
+                                         bool is_pinned,
+                                         std::vector<SessionCommand*>* commands,
+                                         IdToRange* tab_to_available_range) {
   DCHECK(tab && commands && window_id.id());
-  SessionTabHelper* session_tab_helper =
-      SessionTabHelper::FromWebContents(tab->web_contents());
+  SessionTabHelper* session_tab_helper = SessionTabHelper::FromWebContents(tab);
   const SessionID& session_id(session_tab_helper->session_id());
   commands->push_back(CreateSetTabWindowCommand(window_id, session_id));
 
-  const int current_index =
-      tab->web_contents()->GetController().GetCurrentEntryIndex();
+  const int current_index = tab->GetController().GetCurrentEntryIndex();
   const int min_index = std::max(0,
                                  current_index - max_persist_navigation_count);
   const int max_index =
       std::min(current_index + max_persist_navigation_count,
-               tab->web_contents()->GetController().GetEntryCount());
-  const int pending_index =
-      tab->web_contents()->GetController().GetPendingEntryIndex();
+               tab->GetController().GetEntryCount());
+  const int pending_index = tab->GetController().GetPendingEntryIndex();
   if (tab_to_available_range) {
     (*tab_to_available_range)[session_id.id()] =
         std::pair<int, int>(min_index, max_index);
@@ -1316,7 +1294,7 @@ void SessionService::BuildCommandsForTab(
   }
 
   extensions::TabHelper* extensions_tab_helper =
-      extensions::TabHelper::FromWebContents(tab->web_contents());
+      extensions::TabHelper::FromWebContents(tab);
   if (extensions_tab_helper->extension_app()) {
     commands->push_back(
         CreateSetTabExtensionAppIDCommand(
@@ -1324,7 +1302,7 @@ void SessionService::BuildCommandsForTab(
             extensions_tab_helper->extension_app()->id()));
   }
 
-  const std::string& ua_override = tab->web_contents()->GetUserAgentOverride();
+  const std::string& ua_override = tab->GetUserAgentOverride();
   if (!ua_override.empty()) {
     commands->push_back(
         CreateSetTabUserAgentOverrideCommand(
@@ -1333,8 +1311,8 @@ void SessionService::BuildCommandsForTab(
 
   for (int i = min_index; i < max_index; ++i) {
     const NavigationEntry* entry = (i == pending_index) ?
-        tab->web_contents()->GetController().GetPendingEntry() :
-        tab->web_contents()->GetController().GetEntryAtIndex(i);
+        tab->GetController().GetPendingEntry() :
+        tab->GetController().GetEntryAtIndex(i);
     DCHECK(entry);
     if (ShouldTrackEntry(entry->GetVirtualURL())) {
       const TabNavigation navigation =
@@ -1354,7 +1332,7 @@ void SessionService::BuildCommandsForTab(
 
   // Record the association between the sessionStorage namespace and the tab.
   content::SessionStorageNamespace* session_storage_namespace =
-      tab->web_contents()->GetController().GetDefaultSessionStorageNamespace();
+      tab->GetController().GetDefaultSessionStorageNamespace();
   ScheduleCommand(CreateSessionStorageAssociatedCommand(
       session_tab_helper->session_id(),
       session_storage_namespace->persistent_id()));
@@ -1389,23 +1367,19 @@ void SessionService::BuildCommandsForBrowser(
         browser->app_name()));
   }
 
-  bool added_to_windows_to_track = false;
-  for (int i = 0; i < browser->tab_count(); ++i) {
-    TabContents* tab = chrome::GetTabContentsAt(browser, i);
+  windows_to_track->insert(browser->session_id().id());
+  TabStripModel* tab_strip = browser->tab_strip_model();
+  for (int i = 0; i < tab_strip->count(); ++i) {
+    WebContents* tab = tab_strip->GetWebContentsAt(i);
     DCHECK(tab);
-    if (tab->profile() == profile() || profile() == NULL) {
-      BuildCommandsForTab(browser->session_id(), tab, i,
-                          browser->tab_strip_model()->IsTabPinned(i),
-                          commands, tab_to_available_range);
-      if (windows_to_track && !added_to_windows_to_track) {
-        windows_to_track->insert(browser->session_id().id());
-        added_to_windows_to_track = true;
-      }
-    }
+    BuildCommandsForTab(browser->session_id(), tab, i,
+                        tab_strip->IsTabPinned(i),
+                        commands, tab_to_available_range);
   }
+
   commands->push_back(
       CreateSetSelectedTabInWindow(browser->session_id(),
-                                   browser->active_index()));
+                                   browser->tab_strip_model()->active_index()));
 }
 
 void SessionService::BuildCommandsFromBrowsers(
@@ -1413,16 +1387,15 @@ void SessionService::BuildCommandsFromBrowsers(
     IdToRange* tab_to_available_range,
     std::set<SessionID::id_type>* windows_to_track) {
   DCHECK(commands);
-  for (BrowserList::const_iterator i = BrowserList::begin();
-       i != BrowserList::end(); ++i) {
-    Browser* browser = *i;
-    // Make sure the browser has tabs and a window. Browsers destructor
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
+    // Make sure the browser has tabs and a window. Browser's destructor
     // removes itself from the BrowserList. When a browser is closed the
-    // destructor is not necessarily run immediately. This means its possible
+    // destructor is not necessarily run immediately. This means it's possible
     // for us to get a handle to a browser that is about to be removed. If
     // the tab count is 0 or the window is NULL, the browser is about to be
     // deleted, so we ignore it.
-    if (ShouldTrackBrowser(browser) && browser->tab_count() &&
+    if (ShouldTrackBrowser(browser) && browser->tab_strip_model()->count() &&
         browser->window()) {
       BuildCommandsForBrowser(browser, commands, tab_to_available_range,
                               windows_to_track);
@@ -1537,9 +1510,8 @@ bool SessionService::IsOnlyOneTabLeft() const {
   }
 
   int window_count = 0;
-  for (BrowserList::const_iterator i = BrowserList::begin();
-       i != BrowserList::end(); ++i) {
-    Browser* browser = *i;
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
     const SessionID::id_type window_id = browser->session_id().id();
     if (ShouldTrackBrowser(browser) &&
         window_closing_ids_.find(window_id) == window_closing_ids_.end()) {
@@ -1547,7 +1519,7 @@ bool SessionService::IsOnlyOneTabLeft() const {
         return false;
       // By the time this is invoked the tab has been removed. As such, we use
       // > 0 here rather than > 1.
-      if ((*i)->tab_count() > 0)
+      if (browser->tab_strip_model()->count() > 0)
         return false;
     }
   }
@@ -1561,9 +1533,8 @@ bool SessionService::HasOpenTrackableBrowsers(
     return true;
   }
 
-  for (BrowserList::const_iterator i = BrowserList::begin();
-       i != BrowserList::end(); ++i) {
-    Browser* browser = *i;
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
     const SessionID::id_type browser_id = browser->session_id().id();
     if (browser_id != window_id.id() &&
         window_closing_ids_.find(browser_id) == window_closing_ids_.end() &&
@@ -1587,8 +1558,8 @@ bool SessionService::ShouldTrackBrowser(Browser* browser) const {
 
 bool SessionService::should_track_changes_for_browser_type(Browser::Type type,
                                                            AppType app_type) {
-#if defined(USE_AURA)
-  // Restore app popups for aura alone.
+#if defined(OS_CHROMEOS)
+  // Restore app popups for chromeos alone.
   if (type == Browser::TYPE_POPUP && app_type == TYPE_APP)
     return true;
 #endif
@@ -1753,6 +1724,8 @@ void SessionService::RecordUpdatedSaveTime(base::TimeDelta delta,
 void SessionService::TabInserted(WebContents* contents) {
   SessionTabHelper* session_tab_helper =
       SessionTabHelper::FromWebContents(contents);
+  if (!ShouldTrackChangesToWindow(session_tab_helper->window_id()))
+    return;
   SetTabWindow(session_tab_helper->window_id(),
                session_tab_helper->session_id());
   extensions::TabHelper* extensions_tab_helper =

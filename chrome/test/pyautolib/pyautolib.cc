@@ -7,8 +7,8 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -31,12 +31,12 @@ PyUITestSuiteBase::~PyUITestSuiteBase() {
   Shutdown();
 }
 
-void PyUITestSuiteBase::InitializeWithPath(const FilePath& browser_dir) {
+void PyUITestSuiteBase::InitializeWithPath(const base::FilePath& browser_dir) {
   SetBrowserDirectory(browser_dir);
   UITestSuite::Initialize();
 }
 
-void PyUITestSuiteBase::SetCrSourceRoot(const FilePath& path) {
+void PyUITestSuiteBase::SetCrSourceRoot(const base::FilePath& path) {
   PathService::Override(base::DIR_SOURCE_ROOT, path);
 }
 
@@ -65,7 +65,7 @@ MessageLoop* PyUITestBase::GetSharedMessageLoop(
   return message_loop_;
 }
 
-void PyUITestBase::Initialize(const FilePath& browser_dir) {
+void PyUITestBase::Initialize(const base::FilePath& browser_dir) {
   UITestBase::SetBrowserDirectory(browser_dir);
 }
 
@@ -134,8 +134,8 @@ void PyUITestBase::ErrorResponse(
     bool is_timeout,
     std::string* response) {
   base::DictionaryValue error_dict;
-  std::string error_msg = StringPrintf("%s for %s", error_string.c_str(),
-                                       request.c_str());
+  std::string error_msg = base::StringPrintf("%s for %s", error_string.c_str(),
+                                             request.c_str());
   LOG(ERROR) << "Error during automation: " << error_msg;
   error_dict.SetString("error", error_msg);
   error_dict.SetBoolean("is_interface_error", true);
@@ -151,8 +151,8 @@ void PyUITestBase::RequestFailureResponse(
   // TODO(craigdh): Determine timeout directly from IPC's Send().
   if (duration >= timeout) {
     ErrorResponse(
-        StringPrintf("Chrome automation timed out after %d seconds",
-                     static_cast<int>(duration.InSeconds())),
+        base::StringPrintf("Chrome automation timed out after %d seconds",
+                           static_cast<int>(duration.InSeconds())),
         request, true, response);
   } else {
     // TODO(craigdh): Determine specific cause.

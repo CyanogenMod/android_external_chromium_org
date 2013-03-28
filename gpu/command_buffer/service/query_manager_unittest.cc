@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "gpu/command_buffer/service/query_manager.h"
-#include "gpu/command_buffer/common/gl_mock.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
@@ -11,6 +10,7 @@
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gl/gl_mock.h"
 
 using ::testing::_;
 using ::testing::InSequence;
@@ -32,7 +32,7 @@ class QueryManagerTest : public testing::Test {
 
   QueryManagerTest() {
   }
-  ~QueryManagerTest() {
+  virtual ~QueryManagerTest() {
   }
 
  protected:
@@ -45,7 +45,7 @@ class QueryManagerTest : public testing::Test {
     TestHelper::SetupFeatureInfoInitExpectations(
         gl_.get(),
         "GL_EXT_occlusion_query_boolean");
-    FeatureInfo::Ref feature_info(new FeatureInfo());
+    scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
     feature_info->Initialize("*");
     manager_.reset(new QueryManager(decoder_.get(), feature_info.get()));
   }
@@ -98,7 +98,7 @@ class QueryManagerTest : public testing::Test {
     virtual ~MockCommandBufferEngine() {
     }
 
-    virtual Buffer GetSharedMemoryBuffer(int32 shm_id) OVERRIDE {
+    virtual gpu::Buffer GetSharedMemoryBuffer(int32 shm_id) OVERRIDE {
       return shm_id == kSharedMemoryId ? valid_buffer_ : invalid_buffer_;
     }
 
@@ -129,8 +129,8 @@ class QueryManagerTest : public testing::Test {
 
    private:
     scoped_array<int8> data_;
-    Buffer valid_buffer_;
-    Buffer invalid_buffer_;
+    gpu::Buffer valid_buffer_;
+    gpu::Buffer invalid_buffer_;
   };
 
   scoped_ptr<MockCommandBufferEngine> engine_;
@@ -154,7 +154,7 @@ TEST_F(QueryManagerTest, Basic) {
 
   EXPECT_FALSE(manager_->HavePendingQueries());
   // Check we can create a Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(GL_ANY_SAMPLES_PASSED_EXT, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -176,7 +176,7 @@ TEST_F(QueryManagerTest, Destroy) {
   const GLuint kService1Id = 11;
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(GL_ANY_SAMPLES_PASSED_EXT, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -196,7 +196,7 @@ TEST_F(QueryManagerTest, QueryBasic) {
   const GLenum kTarget = GL_ANY_SAMPLES_PASSED_EXT;
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(kTarget, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -220,7 +220,7 @@ TEST_F(QueryManagerTest, ProcessPendingQuery) {
   EXPECT_TRUE(manager_->ProcessPendingQueries());
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(kTarget, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -291,15 +291,15 @@ TEST_F(QueryManagerTest, ProcessPendingQueries) {
   QuerySync* sync3 = sync2 + 1;
 
   // Create Queries.
-  QueryManager::Query::Ref query1(
+  scoped_refptr<QueryManager::Query> query1(
       CreateQuery(kTarget, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset + sizeof(*sync1) * 0,
                   kService1Id));
-  QueryManager::Query::Ref query2(
+  scoped_refptr<QueryManager::Query> query2(
       CreateQuery(kTarget, kClient2Id,
                   kSharedMemoryId, kSharedMemoryOffset + sizeof(*sync1) * 1,
                   kService2Id));
-  QueryManager::Query::Ref query3(
+  scoped_refptr<QueryManager::Query> query3(
       CreateQuery(kTarget, kClient3Id,
                   kSharedMemoryId, kSharedMemoryOffset + sizeof(*sync1) * 2,
                   kService3Id));
@@ -395,7 +395,7 @@ TEST_F(QueryManagerTest, ProcessPendingBadSharedMemoryId) {
   const GLuint kResult = 1;
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(kTarget, kClient1Id,
                   kInvalidSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -424,7 +424,7 @@ TEST_F(QueryManagerTest, ProcessPendingBadSharedMemoryOffset) {
   const GLuint kResult = 1;
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(kTarget, kClient1Id,
                   kSharedMemoryId, kInvalidSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -452,7 +452,7 @@ TEST_F(QueryManagerTest, ExitWithPendingQuery) {
   const uint32 kSubmitCount = 123;
 
   // Create Query.
-  QueryManager::Query::Ref query(
+  scoped_refptr<QueryManager::Query> query(
       CreateQuery(kTarget, kClient1Id,
                   kSharedMemoryId, kSharedMemoryOffset, kService1Id));
   ASSERT_TRUE(query.get() != NULL);
@@ -472,7 +472,7 @@ TEST_F(QueryManagerTest, ARBOcclusionQuery2) {
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(),
       "GL_ARB_occlusion_query2");
-  FeatureInfo::Ref feature_info(new FeatureInfo());
+  scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
   feature_info->Initialize("*");
   scoped_ptr<QueryManager> manager(
       new QueryManager(decoder_.get(), feature_info.get()));
@@ -506,7 +506,7 @@ TEST_F(QueryManagerTest, ARBOcclusionQuery) {
   TestHelper::SetupFeatureInfoInitExpectations(
       gl_.get(),
       "GL_ARB_occlusion_query");
-  FeatureInfo::Ref feature_info(new FeatureInfo());
+  scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
   feature_info->Initialize("*");
   scoped_ptr<QueryManager> manager(
       new QueryManager(decoder_.get(), feature_info.get()));
@@ -535,7 +535,7 @@ TEST_F(QueryManagerTest, GetErrorQuery) {
   const uint32 kSubmitCount = 123;
 
   TestHelper::SetupFeatureInfoInitExpectations(gl_.get(), "");
-  FeatureInfo::Ref feature_info(new FeatureInfo());
+  scoped_refptr<FeatureInfo> feature_info(new FeatureInfo());
   feature_info->Initialize("*");
   scoped_ptr<QueryManager> manager(
       new QueryManager(decoder_.get(), feature_info.get()));

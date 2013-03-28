@@ -10,6 +10,7 @@
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/tools/dump_cache/url_utilities.h"
+#include "net/tools/flip_server/constants.h"
 #include "net/tools/flip_server/flip_config.h"
 #include "net/tools/flip_server/http_interface.h"
 #include "net/tools/flip_server/spdy_util.h"
@@ -24,7 +25,7 @@ class SpdyFrameDataFrame : public DataFrame {
   SpdyFrameDataFrame(SpdyFrame* spdy_frame)
     : frame(spdy_frame) {
     data = spdy_frame->data();
-    size = spdy_frame->length() + SpdyFrame::kHeaderSize;
+    size = spdy_frame->size();
   }
 
   virtual ~SpdyFrameDataFrame() {
@@ -39,7 +40,7 @@ SpdySM::SpdySM(SMConnection* connection,
                EpollServer* epoll_server,
                MemoryCache* memory_cache,
                FlipAcceptor* acceptor)
-    : buffered_spdy_framer_(new BufferedSpdyFramer(2)),
+    : buffered_spdy_framer_(new BufferedSpdyFramer(2, true)),
       valid_spdy_session_(false),
       connection_(connection),
       client_output_list_(connection->output_list()),
@@ -184,7 +185,7 @@ int SpdySM::SpdyHandleNewStream(
 void SpdySM::OnStreamFrameData(SpdyStreamId stream_id,
                                const char* data,
                                size_t len,
-                               SpdyDataFlags flags) {
+                               bool fin) {
   VLOG(2) << ACCEPTOR_CLIENT_IDENT << "SpdySM: StreamData(" << stream_id
           << ", [" << len << "])";
   StreamToSmif::iterator it = stream_to_smif_.find(stream_id);
@@ -255,7 +256,7 @@ void SpdySM::OnHeaders(SpdyStreamId stream_id,
 }
 
 void SpdySM::OnRstStream(SpdyStreamId stream_id,
-                         SpdyStatusCodes status) {
+                         SpdyRstStreamStatus status) {
   VLOG(2) << ACCEPTOR_CLIENT_IDENT << "SpdySM: OnRstStream("
           << stream_id << ")";
   client_output_ordering_.RemoveStreamId(stream_id);
@@ -291,7 +292,7 @@ void SpdySM::ResetForNewInterface(int32 server_idx) {
 void SpdySM::ResetForNewConnection() {
   // seq_num is not cleared, intentionally.
   delete buffered_spdy_framer_;
-  buffered_spdy_framer_ = new BufferedSpdyFramer(2);
+  buffered_spdy_framer_ = new BufferedSpdyFramer(2, true);
   buffered_spdy_framer_->set_visitor(this);
   valid_spdy_session_ = false;
   client_output_ordering_.Reset();
@@ -303,7 +304,7 @@ int SpdySM::PostAcceptHook() {
   SettingsMap settings;
   settings[SETTINGS_MAX_CONCURRENT_STREAMS] =
       SettingsFlagsAndValue(SETTINGS_FLAG_NONE, 100);
-  SpdySettingsControlFrame* settings_frame =
+  SpdyFrame* settings_frame =
       buffered_spdy_framer_->CreateSettings(settings);
 
   VLOG(1) << ACCEPTOR_CLIENT_IDENT << "Sending Settings Frame";
@@ -432,9 +433,9 @@ size_t SpdySM::SendSynStreamImpl(uint32 stream_id,
   }
   CopyHeaders(block, headers);
 
-  SpdySynStreamControlFrame* fsrcf = buffered_spdy_framer_->CreateSynStream(
+  SpdyFrame* fsrcf = buffered_spdy_framer_->CreateSynStream(
       stream_id, 0, 0, 0, CONTROL_FLAG_NONE, true, &block);
-  size_t df_size = fsrcf->length() + SpdyFrame::kHeaderSize;
+  size_t df_size = fsrcf->size();
   EnqueueDataFrame(new SpdyFrameDataFrame(fsrcf));
 
   VLOG(2) << ACCEPTOR_CLIENT_IDENT << "SpdySM: Sending SynStreamheader "
@@ -449,9 +450,9 @@ size_t SpdySM::SendSynReplyImpl(uint32 stream_id, const BalsaHeaders& headers) {
                     headers.response_reason_phrase().as_string();
   block["version"] = headers.response_version().as_string();
 
-  SpdySynReplyControlFrame* fsrcf = buffered_spdy_framer_->CreateSynReply(
+  SpdyFrame* fsrcf = buffered_spdy_framer_->CreateSynReply(
       stream_id, CONTROL_FLAG_NONE, true, &block);
-  size_t df_size = fsrcf->length() + SpdyFrame::kHeaderSize;
+  size_t df_size = fsrcf->size();
   EnqueueDataFrame(new SpdyFrameDataFrame(fsrcf));
 
   VLOG(2) << ACCEPTOR_CLIENT_IDENT << "SpdySM: Sending SynReplyheader "
@@ -465,7 +466,7 @@ void SpdySM::SendDataFrameImpl(uint32 stream_id, const char* data, int64 len,
   //                 priority queue.  Compression needs to be done
   //                 with late binding.
   if (len == 0) {
-    SpdyDataFrame* fdf = buffered_spdy_framer_->CreateDataFrame(
+    SpdyFrame* fdf = buffered_spdy_framer_->CreateDataFrame(
         stream_id, data, len, flags);
     EnqueueDataFrame(new SpdyFrameDataFrame(fdf));
     return;
@@ -482,13 +483,13 @@ void SpdySM::SendDataFrameImpl(uint32 stream_id, const char* data, int64 len,
     if ((size < len) && (flags & DATA_FLAG_FIN))
       chunk_flags = static_cast<SpdyDataFlags>(chunk_flags & ~DATA_FLAG_FIN);
 
-    SpdyDataFrame* fdf = buffered_spdy_framer_->CreateDataFrame(
+    SpdyFrame* fdf = buffered_spdy_framer_->CreateDataFrame(
         stream_id, data, size, chunk_flags);
     EnqueueDataFrame(new SpdyFrameDataFrame(fdf));
 
     VLOG(2) << ACCEPTOR_CLIENT_IDENT << "SpdySM: Sending data frame "
-            << stream_id << " [" << size << "] shrunk to " << fdf->length()
-            << ", flags=" << flags;
+            << stream_id << " [" << size << "] shrunk to "
+            << (fdf->size() - kSpdyOverhead) << ", flags=" << flags;
 
     data += size;
     len -= size;

@@ -13,9 +13,11 @@
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search_engines/template_url.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/url_util.h"
 #include "net/base/net_util.h"
@@ -79,12 +81,11 @@ void HistoryContentsProvider::Start(const AutocompleteInput& input,
   }
 
   // TODO(pkasting): http://b/888148 We disallow URL input and "URL-like" input
-  // (REQUESTED_URL or UNKNOWN with dots) because we get poor results for it,
-  // but we could get better results if we did better tokenizing instead.
-  if ((input.type() == AutocompleteInput::URL) ||
-      (((input.type() == AutocompleteInput::REQUESTED_URL) ||
-        (input.type() == AutocompleteInput::UNKNOWN)) &&
-       (input.text().find('.') != string16::npos))) {
+  // (UNKNOWN with dots) because we get poor results for it, but we could get
+  // better results if we did better tokenizing instead.
+  if (input.type() == AutocompleteInput::URL ||
+      (input.type() == AutocompleteInput::UNKNOWN &&
+       input.text().find('.') != string16::npos)) {
     Stop(false);
     return;
   }
@@ -127,12 +128,6 @@ void HistoryContentsProvider::Start(const AutocompleteInput& input,
     results_.Swap(&empty_results);
   }
 
-  // Querying bookmarks is synchronous, so we always do it.
-  QueryBookmarks(input);
-
-  // Convert the bookmark results.
-  ConvertResults();
-
   if (input.matches_requested() == AutocompleteInput::ALL_MATCHES) {
     HistoryService* history =
         HistoryServiceFactory::GetForProfile(profile_,
@@ -167,7 +162,8 @@ HistoryContentsProvider::~HistoryContentsProvider() {
 
 void HistoryContentsProvider::QueryComplete(HistoryService::Handle handle,
                                             history::QueryResults* results) {
-  results_.AppendResultsBySwapping(results, true);
+  DCHECK(results_.empty());
+  results_.Swap(results);
   have_results_ = true;
   ConvertResults();
 
@@ -185,13 +181,24 @@ void HistoryContentsProvider::ConvertResults() {
   std::vector<MatchReference> result_refs;
   result_refs.reserve(results_.size());
 
+  // |template_url_service| or |template_url| can be NULL in unit tests.
+  TemplateURLService* template_url_service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  TemplateURL* template_url = template_url_service ?
+      template_url_service->GetDefaultSearchProvider() : NULL;
+
   // Results are sorted in decreasing order so we run the loop backwards so that
   // the relevance increment favors the higher ranked results.
   for (std::vector<history::URLResult*>::const_reverse_iterator i =
        results_.rbegin(); i != results_.rend(); ++i) {
     history::URLResult* result = *i;
-    MatchReference ref(result, CalculateRelevance(*result));
-    result_refs.push_back(ref);
+    // Culls results corresponding to queries from the default search engine.
+    // These are low-quality, difficult-to-understand matches for users, and the
+    // SearchProvider should surface past queries in a better way anyway.
+    if (!template_url || !template_url->IsSearchURL(result->url())) {
+      MatchReference ref(result, CalculateRelevance(*result));
+      result_refs.push_back(ref);
+    }
   }
 
   // Get the top matches and add them.
@@ -264,29 +271,4 @@ int HistoryContentsProvider::CalculateRelevance(
     return in_title ? (700 + title_count_++) : (500 + contents_count_++);
   return in_title ?
       (1000 + star_title_count_++) : (550 + star_contents_count_++);
-}
-
-void HistoryContentsProvider::QueryBookmarks(const AutocompleteInput& input) {
-  BookmarkModel* bookmark_model =
-      BookmarkModelFactory::GetForProfile(profile_);
-  if (!bookmark_model)
-    return;
-
-  DCHECK(results_.empty());
-
-  TimeTicks start_time = TimeTicks::Now();
-  std::vector<bookmark_utils::TitleMatch> matches;
-  bookmark_model->GetBookmarksWithTitlesMatching(input.text(),
-                                                 kMaxMatches, &matches);
-  for (size_t i = 0; i < matches.size(); ++i)
-    AddBookmarkTitleMatchToResults(matches[i]);
-  UMA_HISTOGRAM_TIMES("Omnibox.QueryBookmarksTime",
-                      TimeTicks::Now() - start_time);
-}
-
-void HistoryContentsProvider::AddBookmarkTitleMatchToResults(
-    const bookmark_utils::TitleMatch& match) {
-  history::URLResult url_result(match.node->url(), match.match_positions);
-  url_result.set_title(match.node->GetTitle());
-  results_.AppendURLBySwapping(&url_result);
 }

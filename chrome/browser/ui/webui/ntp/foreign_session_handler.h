@@ -15,6 +15,8 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
+class PrefRegistrySyncable;
+
 namespace browser_sync {
 
 class ForeignSessionHandler : public content::WebUIMessageHandler,
@@ -29,7 +31,7 @@ class ForeignSessionHandler : public content::WebUIMessageHandler,
   ForeignSessionHandler();
   virtual ~ForeignSessionHandler() {}
 
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
   static void OpenForeignSessionTab(content::WebUI* web_ui,
                                     const std::string& session_string_value,
@@ -80,10 +82,6 @@ class ForeignSessionHandler : public content::WebUIMessageHandler,
   void HandleDeleteForeignSession(const ListValue* args);
 
   void HandleSetForeignSessionCollapsed(const ListValue* args);
-
-  // Show a popup listing the devices's tabs.
-  // This handler was introduced for NTP5.
-  void HandleShowOtherDeviceSessionPopup(const ListValue* args);
 
   // Helper method to create JSON compatible objects from Session objects.
   bool SessionWindowToValue(const SessionWindow& window,

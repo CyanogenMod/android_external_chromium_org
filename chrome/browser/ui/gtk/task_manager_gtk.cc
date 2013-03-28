@@ -14,11 +14,11 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/memory_purger.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_link_button.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
@@ -26,13 +26,13 @@
 #include "chrome/browser/ui/gtk/gtk_tree.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "grit/chromium_strings.h"
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
-#include "ui/base/gtk/menu_label_accelerator_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -274,14 +274,14 @@ class TaskManagerGtk::ContextMenuController
 
  private:
   // ui::SimpleMenuModel::Delegate implementation:
-  virtual bool IsCommandIdEnabled(int command_id) const {
+  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
     if (!task_manager_)
       return false;
 
     return true;
   }
 
-  virtual bool IsCommandIdChecked(int command_id) const {
+  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
     if (!task_manager_)
       return false;
 
@@ -291,11 +291,11 @@ class TaskManagerGtk::ContextMenuController
 
   virtual bool GetAcceleratorForCommandId(
       int command_id,
-      ui::Accelerator* accelerator) {
+      ui::Accelerator* accelerator) OVERRIDE {
     return false;
   }
 
-  virtual void ExecuteCommand(int command_id) {
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
     if (!task_manager_)
       return;
 
@@ -371,7 +371,7 @@ void TaskManagerGtk::OnItemsChanged(int start, int length) {
 }
 
 void TaskManagerGtk::OnItemsAdded(int start, int length) {
-  AutoReset<bool> autoreset(&ignore_selection_changed_, true);
+  base::AutoReset<bool> autoreset(&ignore_selection_changed_, true);
 
   GtkTreeIter iter;
   if (start == 0) {
@@ -397,7 +397,7 @@ void TaskManagerGtk::OnItemsAdded(int start, int length) {
 
 void TaskManagerGtk::OnItemsRemoved(int start, int length) {
   {
-    AutoReset<bool> autoreset(&ignore_selection_changed_, true);
+    base::AutoReset<bool> autoreset(&ignore_selection_changed_, true);
 
     GtkTreeIter iter;
     gtk_tree_model_iter_nth_child(GTK_TREE_MODEL(process_list_), &iter,
@@ -473,8 +473,7 @@ void TaskManagerGtk::Init() {
   }
 
   gtk_dialog_add_button(GTK_DIALOG(dialog_),
-      ui::ConvertAcceleratorsFromWindowsStyle(
-          l10n_util::GetStringUTF8(IDS_TASK_MANAGER_KILL)).c_str(),
+      l10n_util::GetStringUTF8(IDS_TASK_MANAGER_KILL).c_str(),
       kTaskManagerResponseKill);
 
   // The response button should not be sensitive when the dialog is first opened
@@ -659,7 +658,6 @@ void TaskManagerGtk::CreateTaskManagerTreeview() {
   // Hide some columns by default.
   TreeViewColumnSetVisible(treeview_, kTaskManagerProfileName, false);
   TreeViewColumnSetVisible(treeview_, kTaskManagerSharedMem, false);
-  TreeViewColumnSetVisible(treeview_, kTaskManagerProcessID, false);
   TreeViewColumnSetVisible(treeview_, kTaskManagerJavaScriptMemory, false);
   TreeViewColumnSetVisible(treeview_, kTaskManagerWebCoreImageCache, false);
   TreeViewColumnSetVisible(treeview_, kTaskManagerWebCoreScriptsCache, false);
@@ -672,76 +670,8 @@ void TaskManagerGtk::CreateTaskManagerTreeview() {
   g_object_unref(process_list_sort_);
 }
 
-bool IsSharedByGroup(int col_id) {
-  switch (col_id) {
-    case IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN:
-    case IDS_TASK_MANAGER_SHARED_MEM_COLUMN:
-    case IDS_TASK_MANAGER_CPU_COLUMN:
-    case IDS_TASK_MANAGER_PROCESS_ID_COLUMN:
-    case IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN:
-    case IDS_TASK_MANAGER_WEBCORE_IMAGE_CACHE_COLUMN:
-    case IDS_TASK_MANAGER_WEBCORE_SCRIPTS_CACHE_COLUMN:
-    case IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN:
-      return true;
-    default:
-      return false;
-  }
-}
-
 std::string TaskManagerGtk::GetModelText(int row, int col_id) {
-  if (IsSharedByGroup(col_id) && !model_->IsResourceFirstInGroup(row))
-    return std::string();
-
-  switch (col_id) {
-    case IDS_TASK_MANAGER_TASK_COLUMN:  // Process
-      return UTF16ToUTF8(model_->GetResourceTitle(row));
-
-    case IDS_TASK_MANAGER_PROFILE_NAME_COLUMN:  // Profile name
-      return UTF16ToUTF8(model_->GetResourceProfileName(row));
-
-    case IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN:  // Memory
-      return UTF16ToUTF8(model_->GetResourcePrivateMemory(row));
-
-    case IDS_TASK_MANAGER_SHARED_MEM_COLUMN:  // Memory
-      return UTF16ToUTF8(model_->GetResourceSharedMemory(row));
-
-    case IDS_TASK_MANAGER_CPU_COLUMN:  // CPU
-      return UTF16ToUTF8(model_->GetResourceCPUUsage(row));
-
-    case IDS_TASK_MANAGER_NET_COLUMN:  // Net
-      return UTF16ToUTF8(model_->GetResourceNetworkUsage(row));
-
-    case IDS_TASK_MANAGER_PROCESS_ID_COLUMN:  // Process ID
-      return UTF16ToUTF8(model_->GetResourceProcessId(row));
-
-    case IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN:
-      return UTF16ToUTF8(model_->GetResourceV8MemoryAllocatedSize(row));
-
-    case IDS_TASK_MANAGER_WEBCORE_IMAGE_CACHE_COLUMN:
-      return UTF16ToUTF8(model_->GetResourceWebCoreImageCacheSize(row));
-
-    case IDS_TASK_MANAGER_WEBCORE_SCRIPTS_CACHE_COLUMN:
-      return UTF16ToUTF8(model_->GetResourceWebCoreScriptsCacheSize(row));
-
-    case IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN:
-      return UTF16ToUTF8(model_->GetResourceWebCoreCSSCacheSize(row));
-
-    case IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN:
-      return UTF16ToUTF8(model_->GetResourceVideoMemory(row));
-
-    case IDS_TASK_MANAGER_FPS_COLUMN:
-      return UTF16ToUTF8(model_->GetResourceFPS(row));
-
-    case IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN:
-      return UTF16ToUTF8(model_->GetResourceSqliteMemoryUsed(row));
-
-    case IDS_TASK_MANAGER_GOATS_TELEPORTED_COLUMN:  // Goats Teleported!
-      return UTF16ToUTF8(model_->GetResourceGoatsTeleported(row));
-
-    default:
-      NOTREACHED();
-      return std::string();
-  }
+  return UTF16ToUTF8(model_->GetResourceById(row, col_id));
 }
 
 GdkPixbuf* TaskManagerGtk::GetModelIcon(int row) {
@@ -859,18 +789,13 @@ void TaskManagerGtk::ShowContextMenu(const gfx::Point& point,
 }
 
 void TaskManagerGtk::OnLinkActivated() {
-  task_manager_->OpenAboutMemory();
+  task_manager_->OpenAboutMemory(chrome::HOST_DESKTOP_TYPE_NATIVE);
 }
 
 gint TaskManagerGtk::CompareImpl(GtkTreeModel* model, GtkTreeIter* a,
                                  GtkTreeIter* b, int id) {
   int row1 = gtk_tree::GetRowNumForIter(model, b);
   int row2 = gtk_tree::GetRowNumForIter(model, a);
-
-  // When sorting by non-grouped attributes (e.g., Network), just do a normal
-  // sort.
-  if (!IsSharedByGroup(id))
-    return model_->CompareValues(row1, row2, id);
 
   // Otherwise, make sure grouped resources are shown together.
   TaskManagerModel::GroupRange group_range1 =
@@ -966,7 +891,7 @@ void TaskManagerGtk::OnTreeViewRealize(GtkTreeView* treeview) {
 void TaskManagerGtk::OnSelectionChanged(GtkTreeSelection* selection) {
   if (ignore_selection_changed_)
     return;
-  AutoReset<bool> autoreset(&ignore_selection_changed_, true);
+  base::AutoReset<bool> autoreset(&ignore_selection_changed_, true);
 
   // The set of groups that should be selected.
   std::set<TaskManagerModel::GroupRange> ranges;
@@ -1040,3 +965,12 @@ gboolean TaskManagerGtk::OnGtkAccelerator(GtkAccelGroup* accel_group,
 
   return TRUE;
 }
+
+namespace chrome {
+
+// Declared in browser_dialogs.h.
+void ShowTaskManager(Browser* browser, bool highlight_background_resources) {
+  TaskManagerGtk::Show(highlight_background_resources);
+}
+
+}  // namespace chrome

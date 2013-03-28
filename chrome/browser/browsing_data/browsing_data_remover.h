@@ -10,12 +10,12 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
+#include "base/prefs/pref_member.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/synchronization/waitable_event_watcher.h"
 #include "base/time.h"
-#include "chrome/browser/api/prefs/pref_member.h"
-#include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/pepper_flash_settings_manager.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -50,9 +50,11 @@ struct SessionStorageUsageInfo;
 // BrowsingDataRemover is responsible for removing data related to browsing:
 // visits in url database, downloads, cookies ...
 
-class BrowsingDataRemover : public content::NotificationObserver,
-                            public base::WaitableEventWatcher::Delegate,
-                            public PepperFlashSettingsManager::Client {
+class BrowsingDataRemover : public content::NotificationObserver
+#if defined(ENABLE_PLUGINS)
+                            , public PepperFlashSettingsManager::Client
+#endif
+                            {
  public:
   // Time period ranges available when doing browsing data removals.
   enum TimePeriod {
@@ -80,6 +82,10 @@ class BrowsingDataRemover : public content::NotificationObserver,
     REMOVE_WEBSQL = 1 << 11,
     REMOVE_SERVER_BOUND_CERTS = 1 << 12,
     REMOVE_CONTENT_LICENSES = 1 << 13,
+    // The following flag is used only in tests. In normal usage, hosted app
+    // data is controlled by the REMOVE_COOKIES flag, applied to the
+    // protected-web origin.
+    REMOVE_HOSTED_APP_DATA_TESTONLY = 1 << 31,
 
     // "Site data" includes cookies, appcache, file systems, indexedDBs, local
     // storage, webSQL, and plugin data.
@@ -138,6 +144,9 @@ class BrowsingDataRemover : public content::NotificationObserver,
   static BrowsingDataRemover* CreateForPeriod(Profile* profile,
                                               TimePeriod period);
 
+  // Calculate the begin time for the deletion range specified by |time_period|.
+  static base::Time CalculateBeginDeleteTime(TimePeriod time_period);
+
   // Quota managed data uses a different bitmask for types than
   // BrowsingDataRemover uses. This method generates that mask.
   static int GenerateQuotaClientMask(int remove_mask);
@@ -181,9 +190,6 @@ class BrowsingDataRemover : public content::NotificationObserver,
     STATE_DONE
   };
 
-  // Calculate the begin time for the deletion range specified by |time_period|.
-  static base::Time CalculateBeginDeleteTime(TimePeriod time_period);
-
   // Setter for |is_removing_|; DCHECKs that we can only start removing if we're
   // not already removing, and vice-versa.
   static void set_removing(bool is_removing);
@@ -208,14 +214,14 @@ class BrowsingDataRemover : public content::NotificationObserver,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // WaitableEventWatcher implementation.
   // Called when plug-in data has been cleared. Invokes NotifyAndDeleteIfDone.
-  virtual void OnWaitableEventSignaled(
-      base::WaitableEvent* waitable_event) OVERRIDE;
+  void OnWaitableEventSignaled(base::WaitableEvent* waitable_event);
 
+#if defined(ENABLE_PLUGINS)
   // PepperFlashSettingsManager::Client implementation.
   virtual void OnDeauthorizeContentLicensesCompleted(uint32 request_id,
                                                      bool success) OVERRIDE;
+#endif
 
   // Removes the specified items related to browsing for a specific host. If the
   // provided |origin| is empty, data is removed for all origins. The
@@ -317,6 +323,11 @@ class BrowsingDataRemover : public content::NotificationObserver,
   void ClearServerBoundCertsOnIOThread(
       net::URLRequestContextGetter* rq_context);
 
+  // Callback on IO Thread when server bound certs have been deleted. Clears SSL
+  // connection pool and posts to UI thread to run OnClearedServerBoundCerts.
+  void OnClearedServerBoundCertsOnIOThread(
+      net::URLRequestContextGetter* rq_context);
+
   // Callback when server bound certs have been deleted. Invokes
   // NotifyAndDeleteIfDone.
   void OnClearedServerBoundCerts();
@@ -362,14 +373,16 @@ class BrowsingDataRemover : public content::NotificationObserver,
   scoped_refptr<net::URLRequestContextGetter> main_context_getter_;
   scoped_refptr<net::URLRequestContextGetter> media_context_getter_;
 
+#if defined(ENABLE_PLUGINS)
   // Used to delete plugin data.
   scoped_ptr<content::PluginDataRemover> plugin_data_remover_;
   base::WaitableEventWatcher watcher_;
 
   // Used to deauthorize content licenses for Pepper Flash.
   scoped_ptr<PepperFlashSettingsManager> pepper_flash_settings_manager_;
-  uint32 deauthorize_content_licenses_request_id_;
+#endif
 
+  uint32 deauthorize_content_licenses_request_id_;
   // True if we're waiting for various data to be deleted.
   // These may only be accessed from UI thread in order to avoid races!
   bool waiting_for_clear_cache_;
@@ -405,7 +418,7 @@ class BrowsingDataRemover : public content::NotificationObserver,
   ObserverList<Observer> observer_list_;
 
   // Used if we need to clear history.
-  CancelableRequestConsumer request_consumer_;
+  CancelableTaskTracker history_task_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowsingDataRemover);
 };

@@ -5,18 +5,21 @@
 #include "chrome/renderer/extensions/user_script_scheduler.h"
 
 #include "base/bind.h"
+#include "base/logging.h"
 #include "base/message_loop.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
+#include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/extensions/dispatcher.h"
+#include "chrome/renderer/extensions/dom_activity_logger.h"
 #include "chrome/renderer/extensions/extension_groups.h"
 #include "chrome/renderer/extensions/extension_helper.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "extensions/common/error_utils.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
@@ -175,7 +178,8 @@ void UserScriptScheduler::ExecuteCodeImpl(
       //
       // For child frames, we just skip ones the extension doesn't have access
       // to and carry on.
-      if (!extension->CanExecuteScriptOnPage(child_frame->document().url(),
+      if (!params.is_web_view &&
+          !extension->CanExecuteScriptOnPage(child_frame->document().url(),
                                              frame_->document().url(),
                                              extension_helper->tab_id(),
                                              NULL,
@@ -183,7 +187,7 @@ void UserScriptScheduler::ExecuteCodeImpl(
         if (child_frame->parent()) {
           continue;
         } else {
-          error = ExtensionErrorUtils::FormatErrorMessage(
+          error = ErrorUtils::FormatErrorMessage(
               extension_manifest_errors::kCannotAccessPage,
               child_frame->document().url().spec());
           break;
@@ -195,22 +199,34 @@ void UserScriptScheduler::ExecuteCodeImpl(
       v8::Persistent<v8::Context> persistent_context = v8::Context::New();
       v8::Local<v8::Context> context =
           v8::Local<v8::Context>::New(persistent_context);
-      persistent_context.Dispose();
+      persistent_context.Dispose(context->GetIsolate());
 
       scoped_ptr<content::V8ValueConverter> v8_converter(
           content::V8ValueConverter::create());
       v8::Handle<v8::Value> script_value;
+
       if (params.in_main_world) {
+        DOMActivityLogger::AttachToWorld(
+            DOMActivityLogger::kMainWorldId,
+            extension->id(),
+            UserScriptSlave::GetDataSourceURLForFrame(child_frame),
+            child_frame->document().title());
         script_value = child_frame->executeScriptAndReturnValue(source);
       } else {
         WebKit::WebVector<v8::Local<v8::Value> > results;
         std::vector<WebScriptSource> sources;
         sources.push_back(source);
+        int isolated_world_id =
+            dispatcher_->user_script_slave()->GetIsolatedWorldIdForExtension(
+                extension, child_frame);
+        DOMActivityLogger::AttachToWorld(
+            isolated_world_id,
+            extension->id(),
+            UserScriptSlave::GetDataSourceURLForFrame(child_frame),
+            child_frame->document().title());
         child_frame->executeScriptInIsolatedWorld(
-            dispatcher_->user_script_slave()->
-                GetIsolatedWorldIdForExtension(extension, child_frame),
-            &sources.front(), sources.size(), EXTENSION_GROUP_CONTENT_SCRIPTS,
-            &results);
+            isolated_world_id, &sources.front(),
+            sources.size(), EXTENSION_GROUP_CONTENT_SCRIPTS, &results);
         // We only expect one value back since we only pushed one source
         if (results.size() == 1 && !results[0].IsEmpty())
           script_value = results[0];

@@ -7,11 +7,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "chrome/browser/api/prefs/pref_member.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "net/base/completion_callback.h"
@@ -37,22 +37,21 @@ class ChromeNetworkDelegateTest : public testing::Test {
   }
 
   scoped_ptr<ChromeNetworkDelegate> CreateNetworkDelegate() {
-    return scoped_ptr<ChromeNetworkDelegate>(new ChromeNetworkDelegate(
-        forwarder_.get(), NULL, NULL, NULL, NULL, NULL, &pref_member_, NULL,
-        NULL, NULL));
+    return make_scoped_ptr(
+        new ChromeNetworkDelegate(forwarder_.get(), &pref_member_));
   }
 
   // Implementation moved here for access to private bits.
   void NeverThrottleLogicImpl() {
     scoped_ptr<ChromeNetworkDelegate> delegate(CreateNetworkDelegate());
 
-    TestURLRequestContext context;
-    TestURLRequest extension_request(
-        GURL("http://example.com/"), NULL, &context);
+    net::TestURLRequestContext context;
+    net::TestURLRequest extension_request(
+        GURL("http://example.com/"), NULL, &context, NULL);
     extension_request.set_first_party_for_cookies(
         GURL("chrome-extension://abcdef/bingo.html"));
-    TestURLRequest web_page_request(
-        GURL("http://example.com/"), NULL, &context);
+    net::TestURLRequest web_page_request(
+        GURL("http://example.com/"), NULL, &context, NULL);
     web_page_request.set_first_party_for_cookies(
         GURL("http://example.com/helloworld.html"));
 
@@ -90,10 +89,24 @@ TEST_F(ChromeNetworkDelegateTest, NeverThrottleLogic) {
 
 class ChromeNetworkDelegateSafeSearchTest : public testing::Test {
  public:
+  ChromeNetworkDelegateSafeSearchTest()
+      : ui_thread_(content::BrowserThread::UI, &message_loop_),
+        io_thread_(content::BrowserThread::IO, &message_loop_),
+        forwarder_(new extensions::EventRouterForwarder()) {
+  }
+
+  virtual void SetUp() OVERRIDE {
+    ChromeNetworkDelegate::InitializePrefsOnUIThread(
+        &enable_referrers_, NULL, &force_google_safe_search_,
+        profile_.GetTestingPrefService());
+  }
+
+ protected:
   scoped_ptr<net::NetworkDelegate> CreateNetworkDelegate() {
-    return scoped_ptr<net::NetworkDelegate>(new ChromeNetworkDelegate(
-        forwarder_.get(), NULL, NULL, NULL, NULL, NULL, &enable_referrers_,
-        NULL, &force_google_safe_search_, NULL));
+    scoped_ptr<ChromeNetworkDelegate> network_delegate(
+        new ChromeNetworkDelegate(forwarder_.get(), &enable_referrers_));
+    network_delegate->set_force_google_safe_search(&force_google_safe_search_);
+    return network_delegate.PassAs<net::NetworkDelegate>();
   }
 
   void SetSafeSearch(bool value) {
@@ -101,25 +114,8 @@ class ChromeNetworkDelegateSafeSearchTest : public testing::Test {
   }
 
   void SetDelegate(net::NetworkDelegate* delegate) {
-    context_.set_network_delegate(delegate);
-  }
-
- protected:
-  ChromeNetworkDelegateSafeSearchTest()
-      : forwarder_(new extensions::EventRouterForwarder()) {
-  }
-
-  virtual void SetUp() OVERRIDE {
-    io_thread_.reset(new content::TestBrowserThread(content::BrowserThread::IO,
-                                                    &message_loop_));
-    prefs_.RegisterBooleanPref(prefs::kForceSafeSearch, false,
-                               PrefService::UNSYNCABLE_PREF);
-    force_google_safe_search_.Init(prefs::kForceSafeSearch,
-                                   profile_.GetTestingPrefService(), NULL);
-    prefs_.RegisterBooleanPref(prefs::kEnableReferrers, false,
-                               PrefService::UNSYNCABLE_PREF);
-    enable_referrers_.Init(prefs::kEnableReferrers,
-                           profile_.GetTestingPrefService(), NULL);
+    network_delegate_ = delegate;
+    context_.set_network_delegate(network_delegate_);
   }
 
   // Does a request using the |url_string| URL and verifies that the expected
@@ -130,7 +126,8 @@ class ChromeNetworkDelegateSafeSearchTest : public testing::Test {
     // Show the URL in the trace so we know where we failed.
     SCOPED_TRACE(url_string);
 
-    TestURLRequest request(GURL(url_string), &delegate_, &context_);
+    net::TestURLRequest request(
+        GURL(url_string), &delegate_, &context_, network_delegate_);
 
     request.Start();
     MessageLoop::current()->RunUntilIdle();
@@ -139,16 +136,17 @@ class ChromeNetworkDelegateSafeSearchTest : public testing::Test {
   }
 
  private:
+  MessageLoopForIO message_loop_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread io_thread_;
   scoped_refptr<extensions::EventRouterForwarder> forwarder_;
   TestingProfile profile_;
-  TestingPrefService prefs_;
   BooleanPrefMember enable_referrers_;
   BooleanPrefMember force_google_safe_search_;
   scoped_ptr<net::URLRequest> request_;
-  TestURLRequestContext context_;
-  TestDelegate delegate_;
-  MessageLoopForIO message_loop_;
-  scoped_ptr<content::TestBrowserThread> io_thread_;
+  net::TestURLRequestContext context_;
+  net::NetworkDelegate* network_delegate_;
+  net::TestDelegate delegate_;
 };
 
 TEST_F(ChromeNetworkDelegateSafeSearchTest, SafeSearchOn) {

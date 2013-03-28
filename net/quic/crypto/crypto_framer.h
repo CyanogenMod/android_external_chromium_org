@@ -6,7 +6,6 @@
 #define NET_QUIC_CRYPTO_CRYPTO_FRAMER_H_
 
 #include <map>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
@@ -21,6 +20,7 @@ namespace net {
 class CryptoFramer;
 class QuicDataReader;
 class QuicData;
+struct CryptoHandshakeMessage;
 
 class NET_EXPORT_PRIVATE CryptoFramerVisitorInterface {
  public:
@@ -34,12 +34,18 @@ class NET_EXPORT_PRIVATE CryptoFramerVisitorInterface {
       const CryptoHandshakeMessage& message) = 0;
 };
 
-// A class for framing the crypto message that are exchanged in a QUIC session.
+// A class for framing the crypto messages that are exchanged in a QUIC
+// session.
 class NET_EXPORT_PRIVATE CryptoFramer {
  public:
   CryptoFramer();
 
   virtual ~CryptoFramer();
+
+  // ParseMessage parses exactly one message from the given StringPiece. If
+  // there is an error, the message is truncated, or the message has trailing
+  // garbage then NULL will be returned.
+  static CryptoHandshakeMessage* ParseMessage(base::StringPiece in);
 
   // Set callbacks to be called from the framer.  A visitor must be set, or
   // else the framer will crash.  It is acceptable for the visitor to do
@@ -57,9 +63,16 @@ class NET_EXPORT_PRIVATE CryptoFramer {
   // false if there was an error, and true otherwise.
   bool ProcessInput(base::StringPiece input);
 
+  // Returns the number of bytes of buffered input data remaining to be
+  // parsed.
+  size_t InputBytesRemaining() const {
+    return buffer_.length();
+  }
+
   // Returns a new QuicData owned by the caller that contains a serialized
   // |message|, or NULL if there was an error.
-  QuicData* ConstructHandshakeMessage(const CryptoHandshakeMessage& message);
+  static QuicData* ConstructHandshakeMessage(
+      const CryptoHandshakeMessage& message);
 
  private:
   // Clears per-message state.  Does not clear the visitor.
@@ -69,7 +82,7 @@ class NET_EXPORT_PRIVATE CryptoFramer {
     error_ = error;
   }
 
-  // Represents the current state of the framing state machine.
+  // Represents the current state of the parsing state machine.
   enum CryptoFramerState {
     STATE_READING_TAG,
     STATE_READING_NUM_ENTRIES,

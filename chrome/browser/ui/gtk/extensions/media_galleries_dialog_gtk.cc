@@ -6,9 +6,9 @@
 
 #include "base/auto_reset.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/media_gallery/media_galleries_preferences.h"
+#include "chrome/browser/media_galleries/media_galleries_preferences.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "grit/generated_resources.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -29,15 +29,26 @@ MediaGalleriesDialogGtk::MediaGalleriesDialogGtk(
   InitWidgets();
 
   // May be NULL during tests.
-  if (controller->web_contents())
-    window_ = new ConstrainedWindowGtk(controller->web_contents(), this);
+  if (controller->web_contents()) {
+    window_ = CreateWebContentsModalDialogGtk(contents_.get(), confirm_);
+
+    WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+        WebContentsModalDialogManager::FromWebContents(
+            controller->web_contents());
+    web_contents_modal_dialog_manager->ShowDialog(window_);
+  }
 }
 
 MediaGalleriesDialogGtk::~MediaGalleriesDialogGtk() {
 }
 
 void MediaGalleriesDialogGtk::InitWidgets() {
-  contents_.Own(gtk_vbox_new(FALSE, ui::kContentAreaSpacing));
+  contents_.reset(gtk_vbox_new(FALSE, ui::kContentAreaSpacing));
+  g_object_ref_sink(contents_.get());
+  g_signal_connect(contents_.get(),
+                   "destroy",
+                   G_CALLBACK(OnDestroyThunk),
+                   this);
 
   GtkWidget* header =
       gtk_util::CreateBoldLabel(UTF16ToUTF8(controller_->GetHeader()));
@@ -55,7 +66,7 @@ void MediaGalleriesDialogGtk::InitWidgets() {
 
   const GalleryPermissions& permissions = controller_->permissions();
   for (GalleryPermissions::const_iterator iter = permissions.begin();
-       iter != permissions.end(); iter++) {
+       iter != permissions.end(); ++iter) {
     UpdateGallery(&iter->second.pref_info, iter->second.allowed);
   }
 
@@ -101,30 +112,32 @@ void MediaGalleriesDialogGtk::UpdateGallery(
   if (iter != checkbox_map_.end()) {
     widget = iter->second;
   } else {
-    widget = gtk_check_button_new_with_label(
-        UTF16ToUTF8(gallery->display_name).c_str());
-    gtk_widget_set_tooltip_text(widget,
-        UTF16ToUTF8(gallery->AbsolutePath().LossyDisplayName()).c_str());
+    widget = gtk_check_button_new();
     g_signal_connect(widget, "toggled", G_CALLBACK(OnToggledThunk), this);
     gtk_box_pack_start(GTK_BOX(checkbox_container_), widget, FALSE, FALSE, 0);
     gtk_widget_show(widget);
     checkbox_map_[gallery] = widget;
   }
 
-  AutoReset<bool> reset(&ignore_toggles_, true);
+  gtk_widget_set_tooltip_text(widget, UTF16ToUTF8(
+      MediaGalleriesDialogController::GetGalleryTooltip(*gallery)).c_str());
+
+  base::AutoReset<bool> reset(&ignore_toggles_, true);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), permitted);
+  std::string label_text = UTF16ToUTF8(
+      MediaGalleriesDialogController::GetGalleryDisplayName(*gallery));
+  gtk_button_set_label(GTK_BUTTON(widget), label_text.c_str());
 }
 
-GtkWidget* MediaGalleriesDialogGtk::GetWidgetRoot() {
-  return contents_.get();
-}
+void MediaGalleriesDialogGtk::ForgetGallery(
+    const MediaGalleryPrefInfo* gallery) {
+  CheckboxMap::iterator iter = checkbox_map_.find(gallery);
+  if (iter == checkbox_map_.end())
+    return;
 
-GtkWidget* MediaGalleriesDialogGtk::GetFocusWidget() {
-  return confirm_;
-}
-
-void MediaGalleriesDialogGtk::DeleteDelegate() {
-  controller_->DialogFinished(accepted_);
+  base::AutoReset<bool> reset(&ignore_toggles_, true);
+  gtk_widget_destroy(iter->second);
+  checkbox_map_.erase(iter);
 }
 
 void MediaGalleriesDialogGtk::OnToggled(GtkWidget* widget) {
@@ -134,7 +147,7 @@ void MediaGalleriesDialogGtk::OnToggled(GtkWidget* widget) {
   if (ignore_toggles_)
     return;
 
-  for (CheckboxMap::iterator iter = checkbox_map_.begin();
+  for (CheckboxMap::const_iterator iter = checkbox_map_.begin();
        iter != checkbox_map_.end(); ++iter) {
     if (iter->second == widget) {
       controller_->DidToggleGallery(
@@ -153,11 +166,15 @@ void MediaGalleriesDialogGtk::OnAddFolder(GtkWidget* widget) {
 
 void MediaGalleriesDialogGtk::OnConfirm(GtkWidget* widget) {
   accepted_ = true;
-  window_->CloseConstrainedWindow();
+  gtk_widget_destroy(window_);
 }
 
 void MediaGalleriesDialogGtk::OnCancel(GtkWidget* widget) {
-  window_->CloseConstrainedWindow();
+  gtk_widget_destroy(window_);
+}
+
+void MediaGalleriesDialogGtk::OnDestroy(GtkWidget* widget) {
+  controller_->DialogFinished(accepted_);
 }
 
 // MediaGalleriesDialogController ----------------------------------------------

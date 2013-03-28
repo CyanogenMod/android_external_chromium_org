@@ -5,50 +5,58 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_AUTOFILL_AUTOFILL_POPUP_VIEW_VIEWS_H_
 #define CHROME_BROWSER_UI_VIEWS_AUTOFILL_AUTOFILL_POPUP_VIEW_VIEWS_H_
 
-#include "chrome/browser/autofill/autofill_popup_view.h"
-#include "content/public/browser/keyboard_listener.h"
+#include "chrome/browser/ui/autofill/autofill_popup_view.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/widget/widget_observer.h"
 
-class AutofillExternalDelegateViews;
+class AutofillPopupController;
 
 namespace content {
 class WebContents;
 }
 
-// The View Autofill popup implementation.
-class AutofillPopupViewViews : public views::WidgetDelegateView,
-                               public AutofillPopupView,
-                               public KeyboardListener {
+// Views toolkit implementation for AutofillPopupView.
+class AutofillPopupViewViews : public AutofillPopupView,
+                               public views::WidgetDelegateView,
+                               public views::WidgetObserver {
  public:
-  AutofillPopupViewViews(content::WebContents* web_contents,
-                         AutofillExternalDelegateViews* external_delegate);
-
-  // AutofillPopupView implementation.
-  virtual void Hide() OVERRIDE;
+  explicit AutofillPopupViewViews(AutofillPopupController* controller);
 
  private:
-  class AutofillPopupWidget;
-
   virtual ~AutofillPopupViewViews();
+
+  // AutofillPopupView implementation.
+  virtual void Show() OVERRIDE;
+  virtual void Hide() OVERRIDE;
+  virtual void InvalidateRow(size_t row) OVERRIDE;
+  virtual void UpdateBoundsAndRedrawPopup() OVERRIDE;
 
   // views:Views implementation.
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void OnMouseCaptureLost() OVERRIDE;
+  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE;
+  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
 
-  // KeyboardListener implementation.
-  virtual bool HandleKeyPressEvent(ui::KeyEvent* event) OVERRIDE;
+  // views::WidgetObserver implementation.
+  virtual void OnWidgetBoundsChanged(views::Widget* widget,
+                                     const gfx::Rect& new_bounds) OVERRIDE;
 
-  // AutofillPopupView implementation.
-  virtual void ShowInternal() OVERRIDE;
-  virtual void InvalidateRow(size_t row) OVERRIDE;
-  virtual void UpdateBoundsAndRedrawPopupInternal() OVERRIDE;
+  // Hide the popup (Since either Hide or ~AutofillPopupViewViews can need to
+  // hide the popup, the actually hiding code must be placed here).
+  void HideInternal();
 
   // Draw the given autofill entry in |entry_rect|.
   void DrawAutofillEntry(gfx::Canvas* canvas,
                          int index,
                          const gfx::Rect& entry_rect);
 
-  AutofillExternalDelegateViews* external_delegate_;  // Weak reference.
-  content::WebContents* web_contents_;  // Weak reference.
+  AutofillPopupController* controller_;  // Weak reference.
+
+  // The widget that |this| observes. Weak reference.
+  views::Widget* observing_widget_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillPopupViewViews);
 };

@@ -13,7 +13,7 @@
 #include "base/path_service.h"
 #include "base/prefs/testing_pref_store.h"
 #include "base/run_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
@@ -28,8 +28,9 @@
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
-#include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_backend.h"
+#include "chrome/browser/history/history_db_task.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/shortcuts_backend.h"
 #include "chrome/browser/history/shortcuts_backend_factory.h"
@@ -37,12 +38,11 @@
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
-#include "chrome/browser/policy/user_cloud_policy_manager.h"
 #include "chrome/browser/prefs/browser_prefs.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
-#include "chrome/browser/protector/protector_service_factory.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
 #include "chrome/browser/speech/chrome_speech_recognition_preferences.h"
 #include "chrome/browser/webdata/web_data_service.h"
@@ -53,14 +53,16 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/bookmark_load_observer.h"
 #include "chrome/test/base/history_index_restore_observer.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/common/constants.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -88,21 +90,21 @@ namespace {
 // Task used to make sure history has finished processing a request. Intended
 // for use with BlockUntilHistoryProcessesPendingRequests.
 
-class QuittingHistoryDBTask : public HistoryDBTask {
+class QuittingHistoryDBTask : public history::HistoryDBTask {
  public:
   QuittingHistoryDBTask() {}
 
   virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) {
+                             history::HistoryDatabase* db) OVERRIDE {
     return true;
   }
 
-  virtual void DoneRunOnMainThread() {
+  virtual void DoneRunOnMainThread() OVERRIDE {
     MessageLoop::current()->Quit();
   }
 
  private:
-  ~QuittingHistoryDBTask() {}
+  virtual ~QuittingHistoryDBTask() {}
 
   DISALLOW_COPY_AND_ASSIGN(QuittingHistoryDBTask);
 };
@@ -111,7 +113,7 @@ class TestExtensionURLRequestContext : public net::URLRequestContext {
  public:
   TestExtensionURLRequestContext() {
     net::CookieMonster* cookie_monster = new net::CookieMonster(NULL, NULL);
-    const char* schemes[] = {chrome::kExtensionScheme};
+    const char* schemes[] = {extensions::kExtensionScheme};
     cookie_monster->SetCookieableSchemes(schemes, 1);
     set_cookie_store(cookie_monster);
   }
@@ -122,7 +124,7 @@ class TestExtensionURLRequestContext : public net::URLRequestContext {
 class TestExtensionURLRequestContextGetter
     : public net::URLRequestContextGetter {
  public:
-  virtual net::URLRequestContext* GetURLRequestContext() {
+  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE {
     if (!context_.get())
       context_.reset(new TestExtensionURLRequestContext());
     return context_.get();
@@ -162,6 +164,7 @@ TestingProfile::TestingProfile()
     : start_time_(Time::Now()),
       testing_prefs_(NULL),
       incognito_(false),
+      original_profile_(NULL),
       last_session_exited_cleanly_(true),
       profile_dependency_manager_(ProfileDependencyManager::GetInstance()),
       delegate_(NULL) {
@@ -172,10 +175,11 @@ TestingProfile::TestingProfile()
   FinishInit();
 }
 
-TestingProfile::TestingProfile(const FilePath& path)
+TestingProfile::TestingProfile(const base::FilePath& path)
     : start_time_(Time::Now()),
       testing_prefs_(NULL),
       incognito_(false),
+      original_profile_(NULL),
       last_session_exited_cleanly_(true),
       profile_path_(path),
       profile_dependency_manager_(ProfileDependencyManager::GetInstance()),
@@ -184,11 +188,12 @@ TestingProfile::TestingProfile(const FilePath& path)
   FinishInit();
 }
 
-TestingProfile::TestingProfile(const FilePath& path,
+TestingProfile::TestingProfile(const base::FilePath& path,
                                Delegate* delegate)
     : start_time_(Time::Now()),
       testing_prefs_(NULL),
       incognito_(false),
+      original_profile_(NULL),
       last_session_exited_cleanly_(true),
       profile_path_(path),
       profile_dependency_manager_(ProfileDependencyManager::GetInstance()),
@@ -204,18 +209,17 @@ TestingProfile::TestingProfile(const FilePath& path,
 }
 
 TestingProfile::TestingProfile(
-    const FilePath& path,
+    const base::FilePath& path,
     Delegate* delegate,
     scoped_refptr<ExtensionSpecialStoragePolicy> extension_policy,
-    scoped_ptr<PrefService> prefs,
-    scoped_ptr<policy::UserCloudPolicyManager> user_cloud_policy_manager)
+    scoped_ptr<PrefServiceSyncable> prefs)
     : start_time_(Time::Now()),
       prefs_(prefs.release()),
       testing_prefs_(NULL),
       incognito_(false),
+      original_profile_(NULL),
       last_session_exited_cleanly_(true),
       extension_special_storage_policy_(extension_policy),
-      user_cloud_policy_manager_(user_cloud_policy_manager.release()),
       profile_path_(path),
       profile_dependency_manager_(ProfileDependencyManager::GetInstance()),
       delegate_(delegate) {
@@ -245,7 +249,7 @@ void TestingProfile::CreateTempProfileDir() {
     LOG(ERROR) << "Failed to create unique temporary directory.";
 
     // Fallback logic in case we fail to create unique temporary directory.
-    FilePath system_tmp_dir;
+    base::FilePath system_tmp_dir;
     bool success = PathService::Get(base::DIR_TEMP, &system_tmp_dir);
 
     // We're severly screwed if we can't get the system temporary
@@ -253,7 +257,8 @@ void TestingProfile::CreateTempProfileDir() {
     // or other bad places.
     CHECK(success);
 
-    FilePath fallback_dir(system_tmp_dir.AppendASCII("TestingProfilePath"));
+    base::FilePath fallback_dir(
+        system_tmp_dir.AppendASCII("TestingProfilePath"));
     file_util::Delete(fallback_dir, true);
     file_util::CreateDirectory(fallback_dir);
     if (!temp_dir_.Set(fallback_dir)) {
@@ -267,6 +272,9 @@ void TestingProfile::CreateTempProfileDir() {
 }
 
 void TestingProfile::Init() {
+  if (prefs_.get())
+    components::UserPrefs::Set(this, prefs_.get());
+
   if (!file_util::PathExists(profile_path_))
     file_util::CreateDirectory(profile_path_);
 
@@ -303,11 +311,6 @@ TestingProfile::~TestingProfile() {
 
   DestroyTopSites();
 
-#if defined(ENABLE_CONFIGURATION_POLICY)
-  if (user_cloud_policy_manager_)
-    user_cloud_policy_manager_->Shutdown();
-#endif
-
   if (pref_proxy_config_tracker_.get())
     pref_proxy_config_tracker_->DetachFromPrefService();
 }
@@ -330,7 +333,7 @@ static ProfileKeyedService* BuildHistoryService(Profile* profile) {
 void TestingProfile::CreateHistoryService(bool delete_file, bool no_db) {
   DestroyHistoryService();
   if (delete_file) {
-    FilePath path = GetPath();
+    base::FilePath path = GetPath();
     path = path.Append(chrome::kHistoryFilename);
     file_util::Delete(path, false);
   }
@@ -371,7 +374,7 @@ void TestingProfile::DestroyHistoryService() {
 void TestingProfile::CreateTopSites() {
   DestroyTopSites();
   top_sites_ = new history::TopSites(this);
-  FilePath file_name = GetPath().Append(chrome::kTopSitesFilename);
+  base::FilePath file_name = GetPath().Append(chrome::kTopSitesFilename);
   top_sites_->Init(file_name);
 }
 
@@ -383,7 +386,7 @@ void TestingProfile::DestroyTopSites() {
     // to be run to properly shutdown. Run all pending tasks now. This is
     // normally handled by browser_process shutdown.
     if (MessageLoop::current())
-      MessageLoop::current()->RunAllPending();
+      MessageLoop::current()->RunUntilIdle();
   }
 }
 
@@ -397,7 +400,7 @@ static ProfileKeyedService* BuildBookmarkModel(Profile* profile) {
 void TestingProfile::CreateBookmarkModel(bool delete_file) {
 
   if (delete_file) {
-    FilePath path = GetPath();
+    base::FilePath path = GetPath();
     path = path.Append(chrome::kBookmarksFileName);
     file_util::Delete(path, false);
   }
@@ -417,33 +420,14 @@ void TestingProfile::CreateBookmarkModel(bool delete_file) {
   }
 }
 
-static scoped_refptr<RefcountedProfileKeyedService> BuildWebDataService(
+static ProfileKeyedService* BuildWebDataService(
     Profile* profile) {
-  WebDataService* web_data_service = new WebDataService();
-  if (web_data_service)
-    web_data_service->Init(profile->GetPath());
-  return web_data_service;
+  return new WebDataServiceWrapper(profile);
 }
 
 void TestingProfile::CreateWebDataService() {
   WebDataServiceFactory::GetInstance()->SetTestingFactory(
       this, BuildWebDataService);
-}
-
-void TestingProfile::BlockUntilBookmarkModelLoaded() {
-  // Only get the bookmark model if it actually exists since the caller of the
-  // test should explicitly call CreateBookmarkModel to build it.
-  BookmarkModel* bookmark_model =
-      BookmarkModelFactory::GetForProfileIfExists(this);
-  DCHECK(bookmark_model);
-  if (bookmark_model->IsLoaded())
-    return;
-  base::RunLoop run_loop;
-  BookmarkLoadObserver observer(content::GetQuitTaskForRunLoop(&run_loop));
-  bookmark_model->AddObserver(&observer);
-  run_loop.Run();
-  bookmark_model->RemoveObserver(&observer);
-  DCHECK(bookmark_model->IsLoaded());
 }
 
 void TestingProfile::BlockUntilHistoryIndexIsRefreshed() {
@@ -474,7 +458,7 @@ void TestingProfile::BlockUntilTopSitesLoaded() {
   top_sites_loaded_observer.Wait();
 }
 
-FilePath TestingProfile::GetPath() {
+base::FilePath TestingProfile::GetPath() {
   return profile_path_;
 }
 
@@ -482,7 +466,7 @@ scoped_refptr<base::SequencedTaskRunner> TestingProfile::GetIOTaskRunner() {
   return MessageLoop::current()->message_loop_proxy();
 }
 
-TestingPrefService* TestingProfile::GetTestingPrefService() {
+TestingPrefServiceSyncable* TestingProfile::GetTestingPrefService() {
   if (!prefs_.get())
     CreateTestingPrefService();
   DCHECK(testing_prefs_);
@@ -505,12 +489,12 @@ void TestingProfile::SetOffTheRecordProfile(Profile* profile) {
   incognito_profile_.reset(profile);
 }
 
-Profile* TestingProfile::GetOffTheRecordProfile() {
-  return incognito_profile_.get();
+void TestingProfile::SetOriginalProfile(Profile* profile) {
+  original_profile_ = profile;
 }
 
-GAIAInfoUpdateService* TestingProfile::GetGAIAInfoUpdateService() {
-  return NULL;
+Profile* TestingProfile::GetOffTheRecordProfile() {
+  return incognito_profile_.get();
 }
 
 bool TestingProfile::HasOffTheRecordProfile() {
@@ -518,6 +502,8 @@ bool TestingProfile::HasOffTheRecordProfile() {
 }
 
 Profile* TestingProfile::GetOriginalProfile() {
+  if (original_profile_)
+    return original_profile_;
   return this;
 }
 
@@ -544,10 +530,6 @@ net::CookieMonster* TestingProfile::GetCookieMonster() {
       GetCookieMonster();
 }
 
-policy::UserCloudPolicyManager* TestingProfile::GetUserCloudPolicyManager() {
-  return user_cloud_policy_manager_.get();
-}
-
 policy::ManagedModePolicyProvider*
 TestingProfile::GetManagedModePolicyProvider() {
   return NULL;
@@ -565,24 +547,12 @@ policy::PolicyService* TestingProfile::GetPolicyService() {
   return policy_service_.get();
 }
 
-void TestingProfile::SetPrefService(PrefService* prefs) {
-#if defined(ENABLE_PROTECTOR_SERVICE)
-  // ProtectorService binds itself very closely to the PrefService at the moment
-  // of Profile creation and watches pref changes to update their backup.
-  // For tests that replace the PrefService after TestingProfile creation,
-  // ProtectorService is disabled to prevent further invalid memory accesses.
-  protector::ProtectorServiceFactory::GetInstance()->
-      SetTestingFactory(this, NULL);
-#endif
-  prefs_.reset(prefs);
-}
-
 void TestingProfile::CreateTestingPrefService() {
   DCHECK(!prefs_.get());
-  testing_prefs_ = new TestingPrefService();
+  testing_prefs_ = new TestingPrefServiceSyncable();
   prefs_.reset(testing_prefs_);
-  Profile::RegisterUserPrefs(prefs_.get());
-  chrome::RegisterUserPrefs(prefs_.get());
+  components::UserPrefs::Set(this, prefs_.get());
+  chrome::RegisterUserPrefs(testing_prefs_->registry());
 }
 
 PrefService* TestingProfile::GetPrefs() {
@@ -608,6 +578,11 @@ net::URLRequestContextGetter* TestingProfile::GetRequestContext() {
   return request_context_.get();
 }
 
+net::URLRequestContextGetter* TestingProfile::CreateRequestContext(
+    content::ProtocolHandlerMap* protocol_handlers) {
+  return request_context_.get();
+}
+
 net::URLRequestContextGetter* TestingProfile::GetRequestContextForRenderProcess(
     int renderer_child_id) {
   content::RenderProcessHost* rph = content::RenderProcessHost::FromID(
@@ -618,7 +593,7 @@ net::URLRequestContextGetter* TestingProfile::GetRequestContextForRenderProcess(
 void TestingProfile::CreateRequestContext() {
   if (!request_context_)
     request_context_ =
-        new TestURLRequestContextGetter(
+        new net::TestURLRequestContextGetter(
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 }
 
@@ -642,7 +617,7 @@ TestingProfile::GetMediaRequestContextForRenderProcess(
 
 net::URLRequestContextGetter*
 TestingProfile::GetMediaRequestContextForStoragePartition(
-    const FilePath& partition_path,
+    const base::FilePath& partition_path,
     bool in_memory) {
   return NULL;
 }
@@ -654,13 +629,16 @@ net::URLRequestContextGetter* TestingProfile::GetRequestContextForExtensions() {
 }
 
 net::SSLConfigService* TestingProfile::GetSSLConfigService() {
-  return NULL;
+  if (!GetRequestContext())
+    return NULL;
+  return GetRequestContext()->GetURLRequestContext()->ssl_config_service();
 }
 
 net::URLRequestContextGetter*
-TestingProfile::GetRequestContextForStoragePartition(
-    const FilePath& partition_path,
-    bool in_memory) {
+TestingProfile::CreateRequestContextForStoragePartition(
+    const base::FilePath& partition_path,
+    bool in_memory,
+    content::ProtocolHandlerMap* protocol_handlers) {
   // We don't test storage partitions here yet, so returning the same dummy
   // context is sufficient for now.
   return GetRequestContext();
@@ -686,11 +664,7 @@ HostContentSettingsMap* TestingProfile::GetHostContentSettingsMap() {
 
 content::GeolocationPermissionContext*
 TestingProfile::GetGeolocationPermissionContext() {
-  if (!geolocation_permission_context_.get()) {
-    geolocation_permission_context_ =
-        ChromeGeolocationPermissionContextFactory::Create(this);
-  }
-  return geolocation_permission_context_.get();
+  return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
 }
 
 content::SpeechRecognitionPreferences*
@@ -726,11 +700,11 @@ ProtocolHandlerRegistry* TestingProfile::GetProtocolHandlerRegistry() {
   return NULL;
 }
 
-FilePath TestingProfile::last_selected_directory() {
+base::FilePath TestingProfile::last_selected_directory() {
   return last_selected_directory_;
 }
 
-void TestingProfile::set_last_selected_directory(const FilePath& path) {
+void TestingProfile::set_last_selected_directory(const base::FilePath& path) {
   last_selected_directory_ = path;
 }
 
@@ -785,11 +759,6 @@ Profile::ExitType TestingProfile::GetLastSessionExitType() {
   return last_session_exited_cleanly_ ? EXIT_NORMAL : EXIT_CRASHED;
 }
 
-base::Callback<ChromeURLDataManagerBackend*(void)>
-    TestingProfile::GetChromeURLDataManagerBackendGetter() const {
-  return base::Callback<ChromeURLDataManagerBackend*(void)>();
-}
-
 TestingProfile::Builder::Builder()
     : build_called_(false),
       delegate_(NULL) {
@@ -798,7 +767,7 @@ TestingProfile::Builder::Builder()
 TestingProfile::Builder::~Builder() {
 }
 
-void TestingProfile::Builder::SetPath(const FilePath& path) {
+void TestingProfile::Builder::SetPath(const base::FilePath& path) {
   path_ = path;
 }
 
@@ -811,13 +780,9 @@ void TestingProfile::Builder::SetExtensionSpecialStoragePolicy(
   extension_policy_ = policy;
 }
 
-void TestingProfile::Builder::SetPrefService(scoped_ptr<PrefService> prefs) {
+void TestingProfile::Builder::SetPrefService(
+    scoped_ptr<PrefServiceSyncable> prefs) {
   pref_service_ = prefs.Pass();
-}
-
-void TestingProfile::Builder::SetUserCloudPolicyManager(
-    scoped_ptr<policy::UserCloudPolicyManager> manager) {
-  user_cloud_policy_manager_ = manager.Pass();
 }
 
 scoped_ptr<TestingProfile> TestingProfile::Builder::Build() {
@@ -827,6 +792,5 @@ scoped_ptr<TestingProfile> TestingProfile::Builder::Build() {
       path_,
       delegate_,
       extension_policy_,
-      pref_service_.Pass(),
-      user_cloud_policy_manager_.Pass()));
+      pref_service_.Pass()));
 }

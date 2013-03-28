@@ -14,18 +14,18 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
+#include "base/prefs/pref_service.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/in_memory_url_index.h"
 #include "chrome/browser/history/shortcuts_backend.h"
 #include "chrome/browser/history/shortcuts_backend_factory.h"
 #include "chrome/browser/history/url_database.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
@@ -142,8 +142,8 @@ class ShortcutsProviderTest : public testing::Test,
     std::set<std::string> matches_;
   };
 
-  void SetUp();
-  void TearDown();
+  virtual void SetUp();
+  virtual void TearDown();
 
   // Fills test data into the provider.
   void FillData(TestShortcutInfo* db, size_t db_size);
@@ -187,7 +187,7 @@ void ShortcutsProviderTest::SetUp() {
 void ShortcutsProviderTest::TearDown() {
   // Run all pending tasks or else some threads hold on to the message loop
   // and prevent it from being deleted.
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
   provider_ = NULL;
 }
 
@@ -225,9 +225,9 @@ void ShortcutsProviderTest::RunTest(const string16 text,
                                    std::string expected_top_result) {
   std::sort(expected_urls.begin(), expected_urls.end());
 
-  MessageLoop::current()->RunAllPending();
-  AutocompleteInput input(text, string16(), false, false, true,
-                          AutocompleteInput::ALL_MATCHES);
+  MessageLoop::current()->RunUntilIdle();
+  AutocompleteInput input(text, string16::npos, string16(), GURL(), false,
+                          false, true, AutocompleteInput::ALL_MATCHES);
   provider_->Start(input, false);
   EXPECT_TRUE(provider_->done());
 

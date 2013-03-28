@@ -6,15 +6,15 @@
 
 #include "build/build_config.h"
 #include "ui/base/layout.h"
-#include "ui/base/native_theme/native_theme.h"
+#include "ui/native_theme/native_theme.h"
 
 namespace views {
 
 MenuConfig::MenuConfig(const ui::NativeTheme* theme)
     : text_color(SK_ColorBLACK),
       arrow_color(SK_ColorBLACK),
-      submenu_horizontal_margin_size(3),
-      submenu_vertical_margin_size(3),
+      menu_vertical_border_size(3),
+      menu_horizontal_border_size(3),
       submenu_horizontal_inset(3),
       item_top_margin(3),
       item_bottom_margin(4),
@@ -45,7 +45,9 @@ MenuConfig::MenuConfig(const ui::NativeTheme* theme)
       always_use_icon_to_label_padding(false),
       align_arrow_and_shortcut(false),
       offset_context_menus(false),
-      native_theme(theme) {
+      native_theme(theme),
+      show_delay(400),
+      corner_radius(0) {
   // Use 40px tall menu items when running in touch optimized mode.
   // For Windows use 40px tall menu items when running in touch optimized mode.
   if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) {
@@ -56,5 +58,18 @@ MenuConfig::MenuConfig(const ui::NativeTheme* theme)
 }
 
 MenuConfig::~MenuConfig() {}
+
+void MenuConfig::AdjustForCommonTheme() {
+  render_gutter = false;
+  item_left_margin = 10;
+  item_top_margin = 7;
+  item_bottom_margin = 6;
+  item_no_icon_top_margin = 7;
+  item_no_icon_bottom_margin = 7;
+  icon_to_label_padding = 10;
+  separator_height = 15;
+  menu_horizontal_border_size = 0;
+  menu_vertical_border_size = 7;
+}
 
 }  // namespace views

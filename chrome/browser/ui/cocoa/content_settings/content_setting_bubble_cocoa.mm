@@ -6,12 +6,14 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/stl_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
+#include "chrome/browser/ui/content_settings/content_setting_media_menu_model.h"
 #import "chrome/browser/ui/cocoa/hyperlink_button_cell.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/l10n_util.h"
@@ -56,6 +58,18 @@ const int kGeoHostPadding = 4;
 // Minimal padding between "Manage" and "Done" buttons.
 const int kManageDonePadding = 8;
 
+// Padding between radio buttons and media menus buttons in the media bubble.
+const int kMediaMenuVerticalPadding = 20;
+
+// Padding between media menu elements in the media bubble.
+const int kMediaMenuElementVerticalPadding = 5;
+
+// The amount of horizontal space between the media menu title and the border.
+const int kMediaMenuTitleHorizontalPadding = 10;
+
+// The minimum width of the media menu buttons.
+const CGFloat kMinMediaMenuButtonWidth = 100;
+
 void SetControlSize(NSControl* control, NSControlSize controlSize) {
   CGFloat fontSize = [NSFont systemFontSizeForControlSize:controlSize];
   NSCell* cell = [control cell];
@@ -74,7 +88,74 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
   return [label autorelease];
 }
 
+// Sets the title for the popup button.
+void SetTitleForPopUpButton(NSPopUpButton* button, NSString* title) {
+  scoped_nsobject<NSMenuItem> titleItem([[NSMenuItem alloc] init]);
+  [titleItem setTitle:title];
+  [[button cell] setUsesItemFromMenu:NO];
+  [[button cell] setMenuItem:titleItem.get()];
+}
+
+// Builds the popup button menu from the menu model and returns the width of the
+// longgest item as the width of the popup menu.
+CGFloat BuildPopUpMenuFromModel(NSPopUpButton* button,
+                                ContentSettingMediaMenuModel* model,
+                                const std::string& title) {
+  [[button cell] setControlSize:NSSmallControlSize];
+  [[button cell] setArrowPosition:NSPopUpArrowAtBottom];
+  [button setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+  [button setButtonType:NSMomentaryPushInButton];
+  [button setAlignment:NSLeftTextAlignment];
+  [button setAutoresizingMask:NSViewMinXMargin];
+  [button setAction:@selector(mediaMenuChanged:)];
+  [button sizeToFit];
+
+  CGFloat menuWidth = 0;
+  for (int i = 0; i < model->GetItemCount(); ++i) {
+    NSString* itemTitle =
+        base::SysUTF16ToNSString(model->GetLabelAt(i));
+    [button addItemWithTitle:itemTitle];
+    [[button lastItem] setTag:i];
+
+    if (UTF16ToUTF8(model->GetLabelAt(i)) == title)
+      [button selectItemWithTag:i];
+
+    // Determine the largest possible size for this button.
+    NSDictionary* textAttributes =
+        [NSDictionary dictionaryWithObject:[button font]
+                                    forKey:NSFontAttributeName];
+    NSSize size = [itemTitle sizeWithAttributes:textAttributes];
+    NSRect buttonFrame = [button frame];
+    NSRect titleRect = [[button cell] titleRectForBounds:buttonFrame];
+    CGFloat width = size.width + NSWidth(buttonFrame) - NSWidth(titleRect) +
+        kMediaMenuTitleHorizontalPadding;
+    menuWidth = std::max(menuWidth, width);
+  }
+
+  if (!model->GetItemCount()) {
+    // Show a "None available" title and grey out the menu when there is no
+    // available device.
+    SetTitleForPopUpButton(
+        button, l10n_util::GetNSString(IDS_MEDIA_MENU_NO_DEVICE_TITLE));
+    [button setEnabled:NO];
+  } else {
+    SetTitleForPopUpButton(button, base::SysUTF8ToNSString(title));
+  }
+
+  return menuWidth;
+}
+
 }  // namespace
+
+namespace content_setting_bubble {
+
+MediaMenuParts::MediaMenuParts(content::MediaStreamType type,
+                               NSTextField* label)
+    : type(type),
+      label(label) {}
+MediaMenuParts::~MediaMenuParts() {}
+
+}  // namespace content_setting_bubble
 
 @interface ContentSettingBubbleController(Private)
 - (id)initWithModel:(ContentSettingBubbleModel*)settingsBubbleModel
@@ -89,8 +170,9 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
 - (void)initializeRadioGroup;
 - (void)initializePopupList;
 - (void)initializeGeoLists;
+- (void)initializeMediaMenus;
 - (void)sizeToFitLoadButton;
-- (void)sizeToFitManageDoneButtons;
+- (void)initManageDoneButtons;
 - (void)removeInfoButton;
 - (void)popupLinkClicked:(id)sender;
 - (void)clearGeolocationForCurrentHost:(id)sender;
@@ -122,9 +204,9 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
     case CONTENT_SETTINGS_TYPE_COOKIES:
       nibPath = @"ContentBlockedCookies"; break;
     case CONTENT_SETTINGS_TYPE_IMAGES:
-      nibPath = @"ContentBlockedImages"; break;
     case CONTENT_SETTINGS_TYPE_JAVASCRIPT:
-      nibPath = @"ContentBlockedJavaScript"; break;
+    case CONTENT_SETTINGS_TYPE_PPAPI_BROKER:
+      nibPath = @"ContentBlockedSimple"; break;
     case CONTENT_SETTINGS_TYPE_PLUGINS:
       nibPath = @"ContentBlockedPlugins"; break;
     case CONTENT_SETTINGS_TYPE_POPUPS:
@@ -135,15 +217,16 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
       nibPath = @"ContentBlockedMixedScript"; break;
     case CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS:
       nibPath = @"ContentProtocolHandlers"; break;
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
+      nibPath = @"ContentBlockedMedia"; break;
     // These content types have no bubble:
     case CONTENT_SETTINGS_TYPE_DEFAULT:
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
-    case CONTENT_SETTINGS_TYPE_INTENTS:
     case CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE:
     case CONTENT_SETTINGS_TYPE_FULLSCREEN:
     case CONTENT_SETTINGS_TYPE_MOUSELOCK:
-    case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
-    case CONTENT_SETTINGS_TYPE_PPAPI_BROKER:
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
     case CONTENT_SETTINGS_NUM_TYPES:
       NOTREACHED();
   }
@@ -154,6 +237,11 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
     [self showWindow:nil];
   }
   return self;
+}
+
+- (void)dealloc {
+  STLDeleteValues(&mediaMenus_);
+  [super dealloc];
 }
 
 - (void)initializeTitle {
@@ -399,6 +487,83 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
   [contentsContainer_ setFrame:containerFrame];
 }
 
+- (void)initializeMediaMenus {
+  const ContentSettingBubbleModel::MediaMenuMap& media_menus =
+      contentSettingBubbleModel_->bubble_content().media_menus;
+
+  // Calculate the longest width of the labels and menus menus to avoid
+  // truncation by the window's edge.
+  CGFloat maxLabelWidth = 0;
+  CGFloat maxMenuWidth = 0;
+  CGFloat maxMenuHeight = 0;
+  NSRect mediaMenusFrame = [mediaMenusContainer_ frame];
+  CGFloat topMenuY = NSMaxY(mediaMenusFrame) - kMediaMenuVerticalPadding;
+  for (ContentSettingBubbleModel::MediaMenuMap::const_iterator it(
+       media_menus.begin()); it != media_menus.end(); ++it) {
+    // |labelFrame| will be resized later on in this function.
+    NSRect labelFrame = NSMakeRect(NSMinX(mediaMenusFrame), topMenuY, 0, 0);
+    NSTextField* label =
+        LabelWithFrame(base::SysUTF8ToNSString(it->second.label), labelFrame);
+    SetControlSize(label, NSSmallControlSize);
+    NSCell* cell = [label cell];
+    [cell setAlignment:NSRightTextAlignment];
+    [GTMUILocalizerAndLayoutTweaker sizeToFitView:label];
+    maxLabelWidth = std::max(maxLabelWidth, [label frame].size.width);
+    [[self bubble]  addSubview:label];
+
+    // |buttonFrame| will be resized and repositioned later on.
+    NSRect buttonFrame = NSMakeRect(NSMinX(mediaMenusFrame), topMenuY, 0, 0);
+    scoped_nsobject<NSPopUpButton> button(
+        [[NSPopUpButton alloc] initWithFrame:buttonFrame]);
+    [button setTarget:self];
+
+    // Store the |label| and |button| into MediaMenuParts struct and build
+    // the popup menu from the menu model.
+    content_setting_bubble::MediaMenuParts* menuParts =
+        new content_setting_bubble::MediaMenuParts(it->first, label);
+    menuParts->model.reset(new ContentSettingMediaMenuModel(
+        it->first, contentSettingBubbleModel_.get(),
+        ContentSettingMediaMenuModel::MenuLabelChangedCallback()));
+    mediaMenus_[button] = menuParts;
+    CGFloat width = BuildPopUpMenuFromModel(button,
+                                            menuParts->model.get(),
+                                            it->second.selected_device.name);
+    maxMenuWidth = std::max(maxMenuWidth, width);
+
+    [[self bubble] addSubview:button
+                   positioned:NSWindowBelow
+                   relativeTo:nil];
+
+    maxMenuHeight = std::max(maxMenuHeight, [button frame].size.height);
+    topMenuY -= (maxMenuHeight + kMediaMenuElementVerticalPadding);
+  }
+
+  // Resize and reposition the media menus layout.
+  maxMenuWidth = std::max(maxMenuWidth, kMinMediaMenuButtonWidth);
+  for (content_setting_bubble::MediaMenuPartsMap::const_iterator i =
+       mediaMenus_.begin(); i != mediaMenus_.end(); ++i) {
+    NSRect labelFrame = [i->second->label frame];
+    // Align the label text with the button text.
+    labelFrame.origin.y += (maxMenuHeight - labelFrame.size.height) / 2 + 1;
+    labelFrame.size.width = maxLabelWidth;
+    [i->second->label setFrame:labelFrame];
+    NSRect menuFrame = [i->first frame];
+    menuFrame.origin.x = NSMinX(mediaMenusFrame) + maxLabelWidth;
+    menuFrame.size.width = maxMenuWidth;
+    menuFrame.size.height = maxMenuHeight;
+    [i->first setFrame:menuFrame];
+  }
+
+  // If the media menus are wider than the window, widen the window.
+  NSRect frame = [[self window] frame];
+  CGFloat widthNeeded = maxLabelWidth + maxMenuWidth +
+      2 * NSMinX([mediaMenusContainer_ frame]);
+  if (widthNeeded > frame.size.width) {
+    frame.size.width = widthNeeded;
+    [[self window] setFrame:frame display:NO];
+  }
+}
+
 - (void)sizeToFitLoadButton {
   const ContentSettingBubbleModel::BubbleContent& content =
       contentSettingBubbleModel_->bubble_content();
@@ -414,7 +579,12 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
   }
 }
 
-- (void)sizeToFitManageDoneButtons {
+- (void)initManageDoneButtons {
+  const ContentSettingBubbleModel::BubbleContent& content =
+      contentSettingBubbleModel_->bubble_content();
+  [manageButton_ setTitle:base::SysUTF8ToNSString(content.manage_link)];
+  [GTMUILocalizerAndLayoutTweaker sizeToFitView:manageButton_];
+
   CGFloat actualWidth = NSWidth([[[self window] contentView] frame]);
   CGFloat requiredWidth = NSMaxX([manageButton_ frame]) + kManageDonePadding +
       NSWidth([[doneButton_ superview] frame]) - NSMinX([doneButton_ frame]);
@@ -436,7 +606,7 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
   [[self bubble] setArrowLocation:info_bubble::kTopRight];
 
   // Adapt window size to bottom buttons. Do this before all other layouting.
-  [self sizeToFitManageDoneButtons];
+  [self initManageDoneButtons];
 
   [self initializeTitle];
 
@@ -445,6 +615,9 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
     [self sizeToFitLoadButton];
     [self initializeBlockedPluginsList];
   }
+
+  if (type == CONTENT_SETTINGS_TYPE_MEDIASTREAM)
+    [self initializeMediaMenus];
 
   if (allowBlockRadioGroup_)  // not bound in cookie bubble xib
     [self initializeRadioGroup];
@@ -495,6 +668,23 @@ NSTextField* LabelWithFrame(NSString* text, const NSRect& frame) {
 - (IBAction)closeBubble:(id)sender {
   contentSettingBubbleModel_->OnDoneClicked();
   [self close];
+}
+
+- (IBAction)mediaMenuChanged:(id)sender {
+  NSPopUpButton* button = static_cast<NSPopUpButton*>(sender);
+  content_setting_bubble::MediaMenuPartsMap::const_iterator it(
+      mediaMenus_.find(sender));
+  DCHECK(it != mediaMenus_.end());
+  NSInteger index = [[button selectedItem] tag];
+
+  SetTitleForPopUpButton(
+      button, base::SysUTF16ToNSString(it->second->model->GetLabelAt(index)));
+
+  it->second->model->ExecuteCommand(index, 0);
+}
+
+- (content_setting_bubble::MediaMenuPartsMap*)mediaMenus {
+  return &mediaMenus_;
 }
 
 @end  // ContentSettingBubbleController

@@ -5,16 +5,14 @@
 #ifndef ASH_DESKTOP_BACKGROUND_DESKTOP_BACKGROUND_VIEW_H_
 #define ASH_DESKTOP_BACKGROUND_DESKTOP_BACKGROUND_VIEW_H_
 
-#include "ash/desktop_background/desktop_background_resources.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/view.h"
-#include "ui/views/widget/widget_delegate.h"
 
 namespace ash {
 namespace internal {
 
-class DesktopBackgroundView : public views::WidgetDelegateView,
+class DesktopBackgroundView : public views::View,
                               public views::ContextMenuController {
  public:
   DesktopBackgroundView();

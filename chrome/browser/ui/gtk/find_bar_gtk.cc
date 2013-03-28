@@ -12,10 +12,11 @@
 
 #include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/find_bar/find_bar_state.h"
@@ -36,9 +37,11 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
+#include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/gtk/gtk_floating_container.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -61,9 +64,10 @@ const GdkColor kFindFailureBackgroundColor = GDK_COLOR_RGB(255, 102, 102);
 const GdkColor kFindSuccessTextColor = GDK_COLOR_RGB(178, 178, 178);
 
 // Padding around the container.
-const int kBarPaddingTopBottom = 4;
+const int kBarPaddingTop = 2;
+const int kBarPaddingBottom = 3;
 const int kEntryPaddingLeft = 6;
-const int kCloseButtonPaddingLeft = 3;
+const int kCloseButtonPadding = 3;
 const int kBarPaddingRight = 4;
 
 // The height of the findbar dialog, as dictated by the size of the background
@@ -213,6 +217,10 @@ FindBarGtk::FindBarGtk(BrowserWindowGtk* window)
                    G_CALLBACK(OnFocusInThunk), this);
   g_signal_connect(text_entry_, "focus-out-event",
                    G_CALLBACK(OnFocusOutThunk), this);
+  g_signal_connect_after(text_entry_, "copy-clipboard",
+                         G_CALLBACK(&HandleAfterCopyOrCutClipboardThunk), this);
+  g_signal_connect_after(text_entry_, "cut-clipboard",
+                         G_CALLBACK(&HandleAfterCopyOrCutClipboardThunk), this);
   g_signal_connect(container_, "expose-event",
                    G_CALLBACK(OnExpose), this);
 }
@@ -229,9 +237,9 @@ void FindBarGtk::InitWidgets() {
   // the slide effect.
   GtkWidget* hbox = gtk_hbox_new(false, 0);
   container_ = gtk_util::CreateGtkBorderBin(hbox, NULL,
-      kBarPaddingTopBottom, kBarPaddingTopBottom,
+      kBarPaddingTop, kBarPaddingBottom,
       kEntryPaddingLeft, kBarPaddingRight);
-  gtk_widget_set_size_request(container_, kFindBarWidth, -1);
+  gtk_widget_set_size_request(container_, kFindBarWidth, kFindBarHeight);
   ViewIDUtil::SetID(container_, VIEW_ID_FIND_IN_PAGE);
   gtk_widget_set_app_paintable(container_, TRUE);
 
@@ -239,9 +247,14 @@ void FindBarGtk::InitWidgets() {
                                            SlideAnimatorGtk::DOWN,
                                            0, false, true, NULL));
 
-  close_button_.reset(CustomDrawButton::CloseButton(theme_service_));
-  gtk_util::CenterWidgetInHBox(hbox, close_button_->widget(), true,
-                               kCloseButtonPaddingLeft);
+  GtkWidget* close_alignment = gtk_alignment_new(0, 0.6, 1, 0);
+  close_button_.reset(new CustomDrawButton(
+      theme_service_, IDR_TAB_CLOSE,
+      IDR_TAB_CLOSE_P, IDR_TAB_CLOSE_H, IDR_TAB_CLOSE,
+      GTK_STOCK_CLOSE, GTK_ICON_SIZE_MENU));
+  gtk_container_add(GTK_CONTAINER(close_alignment), close_button_->widget());
+  gtk_box_pack_end(GTK_BOX(hbox), close_alignment, FALSE, FALSE,
+                   kCloseButtonPadding);
   g_signal_connect(close_button_->widget(), "clicked",
                    G_CALLBACK(OnClickedThunk), this);
   gtk_widget_set_tooltip_text(close_button_->widget(),
@@ -458,7 +471,14 @@ void FindBarGtk::RestoreSavedFocus() {
   if (focus_store_.widget())
     gtk_widget_grab_focus(focus_store_.widget());
   else
-    find_bar_controller_->web_contents()->Focus();
+    find_bar_controller_->web_contents()->GetView()->Focus();
+}
+
+bool FindBarGtk::HasGlobalFindPasteboard() {
+  return false;
+}
+
+void FindBarGtk::UpdateFindBarForChangedWebContents() {
 }
 
 FindBarTesting* FindBarGtk::GetFindBarTesting() {
@@ -537,11 +557,12 @@ void FindBarGtk::Observe(int type,
 
     gtk_misc_set_alignment(GTK_MISC(match_count_label_), 0.5, 1.0);
 
+    // This is necessary to make the close button dark enough.
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     close_button_->SetBackground(
-        theme_service_->GetColor(ThemeService::COLOR_TAB_TEXT),
-        rb.GetImageNamed(IDR_CLOSE_BAR).AsBitmap(),
-        rb.GetImageNamed(IDR_CLOSE_BAR_MASK).AsBitmap());
+        theme_service_->GetColor(ThemeProperties::COLOR_TAB_TEXT),
+        rb.GetImageNamed(IDR_TAB_CLOSE).AsBitmap(),
+        rb.GetImageNamed(IDR_TAB_CLOSE).AsBitmap());
   }
 
   UpdateMatchLabelAppearance(match_label_failure_);
@@ -1016,4 +1037,21 @@ gboolean FindBarGtk::OnFocusOut(GtkWidget* entry, GdkEventFocus* event) {
       reinterpret_cast<gpointer>(&OnKeymapDirectionChanged), this);
 
   return FALSE;  // Continue propagation.
+}
+
+void FindBarGtk::HandleAfterCopyOrCutClipboard(GtkWidget* sender) {
+  ui::Clipboard::SourceTag source_tag = content::BrowserContext::
+      GetMarkerForOffTheRecordContext(browser_->profile());
+  if (source_tag == ui::Clipboard::SourceTag())
+    return;
+
+  ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
+  string16 text;
+  clipboard->ReadText(ui::Clipboard::BUFFER_STANDARD, &text);
+
+  // Overwrite clipboard with the correct source tag.
+  ui::ScopedClipboardWriter scw(clipboard,
+                                ui::Clipboard::BUFFER_STANDARD,
+                                source_tag);
+  scw.WriteText(text);
 }

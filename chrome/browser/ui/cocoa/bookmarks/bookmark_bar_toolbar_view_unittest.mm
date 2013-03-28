@@ -5,7 +5,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/memory/scoped_nsobject.h"
-#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_toolbar_view.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
@@ -62,47 +62,50 @@ class MockThemeProvider : public ui::ThemeProvider {
  @private
   int currentTabContentsHeight_;
   ui::ThemeProvider* themeProvider_;
-  bookmarks::VisualState visualState_;
+  BookmarkBar::State state_;
+  BOOL isEmpty_;
 }
 @property (nonatomic, assign) int currentTabContentsHeight;
 @property (nonatomic, assign) ui::ThemeProvider* themeProvider;
-@property (nonatomic, assign) bookmarks::VisualState visualState;
+@property (nonatomic, assign) BookmarkBar::State state;
+@property (nonatomic, assign) BOOL isEmpty;
 
 // |BookmarkBarState| protocol:
 - (BOOL)isVisible;
 - (BOOL)isAnimationRunning;
-- (BOOL)isInState:(bookmarks::VisualState)state;
-- (BOOL)isAnimatingToState:(bookmarks::VisualState)state;
-- (BOOL)isAnimatingFromState:(bookmarks::VisualState)state;
-- (BOOL)isAnimatingFromState:(bookmarks::VisualState)fromState
-                     toState:(bookmarks::VisualState)toState;
-- (BOOL)isAnimatingBetweenState:(bookmarks::VisualState)fromState
-                       andState:(bookmarks::VisualState)toState;
+- (BOOL)isInState:(BookmarkBar::State)state;
+- (BOOL)isAnimatingToState:(BookmarkBar::State)state;
+- (BOOL)isAnimatingFromState:(BookmarkBar::State)state;
+- (BOOL)isAnimatingFromState:(BookmarkBar::State)fromState
+                     toState:(BookmarkBar::State)toState;
+- (BOOL)isAnimatingBetweenState:(BookmarkBar::State)fromState
+                       andState:(BookmarkBar::State)toState;
 - (CGFloat)detachedMorphProgress;
 @end
 
 @implementation DrawDetachedBarFakeController
 @synthesize currentTabContentsHeight = currentTabContentsHeight_;
 @synthesize themeProvider = themeProvider_;
-@synthesize visualState = visualState_;
+@synthesize state = state_;
+@synthesize isEmpty = isEmpty_;
 
 - (id)init {
   if ((self = [super init])) {
-    [self setVisualState:bookmarks::kHiddenState];
+    [self setState:BookmarkBar::HIDDEN];
   }
   return self;
 }
 
 - (BOOL)isVisible { return YES; }
 - (BOOL)isAnimationRunning { return NO; }
-- (BOOL)isInState:(bookmarks::VisualState)state
-    { return ([self visualState] == state) ? YES : NO; }
-- (BOOL)isAnimatingToState:(bookmarks::VisualState)state { return NO; }
-- (BOOL)isAnimatingFromState:(bookmarks::VisualState)state { return NO; }
-- (BOOL)isAnimatingFromState:(bookmarks::VisualState)fromState
-                     toState:(bookmarks::VisualState)toState { return NO; }
-- (BOOL)isAnimatingBetweenState:(bookmarks::VisualState)fromState
-                       andState:(bookmarks::VisualState)toState { return NO; }
+- (BOOL)isInState:(BookmarkBar::State)state
+    { return ([self state] == state) ? YES : NO; }
+- (BOOL)isAnimatingToState:(BookmarkBar::State)state { return NO; }
+- (BOOL)isAnimatingFromState:(BookmarkBar::State)state { return NO; }
+- (BOOL)isAnimatingFromState:(BookmarkBar::State)fromState
+                     toState:(BookmarkBar::State)toState { return NO; }
+- (BOOL)isAnimatingBetweenState:(BookmarkBar::State)fromState
+                       andState:(BookmarkBar::State)toState { return NO; }
 - (CGFloat)detachedMorphProgress { return 1; }
 @end
 
@@ -126,17 +129,17 @@ TEST_VIEW(BookmarkBarToolbarViewTest, view_)
 
 // Test drawing (part 1), mostly to ensure nothing leaks or crashes.
 TEST_F(BookmarkBarToolbarViewTest, DisplayAsNormalBar) {
-  [controller_.get() setVisualState:bookmarks::kShowingState];
+  [controller_.get() setState:BookmarkBar::SHOW];
   [view_ display];
 }
 
 // Test drawing (part 2), mostly to ensure nothing leaks or crashes.
 TEST_F(BookmarkBarToolbarViewTest, DisplayAsDetachedBarWithNoImage) {
-  [controller_.get() setVisualState:bookmarks::kDetachedState];
+  [controller_.get() setState:BookmarkBar::DETACHED];
 
   // Tests where we don't have a background image, only a color.
   NiceMock<MockThemeProvider> provider;
-  EXPECT_CALL(provider, GetColor(ThemeService::COLOR_NTP_BACKGROUND))
+  EXPECT_CALL(provider, GetColor(ThemeProperties::COLOR_NTP_BACKGROUND))
       .WillRepeatedly(Return(SK_ColorWHITE));
   EXPECT_CALL(provider, HasCustomImage(IDR_THEME_NTP_BACKGROUND))
       .WillRepeatedly(Return(false));
@@ -147,34 +150,34 @@ TEST_F(BookmarkBarToolbarViewTest, DisplayAsDetachedBarWithNoImage) {
 
 // Actions used in DisplayAsDetachedBarWithBgImage.
 ACTION(SetBackgroundTiling) {
-  *arg1 = ThemeService::NO_REPEAT;
+  *arg1 = ThemeProperties::NO_REPEAT;
   return true;
 }
 
 ACTION(SetAlignLeft) {
-  *arg1 = ThemeService::ALIGN_LEFT;
+  *arg1 = ThemeProperties::ALIGN_LEFT;
   return true;
 }
 
 // Test drawing (part 3), mostly to ensure nothing leaks or crashes.
 TEST_F(BookmarkBarToolbarViewTest, DisplayAsDetachedBarWithBgImage) {
-  [controller_.get() setVisualState:bookmarks::kDetachedState];
+  [controller_.get() setState:BookmarkBar::DETACHED];
 
   // Tests where we have a background image, with positioning information.
   NiceMock<MockThemeProvider> provider;
 
   // Advertise having an image.
-  EXPECT_CALL(provider, GetColor(ThemeService::COLOR_NTP_BACKGROUND))
+  EXPECT_CALL(provider, GetColor(ThemeProperties::COLOR_NTP_BACKGROUND))
       .WillRepeatedly(Return(SK_ColorRED));
   EXPECT_CALL(provider, HasCustomImage(IDR_THEME_NTP_BACKGROUND))
       .WillRepeatedly(Return(true));
 
   // Return the correct tiling/alignment information.
   EXPECT_CALL(provider,
-      GetDisplayProperty(ThemeService::NTP_BACKGROUND_TILING, _))
+      GetDisplayProperty(ThemeProperties::NTP_BACKGROUND_TILING, _))
       .WillRepeatedly(SetBackgroundTiling());
   EXPECT_CALL(provider,
-      GetDisplayProperty(ThemeService::NTP_BACKGROUND_ALIGNMENT, _))
+      GetDisplayProperty(ThemeProperties::NTP_BACKGROUND_ALIGNMENT, _))
       .WillRepeatedly(SetAlignLeft());
 
   // Create a dummy bitmap full of not-red to blit with.
@@ -182,7 +185,7 @@ TEST_F(BookmarkBarToolbarViewTest, DisplayAsDetachedBarWithBgImage) {
   fake_bg_bitmap.setConfig(SkBitmap::kARGB_8888_Config, 800, 800);
   fake_bg_bitmap.allocPixels();
   fake_bg_bitmap.eraseColor(SK_ColorGREEN);
-  gfx::ImageSkia fake_bg(fake_bg_bitmap);
+  gfx::ImageSkia fake_bg = gfx::ImageSkia::CreateFrom1xBitmap(fake_bg_bitmap);
   EXPECT_CALL(provider, GetImageSkiaNamed(IDR_THEME_NTP_BACKGROUND))
       .WillRepeatedly(Return(&fake_bg));
 

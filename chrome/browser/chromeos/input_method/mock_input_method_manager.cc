@@ -10,9 +10,7 @@ namespace input_method {
 MockInputMethodManager::MockInputMethodManager()
     : add_observer_count_(0),
       remove_observer_count_(0),
-      set_state_count_(0),
-      last_state_(STATE_TERMINATING),
-      util_(whitelist_.GetSupportedInputMethods()) {
+      util_(&delegate_, whitelist_.GetSupportedInputMethods()) {
 }
 
 MockInputMethodManager::~MockInputMethodManager() {
@@ -36,24 +34,20 @@ void MockInputMethodManager::RemoveCandidateWindowObserver(
     InputMethodManager::CandidateWindowObserver* observer) {
 }
 
-void MockInputMethodManager::SetState(State new_state) {
-  ++set_state_count_;
-  last_state_ = new_state;
-}
-
-InputMethodDescriptors*
+scoped_ptr<InputMethodDescriptors>
 MockInputMethodManager::GetSupportedInputMethods() const {
-  InputMethodDescriptors* result = new InputMethodDescriptors;
+  scoped_ptr<InputMethodDescriptors> result(new InputMethodDescriptors);
   result->push_back(
       InputMethodDescriptor::GetFallbackInputMethodDescriptor());
-  return result;
+  return result.Pass();
 }
 
-InputMethodDescriptors* MockInputMethodManager::GetActiveInputMethods() const {
-  InputMethodDescriptors* result = new InputMethodDescriptors;
+scoped_ptr<InputMethodDescriptors>
+MockInputMethodManager::GetActiveInputMethods() const {
+  scoped_ptr<InputMethodDescriptors> result(new InputMethodDescriptors);
   result->push_back(
       InputMethodDescriptor::GetFallbackInputMethodDescriptor());
-  return result;
+  return result.Pass();
 }
 
 size_t MockInputMethodManager::GetNumActiveInputMethods() const {
@@ -140,6 +134,15 @@ XKeyboard* MockInputMethodManager::GetXKeyboard() {
 
 InputMethodUtil* MockInputMethodManager::GetInputMethodUtil() {
   return &util_;
+}
+
+void MockInputMethodManager::set_application_locale(const std::string& value) {
+  delegate_.set_active_locale(value);
+}
+
+void MockInputMethodManager::set_hardware_keyboard_layout(
+    const std::string& value) {
+  delegate_.set_hardware_keyboard_layout(value);
 }
 
 }  // namespace input_method

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+var forEach = require('utils').forEach;
+
 /**
  * Returns a function that throws a 'not available' exception when called.
  *
@@ -27,7 +29,7 @@ function generateDisabledMethodStub(messagePrefix, opt_messageSuffix) {
  * @param {Array.<string>} methodNames names of methods to disable.
  */
 function disableMethods(object, objectName, methodNames) {
-  methodNames.forEach(function(methodName) {
+  forEach(methodNames, function(i, methodName) {
     object[methodName] =
         generateDisabledMethodStub(objectName + '.' + methodName + '()');
   });
@@ -47,7 +49,7 @@ function disableMethods(object, objectName, methodNames) {
  * @param {Array.<string>} propertyNames names of properties to disable.
  */
 function disableGetters(object, objectName, propertyNames, opt_messageSuffix) {
-  propertyNames.forEach(function(propertyName) {
+  forEach(propertyNames, function(i, propertyName) {
     var stub = generateDisabledMethodStub(objectName + '.' + propertyName,
                                           opt_messageSuffix);
     stub._is_platform_app_disabled_getter = true;
@@ -95,9 +97,13 @@ disableGetters(window, 'window',
      'toolbar']);
 
 // Disable window.localStorage.
-disableGetters(window, 'window',
-    ['localStorage'],
-    'Use chrome.storage.local instead.');
+// Sometimes DOM security policy prevents us from doing this (e.g. for data:
+// URLs) so wrap in try-catch.
+try {
+  disableGetters(window, 'window',
+      ['localStorage'],
+      'Use chrome.storage.local instead.');
+} catch (e) {}
 
 // Document instance properties that we wish to disable need to be set when
 // the document begins loading, since only then will the "document" reference

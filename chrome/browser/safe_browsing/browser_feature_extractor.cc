@@ -14,7 +14,7 @@
 #include "base/stringprintf.h"
 #include "base/time.h"
 #include "chrome/browser/common/cancelable_request.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
@@ -50,6 +50,22 @@ static void AddFeature(const std::string& feature_name,
   VLOG(2) << "Browser feature: " << feature->name() << " " << feature->value();
 }
 
+static void AddMalwareFeature(const std::string& feature_name,
+                              const std::set<std::string>& meta_infos,
+                              double feature_value,
+                              ClientMalwareRequest* request) {
+  DCHECK(request);
+  ClientMalwareRequest::Feature* feature =
+      request->add_feature_map();
+  feature->set_name(feature_name);
+  feature->set_value(feature_value);
+  for (std::set<std::string>::const_iterator it = meta_infos.begin();
+       it != meta_infos.end(); ++it) {
+    feature->add_metainfo(*it);
+  }
+  VLOG(2) << "Browser feature: " << feature->name() << " " << feature->value();
+}
+
 static void AddNavigationFeatures(
     const std::string& feature_prefix,
     const NavigationController& controller,
@@ -59,10 +75,10 @@ static void AddNavigationFeatures(
   NavigationEntry* entry = controller.GetEntryAtIndex(index);
   bool is_secure_referrer = entry->GetReferrer().url.SchemeIsSecure();
   if (!is_secure_referrer) {
-    AddFeature(StringPrintf("%s%s=%s",
-                            feature_prefix.c_str(),
-                            features::kReferrer,
-                            entry->GetReferrer().url.spec().c_str()),
+    AddFeature(base::StringPrintf("%s%s=%s",
+                                  feature_prefix.c_str(),
+                                  features::kReferrer,
+                                  entry->GetReferrer().url.spec().c_str()),
                1.0,
                request);
   }
@@ -102,11 +118,11 @@ static void AddNavigationFeatures(
     if (redirect_chain[i].SchemeIsSecure()) {
       printable_redirect = features::kSecureRedirectValue;
     }
-    AddFeature(StringPrintf("%s%s[%"PRIuS"]=%s",
-                            feature_prefix.c_str(),
-                            features::kRedirect,
-                            i,
-                            printable_redirect.c_str()),
+    AddFeature(base::StringPrintf("%s%s[%"PRIuS"]=%s",
+                                  feature_prefix.c_str(),
+                                  features::kRedirect,
+                                  i,
+                                  printable_redirect.c_str()),
                1.0,
                request);
   }
@@ -211,14 +227,33 @@ void BrowserFeatureExtractor::ExtractFeatures(const BrowseInfo* info,
                  weak_factory_.GetWeakPtr(), request, callback));
 }
 
+void BrowserFeatureExtractor::ExtractMalwareFeatures(
+    const BrowseInfo* info,
+    ClientMalwareRequest* request) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(request);
+  DCHECK(info);
+  DCHECK_EQ(0U, request->url().find("http:"));
+  // get the IPs and hosts that match the malware blacklisted IP list.
+  if (service_) {
+    for (IPHostMap::const_iterator it = info->ips.begin();
+         it != info->ips.end(); ++it) {
+      if (service_->IsBadIpAddress(it->first)) {
+        AddMalwareFeature(features::kBadIpFetch + it->first,
+                          it->second, 1.0, request);
+      }
+    }
+  }
+}
+
 void BrowserFeatureExtractor::ExtractBrowseInfoFeatures(
     const BrowseInfo& info,
     ClientPhishingRequest* request) {
   if (service_) {
-    for (std::set<std::string>::const_iterator it = info.ips.begin();
+    for (IPHostMap::const_iterator it = info.ips.begin();
          it != info.ips.end(); ++it) {
-      if (service_->IsBadIpAddress(*it)) {
-        AddFeature(features::kBadIpFetch + *it, 1.0, request);
+      if (service_->IsBadIpAddress(it->first)) {
+        AddFeature(features::kBadIpFetch + it->first, 1.0, request);
       }
     }
   }

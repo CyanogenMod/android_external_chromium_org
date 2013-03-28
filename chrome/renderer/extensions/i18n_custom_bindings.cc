@@ -4,6 +4,7 @@
 
 #include "chrome/renderer/extensions/i18n_custom_bindings.h"
 
+#include "base/bind.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/message_bundle.h"
 #include "content/public/renderer/render_view.h"
@@ -12,12 +13,13 @@
 
 namespace extensions {
 
-I18NCustomBindings::I18NCustomBindings()
-    : ChromeV8Extension(NULL) {
-  RouteStaticFunction("GetL10nMessage", &GetL10nMessage);
+I18NCustomBindings::I18NCustomBindings(Dispatcher* dispatcher,
+                                       v8::Handle<v8::Context> context)
+    : ChromeV8Extension(dispatcher, context) {
+  RouteFunction("GetL10nMessage",
+      base::Bind(&I18NCustomBindings::GetL10nMessage, base::Unretained(this)));
 }
 
-// static
 v8::Handle<v8::Value> I18NCustomBindings::GetL10nMessage(
     const v8::Arguments& args) {
   if (args.Length() != 3 || !args[0]->IsString()) {
@@ -38,7 +40,7 @@ v8::Handle<v8::Value> I18NCustomBindings::GetL10nMessage(
   if (!l10n_messages) {
     // Get the current RenderView so that we can send a routed IPC message
     // from the correct source.
-    content::RenderView* renderview = GetCurrentRenderView();
+    content::RenderView* renderview = GetRenderView();
     if (!renderview)
       return v8::Undefined();
 

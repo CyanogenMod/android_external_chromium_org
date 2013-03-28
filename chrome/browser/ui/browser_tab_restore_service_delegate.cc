@@ -8,7 +8,6 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabrestore.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/navigation_controller.h"
@@ -26,11 +25,11 @@ const SessionID& BrowserTabRestoreServiceDelegate::GetSessionID() const {
 }
 
 int BrowserTabRestoreServiceDelegate::GetTabCount() const {
-  return browser_->tab_count();
+  return browser_->tab_strip_model()->count();
 }
 
 int BrowserTabRestoreServiceDelegate::GetSelectedIndex() const {
-  return browser_->active_index();
+  return browser_->tab_strip_model()->active_index();
 }
 
 std::string BrowserTabRestoreServiceDelegate::GetAppName() const {
@@ -39,11 +38,11 @@ std::string BrowserTabRestoreServiceDelegate::GetAppName() const {
 
 WebContents* BrowserTabRestoreServiceDelegate::GetWebContentsAt(
     int index) const {
-  return chrome::GetWebContentsAt(browser_, index);
+  return browser_->tab_strip_model()->GetWebContentsAt(index);
 }
 
 WebContents* BrowserTabRestoreServiceDelegate::GetActiveWebContents() const {
-  return chrome::GetActiveWebContents(browser_);
+  return browser_->tab_strip_model()->GetActiveWebContents();
 }
 
 bool BrowserTabRestoreServiceDelegate::IsTabPinned(int index) const {
@@ -87,14 +86,16 @@ void BrowserTabRestoreServiceDelegate::CloseTab() {
 // static
 TabRestoreServiceDelegate* TabRestoreServiceDelegate::Create(
     Profile* profile,
+    chrome::HostDesktopType host_desktop_type,
     const std::string& app_name) {
   Browser* browser;
   if (app_name.empty()) {
-    browser = new Browser(Browser::CreateParams(profile));
+    browser = new Browser(Browser::CreateParams(profile, host_desktop_type));
   } else {
     browser = new Browser(
         Browser::CreateParams::CreateForApp(
-            Browser::TYPE_POPUP, app_name, gfx::Rect(), profile));
+            Browser::TYPE_POPUP, app_name, gfx::Rect(), profile,
+            host_desktop_type));
   }
   if (browser)
     return browser->tab_restore_service_delegate();
@@ -106,13 +107,15 @@ TabRestoreServiceDelegate* TabRestoreServiceDelegate::Create(
 TabRestoreServiceDelegate*
     TabRestoreServiceDelegate::FindDelegateForWebContents(
         const WebContents* contents) {
-  Browser* browser = browser::FindBrowserWithWebContents(contents);
+  Browser* browser = chrome::FindBrowserWithWebContents(contents);
   return browser ? browser->tab_restore_service_delegate() : NULL;
 }
 
 // static
 TabRestoreServiceDelegate* TabRestoreServiceDelegate::FindDelegateWithID(
-    SessionID::id_type desired_id) {
-  Browser* browser = browser::FindBrowserWithID(desired_id);
-  return browser ? browser->tab_restore_service_delegate() : NULL;
+    SessionID::id_type desired_id,
+    chrome::HostDesktopType host_desktop_type) {
+  Browser* browser = chrome::FindBrowserWithID(desired_id);
+  return (browser && browser->host_desktop_type() == host_desktop_type) ?
+             browser->tab_restore_service_delegate() : NULL;
 }

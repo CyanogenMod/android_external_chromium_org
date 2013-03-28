@@ -13,7 +13,9 @@
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "googleurl/src/gurl.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace google_apis {
 class AppList;
@@ -50,50 +52,21 @@ struct DriveWebAppInfo {
   bool is_primary_selector;
 };
 
-// DriveWebAppsRegistry abstraction layer.
-// The interface is defined to make DriveWebAppsRegistry mockable.
-class DriveWebAppsRegistryInterface {
- public:
-  virtual ~DriveWebAppsRegistryInterface() {}
-
-  // Gets the list of web |apps| matching |file| and its |mime_type|.
-  virtual void GetWebAppsForFile(const FilePath& file,
-                                 const std::string& mime_type,
-                                 ScopedVector<DriveWebAppInfo>* apps) = 0;
-
-  // Returns a set of filename extensions registered for the given
-  // |web_store_id|.
-  virtual std::set<std::string> GetExtensionsForWebStoreApp(
-      const std::string& web_store_id) = 0;
-
-  // Updates the list of drive-enabled WebApps with freshly fetched account
-  // metadata feed.
-  virtual void UpdateFromFeed(
-      const google_apis::AccountMetadataFeed& metadata) = 0;
-
-  // Updates the list of drive-enabled WebApps with freshly fetched account
-  // metadata feed.
-  virtual void UpdateFromApplicationList(
-      const google_apis::AppList& applist) = 0;
-};
-
-// The production implementation of DriveWebAppsRegistryInterface.
-// Keeps the track of installed drive web application and provider.
-class DriveWebAppsRegistry : public DriveWebAppsRegistryInterface {
+// Keeps the track of installed drive web application and provider in-memory.
+class DriveWebAppsRegistry {
  public:
   DriveWebAppsRegistry();
   virtual ~DriveWebAppsRegistry();
 
   // DriveWebAppsRegistry overrides.
-  virtual void GetWebAppsForFile(const FilePath& file,
+  virtual void GetWebAppsForFile(const base::FilePath& file,
                                  const std::string& mime_type,
-                                 ScopedVector<DriveWebAppInfo>* apps) OVERRIDE;
+                                 ScopedVector<DriveWebAppInfo>* apps);
   virtual std::set<std::string> GetExtensionsForWebStoreApp(
-      const std::string& web_store_id) OVERRIDE;
+      const std::string& web_store_id);
   virtual void UpdateFromFeed(
-      const google_apis::AccountMetadataFeed& metadata) OVERRIDE;
-  virtual void UpdateFromApplicationList(
-      const google_apis::AppList& applist) OVERRIDE;
+      const google_apis::AccountMetadata& metadata);
+  virtual void UpdateFromAppList(const google_apis::AppList& applist);
 
  private:
   // Defines WebApp application details that are associated with a given
@@ -139,7 +112,7 @@ class DriveWebAppsRegistry : public DriveWebAppsRegistryInterface {
       const GURL& product_link,
       const google_apis::InstalledApp::IconList& app_icons,
       const google_apis::InstalledApp::IconList& document_icons,
-      const string16& object_type,
+      const std::string& object_type,
       const std::string& app_id,
       bool is_primary_selector,
       const ScopedVector<std::string>& selectors,
@@ -151,7 +124,7 @@ class DriveWebAppsRegistry : public DriveWebAppsRegistryInterface {
                               SelectorWebAppList* apps);
 
   // Map of web store product URL to application name.
-  std::map<GURL, string16> url_to_name_map_;
+  std::map<GURL, std::string> url_to_name_map_;
 
   // Map of filename extension to application info.
   WebAppFileSelectorMap webapp_extension_map_;

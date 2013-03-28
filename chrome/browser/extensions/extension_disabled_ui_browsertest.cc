@@ -2,43 +2,53 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
-#include "base/scoped_temp_dir.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/global_error/global_error.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
+#include "content/test/net/url_request_prepackaged_interceptor.h"
+#include "net/url_request/url_fetcher.h"
 
 using extensions::Extension;
 
 class ExtensionDisabledGlobalErrorTest : public ExtensionBrowserTest {
  protected:
-  void SetUpOnMainThread() {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    ExtensionBrowserTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitchASCII(switches::kAppsGalleryUpdateURL,
+                                    "http://localhost/autoupdate/updates.xml");
+  }
+
+  virtual void SetUpOnMainThread() OVERRIDE {
     EXPECT_TRUE(scoped_temp_dir_.CreateUniqueTempDir());
     service_ = browser()->profile()->GetExtensionService();
-    FilePath pem_path = test_data_dir_.
+    base::FilePath pem_path = test_data_dir_.
         AppendASCII("permissions_increase").AppendASCII("permissions.pem");
     path_v1_ = PackExtensionWithOptions(
         test_data_dir_.AppendASCII("permissions_increase").AppendASCII("v1"),
         scoped_temp_dir_.path().AppendASCII("permissions1.crx"),
         pem_path,
-        FilePath());
+        base::FilePath());
     path_v2_ = PackExtensionWithOptions(
         test_data_dir_.AppendASCII("permissions_increase").AppendASCII("v2"),
         scoped_temp_dir_.path().AppendASCII("permissions2.crx"),
         pem_path,
-        FilePath());
+        base::FilePath());
     path_v3_ = PackExtensionWithOptions(
         test_data_dir_.AppendASCII("permissions_increase").AppendASCII("v3"),
         scoped_temp_dir_.path().AppendASCII("permissions3.crx"),
         pem_path,
-        FilePath());
+        base::FilePath());
   }
 
   // Returns the ExtensionDisabledGlobalError, if present.
@@ -63,7 +73,7 @@ class ExtensionDisabledGlobalErrorTest : public ExtensionBrowserTest {
   // extension and prompt the user to reenable.
   const Extension* UpdateIncreasingPermissionExtension(
       const Extension* extension,
-      const FilePath& crx_path,
+      const base::FilePath& crx_path,
       int expected_change) {
     size_t size_before = service_->extensions()->size();
     if (UpdateExtension(extension->id(), crx_path, expected_change))
@@ -84,10 +94,10 @@ class ExtensionDisabledGlobalErrorTest : public ExtensionBrowserTest {
   }
 
   ExtensionService* service_;
-  ScopedTempDir scoped_temp_dir_;
-  FilePath path_v1_;
-  FilePath path_v2_;
-  FilePath path_v3_;
+  base::ScopedTempDir scoped_temp_dir_;
+  base::FilePath path_v1_;
+  base::FilePath path_v2_;
+  base::FilePath path_v3_;
 };
 
 // Tests the process of updating an extension to one that requires higher
@@ -98,7 +108,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionDisabledGlobalErrorTest, AcceptPermissions) {
   ASSERT_TRUE(GetExtensionDisabledGlobalError());
   const size_t size_before = service_->extensions()->size();
 
-  service_->GrantPermissionsAndEnableExtension(extension, false);
+  service_->GrantPermissionsAndEnableExtension(extension);
   EXPECT_EQ(size_before + 1, service_->extensions()->size());
   EXPECT_EQ(0u, service_->disabled_extensions()->size());
   ASSERT_FALSE(GetExtensionDisabledGlobalError());
@@ -160,4 +170,49 @@ IN_PROC_BROWSER_TEST_F(ExtensionDisabledGlobalErrorTest,
   extension = UpdateIncreasingPermissionExtension(extension, path_v3_, 0);
   ASSERT_TRUE(extension);
   ASSERT_TRUE(GetExtensionDisabledGlobalError());
+}
+
+// Test that an error appears if the extension gets disabled because a
+// version with higher permissions was installed by sync.
+IN_PROC_BROWSER_TEST_F(ExtensionDisabledGlobalErrorTest,
+                       HigherPermissionsFromSync) {
+  // Get data for extension v2 (disabled) into sync.
+  const Extension* extension = InstallAndUpdateIncreasingPermissionsExtension();
+  std::string extension_id = extension->id();
+  // service_->GrantPermissionsAndEnableExtension(extension, false);
+  extensions::ExtensionSyncData sync_data =
+      service_->GetExtensionSyncData(*extension);
+  UninstallExtension(extension_id);
+  extension = NULL;
+
+  // Install extension v1.
+  InstallIncreasingPermissionExtensionV1();
+
+  // Note: This interceptor gets requests on the IO thread.
+  content::URLRequestPrepackagedInterceptor interceptor;
+  net::URLFetcher::SetEnableInterceptionForTests(true);
+  interceptor.SetResponseIgnoreQuery(
+      GURL("http://localhost/autoupdate/updates.xml"),
+      test_data_dir_.AppendASCII("permissions_increase")
+                    .AppendASCII("updates.xml"));
+  interceptor.SetResponseIgnoreQuery(
+      GURL("http://localhost/autoupdate/v2.crx"),
+      scoped_temp_dir_.path().AppendASCII("permissions2.crx"));
+
+  extensions::ExtensionUpdater::CheckParams params;
+  params.check_blacklist = false;
+  service_->updater()->set_default_check_params(params);
+
+  // Sync is replacing an older version, so it pends.
+  EXPECT_FALSE(service_->ProcessExtensionSyncData(sync_data));
+
+  WaitForExtensionInstall();
+
+  extension = service_->GetExtensionById(extension_id, true);
+  ASSERT_TRUE(extension);
+  EXPECT_EQ("2", extension->VersionString());
+  EXPECT_EQ(1u, service_->disabled_extensions()->size());
+  EXPECT_EQ(Extension::DISABLE_PERMISSIONS_INCREASE,
+            service_->extension_prefs()->GetDisableReasons(extension_id));
+  EXPECT_TRUE(GetExtensionDisabledGlobalError());
 }

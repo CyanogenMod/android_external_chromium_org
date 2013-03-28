@@ -170,9 +170,6 @@ This file contains the strings for ash.
       <message name="IDS_AURA_APP_LIST_SYNCING_TITLE" desc="The title used for the Aura app list in the launcher to indicate loading/syncing apps.">
         Syncing apps...
       </message>
-      <message name="IDS_AURA_NEW_TAB" desc="The text label of the New Tab menu item">
-        New tab
-      </message>
       <message name="IDS_AURA_LAUNCHER_OVERFLOW_NAME" desc="The title used for the Aura overflow button in the launcher">
         Overflow Button
       </message>
@@ -200,19 +197,20 @@ This file contains the strings for ash.
         Keyboard Overlay
       </message>
 
+      <message name="IDS_ASH_LEARN_MORE" desc="Text of Learn more links.">
+        Learn more
+      </message>
+
       <!-- Status tray items -->
       <message name="IDS_ASH_STATUS_TRAY_ACCESSIBLE_NAME" desc="The accessible name of the status tray.">
         Status tray
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_TURNED_ON_BUBBLE" desc="The message shown on a bubble when accessibility is turned on">
-Accessibility features are enabled.
-Press Ctrl+Alt+Z to cancel.
+      <message name="IDS_ASH_STATUS_TRAY_SPOKEN_FEEDBACK_ENABLED_BUBBLE" desc="The message shown on a bubble when spoken feedback is enabled">
+Spoken feedback is enabled.
+Press Ctrl+Alt+Z to disable.
       </message>
       <message name="IDS_ASH_STATUS_TRAY_SETTINGS" desc="The label used for the settings item in the status tray.">
         Settings
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_SHUT_DOWN" desc="The label used for the button in the status tray to shut down the system.">
-        Shut down
       </message>
       <message name="IDS_ASH_STATUS_TRAY_SIGN_OUT" desc="The label used for the button in the status tray to sign out of the system.">
         Sign out
@@ -229,34 +227,16 @@ Press Ctrl+Alt+Z to cancel.
       <message name="IDS_ASH_STATUS_TRAY_EXIT_KIOSK" desc="The label used for the button in the status tray to terminate a session kiosk mode.">
         Exit session
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_EXIT_PUBLIC" desc="The label used for the button in the status tray to terminate a public account session.">
-        End public session
+      <message name="IDS_ASH_STATUS_TRAY_EXIT_PUBLIC" desc="The label used for the button in the status tray to terminate a public account session. If the label is long, indicate where it may be broken into two lines by inserting \n instead of a whitespace.">
+        Exit session
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_PUBLIC_LABEL" desc="Text of the the ash system bubble's user card when the current session is a public account session.">
+        <ph name="DISPLAY_NAME">$1<ex>Internet kiosk</ex></ph> is a public session managed by <ph name="DOMAIN">$2<ex>yourdomain.com</ex></ph>
       </message>
       <message name="IDS_ASH_STATUS_TRAY_LOCK" desc="The label used for the button in the status tray to lock the screen.">
         Lock
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_NETWORK" desc="The label used in the network dialog header.">
-        Network
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_VPN" desc="The label used in the VPN detailed view header.">
-        Private Network
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_NETWORK_SETTINGS" desc="The label used in the settings entry in the network dialog.">
-        Settings...
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_NETWORK_PROXY_SETTINGS" desc="The label used in the proxy settings entry in the network dialog in the login screen.">
-        Proxy...
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_NETWORK_WIFI_ENABLED" desc="The label used in the tray popup to notify that Wi-Fi is turned on.">
-        Wi-Fi is turned on.
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_NETWORK_WIFI_DISABLED" desc="The label used in the tray popup to notify that Wi-Fi is turned off.">
-        Wi-Fi is turned off.
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_NETWORK_NO_VPN" desc="The label used in the tray popup to notify no vpn is configured.">
-        VPN is not configured.
-      </message>      
-      <message name="IDS_ASH_STATUS_TRAY_SMS" desc="The label used in the status tray for SMS.">      
+      <message name="IDS_ASH_STATUS_TRAY_SMS" desc="The label used in the status tray for SMS.">
         SMS
       </message>
       <message name="IDS_ASH_STATUS_TRAY_SMS_MESSAGES" desc="The label used in the default status tray view for SMS with the number of messages.">
@@ -265,50 +245,9 @@ Press Ctrl+Alt+Z to cancel.
       <message name="IDS_ASH_STATUS_TRAY_SMS_NUMBER" desc="Sender for SMS messagees in the system tray.">
         SMS from <ph name="PHONE_NUMBER">$1<ex>08700 776655</ex></ph>
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_LOCALE_CHANGE_MESSAGE" desc="The message used for locale change notifications in the system tray.">
-        The language has changed from "<ph name="FROM_LOCALE">$1<ex>Italian</ex></ph>" to "<ph name="TO_LOCALE">$2<ex>English (United States)</ex></ph>" after syncing your settings.
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_LOCALE_REVERT_MESSAGE" desc="Link to revert a change.">
-        Change back to "<ph name="FROM_LOCALE">$1<ex>Italian</ex></ph>" (requires restart)
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_ENABLE_WIFI" desc="The label used for the item to enable wifi.">
-        Enable Wi-Fi
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_DISABLE_WIFI" desc="The label used for the item to disable wifi.">
-        Disable Wi-Fi
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_OTHER_WIFI" desc="The label used for the item to display other Wi-Fi networks.">
-        Join other...
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_OTHER_VPN" desc="The label used for the item to configure other private networks.">
-        Join other...
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_TURN_ON_WIFI" desc="The label used for the item to turn on Wi-Fi networks.">
-        Turn WiFi on...
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_ENABLE_MOBILE" desc="The label used for the item to enable cellular networks.">
-        Enable mobile data
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_DISABLE_MOBILE" desc="The label used for the item to disable cellular networks.">
-        Disable mobile data
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_SETUP_MOBILE" desc="The label used for the item to setup cellular network when no SIM card in installed.">
-        Setup mobile data
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_OTHER_MOBILE" desc="The label used for the item to display other cellular networks.">
-        Mobile ...
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_MOBILE_VIEW_ACCOUNT" desc="In the network popup bubble, the text of the top-up URL link.">
-        View mobile account
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_UPDATE" desc="The label used in the tray popup to notify that the user should restart to get system updates.">
-        Restart to update
-      </message>
+
       <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH" desc="The label used as the header in the bluetooth popup.">
         Bluetooth
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_CONNECTED" desc="The label used in the tray popup for the bluetooth entry.">
-        Bluetooth connected
       </message>
       <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_ENABLED" desc="The label used in the tray popup to notify that bluetooth is enabled.">
         Bluetooth enabled
@@ -316,36 +255,36 @@ Press Ctrl+Alt+Z to cancel.
       <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_DISABLED" desc="The label used in the tray popup to notify that bluetooth is disabled.">
         Bluetooth disabled
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_BRIGHTNESS" desc="The accessible text for the brightness slider.">
-        Brightness
+      <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_CONNECTING" desc="Shows a connecting bluetooth device in the bluetooth list.">
+        <ph name="BLUETOOTH">$1<ex>Apple Magic Mouse</ex></ph>: Connecting...
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_VOLUME" desc="The accessible text for the volume slider.">
-        Volume
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_VOLUME_MUTE" desc="The label text for the volume mute segment.">
-        mute
-      </message>
+      <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_DISCONNECTING" desc="Shows a disconnecting bluetooth device in the bluetooth list.">
+        <ph name="BLUETOOTH">$1<ex>Apple Magic Mouse</ex></ph>: Disconnecting...
+      </message>      
       <message name="IDS_ASH_STATUS_TRAY_DISABLE_BLUETOOTH" desc="The label used in the tray popup to disable bluetooth.">
         Disable Bluetooth
       </message>
       <message name="IDS_ASH_STATUS_TRAY_ENABLE_BLUETOOTH" desc="The label used in the tray popup to enable bluetooth.">
         Enable Bluetooth
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_SETTINGS" desc="The label used in the tray popup for bluetooth settings.">
-        Bluetooth settings...
-      </message>
       <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_ADD_DEVICE" desc="The label used in the tray popup to add a bluetooth device.">
         Add device...
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_TURNED_OFF" desc="The label used in the tray popup to show bluetooth is turned off.">
-        Bluetooth is turned off.
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_NO_DEVICE" desc="The label used in the tray popup to show bluetooth is turned off.">
-        No bluetooth devices available
       </message>
       <message name="IDS_ASH_STATUS_TRAY_BLUETOOTH_DISCOVERING" desc="The label used in the tray popup to show bluetooth is discovering devices.">
         Scanning for devices...
       </message>
+
+      <message name="IDS_ASH_STATUS_TRAY_UPDATE" desc="The label used in the tray popup to notify that the user should restart to get system updates.">
+        Restart to update
+      </message>
+
+      <message name="IDS_ASH_STATUS_TRAY_BRIGHTNESS" desc="The accessible text for the brightness slider.">
+        Brightness
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_VOLUME" desc="The accessible text for the volume slider.">
+        Volume
+      </message>
+
       <message name="IDS_ASH_STATUS_TRAY_DISPLAY_MIRRORING" desc="The label used in the tray to show that the current status is mirroring.">
 	Mirroring to <ph name="DISPLAY_NAME">$1</ph>
       </message>
@@ -404,8 +343,33 @@ Press Shift + Alt to switch.
         Your input method has changed to <ph name="INPUT_METHOD_ID">$1<ex>EN</ex></ph>*(<ph name="BEGIN_LINK">&lt;a target="_blank" href="$2"&gt;</ph>3rd party<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>).
 Press Shift + Alt to switch.
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_DISABLE_SPOKEN_FEEDBACK" desc="The label used in the tray popup to disable spoken feedback.">
-        Disable spoken feedback
+
+      <message name="IDS_ASH_STATUS_TRAY_LOCALE_CHANGE_MESSAGE" desc="The message used for locale change notifications in the system tray.">
+        The language has changed from "<ph name="FROM_LOCALE">$1<ex>Italian</ex></ph>" to "<ph name="TO_LOCALE">$2<ex>English (United States)</ex></ph>" after syncing your settings.
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_LOCALE_REVERT_MESSAGE" desc="Link to revert a change.">
+        Change back to "<ph name="FROM_LOCALE">$1<ex>Italian</ex></ph>" (requires restart)
+      </message>
+
+      <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY" desc="The label used in the tray menu to show the accessibility option menu.">
+        Accessibility
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_TITLE" desc="The label used in the title of the accessibility option menu.">
+        Accessibility
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SPOKEN_FEEDBACK" desc="The label used in the accessibility menu of the 
+    system tray to toggle on/off spoken feedback feature.">
+        Spoken feedback
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_HIGH_CONTRAST_MODE" desc="The label used in the accessibility menu of the system tray to toggle on/off high contrast feature.">
+        High contrast
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SCREEN_MAGNIFIER" desc="The label used in the accessibility menu of the system tray to toggle on/off magnifier feature.">
+        Screen magnifier
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_ACCESSIBILITY_LEARN_MORE" desc="The label used in the accessibility menu of the system tray
+     to open a webpage (article on help center) containing explanation about accessibility feature.">
+        Learn more...
       </message>
       <message name="IDS_ASH_STATUS_TRAY_BATTERY_FULL" desc="The label in the tray dialog to indicate that the battery is full.">
         Battery full
@@ -422,17 +386,32 @@ Press Shift + Alt to switch.
       <message name="IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING" desc="The label in the tray dialog indicating that the time to charge or discharge the battery is being calculated.">
         Calculating...
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_BATTERY_TIME_ONLY" desc="The label in the tray bubble settings row to show a time estimate until the battery is empty.">
+      <message name="IDS_ASH_STATUS_TRAY_BATTERY_TIME_LEFT_SHORT" desc="The label in the tray bubble settings row to show a time estimate until the battery is empty.">
         <ph name="hour">$1<ex>2</ex></ph>:<ph name="minute">$2<ex>53</ex></ph> left
+      </message>      
+      <message name="IDS_ASH_STATUS_TRAY_BATTERY_TIME_UNTIL_FULL_SHORT" desc="The label in the tray bubble settings row to show a time estimate until the battery is fully charged.">
+        <ph name="hour">$1<ex>2</ex></ph>:<ph name="minute">$2<ex>53</ex></ph> until full
+      </message>      
+      <message name="IDS_ASH_STATUS_TRAY_BATTERY_FULL_CHARGE_ACCESSIBLE" desc="The message used by accessibility to show battery is full and charging.">
+        Battery is full and charging.
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_IP" desc="The label for the IP address of the network:">
-        IP Address
+      <message name="IDS_ASH_STATUS_TRAY_BATTERY_PERCENT_ACCESSIBLE" desc="The message used by accessibility to show battery is calculating its time.">
+        Battery is <ph name="percentage">$1<ex>56</ex></ph>% full
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_ETHERNET" desc="The ethernet network device.">
-        Ethernet
+      <message name="IDS_ASH_STATUS_TRAY_BATTERY_PERCENT_CHARGING_ACCESSIBLE" desc="The message used by accessibility to show battery is calculating its time.">
+        Battery is <ph name="percentage">$1<ex>56</ex></ph>% full and charging
+      </message>      
+      <message name="IDS_ASH_STATUS_TRAY_BATTERY_CALCULATING_ACCESSIBLE" desc="The message used by accessibility to show battery is calculating its time in short message.">
+        Calculating battery time.
+      </message>               
+      <message name= "IDS_ASH_STATUS_TRAY_BATTERY_TIME_LEFT_ACCESSIBLE" desc="The message used by accessibility to read remaining battery time until empty.">
+        Time left until battery is empty, <ph name="time_left">$1<ex>1 hour and 15 minutes</ex></ph>
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_WIFI" desc="The wifi network device.">
-        Wi-Fi
+      <message name= "IDS_ASH_STATUS_TRAY_BATTERY_TIME_UNTIL_FULL_ACCESSIBLE" desc="The message used by accessibility to read the estimated time until full.">
+        Time remaining until battery is fully charged, <ph name="time_remaining">$1<ex>1 hour and 15 minutes</ex></ph>
+      </message>
+      <message name = "IDS_ASH_STATUS_TRAY_BATTERY_TIME_ACCESSIBLE" desc="The message used by accessibility to read battery time, which includes both non-zero hours and minutes.">
+        <ph name="hour">$1<ex> 1 hour</ex></ph> and <ph name="minute">$2<ex>15 minutes</ex></ph>
       </message>
       <message name="IDS_ASH_STATUS_TRAY_HELP" desc="The accessible text for the help button.">
         Help
@@ -443,23 +422,15 @@ Press Shift + Alt to switch.
       <message name="IDS_ASH_STATUS_TRAY_SHUTDOWN" desc="The accessible text for the shutdown button.">
         Shutdown
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_NOTIFICATIONS" desc="The accessible text for the notifications button.">
-        Notifications
+      <message name="IDS_ASH_STATUS_TRAY_REMAINING_SESSION_TIME" desc="The time remaining until the end of the session. Shown if the session length is limited.">
+        <ph name="hours">$1<ex>01</ex></ph>:<ph name="minutes">$2<ex>35</ex></ph>:<ph name="seconds">$3<ex>12</ex></ph>
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_CELLULAR" desc="The accessible text for the cellular button.">
-        Cellular
+      <message name="IDS_ASH_STATUS_TRAY_REMAINING_SESSION_TIME_NOTIFICATION" desc="Notification shown to inform the user that the session length is limited.">
+        This session will end in <ph name="session_time_remaining">$1<ex>15 minutes</ex></ph>. You will be automatically signed out.
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_NETWORK_INFO" desc="The accessible text for the network info button.">
-        Network Info
-      </message>
-      <message name="IDS_ASH_STATUS_TRAY_NO_NETWORKS" desc="The message to display in the network info bubble when it is otherwise empty.">
-        No network information available
-      </message>
+
       <message name="IDS_ASH_STATUS_TRAY_PREVIOUS_MENU" desc="The accessible text for header entries for detailed versions of status tray items.">
         Previous menu
-      </message>
-      <message name="IDS_ASH_WEB_NOTIFICATION_TRAY_ACCESSIBLE_NAME" desc="The accessible name of the web notification tray (message center).">
-        Message Center
       </message>
 
       <message name="IDS_ASH_MAXIMIZE_WINDOW" desc="A help text to show that when the button gets clicked the window get maximized.">
@@ -478,11 +449,20 @@ Press Shift + Alt to switch.
         Minimize
       </message>
       <message name="IDS_ASH_DISPLAY_FAILURE_ON_MIRRORING" desc="An error message to show that the system failed to enter the mirroring mode.">
-	Can't duplicate image on attached monitors. No matching resolution found.
+	Could not mirror displays since no supported resolutions found. Entered extended desktop instead.
+      </message>
+      <message name="IDS_ASH_DISPLAY_FAILURE_ON_NON_MIRRORING" desc="An error message to show that the system failed to enter the extended desktop mode or unknown status. Please translate the parentized text.">
+	Dear Monitor, it's not working out between us. (That monitor is not supported)
       </message>
       <message name="IDS_ASH_INTERNAL_DISPLAY_NAME" desc="The name of the internal display which is shown in the display settings.">
 	Internal Display
       </message>
+
+      <!-- ChromeOS-specific strings -->
+      <if expr="pp_ifdef('chromeos')">
+	<part file="ash_chromeos_strings.grdp" />
+      </if>
+
     </messages>
   </release>
 </grit>

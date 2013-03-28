@@ -20,11 +20,19 @@ const char kDisableGLSLTranslator[]         = "disable-glsl-translator";
 const char kDisableGpuDriverBugWorkarounds[] =
     "disable-gpu-driver-bug-workarounds";
 
+// Turn off user-defined name hashing in shaders.
+const char kDisableShaderNameHashing[]      = "disable-shader-name-hashing";
+
 // Turn on Logging GPU commands.
 const char kEnableGPUCommandLogging[]       = "enable-gpu-command-logging";
 
 // Turn on Calling GL Error after every command.
 const char kEnableGPUDebugging[]            = "enable-gpu-debugging";
+
+// Enable GPU service logging. Note: This is the same switch as the one in
+// gl_switches.cc. It's defined here again to avoid dependencies between
+// dlls.
+const char kEnableGPUServiceLoggingGPU[]    = "enable-gpu-service-logging";
 
 // Turn off gpu program caching
 const char kDisableGpuProgramCache[]        = "disable-gpu-program-cache";
@@ -45,19 +53,25 @@ const char kGpuProgramCacheSizeKb[]         = "gpu-program-cache-size-kb";
 
 const char kTraceGL[]       = "trace-gl";
 
+// Disables the GPU shader on disk cache.
+const char kDisableGpuShaderDiskCache[]     = "disable-gpu-shader-disk-cache";
+
 const char* kGpuSwitches[] = {
   kCompileShaderAlwaysSucceeds,
   kDisableGLErrorLimit,
   kDisableGLSLTranslator,
   kDisableGpuDriverBugWorkarounds,
+  kDisableShaderNameHashing,
   kEnableGPUCommandLogging,
   kEnableGPUDebugging,
+  kEnableGPUServiceLoggingGPU,
   kDisableGpuProgramCache,
   kEnforceGLMinimums,
   kForceGLFinishWorkaround,
   kForceGpuMemAvailableMb,
   kGpuProgramCacheSizeKb,
   kTraceGL,
+  kDisableGpuShaderDiskCache,
 };
 
 const int kNumGpuSwitches = arraysize(kGpuSwitches);

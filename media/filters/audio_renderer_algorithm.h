@@ -7,8 +7,7 @@
 // requests data from the buffer via FillBuffer(). The owner also sets the
 // playback rate, and the AudioRendererAlgorithm will stretch or compress the
 // buffered audio as necessary to match the playback rate when fulfilling
-// FillBuffer() requests. AudioRendererAlgorithm can request more data to be
-// buffered via a read callback passed in during initialization.
+// FillBuffer() requests.
 //
 // This class is *not* thread-safe. Calls to enqueue and retrieve data must be
 // locked if called from multiple threads.
@@ -22,34 +21,22 @@
 #ifndef MEDIA_FILTERS_AUDIO_RENDERER_ALGORITHM_H_
 #define MEDIA_FILTERS_AUDIO_RENDERER_ALGORITHM_H_
 
-#include "base/callback.h"
-#include "base/gtest_prod_util.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "media/audio/audio_parameters.h"
 #include "media/base/seekable_buffer.h"
 
 namespace media {
 
-class Buffer;
+class DataBuffer;
 
 class MEDIA_EXPORT AudioRendererAlgorithm {
  public:
   AudioRendererAlgorithm();
   ~AudioRendererAlgorithm();
 
-  // Call prior to Initialize() to validate configuration.  Returns false if the
-  // configuration is invalid.  Detailed error information will be DVLOG'd.
-  static bool ValidateConfig(int channels,
-                             int samples_per_second,
-                             int bits_per_channel);
-
   // Initializes this object with information about the audio stream.
-  // |samples_per_second| is in Hz. |read_request_callback| is called to
-  // request more data from the client, requests that are fulfilled through
-  // calls to EnqueueBuffer().
-  void Initialize(int channels,
-                  int samples_per_second,
-                  int bits_per_channel,
-                  float initial_playback_rate,
-                  const base::Closure& request_read_cb);
+  void Initialize(float initial_playback_rate, const AudioParameters& params);
 
   // Tries to fill |requested_frames| frames into |dest| with possibly scaled
   // data from our |audio_buffer_|. Data is scaled based on the playback rate,
@@ -70,14 +57,10 @@ class MEDIA_EXPORT AudioRendererAlgorithm {
 
   // Enqueues a buffer. It is called from the owner of the algorithm after a
   // read completes.
-  void EnqueueBuffer(Buffer* buffer_in);
+  void EnqueueBuffer(const scoped_refptr<DataBuffer>& buffer_in);
 
   float playback_rate() const { return playback_rate_; }
   void SetPlaybackRate(float new_rate);
-
-  // Returns whether the algorithm has enough data at the current playback rate
-  // such that it can write data on the next call to FillBuffer().
-  bool CanFillBuffer();
 
   // Returns true if |audio_buffer_| is at or exceeds capacity.
   bool IsQueueFull();
@@ -89,13 +72,15 @@ class MEDIA_EXPORT AudioRendererAlgorithm {
   void IncreaseQueueCapacity();
 
   // Returns the number of bytes left in |audio_buffer_|, which may be larger
-  // than QueueCapacity() in the event that a read callback delivered more data
+  // than QueueCapacity() in the event that EnqueueBuffer() delivered more data
   // than |audio_buffer_| was intending to hold.
   int bytes_buffered() { return audio_buffer_.forward_bytes(); }
 
   int bytes_per_frame() { return bytes_per_frame_; }
 
   int bytes_per_channel() { return bytes_per_channel_; }
+
+  int samples_per_second() { return samples_per_second_; }
 
   bool is_muted() { return muted_; }
 
@@ -112,7 +97,7 @@ class MEDIA_EXPORT AudioRendererAlgorithm {
   // data at normal speed, then we "fast forward" by dropping the next bit of
   // audio data, and then we stich the pieces together by crossfading from one
   // audio chunk to the next.
-  bool OutputFasterPlayback(uint8* dest);
+  bool OutputFasterPlayback(uint8* dest, int input_step, int output_step);
 
   // Fills |dest| with one frame of audio data at slower than normal speed.
   // Returns true if a frame was rendered, false otherwise.
@@ -123,7 +108,7 @@ class MEDIA_EXPORT AudioRendererAlgorithm {
   // by repeating some of the audio data from the previous audio segment.
   // Segments are stiched together by crossfading from one audio chunk to the
   // next.
-  bool OutputSlowerPlayback(uint8* dest);
+  bool OutputSlowerPlayback(uint8* dest, int input_step, int output_step);
 
   // Resets the window state to the start of a new window.
   void ResetWindow();
@@ -162,9 +147,6 @@ class MEDIA_EXPORT AudioRendererAlgorithm {
   // Used by algorithm to scale output.
   float playback_rate_;
 
-  // Used to request more data.
-  base::Closure request_read_cb_;
-
   // Buffered audio data.
   SeekableBuffer audio_buffer_;
 
@@ -184,8 +166,6 @@ class MEDIA_EXPORT AudioRendererAlgorithm {
 
   // True if the audio should be muted.
   bool muted_;
-
-  bool needs_more_data_;
 
   // Temporary buffer to hold crossfade data.
   scoped_array<uint8> crossfade_buffer_;

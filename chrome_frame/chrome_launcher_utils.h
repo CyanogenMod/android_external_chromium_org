@@ -6,10 +6,13 @@
 #define CHROME_FRAME_CHROME_LAUNCHER_UTILS_H_
 
 #include <string>
+#include "base/memory/scoped_ptr.h"
 
 class CommandLine;
+
+namespace base {
 class FilePath;
-template <class C> class scoped_ptr;
+}
 
 namespace chrome_launcher {
 
@@ -35,7 +38,7 @@ bool CreateUpdateCommandLine(const std::wstring& update_command,
                              scoped_ptr<CommandLine>* command_line);
 
 // Returns the full path to the Chrome executable.
-FilePath GetChromeExecutablePath();
+base::FilePath GetChromeExecutablePath();
 
 }  // namespace chrome_launcher
 

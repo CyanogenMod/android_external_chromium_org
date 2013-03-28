@@ -12,9 +12,9 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSocketStreamHandleClient.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSocketStreamHandleClient.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/glue/websocketstreamhandle_bridge.h"
 #include "webkit/glue/websocketstreamhandle_delegate.h"
@@ -48,14 +48,16 @@ class WebSocketStreamHandleImpl::Context
   void Detach();
 
   // WebSocketStreamHandleDelegate methods:
-  virtual void DidOpenStream(WebSocketStreamHandle*, int);
-  virtual void DidSendData(WebSocketStreamHandle*, int);
-  virtual void DidReceiveData(WebSocketStreamHandle*, const char*, int);
-  virtual void DidClose(WebSocketStreamHandle*);
+  virtual void DidOpenStream(WebSocketStreamHandle*, int) OVERRIDE;
+  virtual void DidSendData(WebSocketStreamHandle*, int) OVERRIDE;
+  virtual void DidReceiveData(WebSocketStreamHandle*,
+                              const char*,
+                              int) OVERRIDE;
+  virtual void DidClose(WebSocketStreamHandle*) OVERRIDE;
 
  private:
   friend class base::RefCounted<Context>;
-  ~Context() {
+  virtual ~Context() {
     DCHECK(!handle_);
     DCHECK(!client_);
     DCHECK(!bridge_);

@@ -175,6 +175,9 @@ TEST(LauncherModel, AddIndices) {
   int app_shortcut_index5 = model.AddAt(2, item);
   EXPECT_EQ(browser + 2, app_shortcut_index5);
 
+  // Before there are any panels, no icons should be right aligned.
+  EXPECT_EQ(model.item_count(), model.FirstPanelIndex());
+
   // Check that AddAt() figures out the correct indexes for tabs and panels.
   item.type = TYPE_TABBED;
   int tabbed_index3 = model.AddAt(2, item);
@@ -182,27 +185,58 @@ TEST(LauncherModel, AddIndices) {
 
   item.type = TYPE_APP_PANEL;
   int app_panel_index1 = model.AddAt(2, item);
-  EXPECT_EQ(browser + 6, app_panel_index1);
+  EXPECT_EQ(browser + 10, app_panel_index1);
 
   item.type = TYPE_TABBED;
   int tabbed_index4 = model.AddAt(11, item);
-  EXPECT_EQ(browser + 10, tabbed_index4);
+  EXPECT_EQ(browser + 9, tabbed_index4);
 
   item.type = TYPE_APP_PANEL;
   int app_panel_index2 = model.AddAt(12, item);
-  EXPECT_EQ(browser + 11, app_panel_index2);
+  EXPECT_EQ(browser + 12, app_panel_index2);
 
   item.type = TYPE_TABBED;
   int tabbed_index5 = model.AddAt(7, item);
   EXPECT_EQ(browser + 7, tabbed_index5);
 
   item.type = TYPE_APP_PANEL;
-  int app_panel_index3 = model.AddAt(8, item);
-  EXPECT_EQ(browser + 8, app_panel_index3);
+  int app_panel_index3 = model.AddAt(13, item);
+  EXPECT_EQ(browser + 13, app_panel_index3);
+
+  // Right aligned index should be the first app panel index.
+  EXPECT_EQ(browser + 12, model.FirstPanelIndex());
 
   // Browser shortcut and app list should still be first and second.
   EXPECT_EQ(TYPE_BROWSER_SHORTCUT, model.items()[0].type);
-  EXPECT_EQ(TYPE_APP_LIST, model.items()[model.items().size() - 1].type);
+  EXPECT_EQ(TYPE_APP_LIST, model.items()[model.FirstPanelIndex() - 1].type);
+}
+
+// Assertions around id generation and usage.
+TEST(LauncherModel, LauncherIDTests) {
+  TestLauncherModelObserver observer;
+  LauncherModel model;
+
+  EXPECT_EQ(2, model.item_count());
+
+  // Get the next to use ID counter.
+  LauncherID id = model.next_id();
+
+  // Calling this function multiple times does not change the returned ID.
+  EXPECT_EQ(model.next_id(), id);
+
+  // Check that when we reserve a value it will be the previously retrieved ID,
+  // but it will not change the item count and retrieving the next ID should
+  // produce something new.
+  EXPECT_EQ(model.reserve_external_id(), id);
+  EXPECT_EQ(2, model.item_count());
+  LauncherID id2 = model.next_id();
+  EXPECT_NE(id2, id);
+
+  // Adding another item to the list should also produce a new ID.
+  LauncherItem item;
+  item.type = TYPE_TABBED;
+  model.Add(item);
+  EXPECT_NE(model.next_id(), id2);
 }
 
 }  // namespace ash

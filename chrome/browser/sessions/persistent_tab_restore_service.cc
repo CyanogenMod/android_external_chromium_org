@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
@@ -23,6 +23,7 @@
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/session_storage_namespace.h"
 
 namespace {
@@ -102,13 +103,11 @@ const SessionCommand::id_type kCommandSetExtensionAppID = 6;
 const SessionCommand::id_type kCommandSetWindowAppName = 7;
 const SessionCommand::id_type kCommandSetTabUserAgentOverride = 8;
 
-enum {
-  // Number of entries (not commands) before we clobber the file and write
-  // everything.
-  kEntriesPerReset = 40,
+// Number of entries (not commands) before we clobber the file and write
+// everything.
+const int kEntriesPerReset = 40;
 
-  kMaxEntries = TabRestoreServiceHelper::kMaxEntries,
-};
+const size_t kMaxEntries = TabRestoreServiceHelper::kMaxEntries;
 
 }  // namespace
 
@@ -180,14 +179,11 @@ class PersistentTabRestoreService::Delegate
   // Invoked when we've loaded the session commands that identify the previously
   // closed tabs. This creates entries, adds them to staging_entries_, and
   // invokes LoadState.
-  void OnGotLastSessionCommands(
-      Handle handle,
-      scoped_refptr<InternalGetCommandsRequest> request);
+  void OnGotLastSessionCommands(ScopedVector<SessionCommand> commands);
 
-  // Populates |loaded_entries| with Entries from |request|.
-  void CreateEntriesFromCommands(
-      scoped_refptr<InternalGetCommandsRequest> request,
-      std::vector<Entry*>* loaded_entries);
+  // Populates |loaded_entries| with Entries from |commands|.
+  void CreateEntriesFromCommands(const std::vector<SessionCommand*>& commands,
+                                 std::vector<Entry*>* loaded_entries);
 
   // Validates all entries in |entries|, deleting any with no navigations. This
   // also deletes any entries beyond the max number of entries we can hold.
@@ -197,8 +193,7 @@ class PersistentTabRestoreService::Delegate
   // previous session. This creates and add entries to |staging_entries_| and
   // invokes LoadStateChanged. |ignored_active_window| is ignored because we
   // don't need to restore activation.
-  void OnGotPreviousSession(Handle handle,
-                            std::vector<SessionWindow*>* windows,
+  void OnGotPreviousSession(ScopedVector<SessionWindow> windows,
                             SessionID::id_type ignored_active_window);
 
   // Converts a SessionWindow into a Window, returning true on success. We use 0
@@ -235,18 +230,15 @@ class PersistentTabRestoreService::Delegate
   // LoadStateChanged is invoked, which adds these entries to entries_.
   std::vector<Entry*> staging_entries_;
 
-  // Used when loading previous tabs/session.
-  CancelableRequestConsumer load_consumer_;
-
-  // Used when loading open tabs/session when recovering from a crash.
-  CancelableRequestConsumer crash_consumer_;
+  // Used when loading previous tabs/session and open tabs/session.
+  CancelableTaskTracker cancelable_task_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(Delegate);
 };
 
 PersistentTabRestoreService::Delegate::Delegate(Profile* profile)
     : BaseSessionService(BaseSessionService::TAB_RESTORE, profile,
-                         FilePath()),
+                         base::FilePath()),
       tab_restore_service_helper_(NULL),
       entries_to_write_(0),
       entries_written_(0),
@@ -350,8 +342,8 @@ void PersistentTabRestoreService::Delegate::LoadTabsFromLastSession() {
     // that we need to load the windows from session service (which will have
     // saved them).
     session_service->GetLastSession(
-        &crash_consumer_,
-        base::Bind(&Delegate::OnGotPreviousSession, base::Unretained(this)));
+        base::Bind(&Delegate::OnGotPreviousSession, base::Unretained(this)),
+        &cancelable_task_tracker_);
   } else {
     load_state_ |= LOADED_LAST_SESSION;
   }
@@ -361,10 +353,8 @@ void PersistentTabRestoreService::Delegate::LoadTabsFromLastSession() {
   // this won't contain the tabs/window that were open at the point of the
   // crash (the call to GetLastSession above requests those).
   ScheduleGetLastSessionCommands(
-      new InternalGetCommandsRequest(
-          base::Bind(&Delegate::OnGotLastSessionCommands,
-                     base::Unretained(this))),
-      &load_consumer_);
+      base::Bind(&Delegate::OnGotLastSessionCommands, base::Unretained(this)),
+      &cancelable_task_tracker_);
 }
 
 bool PersistentTabRestoreService::Delegate::IsLoaded() const {
@@ -552,10 +542,9 @@ int PersistentTabRestoreService::Delegate::GetSelectedNavigationIndexToPersist(
 }
 
 void PersistentTabRestoreService::Delegate::OnGotLastSessionCommands(
-    Handle handle,
-    scoped_refptr<InternalGetCommandsRequest> request) {
+    ScopedVector<SessionCommand> commands) {
   std::vector<Entry*> entries;
-  CreateEntriesFromCommands(request, &entries);
+  CreateEntriesFromCommands(commands.get(), &entries);
   // Closed tabs always go to the end.
   staging_entries_.insert(staging_entries_.end(), entries.begin(),
                           entries.end());
@@ -564,13 +553,11 @@ void PersistentTabRestoreService::Delegate::OnGotLastSessionCommands(
 }
 
 void PersistentTabRestoreService::Delegate::CreateEntriesFromCommands(
-    scoped_refptr<InternalGetCommandsRequest> request,
+    const std::vector<SessionCommand*>& commands,
     std::vector<Entry*>* loaded_entries) {
-  if (request->canceled() ||
-      tab_restore_service_helper_->entries().size() == kMaxEntries)
+  if (tab_restore_service_helper_->entries().size() == kMaxEntries)
     return;
 
-  std::vector<SessionCommand*>& commands = request->commands;
   // Iterate through the commands populating entries and id_to_entry.
   ScopedVector<Entry> entries;
   IDToEntry id_to_entry;
@@ -782,11 +769,10 @@ void PersistentTabRestoreService::Delegate::ValidateAndDeleteEmptyEntries(
 }
 
 void PersistentTabRestoreService::Delegate::OnGotPreviousSession(
-    Handle handle,
-    std::vector<SessionWindow*>* windows,
+    ScopedVector<SessionWindow> windows,
     SessionID::id_type ignored_active_window) {
   std::vector<Entry*> entries;
-  CreateEntriesFromWindows(windows, &entries);
+  CreateEntriesFromWindows(&windows.get(), &entries);
   // Previous session tabs go first.
   staging_entries_.insert(staging_entries_.begin(), entries.begin(),
                           entries.end());
@@ -951,8 +937,9 @@ const TabRestoreService::Entries& PersistentTabRestoreService::entries() const {
 }
 
 void PersistentTabRestoreService::RestoreMostRecentEntry(
-    TabRestoreServiceDelegate* delegate) {
-  helper_.RestoreMostRecentEntry(delegate);
+    TabRestoreServiceDelegate* delegate,
+    chrome::HostDesktopType host_desktop_type) {
+  helper_.RestoreMostRecentEntry(delegate, host_desktop_type);
 }
 
 TabRestoreService::Tab* PersistentTabRestoreService::RemoveTabEntryById(
@@ -963,8 +950,9 @@ TabRestoreService::Tab* PersistentTabRestoreService::RemoveTabEntryById(
 void PersistentTabRestoreService::RestoreEntryById(
     TabRestoreServiceDelegate* delegate,
     SessionID::id_type id,
+    chrome::HostDesktopType host_desktop_type,
     WindowOpenDisposition disposition) {
-  helper_.RestoreEntryById(delegate, id, disposition);
+  helper_.RestoreEntryById(delegate, id, host_desktop_type, disposition);
 }
 
 bool PersistentTabRestoreService::IsLoaded() const {

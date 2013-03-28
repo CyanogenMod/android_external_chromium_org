@@ -24,6 +24,7 @@
     "tabs",
     "clipboardWrite",
     "clipboardRead",
+    "https://docs.google.com/",
     "https://*.googleusercontent.com/",
     "https://drive.google.com/"
   ],
@@ -49,6 +50,7 @@
         "filesystem:*.3gp",
         "filesystem:*.avi",
         "filesystem:*.m4v",
+        "filesystem:*.mkv",
         "filesystem:*.mov",
         "filesystem:*.mp4",
         "filesystem:*.mpeg",
@@ -82,6 +84,14 @@
       "default_icon": "images/filetype_pdf.png",
       "file_filters": [
         "filesystem:*.pdf"
+      ]
+    },
+    {
+      "id": "view-swf",
+      "default_title": "__MSG_OPEN_ACTION__",
+      "default_icon": "images/filetype_generic.png",
+      "file_filters": [
+        "filesystem:*.swf"
       ]
     },
     {
@@ -120,6 +130,7 @@
         "filesystem:*.3gp",
         "filesystem:*.avi",
         "filesystem:*.m4v",
+        "filesystem:*.mkv",
         "filesystem:*.mov",
         "filesystem:*.mp4",
         "filesystem:*.mpeg",
@@ -172,11 +183,11 @@
   "app": {
     "background": {
       "scripts": [
-        // "js/mock_chrome.js", // Uncomment this to debug on a desktop browser.
         "js/file_copy_manager.js",
         "js/path_util.js",
         "js/util.js",
         "js/background.js"]
-    }
+    },
+    "content_security_policy": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src 'self' about:; img-src 'self' chrome://resources chrome://theme data: https://docs.google.com https://*.googleusercontent.com chrome://extension-icon; media-src 'self' https://*.googleusercontent.com; connect-src https://drive.google.com"
   }
 }

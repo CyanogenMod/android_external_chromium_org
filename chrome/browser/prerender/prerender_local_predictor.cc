@@ -15,12 +15,13 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/timer.h"
+#include "chrome/browser/history/history_database.h"
+#include "chrome/browser/history/history_db_task.h"
+#include "chrome/browser/history/history_service.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/prerender/prerender_histograms.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/history/history.h"
-#include "chrome/browser/history/history_database.h"
-#include "chrome/browser/history/history_service_factory.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/page_transition_types.h"
 #include "crypto/secure_hash.h"
@@ -38,7 +39,7 @@ namespace {
 static const size_t kURLHashSize = 5;
 
 // Task to lookup the URL for a given URLID.
-class GetURLForURLIDTask : public HistoryDBTask {
+class GetURLForURLIDTask : public history::HistoryDBTask {
  public:
   GetURLForURLIDTask(URLID url_id, base::Callback<void(const GURL&)> callback)
       : url_id_(url_id),
@@ -79,7 +80,7 @@ class GetURLForURLIDTask : public HistoryDBTask {
 };
 
 // Task to load history from the visit database on startup.
-class GetVisitHistoryTask : public HistoryDBTask {
+class GetVisitHistoryTask : public history::HistoryDBTask {
  public:
   GetVisitHistoryTask(PrerenderLocalPredictor* local_predictor,
                       int max_visits)
@@ -144,9 +145,20 @@ bool StrCaseStr(std::string haystack, std::string needle) {
   return haystack.find(needle) != std::string::npos;
 }
 
+bool IsExtendedRootURL(const GURL& url) {
+  const std::string& path = url.path();
+  return path == "/index.html" || path == "/home.html" ||
+      path == "/main.html" ||
+      path == "/index.htm" || path == "/home.htm" || path == "/main.htm" ||
+      path == "/index.php" || path == "/home.php" || path == "/main.php" ||
+      path == "/index.asp" || path == "/home.asp" || path == "/main.asp" ||
+      path == "/index.py" || path == "/home.py" || path == "/main.py" ||
+      path == "/index.pl" || path == "/home.pl" || path == "/main.pl";
+}
+
 bool IsRootPageURL(const GURL& url) {
-  return (url.path() == "/" || url.path() == "") && (!url.has_query()) &&
-    (!url.has_ref());
+  return (url.path() == "/" || url.path() == "" || IsExtendedRootURL(url)) &&
+      (!url.has_query()) && (!url.has_ref());
 }
 
 int64 URLHashToInt64(const unsigned char* data) {
@@ -384,6 +396,10 @@ void PrerenderLocalPredictor::OnLookupURL(history::URLID url_id,
   }
   if (IsRootPageURL(url))
     RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT_ROOT_PAGE);
+  if (IsExtendedRootURL(url))
+    RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT_EXTENDED_ROOT_PAGE);
+  if (IsRootPageURL(url) && url.SchemeIs("http"))
+    RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT_ROOT_PAGE_HTTP);
   if (url.SchemeIs("http"))
     RecordEvent(EVENT_PRERENDER_URL_LOOKUP_RESULT_IS_HTTP);
   if (url.has_query())

@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/download/download_util.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
@@ -179,8 +180,8 @@ content::PageNavigator* DownloadShelfGtk::GetNavigator() {
   return browser_;
 }
 
-void DownloadShelfGtk::DoAddDownload(BaseDownloadItemModel* download_model) {
-  download_items_.push_back(new DownloadItemGtk(this, download_model));
+void DownloadShelfGtk::DoAddDownload(DownloadItem* download) {
+  download_items_.push_back(new DownloadItemGtk(this, download));
 }
 
 bool DownloadShelfGtk::IsShowing() const {
@@ -205,7 +206,7 @@ void DownloadShelfGtk::DoClose() {
   browser_->UpdateDownloadShelfVisibility(false);
   int num_in_progress = 0;
   for (size_t i = 0; i < download_items_.size(); ++i) {
-    if (download_items_[i]->get_download()->IsInProgress())
+    if (download_items_[i]->download()->IsInProgress())
       ++num_in_progress;
   }
   download_util::RecordShelfClose(
@@ -225,12 +226,11 @@ void DownloadShelfGtk::Closed() {
   // When the close animation is complete, remove all completed downloads.
   size_t i = 0;
   while (i < download_items_.size()) {
-    DownloadItem* download = download_items_[i]->get_download();
+    DownloadItem* download = download_items_[i]->download();
     bool is_transfer_done = download->IsComplete() ||
                             download->IsCancelled() ||
                             download->IsInterrupted();
-    if (is_transfer_done &&
-        download->GetSafetyState() != DownloadItem::DANGEROUS) {
+    if (is_transfer_done && !download->IsDangerous()) {
       RemoveDownloadItem(download_items_[i]);
     } else {
       // We set all remaining items as "opened", so that the shelf will auto-
@@ -246,7 +246,7 @@ void DownloadShelfGtk::Observe(int type,
                                const content::NotificationDetails& details) {
   if (type == chrome::NOTIFICATION_BROWSER_THEME_CHANGED) {
     GdkColor color = theme_service_->GetGdkColor(
-        ThemeService::COLOR_TOOLBAR);
+        ThemeProperties::COLOR_TOOLBAR);
     gtk_widget_modify_bg(padding_bg_, GTK_STATE_NORMAL, &color);
 
     color = theme_service_->GetBorderColor();
@@ -256,18 +256,18 @@ void DownloadShelfGtk::Observe(int type,
     // the bookmark text color. Otherwise, standard link blue can look very
     // bad for some dark themes.
     bool use_default_color = theme_service_->GetColor(
-        ThemeService::COLOR_BOOKMARK_TEXT) ==
-        ThemeService::GetDefaultColor(
-            ThemeService::COLOR_BOOKMARK_TEXT);
+        ThemeProperties::COLOR_BOOKMARK_TEXT) ==
+        ThemeProperties::GetDefaultColor(
+            ThemeProperties::COLOR_BOOKMARK_TEXT);
     GdkColor bookmark_color = theme_service_->GetGdkColor(
-        ThemeService::COLOR_BOOKMARK_TEXT);
+        ThemeProperties::COLOR_BOOKMARK_TEXT);
     gtk_chrome_link_button_set_normal_color(
         GTK_CHROME_LINK_BUTTON(link_button_),
         use_default_color ? NULL : &bookmark_color);
 
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     close_button_->SetBackground(
-        theme_service_->GetColor(ThemeService::COLOR_TAB_TEXT),
+        theme_service_->GetColor(ThemeProperties::COLOR_TAB_TEXT),
         rb.GetImageNamed(IDR_CLOSE_BAR).AsBitmap(),
         rb.GetImageNamed(IDR_CLOSE_BAR_MASK).AsBitmap());
   }
@@ -316,7 +316,7 @@ void DownloadShelfGtk::OnButtonClick(GtkWidget* button) {
 void DownloadShelfGtk::AutoCloseIfPossible() {
   for (std::vector<DownloadItemGtk*>::iterator iter = download_items_.begin();
        iter != download_items_.end(); ++iter) {
-    if (!(*iter)->get_download()->GetOpened())
+    if (!(*iter)->download()->GetOpened())
       return;
   }
 

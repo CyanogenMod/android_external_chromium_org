@@ -58,12 +58,10 @@ cr.define('options', function() {
           OptionsPage.closeOverlay.bind(OptionsPage);
     },
 
-    /**
-     * Clear search filter when the dialog is displayed.
-     * @inheritDoc
-     */
+    /** @override */
     didShowPage: function() {
       this.pageDiv.querySelector('.cookies-search-box').value = '';
+      this.lastQuery_ = '';
     },
 
     /**
@@ -102,10 +100,6 @@ cr.define('options', function() {
       if (!this.visible)
         return;
 
-      // Inform the CookiesViewHandler whether we are operating in regular
-      // cookies dialog or the apps one.
-      chrome.send('setViewContext', [this.isAppContext()]);
-
       chrome.send('reloadCookies');
 
       if (!this.initialized_) {
@@ -116,10 +110,6 @@ cr.define('options', function() {
       }
 
       this.pageDiv.querySelector('.cookies-search-box').focus();
-    },
-
-    isAppContext: function() {
-      return false;
     },
   };
 

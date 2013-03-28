@@ -75,7 +75,11 @@ class JellyBeanAccessibilityInjector extends AccessibilityInjector {
             return false;
         }
 
-        return sendActionToAndroidVox(action, arguments);
+        boolean actionSuccessful = sendActionToAndroidVox(action, arguments);
+
+        if (actionSuccessful) mContentViewCore.showImeIfNeeded();
+
+        return actionSuccessful;
     }
 
     @Override
@@ -85,8 +89,7 @@ class JellyBeanAccessibilityInjector extends AccessibilityInjector {
         Context context = mContentViewCore.getContext();
         if (context != null && mCallback == null) {
             mCallback = new CallbackHandler(ALIAS_TRAVERSAL_JS_INTERFACE);
-            mContentViewCore.addJavascriptInterface(
-                    mCallback, ALIAS_TRAVERSAL_JS_INTERFACE, true);
+            mContentViewCore.addJavascriptInterface(mCallback, ALIAS_TRAVERSAL_JS_INTERFACE);
         }
     }
 
@@ -173,7 +176,7 @@ class JellyBeanAccessibilityInjector extends AccessibilityInjector {
             final int resultId = mResultIdCounter.getAndIncrement();
             final String js = String.format(JAVASCRIPT_ACTION_TEMPLATE, mInterfaceName, resultId,
                     code);
-            contentView.evaluateJavaScript(js);
+            contentView.evaluateJavaScript(js, null);
 
             return getResultAndClear(resultId);
         }
@@ -229,7 +232,7 @@ class JellyBeanAccessibilityInjector extends AccessibilityInjector {
          * request to a waiting (or potentially timed out) thread.
          *
          * @param id The result id of the request as a {@link String}.
-         * @param result The result o fa request as a {@link String}.
+         * @param result The result of a request as a {@link String}.
          */
         @JavascriptInterface
         @SuppressWarnings("unused")

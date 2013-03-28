@@ -87,24 +87,33 @@ TEST(VelocityCalculatorTest, IsAccurateWithLargeTimes) {
   EXPECT_LT(velocity_calculator.YVelocity(), -124000);
 }
 
-// Check that the velocity returned is 0 if the velocity calculator
-// doesn't have enough data
+// Check that the right values are returned for insufficient data.
 TEST(VelocityCalculatorTest, RequiresEnoughData) {
-  VelocityCalculator velocity_calculator(5);
+  VelocityCalculator velocity_calculator(3);
+  int64 start_time = 0;
+
+  // Zero points is zero velocity.
   EXPECT_EQ(velocity_calculator.XVelocity(), 0);
   EXPECT_EQ(velocity_calculator.YVelocity(), 0);
 
-  AddPoints(&velocity_calculator, 10, 10, 1, 4);
-
-  // We've only seen 4 points, the buffer size is 5
-  // Since the buffer isn't full, return 0
+  // 1point is still zero velocity.
+  velocity_calculator.PointSeen(10, 10, start_time);
   EXPECT_EQ(velocity_calculator.XVelocity(), 0);
   EXPECT_EQ(velocity_calculator.YVelocity(), 0);
 
-  AddPoints(&velocity_calculator, 10, 10, 1, 1);
+  // 2 points has non-zero velocity.
+  velocity_calculator.PointSeen(20, 20, start_time + 5);
+  EXPECT_FLOAT_EQ(velocity_calculator.XVelocity(), 1923077.f);
+  EXPECT_FLOAT_EQ(velocity_calculator.YVelocity(), 1923077.f);
 
-  EXPECT_GT(velocity_calculator.XVelocity(), 9.9);
-  EXPECT_GT(velocity_calculator.YVelocity(), 9.9);
+  velocity_calculator.PointSeen(30, 30, start_time + 10);
+  velocity_calculator.PointSeen(40, 40, start_time + 15);
+  EXPECT_FLOAT_EQ(velocity_calculator.XVelocity(), 2000000.f);
+  EXPECT_FLOAT_EQ(velocity_calculator.YVelocity(), 2000000.f);
+
+  velocity_calculator.PointSeen(50, 50, start_time + 20);
+  EXPECT_FLOAT_EQ(velocity_calculator.XVelocity(), 2000000.f);
+  EXPECT_FLOAT_EQ(velocity_calculator.YVelocity(), 2000000.f);
 }
 
 // Ensures ClearHistory behaves correctly
@@ -112,10 +121,8 @@ TEST(VelocityCalculatorTest, ClearsHistory) {
   VelocityCalculator velocity_calculator(5);
   AddPoints(&velocity_calculator, 10, -10, 1, 7);
 
-  EXPECT_GT(velocity_calculator.XVelocity(), 9.9);
-  EXPECT_LT(velocity_calculator.XVelocity(), 10.1);
-  EXPECT_GT(velocity_calculator.YVelocity(), -10.1);
-  EXPECT_LT(velocity_calculator.YVelocity(), -9.9);
+  EXPECT_FLOAT_EQ(velocity_calculator.XVelocity(), 10.f);
+  EXPECT_FLOAT_EQ(velocity_calculator.YVelocity(), -10.f);
 
   velocity_calculator.ClearHistory();
 
@@ -128,15 +135,13 @@ TEST(VelocityCalculatorTest, IgnoresOldData) {
   VelocityCalculator velocity_calculator(5);
   AddPoints(&velocity_calculator, 10, -10, 1, 7);
 
-  EXPECT_GT(velocity_calculator.XVelocity(), 9.9);
-  EXPECT_LT(velocity_calculator.XVelocity(), 10.1);
-  EXPECT_GT(velocity_calculator.YVelocity(), -10.1);
-  EXPECT_LT(velocity_calculator.YVelocity(), -9.9);
+  EXPECT_FLOAT_EQ(velocity_calculator.XVelocity(), 10.f);
+  EXPECT_FLOAT_EQ(velocity_calculator.YVelocity(), -10.f);
 
   AddPoints(&velocity_calculator, 0, 0, 1, 5);
 
-  EXPECT_EQ(velocity_calculator.XVelocity(), 0);
-  EXPECT_EQ(velocity_calculator.YVelocity(), 0);
+  EXPECT_FLOAT_EQ(velocity_calculator.XVelocity(), 0);
+  EXPECT_FLOAT_EQ(velocity_calculator.YVelocity(), 0);
 }
 
 }  // namespace test

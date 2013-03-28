@@ -1,15 +1,18 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/login/user_image_manager_impl.h"
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "base/rand_util.h"
 #include "base/threading/worker_pool.h"
 #include "base/time.h"
@@ -19,19 +22,16 @@
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/user_image.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile_downloader.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/webui/web_ui_util.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/url_constants.h"
 #include "ui/gfx/image/image_skia.h"
-
-#include "base/debug/trace_event.h"
+#include "ui/webui/web_ui_util.h"
 
 using content::BrowserThread;
 
@@ -54,13 +54,16 @@ const char kImageIndexNodeName[] = "index";
 const char kImageURLNodeName[] = "url";
 
 // Delay betweeen user login and user image migration.
-const long kUserImageMigrationDelayMs = 50000;
+const int kUserImageMigrationDelaySec = 50;
 
 // Delay betweeen user login and attempt to update user's profile data.
-const long kProfileDataDownloadDelayMs = 10000;
+const int kProfileDataDownloadDelaySec = 10;
+
+// Interval betweeen retries to update user's profile data.
+const int kProfileDataDownloadRetryIntervalSec = 300;
 
 // Delay betweeen subsequent profile refresh attempts (24 hrs).
-const long kProfileRefreshIntervalMs = 24L * 3600 * 1000;
+const int kProfileRefreshIntervalSec = 24 * 3600;
 
 const char kSafeImagePathExtension[] = ".jpg";
 
@@ -92,6 +95,8 @@ const char kProfileDownloadSuccessTime[] =
 const char kProfileDownloadReasonLoggedIn[] = "LoggedIn";
 // Time histogram suffix for a scheduled profile image download.
 const char kProfileDownloadReasonScheduled[] = "Scheduled";
+// Time histogram suffix for a profile image download retry.
+const char kProfileDownloadReasonRetry[] = "Retry";
 
 // Add a histogram showing the time it takes to download a profile image.
 // Separate histograms are reported for each download |reason| and |result|.
@@ -124,9 +129,9 @@ void AddProfileImageTimeHistogram(ProfileDownloadResult result,
   static const base::TimeDelta max_time = base::TimeDelta::FromSeconds(50);
   const size_t bucket_count(50);
 
-  base::Histogram* counter = base::Histogram::FactoryTimeGet(
+  base::HistogramBase* counter = base::Histogram::FactoryTimeGet(
       histogram_name, min_time, max_time, bucket_count,
-      base::Histogram::kUmaTargetedHistogramFlag);
+      base::HistogramBase::kUmaTargetedHistogramFlag);
   counter->AddTime(time_delta);
 
   DVLOG(1) << "Profile image download time: " << time_delta.InSecondsF();
@@ -136,7 +141,7 @@ void AddProfileImageTimeHistogram(ProfileDownloadResult result,
 void DeleteImageFile(const std::string& image_path) {
   if (image_path.empty())
     return;
-  FilePath fp(image_path);
+  base::FilePath fp(image_path);
   BrowserThread::PostTask(
       BrowserThread::FILE,
       FROM_HERE,
@@ -160,15 +165,13 @@ int ImageIndexToHistogramIndex(int image_index) {
 }  // namespace
 
 // static
-long UserImageManagerImpl::user_image_migration_delay_ms =
-    kUserImageMigrationDelayMs;
+int UserImageManagerImpl::user_image_migration_delay_sec =
+    kUserImageMigrationDelaySec;
 
 // static
-void UserImageManager::RegisterPrefs(PrefService* local_state) {
-  local_state->RegisterDictionaryPref(kUserImages,
-                                      PrefService::UNSYNCABLE_PREF);
-  local_state->RegisterDictionaryPref(kUserImageProperties,
-                                      PrefService::UNSYNCABLE_PREF);
+void UserImageManager::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterDictionaryPref(kUserImages);
+  registry->RegisterDictionaryPref(kUserImageProperties);
 }
 
 UserImageManagerImpl::UserImageManagerImpl()
@@ -252,26 +255,30 @@ void UserImageManagerImpl::LoadUserImages(const UserList& users) {
 }
 
 void UserImageManagerImpl::UserLoggedIn(const std::string& email,
-                                        bool user_is_new) {
+                                        bool user_is_new,
+                                        bool user_is_local) {
   if (user_is_new) {
     SetInitialUserImage(email);
   } else {
     int image_index = UserManager::Get()->GetLoggedInUser()->image_index();
-    // If current user image is profile image, it needs to be refreshed.
-    bool download_profile_image = image_index == User::kProfileImageIndex;
-    if (download_profile_image)
-      InitDownloadedProfileImage();
 
-    // Download user's profile data (full name and optionally image) to see if
-    // it has changed.
-    BrowserThread::PostDelayedTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&UserImageManagerImpl::DownloadProfileData,
-                   base::Unretained(this),
-                   kProfileDownloadReasonLoggedIn,
-                   download_profile_image),
-        base::TimeDelta::FromMilliseconds(kProfileDataDownloadDelayMs));
+    if (!user_is_local) {
+      // If current user image is profile image, it needs to be refreshed.
+      bool download_profile_image = image_index == User::kProfileImageIndex;
+      if (download_profile_image)
+        InitDownloadedProfileImage();
+
+      // Download user's profile data (full name and optionally image) to see if
+      // it has changed.
+      BrowserThread::PostDelayedTask(
+          BrowserThread::UI,
+          FROM_HERE,
+          base::Bind(&UserImageManagerImpl::DownloadProfileData,
+                     base::Unretained(this),
+                     kProfileDownloadReasonLoggedIn,
+                     download_profile_image),
+          base::TimeDelta::FromSeconds(kProfileDataDownloadDelaySec));
+    }
 
     UMA_HISTOGRAM_ENUMERATION("UserImage.LoggedIn",
                               ImageIndexToHistogramIndex(image_index),
@@ -284,14 +291,16 @@ void UserImageManagerImpl::UserLoggedIn(const std::string& email,
           FROM_HERE,
           base::Bind(&UserImageManagerImpl::MigrateUserImage,
                      base::Unretained(this)),
-          base::TimeDelta::FromMilliseconds(user_image_migration_delay_ms));
+          base::TimeDelta::FromSeconds(user_image_migration_delay_sec));
     }
   }
 
-  // Set up a repeating timer for refreshing the profile data.
-  profile_download_timer_.Start(
-      FROM_HERE, base::TimeDelta::FromMilliseconds(kProfileRefreshIntervalMs),
-      this, &UserImageManagerImpl::DownloadProfileDataScheduled);
+  if (!user_is_local) {
+    // Set up a repeating timer for refreshing the profile data.
+    profile_download_timer_.Start(
+        FROM_HERE, base::TimeDelta::FromSeconds(kProfileRefreshIntervalSec),
+        this, &UserImageManagerImpl::DownloadProfileDataScheduled);
+  }
 }
 
 void UserImageManagerImpl::SaveUserDefaultImageIndex(
@@ -311,7 +320,7 @@ void UserImageManagerImpl::SaveUserImage(const std::string& username,
 }
 
 void UserImageManagerImpl::SaveUserImageFromFile(const std::string& username,
-                                                 const FilePath& path) {
+                                                 const base::FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Always use unsafe image loader because we resize the image when saving
   // anyway.
@@ -364,10 +373,10 @@ const gfx::ImageSkia& UserImageManagerImpl::DownloadedProfileImage() const {
   return downloaded_profile_image_;
 }
 
-FilePath UserImageManagerImpl::GetImagePathForUser(
+base::FilePath UserImageManagerImpl::GetImagePathForUser(
     const std::string& username) {
   std::string filename = username + kSafeImagePathExtension;
-  FilePath user_data_dir;
+  base::FilePath user_data_dir;
   PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
   return user_data_dir.AppendASCII(filename);
 }
@@ -419,11 +428,12 @@ void UserImageManagerImpl::SaveUserImageInternal(const std::string& username,
 
   SetUserImage(username, image_index, image_url, user_image);
 
-  // Ignore for ephemeral users.
-  if (UserManager::Get()->IsEphemeralUser(username))
+  // Ignore if data stored or cached outside the user's cryptohome is to be
+  // treated as ephemeral.
+  if (UserManager::Get()->IsUserNonCryptohomeDataEphemeral(username))
     return;
 
-  FilePath image_path = GetImagePathForUser(username);
+  base::FilePath image_path = GetImagePathForUser(username);
   DVLOG(1) << "Saving user image to " << image_path.value();
 
   last_image_set_async_ = true;
@@ -438,7 +448,7 @@ void UserImageManagerImpl::SaveUserImageInternal(const std::string& username,
 
 void UserImageManagerImpl::SaveImageToFile(const std::string& username,
                                            const UserImage& user_image,
-                                           const FilePath& image_path,
+                                           const base::FilePath& image_path,
                                            int image_index,
                                            const GURL& image_url) {
   if (!SaveBitmapToFile(user_image, image_path))
@@ -459,8 +469,9 @@ void UserImageManagerImpl::SaveImageToLocalState(const std::string& username,
                                                  bool is_async) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // Ignore for ephemeral users.
-  if (UserManager::Get()->IsEphemeralUser(username))
+  // Ignore if data stored or cached outside the user's cryptohome is to be
+  // treated as ephemeral.
+  if (UserManager::Get()->IsUserNonCryptohomeDataEphemeral(username))
     return;
 
   // TODO(ivankr): use unique filenames for user images each time
@@ -498,7 +509,7 @@ void UserImageManagerImpl::SaveImageToLocalState(const std::string& username,
 }
 
 bool UserImageManagerImpl::SaveBitmapToFile(const UserImage& user_image,
-                                            const FilePath& image_path) {
+                                            const base::FilePath& image_path) {
   UserImage safe_image;
   const UserImage::RawImage* encoded_image = NULL;
   if (!user_image.is_safe_format()) {
@@ -528,7 +539,7 @@ void UserImageManagerImpl::InitDownloadedProfileImage() {
     VLOG(1) << "Profile image initialized";
     downloaded_profile_image_ = logged_in_user->image();
     downloaded_profile_image_data_url_ =
-        web_ui_util::GetBitmapDataUrl(*downloaded_profile_image_.bitmap());
+        webui::GetBitmapDataUrl(*downloaded_profile_image_.bitmap());
     profile_image_url_ = logged_in_user->image_url();
   }
 }
@@ -537,8 +548,8 @@ void UserImageManagerImpl::DownloadProfileData(const std::string& reason,
                                                bool download_image) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  // For guest login there's no profile image to download.
-  if (UserManager::Get()->IsLoggedInAsGuest())
+  // GAIA profiles exist for regular users only.
+  if (!UserManager::Get()->IsLoggedInAsRegularUser())
     return;
 
   // Mark profile picture as needed.
@@ -560,6 +571,10 @@ void UserImageManagerImpl::DownloadProfileDataScheduled() {
   bool download_profile_image =
       logged_in_user->image_index() == User::kProfileImageIndex;
   DownloadProfileData(kProfileDownloadReasonScheduled, download_profile_image);
+}
+
+void UserImageManagerImpl::DownloadProfileDataRetry(bool download_image) {
+  DownloadProfileData(kProfileDownloadReasonRetry, download_image);
 }
 
 // ProfileDownloaderDelegate override.
@@ -636,13 +651,14 @@ void UserImageManagerImpl::OnProfileDownloadSuccess(
 
   // Check if this image is not the same as already downloaded.
   SkBitmap new_bitmap(downloader->GetProfilePicture());
-  std::string new_image_data_url = web_ui_util::GetBitmapDataUrl(new_bitmap);
+  std::string new_image_data_url = webui::GetBitmapDataUrl(new_bitmap);
   if (!downloaded_profile_image_data_url_.empty() &&
       new_image_data_url == downloaded_profile_image_data_url_)
     return;
 
   downloaded_profile_image_data_url_ = new_image_data_url;
-  downloaded_profile_image_ = gfx::ImageSkia(downloader->GetProfilePicture());
+  downloaded_profile_image_ = gfx::ImageSkia::CreateFrom1xBitmap(
+      downloader->GetProfilePicture());
   profile_image_url_ = GURL(downloader->GetProfilePictureURL());
 
   if (user->image_index() == User::kProfileImageIndex) {
@@ -661,11 +677,10 @@ void UserImageManagerImpl::OnProfileDownloadSuccess(
 }
 
 void UserImageManagerImpl::OnProfileDownloadFailure(
-    ProfileDownloader* downloader) {
+    ProfileDownloader* downloader,
+    ProfileDownloaderDelegate::FailureReason reason) {
   DCHECK_EQ(downloader, profile_image_downloader_.get());
   profile_image_downloader_.reset();
-
-  downloading_profile_image_ = false;
 
   UMA_HISTOGRAM_ENUMERATION("UserImage.ProfileDownloadResult",
       kDownloadFailure, kDownloadResultsCount);
@@ -674,6 +689,19 @@ void UserImageManagerImpl::OnProfileDownloadFailure(
   base::TimeDelta delta = base::Time::Now() - profile_image_load_start_time_;
   AddProfileImageTimeHistogram(kDownloadFailure, profile_image_download_reason_,
                                delta);
+
+  // Retry download after some time if a network error has occured.
+  if (reason == ProfileDownloaderDelegate::NETWORK_ERROR) {
+    BrowserThread::PostDelayedTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&UserImageManagerImpl::DownloadProfileDataRetry,
+                   base::Unretained(this),
+                   downloading_profile_image_),
+        base::TimeDelta::FromSeconds(kProfileDataDownloadRetryIntervalSec));
+  }
+
+  downloading_profile_image_ = false;
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PROFILE_IMAGE_UPDATE_FAILED,

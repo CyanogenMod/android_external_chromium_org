@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
- * @constructor
  * @extends cr.EventTarget
  * @param {HTMLDivElement} div Div container for breadcrumbs.
+ * @constructor
  */
 function BreadcrumbsController(div) {
   this.bc_ = div;
@@ -174,7 +176,6 @@ BreadcrumbsController.prototype.truncate = function() {
  * @param {string} path Path to directory.
  */
 BreadcrumbsController.prototype.show = function(rootPath, path) {
-  console.log('show', rootPath, path);
   this.bc_.style.display = '-webkit-box';
   this.update(rootPath, path);
 };
@@ -188,8 +189,8 @@ BreadcrumbsController.prototype.hide = function() {
 
 /**
  * Handle a click event on a breadcrumb element.
- * @private
  * @param {Event} event The click event.
+ * @private
  */
 BreadcrumbsController.prototype.onClick_ = function(event) {
   var path = this.getTargetPath(event);
@@ -231,4 +232,3 @@ BreadcrumbsController.prototype.getTargetPath = function(event) {
 BreadcrumbsController.prototype.getContainer = function() {
   return this.bc_;
 };
-

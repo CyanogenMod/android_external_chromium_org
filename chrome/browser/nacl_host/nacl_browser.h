@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_NACL_HOST_NACL_BROWSER_H_
 
 #include "base/bind.h"
-#include "base/file_util_proxy.h"
+#include "base/files/file_util_proxy.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
 #include "base/platform_file.h"
@@ -41,7 +41,7 @@ class NaClBrowser {
   void EnsureIrtAvailable();
 
   // Path to IRT. Available even before IRT is loaded.
-  const FilePath& GetIrtFilePath();
+  const base::FilePath& GetIrtFilePath();
 
   // IRT file handle, only available when IsReady().
   base::PlatformFile IrtFile() const;
@@ -51,6 +51,16 @@ class NaClBrowser {
 
   // Returns whether NaCl application with this manifest URL should be debugged.
   bool URLMatchesDebugPatterns(GURL manifest_url);
+
+  // Methods for testing GDB debug stub in browser. If test adds debug stub
+  // port listener, Chrome will allocate a currently-unused TCP port number for
+  // debug stub server instead of a fixed one.
+
+  // Notify listener that new debug stub TCP port is allocated.
+  void FireGdbDebugStubPortOpened(int port);
+  bool HasGdbDebugStubPortListener();
+  void SetGdbDebugStubPortListener(base::Callback<void(int)> listener);
+  void ClearGdbDebugStubPortListener();
 
   bool ValidationCacheIsEnabled() const {
     return validation_cache_is_enabled_;
@@ -101,16 +111,17 @@ class NaClBrowser {
   base::WeakPtrFactory<NaClBrowser> weak_factory_;
 
   base::PlatformFile irt_platform_file_;
-  FilePath irt_filepath_;
+  base::FilePath irt_filepath_;
   NaClResourceState irt_state_;
   std::vector<URLPattern> debug_patterns_;
   bool inverse_debug_patterns_;
   NaClValidationCache validation_cache_;
   NaClValidationCache off_the_record_validation_cache_;
-  FilePath validation_cache_file_path_;
+  base::FilePath validation_cache_file_path_;
   bool validation_cache_is_enabled_;
   bool validation_cache_is_modified_;
   NaClResourceState validation_cache_state_;
+  base::Callback<void(int)> debug_stub_port_listener_;
 
   bool ok_;
 

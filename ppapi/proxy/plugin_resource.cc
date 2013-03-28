@@ -81,6 +81,20 @@ void PluginResource::SendCreate(Destination dest, const IPC::Message& msg) {
       new PpapiHostMsg_ResourceCreated(params, pp_instance(), msg));
 }
 
+void PluginResource::AttachToPendingHost(Destination dest,
+                                         int pending_host_id) {
+  // Connecting to a pending host is a replacement for "create".
+  if (dest == RENDERER) {
+    DCHECK(!sent_create_to_renderer_);
+    sent_create_to_renderer_ = true;
+  } else {
+    DCHECK(!sent_create_to_browser_);
+    sent_create_to_browser_ = true;
+  }
+  GetSender(dest)->Send(
+      new PpapiHostMsg_AttachToPendingHost(pp_resource(), pending_host_id));
+}
+
 void PluginResource::Post(Destination dest, const IPC::Message& msg) {
   ResourceMessageCallParams params(pp_resource(), GetNextSequence());
   SendResourceCall(dest, params, msg);
@@ -94,16 +108,17 @@ bool PluginResource::SendResourceCall(
       new PpapiHostMsg_ResourceCall(call_params, nested_msg));
 }
 
-int32_t PluginResource::GenericSyncCall(Destination dest,
-                                        const IPC::Message& msg,
-                                        IPC::Message* reply) {
+int32_t PluginResource::GenericSyncCall(
+    Destination dest,
+    const IPC::Message& msg,
+    IPC::Message* reply,
+    ResourceMessageReplyParams* reply_params) {
   ResourceMessageCallParams params(pp_resource(), GetNextSequence());
   params.set_has_callback();
-  ResourceMessageReplyParams reply_params;
   bool success = GetSender(dest)->Send(new PpapiHostMsg_ResourceSyncCall(
-      params, msg, &reply_params, reply));
+      params, msg, reply_params, reply));
   if (success)
-    return reply_params.result();
+    return reply_params->result();
   return PP_ERROR_FAILED;
 }
 

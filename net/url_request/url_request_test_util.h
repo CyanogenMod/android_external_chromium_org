@@ -23,9 +23,9 @@
 #include "googleurl/src/url_util.h"
 #include "net/base/cert_verifier.h"
 #include "net/base/io_buffer.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
-#include "net/base/ssl_config_service_defaults.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/ftp/ftp_network_layer.h"
@@ -33,6 +33,7 @@
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -41,9 +42,11 @@
 
 using base::TimeDelta;
 
+namespace net {
+
 //-----------------------------------------------------------------------------
 
-class TestURLRequestContext : public net::URLRequestContext {
+class TestURLRequestContext : public URLRequestContext {
  public:
   TestURLRequestContext();
   // Default constructor like TestURLRequestContext() but does not call
@@ -55,18 +58,28 @@ class TestURLRequestContext : public net::URLRequestContext {
 
   void Init();
 
+  ClientSocketFactory* client_socket_factory() {
+    return client_socket_factory_;
+  }
+  void set_client_socket_factory(ClientSocketFactory* factory) {
+    client_socket_factory_ = factory;
+  }
+
  private:
   bool initialized_;
 
+  // Not owned:
+  ClientSocketFactory* client_socket_factory_;
+
  protected:
-  net::URLRequestContextStorage context_storage_;
+  URLRequestContextStorage context_storage_;
 };
 
 //-----------------------------------------------------------------------------
 
 // Used to return a dummy context, which lives on the message loop
 // given in the constructor.
-class TestURLRequestContextGetter : public net::URLRequestContextGetter {
+class TestURLRequestContextGetter : public URLRequestContextGetter {
  public:
   // |network_task_runner| must not be NULL.
   explicit TestURLRequestContextGetter(
@@ -77,7 +90,7 @@ class TestURLRequestContextGetter : public net::URLRequestContextGetter {
       const scoped_refptr<base::SingleThreadTaskRunner>& network_task_runner,
       scoped_ptr<TestURLRequestContext> context);
 
-  // net::URLRequestContextGetter implementation.
+  // URLRequestContextGetter implementation.
   virtual TestURLRequestContext* GetURLRequestContext() OVERRIDE;
   virtual scoped_refptr<base::SingleThreadTaskRunner>
       GetNetworkTaskRunner() const OVERRIDE;
@@ -92,16 +105,20 @@ class TestURLRequestContextGetter : public net::URLRequestContextGetter {
 
 //-----------------------------------------------------------------------------
 
-class TestURLRequest : public net::URLRequest {
+class TestURLRequest : public URLRequest {
  public:
+  // todo(tedv): Remove this interface in favor of the one below it.
   TestURLRequest(
       const GURL& url, Delegate* delegate, TestURLRequestContext* context);
+  TestURLRequest(
+      const GURL& url, Delegate* delegate,
+      TestURLRequestContext* context, NetworkDelegate* network_delegate);
   virtual ~TestURLRequest();
 };
 
 //-----------------------------------------------------------------------------
 
-class TestDelegate : public net::URLRequest::Delegate {
+class TestDelegate : public URLRequest::Delegate {
  public:
   TestDelegate();
   virtual ~TestDelegate();
@@ -117,7 +134,7 @@ class TestDelegate : public net::URLRequest::Delegate {
   void set_allow_certificate_errors(bool val) {
     allow_certificate_errors_ = val;
   }
-  void set_credentials(const net::AuthCredentials& credentials) {
+  void set_credentials(const AuthCredentials& credentials) {
     credentials_ = credentials;
   }
 
@@ -136,25 +153,25 @@ class TestDelegate : public net::URLRequest::Delegate {
   }
   bool auth_required_called() const { return auth_required_; }
 
-  // net::URLRequest::Delegate:
-  virtual void OnReceivedRedirect(net::URLRequest* request, const GURL& new_url,
+  // URLRequest::Delegate:
+  virtual void OnReceivedRedirect(URLRequest* request, const GURL& new_url,
                                   bool* defer_redirect) OVERRIDE;
-  virtual void OnAuthRequired(net::URLRequest* request,
-                              net::AuthChallengeInfo* auth_info) OVERRIDE;
+  virtual void OnAuthRequired(URLRequest* request,
+                              AuthChallengeInfo* auth_info) OVERRIDE;
   // NOTE: |fatal| causes |certificate_errors_are_fatal_| to be set to true.
   // (Unit tests use this as a post-condition.) But for policy, this method
   // consults |allow_certificate_errors_|.
-  virtual void OnSSLCertificateError(net::URLRequest* request,
-                                     const net::SSLInfo& ssl_info,
+  virtual void OnSSLCertificateError(URLRequest* request,
+                                     const SSLInfo& ssl_info,
                                      bool fatal) OVERRIDE;
-  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
-  virtual void OnReadCompleted(net::URLRequest* request,
+  virtual void OnResponseStarted(URLRequest* request) OVERRIDE;
+  virtual void OnReadCompleted(URLRequest* request,
                                int bytes_read) OVERRIDE;
 
  private:
   static const int kBufferSize = 4096;
 
-  virtual void OnResponseCompleted(net::URLRequest* request);
+  virtual void OnResponseCompleted(URLRequest* request);
 
   // options for controlling behavior
   bool cancel_in_rr_;
@@ -164,7 +181,7 @@ class TestDelegate : public net::URLRequest::Delegate {
   bool quit_on_complete_;
   bool quit_on_redirect_;
   bool allow_certificate_errors_;
-  net::AuthCredentials credentials_;
+  AuthCredentials credentials_;
 
   // tracks status of callbacks
   int response_started_count_;
@@ -178,12 +195,12 @@ class TestDelegate : public net::URLRequest::Delegate {
   std::string data_received_;
 
   // our read buffer
-  scoped_refptr<net::IOBuffer> buf_;
+  scoped_refptr<IOBuffer> buf_;
 };
 
 //-----------------------------------------------------------------------------
 
-class TestNetworkDelegate : public net::NetworkDelegate {
+class TestNetworkDelegate : public NetworkDelegate {
  public:
   enum Options {
     NO_GET_COOKIES = 1 << 0,
@@ -192,6 +209,15 @@ class TestNetworkDelegate : public net::NetworkDelegate {
 
   TestNetworkDelegate();
   virtual ~TestNetworkDelegate();
+
+  // Writes the LoadTimingInfo during the most recent call to OnBeforeRedirect.
+  bool GetLoadTimingInfoBeforeRedirect(
+      LoadTimingInfo* load_timing_info_before_redirect) const;
+
+  // Same as GetLoadTimingInfoBeforeRedirect, except for calls to
+  // AuthRequiredResponse.
+  bool GetLoadTimingInfoBeforeAuth(
+      LoadTimingInfo* load_timing_info_before_auth) const;
 
   void set_cookie_options(int o) {cookie_options_bit_mask_ = o; }
 
@@ -205,48 +231,47 @@ class TestNetworkDelegate : public net::NetworkDelegate {
   int set_cookie_count() const { return set_cookie_count_; }
 
  protected:
-  // net::NetworkDelegate:
-  virtual int OnBeforeURLRequest(net::URLRequest* request,
-                                 const net::CompletionCallback& callback,
+  // NetworkDelegate:
+  virtual int OnBeforeURLRequest(URLRequest* request,
+                                 const CompletionCallback& callback,
                                  GURL* new_url) OVERRIDE;
-  virtual int OnBeforeSendHeaders(net::URLRequest* request,
-                                  const net::CompletionCallback& callback,
-                                  net::HttpRequestHeaders* headers) OVERRIDE;
-  virtual void OnSendHeaders(net::URLRequest* request,
-                             const net::HttpRequestHeaders& headers) OVERRIDE;
+  virtual int OnBeforeSendHeaders(URLRequest* request,
+                                  const CompletionCallback& callback,
+                                  HttpRequestHeaders* headers) OVERRIDE;
+  virtual void OnSendHeaders(URLRequest* request,
+                             const HttpRequestHeaders& headers) OVERRIDE;
   virtual int OnHeadersReceived(
-      net::URLRequest* request,
-      const net::CompletionCallback& callback,
-      const net::HttpResponseHeaders* original_response_headers,
-      scoped_refptr<net::HttpResponseHeaders>* override_response_headers)
-      OVERRIDE;
-  virtual void OnBeforeRedirect(net::URLRequest* request,
+      URLRequest* request,
+      const CompletionCallback& callback,
+      const HttpResponseHeaders* original_response_headers,
+      scoped_refptr<HttpResponseHeaders>* override_response_headers) OVERRIDE;
+  virtual void OnBeforeRedirect(URLRequest* request,
                                 const GURL& new_location) OVERRIDE;
-  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
-  virtual void OnRawBytesRead(const net::URLRequest& request,
+  virtual void OnResponseStarted(URLRequest* request) OVERRIDE;
+  virtual void OnRawBytesRead(const URLRequest& request,
                               int bytes_read) OVERRIDE;
-  virtual void OnCompleted(net::URLRequest* request, bool started) OVERRIDE;
-  virtual void OnURLRequestDestroyed(net::URLRequest* request) OVERRIDE;
+  virtual void OnCompleted(URLRequest* request, bool started) OVERRIDE;
+  virtual void OnURLRequestDestroyed(URLRequest* request) OVERRIDE;
   virtual void OnPACScriptError(int line_number,
                                 const string16& error) OVERRIDE;
-  virtual net::NetworkDelegate::AuthRequiredResponse OnAuthRequired(
-      net::URLRequest* request,
-      const net::AuthChallengeInfo& auth_info,
+  virtual NetworkDelegate::AuthRequiredResponse OnAuthRequired(
+      URLRequest* request,
+      const AuthChallengeInfo& auth_info,
       const AuthCallback& callback,
-      net::AuthCredentials* credentials) OVERRIDE;
-  virtual bool OnCanGetCookies(const net::URLRequest& request,
-                               const net::CookieList& cookie_list) OVERRIDE;
-  virtual bool OnCanSetCookie(const net::URLRequest& request,
+      AuthCredentials* credentials) OVERRIDE;
+  virtual bool OnCanGetCookies(const URLRequest& request,
+                               const CookieList& cookie_list) OVERRIDE;
+  virtual bool OnCanSetCookie(const URLRequest& request,
                               const std::string& cookie_line,
-                              net::CookieOptions* options) OVERRIDE;
-  virtual bool OnCanAccessFile(const net::URLRequest& request,
-                               const FilePath& path) const OVERRIDE;
+                              CookieOptions* options) OVERRIDE;
+  virtual bool OnCanAccessFile(const URLRequest& request,
+                               const base::FilePath& path) const OVERRIDE;
   virtual bool OnCanThrottleRequest(
-      const net::URLRequest& request) const OVERRIDE;
+      const URLRequest& request) const OVERRIDE;
   virtual int OnBeforeSocketStreamConnect(
-      net::SocketStream* stream,
-      const net::CompletionCallback& callback) OVERRIDE;
-  virtual void OnRequestWaitStateChange(const net::URLRequest& request,
+      SocketStream* stream,
+      const CompletionCallback& callback) OVERRIDE;
+  virtual void OnRequestWaitStateChange(const URLRequest& request,
                                         RequestWaitState state) OVERRIDE;
 
   void InitRequestStatesIfNew(int request_id);
@@ -261,7 +286,7 @@ class TestNetworkDelegate : public net::NetworkDelegate {
   int blocked_set_cookie_count_;
   int set_cookie_count_;
 
-  // net::NetworkDelegate callbacks happen in a particular order (e.g.
+  // NetworkDelegate callbacks happen in a particular order (e.g.
   // OnBeforeURLRequest is always called before OnBeforeSendHeaders).
   // This bit-set indicates for each request id (key) what events may be sent
   // next.
@@ -270,6 +295,12 @@ class TestNetworkDelegate : public net::NetworkDelegate {
   // A log that records for each request id (key) the order in which On...
   // functions were called.
   std::map<int, std::string> event_order_;
+
+  LoadTimingInfo load_timing_info_before_redirect_;
+  bool has_load_timing_info_before_redirect_;
+
+  LoadTimingInfo load_timing_info_before_auth_;
+  bool has_load_timing_info_before_auth_;
 };
 
 // Overrides the host used by the LocalHttpTestServer in
@@ -299,25 +330,20 @@ class ScopedCustomUrlRequestTestHttpHost {
 
 //-----------------------------------------------------------------------------
 
-// A simple Interceptor that returns a pre-built URLRequestJob only once.
-class TestJobInterceptor : public net::URLRequestJobFactory::Interceptor {
+// A simple ProtocolHandler that returns a pre-built URLRequestJob only once.
+class TestJobInterceptor : public URLRequestJobFactory::ProtocolHandler {
  public:
   TestJobInterceptor();
 
-  virtual net::URLRequestJob* MaybeIntercept(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE;
-  virtual net::URLRequestJob* MaybeInterceptRedirect(
-      const GURL& location,
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE;
-  virtual net::URLRequestJob* MaybeInterceptResponse(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE;
-  void set_main_intercept_job(net::URLRequestJob* job);
+  virtual URLRequestJob* MaybeCreateJob(
+      URLRequest* request,
+      NetworkDelegate* network_delegate) const OVERRIDE;
+  void set_main_intercept_job(URLRequestJob* job);
 
  private:
-  mutable net::URLRequestJob* main_intercept_job_;
+  mutable URLRequestJob* main_intercept_job_;
 };
+
+}  // namespace net
 
 #endif  // NET_URL_REQUEST_URL_REQUEST_TEST_UTIL_H_

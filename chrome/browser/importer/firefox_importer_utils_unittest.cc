@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
 #include "chrome/browser/importer/firefox_importer_utils.h"
 #include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -100,9 +100,10 @@ TEST(FirefoxImporterUtilsTest, GetPrefsJsValue) {
 }
 
 TEST(FirefoxImporterUtilsTest, GetFirefoxImporterName) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  const FilePath app_ini_file(temp_dir.path().AppendASCII("application.ini"));
+  const base::FilePath app_ini_file(
+      temp_dir.path().AppendASCII("application.ini"));
   for (size_t i = 0; i < arraysize(GetFirefoxImporterNameCases); ++i) {
     file_util::WriteFile(app_ini_file,
                          GetFirefoxImporterNameCases[i].app_ini_content.c_str(),
@@ -110,6 +111,8 @@ TEST(FirefoxImporterUtilsTest, GetFirefoxImporterName) {
     EXPECT_EQ(GetFirefoxImporterName(temp_dir.path()),
         l10n_util::GetStringUTF16(GetFirefoxImporterNameCases[i].resource_id));
   }
-  EXPECT_EQ(l10n_util::GetStringUTF16(IDS_IMPORT_FROM_FIREFOX),
-      GetFirefoxImporterName(FilePath(FILE_PATH_LITERAL("/invalid/path"))));
+  EXPECT_EQ(l10n_util::GetStringUTF16(
+          IDS_IMPORT_FROM_FIREFOX),
+      GetFirefoxImporterName(base::FilePath(
+                                        FILE_PATH_LITERAL("/invalid/path"))));
 }

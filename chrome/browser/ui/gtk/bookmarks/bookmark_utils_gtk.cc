@@ -12,12 +12,16 @@
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_button.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
+#include "grit/ui_strings.h"
+#include "net/base/net_util.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_screen_util.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/canvas_skia_paint.h"
@@ -192,7 +196,7 @@ GtkWidget* GetDragRepresentation(GdkPixbuf* pixbuf,
       gtk_util::AddWindowAlphaChannel(window)) {
     DragRepresentationData* data = new DragRepresentationData(
         pixbuf, title,
-        provider->GetColor(ThemeService::COLOR_BOOKMARK_TEXT));
+        provider->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT));
     g_signal_connect(window, "expose-event", G_CALLBACK(OnDragIconExpose),
                      data);
     g_object_ref(window);
@@ -205,7 +209,7 @@ GtkWidget* GetDragRepresentation(GdkPixbuf* pixbuf,
   } else {
     if (!provider->UsingNativeTheme()) {
       GdkColor color = provider->GetGdkColor(
-          ThemeService::COLOR_TOOLBAR);
+          ThemeProperties::COLOR_TOOLBAR);
       gtk_widget_modify_bg(window, GTK_STATE_NORMAL, &color);
     }
     gtk_widget_realize(window);
@@ -281,7 +285,7 @@ void SetButtonTextColors(GtkWidget* label, GtkThemeService* provider) {
     gtk_util::SetLabelColor(label, NULL);
   } else {
     GdkColor color = provider->GetGdkColor(
-        ThemeService::COLOR_BOOKMARK_TEXT);
+        ThemeProperties::COLOR_BOOKMARK_TEXT);
     gtk_widget_modify_fg(label, GTK_STATE_NORMAL, &color);
     gtk_widget_modify_fg(label, GTK_STATE_INSENSITIVE, &color);
 
@@ -454,6 +458,14 @@ bool CreateNewBookmarkFromNetscapeURL(GtkSelectionData* selection_data,
 
   model->AddURL(parent, idx, title, url);
   return true;
+}
+
+string16 GetNameForURL(const GURL& url) {
+  if (url.is_valid()) {
+    return net::GetSuggestedFilename(url, "", "", "", "", std::string());
+  } else {
+    return l10n_util::GetStringUTF16(IDS_APP_UNTITLED_SHORTCUT_FILE_NAME);
+  }
 }
 
 }  // namespace bookmark_utils

@@ -11,7 +11,7 @@
 #include "base/memory/scoped_vector.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/page_usage_data.h"
 
 #if defined(OS_ANDROID)
@@ -54,25 +54,6 @@ typedef CancelableRequest1<HistoryService::QueryFilteredURLsCallback,
 
 typedef CancelableRequest<HistoryService::ThumbnailDataCallback>
     GetPageThumbnailRequest;
-
-// Favicons -------------------------------------------------------------------
-
-typedef CancelableRequest<FaviconService::FaviconResultsCallback>
-    GetFaviconRequest;
-
-// Downloads ------------------------------------------------------------------
-
-typedef CancelableRequest1<HistoryService::DownloadNextIdCallback,
-                           int/*next_id*/>
-    DownloadNextIdRequest;
-
-
-typedef CancelableRequest1<HistoryService::DownloadQueryCallback,
-                           std::vector<content::DownloadPersistentStoreInfo> >
-    DownloadQueryRequest;
-
-typedef CancelableRequest<HistoryService::DownloadCreateCallback>
-    DownloadCreateRequest;
 
 // Segment usage --------------------------------------------------------------
 

@@ -13,6 +13,7 @@
 
 namespace base {
 class DictionaryValue;
+class Value;
 }
 
 namespace extensions {
@@ -126,7 +127,7 @@ class MessageBundle {
   // They replace all $PLACEHOLDERS$ with their value, and return just key/value
   // of the message.
   bool GetMessageValue(const std::string& key,
-                       const base::DictionaryValue& catalog,
+                       const base::Value& name_value,
                        std::string* value,
                        std::string* error) const;
 
@@ -163,6 +164,9 @@ ExtensionToL10nMessagesMap* GetExtensionToL10nMessagesMap();
 
 // Returns message map that matches given extension_id, or NULL.
 L10nMessagesMap* GetL10nMessagesMap(const std::string& extension_id);
+
+// Erases the L10nMessagesMap for the given |extension_id|.
+void EraseL10nMessagesMap(const std::string& extension_id);
 
 }  // namsepace extensions
 

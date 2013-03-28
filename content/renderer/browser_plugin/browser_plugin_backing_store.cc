@@ -8,6 +8,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/size_conversions.h"
+#include "ui/gfx/vector2d_conversions.h"
 #include "ui/surface/transport_dib.h"
 
 namespace content {
@@ -33,7 +34,7 @@ BrowserPluginBackingStore::~BrowserPluginBackingStore() {
 void BrowserPluginBackingStore::PaintToBackingStore(
     const gfx::Rect& bitmap_rect,
     const std::vector<gfx::Rect>& copy_rects,
-    TransportDIB* dib) {
+    void* bitmap) {
   if (bitmap_rect.IsEmpty())
     return;
 
@@ -47,7 +48,7 @@ void BrowserPluginBackingStore::PaintToBackingStore(
       height <= 0 || height > kMaxSize)
     return;
 
-  if (!dib)
+  if (!bitmap)
     return;
 
   SkPaint copy_paint;
@@ -55,7 +56,7 @@ void BrowserPluginBackingStore::PaintToBackingStore(
 
   SkBitmap sk_bitmap;
   sk_bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
-  sk_bitmap.setPixels(dib->memory());
+  sk_bitmap.setPixels(bitmap);
   for (size_t i = 0; i < copy_rects.size(); i++) {
     const gfx::Rect& pixel_copy_rect = gfx::ToEnclosingRect(
         gfx::ScaleRect(copy_rects[i], scale_factor_));
@@ -75,21 +76,20 @@ void BrowserPluginBackingStore::PaintToBackingStore(
 }
 
 void BrowserPluginBackingStore::ScrollBackingStore(
-    int dx,
-    int dy,
+    const gfx::Vector2d& delta,
     const gfx::Rect& clip_rect,
     const gfx::Size& view_size) {
   gfx::Rect pixel_rect = gfx::ToEnclosingRect(
       gfx::ScaleRect(clip_rect, scale_factor_));
-  int pixel_dx = dx * scale_factor_;
-  int pixel_dy = dy * scale_factor_;
+  gfx::Vector2d pixel_delta = gfx::ToFlooredVector2d(
+      gfx::ScaleVector2d(delta, scale_factor_));
 
-  int x = std::min(pixel_rect.x(), pixel_rect.x() - pixel_dx);
-  int y = std::min(pixel_rect.y(), pixel_rect.y() - pixel_dy);
-  int w = pixel_rect.width() + abs(pixel_dx);
-  int h = pixel_rect.height() + abs(pixel_dy);
+  int x = std::min(pixel_rect.x(), pixel_rect.x() - pixel_delta.x());
+  int y = std::min(pixel_rect.y(), pixel_rect.y() - pixel_delta.y());
+  int w = pixel_rect.width() + abs(pixel_delta.x());
+  int h = pixel_rect.height() + abs(pixel_delta.y());
   SkIRect rect = SkIRect::MakeXYWH(x, y, w, h);
-  bitmap_.scrollRect(&rect, pixel_dx, pixel_dy);
+  bitmap_.scrollRect(&rect, pixel_delta.x(), pixel_delta.y());
 }
 
 void BrowserPluginBackingStore::Clear(SkColor clear_color) {

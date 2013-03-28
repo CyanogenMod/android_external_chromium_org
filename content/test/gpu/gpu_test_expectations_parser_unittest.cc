@@ -17,7 +17,7 @@ class GPUTestExpectationsParserTest : public testing::Test {
   }
 
  protected:
-  void SetUp() {
+  virtual void SetUp() {
     bot_config_.set_os(GPUTestConfig::kOsWin7);
     bot_config_.set_build_type(GPUTestConfig::kBuildTypeRelease);
     bot_config_.AddGPUVendor(0x10de);
@@ -25,7 +25,7 @@ class GPUTestExpectationsParserTest : public testing::Test {
     ASSERT_TRUE(bot_config_.IsValid());
   }
 
-  void TearDown() { }
+  virtual void TearDown() { }
 
  private:
   GPUTestBotConfig bot_config_;
@@ -89,7 +89,8 @@ TEST_F(GPUTestExpectationsParserTest, ValidUnrelatedTestEntry) {
 
 TEST_F(GPUTestExpectationsParserTest, AllModifiers) {
   const std::string text =
-      "BUG12345 XP VISTA WIN7 LEOPARD SNOWLEOPARD LION LINUX CHROMEOS ANDROID "
+      "BUG12345 XP VISTA WIN7 WIN8 LEOPARD SNOWLEOPARD LION MOUNTAINLION "
+      "LINUX CHROMEOS ANDROID "
       "NVIDIA INTEL AMD VMWARE RELEASE DEBUG : MyTest = "
       "PASS FAIL FLAKY TIMEOUT SKIP";
 

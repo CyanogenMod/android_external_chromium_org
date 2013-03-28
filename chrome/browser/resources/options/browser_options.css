@@ -72,6 +72,13 @@ html[dir=rtl] #account-picture-wrapper {
   min-height: 0;
 }
 
+#profiles-list .profile-name {
+  -webkit-box-flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 #profiles-list > * {
   height: 40px;
 }
@@ -179,7 +186,6 @@ list:not([disabled]) > .network-group[selected] {
 }
 
 .other-cellulars > .network-menu-item-icon {
-  background-image: url('chrome://theme/IDR_STATUSBAR_NETWORK_BARS_DARK');
   background-position: left top;
 }
 
@@ -208,26 +214,6 @@ list:not([disabled]) > .network-group[selected] {
   87.5%  {
     background-position: 0 25%;
   }
-}
-
-.network-wifi {
-  background-image: url('chrome://theme/IDR_STATUSBAR_NETWORK_ARCS_DARK');
-  background-size: 25px;
-}
-
-.network-wimax {
-  background-image: url('chrome://theme/IDR_STATUSBAR_NETWORK_BARS_DARK');
-  background-size: 25px;
-}
-
-.network-cellular {
-  background-image: url('chrome://theme/IDR_STATUSBAR_NETWORK_BARS_DARK');
-  background-size: 25px;
-}
-
-.network-vpn {
-  background-image: url('chrome://theme/IDR_STATUSBAR_VPN');
-  background-size: 25px;
 }
 
 .network-add-connection,
@@ -265,9 +251,6 @@ list:not([disabled]) > .network-group[selected] {
 .network-group > .controlled-setting-indicator,
 .network-menu-item > .controlled-setting-indicator {
   -webkit-margin-end: 5px;
-  bottom: auto;
-  position: static;
-  vertical-align: text-bottom;
 }
 
 .network-options-button:hover {
@@ -310,7 +293,7 @@ list:not([disabled]) > .network-group[selected] {
 
 .network-selector {
   background: right center no-repeat;
-  background-image: url('../shared/images/select.png');
+  background-image: url('../../../../ui/webui/resources/images/select.png');
   padding-right: 20px;
 }
 

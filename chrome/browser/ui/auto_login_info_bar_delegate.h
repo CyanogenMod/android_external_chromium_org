@@ -5,11 +5,11 @@
 #ifndef CHROME_BROWSER_UI_AUTO_LOGIN_INFO_BAR_DELEGATE_H_
 #define CHROME_BROWSER_UI_AUTO_LOGIN_INFO_BAR_DELEGATE_H_
 
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "components/auto_login_parser/auto_login_parser.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
-class InfoBarTabHelper;
 class PrefService;
 class TokenService;
 
@@ -25,15 +25,8 @@ class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate,
     Params();
     ~Params();
 
-    // "realm" string from x-auto-login (e.g. "com.google").
-    std::string realm;
-
-    // "account" string from x-auto-login.
-    std::string account;
-
-    // "args" string from x-auto-login to be passed to MergeSession. This string
-    // should be considered opaque and not be cracked open to look inside.
-    std::string args;
+    // Information from a parsed header.
+    components::auto_login::HeaderData header;
 
     // Username to display in the infobar indicating user to be logged in as.
     // This is initially fetched from sign-in on non-Android platforms. Note
@@ -41,8 +34,8 @@ class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate,
     std::string username;
   };
 
-  AutoLoginInfoBarDelegate(InfoBarTabHelper* owner, const Params& params);
-  virtual ~AutoLoginInfoBarDelegate();
+  // Creates an autologin delegate and adds it to |infobar_service|.
+  static void Create(InfoBarService* infobar_service, const Params& params);
 
   // ConfirmInfoBarDelegate:
   virtual void InfoBarDismissed() OVERRIDE;
@@ -63,11 +56,14 @@ class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate,
   // AutoLogin bar on the app side.
   string16 GetMessageText(const std::string& username) const;
 
-  const std::string& realm() const { return params_.realm; }
-  const std::string& account() const { return params_.account; }
-  const std::string& args() const { return params_.args; }
+  const std::string& realm() const { return params_.header.realm; }
+  const std::string& account() const { return params_.header.account; }
+  const std::string& args() const { return params_.header.args; }
 
  private:
+  AutoLoginInfoBarDelegate(InfoBarService* owner, const Params& params);
+  virtual ~AutoLoginInfoBarDelegate();
+
   void RecordHistogramAction(int action);
 
   const Params params_;

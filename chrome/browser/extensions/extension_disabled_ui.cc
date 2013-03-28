@@ -108,8 +108,7 @@ ExtensionDisabledDialogDelegate::~ExtensionDisabledDialogDelegate() {
 }
 
 void ExtensionDisabledDialogDelegate::InstallUIProceed() {
-  service_->GrantPermissionsAndEnableExtension(
-      extension_, install_ui_->record_oauth2_grant());
+  service_->GrantPermissionsAndEnableExtension(extension_);
   Release();
 }
 
@@ -268,7 +267,7 @@ void ExtensionDisabledGlobalError::BubbleViewCancelButtonPressed(
     Browser* browser) {
 #if !defined(OS_ANDROID)
   uninstall_dialog_.reset(
-      ExtensionUninstallDialog::Create(browser, this));
+      ExtensionUninstallDialog::Create(service_->profile(), browser, this));
   // Delay showing the uninstall dialog, so that this function returns
   // immediately, to close the bubble properly. See crbug.com/121544.
   MessageLoop::current()->PostTask(FROM_HERE,

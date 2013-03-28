@@ -10,6 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/non_thread_safe.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_listener.h"
@@ -51,7 +52,7 @@ class SendCallbackHelper;
 // The consumer of IPC::ChannelProxy is responsible for allocating the Thread
 // instance where the IPC::Channel will be created and operated.
 //
-class IPC_EXPORT ChannelProxy : public Sender {
+class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
  public:
   struct MessageFilterTraits;
 
@@ -180,7 +181,7 @@ class IPC_EXPORT ChannelProxy : public Sender {
   // Calls through to the underlying channel's methods.
   int GetClientFileDescriptor();
   int TakeClientFileDescriptor();
-  bool GetClientEuid(uid_t* client_euid) const;
+  bool GetPeerEuid(uid_t* peer_euid) const;
 #endif  // defined(OS_POSIX)
 
  protected:

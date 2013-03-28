@@ -1,10 +1,12 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SYNC_SYNCABLE_MUTABLE_ENTRY_H_
 #define SYNC_SYNCABLE_MUTABLE_ENTRY_H_
 
+#include "sync/base/sync_export.h"
+#include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/base/node_ordinal.h"
 #include "sync/syncable/entry.h"
 #include "sync/syncable/metahandle_set.h"
@@ -26,13 +28,13 @@ enum CreateNewUpdateItem {
 
 // A mutable meta entry.  Changes get committed to the database when the
 // WriteTransaction is destroyed.
-class MutableEntry : public Entry {
-  void Init(WriteTransaction* trans, const Id& parent_id,
-      const std::string& name);
+class SYNC_EXPORT_PRIVATE MutableEntry : public Entry {
+  void Init(WriteTransaction* trans, ModelType model_type,
+            const Id& parent_id, const std::string& name);
 
  public:
-  MutableEntry(WriteTransaction* trans, Create, const Id& parent_id,
-               const std::string& name);
+  MutableEntry(WriteTransaction* trans, Create, ModelType model_type,
+               const Id& parent_id, const std::string& name);
   MutableEntry(WriteTransaction* trans, CreateNewUpdateItem, const Id& id);
   MutableEntry(WriteTransaction* trans, GetByHandle, int64);
   MutableEntry(WriteTransaction* trans, GetById, const Id&);

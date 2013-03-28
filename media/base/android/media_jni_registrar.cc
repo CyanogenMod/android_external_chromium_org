@@ -8,16 +8,22 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_registrar.h"
 
+#include "media/audio/audio_manager_base.h"
 #include "media/base/android/media_player_bridge.h"
 #include "media/base/android/media_player_listener.h"
+#include "media/video/capture/android/video_capture_device_android.h"
 
 namespace media {
 
 static base::android::RegistrationMethod kMediaRegisteredMethods[] = {
+  { "AudioManagerBase",
+    AudioManagerBase::RegisterAudioManager },
   { "MediaPlayerBridge",
     MediaPlayerBridge::RegisterMediaPlayerBridge },
   { "MediaPlayerListener",
     MediaPlayerListener::RegisterMediaPlayerListener },
+  { "VideoCaptureDevice",
+    VideoCaptureDeviceAndroid::RegisterVideoCaptureDevice },
 };
 
 bool RegisterJni(JNIEnv* env) {

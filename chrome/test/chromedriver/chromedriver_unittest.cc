@@ -15,9 +15,9 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
+#include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chromedriver.h"
 #include "chrome/test/chromedriver/command_executor.h"
-#include "chrome/test/chromedriver/status.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -38,13 +38,13 @@ class DummyExecutor : public CommandExecutor {
  public:
   virtual ~DummyExecutor() {}
 
+  virtual void Init() OVERRIDE {}
   virtual void ExecuteCommand(const std::string& name,
                               const base::DictionaryValue& params,
                               const std::string& session_id,
                               StatusCode* status,
                               scoped_ptr<base::Value>* value,
-                              std::string* out_session_id) OVERRIDE {
-  }
+                              std::string* out_session_id) OVERRIDE {}
 };
 
 
@@ -79,6 +79,8 @@ class ExecutorMock : public CommandExecutor {
   virtual ~ExecutorMock() {
     EXPECT_TRUE(DidSatisfyExpectations());
   }
+
+  virtual void Init() OVERRIDE {}
 
   virtual void ExecuteCommand(const std::string& name,
                               const base::DictionaryValue& params,

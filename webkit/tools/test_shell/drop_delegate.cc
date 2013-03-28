@@ -4,8 +4,8 @@
 
 #include "webkit/tools/test_shell/drop_delegate.h"
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebDragData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebPoint.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebDragData.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebPoint.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "webkit/glue/webdropdata.h"
 
@@ -15,7 +15,7 @@ using WebKit::WebPoint;
 using WebKit::WebView;
 
 TestDropDelegate::TestDropDelegate(HWND source_hwnd, WebKit::WebView* webview)
-    : ui::DropTarget(source_hwnd),
+    : ui::DropTargetWin(source_hwnd),
       webview_(webview) {
 }
 

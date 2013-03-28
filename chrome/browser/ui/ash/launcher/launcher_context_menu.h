@@ -8,6 +8,7 @@
 #include "ash/launcher/launcher_alignment_menu.h"
 #include "ash/launcher/launcher_types.h"
 #include "base/basictypes.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/base/models/simple_menu_model.h"
 
@@ -48,9 +49,16 @@ class LauncherContextMenu : public ui::SimpleMenuModel,
   virtual bool GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(
+      LauncherContextMenuTest,
+      NewIncognitoWindowMenuIsDisabledWhenIncognitoModeOff);
+  FRIEND_TEST_ALL_PREFIXES(
+      LauncherContextMenuTest,
+      NewWindowMenuIsDisabledWhenIncognitoModeForced);
+
   enum MenuItem {
     MENU_OPEN_NEW,
     MENU_CLOSE,
@@ -63,7 +71,9 @@ class LauncherContextMenu : public ui::SimpleMenuModel,
     MENU_NEW_WINDOW,
     MENU_NEW_INCOGNITO_WINDOW,
     MENU_ALIGNMENT_MENU,
+#if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
     MENU_CHANGE_WALLPAPER,
+#endif
   };
 
   // Does |item_| represent a valid item? See description of constructor for

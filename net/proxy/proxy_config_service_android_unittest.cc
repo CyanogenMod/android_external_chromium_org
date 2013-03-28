@@ -50,7 +50,7 @@ typedef std::map<std::string, std::string> StringMap;
 class ProxyConfigServiceAndroidTestBase : public testing::Test {
  protected:
   // Note that the current thread's message loop is initialized by the test
-  // suite (see net/base/net_test_suite.cc).
+  // suite (see net/test/net_test_suite.cc).
   ProxyConfigServiceAndroidTestBase(const StringMap& initial_configuration)
       : configuration_(initial_configuration),
         message_loop_(MessageLoop::current()),
@@ -64,7 +64,7 @@ class ProxyConfigServiceAndroidTestBase : public testing::Test {
 
   // testing::Test:
   virtual void SetUp() OVERRIDE {
-    message_loop_->RunAllPending();
+    message_loop_->RunUntilIdle();
     service_.AddObserver(&observer_);
   }
 
@@ -89,7 +89,7 @@ class ProxyConfigServiceAndroidTestBase : public testing::Test {
 
   void ProxySettingsChanged() {
     service_.ProxySettingsChanged();
-    message_loop_->RunAllPending();
+    message_loop_->RunUntilIdle();
   }
 
   void TestMapping(const std::string& url, const std::string& expected) {
@@ -265,7 +265,7 @@ TEST_F(ProxyConfigServiceAndroidTest, HttpsProxyHostAndPort) {
   ProxySettingsChanged();
   TestMapping("ftp://example.com/", "DIRECT");
   TestMapping("http://example.com/", "DIRECT");
-  TestMapping("https://example.com/", "HTTPS httpproxy.com:8080");
+  TestMapping("https://example.com/", "PROXY httpproxy.com:8080");
 }
 
 TEST_F(ProxyConfigServiceAndroidTest, HttpsProxyHostOnly) {
@@ -274,7 +274,7 @@ TEST_F(ProxyConfigServiceAndroidTest, HttpsProxyHostOnly) {
   ProxySettingsChanged();
   TestMapping("ftp://example.com/", "DIRECT");
   TestMapping("http://example.com/", "DIRECT");
-  TestMapping("https://example.com/", "HTTPS httpproxy.com:443");
+  TestMapping("https://example.com/", "PROXY httpproxy.com:80");
 }
 
 TEST_F(ProxyConfigServiceAndroidTest, HttpProxyHostIPv6) {
@@ -312,7 +312,7 @@ TEST_F(ProxyConfigServiceAndroidTest, DefaultProxyExplictPort) {
   ProxySettingsChanged();
   TestMapping("ftp://example.com/", "PROXY httpproxy.com:8080");
   TestMapping("http://example.com/", "PROXY defaultproxy.com:8080");
-  TestMapping("https://example.com/", "HTTPS defaultproxy.com:8080");
+  TestMapping("https://example.com/", "PROXY defaultproxy.com:8080");
 }
 
 TEST_F(ProxyConfigServiceAndroidTest, DefaultProxyDefaultPort) {
@@ -320,7 +320,7 @@ TEST_F(ProxyConfigServiceAndroidTest, DefaultProxyDefaultPort) {
   AddProperty("proxyHost", "defaultproxy.com");
   ProxySettingsChanged();
   TestMapping("http://example.com/", "PROXY defaultproxy.com:80");
-  TestMapping("https://example.com/", "HTTPS defaultproxy.com:443");
+  TestMapping("https://example.com/", "PROXY defaultproxy.com:80");
 }
 
 TEST_F(ProxyConfigServiceAndroidTest, FallbackToSocks) {

@@ -5,7 +5,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/input_method/ibus_controller_base.h"
-#include "chrome/browser/chromeos/input_method/input_method_config.h"
+#include "chromeos/ime/input_method_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -25,14 +25,6 @@ class TestIBusController : public IBusControllerBase {
   }
 
   // IBusController overrides:
-  virtual bool Start() OVERRIDE {
-    return true;
-  }
-  virtual void Reset() OVERRIDE {
-  }
-  virtual bool Stop() OVERRIDE {
-    return true;
-  }
   virtual bool ChangeInputMethod(const std::string& id) OVERRIDE {
     return true;
   }
@@ -73,8 +65,6 @@ class TestObserver : public IBusController::Observer {
  public:
   // IBusController::Observer overrides:
   virtual void PropertyChanged() OVERRIDE {}
-  virtual void OnConnected() OVERRIDE {}
-  virtual void OnDisconnected() OVERRIDE {}
 };
 
 class IBusControllerBaseTest : public testing::Test {

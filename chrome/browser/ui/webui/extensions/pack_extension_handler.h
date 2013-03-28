@@ -11,7 +11,11 @@
 #include "chrome/browser/extensions/pack_extension_job.h"
 #include "chrome/browser/plugins/plugin_data_remover_helper.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "ui/base/dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
+
+namespace content {
+class WebUIDataSource;
+}
 
 // Clear browser data handler page UI handler.
 class PackExtensionHandler : public content::WebUIMessageHandler,
@@ -21,24 +25,24 @@ class PackExtensionHandler : public content::WebUIMessageHandler,
   PackExtensionHandler();
   virtual ~PackExtensionHandler();
 
-  void GetLocalizedValues(DictionaryValue* localized_strings);
+  void GetLocalizedValues(content::WebUIDataSource* source);
 
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
 
   // ExtensionPackJob::Client implementation.
-  virtual void OnPackSuccess(const FilePath& crx_file,
-                             const FilePath& key_file) OVERRIDE;
+  virtual void OnPackSuccess(const base::FilePath& crx_file,
+                             const base::FilePath& key_file) OVERRIDE;
 
   virtual void OnPackFailure(const std::string& error,
                              extensions::ExtensionCreator::ErrorType) OVERRIDE;
 
  private:
   // SelectFileDialog::Listener implementation.
-  virtual void FileSelected(const FilePath& path,
+  virtual void FileSelected(const base::FilePath& path,
                             int index, void* params) OVERRIDE;
   virtual void MultiFilesSelected(
-      const std::vector<FilePath>& files, void* params) OVERRIDE;
+      const std::vector<base::FilePath>& files, void* params) OVERRIDE;
   virtual void FileSelectionCanceled(void* params) OVERRIDE {}
 
   // JavaScript callback to start packing an extension.

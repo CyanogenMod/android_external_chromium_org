@@ -17,7 +17,7 @@
 namespace media {
 
 class AudioDecoderConfig;
-class Buffer;
+class DataBuffer;
 class DecoderBuffer;
 class VideoDecoderConfig;
 class VideoFrame;
@@ -56,6 +56,7 @@ class MEDIA_EXPORT Decryptor {
     kError  // Key is available but an error occurred during decryption.
   };
 
+  // TODO(xhwang): Unify this with DemuxerStream::Type.
   enum StreamType {
     kAudio,
     kVideo
@@ -89,16 +90,16 @@ class MEDIA_EXPORT Decryptor {
   virtual void CancelKeyRequest(const std::string& key_system,
                                 const std::string& session_id) = 0;
 
-  // Indicates that a key has been added to the Decryptor.
-  typedef base::Callback<void()> KeyAddedCB;
+  // Indicates that a new key has been added to the Decryptor.
+  typedef base::Callback<void()> NewKeyCB;
 
-  // Registers a KeyAddedCB which should be called when a key is added to the
-  // decryptor. Only one KeyAddedCB can be registered for one |stream_type|.
+  // Registers a NewKeyCB which should be called when a new key is added to the
+  // decryptor. Only one NewKeyCB can be registered for one |stream_type|.
   // If this function is called multiple times for the same |stream_type|, the
   // previously registered callback will be replaced. In other words,
   // registering a null callback cancels the originally registered callback.
-  virtual void RegisterKeyAddedCB(StreamType stream_type,
-                                  const KeyAddedCB& key_added_cb) = 0;
+  virtual void RegisterNewKeyCB(StreamType stream_type,
+                                const NewKeyCB& key_added_cb) = 0;
 
   // Indicates completion of a decryption operation.
   //
@@ -138,14 +139,14 @@ class MEDIA_EXPORT Decryptor {
 
   // Initializes a decoder with the given |config|, executing the |init_cb|
   // upon completion.
-  virtual void InitializeAudioDecoder(scoped_ptr<AudioDecoderConfig> config,
+  virtual void InitializeAudioDecoder(const AudioDecoderConfig& config,
                                       const DecoderInitCB& init_cb) = 0;
-  virtual void InitializeVideoDecoder(scoped_ptr<VideoDecoderConfig> config,
+  virtual void InitializeVideoDecoder(const VideoDecoderConfig& config,
                                       const DecoderInitCB& init_cb) = 0;
 
   // Helper structure for managing multiple decoded audio buffers per input.
   // TODO(xhwang): Rename this to AudioFrames.
-  typedef std::list<scoped_refptr<Buffer> > AudioBuffers;
+  typedef std::list<scoped_refptr<DataBuffer> > AudioBuffers;
 
   // Indicates completion of audio/video decrypt-and-decode operation.
   //
@@ -202,6 +203,40 @@ class MEDIA_EXPORT Decryptor {
  private:
   DISALLOW_COPY_AND_ASSIGN(Decryptor);
 };
+
+// Callback to notify that a decryptor is ready.
+typedef base::Callback<void(Decryptor*)> DecryptorReadyCB;
+
+// Callback to set/cancel a DecryptorReadyCB.
+// Calling this callback with a non-null callback registers decryptor ready
+// notification. When the decryptor is ready, notification will be sent
+// through the provided callback.
+// Calling this callback with a null callback cancels previously registered
+// decryptor ready notification. Any previously provided callback will be
+// fired immediately with NULL.
+typedef base::Callback<void(const DecryptorReadyCB&)> SetDecryptorReadyCB;
+
+
+// Key event callbacks. See the spec for details:
+// http://dvcs.w3.org/hg/html-media/raw-file/eme-v0.1b/encrypted-media/encrypted-media.html#event-summary
+typedef base::Callback<void(const std::string& key_system,
+                            const std::string& session_id)> KeyAddedCB;
+
+typedef base::Callback<void(const std::string& key_system,
+                            const std::string& session_id,
+                            media::Decryptor::KeyError error_code,
+                            int system_code)> KeyErrorCB;
+
+typedef base::Callback<void(const std::string& key_system,
+                            const std::string& session_id,
+                            const std::string& message,
+                            const std::string& default_url)> KeyMessageCB;
+
+typedef base::Callback<void(const std::string& key_system,
+                            const std::string& session_id,
+                            const std::string& type,
+                            scoped_array<uint8> init_data,
+                            int init_data_size)> NeedKeyCB;
 
 }  // namespace media
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,7 @@
 #include "base/observer_list.h"
 #include "base/time.h"
 #include "base/timer.h"
+#include "sync/base/sync_export.h"
 #include "sync/engine/net/server_connection_manager.h"
 #include "sync/engine/nudge_source.h"
 #include "sync/engine/sync_scheduler.h"
@@ -32,7 +33,7 @@ namespace syncer {
 
 class BackoffDelayProvider;
 
-class SyncSchedulerImpl : public SyncScheduler {
+class SYNC_EXPORT_PRIVATE SyncSchedulerImpl : public SyncScheduler {
  public:
   // |name| is a display string to identify the syncer thread.  Takes
   // |ownership of |syncer| and |delay_provider|.
@@ -88,6 +89,13 @@ class SyncSchedulerImpl : public SyncScheduler {
     DROP,
   };
 
+  enum JobPriority {
+    // Non-canary jobs respect exponential backoff.
+    NORMAL_PRIORITY,
+    // Canary jobs bypass exponential backoff, so use with extreme caution.
+    CANARY_PRIORITY
+  };
+
   friend class SyncSchedulerTest;
   friend class SyncSchedulerWhiteboxTest;
   friend class SyncerTest;
@@ -116,7 +124,7 @@ class SyncSchedulerImpl : public SyncScheduler {
   FRIEND_TEST_ALL_PREFIXES(SyncSchedulerTest,
                            ConnectionChangeCanaryPreemptedByNudge);
 
-  struct WaitInterval {
+  struct SYNC_EXPORT_PRIVATE WaitInterval {
     enum Mode {
       // Uninitialized state, should not be set in practice.
       UNKNOWN = -1,
@@ -161,23 +169,25 @@ class SyncSchedulerImpl : public SyncScheduler {
                        const base::Closure& task,
                        base::TimeDelta delay);
 
-  // Helper to assemble a job and post a delayed task to sync.
-  void ScheduleSyncSessionJob(scoped_ptr<SyncSessionJob> job);
+  // Invoke the Syncer to perform a non-poll job.
+  bool DoSyncSessionJob(scoped_ptr<SyncSessionJob> job,
+                        JobPriority priority);
 
-  // Invoke the Syncer to perform a sync.
-  bool DoSyncSessionJob(scoped_ptr<SyncSessionJob> job);
+  // Returns whether or not it's safe to run a poll job at this time.
+  bool ShouldPoll();
+
+  // Invoke the Syncer to perform a poll job.
+  void DoPollSyncSessionJob(scoped_ptr<SyncSessionJob> job);
 
   // Called after the Syncer has performed the sync represented by |job|, to
   // reset our state.  |exited_prematurely| is true if the Syncer did not
   // cycle from job.start_step() to job.end_step(), likely because the
   // scheduler was forced to quit the job mid-way through.
-  bool FinishSyncSessionJob(scoped_ptr<SyncSessionJob> job,
+  bool FinishSyncSessionJob(SyncSessionJob* job,
                             bool exited_prematurely);
 
-  // Helper to FinishSyncSessionJob to schedule the next sync operation.
-  // |succeeded| carries the return value of |old_job|->Finish.
-  void ScheduleNextSync(scoped_ptr<SyncSessionJob> finished_job,
-                        bool succeeded);
+  // Helper to schedule retries of a failed configure or nudge job.
+  void ScheduleNextSync(scoped_ptr<SyncSessionJob> finished_job);
 
   // Helper to configure polling intervals. Used by Start and ScheduleNextSync.
   void AdjustPolling(const SyncSessionJob* old_job);
@@ -189,7 +199,8 @@ class SyncSchedulerImpl : public SyncScheduler {
   void HandleContinuationError(scoped_ptr<SyncSessionJob> old_job);
 
   // Decide whether we should CONTINUE, SAVE or DROP the job.
-  JobProcessDecision DecideOnJob(const SyncSessionJob& job);
+  JobProcessDecision DecideOnJob(const SyncSessionJob& job,
+                                 JobPriority priority);
 
   // If DecideOnJob decides that |job| should be SAVEd, this function will
   // carry out the task of actually "saving" (or coalescing) the job.
@@ -197,11 +208,17 @@ class SyncSchedulerImpl : public SyncScheduler {
 
   // Decide on whether to CONTINUE, SAVE or DROP the job when we are in
   // backoff mode.
-  JobProcessDecision DecideWhileInWaitInterval(const SyncSessionJob& job);
+  JobProcessDecision DecideWhileInWaitInterval(const SyncSessionJob& job,
+                                               JobPriority priority);
 
   // 'Impl' here refers to real implementation of public functions, running on
   // |thread_|.
   void StopImpl(const base::Closure& callback);
+
+  // If the scheduler's current state supports it, this will create a job based
+  // on the passed in parameters and coalesce it with any other pending jobs,
+  // then post a delayed task to run it.  It may also choose to drop the job or
+  // save it for later, depending on the scheduler's current state.
   void ScheduleNudgeImpl(
       const base::TimeDelta& delay,
       sync_pb::GetUpdatesCallerInfo::GetUpdatesSource source,
@@ -213,6 +230,9 @@ class SyncSchedulerImpl : public SyncScheduler {
 
   // Helper to signal all listeners registered with |session_context_|.
   void Notify(SyncEngineEvent::EventCause cause);
+
+  // Helper to signal listeners about changed retry time
+  void NotifyRetryTime(base::Time retry_time);
 
   // Callback to change backoff state. |to_be_canary| in both cases is the job
   // that should be granted canary privileges. Note: it is possible that the
@@ -239,10 +259,6 @@ class SyncSchedulerImpl : public SyncScheduler {
 
   // Creates a session for a poll and performs the sync.
   void PollTimerCallback();
-
-  // Used to update |connection_code_|, see below.
-  void UpdateServerConnectionManagerStatus(
-      HttpResponse::ServerConnectionCode code);
 
   // Called once the first time thread_ is started to broadcast an initial
   // session snapshot containing data like initial_sync_ended.  Important when
@@ -289,9 +305,6 @@ class SyncSchedulerImpl : public SyncScheduler {
 
   // The mode of operation.
   Mode mode_;
-
-  // The latest connection code we got while trying to connect.
-  HttpResponse::ServerConnectionCode connection_code_;
 
   // Tracks (does not own) in-flight nudges (scheduled or unscheduled),
   // so we can coalesce. NULL if there is no pending nudge.

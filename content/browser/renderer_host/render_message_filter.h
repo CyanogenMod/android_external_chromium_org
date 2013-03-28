@@ -9,17 +9,20 @@
 #include <windows.h>
 #endif
 
+#include <set>
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/linked_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/shared_memory.h"
 #include "base/string16.h"
 #include "build/build_config.h"
-#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
+#include "content/common/pepper_renderer_instance_data.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "content/public/common/three_d_api_types.h"
+#include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "net/cookies/canonical_cookie.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
@@ -52,6 +55,7 @@ struct MediaLogEvent;
 }
 
 namespace net {
+class URLRequestContext;
 class URLRequestContextGetter;
 }
 
@@ -62,7 +66,7 @@ struct WebPluginInfo;
 namespace content {
 class BrowserContext;
 class DOMStorageContextImpl;
-class MediaObserver;
+class MediaInternals;
 class PluginServiceImpl;
 class RenderWidgetHelper;
 class ResourceContext;
@@ -79,7 +83,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
                       BrowserContext* browser_context,
                       net::URLRequestContextGetter* request_context,
                       RenderWidgetHelper* render_widget_helper,
-                      MediaObserver* media_observer,
+                      MediaInternals* media_internals,
                       DOMStorageContextImpl* dom_storage_context);
 
   // IPC::ChannelProxy::MessageFilter methods:
@@ -110,17 +114,18 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   virtual ~RenderMessageFilter();
 
-  void OnMsgCreateWindow(const ViewHostMsg_CreateWindow_Params& params,
-                         int* route_id,
-                         int* surface_id,
-                         int64* cloned_session_storage_namespace_id);
-  void OnMsgCreateWidget(int opener_id,
-                         WebKit::WebPopupType popup_type,
-                         int* route_id,
-                         int* surface_id);
-  void OnMsgCreateFullscreenWidget(int opener_id,
-                                   int* route_id,
-                                   int* surface_id);
+  void OnGetProcessMemorySizes(size_t* private_bytes, size_t* shared_bytes);
+  void OnCreateWindow(const ViewHostMsg_CreateWindow_Params& params,
+                      int* route_id,
+                      int* surface_id,
+                      int64* cloned_session_storage_namespace_id);
+  void OnCreateWidget(int opener_id,
+                      WebKit::WebPopupType popup_type,
+                      int* route_id,
+                      int* surface_id);
+  void OnCreateFullscreenWidget(int opener_id,
+                                int* route_id,
+                                int* surface_id);
   void OnSetCookie(const IPC::Message& message,
                    const GURL& url,
                    const GURL& first_party_for_cookies,
@@ -143,6 +148,11 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void SendLoadFontReply(IPC::Message* reply, FontLoader::Result* result);
 #endif
 
+#if defined(OS_WIN)
+  void OnPreCacheFontCharacters(const LOGFONT& log_font,
+                                const string16& characters);
+#endif
+
   void OnGetPlugins(bool refresh, IPC::Message* reply_msg);
   void GetPluginsCallback(IPC::Message* reply_msg,
                           const std::vector<webkit::WebPluginInfo>& plugins);
@@ -158,18 +168,19 @@ class RenderMessageFilter : public BrowserMessageFilter {
                              const GURL& policy_url,
                              const std::string& mime_type,
                              IPC::Message* reply_msg);
-  void OnOpenChannelToPepperPlugin(const FilePath& path,
+  void OnOpenChannelToPepperPlugin(const base::FilePath& path,
                                    IPC::Message* reply_msg);
-  void OnDidCreateOutOfProcessPepperInstance(int plugin_child_id,
-                                             int32 pp_instance,
-                                             int render_view_id,
-                                             bool is_external);
+  void OnDidCreateOutOfProcessPepperInstance(
+      int plugin_child_id,
+      int32 pp_instance,
+      PepperRendererInstanceData instance_data,
+      bool is_external);
   void OnDidDeleteOutOfProcessPepperInstance(int plugin_child_id,
                                              int32 pp_instance,
                                              bool is_external);
   void OnOpenChannelToPpapiBroker(int routing_id,
                                   int request_id,
-                                  const FilePath& path);
+                                  const base::FilePath& path);
   void OnGenerateRoutingID(int* route_id);
   void OnDownloadUrl(const IPC::Message& message,
                      const GURL& url,
@@ -180,10 +191,8 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   void OnGetCPUUsage(int* cpu_usage);
 
-  void OnGetHardwareBufferSize(uint32* buffer_size);
-  void OnGetHardwareInputSampleRate(int* sample_rate);
-  void OnGetHardwareSampleRate(int* sample_rate);
-  void OnGetHardwareInputChannelLayout(media::ChannelLayout* layout);
+  void OnGetAudioHardwareConfig(media::AudioParameters* input_params,
+                                media::AudioParameters* output_params);
 
   // Used to look up the monitor color profile.
   void OnGetMonitorColorProfile(std::vector<char>* profile);
@@ -211,10 +220,10 @@ class RenderMessageFilter : public BrowserMessageFilter {
       const GURL& url,
       IPC::Message* reply_msg);
   void OnAsyncOpenFile(const IPC::Message& msg,
-                       const FilePath& path,
+                       const base::FilePath& path,
                        int flags,
                        int message_id);
-  void AsyncOpenFileOnFileThread(const FilePath& path,
+  void AsyncOpenFileOnFileThread(const base::FilePath& path,
                                  int flags,
                                  int message_id,
                                  int routing_id);
@@ -239,13 +248,20 @@ class RenderMessageFilter : public BrowserMessageFilter {
       OpenChannelToNpapiPluginCallback* client);
 
   void OnUpdateIsDelayed(const IPC::Message& msg);
+  void OnAre3DAPIsBlocked(int render_view_id,
+                          const GURL& top_origin_url,
+                          ThreeDAPIType requester,
+                          bool* blocked);
+  void OnDidLose3DContext(const GURL& top_origin_url,
+                          ThreeDAPIType context_type,
+                          int arb_robustness_status_code);
 
   // Cached resource request dispatcher host and plugin service, guaranteed to
   // be non-null if Init succeeds. We do not own the objects, they are managed
   // by the BrowserProcess, which has a wider scope than we do.
   ResourceDispatcherHostImpl* resource_dispatcher_host_;
   PluginServiceImpl* plugin_service_;
-  FilePath profile_data_directory_;
+  base::FilePath profile_data_directory_;
 
   // Contextual information to be used for requests created here.
   scoped_refptr<net::URLRequestContextGetter> request_context_;
@@ -275,7 +291,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   // Used for sampling CPU usage of the renderer process.
   scoped_ptr<base::ProcessMetrics> process_metrics_;
 
-  MediaObserver* media_observer_;
+  MediaInternals* media_internals_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderMessageFilter);
 };

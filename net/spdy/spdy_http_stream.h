@@ -28,10 +28,15 @@ class UploadDataStream;
 class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
                                           public HttpStream {
  public:
+  // |spdy_session| may be NULL, but in that case some functions must
+  // not be called (see comments below).
   SpdyHttpStream(SpdySession* spdy_session, bool direct);
   virtual ~SpdyHttpStream();
 
-  // Initializes this SpdyHttpStream by wrapping an existing SpdyStream.
+  // Initializes this SpdyHttpStream by wrapping an existing
+  // SpdyStream. In particular, this must be called instead of
+  // InitializeStream() if a NULL SpdySession was passed into the
+  // constructor.
   void InitializeWithExistingStream(SpdyStream* spdy_stream);
 
   SpdyStream* stream() { return stream_.get(); }
@@ -40,11 +45,15 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   void Cancel();
 
   // HttpStream implementation.
+
+  // Must not be called if a NULL SpdySession was passed into the
+  // constructor.
   virtual int InitializeStream(const HttpRequestInfo* request_info,
+                               RequestPriority priority,
                                const BoundNetLog& net_log,
                                const CompletionCallback& callback) OVERRIDE;
+
   virtual int SendRequest(const HttpRequestHeaders& headers,
-                          UploadDataStream* request_body,
                           HttpResponseInfo* response,
                           const CompletionCallback& callback) OVERRIDE;
   virtual UploadProgress GetUploadProgress() const OVERRIDE;
@@ -57,10 +66,15 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   virtual HttpStream* RenewStreamForAuth() OVERRIDE;
   virtual bool IsResponseBodyComplete() const OVERRIDE;
   virtual bool CanFindEndOfResponse() const OVERRIDE;
-  virtual bool IsMoreDataBuffered() const OVERRIDE;
+
+  // Must not be called if a NULL SpdySession was pssed into the
+  // constructor.
   virtual bool IsConnectionReused() const OVERRIDE;
+
   virtual void SetConnectionReused() OVERRIDE;
   virtual bool IsConnectionReusable() const OVERRIDE;
+  virtual bool GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE;
   virtual void GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
@@ -81,14 +95,7 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   virtual void OnClose(int status) OVERRIDE;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy2Test,
-                           FlowControlStallResume);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy3Test,
-                           FlowControlStallResume);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy3Test,
-                           FlowControlStallResumeAfterSettings);
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy3Test,
-                           FlowControlNegativeSendWindowSize);
+  void OnStreamCreated(const CompletionCallback& callback, int rv);
 
   // Reads the data (whether chunked or not) from the request body stream and
   // sends the data by calling WriteStreamData on the underlying SpdyStream.
@@ -106,13 +113,22 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   bool ShouldWaitForMoreBufferedData() const;
 
   base::WeakPtrFactory<SpdyHttpStream> weak_factory_;
+
+  const scoped_refptr<SpdySession> spdy_session_;
+  SpdyStreamRequest stream_request_;
   scoped_refptr<SpdyStream> stream_;
-  scoped_refptr<SpdySession> spdy_session_;
+
+  bool stream_closed_;
+
+  // Set only when |stream_closed_| is true.
+  bool closed_stream_pushed_;
+  int closed_stream_status_;
+  SpdyStreamId closed_stream_id_;
 
   // The request to send.
   const HttpRequestInfo* request_info_;
 
-  UploadDataStream* request_body_stream_;
+  bool has_upload_data_;
 
   // |response_info_| is the HTTP response data object which is filled in
   // when a SYN_REPLY comes in for the stream.
@@ -121,7 +137,6 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
 
   scoped_ptr<HttpResponseInfo> push_response_info_;
 
-  bool download_finished_;
   bool response_headers_received_;  // Indicates waiting for more HEADERS.
 
   // We buffer the response body as it arrives asynchronously from the stream.

@@ -11,7 +11,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/browser/profiles/profile.h"
@@ -54,16 +54,11 @@ void ExtensionAppProvider::LaunchAppFromOmnibox(
     return;
 
   AppLauncherHandler::RecordAppLaunchType(
-      extension_misc::APP_LAUNCH_OMNIBOX_APP);
+      extension_misc::APP_LAUNCH_OMNIBOX_APP,
+      extension->GetType());
 
-  // Look at the preferences to find the right launch container.  If no
-  // preference is set, launch as a regular tab.
-  extension_misc::LaunchContainer launch_container =
-      service->extension_prefs()->GetLaunchContainer(
-          extension, extensions::ExtensionPrefs::LAUNCH_REGULAR);
-
-  application_launch::OpenApplication(application_launch::LaunchParams(
-          profile, extension, launch_container, disposition));
+  chrome::OpenApplication(chrome::AppLaunchParams(
+      profile, extension, disposition));
 }
 
 void ExtensionAppProvider::AddExtensionAppForTesting(

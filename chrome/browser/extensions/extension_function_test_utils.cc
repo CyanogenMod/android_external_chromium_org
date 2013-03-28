@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
@@ -15,10 +15,12 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "extensions/common/id_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::WebContents;
 using extensions::Extension;
+using extensions::Manifest;
 namespace keys = extensions::tabs_constants;
 
 namespace {
@@ -102,11 +104,11 @@ base::ListValue* ToList(base::Value* val) {
 }
 
 scoped_refptr<Extension> CreateEmptyExtension() {
-  return CreateEmptyExtensionWithLocation(Extension::INTERNAL);
+  return CreateEmptyExtensionWithLocation(Manifest::INTERNAL);
 }
 
 scoped_refptr<Extension> CreateEmptyExtensionWithLocation(
-    Extension::Location location) {
+    Manifest::Location location) {
   scoped_ptr<base::DictionaryValue> test_extension_value(
       ParseDictionary("{\"name\": \"Test\", \"version\": \"1.0\"}"));
   return CreateExtension(location, test_extension_value.get(), std::string());
@@ -116,25 +118,25 @@ scoped_refptr<Extension> CreateEmptyExtension(
     const std::string& id_input) {
   scoped_ptr<base::DictionaryValue> test_extension_value(
       ParseDictionary("{\"name\": \"Test\", \"version\": \"1.0\"}"));
-  return CreateExtension(Extension::INTERNAL, test_extension_value.get(),
+  return CreateExtension(Manifest::INTERNAL, test_extension_value.get(),
                          id_input);
 }
 
 scoped_refptr<Extension> CreateExtension(
     base::DictionaryValue* test_extension_value) {
-  return CreateExtension(Extension::INTERNAL, test_extension_value,
+  return CreateExtension(Manifest::INTERNAL, test_extension_value,
                          std::string());
 }
 
 scoped_refptr<Extension> CreateExtension(
-    Extension::Location location,
+    Manifest::Location location,
     base::DictionaryValue* test_extension_value,
     const std::string& id_input) {
   std::string error;
-  const FilePath test_extension_path;
+  const base::FilePath test_extension_path;
   std::string id;
   if (!id_input.empty())
-    CHECK(Extension::GenerateId(id_input, &id));
+    id = extensions::id_util::GenerateId(id_input);
   scoped_refptr<Extension> extension(Extension::Create(
       test_extension_path,
       location,
@@ -221,7 +223,7 @@ class SendResponseDelegate
 
   virtual void OnSendResponse(UIThreadExtensionFunction* function,
                               bool success,
-                              bool bad_message) {
+                              bool bad_message) OVERRIDE {
     ASSERT_FALSE(bad_message);
     ASSERT_FALSE(HasResponse());
     response_.reset(new bool);

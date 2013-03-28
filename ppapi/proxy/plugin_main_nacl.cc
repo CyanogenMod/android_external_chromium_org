@@ -14,6 +14,7 @@
 #include "base/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
+#include "components/tracing/child_trace_message_filter.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message.h"
@@ -65,14 +66,13 @@ class PpapiDispatcher : public ProxyChannel,
   virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
   virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
       base::PlatformFile handle,
-      const IPC::SyncChannel& channel,
+      base::ProcessId peer_pid,
       bool should_close_source) OVERRIDE;
   virtual std::set<PP_Instance>* GetGloballySeenInstanceIDSet() OVERRIDE;
   virtual uint32 Register(PluginDispatcher* plugin_dispatcher) OVERRIDE;
   virtual void Unregister(uint32 plugin_dispatcher_id) OVERRIDE;
 
   // PluginProxyDelegate implementation.
-  virtual bool SendToBrowser(IPC::Message* msg) OVERRIDE;
   virtual IPC::Sender* GetBrowserSender() OVERRIDE;
   virtual std::string GetUILanguage() OVERRIDE;
   virtual void PreCacheFont(const void* logfontw) OVERRIDE;
@@ -86,6 +86,9 @@ class PpapiDispatcher : public ProxyChannel,
                               const ppapi::PpapiPermissions& permissions,
                               bool incognito,
                               SerializedHandle handle);
+  void OnMsgResourceReply(
+      const ppapi::proxy::ResourceMessageReplyParams& reply_params,
+      const IPC::Message& nested_msg);
   void OnPluginDispatcherMessageReceived(const IPC::Message& msg);
 
   std::set<PP_Instance> instances_;
@@ -101,7 +104,12 @@ PpapiDispatcher::PpapiDispatcher(scoped_refptr<base::MessageLoopProxy> io_loop)
       shutdown_event_(true, false) {
   IPC::ChannelHandle channel_handle(
       "NaCl IPC", base::FileDescriptor(NACL_IPC_FD, false));
-  InitWithChannel(this, channel_handle, false);  // Channel is server.
+  // We don't have/need a PID since handle sharing happens outside of the
+  // NaCl sandbox.
+  InitWithChannel(this, base::kNullProcessId, channel_handle,
+                  false);  // Channel is server.
+  channel()->AddFilter(
+      new components::ChildTraceMessageFilter(message_loop_));
 }
 
 base::MessageLoopProxy* PpapiDispatcher::GetIPCMessageLoop() {
@@ -114,7 +122,7 @@ base::WaitableEvent* PpapiDispatcher::GetShutdownEvent() {
 
 IPC::PlatformFileForTransit PpapiDispatcher::ShareHandleWithRemote(
     base::PlatformFile handle,
-    const IPC::SyncChannel& channel,
+    base::ProcessId peer_pid,
     bool should_close_source) {
   return IPC::InvalidPlatformFileForTransit();
 }
@@ -144,10 +152,6 @@ void PpapiDispatcher::Unregister(uint32 plugin_dispatcher_id) {
   plugin_dispatchers_.erase(plugin_dispatcher_id);
 }
 
-bool PpapiDispatcher::SendToBrowser(IPC::Message* msg) {
-  return Send(msg);
-}
-
 IPC::Sender* PpapiDispatcher::GetBrowserSender() {
   return this;
 }
@@ -168,6 +172,7 @@ void PpapiDispatcher::SetActiveURL(const std::string& url) {
 bool PpapiDispatcher::OnMessageReceived(const IPC::Message& msg) {
   IPC_BEGIN_MESSAGE_MAP(PpapiDispatcher, msg)
     IPC_MESSAGE_HANDLER(PpapiMsg_CreateNaClChannel, OnMsgCreateNaClChannel)
+    IPC_MESSAGE_HANDLER(PpapiPluginMsg_ResourceReply, OnMsgResourceReply)
     // All other messages are simply forwarded to a PluginDispatcher.
     IPC_MESSAGE_UNHANDLED(OnPluginDispatcherMessageReceived(msg))
   IPC_END_MESSAGE_MAP()
@@ -188,12 +193,20 @@ void PpapiDispatcher::OnMsgCreateNaClChannel(
       new PluginDispatcher(::PPP_GetInterface, permissions, incognito);
   // The channel handle's true name is not revealed here.
   IPC::ChannelHandle channel_handle("nacl", handle.descriptor());
-  if (!dispatcher->InitPluginWithChannel(this, channel_handle, false)) {
+  if (!dispatcher->InitPluginWithChannel(this, base::kNullProcessId,
+                                         channel_handle, false)) {
     delete dispatcher;
     return;
   }
   // From here, the dispatcher will manage its own lifetime according to the
   // lifetime of the attached channel.
+}
+
+void PpapiDispatcher::OnMsgResourceReply(
+    const ppapi::proxy::ResourceMessageReplyParams& reply_params,
+    const IPC::Message& nested_msg) {
+  ppapi::proxy::PluginDispatcher::DispatchResourceReply(reply_params,
+                                                        nested_msg);
 }
 
 void PpapiDispatcher::OnPluginDispatcherMessageReceived(
@@ -233,6 +246,8 @@ int IrtInit() {
 }
 
 int PpapiPluginMain() {
+  IrtInit();
+
   // Though it isn't referenced here, we must instantiate an AtExitManager.
   base::AtExitManager exit_manager;
   MessageLoop loop;

@@ -26,7 +26,6 @@ class PrerenderTabHelper
   // content::WebContentsObserver implementation.
   virtual void ProvisionalChangeToMainFrameUrl(
       const GURL& url,
-      const GURL& opener_url,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidStopLoading(
       content::RenderViewHost* render_view_host) OVERRIDE;
@@ -36,6 +35,7 @@ class PrerenderTabHelper
       bool is_main_frame,
       const GURL& validated_url,
       bool is_error_page,
+      bool is_iframe_srcdoc,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
@@ -43,7 +43,7 @@ class PrerenderTabHelper
       const GURL& validated_url,
       content::PageTransition transition_type,
       content::RenderViewHost* render_view_host) OVERRIDE;
-  // Called when this prerendered TabContents has just been swapped in.
+  // Called when this prerendered WebContents has just been swapped in.
   void PrerenderSwappedIn();
 
  private:

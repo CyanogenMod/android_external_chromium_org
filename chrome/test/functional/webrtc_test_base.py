@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 import os
+import re
 import subprocess
 
 import pyauto
@@ -16,24 +17,40 @@ class MissingRequiredBinaryException(Exception):
 class WebrtcTestBase(pyauto.PyUITest):
   """This base class provides helpers for WebRTC calls."""
 
+  DEFAULT_TEST_PAGE = 'webrtc_jsep01_test.html'
+
   def ExtraChromeFlags(self):
     """Adds flags to the Chrome command line."""
-    extra_flags = ['--enable-media-stream', '--enable-peer-connection']
+    extra_flags = ['--enable-data-channels', '--enable-dcheck']
     return pyauto.PyUITest.ExtraChromeFlags(self) + extra_flags
 
-  def GetUserMedia(self, tab_index, action='allow'):
+  def LoadTestPageInTwoTabs(self, test_page=DEFAULT_TEST_PAGE):
+    url = self.GetFileURLForDataPath('webrtc', test_page)
+    self.NavigateToURL(url)
+    self.AppendTab(pyauto.GURL(url))
+
+  def LoadTestPageInOneTab(self, test_page=DEFAULT_TEST_PAGE):
+    url = self.GetFileURLForDataPath('webrtc', test_page)
+    self.NavigateToURL(url)
+
+  def GetUserMedia(self, tab_index, action='accept',
+                   request_video=True, request_audio=True):
     """Acquires webcam or mic for one tab and returns the result.
 
     Args:
       tab_index: The tab to request user media on.
-      action: The action to take on the info bar. Can be 'allow', 'deny' or
+      action: The action to take on the info bar. Can be 'accept', 'cancel' or
           'dismiss'.
+      request_video: Whether to request video.
+      request_audio: Whether to request audio.
 
     Returns:
       A string as specified by the getUserMedia javascript function.
     """
+    constraints = '{ video: %s, audio: %s }' % (str(request_video).lower(),
+                                                str(request_audio).lower())
     self.assertEquals('ok-requested', self.ExecuteJavascript(
-        'getUserMedia("{ audio: true, video: true, }")', tab_index=tab_index))
+        'getUserMedia("%s")' % constraints, tab_index=tab_index))
 
     self.WaitForInfobarCount(1, tab_index=tab_index)
     self.PerformActionOnInfobar(action, infobar_index=0, tab_index=tab_index)
@@ -83,20 +100,42 @@ class WebrtcTestBase(pyauto.PyUITest):
         tab_index=tab_index))
     self.AssertNoFailures(tab_index)
 
-  def EstablishCall(self, from_tab_with_index):
+  def CreatePeerConnection(self, tab_index):
+    self.assertEquals('ok-peerconnection-created', self.ExecuteJavascript(
+        'preparePeerConnection()', tab_index=tab_index))
+
+  def AddUserMediaLocalStream(self, tab_index):
+    self.assertEquals('ok-added', self.ExecuteJavascript(
+        'addLocalStream()', tab_index=tab_index))
+
+  def AddWebAudioFile(self, tab_index, input_relative_path):
+    """The path must be relative to where the javascript is.
+
+    This call just loads and adds a file to a peer connection, but it doesn't
+    start to play it until you call PlayWebAudioFile.
+    """
+    self.assertEquals('ok-added', self.ExecuteJavascript(
+        'addAudioFile("%s")' % re.escape(input_relative_path),
+        tab_index=tab_index))
+
+  def PlayWebAudioFile(self, tab_index):
+    """Plays a web audio file which was added earlier."""
+    self.assertEquals('ok-playing', self.ExecuteJavascript(
+        'playAudioFile()', tab_index=tab_index))
+
+  def EstablishCall(self, from_tab_with_index, to_tab_with_index):
     self.WaitUntilPeerConnects(tab_index=from_tab_with_index)
 
-    self.assertEquals('ok-got-remote-stream', self.ExecuteJavascript(
-        'call()', tab_index=from_tab_with_index))
+    self.assertEquals('ok-negotiating', self.ExecuteJavascript(
+        'negotiateCall()', tab_index=from_tab_with_index))
     self.AssertNoFailures(from_tab_with_index)
 
-    self.assertEquals('ok-local-stream-sent', self.ExecuteJavascript(
-        'sendLocalStreamOverPeerConnection()', tab_index=from_tab_with_index))
-    self.AssertNoFailures(from_tab_with_index)
+    self.WaitUntilReadyState(ready_state='active',
+                             tab_index=from_tab_with_index)
 
     # Double-check the call reached the other side.
-    self.assertEquals('yes', self.ExecuteJavascript(
-        'isCallActive()', tab_index=from_tab_with_index))
+    self.WaitUntilReadyState(ready_state='active',
+                             tab_index=to_tab_with_index)
 
   def HangUp(self, from_tab_with_index):
     self.assertEquals('ok-call-hung-up', self.ExecuteJavascript(
@@ -112,13 +151,18 @@ class WebrtcTestBase(pyauto.PyUITest):
     self.assertTrue(peer_connected,
                     msg='Timed out while waiting for peer to connect.')
 
-  def WaitUntilHangUpVerified(self, tab_index):
-    hung_up = self.WaitUntil(
-        function=lambda: self.ExecuteJavascript('isCallActive()',
+  def WaitUntilReadyState(self, ready_state, tab_index):
+    got_ready_state = self.WaitUntil(
+        function=lambda: self.ExecuteJavascript('getPeerConnectionReadyState()',
                                                 tab_index=tab_index),
-        expect_retval='no')
-    self.assertTrue(hung_up,
-                    msg='Timed out while waiting for hang-up to be confirmed.')
+        expect_retval=ready_state)
+    self.assertTrue(got_ready_state,
+                    msg=('Timed out while waiting for peer connection ready '
+                         'state to change to %s for tab %d.' % (ready_state,
+                                                                tab_index)))
+
+  def WaitUntilHangUpVerified(self, tab_index):
+    self.WaitUntilReadyState('no-peer-connection', tab_index=tab_index)
 
   def Disconnect(self, tab_index):
     self.assertEquals('ok-disconnected', self.ExecuteJavascript(

@@ -10,14 +10,13 @@
 #include "base/base64.h"
 #include "base/lazy_instance.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "base/time.h"
 #include "base/values.h"
-#include "content/public/browser/browser_thread.h"
 #include "crypto/hmac.h"
 
 namespace {
@@ -65,7 +64,7 @@ const char kItemSeparator = '\n';
 const char kVarValueSeparator = '=';
 
 const size_t kKeySizeInBytes = 128 / 8;
-const int kHMACSizeInBytes = 256 / 8;
+const size_t kHMACSizeInBytes = 256 / 8;
 
 // Length of base64 string required to encode given number of raw octets.
 #define BASE64_PER_RAW(X) (X > 0 ? ((X - 1) / 3 + 1) * 4 : 0)

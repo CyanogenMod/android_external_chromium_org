@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stringprintf.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
@@ -33,8 +33,8 @@ class ShortcutsBackendTest : public testing::Test,
         load_notified_(false),
         changed_notified_(false) {}
 
-  void SetUp();
-  void TearDown();
+  virtual void SetUp();
+  virtual void TearDown();
 
   virtual void OnShortcutsLoaded() OVERRIDE;
   virtual void OnShortcutsChanged() OVERRIDE;

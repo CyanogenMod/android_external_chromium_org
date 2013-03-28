@@ -6,7 +6,10 @@
 
 #include "base/logging.h"
 
-namespace fileapi {
+using fileapi::FileSystemURL;
+using fileapi::FileSystemURLSet;
+
+namespace sync_file_system {
 
 LocalFileSyncStatus::LocalFileSyncStatus() {}
 
@@ -30,6 +33,7 @@ void LocalFileSyncStatus::EndWriting(const FileSystemURL& url) {
 void LocalFileSyncStatus::StartSyncing(const FileSystemURL& url) {
   DCHECK(CalledOnValidThread());
   DCHECK(!IsChildOrParentWriting(url));
+  DCHECK(!IsChildOrParentSyncing(url));
   syncing_.insert(url);
 }
 
@@ -47,6 +51,11 @@ bool LocalFileSyncStatus::IsWriting(const FileSystemURL& url) const {
 bool LocalFileSyncStatus::IsWritable(const FileSystemURL& url) const {
   DCHECK(CalledOnValidThread());
   return !IsChildOrParentSyncing(url);
+}
+
+bool LocalFileSyncStatus::IsSyncable(const FileSystemURL& url) const {
+  DCHECK(CalledOnValidThread());
+  return !IsChildOrParentSyncing(url) && !IsChildOrParentWriting(url);
 }
 
 void LocalFileSyncStatus::AddObserver(Observer* observer) {
@@ -85,4 +94,4 @@ bool LocalFileSyncStatus::IsChildOrParentSyncing(
   return false;
 }
 
-}  // namespace fileapi
+}  // namespace sync_file_system

@@ -12,8 +12,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time.h"
 #include "base/timer.h"
+#include "content/browser/byte_stream.h"
 #include "content/browser/download/base_file.h"
-#include "content/browser/download/byte_stream.h"
 #include "content/public/browser/download_save_info.h"
 #include "net/base/net_log.h"
 
@@ -36,7 +36,7 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   // DownloadDestinationObserver.
   DownloadFileImpl(
     scoped_ptr<DownloadSaveInfo> save_info,
-    const FilePath& default_downloads_directory,
+    const base::FilePath& default_downloads_directory,
     const GURL& url,
     const GURL& referrer_url,
     bool calculate_hash,
@@ -50,14 +50,14 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   // DownloadFile functions.
   virtual void Initialize(const InitializeCallback& callback) OVERRIDE;
   virtual void RenameAndUniquify(
-      const FilePath& full_path,
+      const base::FilePath& full_path,
       const RenameCompletionCallback& callback) OVERRIDE;
   virtual void RenameAndAnnotate(
-      const FilePath& full_path,
+      const base::FilePath& full_path,
       const RenameCompletionCallback& callback) OVERRIDE;
   virtual void Detach() OVERRIDE;
   virtual void Cancel() OVERRIDE;
-  virtual FilePath FullPath() const OVERRIDE;
+  virtual base::FilePath FullPath() const OVERRIDE;
   virtual bool InProgress() const OVERRIDE;
   virtual int64 BytesSoFar() const OVERRIDE;
   virtual int64 CurrentSpeed() const OVERRIDE;
@@ -81,7 +81,7 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   BaseFile file_;
 
   // The default directory for creating the download file.
-  FilePath default_download_directory_;
+  base::FilePath default_download_directory_;
 
   // The stream through which data comes.
   // TODO(rdsmith): Move this into BaseFile; requires using the same

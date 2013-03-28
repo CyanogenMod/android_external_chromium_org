@@ -14,7 +14,7 @@
 #include "content/public/common/console_message_level.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_observer_tracker.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
 
 class GURL;
 class SkBitmap;
@@ -53,16 +53,10 @@ class ExtensionHelper
   ExtensionHelper(content::RenderView* render_view, Dispatcher* dispatcher);
   virtual ~ExtensionHelper();
 
-  // Starts installation of the page in the specified frame as a web app. The
-  // page must link to an external 'definition file'. This is different from
-  // the 'application shortcuts' feature where we pull the application
-  // definition out of optional meta tags in the page.
-  bool InstallWebApplicationUsingDefinitionFile(WebKit::WebFrame* frame,
-                                                string16* error);
-
   int tab_id() const { return tab_id_; }
   int browser_window_id() const { return browser_window_id_; }
   chrome::ViewType view_type() const { return view_type_; }
+  Dispatcher* dispatcher() const { return dispatcher_; }
 
  private:
   // RenderViewObserver implementation.
@@ -91,7 +85,8 @@ class ExtensionHelper
                                     const std::string& target_extension_id);
   void OnExtensionDeliverMessage(int target_port_id,
                                  const std::string& message);
-  void OnExtensionDispatchOnDisconnect(int port_id, bool connection_error);
+  void OnExtensionDispatchOnDisconnect(int port_id,
+                                       const std::string& error_message);
   void OnExecuteCode(const ExtensionMsg_ExecuteCode_Params& params);
   void OnGetApplicationInfo(int page_id);
   void OnNotifyRendererViewType(chrome::ViewType view_type);
@@ -100,20 +95,6 @@ class ExtensionHelper
   void OnAddMessageToConsole(content::ConsoleMessageLevel level,
                              const std::string& message);
   void OnAppWindowClosed();
-
-  // Callback triggered when we finish downloading the application definition
-  // file.
-  void DidDownloadApplicationDefinition(const WebKit::WebURLResponse& response,
-                                        const std::string& data);
-
-  // Callback triggered after each icon referenced by the application definition
-  // is downloaded.
-  void DidDownloadApplicationIcon(webkit_glue::ImageResourceFetcher* fetcher,
-                                  const SkBitmap& image);
-
-  // Helper to add an logging message to the root frame's console.
-  void AddMessageToRootConsole(content::ConsoleMessageLevel level,
-                               const string16& message);
 
   Dispatcher* dispatcher_;
 

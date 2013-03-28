@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,12 +12,12 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
 #include "base/test/values_test_util.h"
@@ -32,6 +32,7 @@
 #include "sync/internal_api/public/http_post_provider_interface.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
+#include "sync/internal_api/public/test/test_entry_factory.h"
 #include "sync/internal_api/public/test/test_internal_components_factory.h"
 #include "sync/internal_api/public/test/test_user_share.h"
 #include "sync/internal_api/public/write_node.h"
@@ -61,9 +62,12 @@
 #include "sync/syncable/mutable_entry.h"
 #include "sync/syncable/nigori_util.h"
 #include "sync/syncable/syncable_id.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_read_transaction.h"
+#include "sync/syncable/syncable_util.h"
+#include "sync/syncable/syncable_write_transaction.h"
 #include "sync/test/callback_counter.h"
 #include "sync/test/engine/fake_sync_scheduler.h"
+#include "sync/test/engine/test_id_factory.h"
 #include "sync/test/fake_encryptor.h"
 #include "sync/test/fake_extensions_activity_monitor.h"
 #include "sync/util/cryptographer.h"
@@ -84,18 +88,20 @@ using testing::StrictMock;
 namespace syncer {
 
 using sessions::SyncSessionSnapshot;
+using syncable::GET_BY_HANDLE;
 using syncable::IS_DEL;
 using syncable::IS_UNSYNCED;
-using syncable::kEncryptedString;
 using syncable::NON_UNIQUE_NAME;
 using syncable::SPECIFICS;
+using syncable::kEncryptedString;
 
 namespace {
 
 const char kTestChromeVersion[] = "test chrome version";
 
 void ExpectInt64Value(int64 expected_value,
-                      const DictionaryValue& value, const std::string& key) {
+                      const base::DictionaryValue& value,
+                      const std::string& key) {
   std::string int64_str;
   EXPECT_TRUE(value.GetString(key, &int64_str));
   int64 val = 0;
@@ -104,7 +110,8 @@ void ExpectInt64Value(int64 expected_value,
 }
 
 void ExpectTimeValue(const base::Time& expected_value,
-                     const DictionaryValue& value, const std::string& key) {
+                     const base::DictionaryValue& value,
+                     const std::string& key) {
   std::string time_str;
   EXPECT_TRUE(value.GetString(key, &time_str));
   EXPECT_EQ(GetTimeDebugString(expected_value), time_str);
@@ -126,23 +133,6 @@ int64 MakeNode(UserShare* share,
   return node.GetId();
 }
 
-// Makes a non-folder child of a non-root node. Returns the id of the
-// newly-created node.
-int64 MakeNodeWithParent(UserShare* share,
-                         ModelType model_type,
-                         const std::string& client_tag,
-                         int64 parent_id) {
-  WriteTransaction trans(FROM_HERE, share);
-  ReadNode parent_node(&trans);
-  EXPECT_EQ(BaseNode::INIT_OK, parent_node.InitByIdLookup(parent_id));
-  WriteNode node(&trans);
-  WriteNode::InitUniqueByCreationResult result =
-      node.InitUniqueByCreation(model_type, parent_node, client_tag);
-  EXPECT_EQ(WriteNode::INIT_SUCCESS, result);
-  node.SetIsFolder(false);
-  return node.GetId();
-}
-
 // Makes a folder child of a non-root node. Returns the id of the
 // newly-created node.
 int64 MakeFolderWithParent(UserShare* share,
@@ -153,8 +143,19 @@ int64 MakeFolderWithParent(UserShare* share,
   ReadNode parent_node(&trans);
   EXPECT_EQ(BaseNode::INIT_OK, parent_node.InitByIdLookup(parent_id));
   WriteNode node(&trans);
-  EXPECT_TRUE(node.InitByCreation(model_type, parent_node, predecessor));
+  EXPECT_TRUE(node.InitBookmarkByCreation(parent_node, predecessor));
   node.SetIsFolder(true);
+  return node.GetId();
+}
+
+int64 MakeBookmarkWithParent(UserShare* share,
+                             int64 parent_id,
+                             BaseNode* predecessor) {
+  WriteTransaction trans(FROM_HERE, share);
+  ReadNode parent_node(&trans);
+  EXPECT_EQ(BaseNode::INIT_OK, parent_node.InitByIdLookup(parent_id));
+  WriteNode node(&trans);
+  EXPECT_TRUE(node.InitBookmarkByCreation(parent_node, predecessor));
   return node.GetId();
 }
 
@@ -276,22 +277,6 @@ TEST_F(SyncApiTest, BasicTagWrite) {
   }
 }
 
-TEST_F(SyncApiTest, GenerateSyncableHash) {
-  EXPECT_EQ("OyaXV5mEzrPS4wbogmtKvRfekAI=",
-      BaseNode::GenerateSyncableHash(BOOKMARKS, "tag1"));
-  EXPECT_EQ("iNFQtRFQb+IZcn1kKUJEZDDkLs4=",
-      BaseNode::GenerateSyncableHash(PREFERENCES, "tag1"));
-  EXPECT_EQ("gO1cPZQXaM73sHOvSA+tKCKFs58=",
-      BaseNode::GenerateSyncableHash(AUTOFILL, "tag1"));
-
-  EXPECT_EQ("A0eYIHXM1/jVwKDDp12Up20IkKY=",
-      BaseNode::GenerateSyncableHash(BOOKMARKS, "tag2"));
-  EXPECT_EQ("XYxkF7bhS4eItStFgiOIAU23swI=",
-      BaseNode::GenerateSyncableHash(PREFERENCES, "tag2"));
-  EXPECT_EQ("GFiWzo5NGhjLlN+OyCfhy28DJTQ=",
-      BaseNode::GenerateSyncableHash(AUTOFILL, "tag2"));
-}
-
 TEST_F(SyncApiTest, ModelTypesSiloed) {
   {
     WriteTransaction trans(FROM_HERE, test_user_share_.user_share());
@@ -362,8 +347,7 @@ TEST_F(SyncApiTest, TestDeleteBehavior) {
 
     // we'll use this spare folder later
     WriteNode folder_node(&trans);
-    EXPECT_TRUE(folder_node.InitByCreation(BOOKMARKS,
-        root_node, NULL));
+    EXPECT_TRUE(folder_node.InitBookmarkByCreation(root_node, NULL));
     folder_id = folder_node.GetId();
 
     WriteNode wnode(&trans);
@@ -386,7 +370,7 @@ TEST_F(SyncApiTest, TestDeleteBehavior) {
     EXPECT_FALSE(wnode.GetIsFolder());
     EXPECT_EQ(wnode.GetTitle(), test_title);
 
-    wnode.Remove();
+    wnode.Tombstone();
   }
 
   // Lookup of a node which was deleted should return failure,
@@ -472,22 +456,21 @@ TEST_F(SyncApiTest, WriteEncryptedTitle) {
     trans.GetCryptographer()->AddKey(params);
   }
   test_user_share_.encryption_handler()->EnableEncryptEverything();
+  int bookmark_id;
   {
     WriteTransaction trans(FROM_HERE, test_user_share_.user_share());
     ReadNode root_node(&trans);
     root_node.InitByRootLookup();
 
     WriteNode bookmark_node(&trans);
-    WriteNode::InitUniqueByCreationResult result =
-        bookmark_node.InitUniqueByCreation(BOOKMARKS,
-                                           root_node, "foo");
-    EXPECT_EQ(WriteNode::INIT_SUCCESS, result);
+    ASSERT_TRUE(bookmark_node.InitBookmarkByCreation(root_node, NULL));
+    bookmark_id = bookmark_node.GetId();
     bookmark_node.SetTitle(UTF8ToWide("foo"));
 
     WriteNode pref_node(&trans);
-    result =
+    WriteNode::InitUniqueByCreationResult result =
         pref_node.InitUniqueByCreation(PREFERENCES, root_node, "bar");
-    EXPECT_EQ(WriteNode::INIT_SUCCESS, result);
+    ASSERT_EQ(WriteNode::INIT_SUCCESS, result);
     pref_node.SetTitle(UTF8ToWide("bar"));
   }
   {
@@ -496,15 +479,13 @@ TEST_F(SyncApiTest, WriteEncryptedTitle) {
     root_node.InitByRootLookup();
 
     ReadNode bookmark_node(&trans);
-    EXPECT_EQ(BaseNode::INIT_OK,
-              bookmark_node.InitByClientTagLookup(BOOKMARKS,
-                                                  "foo"));
+    ASSERT_EQ(BaseNode::INIT_OK, bookmark_node.InitByIdLookup(bookmark_id));
     EXPECT_EQ("foo", bookmark_node.GetTitle());
     EXPECT_EQ(kEncryptedString,
               bookmark_node.GetEntry()->Get(syncable::NON_UNIQUE_NAME));
 
     ReadNode pref_node(&trans);
-    EXPECT_EQ(BaseNode::INIT_OK,
+    ASSERT_EQ(BaseNode::INIT_OK,
               pref_node.InitByClientTagLookup(PREFERENCES,
                                               "bar"));
     EXPECT_EQ(kEncryptedString, pref_node.GetTitle());
@@ -549,7 +530,7 @@ TEST_F(SyncApiTest, BaseNodeSetSpecificsPreservesUnknownFields) {
 
 namespace {
 
-void CheckNodeValue(const BaseNode& node, const DictionaryValue& value,
+void CheckNodeValue(const BaseNode& node, const base::DictionaryValue& value,
                     bool is_detailed) {
   ExpectInt64Value(node.GetId(), value, "id");
   {
@@ -581,10 +562,11 @@ void CheckNodeValue(const BaseNode& node, const DictionaryValue& value,
     ExpectInt64Value(node.GetSuccessorId(), value, "successorId");
     ExpectInt64Value(node.GetFirstChildId(), value, "firstChildId");
     {
-      scoped_ptr<DictionaryValue> expected_entry(node.GetEntry()->ToValue());
-      const Value* entry = NULL;
+      scoped_ptr<base::DictionaryValue> expected_entry(
+          node.GetEntry()->ToValue(NULL));
+      const base::Value* entry = NULL;
       EXPECT_TRUE(value.Get("entry", &entry));
-      EXPECT_TRUE(Value::Equals(entry, expected_entry.get()));
+      EXPECT_TRUE(base::Value::Equals(entry, expected_entry.get()));
     }
     EXPECT_EQ(11u, value.size());
   } else {
@@ -598,7 +580,7 @@ TEST_F(SyncApiTest, BaseNodeGetSummaryAsValue) {
   ReadTransaction trans(FROM_HERE, test_user_share_.user_share());
   ReadNode node(&trans);
   node.InitByRootLookup();
-  scoped_ptr<DictionaryValue> details(node.GetSummaryAsValue());
+  scoped_ptr<base::DictionaryValue> details(node.GetSummaryAsValue());
   if (details.get()) {
     CheckNodeValue(node, *details, false);
   } else {
@@ -610,7 +592,7 @@ TEST_F(SyncApiTest, BaseNodeGetDetailsAsValue) {
   ReadTransaction trans(FROM_HERE, test_user_share_.user_share());
   ReadNode node(&trans);
   node.InitByRootLookup();
-  scoped_ptr<DictionaryValue> details(node.GetDetailsAsValue());
+  scoped_ptr<base::DictionaryValue> details(node.GetDetailsAsValue());
   if (details.get()) {
     CheckNodeValue(node, *details, true);
   } else {
@@ -629,6 +611,80 @@ TEST_F(SyncApiTest, EmptyTags) {
   EXPECT_NE(WriteNode::INIT_SUCCESS, result);
   EXPECT_EQ(BaseNode::INIT_FAILED_PRECONDITION,
             node.InitByTagLookup(empty_tag));
+}
+
+// Test counting nodes when the type's root node has no children.
+TEST_F(SyncApiTest, GetTotalNodeCountEmpty) {
+  int64 type_root = MakeServerNodeForType(test_user_share_.user_share(),
+                                          BOOKMARKS);
+  {
+    ReadTransaction trans(FROM_HERE, test_user_share_.user_share());
+    ReadNode type_root_node(&trans);
+    EXPECT_EQ(BaseNode::INIT_OK,
+              type_root_node.InitByIdLookup(type_root));
+    EXPECT_EQ(1, type_root_node.GetTotalNodeCount());
+  }
+}
+
+// Test counting nodes when there is one child beneath the type's root.
+TEST_F(SyncApiTest, GetTotalNodeCountOneChild) {
+  int64 type_root = MakeServerNodeForType(test_user_share_.user_share(),
+                                          BOOKMARKS);
+  int64 parent = MakeFolderWithParent(test_user_share_.user_share(),
+                                      BOOKMARKS,
+                                      type_root,
+                                      NULL);
+  {
+    ReadTransaction trans(FROM_HERE, test_user_share_.user_share());
+    ReadNode type_root_node(&trans);
+    EXPECT_EQ(BaseNode::INIT_OK,
+              type_root_node.InitByIdLookup(type_root));
+    EXPECT_EQ(2, type_root_node.GetTotalNodeCount());
+    ReadNode parent_node(&trans);
+    EXPECT_EQ(BaseNode::INIT_OK,
+              parent_node.InitByIdLookup(parent));
+    EXPECT_EQ(1, parent_node.GetTotalNodeCount());
+  }
+}
+
+// Test counting nodes when there are multiple children beneath the type root,
+// and one of those children has children of its own.
+TEST_F(SyncApiTest, GetTotalNodeCountMultipleChildren) {
+  int64 type_root = MakeServerNodeForType(test_user_share_.user_share(),
+                                          BOOKMARKS);
+  int64 parent = MakeFolderWithParent(test_user_share_.user_share(),
+                                      BOOKMARKS,
+                                      type_root,
+                                      NULL);
+  ignore_result(MakeFolderWithParent(test_user_share_.user_share(),
+                                     BOOKMARKS,
+                                     type_root,
+                                     NULL));
+  int64 child1 = MakeFolderWithParent(
+      test_user_share_.user_share(),
+      BOOKMARKS,
+      parent,
+      NULL);
+  ignore_result(MakeBookmarkWithParent(
+      test_user_share_.user_share(),
+      parent,
+      NULL));
+  ignore_result(MakeBookmarkWithParent(
+      test_user_share_.user_share(),
+      child1,
+      NULL));
+
+  {
+    ReadTransaction trans(FROM_HERE, test_user_share_.user_share());
+    ReadNode type_root_node(&trans);
+    EXPECT_EQ(BaseNode::INIT_OK,
+              type_root_node.InitByIdLookup(type_root));
+    EXPECT_EQ(6, type_root_node.GetTotalNodeCount());
+    ReadNode node(&trans);
+    EXPECT_EQ(BaseNode::INIT_OK,
+              node.InitByIdLookup(parent));
+    EXPECT_EQ(4, node.GetTotalNodeCount());
+  }
 }
 
 namespace {
@@ -754,7 +810,6 @@ class SyncManagerTest : public testing::Test,
     sync_manager_.Init(temp_dir_.path(),
                        WeakHandle<JsEventHandler>(),
                        "bogus", 0, false,
-                       base::MessageLoopProxy::current(),
                        scoped_ptr<HttpPostProviderFactory>(
                            new TestHttpPostProviderFactory()),
                        workers, &extensions_activity_monitor_, this,
@@ -799,6 +854,7 @@ class SyncManagerTest : public testing::Test,
     (*out)[SESSIONS] = GROUP_PASSIVE;
     (*out)[PASSWORDS] = GROUP_PASSIVE;
     (*out)[PREFERENCES] = GROUP_PASSIVE;
+    (*out)[PRIORITY_PREFERENCES] = GROUP_PASSIVE;
   }
 
   virtual void OnChangesApplied(
@@ -813,7 +869,6 @@ class SyncManagerTest : public testing::Test,
   bool SetUpEncryption(NigoriStatus nigori_status,
                        EncryptionStatus encryption_status) {
     UserShare* share = sync_manager_.GetUserShare();
-    share->directory->set_initial_sync_ended_for_type(NIGORI, true);
 
     // We need to create the nigori node as if it were an applied server update.
     int64 nigori_id = GetIdForDataType(NIGORI);
@@ -854,7 +909,7 @@ class SyncManagerTest : public testing::Test,
   }
 
   void PumpLoop() {
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   void SendJsMessage(const std::string& name, const JsArgList& args,
@@ -878,7 +933,7 @@ class SyncManagerTest : public testing::Test,
     UserShare* share = sync_manager_.GetUserShare();
     syncable::WriteTransaction trans(
         FROM_HERE, syncable::UNITTEST, share->directory.get());
-    const std::string hash = BaseNode::GenerateSyncableHash(type, client_tag);
+    const std::string hash = syncable::GenerateSyncableHash(type, client_tag);
     syncable::MutableEntry entry(&trans, syncable::GET_BY_CLIENT_TAG,
                                  hash);
     EXPECT_TRUE(entry.good());
@@ -921,8 +976,7 @@ class SyncManagerTest : public testing::Test,
         ModelTypeSetToInvalidationMap(model_types, std::string());
     sync_manager_.OnIncomingInvalidation(
         ModelTypeInvalidationMapToObjectIdInvalidationMap(
-            invalidation_map),
-        REMOTE_INVALIDATION);
+            invalidation_map));
   }
 
   void SetProgressMarkerForType(ModelType type, bool set) {
@@ -937,10 +991,6 @@ class SyncManagerTest : public testing::Test,
     }
   }
 
-  void SetInitialSyncEndedForType(ModelType type, bool value) {
-    sync_manager_.directory()->set_initial_sync_ended_for_type(type, value);
-  }
-
   InternalComponentsFactory::Switches GetSwitches() const {
     return switches_;
   }
@@ -949,7 +999,7 @@ class SyncManagerTest : public testing::Test,
   // Needed by |sync_manager_|.
   MessageLoop message_loop_;
   // Needed by |sync_manager_|.
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   // Sync Id's for the roots of the enabled datatypes.
   std::map<ModelType, int64> type_roots_;
   FakeExtensionsActivityMonitor extensions_activity_monitor_;
@@ -993,9 +1043,8 @@ TEST_F(SyncManagerTest, ProcessJsMessage) {
 
   StrictMock<MockJsReplyHandler> reply_handler;
 
-  ListValue disabled_args;
-  disabled_args.Append(
-      Value::CreateStringValue("TRANSIENT_INVALIDATION_ERROR"));
+  base::ListValue disabled_args;
+  disabled_args.Append(new base::StringValue("TRANSIENT_INVALIDATION_ERROR"));
 
   EXPECT_CALL(reply_handler,
               HandleJsReply("getNotificationState",
@@ -1021,7 +1070,7 @@ TEST_F(SyncManagerTest, ProcessJsMessageGetRootNodeDetails) {
   SendJsMessage("getRootNodeDetails", kNoArgs, reply_handler.AsWeakHandle());
 
   EXPECT_EQ(1u, return_args.Get().GetSize());
-  const DictionaryValue* node_info = NULL;
+  const base::DictionaryValue* node_info = NULL;
   EXPECT_TRUE(return_args.Get().GetDictionary(0, &node_info));
   if (node_info) {
     ReadTransaction trans(FROM_HERE, sync_manager_.GetUserShare());
@@ -1038,11 +1087,11 @@ void CheckGetNodesByIdReturnArgs(SyncManager* sync_manager,
                                  int64 id,
                                  bool is_detailed) {
   EXPECT_EQ(1u, return_args.Get().GetSize());
-  const ListValue* nodes = NULL;
+  const base::ListValue* nodes = NULL;
   ASSERT_TRUE(return_args.Get().GetList(0, &nodes));
   ASSERT_TRUE(nodes);
   EXPECT_EQ(1u, nodes->GetSize());
-  const DictionaryValue* node_info = NULL;
+  const base::DictionaryValue* node_info = NULL;
   EXPECT_TRUE(nodes->GetDictionary(0, &node_info));
   ASSERT_TRUE(node_info);
   ReadTransaction trans(FROM_HERE, sync_manager->GetUserShare());
@@ -1078,10 +1127,10 @@ class SyncManagerGetNodesByIdTest : public SyncManagerTest {
         .Times(arraysize(ids)).WillRepeatedly(SaveArg<1>(&return_args));
 
     for (size_t i = 0; i < arraysize(ids); ++i) {
-      ListValue args;
-      ListValue* id_values = new ListValue();
+      base::ListValue args;
+      base::ListValue* id_values = new base::ListValue();
       args.Append(id_values);
-      id_values->Append(Value::CreateStringValue(base::Int64ToString(ids[i])));
+      id_values->Append(new base::StringValue(base::Int64ToString(ids[i])));
       SendJsMessage(message_name,
                     JsArgList(&args), reply_handler.AsWeakHandle());
 
@@ -1093,8 +1142,8 @@ class SyncManagerGetNodesByIdTest : public SyncManagerTest {
   void RunGetNodesByIdFailureTest(const char* message_name) {
     StrictMock<MockJsReplyHandler> reply_handler;
 
-    ListValue empty_list_args;
-    empty_list_args.Append(new ListValue());
+    base::ListValue empty_list_args;
+    empty_list_args.Append(new base::ListValue());
 
     EXPECT_CALL(reply_handler,
                 HandleJsReply(message_name,
@@ -1102,50 +1151,50 @@ class SyncManagerGetNodesByIdTest : public SyncManagerTest {
         .Times(6);
 
     {
-      ListValue args;
+      base::ListValue args;
       SendJsMessage(message_name,
                     JsArgList(&args), reply_handler.AsWeakHandle());
     }
 
     {
-      ListValue args;
-      args.Append(new ListValue());
+      base::ListValue args;
+      args.Append(new base::ListValue());
       SendJsMessage(message_name,
                     JsArgList(&args), reply_handler.AsWeakHandle());
     }
 
     {
-      ListValue args;
-      ListValue* ids = new ListValue();
+      base::ListValue args;
+      base::ListValue* ids = new base::ListValue();
       args.Append(ids);
-      ids->Append(Value::CreateStringValue(""));
+      ids->Append(new base::StringValue(""));
       SendJsMessage(message_name,
                     JsArgList(&args), reply_handler.AsWeakHandle());
     }
 
     {
-      ListValue args;
-      ListValue* ids = new ListValue();
+      base::ListValue args;
+      base::ListValue* ids = new base::ListValue();
       args.Append(ids);
-      ids->Append(Value::CreateStringValue("nonsense"));
+      ids->Append(new base::StringValue("nonsense"));
       SendJsMessage(message_name,
                     JsArgList(&args), reply_handler.AsWeakHandle());
     }
 
     {
-      ListValue args;
-      ListValue* ids = new ListValue();
+      base::ListValue args;
+      base::ListValue* ids = new base::ListValue();
       args.Append(ids);
-      ids->Append(Value::CreateStringValue("0"));
+      ids->Append(new base::StringValue("0"));
       SendJsMessage(message_name,
                     JsArgList(&args), reply_handler.AsWeakHandle());
     }
 
     {
-      ListValue args;
-      ListValue* ids = new ListValue();
+      base::ListValue args;
+      base::ListValue* ids = new base::ListValue();
       args.Append(ids);
-      ids->Append(Value::CreateStringValue("9999"));
+      ids->Append(new base::StringValue("9999"));
       SendJsMessage(message_name,
                     JsArgList(&args), reply_handler.AsWeakHandle());
     }
@@ -1178,24 +1227,24 @@ TEST_F(SyncManagerTest, GetChildNodeIds) {
       .Times(1).WillRepeatedly(SaveArg<1>(&return_args));
 
   {
-    ListValue args;
-    args.Append(Value::CreateStringValue("1"));
+    base::ListValue args;
+    args.Append(new base::StringValue("1"));
     SendJsMessage("getChildNodeIds",
                   JsArgList(&args), reply_handler.AsWeakHandle());
   }
 
   EXPECT_EQ(1u, return_args.Get().GetSize());
-  const ListValue* nodes = NULL;
+  const base::ListValue* nodes = NULL;
   ASSERT_TRUE(return_args.Get().GetList(0, &nodes));
   ASSERT_TRUE(nodes);
-  EXPECT_EQ(8u, nodes->GetSize());
+  EXPECT_EQ(9u, nodes->GetSize());
 }
 
 TEST_F(SyncManagerTest, GetChildNodeIdsFailure) {
   StrictMock<MockJsReplyHandler> reply_handler;
 
-  ListValue empty_list_args;
-  empty_list_args.Append(new ListValue());
+  base::ListValue empty_list_args;
+  empty_list_args.Append(new base::ListValue());
 
   EXPECT_CALL(reply_handler,
               HandleJsReply("getChildNodeIds",
@@ -1203,35 +1252,35 @@ TEST_F(SyncManagerTest, GetChildNodeIdsFailure) {
       .Times(5);
 
   {
-    ListValue args;
+    base::ListValue args;
     SendJsMessage("getChildNodeIds",
                    JsArgList(&args), reply_handler.AsWeakHandle());
   }
 
   {
-    ListValue args;
-    args.Append(Value::CreateStringValue(""));
+    base::ListValue args;
+    args.Append(new base::StringValue(""));
     SendJsMessage("getChildNodeIds",
                   JsArgList(&args), reply_handler.AsWeakHandle());
   }
 
   {
-    ListValue args;
-    args.Append(Value::CreateStringValue("nonsense"));
+    base::ListValue args;
+    args.Append(new base::StringValue("nonsense"));
     SendJsMessage("getChildNodeIds",
                   JsArgList(&args), reply_handler.AsWeakHandle());
   }
 
   {
-    ListValue args;
-    args.Append(Value::CreateStringValue("0"));
+    base::ListValue args;
+    args.Append(new base::StringValue("0"));
     SendJsMessage("getChildNodeIds",
                   JsArgList(&args), reply_handler.AsWeakHandle());
   }
 
   {
-    ListValue args;
-    args.Append(Value::CreateStringValue("9999"));
+    base::ListValue args;
+    args.Append(new base::StringValue("9999"));
     SendJsMessage("getChildNodeIds",
                   JsArgList(&args), reply_handler.AsWeakHandle());
   }
@@ -1246,7 +1295,7 @@ TEST_F(SyncManagerTest, GetAllNodesTest) {
       .Times(1).WillRepeatedly(SaveArg<1>(&return_args));
 
   {
-    ListValue args;
+    base::ListValue args;
     SendJsMessage("getAllNodes",
                   JsArgList(&args), reply_handler.AsWeakHandle());
   }
@@ -1259,8 +1308,8 @@ TEST_F(SyncManagerTest, GetAllNodesTest) {
   // would make this test brittle without greatly increasing our chances of
   // catching real bugs.
 
-  const ListValue* node_list;
-  const DictionaryValue* first_result;
+  const base::ListValue* node_list;
+  const base::DictionaryValue* first_result;
 
   // The resulting argument list should have one argument, a list of nodes.
   ASSERT_EQ(1U, return_args.Get().GetSize());
@@ -1278,32 +1327,80 @@ TEST_F(SyncManagerTest, GetAllNodesTest) {
   EXPECT_TRUE(first_result->HasKey("NON_UNIQUE_NAME"));
 }
 
-TEST_F(SyncManagerTest, OnNotificationStateChange) {
-  InSequence dummy;
+// Simulate various invalidator state changes.  Those should propagate
+// JS events.
+TEST_F(SyncManagerTest, OnInvalidatorStateChangeJsEvents) {
   StrictMock<MockJsEventHandler> event_handler;
 
-  DictionaryValue enabled_details;
+  base::DictionaryValue enabled_details;
   enabled_details.SetString("state", "INVALIDATIONS_ENABLED");
-  DictionaryValue disabled_details;
-  disabled_details.SetString("state", "TRANSIENT_INVALIDATION_ERROR");
+  base::DictionaryValue credentials_rejected_details;
+  credentials_rejected_details.SetString(
+      "state", "INVALIDATION_CREDENTIALS_REJECTED");
+  base::DictionaryValue transient_error_details;
+  transient_error_details.SetString("state", "TRANSIENT_INVALIDATION_ERROR");
+  base::DictionaryValue auth_error_details;
+  auth_error_details.SetString("status", "CONNECTION_AUTH_ERROR");
+
+  EXPECT_CALL(manager_observer_,
+              OnConnectionStatusChange(CONNECTION_AUTH_ERROR));
+
+  EXPECT_CALL(
+      event_handler,
+      HandleJsEvent("onConnectionStatusChange",
+                    HasDetailsAsDictionary(auth_error_details)));
 
   EXPECT_CALL(event_handler,
               HandleJsEvent("onNotificationStateChange",
                             HasDetailsAsDictionary(enabled_details)));
+
+  EXPECT_CALL(
+      event_handler,
+      HandleJsEvent("onNotificationStateChange",
+                    HasDetailsAsDictionary(credentials_rejected_details)))
+      .Times(2);
+
   EXPECT_CALL(event_handler,
               HandleJsEvent("onNotificationStateChange",
-                            HasDetailsAsDictionary(disabled_details)));
+                            HasDetailsAsDictionary(transient_error_details)));
+
+  // Test needs to simulate INVALIDATION_CREDENTIALS_REJECTED with event handler
+  // attached because this is the only time when CONNECTION_AUTH_ERROR
+  // notification will be generated, therefore the only chance to verify that
+  // "onConnectionStatusChange" event is delivered
+  SetJsEventHandler(event_handler.AsWeakHandle());
+  SimulateInvalidatorStateChangeForTest(INVALIDATION_CREDENTIALS_REJECTED);
+  SetJsEventHandler(WeakHandle<JsEventHandler>());
 
   SimulateInvalidatorStateChangeForTest(INVALIDATIONS_ENABLED);
+  SimulateInvalidatorStateChangeForTest(INVALIDATION_CREDENTIALS_REJECTED);
   SimulateInvalidatorStateChangeForTest(TRANSIENT_INVALIDATION_ERROR);
 
   SetJsEventHandler(event_handler.AsWeakHandle());
   SimulateInvalidatorStateChangeForTest(INVALIDATIONS_ENABLED);
+  SimulateInvalidatorStateChangeForTest(INVALIDATION_CREDENTIALS_REJECTED);
   SimulateInvalidatorStateChangeForTest(TRANSIENT_INVALIDATION_ERROR);
   SetJsEventHandler(WeakHandle<JsEventHandler>());
 
   SimulateInvalidatorStateChangeForTest(INVALIDATIONS_ENABLED);
+  SimulateInvalidatorStateChangeForTest(INVALIDATION_CREDENTIALS_REJECTED);
   SimulateInvalidatorStateChangeForTest(TRANSIENT_INVALIDATION_ERROR);
+
+  // Should trigger the replies.
+  PumpLoop();
+}
+
+// Simulate the invalidator's credentials being rejected.  That should
+// also clear the sync token.
+TEST_F(SyncManagerTest, OnInvalidatorStateChangeCredentialsRejected) {
+  EXPECT_CALL(manager_observer_,
+              OnConnectionStatusChange(CONNECTION_AUTH_ERROR));
+
+  EXPECT_FALSE(sync_manager_.GetHasInvalidAuthTokenForTest());
+
+  SimulateInvalidatorStateChangeForTest(INVALIDATION_CREDENTIALS_REJECTED);
+
+  EXPECT_TRUE(sync_manager_.GetHasInvalidAuthTokenForTest());
 
   // Should trigger the replies.
   PumpLoop();
@@ -1318,15 +1415,15 @@ TEST_F(SyncManagerTest, OnIncomingNotification) {
 
   // Build expected_args to have a single argument with the string
   // equivalents of model_types.
-  DictionaryValue expected_details;
+  base::DictionaryValue expected_details;
   {
-    ListValue* model_type_list = new ListValue();
+    base::ListValue* model_type_list = new base::ListValue();
     expected_details.SetString("source", "REMOTE_INVALIDATION");
     expected_details.Set("changedTypes", model_type_list);
     for (ModelTypeSet::Iterator it = model_types.First();
          it.Good(); it.Inc()) {
       model_type_list->Append(
-          Value::CreateStringValue(ModelTypeToString(it.Get())));
+          new base::StringValue(ModelTypeToString(it.Get())));
     }
   }
 
@@ -1441,20 +1538,17 @@ TEST_F(SyncManagerTest, EncryptDataTypesWithData) {
   // First batch_size nodes are children of folder.
   size_t i;
   for (i = 0; i < batch_size; ++i) {
-    MakeNodeWithParent(sync_manager_.GetUserShare(), BOOKMARKS,
-                       base::StringPrintf("%"PRIuS"", i), folder);
+    MakeBookmarkWithParent(sync_manager_.GetUserShare(), folder, NULL);
   }
   // Next batch_size nodes are a different type and on their own.
   for (; i < 2*batch_size; ++i) {
-    MakeNodeWithParent(sync_manager_.GetUserShare(), SESSIONS,
-                       base::StringPrintf("%"PRIuS"", i),
-                       GetIdForDataType(SESSIONS));
+    MakeNode(sync_manager_.GetUserShare(), SESSIONS,
+             base::StringPrintf("%"PRIuS"", i));
   }
   // Last batch_size nodes are a third type that will not need encryption.
   for (; i < 3*batch_size; ++i) {
-    MakeNodeWithParent(sync_manager_.GetUserShare(), THEMES,
-                       base::StringPrintf("%"PRIuS"", i),
-                       GetIdForDataType(THEMES));
+    MakeNode(sync_manager_.GetUserShare(), THEMES,
+             base::StringPrintf("%"PRIuS"", i));
   }
 
   {
@@ -2048,28 +2142,33 @@ TEST_F(SyncManagerTest, EncryptBookmarksWithLegacyData) {
 // See BookmarkChangeProcessor::PlaceSyncNode(..).
 TEST_F(SyncManagerTest, CreateLocalBookmark) {
   std::string title = "title";
-  GURL url("url");
+  std::string url = "url";
   {
     WriteTransaction trans(FROM_HERE, sync_manager_.GetUserShare());
-    ReadNode root_node(&trans);
-    root_node.InitByRootLookup();
+    ReadNode bookmark_root(&trans);
+    ASSERT_EQ(BaseNode::INIT_OK,
+              bookmark_root.InitByTagLookup(ModelTypeToRootTag(BOOKMARKS)));
     WriteNode node(&trans);
-    ASSERT_TRUE(node.InitByCreation(BOOKMARKS, root_node, NULL));
+    ASSERT_TRUE(node.InitBookmarkByCreation(bookmark_root, NULL));
     node.SetIsFolder(false);
     node.SetTitle(UTF8ToWide(title));
-    node.SetURL(url);
+
+    sync_pb::BookmarkSpecifics bookmark_specifics(node.GetBookmarkSpecifics());
+    bookmark_specifics.set_url(url);
+    node.SetBookmarkSpecifics(bookmark_specifics);
   }
   {
     ReadTransaction trans(FROM_HERE, sync_manager_.GetUserShare());
-    ReadNode root_node(&trans);
-    root_node.InitByRootLookup();
-    int64 child_id = root_node.GetFirstChildId();
+    ReadNode bookmark_root(&trans);
+    ASSERT_EQ(BaseNode::INIT_OK,
+              bookmark_root.InitByTagLookup(ModelTypeToRootTag(BOOKMARKS)));
+    int64 child_id = bookmark_root.GetFirstChildId();
 
     ReadNode node(&trans);
     ASSERT_EQ(BaseNode::INIT_OK, node.InitByIdLookup(child_id));
     EXPECT_FALSE(node.GetIsFolder());
     EXPECT_EQ(title, node.GetTitle());
-    EXPECT_EQ(url, node.GetURL());
+    EXPECT_EQ(url, node.GetBookmarkSpecifics().url());
   }
 }
 
@@ -2081,7 +2180,7 @@ TEST_F(SyncManagerTest, UpdateEntryWithEncryption) {
   entity_specifics.mutable_bookmark()->set_url("url");
   entity_specifics.mutable_bookmark()->set_title("title");
   MakeServerNode(sync_manager_.GetUserShare(), BOOKMARKS, client_tag,
-                 BaseNode::GenerateSyncableHash(BOOKMARKS,
+                 syncable::GenerateSyncableHash(BOOKMARKS,
                                                 client_tag),
                  entity_specifics);
   // New node shouldn't start off unsynced.
@@ -2230,7 +2329,7 @@ TEST_F(SyncManagerTest, UpdatePasswordSetEntitySpecificsNoChange) {
             mutable_encrypted());
   }
   MakeServerNode(sync_manager_.GetUserShare(), PASSWORDS, client_tag,
-                 BaseNode::GenerateSyncableHash(PASSWORDS,
+                 syncable::GenerateSyncableHash(PASSWORDS,
                                                 client_tag),
                  entity_specifics);
   // New node shouldn't start off unsynced.
@@ -2265,7 +2364,7 @@ TEST_F(SyncManagerTest, UpdatePasswordSetPasswordSpecifics) {
             mutable_encrypted());
   }
   MakeServerNode(sync_manager_.GetUserShare(), PASSWORDS, client_tag,
-                 BaseNode::GenerateSyncableHash(PASSWORDS,
+                 syncable::GenerateSyncableHash(PASSWORDS,
                                                 client_tag),
                  entity_specifics);
   // New node shouldn't start off unsynced.
@@ -2316,7 +2415,7 @@ TEST_F(SyncManagerTest, UpdatePasswordNewPassphrase) {
         entity_specifics.mutable_password()->mutable_encrypted());
   }
   MakeServerNode(sync_manager_.GetUserShare(), PASSWORDS, client_tag,
-                 BaseNode::GenerateSyncableHash(PASSWORDS,
+                 syncable::GenerateSyncableHash(PASSWORDS,
                                                 client_tag),
                  entity_specifics);
   // New node shouldn't start off unsynced.
@@ -2355,7 +2454,7 @@ TEST_F(SyncManagerTest, UpdatePasswordReencryptEverything) {
         entity_specifics.mutable_password()->mutable_encrypted());
   }
   MakeServerNode(sync_manager_.GetUserShare(), PASSWORDS, client_tag,
-                 BaseNode::GenerateSyncableHash(PASSWORDS,
+                 syncable::GenerateSyncableHash(PASSWORDS,
                                                 client_tag),
                  entity_specifics);
   // New node shouldn't start off unsynced.
@@ -2379,7 +2478,7 @@ TEST_F(SyncManagerTest, SetBookmarkTitle) {
   entity_specifics.mutable_bookmark()->set_url("url");
   entity_specifics.mutable_bookmark()->set_title("title");
   MakeServerNode(sync_manager_.GetUserShare(), BOOKMARKS, client_tag,
-                 BaseNode::GenerateSyncableHash(BOOKMARKS,
+                 syncable::GenerateSyncableHash(BOOKMARKS,
                                                 client_tag),
                  entity_specifics);
   // New node shouldn't start off unsynced.
@@ -2415,7 +2514,7 @@ TEST_F(SyncManagerTest, SetBookmarkTitleWithEncryption) {
   entity_specifics.mutable_bookmark()->set_url("url");
   entity_specifics.mutable_bookmark()->set_title("title");
   MakeServerNode(sync_manager_.GetUserShare(), BOOKMARKS, client_tag,
-                 BaseNode::GenerateSyncableHash(BOOKMARKS,
+                 syncable::GenerateSyncableHash(BOOKMARKS,
                                                 client_tag),
                  entity_specifics);
   // New node shouldn't start off unsynced.
@@ -2474,7 +2573,7 @@ TEST_F(SyncManagerTest, SetNonBookmarkTitle) {
   MakeServerNode(sync_manager_.GetUserShare(),
                  PREFERENCES,
                  client_tag,
-                 BaseNode::GenerateSyncableHash(PREFERENCES,
+                 syncable::GenerateSyncableHash(PREFERENCES,
                                                 client_tag),
                  entity_specifics);
   // New node shouldn't start off unsynced.
@@ -2512,7 +2611,7 @@ TEST_F(SyncManagerTest, SetNonBookmarkTitleWithEncryption) {
   MakeServerNode(sync_manager_.GetUserShare(),
                  PREFERENCES,
                  client_tag,
-                 BaseNode::GenerateSyncableHash(PREFERENCES,
+                 syncable::GenerateSyncableHash(PREFERENCES,
                                                 client_tag),
                  entity_specifics);
   // New node shouldn't start off unsynced.
@@ -2583,7 +2682,7 @@ TEST_F(SyncManagerTest, SetPreviouslyEncryptedSpecifics) {
     AddDefaultFieldValue(BOOKMARKS, &entity_specifics);
   }
   MakeServerNode(sync_manager_.GetUserShare(), BOOKMARKS, client_tag,
-                 BaseNode::GenerateSyncableHash(BOOKMARKS,
+                 syncable::GenerateSyncableHash(BOOKMARKS,
                                                 client_tag),
                  entity_specifics);
 
@@ -2594,7 +2693,7 @@ TEST_F(SyncManagerTest, SetPreviouslyEncryptedSpecifics) {
     EXPECT_EQ(BaseNode::INIT_OK,
               node.InitByClientTagLookup(BOOKMARKS, client_tag));
     EXPECT_EQ(title, node.GetTitle());
-    EXPECT_EQ(GURL(url), node.GetURL());
+    EXPECT_EQ(url, node.GetBookmarkSpecifics().url());
   }
 
   {
@@ -2603,7 +2702,10 @@ TEST_F(SyncManagerTest, SetPreviouslyEncryptedSpecifics) {
     WriteNode node(&trans);
     EXPECT_EQ(BaseNode::INIT_OK,
               node.InitByClientTagLookup(BOOKMARKS, client_tag));
-    node.SetURL(GURL(url2));
+
+    sync_pb::BookmarkSpecifics bookmark_specifics(node.GetBookmarkSpecifics());
+    bookmark_specifics.set_url(url2);
+    node.SetBookmarkSpecifics(bookmark_specifics);
   }
 
   {
@@ -2613,7 +2715,7 @@ TEST_F(SyncManagerTest, SetPreviouslyEncryptedSpecifics) {
     EXPECT_EQ(BaseNode::INIT_OK,
               node.InitByClientTagLookup(BOOKMARKS, client_tag));
     EXPECT_EQ(title, node.GetTitle());
-    EXPECT_EQ(GURL(url2), node.GetURL());
+    EXPECT_EQ(url2, node.GetBookmarkSpecifics().url());
     const syncable::Entry* node_entry = node.GetEntry();
     EXPECT_EQ(kEncryptedString, node_entry->Get(NON_UNIQUE_NAME));
     const sync_pb::EntitySpecifics& specifics = node_entry->Get(SPECIFICS);
@@ -2645,7 +2747,7 @@ TEST_F(SyncManagerTest, IncrementTransactionVersion) {
   entity_specifics.mutable_bookmark()->set_url("url");
   entity_specifics.mutable_bookmark()->set_title("title");
   MakeServerNode(sync_manager_.GetUserShare(), BOOKMARKS, client_tag,
-                 BaseNode::GenerateSyncableHash(BOOKMARKS,
+                 syncable::GenerateSyncableHash(BOOKMARKS,
                                                 client_tag),
                  entity_specifics);
 
@@ -2712,13 +2814,7 @@ class SyncManagerTestWithMockScheduler : public SyncManagerTest {
 // Test that the configuration params are properly created and sent to
 // ScheduleConfigure. No callback should be invoked. Any disabled datatypes
 // should be purged.
-// Fails on Windows: crbug.com/139726
-#if defined(OS_WIN)
-#define MAYBE_BasicConfiguration DISABLED_BasicConfiguration
-#else
-#define MAYBE_BasicConfiguration BasicConfiguration
-#endif
-TEST_F(SyncManagerTestWithMockScheduler, MAYBE_BasicConfiguration) {
+TEST_F(SyncManagerTestWithMockScheduler, BasicConfiguration) {
   ConfigureReason reason = CONFIGURE_REASON_RECONFIGURATION;
   ModelTypeSet types_to_download(BOOKMARKS, PREFERENCES);
   ModelSafeRoutingInfo new_routing_info;
@@ -2732,16 +2828,17 @@ TEST_F(SyncManagerTestWithMockScheduler, MAYBE_BasicConfiguration) {
       WillOnce(DoAll(SaveArg<0>(&params), Return(true)));
 
   // Set data for all types.
-  for (ModelTypeSet::Iterator iter = ModelTypeSet::All().First(); iter.Good();
+  ModelTypeSet protocol_types = ProtocolTypes();
+  for (ModelTypeSet::Iterator iter = protocol_types.First(); iter.Good();
        iter.Inc()) {
     SetProgressMarkerForType(iter.Get(), true);
-    SetInitialSyncEndedForType(iter.Get(), true);
   }
 
   CallbackCounter ready_task_counter, retry_task_counter;
   sync_manager_.ConfigureSyncer(
       reason,
       types_to_download,
+      ModelTypeSet(),
       new_routing_info,
       base::Bind(&CallbackCounter::Callback,
                  base::Unretained(&ready_task_counter)),
@@ -2782,14 +2879,13 @@ TEST_F(SyncManagerTestWithMockScheduler, ReConfiguration) {
 
   // Set data for all types except those recently disabled (so we can verify
   // only those recently disabled are purged) .
-  for (ModelTypeSet::Iterator iter = ModelTypeSet::All().First(); iter.Good();
+  ModelTypeSet protocol_types = ProtocolTypes();
+  for (ModelTypeSet::Iterator iter = protocol_types.First(); iter.Good();
        iter.Inc()) {
     if (!disabled_types.Has(iter.Get())) {
       SetProgressMarkerForType(iter.Get(), true);
-      SetInitialSyncEndedForType(iter.Get(), true);
     } else {
       SetProgressMarkerForType(iter.Get(), false);
-      SetInitialSyncEndedForType(iter.Get(), false);
     }
   }
 
@@ -2800,6 +2896,7 @@ TEST_F(SyncManagerTestWithMockScheduler, ReConfiguration) {
   sync_manager_.ConfigureSyncer(
       reason,
       types_to_download,
+      ModelTypeSet(),
       new_routing_info,
       base::Bind(&CallbackCounter::Callback,
                  base::Unretained(&ready_task_counter)),
@@ -2813,10 +2910,8 @@ TEST_F(SyncManagerTestWithMockScheduler, ReConfiguration) {
   EXPECT_EQ(new_routing_info, params.routing_info);
 
   // Verify only the recently disabled types were purged.
-  EXPECT_TRUE(sync_manager_.InitialSyncEndedTypes().Equals(
-      Difference(ModelTypeSet::All(), disabled_types)));
   EXPECT_TRUE(sync_manager_.GetTypesWithEmptyProgressMarkerToken(
-      ModelTypeSet::All()).Equals(disabled_types));
+      ProtocolTypes()).Equals(disabled_types));
 }
 
 // Test that the retry callback is invoked on configuration failure.
@@ -2835,6 +2930,7 @@ TEST_F(SyncManagerTestWithMockScheduler, ConfigurationRetry) {
   sync_manager_.ConfigureSyncer(
       reason,
       types_to_download,
+      ModelTypeSet(),
       new_routing_info,
       base::Bind(&CallbackCounter::Callback,
                  base::Unretained(&ready_task_counter)),
@@ -2848,77 +2944,102 @@ TEST_F(SyncManagerTestWithMockScheduler, ConfigurationRetry) {
   EXPECT_EQ(new_routing_info, params.routing_info);
 }
 
-// Test that PurgePartiallySyncedTypes purges only those types that don't
-// have empty progress marker and don't have initial sync ended set.
+// Test that PurgePartiallySyncedTypes purges only those types that have not
+// fully completed their initial download and apply.
 TEST_F(SyncManagerTest, PurgePartiallySyncedTypes) {
+  ModelSafeRoutingInfo routing_info;
+  GetModelSafeRoutingInfo(&routing_info);
+  ModelTypeSet enabled_types = GetRoutingInfoTypes(routing_info);
+
   UserShare* share = sync_manager_.GetUserShare();
 
-  // Set Nigori and Bookmarks to be partial types.
-  sync_pb::DataTypeProgressMarker nigori_marker;
-  nigori_marker.set_data_type_id(
-      GetSpecificsFieldNumberFromModelType(NIGORI));
-  nigori_marker.set_token("token");
-  sync_pb::DataTypeProgressMarker bookmark_marker;
-  bookmark_marker.set_data_type_id(
-      GetSpecificsFieldNumberFromModelType(BOOKMARKS));
-  bookmark_marker.set_token("token");
-  share->directory->SetDownloadProgress(NIGORI, nigori_marker);
-  share->directory->SetDownloadProgress(BOOKMARKS, bookmark_marker);
+  // The test harness automatically initializes all types in the routing info.
+  // Check that autofill is not among them.
+  ASSERT_FALSE(enabled_types.Has(AUTOFILL));
 
-  // Set Preferences to be a full type.
-  sync_pb::DataTypeProgressMarker pref_marker;
-  pref_marker.set_data_type_id(
+  // Further ensure that the test harness did not create its root node.
+  {
+    syncable::ReadTransaction trans(FROM_HERE, share->directory.get());
+    syncable::Entry autofill_root_node(&trans, syncable::GET_BY_SERVER_TAG,
+                                       ModelTypeToRootTag(AUTOFILL));
+    ASSERT_FALSE(autofill_root_node.good());
+  }
+
+  // One more redundant check.
+  ASSERT_FALSE(sync_manager_.InitialSyncEndedTypes().Has(AUTOFILL));
+
+  // Give autofill a progress marker.
+  sync_pb::DataTypeProgressMarker autofill_marker;
+  autofill_marker.set_data_type_id(
+      GetSpecificsFieldNumberFromModelType(AUTOFILL));
+  autofill_marker.set_token("token");
+  share->directory->SetDownloadProgress(AUTOFILL, autofill_marker);
+
+  // Also add a pending autofill root node update from the server.
+  TestEntryFactory factory_(share->directory.get());
+  int autofill_meta = factory_.CreateUnappliedRootNode(AUTOFILL);
+
+  // Preferences is an enabled type.  Check that the harness initialized it.
+  ASSERT_TRUE(enabled_types.Has(PREFERENCES));
+  ASSERT_TRUE(sync_manager_.InitialSyncEndedTypes().Has(PREFERENCES));
+
+  // Give preferencse a progress marker.
+  sync_pb::DataTypeProgressMarker prefs_marker;
+  prefs_marker.set_data_type_id(
       GetSpecificsFieldNumberFromModelType(PREFERENCES));
-  pref_marker.set_token("token");
-  share->directory->SetDownloadProgress(PREFERENCES, pref_marker);
-  share->directory->set_initial_sync_ended_for_type(PREFERENCES, true);
+  prefs_marker.set_token("token");
+  share->directory->SetDownloadProgress(PREFERENCES, prefs_marker);
 
-  ModelTypeSet partial_types =
-      sync_manager_.GetTypesWithEmptyProgressMarkerToken(ModelTypeSet::All());
-  EXPECT_FALSE(partial_types.Has(NIGORI));
-  EXPECT_FALSE(partial_types.Has(BOOKMARKS));
-  EXPECT_FALSE(partial_types.Has(PREFERENCES));
+  // Add a fully synced preferences node under the root.
+  std::string pref_client_tag = "prefABC";
+  std::string pref_hashed_tag = "hashXYZ";
+  sync_pb::EntitySpecifics pref_specifics;
+  AddDefaultFieldValue(PREFERENCES, &pref_specifics);
+  int pref_meta = MakeServerNode(
+      share, PREFERENCES, pref_client_tag, pref_hashed_tag, pref_specifics);
 
+  // And now, the purge.
   EXPECT_TRUE(sync_manager_.PurgePartiallySyncedTypes());
 
-  // Ensure only bookmarks and nigori lost their progress marker. Preferences
-  // should still have it.
-  partial_types =
+  // Ensure that autofill lost its progress marker, but preferences did not.
+  ModelTypeSet empty_tokens =
       sync_manager_.GetTypesWithEmptyProgressMarkerToken(ModelTypeSet::All());
-  EXPECT_TRUE(partial_types.Has(NIGORI));
-  EXPECT_TRUE(partial_types.Has(BOOKMARKS));
-  EXPECT_FALSE(partial_types.Has(PREFERENCES));
+  EXPECT_TRUE(empty_tokens.Has(AUTOFILL));
+  EXPECT_FALSE(empty_tokens.Has(PREFERENCES));
+
+  // Ensure that autofill lots its node, but preferences did not.
+  {
+    syncable::ReadTransaction trans(FROM_HERE, share->directory.get());
+    syncable::Entry autofill_node(&trans, GET_BY_HANDLE, autofill_meta);
+    syncable::Entry pref_node(&trans, GET_BY_HANDLE, pref_meta);
+    EXPECT_FALSE(autofill_node.good());
+    EXPECT_TRUE(pref_node.good());
+  }
 }
 
-// Test CleanipDisabledTypes properly purges all disabled types as specified
-// by the previous and current enabled params. Enabled partial types should not
-// be purged.
-// Fails on Windows: crbug.com/139726
-#if defined(OS_WIN)
-#define MAYBE_PurgeDisabledTypes DISABLED_PurgeDisabledTypes
-#else
-#define MAYBE_PurgeDisabledTypes PurgeDisabledTypes
-#endif
-TEST_F(SyncManagerTest, MAYBE_PurgeDisabledTypes) {
+// Test CleanupDisabledTypes properly purges all disabled types as specified
+// by the previous and current enabled params.
+TEST_F(SyncManagerTest, PurgeDisabledTypes) {
   ModelSafeRoutingInfo routing_info;
   GetModelSafeRoutingInfo(&routing_info);
   ModelTypeSet enabled_types = GetRoutingInfoTypes(routing_info);
   ModelTypeSet disabled_types = Difference(ModelTypeSet::All(), enabled_types);
-  ModelTypeSet partial_enabled_types(PASSWORDS);
 
-  // Set data for all non-partial types.
-  for (ModelTypeSet::Iterator iter = ModelTypeSet::All().First(); iter.Good();
+  // The harness should have initialized the enabled_types for us.
+  EXPECT_TRUE(enabled_types.Equals(sync_manager_.InitialSyncEndedTypes()));
+
+  // Set progress markers for all types.
+  ModelTypeSet protocol_types = ProtocolTypes();
+  for (ModelTypeSet::Iterator iter = protocol_types.First(); iter.Good();
        iter.Inc()) {
     SetProgressMarkerForType(iter.Get(), true);
-    if (!partial_enabled_types.Has(iter.Get()))
-      SetInitialSyncEndedForType(iter.Get(), true);
   }
 
   // Verify all the enabled types remain after cleanup, and all the disabled
   // types were purged.
-  sync_manager_.PurgeDisabledTypes(ModelTypeSet::All(), enabled_types);
-  EXPECT_TRUE(enabled_types.Equals(
-      Union(sync_manager_.InitialSyncEndedTypes(), partial_enabled_types)));
+  sync_manager_.PurgeDisabledTypes(ModelTypeSet::All(), enabled_types,
+                                   ModelTypeSet());
+  EXPECT_TRUE(enabled_types.Equals(sync_manager_.InitialSyncEndedTypes()));
   EXPECT_TRUE(disabled_types.Equals(
       sync_manager_.GetTypesWithEmptyProgressMarkerToken(ModelTypeSet::All())));
 
@@ -2929,11 +3050,309 @@ TEST_F(SyncManagerTest, MAYBE_PurgeDisabledTypes) {
       Difference(ModelTypeSet::All(), disabled_types);
 
   // Verify only the non-disabled types remain after cleanup.
-  sync_manager_.PurgeDisabledTypes(enabled_types, new_enabled_types);
-  EXPECT_TRUE(new_enabled_types.Equals(
-      Union(sync_manager_.InitialSyncEndedTypes(), partial_enabled_types)));
+  sync_manager_.PurgeDisabledTypes(enabled_types, new_enabled_types,
+                                   ModelTypeSet());
+  EXPECT_TRUE(new_enabled_types.Equals(sync_manager_.InitialSyncEndedTypes()));
   EXPECT_TRUE(disabled_types.Equals(
       sync_manager_.GetTypesWithEmptyProgressMarkerToken(ModelTypeSet::All())));
+}
+
+// A test harness to exercise the code that processes and passes changes from
+// the "SYNCER"-WriteTransaction destructor, through the SyncManager, to the
+// ChangeProcessor.
+class SyncManagerChangeProcessingTest : public SyncManagerTest {
+ public:
+  virtual void OnChangesApplied(
+      ModelType model_type,
+      int64 model_version,
+      const BaseTransaction* trans,
+      const ImmutableChangeRecordList& changes) OVERRIDE {
+    last_changes_ = changes;
+  }
+
+  virtual void OnChangesComplete(ModelType model_type) OVERRIDE {}
+
+  const ImmutableChangeRecordList& GetRecentChangeList() {
+    return last_changes_;
+  }
+
+  UserShare* share() {
+    return sync_manager_.GetUserShare();
+  }
+
+  // Set some flags so our nodes reasonably approximate the real world scenario
+  // and can get past CheckTreeInvariants.
+  //
+  // It's never going to be truly accurate, since we're squashing update
+  // receipt, processing and application into a single transaction.
+  void SetNodeProperties(syncable::MutableEntry *entry) {
+    entry->Put(syncable::ID, id_factory_.NewServerId());
+    entry->Put(syncable::BASE_VERSION, 10);
+    entry->Put(syncable::SERVER_VERSION, 10);
+  }
+
+  // Looks for the given change in the list.  Returns the index at which it was
+  // found.  Returns -1 on lookup failure.
+  size_t FindChangeInList(int64 id, ChangeRecord::Action action) {
+    SCOPED_TRACE(id);
+    for (size_t i = 0; i < last_changes_.Get().size(); ++i) {
+      if (last_changes_.Get()[i].id == id
+          && last_changes_.Get()[i].action == action) {
+        return i;
+      }
+    }
+    ADD_FAILURE() << "Failed to find specified change";
+    return -1;
+  }
+
+  // Returns the current size of the change list.
+  //
+  // Note that spurious changes do not necessarily indicate a problem.
+  // Assertions on change list size can help detect problems, but it may be
+  // necessary to reduce their strictness if the implementation changes.
+  size_t GetChangeListSize() {
+    return last_changes_.Get().size();
+  }
+
+ protected:
+  ImmutableChangeRecordList last_changes_;
+  TestIdFactory id_factory_;
+};
+
+// Test creation of a folder and a bookmark.
+TEST_F(SyncManagerChangeProcessingTest, AddBookmarks) {
+  int64 type_root = GetIdForDataType(BOOKMARKS);
+  int64 folder_id = kInvalidId;
+  int64 child_id = kInvalidId;
+
+  // Create a folder and a bookmark under it.
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+    syncable::Entry root(&trans, syncable::GET_BY_HANDLE, type_root);
+    ASSERT_TRUE(root.good());
+
+    syncable::MutableEntry folder(&trans, syncable::CREATE,
+                                  BOOKMARKS, root.Get(syncable::ID), "folder");
+    ASSERT_TRUE(folder.good());
+    SetNodeProperties(&folder);
+    folder.Put(syncable::IS_DIR, true);
+    folder_id = folder.Get(syncable::META_HANDLE);
+
+    syncable::MutableEntry child(&trans, syncable::CREATE,
+                                 BOOKMARKS, folder.Get(syncable::ID), "child");
+    ASSERT_TRUE(child.good());
+    SetNodeProperties(&child);
+    child_id = child.Get(syncable::META_HANDLE);
+  }
+
+  // The closing of the above scope will delete the transaction.  Its processed
+  // changes should be waiting for us in a member of the test harness.
+  EXPECT_EQ(2UL, GetChangeListSize());
+
+  // We don't need to check these return values here.  The function will add a
+  // non-fatal failure if these changes are not found.
+  size_t folder_change_pos =
+      FindChangeInList(folder_id, ChangeRecord::ACTION_ADD);
+  size_t child_change_pos =
+      FindChangeInList(child_id, ChangeRecord::ACTION_ADD);
+
+  // Parents are delivered before children.
+  EXPECT_LT(folder_change_pos, child_change_pos);
+}
+
+// Test moving a bookmark into an empty folder.
+TEST_F(SyncManagerChangeProcessingTest, MoveBookmarkIntoEmptyFolder) {
+  int64 type_root = GetIdForDataType(BOOKMARKS);
+  int64 folder_b_id = kInvalidId;
+  int64 child_id = kInvalidId;
+
+  // Create two folders.  Place a child under folder A.
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+    syncable::Entry root(&trans, syncable::GET_BY_HANDLE, type_root);
+    ASSERT_TRUE(root.good());
+
+    syncable::MutableEntry folder_a(&trans, syncable::CREATE,
+                                  BOOKMARKS, root.Get(syncable::ID), "folderA");
+    ASSERT_TRUE(folder_a.good());
+    SetNodeProperties(&folder_a);
+    folder_a.Put(syncable::IS_DIR, true);
+
+    syncable::MutableEntry folder_b(&trans, syncable::CREATE,
+                                  BOOKMARKS, root.Get(syncable::ID), "folderB");
+    ASSERT_TRUE(folder_b.good());
+    SetNodeProperties(&folder_b);
+    folder_b.Put(syncable::IS_DIR, true);
+    folder_b_id = folder_b.Get(syncable::META_HANDLE);
+
+    syncable::MutableEntry child(&trans, syncable::CREATE,
+                                 BOOKMARKS, folder_a.Get(syncable::ID),
+                                 "child");
+    ASSERT_TRUE(child.good());
+    SetNodeProperties(&child);
+    child_id = child.Get(syncable::META_HANDLE);
+  }
+
+  // Close that transaction.  The above was to setup the initial scenario.  The
+  // real test starts now.
+
+  // Move the child from folder A to folder B.
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+
+    syncable::Entry folder_b(&trans, syncable::GET_BY_HANDLE, folder_b_id);
+    syncable::MutableEntry child(&trans, syncable::GET_BY_HANDLE, child_id);
+
+    child.Put(syncable::PARENT_ID, folder_b.Get(syncable::ID));
+  }
+
+  EXPECT_EQ(1UL, GetChangeListSize());
+
+  // Verify that this was detected as a real change.  An early version of the
+  // UniquePosition code had a bug where moves from one folder to another were
+  // ignored unless the moved node's UniquePosition value was also changed in
+  // some way.
+  FindChangeInList(child_id, ChangeRecord::ACTION_UPDATE);
+}
+
+// Test moving a bookmark into a non-empty folder.
+TEST_F(SyncManagerChangeProcessingTest, MoveIntoPopulatedFolder) {
+  int64 type_root = GetIdForDataType(BOOKMARKS);
+  int64 child_a_id = kInvalidId;
+  int64 child_b_id = kInvalidId;
+
+  // Create two folders.  Place one child each under folder A and folder B.
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+    syncable::Entry root(&trans, syncable::GET_BY_HANDLE, type_root);
+    ASSERT_TRUE(root.good());
+
+    syncable::MutableEntry folder_a(&trans, syncable::CREATE,
+                                  BOOKMARKS, root.Get(syncable::ID), "folderA");
+    ASSERT_TRUE(folder_a.good());
+    SetNodeProperties(&folder_a);
+    folder_a.Put(syncable::IS_DIR, true);
+
+    syncable::MutableEntry folder_b(&trans, syncable::CREATE,
+                                  BOOKMARKS, root.Get(syncable::ID), "folderB");
+    ASSERT_TRUE(folder_b.good());
+    SetNodeProperties(&folder_b);
+    folder_b.Put(syncable::IS_DIR, true);
+
+    syncable::MutableEntry child_a(&trans, syncable::CREATE,
+                                   BOOKMARKS, folder_a.Get(syncable::ID),
+                                   "childA");
+    ASSERT_TRUE(child_a.good());
+    SetNodeProperties(&child_a);
+    child_a_id = child_a.Get(syncable::META_HANDLE);
+
+    syncable::MutableEntry child_b(&trans, syncable::CREATE,
+                                   BOOKMARKS, folder_b.Get(syncable::ID),
+                                   "childB");
+    SetNodeProperties(&child_b);
+    child_b_id = child_b.Get(syncable::META_HANDLE);
+
+  }
+
+  // Close that transaction.  The above was to setup the initial scenario.  The
+  // real test starts now.
+
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+
+    syncable::MutableEntry child_a(&trans, syncable::GET_BY_HANDLE, child_a_id);
+    syncable::MutableEntry child_b(&trans, syncable::GET_BY_HANDLE, child_b_id);
+
+    // Move child A from folder A to folder B and update its position.
+    child_a.Put(syncable::PARENT_ID, child_b.Get(syncable::PARENT_ID));
+    child_a.PutPredecessor(child_b.Get(syncable::ID));
+  }
+
+  EXPECT_EQ(2UL, GetChangeListSize());
+
+  // Verify that both child A and child B are in the change list, even though
+  // only child A was moved.  The rules state that all siblings of
+  // position-modified items must be included in the list of changes.
+  int64 child_a_pos = FindChangeInList(child_a_id, ChangeRecord::ACTION_UPDATE);
+  int64 child_b_pos = FindChangeInList(child_b_id, ChangeRecord::ACTION_UPDATE);
+
+  // Siblings should appear in left-to-right order.
+  EXPECT_LT(child_b_pos, child_a_pos);
+}
+
+// Tests the ordering of deletion changes.
+TEST_F(SyncManagerChangeProcessingTest, DeletionsAndChanges) {
+  int64 type_root = GetIdForDataType(BOOKMARKS);
+  int64 folder_a_id = kInvalidId;
+  int64 folder_b_id = kInvalidId;
+  int64 child_id = kInvalidId;
+
+  // Create two folders.  Place a child under folder A.
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+    syncable::Entry root(&trans, syncable::GET_BY_HANDLE, type_root);
+    ASSERT_TRUE(root.good());
+
+    syncable::MutableEntry folder_a(&trans, syncable::CREATE,
+                                  BOOKMARKS, root.Get(syncable::ID), "folderA");
+    ASSERT_TRUE(folder_a.good());
+    SetNodeProperties(&folder_a);
+    folder_a.Put(syncable::IS_DIR, true);
+    folder_a_id = folder_a.Get(syncable::META_HANDLE);
+
+    syncable::MutableEntry folder_b(&trans, syncable::CREATE,
+                                  BOOKMARKS, root.Get(syncable::ID), "folderB");
+    ASSERT_TRUE(folder_b.good());
+    SetNodeProperties(&folder_b);
+    folder_b.Put(syncable::IS_DIR, true);
+    folder_b_id = folder_b.Get(syncable::META_HANDLE);
+
+    syncable::MutableEntry child(&trans, syncable::CREATE,
+                                 BOOKMARKS, folder_a.Get(syncable::ID),
+                                 "child");
+    ASSERT_TRUE(child.good());
+    SetNodeProperties(&child);
+    child_id = child.Get(syncable::META_HANDLE);
+  }
+
+  // Close that transaction.  The above was to setup the initial scenario.  The
+  // real test starts now.
+
+  {
+    syncable::WriteTransaction trans(
+        FROM_HERE, syncable::SYNCER, share()->directory.get());
+
+    syncable::MutableEntry folder_a(
+        &trans, syncable::GET_BY_HANDLE, folder_a_id);
+    syncable::MutableEntry folder_b(
+        &trans, syncable::GET_BY_HANDLE, folder_b_id);
+    syncable::MutableEntry child(&trans, syncable::GET_BY_HANDLE, child_id);
+
+    // Delete folder B and its child.
+    child.Put(syncable::IS_DEL, true);
+    folder_b.Put(syncable::IS_DEL, true);
+
+    // Make an unrelated change to folder A.
+    folder_a.Put(syncable::NON_UNIQUE_NAME, "NewNameA");
+  }
+
+  EXPECT_EQ(3UL, GetChangeListSize());
+
+  size_t folder_a_pos =
+      FindChangeInList(folder_a_id, ChangeRecord::ACTION_UPDATE);
+  size_t folder_b_pos =
+      FindChangeInList(folder_b_id, ChangeRecord::ACTION_DELETE);
+  size_t child_pos = FindChangeInList(child_id, ChangeRecord::ACTION_DELETE);
+
+  // Deletes should appear before updates.
+  EXPECT_LT(child_pos, folder_a_pos);
+  EXPECT_LT(folder_b_pos, folder_a_pos);
 }
 
 }  // namespace

@@ -8,19 +8,21 @@
 #include "base/run_loop.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/default_capture_client.h"
+#include "ui/aura/client/focus_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/focus_manager.h"
-#include "ui/aura/display_manager.h"
 #include "ui/aura/root_window.h"
-#include "ui/aura/single_display_manager.h"
 #include "ui/aura/test/test_activation_client.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/test/test_stacking_client.h"
-#include "ui/aura/ui_controls_aura.h"
 #include "ui/base/test/dummy_input_method.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/screen.h"
-#include "ui/ui_controls/ui_controls.h"
+
+#if defined(USE_X11)
+#include "ui/base/x/x11_util.h"
+#endif
 
 namespace aura {
 namespace test {
@@ -32,7 +34,8 @@ AuraTestHelper::AuraTestHelper(MessageLoopForUI* message_loop)
   DCHECK(message_loop);
   message_loop_ = message_loop;
   // Disable animations during tests.
-  ui::LayerAnimator::set_disable_animations_for_test(true);
+  zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(
+      ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
 }
 
 AuraTestHelper::~AuraTestHelper() {
@@ -44,21 +47,20 @@ AuraTestHelper::~AuraTestHelper() {
 
 void AuraTestHelper::SetUp() {
   setup_called_ = true;
-  Env::GetInstance()->SetDisplayManager(new SingleDisplayManager);
-  root_window_.reset(aura::DisplayManager::CreateRootWindowForPrimaryDisplay());
-  test_screen_.reset(new aura::TestScreen(root_window_.get()));
+  Env::GetInstance();
+  test_screen_.reset(TestScreen::Create());
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen_.get());
-  ui_controls::InstallUIControlsAura(CreateUIControlsAura(root_window_.get()));
+  root_window_.reset(test_screen_->CreateRootWindowForPrimaryDisplay());
 
-  focus_manager_.reset(new FocusManager);
-  root_window_->set_focus_manager(focus_manager_.get());
+  focus_client_.reset(new FocusManager);
+  client::SetFocusClient(root_window_.get(), focus_client_.get());
   stacking_client_.reset(new TestStackingClient(root_window_.get()));
   test_activation_client_.reset(
       new test::TestActivationClient(root_window_.get()));
   capture_client_.reset(new client::DefaultCaptureClient(root_window_.get()));
   test_input_method_.reset(new ui::test::DummyInputMethod);
   root_window_->SetProperty(
-      aura::client::kRootWindowInputMethodKey,
+      client::kRootWindowInputMethodKey,
       test_input_method_.get());
 
   root_window_->Show();
@@ -72,11 +74,16 @@ void AuraTestHelper::TearDown() {
   stacking_client_.reset();
   test_activation_client_.reset();
   capture_client_.reset();
-  focus_manager_.reset();
+  focus_client_.reset();
   root_window_.reset();
   test_screen_.reset();
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, NULL);
-  aura::Env::DeleteInstance();
+
+#if defined(USE_X11)
+  ui::ResetXCursorCache();
+#endif
+
+  Env::DeleteInstance();
 }
 
 void AuraTestHelper::RunAllPendingInMessageLoop() {

@@ -42,7 +42,7 @@ class ExternalExtensionWrapper : public v8::Extension {
   // Allows v8's javascript code to call the native functions defined
   // in this class for window.external.
   virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
-      v8::Handle<v8::String> name);
+      v8::Handle<v8::String> name) OVERRIDE;
 
   // Helper function to find the RenderView. May return NULL.
   static RenderView* GetRenderView();
@@ -100,7 +100,7 @@ v8::Handle<v8::Value> ExternalExtensionWrapper::AddSearchProvider(
   if (!render_view) return v8::Undefined();
 
   GURL osd_url(name);
-  if (!osd_url.is_empty()) {
+  if (!osd_url.is_empty() && osd_url.is_valid()) {
     render_view->Send(new ChromeViewHostMsg_PageHasOSDD(
         render_view->GetRoutingID(), render_view->GetPageId(), osd_url,
         search_provider::EXPLICIT_PROVIDER));

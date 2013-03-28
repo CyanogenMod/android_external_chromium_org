@@ -16,16 +16,35 @@
 #include "ui/aura/root_window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/theme_provider.h"
 #include "ui/gfx/screen.h"
+#include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/window/non_client_view.h"
 
-using views::Widget;
+using ui::ThemeProvider;
+using views::Button;
 using views::ImageButton;
+using views::NonClientFrameView;
+using views::ToggleImageButton;
+using views::Widget;
 
 namespace {
+
+bool ImagesMatch(ImageButton* button,
+                 int normal_image_id,
+                 int hovered_image_id,
+                 int pressed_image_id) {
+  ThemeProvider* theme = button->GetWidget()->GetThemeProvider();
+  gfx::ImageSkia* normal = theme->GetImageSkiaNamed(normal_image_id);
+  gfx::ImageSkia* hovered = theme->GetImageSkiaNamed(hovered_image_id);
+  gfx::ImageSkia* pressed = theme->GetImageSkiaNamed(pressed_image_id);
+  return button->GetImage(Button::STATE_NORMAL).BackedBySameObjectAs(*normal) &&
+      button->GetImage(Button::STATE_HOVERED).BackedBySameObjectAs(*hovered) &&
+      button->GetImage(Button::STATE_PRESSED).BackedBySameObjectAs(*pressed);
+}
 
 class ResizableWidgetDelegate : public views::WidgetDelegate {
  public:
@@ -77,55 +96,74 @@ class WindowRepaintChecker : public aura::WindowObserver {
   DISALLOW_COPY_AND_ASSIGN(WindowRepaintChecker);
 };
 
-// Creates a test widget that owns its native widget.
-Widget* CreateTestWidget() {
-  Widget* widget = new Widget;
-  Widget::InitParams params;
-  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  widget->Init(params);
-  return widget;
-}
+// Modifies the values of kInactiveWindowOpacity, kActiveWindowOpacity, and
+// kSoloWindowOpacity for the lifetime of the class. This is useful so that
+// the constants each have different values.
+class ScopedOpacityConstantModifier {
+ public:
+  ScopedOpacityConstantModifier()
+      : initial_active_window_opacity_(
+            ash::FramePainter::kActiveWindowOpacity),
+        initial_inactive_window_opacity_(
+            ash::FramePainter::kInactiveWindowOpacity),
+        initial_solo_window_opacity_(ash::FramePainter::kSoloWindowOpacity) {
+    ash::FramePainter::kActiveWindowOpacity = 100;
+    ash::FramePainter::kInactiveWindowOpacity = 120;
+    ash::FramePainter::kSoloWindowOpacity = 140;
+  }
+  ~ScopedOpacityConstantModifier() {
+    ash::FramePainter::kActiveWindowOpacity = initial_active_window_opacity_;
+    ash::FramePainter::kInactiveWindowOpacity =
+        initial_inactive_window_opacity_;
+    ash::FramePainter::kSoloWindowOpacity = initial_solo_window_opacity_;
+  }
 
-Widget* CreateAlwaysOnTopWidget() {
-  Widget* widget = new Widget;
-  Widget::InitParams params;
-  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  params.keep_on_top = true;
-  widget->Init(params);
-  return widget;
-}
+ private:
+  int initial_active_window_opacity_;
+  int initial_inactive_window_opacity_;
+  int initial_solo_window_opacity_;
 
-Widget* CreateResizableWidget() {
-  Widget* widget = new Widget;
-  Widget::InitParams params;
-  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  params.keep_on_top = true;
-  params.delegate = new ResizableWidgetDelegate(widget);
-  params.type = Widget::InitParams::TYPE_WINDOW;
-  widget->Init(params);
-  return widget;
-}
+  DISALLOW_COPY_AND_ASSIGN(ScopedOpacityConstantModifier);
+};
 
 }  // namespace
 
 namespace ash {
 
-typedef ash::test::AshTestBase FramePainterTest;
+class FramePainterTest : public ash::test::AshTestBase {
+ public:
+  // Creates a test widget that owns its native widget.
+  Widget* CreateTestWidget() {
+    Widget* widget = new Widget;
+    Widget::InitParams params;
+    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    params.context = CurrentContext();
+    widget->Init(params);
+    return widget;
+  }
 
-TEST_F(FramePainterTest, Basics) {
-  // Other tests might have created a FramePainter, so we cannot assert that
-  // FramePainter::instances_ is NULL here.
+  Widget* CreateAlwaysOnTopWidget() {
+    Widget* widget = new Widget;
+    Widget::InitParams params;
+    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    params.context = CurrentContext();
+    params.keep_on_top = true;
+    widget->Init(params);
+    return widget;
+  }
 
-  // Creating a painter bumps the instance count.
-  scoped_ptr<FramePainter> painter(new FramePainter);
-  ASSERT_TRUE(FramePainter::instances_);
-  EXPECT_EQ(1u, FramePainter::instances_->size());
-
-  // Destroying that painter leaves a valid pointer but no instances.
-  painter.reset();
-  ASSERT_TRUE(FramePainter::instances_);
-  EXPECT_EQ(0u, FramePainter::instances_->size());
-}
+  Widget* CreateResizableWidget() {
+    Widget* widget = new Widget;
+    Widget::InitParams params;
+    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    params.context = CurrentContext();
+    params.keep_on_top = true;
+    params.delegate = new ResizableWidgetDelegate(widget);
+    params.type = Widget::InitParams::TYPE_WINDOW;
+    widget->Init(params);
+    return widget;
+  }
+};
 
 TEST_F(FramePainterTest, CreateAndDeleteSingleWindow) {
   // Ensure that creating/deleting a window works well and doesn't cause
@@ -142,12 +180,11 @@ TEST_F(FramePainterTest, CreateAndDeleteSingleWindow) {
 
   // We only have one window, so it should use a solo header.
   EXPECT_TRUE(painter->UseSoloWindowHeader());
-  EXPECT_EQ(painter.get(),
-            root->GetProperty(internal::kSoloWindowFramePainterKey));
+  EXPECT_TRUE(root->GetProperty(internal::kSoloWindowHeaderKey));
 
   // Close the window.
   widget.reset();
-  EXPECT_EQ(NULL, root->GetProperty(internal::kSoloWindowFramePainterKey));
+  EXPECT_FALSE(root->GetProperty(internal::kSoloWindowHeaderKey));
 
   // Recreate another window again.
   painter.reset(new FramePainter);
@@ -157,8 +194,70 @@ TEST_F(FramePainterTest, CreateAndDeleteSingleWindow) {
       widget.get(), NULL, &size, &close, FramePainter::SIZE_BUTTON_MAXIMIZES);
   widget->Show();
   EXPECT_TRUE(painter->UseSoloWindowHeader());
-  EXPECT_EQ(painter.get(),
-            root->GetProperty(internal::kSoloWindowFramePainterKey));
+  EXPECT_TRUE(root->GetProperty(internal::kSoloWindowHeaderKey));
+}
+
+TEST_F(FramePainterTest, LayoutHeader) {
+  scoped_ptr<Widget> widget(CreateTestWidget());
+  ImageButton size_button(NULL);
+  ImageButton close_button(NULL);
+  NonClientFrameView* frame_view = widget->non_client_view()->frame_view();
+  frame_view->AddChildView(&size_button);
+  frame_view->AddChildView(&close_button);
+  scoped_ptr<FramePainter> painter(new FramePainter);
+  painter->Init(widget.get(),
+                NULL,
+                &size_button,
+                &close_button,
+                FramePainter::SIZE_BUTTON_MAXIMIZES);
+  widget->Show();
+
+  // Basic layout.
+  painter->LayoutHeader(frame_view, false);
+  EXPECT_TRUE(ImagesMatch(&close_button,
+                          IDR_AURA_WINDOW_CLOSE,
+                          IDR_AURA_WINDOW_CLOSE_H,
+                          IDR_AURA_WINDOW_CLOSE_P));
+  EXPECT_TRUE(ImagesMatch(&size_button,
+                          IDR_AURA_WINDOW_MAXIMIZE,
+                          IDR_AURA_WINDOW_MAXIMIZE_H,
+                          IDR_AURA_WINDOW_MAXIMIZE_P));
+
+  // Shorter layout.
+  painter->LayoutHeader(frame_view, true);
+  EXPECT_TRUE(ImagesMatch(&close_button,
+                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE,
+                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE_H,
+                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE_P));
+  EXPECT_TRUE(ImagesMatch(&size_button,
+                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE,
+                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE_H,
+                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE_P));
+
+  // Maximized shorter layout.
+  widget->Maximize();
+  painter->LayoutHeader(frame_view, true);
+  EXPECT_TRUE(ImagesMatch(&close_button,
+                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2,
+                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_H,
+                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_P));
+  EXPECT_TRUE(ImagesMatch(&size_button,
+                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2,
+                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_H,
+                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_P));
+
+  // Fullscreen can show the buttons during an immersive reveal, so it should
+  // use the same images as maximized.
+  widget->SetFullscreen(true);
+  painter->LayoutHeader(frame_view, true);
+  EXPECT_TRUE(ImagesMatch(&close_button,
+                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2,
+                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_H,
+                          IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_P));
+  EXPECT_TRUE(ImagesMatch(&size_button,
+                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2,
+                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_H,
+                          IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_P));
 }
 
 TEST_F(FramePainterTest, UseSoloWindowHeader) {
@@ -181,9 +280,10 @@ TEST_F(FramePainterTest, UseSoloWindowHeader) {
   p2.Init(w2.get(), NULL, &size2, &close2, FramePainter::SIZE_BUTTON_MAXIMIZES);
   w2->Show();
 
-  // Now there are two windows, so we should not use solo headers.
+  // Now there are two windows, so we should not use solo headers. This only
+  // needs to test |p1| because "solo window headers" are a per-root-window
+  // property.
   EXPECT_FALSE(p1.UseSoloWindowHeader());
-  EXPECT_FALSE(p2.UseSoloWindowHeader());
 
   // Hide one window.  Solo should be enabled.
   w2->Hide();
@@ -192,19 +292,16 @@ TEST_F(FramePainterTest, UseSoloWindowHeader) {
   // Show that window.  Solo should be disabled.
   w2->Show();
   EXPECT_FALSE(p1.UseSoloWindowHeader());
-  EXPECT_FALSE(p2.UseSoloWindowHeader());
 
   // Maximize the window, then activate the first window. The second window
   // is in its own workspace, so solo should be active for the first one.
   w2->Maximize();
   w1->Activate();
   EXPECT_TRUE(p1.UseSoloWindowHeader());
-  EXPECT_FALSE(p2.UseSoloWindowHeader());
 
   // Switch to the second window and restore it.  Solo should be disabled.
   w2->Activate();
   w2->Restore();
-  EXPECT_FALSE(p1.UseSoloWindowHeader());
   EXPECT_FALSE(p2.UseSoloWindowHeader());
 
   // Minimize the second window.  Solo should be enabled.
@@ -222,7 +319,6 @@ TEST_F(FramePainterTest, UseSoloWindowHeader) {
   ImageButton close3(NULL);
   p3.Init(w3.get(), NULL, &size3, &close3, FramePainter::SIZE_BUTTON_MAXIMIZES);
   w3->Show();
-  EXPECT_FALSE(p1.UseSoloWindowHeader());
   EXPECT_FALSE(p3.UseSoloWindowHeader());
 
   // Close the always-on-top widget.
@@ -230,7 +326,47 @@ TEST_F(FramePainterTest, UseSoloWindowHeader) {
   EXPECT_TRUE(p1.UseSoloWindowHeader());
 }
 
-TEST_F(FramePainterTest, UseSoloWindowHeaderMultiDisplay) {
+// An open V2 app window should cause browser windows not to use the
+// solo window header.
+TEST_F(FramePainterTest, UseSoloWindowHeaderWithApp) {
+  // Create a widget and a painter for it.
+  scoped_ptr<Widget> w1(CreateTestWidget());
+  FramePainter p1;
+  ImageButton size1(NULL);
+  ImageButton close1(NULL);
+  p1.Init(w1.get(), NULL, &size1, &close1, FramePainter::SIZE_BUTTON_MAXIMIZES);
+  w1->Show();
+
+  // We only have one window, so it should use a solo header.
+  EXPECT_TRUE(p1.UseSoloWindowHeader());
+
+  // Simulate a V2 app window, which is part of the active workspace but does
+  // not have a frame painter.
+  scoped_ptr<Widget> w2(CreateTestWidget());
+  w2->Show();
+
+  // Now there are two windows, so we should not use solo headers.
+  EXPECT_FALSE(p1.UseSoloWindowHeader());
+
+  // Minimize the app window. The first window should go solo again.
+  w2->Minimize();
+  EXPECT_TRUE(p1.UseSoloWindowHeader());
+
+  // Restoring the app window turns off solo headers.
+  w2->Restore();
+  EXPECT_FALSE(p1.UseSoloWindowHeader());
+}
+
+#if defined(OS_WIN)
+// Multiple displays are not supported on Windows Ash. http://crbug.com/165962
+#define MAYBE_UseSoloWindowHeaderMultiDisplay \
+        DISABLED_UseSoloWindowHeaderMultiDisplay
+#else
+#define MAYBE_UseSoloWindowHeaderMultiDisplay \
+        UseSoloWindowHeaderMultiDisplay
+#endif
+
+TEST_F(FramePainterTest, MAYBE_UseSoloWindowHeaderMultiDisplay) {
   UpdateDisplay("1000x600,600x400");
 
   // Create two widgets and painters for them.
@@ -342,6 +478,10 @@ TEST_F(FramePainterTest, GetHeaderOpacity) {
   p1.Init(w1.get(), NULL, &size1, &close1, FramePainter::SIZE_BUTTON_MAXIMIZES);
   w1->Show();
 
+  // Modify the values of the opacity constants so that they each have a
+  // different value.
+  ScopedOpacityConstantModifier opacity_constant_modifier;
+
   // Solo active window has solo window opacity.
   EXPECT_EQ(FramePainter::kSoloWindowOpacity,
             p1.GetHeaderOpacity(FramePainter::ACTIVE,
@@ -374,6 +514,28 @@ TEST_F(FramePainterTest, GetHeaderOpacity) {
             p1.GetHeaderOpacity(FramePainter::ACTIVE,
                                 IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
                                 &custom_overlay));
+
+  // Regular maximized window is fully transparent.
+  ash::wm::MaximizeWindow(w1->GetNativeWindow());
+  EXPECT_EQ(0,
+            p1.GetHeaderOpacity(FramePainter::ACTIVE,
+                                IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
+                                NULL));
+
+  // Windows with custom overlays are fully opaque when maximized.
+  EXPECT_EQ(255,
+            p1.GetHeaderOpacity(FramePainter::ACTIVE,
+                                IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
+                                &custom_overlay));
+
+  // The maximized window frame should take on the active/inactive opacity
+  // while the user is cycling through workspaces.
+  w1->GetNativeWindow()->GetRootWindow()->SetProperty(
+      ash::internal::kCyclingThroughWorkspacesKey, true);
+  EXPECT_EQ(FramePainter::kInactiveWindowOpacity,
+            p1.GetHeaderOpacity(FramePainter::INACTIVE,
+                                IDR_AURA_WINDOW_HEADER_BASE_ACTIVE,
+                                NULL));
 }
 
 // Test the hit test function with windows which are "partially maximized".

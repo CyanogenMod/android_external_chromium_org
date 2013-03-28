@@ -60,20 +60,23 @@ cr.define('options', function() {
 
       var suggestionList = new cr.ui.AutocompleteList();
       suggestionList.autoExpands = true;
-      suggestionList.suggestionUpdateRequestCallback =
+      suggestionList.requestSuggestions =
           this.requestAutocompleteSuggestions_.bind(this);
       $('startup-overlay').appendChild(suggestionList);
       this.autocompleteList_ = suggestionList;
       startupPagesList.autocompleteList = suggestionList;
     },
 
-    /** @inheritDoc */
+    /** @override */
     handleConfirm: function() {
       SettingsDialog.prototype.handleConfirm.call(this);
       chrome.send('commitStartupPrefChanges');
+      // Set the startup behavior to "open specific set of pages" so that the
+      // pages the user selected actually get opened on startup.
+      Preferences.setIntegerPref('session.restore_on_startup', 4, true);
     },
 
-    /** @inheritDoc */
+    /** @override */
     handleCancel: function() {
       SettingsDialog.prototype.handleCancel.call(this);
       chrome.send('cancelStartupPrefChanges');
@@ -122,9 +125,7 @@ cr.define('options', function() {
     updateStartupPages_: function(pages) {
       var model = new ArrayDataModel(pages);
       // Add a "new page" row.
-      model.push({
-        'modelIndex': '-1'
-      });
+      model.push({modelIndex: -1});
       $('startupPagesList').dataModel = model;
     },
 

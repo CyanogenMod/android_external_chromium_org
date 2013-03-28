@@ -1,12 +1,15 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SYNC_SYNCABLE_ENTRY_KERNEL_H_
 #define SYNC_SYNCABLE_ENTRY_KERNEL_H_
 
+#include <set>
+
 #include "base/time.h"
 #include "base/values.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/base/node_ordinal.h"
 #include "sync/internal_api/public/util/immutable.h"
@@ -16,6 +19,9 @@
 #include "sync/util/time.h"
 
 namespace syncer {
+
+class Cryptographer;
+
 namespace syncable {
 
 // Things you need to update if you change any of the fields below:
@@ -171,7 +177,7 @@ enum {
 
 
 
-struct EntryKernel {
+struct SYNC_EXPORT_PRIVATE EntryKernel {
  private:
   std::string string_fields[STRING_FIELDS_COUNT];
   sync_pb::EntitySpecifics specifics_fields[PROTO_FIELDS_COUNT];
@@ -309,12 +315,26 @@ struct EntryKernel {
 
   // Dumps all kernel info into a DictionaryValue and returns it.
   // Transfers ownership of the DictionaryValue to the caller.
-  base::DictionaryValue* ToValue() const;
+  // Note: |cryptographer| is an optional parameter for use in decrypting
+  // encrypted specifics. If it is NULL or the specifics are not decryptsble,
+  // they will be serialized as empty proto's.
+  base::DictionaryValue* ToValue(Cryptographer* cryptographer) const;
 
  private:
   // Tracks whether this entry needs to be saved to the database.
   bool dirty_;
 };
+
+class EntryKernelLessByMetaHandle {
+ public:
+  inline bool operator()(const EntryKernel* a,
+                         const EntryKernel* b) const {
+    return a->ref(META_HANDLE) < b->ref(META_HANDLE);
+  }
+};
+
+typedef std::set<const EntryKernel*, EntryKernelLessByMetaHandle>
+    EntryKernelSet;
 
 struct EntryKernelMutation {
   EntryKernel original, mutated;

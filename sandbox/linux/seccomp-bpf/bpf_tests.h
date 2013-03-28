@@ -5,11 +5,28 @@
 #ifndef SANDBOX_LINUX_SECCOMP_BPF_BPF_TESTS_H__
 #define SANDBOX_LINUX_SECCOMP_BPF_BPF_TESTS_H__
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include "sandbox/linux/tests/unit_tests.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 
 
 namespace sandbox {
+
+// A BPF_DEATH_TEST is just the same as a BPF_TEST, but it assumes that the
+// test will fail with a particular known error condition. Use the DEATH_XXX()
+// macros from unit_tests.h to specify the expected error condition.
+#define BPF_DEATH_TEST(test_case_name, test_name, death, policy, aux...)      \
+  void BPF_TEST_##test_name(sandbox::BpfTests<aux>::AuxType& BPF_AUX);        \
+  TEST(test_case_name, test_name) {                                           \
+    sandbox::BpfTests<aux>::TestArgs arg(BPF_TEST_##test_name, policy);       \
+    sandbox::BpfTests<aux>::RunTestInProcess(                                 \
+                                   sandbox::BpfTests<aux>::TestWrapper, &arg, \
+                                   death);                                    \
+  }                                                                           \
+  void BPF_TEST_##test_name(sandbox::BpfTests<aux>::AuxType& BPF_AUX)
 
 // BPF_TEST() is a special version of SANDBOX_TEST(). It turns into a no-op,
 // if the host does not have kernel support for running BPF filters.
@@ -22,13 +39,8 @@ namespace sandbox {
 // would typically use it as an argument to Sandbox::Trap(), if they want to
 // communicate data between the BPF_TEST() and a Trap() function.
 #define BPF_TEST(test_case_name, test_name, policy, aux...)                   \
-  void BPF_TEST_##test_name(sandbox::BpfTests<aux>::AuxType& BPF_AUX);        \
-  TEST(test_case_name, test_name) {                                           \
-    sandbox::BpfTests<aux>::TestArgs arg(BPF_TEST_##test_name, policy);       \
-    sandbox::BpfTests<aux>::RunTestInProcess(                                 \
-                                   sandbox::BpfTests<aux>::TestWrapper, &arg);\
-  }                                                                           \
-  void BPF_TEST_##test_name(sandbox::BpfTests<aux>::AuxType& BPF_AUX)
+  BPF_DEATH_TEST(test_case_name, test_name, DEATH_SUCCESS(), policy, aux)
+
 
 // Assertions are handled exactly the same as with a normal SANDBOX_TEST()
 #define BPF_ASSERT SANDBOX_ASSERT
@@ -64,24 +76,30 @@ class BpfTests : public UnitTests {
   static void TestWrapper(void *void_arg) {
     TestArgs *arg = reinterpret_cast<TestArgs *>(void_arg);
     playground2::Die::EnableSimpleExit();
-    if (playground2::Sandbox::supportsSeccompSandbox(-1) ==
+    if (playground2::Sandbox::SupportsSeccompSandbox(-1) ==
         playground2::Sandbox::STATUS_AVAILABLE) {
       // Ensure the the sandbox is actually available at this time
       int proc_fd;
       BPF_ASSERT((proc_fd = open("/proc", O_RDONLY|O_DIRECTORY)) >= 0);
-      BPF_ASSERT(playground2::Sandbox::supportsSeccompSandbox(proc_fd) ==
+      BPF_ASSERT(playground2::Sandbox::SupportsSeccompSandbox(proc_fd) ==
                  playground2::Sandbox::STATUS_AVAILABLE);
 
       // Initialize and then start the sandbox with our custom policy
-      playground2::Sandbox::setProcFd(proc_fd);
-      playground2::Sandbox::setSandboxPolicy(arg->policy(), &arg->aux_);
-      playground2::Sandbox::startSandbox();
+      playground2::Sandbox sandbox;
+      sandbox.set_proc_fd(proc_fd);
+      sandbox.SetSandboxPolicy(arg->policy(), &arg->aux_);
+      sandbox.Sandbox::StartSandbox();
 
       arg->test()(arg->aux_);
     } else {
-      // TODO(markus): (crbug.com/141545) Call the compiler and verify the
-      //   policy. That's the least we can do, if we don't have kernel support.
-      playground2::Sandbox::setSandboxPolicy(arg->policy(), NULL);
+      // Call the compiler and verify the policy. That's the least we can do,
+      // if we don't have kernel support.
+      playground2::Sandbox sandbox;
+      sandbox.SetSandboxPolicy(arg->policy(), &arg->aux_);
+      playground2::Sandbox::Program *program =
+          sandbox.AssembleFilter(true /* force_verification */);
+      delete program;
+      sandbox::UnitTests::IgnoreThisTest();
     }
   }
 

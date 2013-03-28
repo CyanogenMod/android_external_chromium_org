@@ -4,6 +4,7 @@
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#include <GLES2/gl2extchromium.h>
 
 #include "base/threading/platform_thread.h"
 #include "gpu/command_buffer/tests/gl_manager.h"
@@ -16,7 +17,7 @@ namespace gpu {
 class QueryTest : public testing::Test {
  protected:
   virtual void SetUp() {
-    gl_.Initialize(gfx::Size(2, 2));
+    gl_.Initialize(GLManager::Options());
   }
 
   virtual void TearDown() {

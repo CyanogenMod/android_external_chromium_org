@@ -8,7 +8,6 @@
 #include <string>
 
 #include "content/common/content_export.h"
-#include "content/public/common/console_message_level.h"
 
 namespace IPC {
 class Message;
@@ -28,15 +27,12 @@ class CONTENT_EXPORT DevToolsManager {
  public:
   static DevToolsManager* GetInstance();
 
+  virtual ~DevToolsManager() {}
+
   // Routes devtools message from |from| client to corresponding
   // DevToolsAgentHost.
   virtual bool DispatchOnInspectorBackend(DevToolsClientHost* from,
                                           const std::string& message) = 0;
-
-  // Invoked when contents is replaced by another contents. This is triggered by
-  // TabStripModel::ReplaceTabContentsAt.
-  virtual void ContentsReplaced(WebContents* old_contents,
-                                WebContents* new_contents) = 0;
 
   // Closes all open developer tools windows.
   virtual void CloseAllClientHosts() = 0;
@@ -59,28 +55,10 @@ class CONTENT_EXPORT DevToolsManager {
   virtual void UnregisterDevToolsClientHostFor(
       DevToolsAgentHost* agent_host) = 0;
 
-  // Detaches client from |from_agent| and returns a cookie that allows to
-  // reattach that client to another agent later. Returns -1 if there is no
-  // client attached to |from_agent|.
-  virtual int DetachClientHost(DevToolsAgentHost* from_agent) = 0;
-  // Reattaches client host detached with DetachClientHost method above
-  // to |to_agent|.
-  virtual void AttachClientHost(int client_host_cookie,
-                                DevToolsAgentHost* to_agent) = 0;
-
   // This method will remove all references from the manager to the
   // DevToolsClientHost and unregister all listeners related to the
   // DevToolsClientHost. Called by closing client.
   virtual void ClientHostClosing(DevToolsClientHost* client_host) = 0;
-
-  // Starts inspecting element at position (x, y) in the specified page.
-  virtual void InspectElement(DevToolsAgentHost* agent_host, int x, int y) = 0;
-
-  // Logs given |message| on behalf of the given |agent_host|.
-  virtual void AddMessageToConsole(DevToolsAgentHost* agent_host,
-                                   ConsoleMessageLevel level,
-                                   const std::string& message) = 0;
-
 };
 
 }  // namespace content

@@ -124,7 +124,7 @@ class Server : public DiscreteTimeSimulation::Actor {
         num_current_tick_queries_(0),
         num_overloaded_ticks_(0),
         max_experienced_queries_per_tick_(0),
-        mock_request_(GURL(), NULL, &context_) {
+        mock_request_(GURL(), NULL, &context_, NULL) {
   }
 
   void SetDowntime(const TimeTicks& start_time, const TimeDelta& duration) {
@@ -411,14 +411,14 @@ class Requester : public DiscreteTimeSimulation::Actor {
     DCHECK(server_);
   }
 
-  void AdvanceTime(const TimeTicks& absolute_time) OVERRIDE {
+  virtual void AdvanceTime(const TimeTicks& absolute_time) OVERRIDE {
     if (time_of_last_success_.is_null())
       time_of_last_success_ = absolute_time;
 
     throttler_entry_->SetFakeNow(absolute_time);
   }
 
-  void PerformAction() OVERRIDE {
+  virtual void PerformAction() OVERRIDE {
     TimeDelta effective_delay = time_between_requests_;
     TimeDelta current_jitter = TimeDelta::FromMilliseconds(
         request_jitter_.InMilliseconds() * base::RandDouble());

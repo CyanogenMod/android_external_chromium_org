@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/process.h"
 #include "base/shared_memory.h"
 #include "base/string16.h"
@@ -22,6 +22,7 @@
 #include "chrome/common/instant_types.h"
 #include "chrome/common/nacl_types.h"
 #include "chrome/common/search_provider.h"
+#include "chrome/common/search_types.h"
 #include "chrome/common/translate_errors.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_channel_handle.h"
@@ -30,6 +31,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/rect.h"
 
 // Singly-included section for enums and custom IPC traits.
@@ -116,9 +118,10 @@ IPC_ENUM_TRAITS(ChromeViewHostMsg_GetPluginInfo_Status::Value)
 IPC_ENUM_TRAITS(InstantCompleteBehavior)
 IPC_ENUM_TRAITS(InstantSizeUnits)
 IPC_ENUM_TRAITS(InstantSuggestionType)
-IPC_ENUM_TRAITS(InstantShownReason)
 IPC_ENUM_TRAITS(search_provider::OSDDType)
 IPC_ENUM_TRAITS(search_provider::InstallState)
+IPC_ENUM_TRAITS(ThemeBackgroundImageAlignment)
+IPC_ENUM_TRAITS(ThemeBackgroundImageTiling)
 IPC_ENUM_TRAITS(TranslateErrors::Type)
 IPC_ENUM_TRAITS(WebKit::WebConsoleMessage::Level)
 
@@ -156,21 +159,56 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(InstantAutocompleteResult)
   IPC_STRUCT_TRAITS_MEMBER(provider)
-  IPC_STRUCT_TRAITS_MEMBER(is_search)
-  IPC_STRUCT_TRAITS_MEMBER(contents)
+  IPC_STRUCT_TRAITS_MEMBER(type)
+  IPC_STRUCT_TRAITS_MEMBER(description)
   IPC_STRUCT_TRAITS_MEMBER(destination_url)
+  IPC_STRUCT_TRAITS_MEMBER(search_query)
+  IPC_STRUCT_TRAITS_MEMBER(transition)
   IPC_STRUCT_TRAITS_MEMBER(relevance)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(InstantMostVisitedItem)
+  IPC_STRUCT_TRAITS_MEMBER(url)
+  IPC_STRUCT_TRAITS_MEMBER(title)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(InstantSuggestion)
   IPC_STRUCT_TRAITS_MEMBER(text)
   IPC_STRUCT_TRAITS_MEMBER(behavior)
   IPC_STRUCT_TRAITS_MEMBER(type)
+  IPC_STRUCT_TRAITS_MEMBER(query)
+IPC_STRUCT_TRAITS_END()
+
+IPC_ENUM_TRAITS(chrome::search::Mode::Type)
+IPC_ENUM_TRAITS(chrome::search::Mode::Origin)
+IPC_STRUCT_TRAITS_BEGIN(chrome::search::Mode)
+  IPC_STRUCT_TRAITS_MEMBER(mode)
+  IPC_STRUCT_TRAITS_MEMBER(origin)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(nacl::NaClLaunchParams)
+  IPC_STRUCT_TRAITS_MEMBER(manifest_url)
+  IPC_STRUCT_TRAITS_MEMBER(render_view_id)
+  IPC_STRUCT_TRAITS_MEMBER(permission_bits)
+  IPC_STRUCT_TRAITS_MEMBER(uses_irt)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(RendererContentSettingRules)
   IPC_STRUCT_TRAITS_MEMBER(image_rules)
   IPC_STRUCT_TRAITS_MEMBER(script_rules)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(ThemeBackgroundInfo)
+  IPC_STRUCT_TRAITS_MEMBER(color_r)
+  IPC_STRUCT_TRAITS_MEMBER(color_g)
+  IPC_STRUCT_TRAITS_MEMBER(color_b)
+  IPC_STRUCT_TRAITS_MEMBER(color_a)
+  IPC_STRUCT_TRAITS_MEMBER(theme_id)
+  IPC_STRUCT_TRAITS_MEMBER(image_horizontal_alignment)
+  IPC_STRUCT_TRAITS_MEMBER(image_vertical_alignment)
+  IPC_STRUCT_TRAITS_MEMBER(image_tiling)
+  IPC_STRUCT_TRAITS_MEMBER(image_height)
+  IPC_STRUCT_TRAITS_MEMBER(has_attribution)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(WebKit::WebCache::ResourceTypeStat)
@@ -229,21 +267,6 @@ IPC_MESSAGE_ROUTED4(ChromeViewMsg_WebUIJavaScript,
 // render view responds with a ChromeViewHostMsg_Snapshot.
 IPC_MESSAGE_ROUTED0(ChromeViewMsg_CaptureSnapshot)
 
-// History system notification that the visited link database has been
-// replaced. It has one SharedMemoryHandle argument consisting of the table
-// handle. This handle is valid in the context of the renderer
-IPC_MESSAGE_CONTROL1(ChromeViewMsg_VisitedLink_NewTable,
-                     base::SharedMemoryHandle)
-
-// History system notification that a link has been added and the link
-// coloring state for the given hash must be re-calculated.
-IPC_MESSAGE_CONTROL1(ChromeViewMsg_VisitedLink_Add, std::vector<uint64>)
-
-// History system notification that one or more history items have been
-// deleted, which at this point means that all link coloring state must be
-// re-calculated.
-IPC_MESSAGE_CONTROL0(ChromeViewMsg_VisitedLink_Reset)
-
 // Set the content setting rules stored by the renderer.
 IPC_MESSAGE_CONTROL1(ChromeViewMsg_SetContentSettingRules,
                      RendererContentSettingRules /* rules */)
@@ -283,8 +306,14 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSubmit,
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxCancel,
                     string16 /* value */)
 
-IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxResize,
-                    gfx::Rect /* search_box_bounds */)
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxPopupResize,
+                    gfx::Rect /* bounds */)
+
+IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxMarginChange,
+                    int /* start */,
+                    int /* end */)
+
+IPC_MESSAGE_ROUTED0(ChromeViewMsg_SearchBoxBarsHidden)
 
 IPC_MESSAGE_ROUTED0(ChromeViewMsg_DetermineIfPageSupportsInstant)
 
@@ -295,12 +324,35 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxAutocompleteResults,
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxUpOrDownKeyPressed,
                     int /* count */)
 
-IPC_MESSAGE_ROUTED0(ChromeViewMsg_SearchBoxFocus)
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxCancelSelection,
+                    string16 /* value */)
 
-IPC_MESSAGE_ROUTED0(ChromeViewMsg_SearchBoxBlur)
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxModeChanged,
+                    chrome::search::Mode /* mode */)
 
-IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxActiveTabModeChanged,
-                    bool /* active_tab_is_ntp */)
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSetDisplayInstantResults,
+                    bool /* display_instant_results */)
+
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxThemeChanged,
+                    ThemeBackgroundInfo /* value */)
+
+IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxFontInformation,
+                    string16 /* omnibox_font */,
+                    size_t /* omnibox_font_size */)
+
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxKeyCaptureChanged,
+                    bool /* is_key_capture_enabled */)
+
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxMostVisitedItemsChanged,
+                    std::vector<InstantMostVisitedItemIDPair> /* items */)
+
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxDeleteMostVisitedItem,
+                    InstantRestrictedID /* most_visited_item_id */)
+
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxUndoMostVisitedDeletion,
+                    InstantRestrictedID /* most_visited_item_id */)
+
+IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_SearchBoxUndoAllMostVisitedDeletions)
 
 // Toggles visual muting of the render view area. This is on when a constrained
 // window is showing.
@@ -326,6 +378,11 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_RevertTranslation,
 // incognito mode.
 IPC_MESSAGE_CONTROL1(ChromeViewMsg_SetIsIncognitoProcess,
                      bool /* is_incognito_processs */)
+
+// Sent on process startup to indicate whether the extension activity
+// log is enabled.
+IPC_MESSAGE_CONTROL1(ChromeViewMsg_SetExtensionActivityLogEnabled,
+                     bool /* extension_activity_log_enabled */)
 
 // Sent in response to ViewHostMsg_DidBlockDisplayingInsecureContent.
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SetAllowDisplayingInsecureContent,
@@ -364,6 +421,13 @@ IPC_MESSAGE_ROUTED0(ChromeViewMsg_SetAsInterstitial)
 // Tells the renderer to suspend/resume the webkit timers.
 IPC_MESSAGE_CONTROL1(ChromeViewMsg_ToggleWebKitSharedTimer,
                      bool /* suspend */)
+
+// Provides the renderer with the results of the browser's investigation into
+// why a recent main frame load failed (currently, just DNS probe result).
+// NetErrorHelper will receive this mesage and replace or update the error
+// page with more specific troubleshooting suggestions.
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_NetErrorInfo,
+                    int /* DNS probe result */)
 
 //-----------------------------------------------------------------------------
 // Misc messages
@@ -482,7 +546,7 @@ IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_OpenAboutPlugins)
 
 // Tells the browser that there was an error loading a plug-in.
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_CouldNotLoadPlugin,
-                    FilePath /* plugin_path */)
+                    base::FilePath /* plugin_path */)
 
 // Tells the browser that we blocked a plug-in because NPAPI is not supported.
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_NPAPINotSupported,
@@ -502,14 +566,11 @@ IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_ForwardMessageToExternalHost,
 // a new instance of the Native Client process. The browser will launch
 // the process and return an IPC channel handle. This handle will only
 // be valid if the NaCl IPC proxy is enabled.
-IPC_SYNC_MESSAGE_CONTROL4_3(ChromeViewHostMsg_LaunchNaCl,
-                            GURL /* manifest_url */,
-                            int /* render_view_id */,
-                            uint32 /* permission_bits */,
-                            int /* socket count */,
-                            std::vector<nacl::FileDescriptor>
-                                /* imc channel handles */,
+IPC_SYNC_MESSAGE_CONTROL1_4(ChromeViewHostMsg_LaunchNaCl,
+                            nacl::NaClLaunchParams /* launch_params */,
+                            nacl::FileDescriptor /* imc channel handle */,
                             IPC::ChannelHandle /* ipc_channel_handle */,
+                            base::ProcessId /* plugin_pid */,
                             int /* plugin_child_id */)
 
 // A renderer sends this to the browser process when it wants to
@@ -522,6 +583,11 @@ IPC_SYNC_MESSAGE_CONTROL1_1(ChromeViewHostMsg_GetReadonlyPnaclFD,
 // create a temporary file.
 IPC_SYNC_MESSAGE_CONTROL0_1(ChromeViewHostMsg_NaClCreateTemporaryFile,
                             IPC::PlatformFileForTransit /* out file */)
+
+// A renderer sends this to the browser process to display infobar
+IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_NaClErrorStatus,
+                     int /* render_view_id */,
+                     int /* Error ID */)
 
 // Notification that the page has an OpenSearch description document
 // associated with it.
@@ -536,11 +602,6 @@ IPC_SYNC_MESSAGE_ROUTED2_1(ChromeViewHostMsg_GetSearchProviderInstallState,
                            GURL /* page url */,
                            GURL /* inquiry url */,
                            search_provider::InstallState /* install */)
-
-// Send back histograms as vector of pickled-histogram strings.
-IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_RendererHistograms,
-                     int, /* sequence number of Renderer Histograms. */
-                     std::vector<std::string>)
 
 // Sends back stats about the V8 heap.
 IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_V8HeapStats,
@@ -567,12 +628,6 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_BlockedUnauthorizedPlugin,
 // cache and current renderer framerate.
 IPC_MESSAGE_CONTROL1(ChromeViewHostMsg_ResourceTypeStats,
                      WebKit::WebCache::ResourceTypeStats)
-
-
-// Notifies the browser of the language (ISO 639_1 code language, such as fr,
-// en, zh...) of the current page.
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_PageLanguageDetermined,
-                    std::string /* the language */)
 
 // Notifies the browser that a page has been translated.
 IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_PageTranslated,
@@ -609,28 +664,53 @@ IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_DidBlockDisplayingInsecureContent)
 IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_DidBlockRunningInsecureContent)
 
 // Message sent from renderer to the browser when the element that is focused
-// and currently accepts keyboard input inside the webpage has been touched.
-IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_FocusedEditableNodeTouched)
+// has been touched. A bool is passed in this message which indicates if the
+// node is editable.
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_FocusedNodeTouched,
+                    bool /* editable */)
 
 // Suggest results -----------------------------------------------------------
 
-// Sent by the Instant preview to populate the omnibox with query suggestions.
+// Sent by Instant to populate the omnibox with query or URL suggestions.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SetSuggestions,
                     int /* page_id */,
                     std::vector<InstantSuggestion> /* suggestions */)
 
-// Sent by the Instant preview indicating whether the page supports the Instant
-// API or not (http://dev.chromium.org/searchbox).
+// Sent by Instant to indicate whether the page supports the Instant API
+// (http://dev.chromium.org/searchbox).
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_InstantSupportDetermined,
                     int /* page_id */,
                     bool /* result */)
 
-// Sent by the Instant preview asking to show itself with the given height.
-IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_ShowInstantPreview,
+IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_SearchBoxNavigate,
                     int /* page_id */,
-                    InstantShownReason /* reason */,
+                    GURL /* destination */,
+                    content::PageTransition /* transition */,
+                    WindowOpenDisposition /* disposition */)
+
+// Sent by the Instant overlay asking to show itself with the given height.
+IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_ShowInstantOverlay,
+                    int /* page_id */,
                     int /* height */,
                     InstantSizeUnits /* units */)
+
+// Sent by Instant to focus the omnibox.
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_FocusOmnibox,
+                    int /* page_id */)
+
+// Sent by Instant to show any attached bars.
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxShowBars,
+                    int /* page_id */)
+
+// Sent by Instant to hide any attached bars.
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxHideBars,
+                    int /* page_id */)
+
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_StartCapturingKeyStrokes,
+                    int /* page_id */)
+
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_StopCapturingKeyStrokes,
+                    int /* page_id */)
 
 // The currently displayed PDF has an unsupported feature.
 IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_PDFHasUnsupportedFeature)

@@ -17,9 +17,9 @@
 
 #include <algorithm>
 
-#include "base/eintr_wrapper.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
+#include "base/posix/eintr_wrapper.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/udp/datagram_client_socket.h"
 
@@ -377,10 +377,8 @@ void AddressSorterPosix::OnIPAddressChanged() {
 
   for (struct ifaddrs* ifa = addrs; ifa != NULL; ifa = ifa->ifa_next) {
     IPEndPoint src;
-    if (!src.FromSockAddr(ifa->ifa_addr, ifa->ifa_addr->sa_len)) {
-      LOG(WARNING) << "FromSockAddr failed";
+    if (!src.FromSockAddr(ifa->ifa_addr, ifa->ifa_addr->sa_len))
       continue;
-    }
     SourceAddressInfo& info = source_map_[src.address()];
     // Note: no known way to fill in |native| and |home|.
     info.native = info.home = info.deprecated = false;
@@ -390,7 +388,7 @@ void AddressSorterPosix::OnIPAddressChanged() {
       DCHECK_LE(ifa->ifa_addr->sa_len, sizeof(ifr.ifr_ifru.ifru_addr));
       memcpy(&ifr.ifr_ifru.ifru_addr, ifa->ifa_addr, ifa->ifa_addr->sa_len);
       int rv = ioctl(ioctl_socket, SIOCGIFAFLAG_IN6, &ifr);
-      if (rv > 0) {
+      if (rv >= 0) {
         info.deprecated = ifr.ifr_ifru.ifru_flags & IN6_IFF_DEPRECATED;
       } else {
         LOG(WARNING) << "SIOCGIFAFLAG_IN6 failed " << rv;

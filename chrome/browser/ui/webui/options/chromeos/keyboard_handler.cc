@@ -34,6 +34,7 @@ const char* kDataValuesNames[] = {
   "remapControlKeyToValue",
   "remapAltKeyToValue",
   "remapCapsLockKeyToValue",
+  "remapDiamondKeyToValue",
 };
 }  // namespace
 
@@ -63,6 +64,12 @@ void KeyboardHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
   localized_strings->SetString("remapCapsLockKeyToContent",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_SETTINGS_LANGUAGES_KEY_CAPS_LOCK_LABEL));
+  localized_strings->SetString("remapDiamondKeyToContent",
+      l10n_util::GetStringUTF16(
+          IDS_OPTIONS_SETTINGS_LANGUAGES_KEY_DIAMOND_KEY_LABEL));
+  localized_strings->SetString("changeLanguageAndInputSettings",
+      l10n_util::GetStringUTF16(
+          IDS_OPTIONS_SETTINGS_CHANGE_LANGUAGE_AND_INPUT_SETTINGS));
 
   for (size_t i = 0; i < arraysize(kDataValuesNames); ++i) {
     ListValue* list_value = new ListValue();
@@ -77,8 +84,8 @@ void KeyboardHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
         continue;
       }
       ListValue* option = new ListValue();
-      option->Append(Value::CreateIntegerValue(value));
-      option->Append(Value::CreateStringValue(l10n_util::GetStringUTF16(
+      option->Append(new base::FundamentalValue(value));
+      option->Append(new base::StringValue(l10n_util::GetStringUTF16(
           message_id)));
       list_value->Append(option);
     }
@@ -87,12 +94,20 @@ void KeyboardHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
 }
 
 void KeyboardHandler::InitializePage() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kHasChromeOSKeyboard))
-    return;
-  const base::FundamentalValue show_options(true);
+  bool chromeos_keyboard = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kHasChromeOSKeyboard);
+  const base::FundamentalValue show_caps_lock_options(!chromeos_keyboard);
+
+  bool has_diamond_key = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kHasChromeOSDiamondKey);
+  const base::FundamentalValue show_diamond_key_options(has_diamond_key);
+
   web_ui()->CallJavascriptFunction(
-      "options.KeyboardOverlay.showCapsLockOptions", show_options);
+      "options.KeyboardOverlay.showCapsLockOptions",
+      show_caps_lock_options);
+  web_ui()->CallJavascriptFunction(
+      "options.KeyboardOverlay.showDiamondKeyOptions",
+      show_diamond_key_options);
 }
 
 }  // namespace options

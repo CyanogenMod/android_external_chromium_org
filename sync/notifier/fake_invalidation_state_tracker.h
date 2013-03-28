@@ -23,16 +23,26 @@ class FakeInvalidationStateTracker
 
   // InvalidationStateTracker implementation.
   virtual InvalidationStateMap GetAllInvalidationStates() const OVERRIDE;
-  virtual void SetMaxVersion(const invalidation::ObjectId& id,
-                             int64 max_version) OVERRIDE;
+  virtual void SetMaxVersionAndPayload(const invalidation::ObjectId& id,
+                                       int64 max_version,
+                                       const std::string& payload) OVERRIDE;
   virtual void Forget(const ObjectIdSet& ids) OVERRIDE;
+  virtual void SetInvalidatorClientId(const std::string& client_id) OVERRIDE;
+  virtual std::string GetInvalidatorClientId() const OVERRIDE;
   virtual void SetBootstrapData(const std::string& data) OVERRIDE;
   virtual std::string GetBootstrapData() const OVERRIDE;
+  virtual void GenerateAckHandles(
+      const ObjectIdSet& ids,
+      const scoped_refptr<base::TaskRunner>& task_runner,
+      base::Callback<void(const AckHandleMap&)> callback) OVERRIDE;
+  virtual void Acknowledge(const invalidation::ObjectId& id,
+                           const AckHandle& ack_handle) OVERRIDE;
 
   static const int64 kMinVersion;
 
  private:
   InvalidationStateMap state_map_;
+  std::string invalidator_client_id_;
   std::string bootstrap_data_;
 };
 

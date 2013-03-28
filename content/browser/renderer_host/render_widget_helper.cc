@@ -6,14 +6,14 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/eintr_wrapper.h"
 #include "base/lazy_instance.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/common/view_messages.h"
 
@@ -127,17 +127,6 @@ RenderWidgetHelper* RenderWidgetHelper::FromProcessHostID(
   return (ci == g_widget_helpers.Get().end())? NULL : ci->second;
 }
 
-void RenderWidgetHelper::CancelResourceRequests(int render_widget_id) {
-  if (render_process_id_ == -1)
-    return;
-
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&RenderWidgetHelper::OnCancelResourceRequests,
-                 this,
-                 render_widget_id));
-}
-
 void RenderWidgetHelper::SimulateSwapOutACK(
     const ViewMsg_SwapOut_Params& params) {
   BrowserThread::PostTask(
@@ -249,12 +238,6 @@ void RenderWidgetHelper::OnDispatchBackingStoreMsg(
   RenderProcessHost* host = RenderProcessHost::FromID(render_process_id_);
   if (host)
     host->OnMessageReceived(proxy->message());
-}
-
-void RenderWidgetHelper::OnCancelResourceRequests(
-    int render_widget_id) {
-  resource_dispatcher_host_->CancelRequestsForRoute(
-      render_process_id_, render_widget_id);
 }
 
 void RenderWidgetHelper::OnSimulateSwapOutACK(

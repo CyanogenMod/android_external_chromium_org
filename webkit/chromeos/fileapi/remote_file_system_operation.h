@@ -5,9 +5,9 @@
 #ifndef WEBKIT_CHROMEOS_FILEAPI_REMOTE_FILE_SYSTEM_OPERATION_H_
 #define WEBKIT_CHROMEOS_FILEAPI_REMOTE_FILE_SYSTEM_OPERATION_H_
 
-#include "webkit/chromeos/fileapi/remote_file_system_proxy.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_writer_delegate.h"
+#include "webkit/fileapi/remote_file_system_proxy.h"
 
 namespace base {
 class Value;
@@ -88,15 +88,15 @@ class RemoteFileSystemOperation : public fileapi::FileSystemOperation {
   void DidDirectoryExists(const StatusCallback& callback,
                           base::PlatformFileError rv,
                           const base::PlatformFileInfo& file_info,
-                          const FilePath& unused);
+                          const base::FilePath& unused);
   void DidFileExists(const StatusCallback& callback,
                      base::PlatformFileError rv,
                      const base::PlatformFileInfo& file_info,
-                     const FilePath& unused);
+                     const base::FilePath& unused);
   void DidGetMetadata(const GetMetadataCallback& callback,
                       base::PlatformFileError rv,
                       const base::PlatformFileInfo& file_info,
-                      const FilePath& platform_path);
+                      const base::FilePath& platform_path);
   void DidReadDirectory(
       const ReadDirectoryCallback& callback,
       base::PlatformFileError rv,
@@ -111,7 +111,7 @@ class RemoteFileSystemOperation : public fileapi::FileSystemOperation {
       const SnapshotFileCallback& callback,
       base::PlatformFileError result,
       const base::PlatformFileInfo& file_info,
-      const FilePath& platform_path,
+      const base::FilePath& platform_path,
       const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
   void DidOpenFile(
       const OpenFileCallback& callback,

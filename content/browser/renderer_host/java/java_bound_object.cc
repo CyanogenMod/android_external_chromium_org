@@ -9,7 +9,9 @@
 #include "base/memory/singleton.h"
 #include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
+#include "content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.h"
 #include "content/browser/renderer_host/java/java_type.h"
+#include "content/public/browser/browser_thread.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 
 using base::StringPrintf;
@@ -36,10 +38,6 @@ namespace {
 const char kJavaLangClass[] = "java/lang/Class";
 const char kJavaLangObject[] = "java/lang/Object";
 const char kJavaLangReflectMethod[] = "java/lang/reflect/Method";
-// TODO(dtrainor): Parameterize this so that WebView and Chrome for Android can
-// use different annotations.
-const char kJavaScriptInterfaceAnnotation[] =
-    "org/chromium/content/browser/JavascriptInterface";
 const char kGetClass[] = "getClass";
 const char kGetMethods[] = "getMethods";
 const char kIsAnnotationPresent[] = "isAnnotationPresent";
@@ -47,8 +45,6 @@ const char kReturningJavaLangClass[] = "()Ljava/lang/Class;";
 const char kReturningJavaLangReflectMethodArray[] =
     "()[Ljava/lang/reflect/Method;";
 const char kTakesJavaLangClassReturningBoolean[] = "(Ljava/lang/Class;)Z";
-
-jclass g_safe_annotation_clazz = NULL;
 
 // Our special NPObject type.  We extend an NPObject with a pointer to a
 // JavaBoundObject.  We also add static methods for each of the NPObject
@@ -129,9 +125,14 @@ bool JavaNPObject::GetProperty(NPObject* np_object,
 // method returns true and the Java method's return value is provided as an
 // NPVariant. Note that this method does not do any type coercion. The Java
 // return value is simply converted to the corresponding NPAPI type.
-bool CallJNIMethod(jobject object, const JavaType& return_type, jmethodID id,
-                   jvalue* parameters, NPVariant* result,
-                   bool require_annotation) {
+bool CallJNIMethod(
+    jobject object,
+    const JavaType& return_type,
+    jmethodID id,
+    jvalue* parameters,
+    NPVariant* result,
+    const JavaRef<jclass>& safe_annotation_clazz,
+    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager) {
   JNIEnv* env = AttachCurrentThread();
   switch (return_type.type) {
     case JavaType::TypeBoolean:
@@ -191,10 +192,10 @@ bool CallJNIMethod(jobject object, const JavaType& return_type, jmethodID id,
       }
       std::string str =
           base::android::ConvertJavaStringToUTF8(scoped_java_string);
-      // Take a copy and pass ownership to the variant. We must allocate using
-      // NPN_MemAlloc, to match NPN_ReleaseVariant, which uses NPN_MemFree.
       size_t length = str.length();
-      char* buffer = static_cast<char*>(NPN_MemAlloc(length));
+      // This pointer is freed in _NPN_ReleaseVariantValue in
+      // third_party/WebKit/Source/WebCore/bindings/v8/npruntime.cpp.
+      char* buffer = static_cast<char*>(malloc(length));
       str.copy(buffer, length, 0);
       STRINGN_TO_NPVARIANT(buffer, length, *result);
       break;
@@ -213,7 +214,8 @@ bool CallJNIMethod(jobject object, const JavaType& return_type, jmethodID id,
         break;
       }
       OBJECT_TO_NPVARIANT(JavaBoundObject::Create(scoped_java_object,
-                                                  require_annotation),
+                                                  safe_annotation_clazz,
+                                                  manager),
                           *result);
       break;
     }
@@ -269,9 +271,9 @@ jvalue CoerceJavaScriptNumberToJavaValue(const NPVariant& variant,
       result.l = coerce_to_string ?
           ConvertUTF8ToJavaString(
               AttachCurrentThread(),
-              is_double ? StringPrintf("%.6lg", NPVARIANT_TO_DOUBLE(variant)) :
-                          base::Int64ToString(NPVARIANT_TO_INT32(variant))).
-                              Release() :
+              is_double ?
+                  base::StringPrintf("%.6lg", NPVARIANT_TO_DOUBLE(variant)) :
+                  base::Int64ToString(NPVARIANT_TO_INT32(variant))).Release() :
           NULL;
       break;
     case JavaType::TypeBoolean:
@@ -593,7 +595,7 @@ jvalue CoerceJavaScriptObjectToJavaValue(const NPVariant& variant,
         // objects. Spec requires passing only Java objects which are
         // assignment-compatibile.
         result.l = AttachCurrentThread()->NewLocalRef(
-            JavaBoundObject::GetJavaObject(object));
+            JavaBoundObject::GetJavaObject(object).obj());
       } else {
         // LIVECONNECT_COMPLIANCE: Existing behavior is to pass null. Spec
         // requires converting if the target type is
@@ -729,8 +731,10 @@ jvalue CoerceJavaScriptValueToJavaValue(const NPVariant& variant,
 
 }  // namespace
 
-NPObject* JavaBoundObject::Create(const JavaRef<jobject>& object,
-                                  bool require_annotation) {
+NPObject* JavaBoundObject::Create(
+    const JavaRef<jobject>& object,
+    const JavaRef<jclass>& safe_annotation_clazz,
+    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager) {
   // The first argument (a plugin's instance handle) is passed through to the
   // allocate function directly, and we don't use it, so it's ok to be 0.
   // The object is created with a ref count of one.
@@ -738,26 +742,42 @@ NPObject* JavaBoundObject::Create(const JavaRef<jobject>& object,
       &JavaNPObject::kNPClass));
   // The NPObject takes ownership of the JavaBoundObject.
   reinterpret_cast<JavaNPObject*>(np_object)->bound_object =
-      new JavaBoundObject(object, require_annotation);
+      new JavaBoundObject(object, safe_annotation_clazz, manager);
   return np_object;
 }
 
-JavaBoundObject::JavaBoundObject(const JavaRef<jobject>& object,
-                                 bool require_annotation)
-    : java_object_(object),
+JavaBoundObject::JavaBoundObject(
+    const JavaRef<jobject>& object,
+    const JavaRef<jclass>& safe_annotation_clazz,
+    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager)
+    : java_object_(AttachCurrentThread(), object.obj()),
+      manager_(manager),
       are_methods_set_up_(false),
-      require_annotation_(require_annotation) {
-  // We don't do anything with our Java object when first created. We do it all
-  // lazily when a method is first invoked.
+      safe_annotation_clazz_(safe_annotation_clazz) {
+  BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&JavaBridgeDispatcherHostManager::JavaBoundObjectCreated,
+                   manager_,
+                   base::android::ScopedJavaGlobalRef<jobject>(object)));
+  // Other than informing the JavaBridgeDispatcherHostManager that a java bound
+  // object has been created (above), we don't do anything else with our Java
+  // object when first created. We do it all lazily when a method is first
+  // invoked.
 }
 
 JavaBoundObject::~JavaBoundObject() {
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&JavaBridgeDispatcherHostManager::JavaBoundObjectDestroyed,
+                 manager_,
+                 base::android::ScopedJavaGlobalRef<jobject>(
+                     java_object_.get(AttachCurrentThread()))));
 }
 
-jobject JavaBoundObject::GetJavaObject(NPObject* object) {
+ScopedJavaLocalRef<jobject> JavaBoundObject::GetJavaObject(NPObject* object) {
   DCHECK_EQ(&JavaNPObject::kNPClass, object->_class);
   JavaBoundObject* jbo = reinterpret_cast<JavaNPObject*>(object)->bound_object;
-  return jbo->java_object_.obj();
+  return jbo->java_object_.get(AttachCurrentThread());
 }
 
 bool JavaBoundObject::HasMethod(const std::string& name) const {
@@ -797,10 +817,16 @@ bool JavaBoundObject::Invoke(const std::string& name, const NPVariant* args,
                                                      true);
   }
 
-  // Call
-  bool ok = CallJNIMethod(java_object_.obj(), method->return_type(),
-                          method->id(), &parameters[0], result,
-                          require_annotation_);
+  ScopedJavaLocalRef<jobject> obj = java_object_.get(AttachCurrentThread());
+
+  bool ok = false;
+  if (!obj.is_null()) {
+    // Call
+    ok = CallJNIMethod(obj.obj(), method->return_type(),
+                       method->id(), &parameters[0], result,
+                       safe_annotation_clazz_,
+                       manager_);
+  }
 
   // Now that we're done with the jvalue, release any local references created
   // by CoerceJavaScriptValueToJavaValue().
@@ -812,22 +838,20 @@ bool JavaBoundObject::Invoke(const std::string& name, const NPVariant* args,
   return ok;
 }
 
-bool JavaBoundObject::RegisterJavaBoundObject(JNIEnv* env) {
-  g_safe_annotation_clazz = reinterpret_cast<jclass>(env->NewGlobalRef(
-      base::android::GetUnscopedClass(env, kJavaScriptInterfaceAnnotation)));
-  DCHECK(g_safe_annotation_clazz);
-
-  return true;
-}
-
 void JavaBoundObject::EnsureMethodsAreSetUp() const {
   if (are_methods_set_up_)
     return;
   are_methods_set_up_ = true;
 
   JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_object_.get(env);
+
+  if (obj.is_null()) {
+    return;
+  }
+
   ScopedJavaLocalRef<jclass> clazz(env, static_cast<jclass>(
-      env->CallObjectMethod(java_object_.obj(),  GetMethodIDFromClassName(
+      env->CallObjectMethod(obj.obj(),  GetMethodIDFromClassName(
           env,
           kJavaLangObject,
           kGetClass,
@@ -849,14 +873,14 @@ void JavaBoundObject::EnsureMethodsAreSetUp() const {
         env,
         env->GetObjectArrayElement(methods.obj(), i));
 
-    if (require_annotation_) {
+    if (!safe_annotation_clazz_.is_null()) {
       jboolean safe = env->CallBooleanMethod(java_method.obj(),
           GetMethodIDFromClassName(
               env,
               kJavaLangReflectMethod,
               kIsAnnotationPresent,
               kTakesJavaLangClassReturningBoolean),
-          g_safe_annotation_clazz);
+          safe_annotation_clazz_.obj());
 
       if (!safe)
         continue;

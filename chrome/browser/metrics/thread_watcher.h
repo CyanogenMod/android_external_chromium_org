@@ -43,7 +43,6 @@
 #define CHROME_BROWSER_METRICS_THREAD_WATCHER_H_
 
 #include <map>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -251,20 +250,20 @@ class ThreadWatcher {
   int ping_count_;
 
   // Histogram that keeps track of response times for the watched thread.
-  base::Histogram* response_time_histogram_;
+  base::HistogramBase* response_time_histogram_;
 
   // Histogram that keeps track of unresponsive time since the last pong message
   // when we got no response (GotNoResponse()) from the watched thread.
-  base::Histogram* unresponsive_time_histogram_;
+  base::HistogramBase* unresponsive_time_histogram_;
 
   // Histogram that keeps track of how many threads are responding when we got
   // no response (GotNoResponse()) from the watched thread.
-  base::Histogram* responsive_count_histogram_;
+  base::HistogramBase* responsive_count_histogram_;
 
   // Histogram that keeps track of how many threads are not responding when we
   // got no response (GotNoResponse()) from the watched thread. Count includes
   // the thread that got no response.
-  base::Histogram* unresponsive_count_histogram_;
+  base::HistogramBase* unresponsive_count_histogram_;
 
   // This counter tracks the unresponsiveness of watched thread. If this value
   // is zero then watched thread has responded with a pong message. This is
@@ -309,6 +308,76 @@ class ThreadWatcherList {
   // A map from BrowserThread to the actual instances.
   typedef std::map<content::BrowserThread::ID, ThreadWatcher*> RegistrationList;
 
+  // A map from thread names (UI, IO, etc) to |CrashDataThresholds|.
+  // |live_threads_threshold| specifies the maximum number of browser threads
+  // that have to be responsive when we want to crash the browser because of
+  // hung watched thread. This threshold allows us to either look for a system
+  // deadlock, or look for a solo hung thread. A small live_threads_threshold
+  // looks for a broad deadlock (few browser threads left running), and a large
+  // threshold looks for a single hung thread (this in only appropriate for a
+  // thread that *should* never have much jank, such as the IO).
+  //
+  // |unresponsive_threshold| specifies the number of unanswered ping messages
+  // after which watched (UI, IO, etc) thread is considered as not responsive.
+  // We translate "time" (given in seconds) into a number of pings. As a result,
+  // we only declare a thread unresponsive when a lot of "time" has passed (many
+  // pings), and yet our pinging thread has continued to process messages (so we
+  // know the entire PC is not hung). Set this number higher to crash less
+  // often, and lower to crash more often.
+  //
+  // The map lists all threads (by name) that can induce a crash by hanging. It
+  // is populated from the command line, or given a default list.  See
+  // InitializeAndStartWatching() for the separate list of all threads that are
+  // watched, as they provide the system context of how hung *other* threads
+  // are.
+  //
+  // ThreadWatcher monitors six browser threads (i.e., UI, IO, DB, FILE,
+  // FILE_USER_BLOCKING and CACHE). Out of the 6 threads, any subset may be
+  // watched, to potentially cause a crash. The following example's command line
+  // causes exactly 3 threads to be watched.
+  //
+  // The example command line argument consists of "UI:3:18,IO:3:18,FILE:5:90".
+  // In that string, the first parameter specifies the thread_id: UI, IO or
+  // FILE. The second parameter specifies |live_threads_threshold|. For UI and
+  // IO threads, we would crash if the number of threads responding is less than
+  // or equal to 3. The third parameter specifies the unresponsive threshold
+  // seconds. This number is used to calculate |unresponsive_threshold|. In this
+  // example for UI and IO threads, we would crash if those threads don't
+  // respond for 18 seconds (or 9 unanswered ping messages) and for FILE thread,
+  // crash_seconds is set to 90 seconds (or 45 unanswered ping messages).
+  //
+  // The following examples explain how the data in |CrashDataThresholds|
+  // controls the crashes.
+  //
+  // Example 1: If the |live_threads_threshold| value for "IO" was 3 and
+  // unresponsive threshold seconds is 18 (or |unresponsive_threshold| is 9),
+  // then we would crash if the IO thread was hung (9 unanswered ping messages)
+  // and if at least one thread is responding and total responding threads is
+  // less than or equal to 3 (this thread, plus at least one other thread is
+  // unresponsive). We would not crash if none of the threads are responding, as
+  // we'd assume such large hang counts mean that the system is generally
+  // unresponsive.
+  // Example 2: If the |live_threads_threshold| value for "UI" was any number
+  // higher than 6 and unresponsive threshold seconds is 18 (or
+  // |unresponsive_threshold| is 9), then we would always crash if the UI thread
+  // was hung (9 unanswered ping messages), no matter what the other threads are
+  // doing.
+  // Example 3: If the |live_threads_threshold| value of "FILE" was 5 and
+  // unresponsive threshold seconds is 90 (or |unresponsive_threshold| is 45),
+  // then we would only crash if the FILE thread was the ONLY hung thread
+  // (because we watch 6 threads). If there was another unresponsive thread, we
+  // would not consider this a problem worth crashing for. FILE thread would be
+  // considered as hung if it didn't respond for 45 ping messages.
+  struct CrashDataThresholds {
+    CrashDataThresholds(uint32 live_threads_threshold,
+                        uint32 unresponsive_threshold);
+    CrashDataThresholds();
+
+    uint32 live_threads_threshold;
+    uint32 unresponsive_threshold;
+  };
+  typedef std::map<std::string, CrashDataThresholds> CrashOnHangThreadMap;
+
   // This method posts a task on WatchDogThread to start watching all browser
   // threads.
   // This method is accessible on UI thread.
@@ -338,7 +407,9 @@ class ThreadWatcherList {
   // Allow tests to access our innards for testing purposes.
   friend class CustomThreadWatcher;
   friend class ThreadWatcherTest;
-  FRIEND_TEST_ALL_PREFIXES(ThreadWatcherTest, CommandLineArgs);
+  FRIEND_TEST_ALL_PREFIXES(ThreadWatcherTest, ThreadNamesOnlyArgs);
+  FRIEND_TEST_ALL_PREFIXES(ThreadWatcherTest, ThreadNamesAndLiveThresholdArgs);
+  FRIEND_TEST_ALL_PREFIXES(ThreadWatcherTest, CrashOnHangThreadsAllArgs);
 
   // This singleton holds the global list of registered ThreadWatchers.
   ThreadWatcherList();
@@ -346,24 +417,32 @@ class ThreadWatcherList {
   // Destructor deletes all registered ThreadWatcher instances.
   virtual ~ThreadWatcherList();
 
-  // Parses the command line to get |unresponsive_threshold| from
-  // switches::kCrashOnHangSeconds, |crash_on_hang_thread_names| from
-  // switches::kCrashOnHangThreads and |live_threads_threshold| from
-  // switches::kCrashOnLive. |crash_on_hang_thread_names| is the set of watched
-  // thread's names that are to be crashed if they are not responding.
+  // Parses the command line to get |crash_on_hang_threads| map from
+  // switches::kCrashOnHangThreads. |crash_on_hang_threads| is a map of
+  // |crash_on_hang| thread's names to |CrashDataThresholds|.
   static void ParseCommandLine(
       const CommandLine& command_line,
       uint32* unresponsive_threshold,
-      std::set<std::string>* crash_on_hang_thread_names,
-      uint32* live_threads_threshold);
+      CrashOnHangThreadMap* crash_on_hang_threads);
+
+  // Parses the argument |crash_on_hang_thread_names| and creates
+  // |crash_on_hang_threads| map of |crash_on_hang| thread's names to
+  // |CrashDataThresholds|. If |crash_on_hang_thread_names| doesn't specify
+  // |live_threads_threshold|, then it uses |default_live_threads_threshold| as
+  // the value. If |crash_on_hang_thread_names| doesn't specify |crash_seconds|,
+  // then it uses |default_crash_seconds| as the value.
+  static void ParseCommandLineCrashOnHangThreads(
+      const std::string& crash_on_hang_thread_names,
+      uint32 default_live_threads_threshold,
+      uint32 default_crash_seconds,
+      CrashOnHangThreadMap* crash_on_hang_threads);
 
   // This constructs the |ThreadWatcherList| singleton and starts watching
   // browser threads by calling StartWatching() on each browser thread that is
   // watched. It disarms StartupTimeBomb.
   static void InitializeAndStartWatching(
       uint32 unresponsive_threshold,
-      const std::set<std::string>& crash_on_hang_thread_names,
-      uint32 live_threads_threshold);
+      const CrashOnHangThreadMap& crash_on_hang_threads);
 
   // This method calls ThreadWatcher::StartWatching() to perform health check on
   // the given |thread_id|.
@@ -373,8 +452,7 @@ class ThreadWatcherList {
       const base::TimeDelta& sleep_time,
       const base::TimeDelta& unresponsive_time,
       uint32 unresponsive_threshold,
-      const std::set<std::string>& crash_on_hang_thread_names,
-      uint32 live_threads_threshold);
+      const CrashOnHangThreadMap& crash_on_hang_threads);
 
   // Delete all thread watcher objects and remove them from global map. It also
   // deletes |g_thread_watcher_list_|.

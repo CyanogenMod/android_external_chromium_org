@@ -17,14 +17,14 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_win.h"
 #include "ui/base/models/menu_model.h"
-#include "ui/base/native_theme/native_theme.h"
-#include "ui/base/native_theme/native_theme_win.h"
 #include "ui/base/win/hwnd_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/rect.h"
+#include "ui/native_theme/native_theme.h"
+#include "ui/native_theme/native_theme_win.h"
 #include "ui/views/controls/menu/menu_2.h"
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_listener.h"
@@ -469,12 +469,12 @@ void NativeMenuWin::CancelMenu() {
   EndMenu();
 }
 
-void NativeMenuWin::Rebuild() {
+void NativeMenuWin::Rebuild(InsertionDelegate* delegate) {
   ResetNativeMenu();
   items_.clear();
 
   owner_draw_ = model_->HasIcons() || owner_draw_;
-  first_item_index_ = model_->GetFirstItemIndex(GetNativeMenu());
+  first_item_index_ = delegate ? delegate->GetInsertionIndex(menu_) : 0;
   for (int menu_index = first_item_index_;
         menu_index < first_item_index_ + model_->GetItemCount(); ++menu_index) {
     int model_index = menu_index - first_item_index_;
@@ -504,7 +504,7 @@ void NativeMenuWin::UpdateStates() {
   }
 }
 
-gfx::NativeMenu NativeMenuWin::GetNativeMenu() const {
+HMENU NativeMenuWin::GetNativeMenu() const {
   return menu_;
 }
 

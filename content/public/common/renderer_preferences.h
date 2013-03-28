@@ -13,6 +13,7 @@
 #define CONTENT_PUBLIC_COMMON_RENDERER_PREFERENCES_H_
 
 #include <string>
+#include <vector>
 
 #include "content/common/content_export.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -38,6 +39,7 @@ enum RendererPreferencesSubpixelRenderingEnum {
 
 struct CONTENT_EXPORT RendererPreferences {
   RendererPreferences();
+  ~RendererPreferences();
 
   // Whether the renderer's current browser context accept drops from the OS
   // that result in navigations away from the current page.
@@ -92,6 +94,9 @@ struct CONTENT_EXPORT RendererPreferences {
   // from GtkSettings.
   double caret_blink_interval;
 
+  // Whether or not to set custom colors at all.
+  bool use_custom_colors;
+
   // Set to false to not send referrers.
   bool enable_referrers;
 
@@ -107,6 +112,20 @@ struct CONTENT_EXPORT RendererPreferences {
 
   // Specifies whether renderer input event throttle is enabled.
   bool throttle_input_events;
+
+  // Specifies whether the renderer reports frame name changes to the browser
+  // process.
+  // TODO(fsamuel): This is a short-term workaround to avoid regressing
+  // Sunspider. We need to find an efficient way to report changes to frame
+  // names to the browser process. See http://crbug.com/169110 for more
+  // information.
+  bool report_frame_name_changes;
+
+  // Controls deacceleration of touchpad-initiated flings.
+  std::vector<float> touchpad_fling_profile;
+
+  // Controls deacceleration of touchscreen-initiated flings.
+  std::vector<float> touchscreen_fling_profile;
 };
 
 }  // namespace content

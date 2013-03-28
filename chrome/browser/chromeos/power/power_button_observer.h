@@ -30,13 +30,11 @@ class PowerButtonObserver : public content::NotificationObserver,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // PowerManagerClient::Observer implementation.
-  virtual void PowerButtonStateChanged(
-      bool down, const base::TimeTicks& timestamp) OVERRIDE;
-  virtual void LockButtonStateChanged(
+  // PowerManagerObserver implementation:
+  virtual void PowerButtonEventReceived(
       bool down, const base::TimeTicks& timestamp) OVERRIDE;
 
-  // SessionManagerClient::Observer implementation.
+  // SessionManagerClient::Observer implementation:
   virtual void LockScreen() OVERRIDE;
 
   content::NotificationRegistrar registrar_;

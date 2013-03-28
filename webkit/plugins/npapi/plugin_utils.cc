@@ -6,8 +6,8 @@
 
 #include <algorithm>
 
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/version.h"
 
 namespace webkit {
@@ -42,6 +42,14 @@ void CreateVersionFromString(const string16& version_string,
   }
 
   *parsed_version = Version(no_leading_zeros_version);
+}
+
+bool NPAPIPluginsSupported() {
+#if defined(OS_WIN) || defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(USE_AURA))
+  return true;
+#else
+  return false;
+#endif
 }
 
 }  // namespace npapi

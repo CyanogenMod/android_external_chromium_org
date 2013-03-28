@@ -20,6 +20,10 @@
 #include "base/win/scoped_com_initializer.h"
 #endif
 
+#if defined(OS_ANDROID)
+#include "base/android/jni_android.h"
+#endif
+
 namespace base {
 class Thread;
 }
@@ -42,7 +46,6 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
 
   virtual string16 GetAudioInputDeviceModel() OVERRIDE;
 
-  virtual bool CanShowAudioInputSettings() OVERRIDE;
   virtual void ShowAudioInputSettings() OVERRIDE;
 
   virtual void GetAudioInputDeviceNames(
@@ -84,20 +87,19 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   virtual AudioInputStream* MakeLowLatencyInputStream(
       const AudioParameters& params, const std::string& device_id) = 0;
 
-  // Returns the preferred hardware audio output parameters for opening output
-  // streams in the |AUDIO_PCM_LOW_LATENCY| format.
-  // TODO(dalecurtis): Retrieve the |channel_layout| value from hardware instead
-  // of accepting the value.
-  // TODO(dalecurtis): Each AudioManager should implement their own version, see
-  // http://crbug.com/137326
-  virtual AudioParameters GetPreferredLowLatencyOutputStreamParameters(
-      const AudioParameters& input_params);
-
   // Listeners will be notified on the AudioManager::GetMessageLoop() loop.
   virtual void AddOutputDeviceChangeListener(
       AudioDeviceListener* listener) OVERRIDE;
   virtual void RemoveOutputDeviceChangeListener(
       AudioDeviceListener* listener) OVERRIDE;
+
+  virtual AudioParameters GetDefaultOutputStreamParameters() OVERRIDE;
+  virtual AudioParameters GetInputStreamParameters(
+      const std::string& device_id) OVERRIDE;
+
+#if defined(OS_ANDROID)
+  static bool RegisterAudioManager(JNIEnv* env);
+#endif
 
  protected:
   AudioManagerBase();
@@ -122,6 +124,14 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // thread.
   void NotifyAllOutputDeviceChangeListeners();
 
+  // Returns the preferred hardware audio output parameters for opening output
+  // streams. If the users inject a valid |input_params|, each AudioManager
+  // will decide if they should return the values from |input_params| or the
+  // default hardware values. If the |input_params| is invalid, it will return
+  // the default hardware audio parameters.
+  virtual AudioParameters GetPreferredOutputStreamParameters(
+      const AudioParameters& input_params) = 0;
+
   // Map of cached AudioOutputDispatcher instances.  Must only be touched
   // from the audio thread (no locking).
   AudioOutputDispatchersMap output_dispatchers_;
@@ -129,6 +139,12 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
  private:
   // Called by Shutdown().
   void ShutdownOnAudioThread();
+
+#if defined(OS_ANDROID)
+  void SetAudioMode(int mode);
+  void RegisterHeadsetReceiver();
+  void UnregisterHeadsetReceiver();
+#endif
 
   // Counts the number of active input streams to find out if something else
   // is currently recording in Chrome.
@@ -158,6 +174,11 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // tasks which run on the audio thread even after Shutdown() has been started
   // and GetMessageLoop() starts returning NULL.
   scoped_refptr<base::MessageLoopProxy> message_loop_;
+
+#if defined(OS_ANDROID)
+  // Java AudioManager instance.
+  base::android::ScopedJavaGlobalRef<jobject> j_audio_manager_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(AudioManagerBase);
 };

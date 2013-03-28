@@ -9,10 +9,8 @@
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/sync/tab_contents_synced_tab_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 
 // static SyncedWindowDelegate implementations
@@ -21,10 +19,8 @@
 const std::set<browser_sync::SyncedWindowDelegate*>
     browser_sync::SyncedWindowDelegate::GetSyncedWindowDelegates() {
   std::set<browser_sync::SyncedWindowDelegate*> synced_window_delegates;
-  for (BrowserList::const_iterator i = BrowserList::begin();
-       i != BrowserList::end(); ++i) {
-    synced_window_delegates.insert((*i)->synced_window_delegate());
-  }
+  for (chrome::BrowserIterator it; !it.done(); it.Next())
+    synced_window_delegates.insert(it->synced_window_delegate());
   return synced_window_delegates;
 }
 
@@ -32,7 +28,7 @@ const std::set<browser_sync::SyncedWindowDelegate*>
 const browser_sync::SyncedWindowDelegate*
     browser_sync::SyncedWindowDelegate::FindSyncedWindowDelegateWithId(
         SessionID::id_type id) {
-  Browser* browser = browser::FindBrowserWithID(id);
+  Browser* browser = chrome::FindBrowserWithID(id);
   // In case we don't find the browser (e.g. for Developer Tools).
   return browser ? browser->synced_window_delegate() : NULL;
 }
@@ -46,7 +42,7 @@ BrowserSyncedWindowDelegate::~BrowserSyncedWindowDelegate() {}
 
 bool BrowserSyncedWindowDelegate::IsTabPinned(
     const browser_sync::SyncedTabDelegate* tab) const {
-  for (int i = 0; i < browser_->tab_count(); i++) {
+  for (int i = 0; i < browser_->tab_strip_model()->count(); i++) {
     browser_sync::SyncedTabDelegate* current = GetTabAt(i);
     if (tab == current)
       return browser_->tab_strip_model()->IsTabPinned(i);
@@ -58,7 +54,7 @@ bool BrowserSyncedWindowDelegate::IsTabPinned(
 browser_sync::SyncedTabDelegate* BrowserSyncedWindowDelegate::GetTabAt(
     int index) const {
   return TabContentsSyncedTabDelegate::FromWebContents(
-      chrome::GetWebContentsAt(browser_, index));
+      browser_->tab_strip_model()->GetWebContentsAt(index));
 }
 
 SessionID::id_type BrowserSyncedWindowDelegate::GetTabIdAt(int index) const {
@@ -74,11 +70,11 @@ SessionID::id_type BrowserSyncedWindowDelegate::GetSessionId() const {
 }
 
 int BrowserSyncedWindowDelegate::GetTabCount() const {
-  return browser_->tab_count();
+  return browser_->tab_strip_model()->count();
 }
 
 int BrowserSyncedWindowDelegate::GetActiveIndex() const {
-  return browser_->active_index();
+  return browser_->tab_strip_model()->active_index();
 }
 
 bool BrowserSyncedWindowDelegate::IsApp() const {

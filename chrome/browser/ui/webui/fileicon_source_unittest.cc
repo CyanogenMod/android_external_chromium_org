@@ -20,12 +20,12 @@ class TestFileIconSource : public FileIconSource {
  public:
   explicit TestFileIconSource() {}
 
-  MOCK_METHOD4(FetchFileIcon, void(const FilePath& path,
-                                   ui::ScaleFactor scale_factor,
-                                   IconLoader::IconSize icon_size,
-                                   int request_id));
+  MOCK_METHOD4(FetchFileIcon,
+               void(const base::FilePath& path,
+                    ui::ScaleFactor scale_factor,
+                    IconLoader::IconSize icon_size,
+                    const content::URLDataSource::GotDataCallback& callback));
 
- private:
   virtual ~TestFileIconSource() {}
 };
 
@@ -48,7 +48,7 @@ class FileIconSourceTest : public testing::Test {
 
 const struct FetchFileIconExpectation {
   const char* request_path;
-  const FilePath::CharType* unescaped_path;
+  const base::FilePath::CharType* unescaped_path;
   ui::ScaleFactor scale_factor;
   IconLoader::IconSize size;
 } kBasicExpectations[] = {
@@ -110,15 +110,29 @@ const struct FetchFileIconExpectation {
 #endif
 };
 
+// Test that the callback is NULL.
+MATCHER(CallbackIsNull, "") {
+  return arg.is_null();
+}
+
 }  // namespace
 
 TEST_F(FileIconSourceTest, FileIconSource_Parse) {
+  std::vector<ui::ScaleFactor> supported_scale_factors;
+  supported_scale_factors.push_back(ui::SCALE_FACTOR_100P);
+  supported_scale_factors.push_back(ui::SCALE_FACTOR_200P);
+  ui::test::ScopedSetSupportedScaleFactors scoped_supported(
+      supported_scale_factors);
+
   for (unsigned i = 0; i < arraysize(kBasicExpectations); i++) {
-    scoped_refptr<TestFileIconSource> source(CreateFileIconSource());
+    scoped_ptr<TestFileIconSource> source(CreateFileIconSource());
+    content::URLDataSource::GotDataCallback callback;
     EXPECT_CALL(*source.get(),
-                FetchFileIcon(FilePath(kBasicExpectations[i].unescaped_path),
-                              kBasicExpectations[i].scale_factor,
-                              kBasicExpectations[i].size, i));
-    source->StartDataRequest(kBasicExpectations[i].request_path, false, i);
+                FetchFileIcon(
+                    base::FilePath(kBasicExpectations[i].unescaped_path),
+                    kBasicExpectations[i].scale_factor,
+                    kBasicExpectations[i].size, CallbackIsNull()));
+    source->StartDataRequest(kBasicExpectations[i].request_path, false,
+                             callback);
   }
 }

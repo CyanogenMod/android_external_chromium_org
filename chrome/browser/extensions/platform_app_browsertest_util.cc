@@ -6,12 +6,12 @@
 
 #include "base/command_line.h"
 #include "base/stringprintf.h"
-#include "chrome/browser/extensions/api/tabs/tabs.h"
+#include "chrome/browser/extensions/api/tabs/tabs_api.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/shell_window_registry.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
-#include "chrome/browser/ui/extensions/shell_window.h"
+#include "chrome/browser/ui/extensions/native_app_window.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
@@ -28,7 +28,7 @@ void PlatformAppBrowserTest::SetUpCommandLine(CommandLine* command_line) {
 
   // Make event pages get suspended quicker.
   command_line->AppendSwitchASCII(switches::kEventPageIdleTime, "1");
-  command_line->AppendSwitchASCII(switches::kEventPageUnloadingTime, "1");
+  command_line->AppendSwitchASCII(switches::kEventPageSuspendingTime, "1");
 }
 
 const Extension* PlatformAppBrowserTest::LoadAndLaunchPlatformApp(
@@ -41,9 +41,10 @@ const Extension* PlatformAppBrowserTest::LoadAndLaunchPlatformApp(
       test_data_dir_.AppendASCII("platform_apps").AppendASCII(name));
   EXPECT_TRUE(extension);
 
-  application_launch::OpenApplication(application_launch::LaunchParams(
-          browser()->profile(), extension, extension_misc::LAUNCH_NONE,
-          NEW_WINDOW));
+  chrome::OpenApplication(chrome::AppLaunchParams(browser()->profile(),
+                                                  extension,
+                                                  extension_misc::LAUNCH_NONE,
+                                                  NEW_WINDOW));
 
   app_loaded_observer.Wait();
 
@@ -60,9 +61,10 @@ const Extension* PlatformAppBrowserTest::InstallAndLaunchPlatformApp(
       test_data_dir_.AppendASCII("platform_apps").AppendASCII(name), 1);
   EXPECT_TRUE(extension);
 
-  application_launch::OpenApplication(application_launch::LaunchParams(
-          browser()->profile(), extension, extension_misc::LAUNCH_NONE,
-          NEW_WINDOW));
+  chrome::OpenApplication(chrome::AppLaunchParams(browser()->profile(),
+                                                  extension,
+                                                  extension_misc::LAUNCH_NONE,
+                                                  NEW_WINDOW));
 
   app_loaded_observer.Wait();
 
@@ -92,7 +94,7 @@ ShellWindow* PlatformAppBrowserTest::GetFirstShellWindow() {
 
 size_t PlatformAppBrowserTest::RunGetWindowsFunctionForExtension(
     const Extension* extension) {
-  scoped_refptr<GetAllWindowsFunction> function = new GetAllWindowsFunction();
+  scoped_refptr<WindowsGetAllFunction> function = new WindowsGetAllFunction();
   function->set_extension(extension);
   scoped_ptr<base::ListValue> result(utils::ToList(
       utils::RunFunctionAndReturnSingleResult(function.get(),
@@ -104,7 +106,7 @@ size_t PlatformAppBrowserTest::RunGetWindowsFunctionForExtension(
 bool PlatformAppBrowserTest::RunGetWindowFunctionForExtension(
     int window_id,
     const Extension* extension) {
-  scoped_refptr<GetWindowFunction> function = new GetWindowFunction();
+  scoped_refptr<WindowsGetFunction> function = new WindowsGetFunction();
   function->set_extension(extension);
   utils::RunFunction(
           function.get(),
@@ -131,7 +133,7 @@ void PlatformAppBrowserTest::ClearCommandLineArgs() {
 void PlatformAppBrowserTest::SetCommandLineArg(const std::string& test_file) {
   ClearCommandLineArgs();
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  FilePath test_doc(test_data_dir_.AppendASCII(test_file));
+  base::FilePath test_doc(test_data_dir_.AppendASCII(test_file));
   test_doc = test_doc.NormalizePathSeparators();
   command_line->AppendArgPath(test_doc);
 }
@@ -143,12 +145,24 @@ ShellWindow* PlatformAppBrowserTest::CreateShellWindow(
       browser()->profile(), extension, GURL(""), params);
 }
 
+ShellWindow* PlatformAppBrowserTest::CreateShellWindowFromParams(
+    const Extension* extension, const ShellWindow::CreateParams& params) {
+  return ShellWindow::Create(
+      browser()->profile(), extension, GURL(""), params);
+}
+
 void PlatformAppBrowserTest::CloseShellWindow(ShellWindow* window) {
   content::WindowedNotificationObserver destroyed_observer(
       content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
       content::NotificationService::AllSources());
   window->GetBaseWindow()->Close();
   destroyed_observer.Wait();
+}
+
+void ExperimentalPlatformAppBrowserTest::SetUpCommandLine(
+    CommandLine* command_line) {
+  PlatformAppBrowserTest::SetUpCommandLine(command_line);
+  command_line->AppendSwitch(switches::kEnableExperimentalExtensionApis);
 }
 
 }  // namespace extensions

@@ -9,6 +9,7 @@
 #include <set>
 
 #include "chrome/browser/chromeos/cros/network_library.h"
+#include "chromeos/network/onc/onc_constants.h"
 
 namespace chromeos {
 
@@ -43,7 +44,7 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   virtual void CallConfigureService(const std::string& identifier,
                                     const DictionaryValue* info) = 0;
   // Called from NetworkConnectStart.
-  // Calls NetworkConnectCompleted when the connection attept completes.
+  // Calls NetworkConnectCompleted when the connection attempt completes.
   virtual void CallConnectToNetwork(Network* network) = 0;
   // Called from DeleteRememberedNetwork.
   virtual void CallDeleteRememberedNetwork(
@@ -64,6 +65,10 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   // virtual Init implemented in derived classes.
   // virtual IsCros implemented in derived classes.
 
+  virtual void AddNetworkProfileObserver(
+      NetworkProfileObserver* observer) OVERRIDE;
+  virtual void RemoveNetworkProfileObserver(
+      NetworkProfileObserver* observer) OVERRIDE;
   virtual void AddNetworkManagerObserver(
       NetworkManagerObserver* observer) OVERRIDE;
   virtual void RemoveNetworkManagerObserver(
@@ -85,10 +90,6 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   virtual void Unlock() OVERRIDE;
   virtual bool IsLocked() OVERRIDE;
 
-  virtual void AddCellularDataPlanObserver(
-      CellularDataPlanObserver* observer) OVERRIDE;
-  virtual void RemoveCellularDataPlanObserver(
-      CellularDataPlanObserver* observer) OVERRIDE;
   virtual void AddPinOperationObserver(
       PinOperationObserver* observer) OVERRIDE;
   virtual void RemovePinOperationObserver(
@@ -126,6 +127,7 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   virtual const VirtualNetworkVector&
       remembered_virtual_networks() const OVERRIDE;
   virtual const Network* active_network() const OVERRIDE;
+  virtual const Network* active_nonvirtual_network() const OVERRIDE;
   virtual const Network* connected_network() const OVERRIDE;
   virtual const Network* connecting_network() const OVERRIDE;
   virtual bool ethernet_available() const OVERRIDE;
@@ -144,6 +146,7 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   virtual bool cellular_busy() const OVERRIDE;
   virtual bool mobile_busy() const OVERRIDE;
   virtual bool wifi_scanning() const OVERRIDE;
+  virtual bool cellular_initializing() const OVERRIDE;
   virtual bool offline_mode() const OVERRIDE;
   virtual std::string GetCheckPortalList() const OVERRIDE;
   // virtual SetCheckPortalList implemented in derived classes.
@@ -173,16 +176,10 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   Network* FindRememberedFromNetwork(const Network* network) const;
   virtual Network* FindRememberedNetworkByPath(
       const std::string& path) const OVERRIDE;
-  virtual Network* FindRememberedNetworkByUniqueId(
-      const std::string& unique_id) const OVERRIDE;
 
   virtual const base::DictionaryValue* FindOncForNetwork(
       const std::string& unique_id) const OVERRIDE;
 
-  virtual const CellularDataPlanVector* GetDataPlans(
-      const std::string& path) const OVERRIDE;
-  virtual const CellularDataPlan* GetSignificantDataPlan(
-      const std::string& path) const OVERRIDE;
   virtual void SignalCellularPlanPayment() OVERRIDE;
   virtual bool HasRecentCellularPlanPayment() OVERRIDE;
   virtual const std::string& GetCellularHomeCarrierId() const OVERRIDE;
@@ -196,13 +193,11 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   // virtual RequestCellularRegister implemented in derived classes.
   // virtual SetCellularDataRoamingAllowed implemented in derived classes.
   // virtual SetCarrier implemented in derived classes.
+  // virtual ResetModem implemented in derived classes.
   // virtual IsCellularAlwaysInRoaming implemented in derived classes.
   // virtual RequestNetworkScan implemented in derived classes.
-  // virtual GetWifiAccessPoints implemented in derived classes.
 
   virtual bool HasProfileType(NetworkProfileType type) const OVERRIDE;
-  virtual void SetNetworkProfile(const std::string& service_path,
-                                 NetworkProfileType type) OVERRIDE;
   virtual bool CanConnectToNetwork(const Network* network) const OVERRIDE;
 
   // Connect to an existing network.
@@ -241,9 +236,8 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   virtual void SwitchToPreferredNetwork() OVERRIDE;
   virtual bool LoadOncNetworks(const std::string& onc_blob,
                                const std::string& passphrase,
-                               NetworkUIData::ONCSource source,
-                               bool allow_web_trust_from_policy,
-                               std::string* error) OVERRIDE;
+                               onc::ONCSource source,
+                               bool allow_web_trust_from_policy) OVERRIDE;
   virtual bool SetActiveNetwork(ConnectionType type,
                                 const std::string& service_path) OVERRIDE;
 
@@ -258,9 +252,8 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   typedef std::map<std::string, Network*> NetworkMap;
   typedef std::map<std::string, int> PriorityMap;
   typedef std::map<std::string, NetworkDevice*> NetworkDeviceMap;
-  typedef std::map<std::string, CellularDataPlanVector*> CellularDataPlanMap;
   typedef std::map<std::string, const base::DictionaryValue*> NetworkOncMap;
-  typedef std::map<NetworkUIData::ONCSource,
+  typedef std::map<onc::ONCSource,
                    std::set<std::string> > NetworkSourceMap;
 
   struct NetworkProfile {
@@ -315,14 +308,6 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   void ConnectToWifiNetworkUsingConnectData(WifiNetwork* wifi);
   // Called from CallRequestVirtualNetworkAndConnect.
   void ConnectToVirtualNetworkUsingConnectData(VirtualNetwork* vpn);
-  // Called from GetSignificantDataPlan.
-  const CellularDataPlan* GetSignificantDataPlanFromVector(
-      const CellularDataPlanVector* plans) const;
-  CellularNetwork::DataLeft GetDataLeft(
-      CellularDataPlanVector* data_plan_vector);
-  // Takes ownership of |data_plan|.
-  void UpdateCellularDataPlan(const std::string& service_path,
-                              CellularDataPlanVector* data_plan_vector);
 
   // Network list management functions.
   void ClearActiveNetwork(ConnectionType type);
@@ -334,7 +319,7 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   // When |if_found| is true, then it forgets networks that appear in |ids|.
   // When |if_found| is false, it removes networks that do NOT appear in |ids|.
   // |source| is the import source of the data.
-  void ForgetNetworksById(NetworkUIData::ONCSource source,
+  void ForgetNetworksById(onc::ONCSource source,
                           std::set<std::string> ids,
                           bool if_found);
 
@@ -350,8 +335,6 @@ class NetworkLibraryImplBase : public NetworkLibrary {
 
   void DeleteRememberedNetwork(const std::string& service_path);
   void ClearNetworks();
-  void ClearRememberedNetworks();
-  void DeleteNetworks();
   void DeleteRememberedNetworks();
   void DeleteDevice(const std::string& device_path);
   void DeleteDeviceFromDeviceObserversMap(const std::string& device_path);
@@ -365,11 +348,11 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   std::string GetProfilePath(NetworkProfileType type);
 
   // Notifications.
+  void NotifyNetworkProfileObservers();
   void NotifyNetworkManagerChanged(bool force_update);
   void SignalNetworkManagerObservers();
   void NotifyNetworkChanged(const Network* network);
   void NotifyNetworkDeviceChanged(NetworkDevice* device, PropertyIndex index);
-  void NotifyCellularDataPlanChanged();
   void NotifyPinOperationCompleted(PinOperationError error);
   void NotifyUserConnectionInitiated(const Network* network);
 
@@ -378,11 +361,11 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   const std::string& GetTpmSlot();
   const std::string& GetTpmPin();
 
+  // Network profile observer list.
+  ObserverList<NetworkProfileObserver> network_profile_observers_;
+
   // Network manager observer list.
   ObserverList<NetworkManagerObserver> network_manager_observers_;
-
-  // Cellular data plan observer list.
-  ObserverList<CellularDataPlanObserver> data_plan_observers_;
 
   // PIN operation observer list.
   ObserverList<PinOperationObserver> pin_operation_observers_;
@@ -411,17 +394,11 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   // A service path based map of all remembered Networks.
   NetworkMap remembered_network_map_;
 
-  // A unique_id based map of all remembered Networks.
-  NetworkMap remembered_network_unique_id_map_;
-
   // A list of services that we are awaiting updates for.
   PriorityMap network_update_requests_;
 
   // A device path based map of all NetworkDevices.
   NetworkDeviceMap device_map_;
-
-  // A network service path based map of all CellularDataPlanVectors.
-  CellularDataPlanMap data_plan_map_;
 
   // The ethernet network.
   EthernetNetwork* ethernet_;
@@ -462,15 +439,15 @@ class NetworkLibraryImplBase : public NetworkLibrary {
   // The current available network devices. Bitwise flag of ConnectionTypes.
   int available_devices_;
 
+  // The current uninitialized network devices. Bitwise flag of ConnectionTypes.
+  int uninitialized_devices_;
+
   // The current enabled network devices. Bitwise flag of ConnectionTypes.
   int enabled_devices_;
 
   // The current busy network devices. Bitwise flag of ConnectionTypes.
   // Busy means device is switching from enable/disable state.
   int busy_devices_;
-
-  // The current connected network devices. Bitwise flag of ConnectionTypes.
-  int connected_devices_;
 
   // True if we are currently scanning for wifi networks.
   bool wifi_scanning_;

@@ -13,7 +13,8 @@ TabRendererData::TabRendererData()
       mini(false),
       blocked(false),
       app(false),
-      recording(false) {
+      capture_state(CAPTURE_STATE_NONE),
+      audio_state(AUDIO_STATE_NONE) {
 }
 
 TabRendererData::~TabRendererData() {}
@@ -31,5 +32,6 @@ bool TabRendererData::Equals(const TabRendererData& data) {
       mini == data.mini &&
       blocked == data.blocked &&
       app == data.app &&
-      recording == data.recording;
+      capture_state == data.capture_state &&
+      audio_state == data.audio_state;
 }

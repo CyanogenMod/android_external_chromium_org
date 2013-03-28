@@ -10,58 +10,26 @@ level installations are supported, and either one can be used for running the
 tests. Currently the only platform it supports is Windows.
 """
 
-import atexit
 import os
-import platform
-import stat
 import sys
-import tempfile
 import unittest
 import urllib
 
 import chrome_installer_win
 
 _DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(os.path.dirname(_DIRECTORY), 'pyautolib'))
 sys.path.append(os.path.join(_DIRECTORY, os.path.pardir, os.path.pardir,
                              os.path.pardir, 'third_party', 'webdriver',
                              'pylib'))
+sys.path.append(os.path.join(_DIRECTORY, os.path.pardir, 'pylib'))
 
 # This import should go after sys.path is set appropriately.
+from chrome import Chrome
 from selenium import webdriver
 import selenium.webdriver.chrome.service as service
 from selenium.webdriver.chrome.service import WebDriverException
 
-import pyauto_utils
-
-
-def MakeTempDir(parent_dir=None):
-  """Creates a temporary directory and returns an absolute path to it.
-
-  The temporary directory is automatically deleted when the python interpreter
-  exits normally.
-
-  Args:
-    parent_dir: the directory to create the temp dir in. If None, the system
-                temp dir is used.
-
-  Returns:
-    The absolute path to the temporary directory.
-  """
-  path = tempfile.mkdtemp(dir=parent_dir)
-  def DeleteDir():
-    # Don't use shutil.rmtree because it can't delete read-only files on Win.
-    for root, dirs, files in os.walk(path, topdown=False):
-      for name in files:
-        filename = os.path.join(root, name)
-        os.chmod(filename, stat.S_IWRITE)
-        os.remove(filename)
-      for name in dirs:
-        os.rmdir(os.path.join(root, name))
-    # Delete parent directory after its contents have been removed.
-    os.rmdir(path)
-  atexit.register(DeleteDir)
-  return path
+from common import util
 
 
 class InstallTest(unittest.TestCase):
@@ -115,7 +83,7 @@ class InstallTest(unittest.TestCase):
   def tearDown(self):
     """Called at the end of each unittest to do any test related cleanup."""
     # Confirm ChromeDriver was instantiated, before attempting to quit.
-    if self._driver != None:
+    if self._driver is not None:
       try:
         self._driver.quit()
       except WebDriverException:
@@ -128,13 +96,17 @@ class InstallTest(unittest.TestCase):
     self._service = service.Service(InstallTest._chrome_driver)
     self._service.start()
 
-  def StartChrome(self, caps={}):
+  def StartChrome(self, caps={}, options=None):
     """Creates a ChromeDriver instance.
+
+    If both caps and options have the same settings, the settings from options
+    will be used.
 
     Args:
       caps: Capabilities that will be passed to ChromeDriver.
+      options: ChromeOptions object that will be passed to ChromeDriver.
     """
-    self._driver = webdriver.Remote(self._service.service_url, caps)
+    self._driver = Chrome(self._service.service_url, caps, options)
 
   def Install(self, build, master_pref=None):
     """Helper method that installs the specified Chrome build.
@@ -153,7 +125,7 @@ class InstallTest(unittest.TestCase):
     if self._install_type == chrome_installer_win.InstallationType.SYSTEM:
       options.append('--system-level')
     if master_pref:
-      options.append('--installerdata="%s"' % master_pref)
+      options.append('--installerdata=%s' % master_pref)
     self._installation = chrome_installer_win.Install(
         self._installer_paths[build],
         self._install_type,
@@ -175,8 +147,11 @@ class InstallTest(unittest.TestCase):
     Args:
       url: URL where the file is located.
       path: Location where file will be downloaded.
+
+    Raises:
+      RuntimeError: URL or file name is invalid.
     """
-    if not pyauto_utils.DoesUrlExist(url):
+    if not util.DoesUrlExist(url):
       raise RuntimeError('Either the URL or the file name is invalid.')
     urllib.urlretrieve(url, path)
 
@@ -208,13 +183,11 @@ class InstallTest(unittest.TestCase):
       base_url: Base url of the 'official chrome builds' page.
       options: A list that contains options to be passed to Chrome installer.
     """
-    system = ({'Windows': 'win',
-               'Darwin': 'mac',
-               'Linux': 'linux'}).get(platform.system())
+    system = util.GetPlatformName()
     InstallTest._install_build = install_build
     InstallTest._update_builds = update_builds
     InstallTest._installer_options = options
-    tempdir = MakeTempDir()
+    tempdir = util.MakeTempDir()
     builds = []
     if InstallTest._install_build:
       builds.append(InstallTest._install_build)

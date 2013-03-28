@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/pp_content_decryptor.idl modified Thu Oct 25 16:40:07 2012. */
+/* From private/pp_content_decryptor.idl modified Tue Dec  4 16:42:46 2012. */
 
 #ifndef PPAPI_C_PRIVATE_PP_CONTENT_DECRYPTOR_H_
 #define PPAPI_C_PRIVATE_PP_CONTENT_DECRYPTOR_H_
@@ -31,11 +31,16 @@ struct PP_DecryptTrackingInfo {
    */
   uint32_t request_id;
   /**
-   * 4-byte padding to make the size of <code>PP_DecryptTrackingInfo</code>
-   * a multiple of 8 bytes and make sure |timestamp| starts on 8-byte boundary.
-   * The value of this field should not be used.
+   * A unique buffer ID to identify a PPB_Buffer_Dev. Unlike a PP_Resource,
+   * this ID is identical at both the renderer side and the plugin side.
+   * In <code>PPB_ContentDecryptor_Private</code> calls, this is the ID of the
+   * buffer associated with the decrypted block/frame/samples.
+   * In <code>PPP_ContentDecryptor_Private</code> calls, this is the ID of a
+   * buffer that is no longer need at the renderer side, which can be released
+   * or recycled by the plugin. This ID can be 0 if there is no buffer to be
+   * released or recycled.
    */
-  uint32_t padding;
+  uint32_t buffer_id;
   /**
    * Timestamp in microseconds of the associated block. By using this value,
    * the client can associate the decrypted (and decoded) data with an input
@@ -94,6 +99,10 @@ struct PP_EncryptedBlockInfo {
    */
   struct PP_DecryptTrackingInfo tracking_info;
   /**
+   * Size in bytes of data to be decrypted (data_offset included).
+   */
+  uint32_t data_size;
+  /**
    * Size in bytes of data to be discarded before applying the decryption.
    */
   uint32_t data_offset;
@@ -118,8 +127,13 @@ struct PP_EncryptedBlockInfo {
    */
   struct PP_DecryptSubsampleDescription subsamples[16];
   uint32_t num_subsamples;
+  /**
+   * 4-byte padding to make the size of <code>PP_EncryptedBlockInfo</code>
+   * a multiple of 8 bytes. The value of this field should not be used.
+   */
+  uint32_t padding;
 };
-PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_EncryptedBlockInfo, 240);
+PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_EncryptedBlockInfo, 248);
 /**
  * @}
  */
@@ -173,11 +187,10 @@ struct PP_DecryptedBlockInfo {
    */
   PP_DecryptResult result;
   /**
-   * 4-byte padding to make the size of <code>PP_DecryptedBlockInfo</code>
-   * a multiple of 8 bytes, and ensure consistent size on all targets. This
-   * value should never be used.
+   * Size in bytes of decrypted data, which may be less than the size of the
+   * corresponding buffer.
    */
-  uint32_t padding;
+  uint32_t data_size;
   /**
    * Information needed by the client to track the block to be decrypted.
    */

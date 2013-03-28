@@ -10,6 +10,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 
 class Browser;
+class BrowserList;
 class TabStrip;
 class TabStripModel;
 
@@ -43,6 +44,10 @@ class TabDragControllerTest : public InProcessBrowserTest {
   // side by side.
   Browser* CreateAnotherWindowBrowserAndRelayout();
 
+  // The tab drag controller interactive ui tests only use the native desktop
+  // for now.
+  const BrowserList* native_browser_list;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(TabDragControllerTest);
 };
@@ -55,8 +60,8 @@ TabStrip* GetTabStripForBrowser(Browser* browser);
 // Returns the center of |view| in screen coordinates.
 gfx::Point GetCenterInScreenCoordinates(const views::View* view);
 
-// Sets the id of |tab_contents| to |id|.
-void SetID(content::WebContents* tab_contents, int id);
+// Sets the id of |web_contents| to |id|.
+void SetID(content::WebContents* web_contents, int id);
 
 // Resets the ids of all the tabs in |model| starting at |start|. That is, the
 // id of the first tab is set to |start|, the second tab |start + 1| ...

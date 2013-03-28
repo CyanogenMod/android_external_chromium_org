@@ -12,18 +12,23 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/api/prefs/pref_member.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/net/ssl_config_service_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/browser_thread_delegate.h"
 #include "net/base/network_change_notifier.h"
+#include "net/http/http_network_session.h"
+#include "net/socket/next_proto.h"
 
 class ChromeNetLog;
+class CommandLine;
 class PrefProxyConfigTrackerImpl;
 class PrefService;
+class PrefRegistrySimple;
 class SystemURLRequestContextGetter;
 
 namespace chrome_browser_net {
+class DnsProbeService;
 class HttpPipeliningCompatibilityClient;
 class LoadTimeStats;
 }
@@ -55,6 +60,10 @@ class URLRequestThrottlerManager;
 class URLSecurityManager;
 }  // namespace net
 
+namespace policy {
+class PolicyService;
+}  // namespace policy
+
 // Contains state associated with, initialized and cleaned up on, and
 // primarily used on, the IO thread.
 //
@@ -64,6 +73,26 @@ class URLSecurityManager;
 class IOThread : public content::BrowserThreadDelegate {
  public:
   struct Globals {
+    template <typename T>
+    class Optional {
+     public:
+      Optional() : set_(false) {}
+
+      void set(T value) {
+        set_ = true;
+        value_ = value;
+      }
+      void CopyToIfSet(T* value) {
+        if (set_) {
+          *value = value_;
+        }
+      }
+
+     private:
+      bool set_;
+      T value_;
+    };
+
     class SystemRequestContextLeakChecker {
      public:
       explicit SystemRequestContextLeakChecker(Globals* globals);
@@ -80,6 +109,8 @@ class IOThread : public content::BrowserThreadDelegate {
     scoped_ptr<net::NetworkDelegate> system_network_delegate;
     scoped_ptr<net::HostResolver> host_resolver;
     scoped_ptr<net::CertVerifier> cert_verifier;
+    // The ServerBoundCertService must outlive the HttpTransactionFactory.
+    scoped_ptr<net::ServerBoundCertService> system_server_bound_cert_service;
     // This TransportSecurityState doesn't load or save any state. It's only
     // used to enforce pinning for system requests and will only use built-in
     // pins.
@@ -109,7 +140,6 @@ class IOThread : public content::BrowserThreadDelegate {
     // |system_cookie_store| and |system_server_bound_cert_service| are shared
     // between |proxy_script_fetcher_context| and |system_request_context|.
     scoped_refptr<net::CookieStore> system_cookie_store;
-    scoped_ptr<net::ServerBoundCertService> system_server_bound_cert_service;
     scoped_refptr<extensions::EventRouterForwarder>
         extension_event_router_forwarder;
     scoped_ptr<chrome_browser_net::HttpPipeliningCompatibilityClient>
@@ -121,14 +151,33 @@ class IOThread : public content::BrowserThreadDelegate {
     bool http_pipelining_enabled;
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
+    Optional<size_t> max_spdy_sessions_per_domain;
+    Optional<size_t> initial_max_spdy_concurrent_streams;
+    Optional<size_t> max_spdy_concurrent_streams_limit;
+    Optional<bool> force_spdy_single_domain;
+    Optional<bool> enable_spdy_ip_pooling;
+    Optional<bool> enable_spdy_credential_frames;
+    Optional<bool> enable_spdy_compression;
+    Optional<bool> enable_spdy_ping_based_connection_checking;
+    Optional<net::NextProto> spdy_default_protocol;
+    Optional<bool> enable_quic;
+    Optional<uint16> origin_port_to_force_quic_on;
+    bool enable_user_alternate_protocol_ports;
+    // NetErrorTabHelper uses |dns_probe_service| to send DNS probes when a
+    // main frame load fails with a DNS error in order to provide more useful
+    // information to the renderer so it can show a more specific error page.
+    scoped_ptr<chrome_browser_net::DnsProbeService> dns_probe_service;
   };
 
   // |net_log| must either outlive the IOThread or be NULL.
   IOThread(PrefService* local_state,
+           policy::PolicyService* policy_service,
            ChromeNetLog* net_log,
            extensions::EventRouterForwarder* extension_event_router_forwarder);
 
   virtual ~IOThread();
+
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // Can only be called on the IO thread.
   Globals* globals();
@@ -146,16 +195,37 @@ class IOThread : public content::BrowserThreadDelegate {
   // called on the IO thread.
   void ClearHostCache();
 
+  void InitializeNetworkSessionParams(net::HttpNetworkSession::Params* params);
+
  private:
+  // Provide SystemURLRequestContextGetter with access to
+  // InitSystemRequestContext().
+  friend class SystemURLRequestContextGetter;
+
   // BrowserThreadDelegate implementation, runs on the IO thread.
   // This handles initialization and destruction of state that must
   // live on the IO thread.
   virtual void Init() OVERRIDE;
   virtual void CleanUp() OVERRIDE;
 
-  // Provide SystemURLRequestContextGetter with access to
-  // InitSystemRequestContext().
-  friend class SystemURLRequestContextGetter;
+  void InitializeNetworkOptions(const CommandLine& parsed_command_line);
+
+  // Enable the SPDY protocol.  If this function is not called, SPDY/3
+  // will be enabled.
+  //   "off"                      : Disables SPDY support entirely.
+  //   "ssl"                      : Forces SPDY for all HTTPS requests.
+  //   "no-ssl"                   : Forces SPDY for all HTTP requests.
+  //   "no-ping"                  : Disables SPDY ping connection testing.
+  //   "exclude=<host>"           : Disables SPDY support for the host <host>.
+  //   "no-compress"              : Disables SPDY header compression.
+  //   "no-alt-protocols          : Disables alternate protocol support.
+  //   "force-alt-protocols       : Forces an alternate protocol of SPDY/2
+  //                                on port 443.
+  //   "single-domain"            : Forces all spdy traffic to a single domain.
+  //   "init-max-streams=<limit>" : Specifies the maximum number of concurrent
+  //                                streams for a SPDY session, unless the
+  //                                specifies a different value via SETTINGS.
+  void EnableSpdy(const std::string& mode);
 
   // Global state must be initialized on the IO thread, then this
   // method must be invoked on the UI thread.
@@ -167,8 +237,6 @@ class IOThread : public content::BrowserThreadDelegate {
   // SystemRequestContext state has been initialized on the UI thread.
   void InitSystemRequestContextOnIOThread();
 
-  static void RegisterPrefs(PrefService* local_state);
-
   net::HttpAuthHandlerFactory* CreateDefaultAuthHandlerFactory(
       net::HostResolver* resolver);
 
@@ -176,6 +244,8 @@ class IOThread : public content::BrowserThreadDelegate {
   net::SSLConfigService* GetSSLConfigService();
 
   void ChangedToOnTheRecordOnIOThread();
+
+  void UpdateDnsClientEnabled();
 
   // The NetLog is owned by the browser process, to allow logging from other
   // threads during shutdown, but is used most frequently on the IOThread.
@@ -201,6 +271,8 @@ class IOThread : public content::BrowserThreadDelegate {
 
   BooleanPrefMember system_enable_referrers_;
 
+  BooleanPrefMember dns_client_enabled_;
+
   // Store HTTP Auth-related policies in this thread.
   std::string auth_schemes_;
   bool negotiate_disable_cname_lookup_;
@@ -208,7 +280,7 @@ class IOThread : public content::BrowserThreadDelegate {
   std::string auth_server_whitelist_;
   std::string auth_delegate_whitelist_;
   std::string gssapi_library_name_;
-  std::string spdyproxy_origin_;
+  std::string spdyproxy_auth_origin_;
 
   // This is an instance of the default SSLConfigServiceManager for the current
   // platform and it gets SSL preferences from local_state object.
@@ -224,6 +296,9 @@ class IOThread : public content::BrowserThreadDelegate {
       system_url_request_context_getter_;
 
   net::SdchManager* sdch_manager_;
+
+  // True if SPDY is disabled by policy.
+  bool is_spdy_disabled_by_policy_;
 
   base::WeakPtrFactory<IOThread> weak_factory_;
 

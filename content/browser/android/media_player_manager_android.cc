@@ -5,12 +5,13 @@
 #include "content/browser/android/media_player_manager_android.h"
 
 #include "base/bind.h"
-#include "content/browser/android/cookie_getter_impl.h"
+#include "content/browser/android/media_resource_getter_impl.h"
+#include "content/browser/web_contents/web_contents_view_android.h"
 #include "content/common/media/media_player_messages.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/storage_partition.h"
 
 using media::MediaPlayerBridge;
 
@@ -24,7 +25,8 @@ MediaPlayerManagerAndroid::MediaPlayerManagerAndroid(
     RenderViewHost* render_view_host)
     : RenderViewHostObserver(render_view_host),
       ALLOW_THIS_IN_INITIALIZER_LIST(video_view_(this)),
-      fullscreen_player_id_(-1) {
+      fullscreen_player_id_(-1),
+      web_contents_(WebContents::FromRenderViewHost(render_view_host)) {
 }
 
 MediaPlayerManagerAndroid::~MediaPlayerManagerAndroid() {}
@@ -43,6 +45,8 @@ bool MediaPlayerManagerAndroid::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DestroyMediaPlayer, OnDestroyPlayer)
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DestroyAllMediaPlayers,
                         DestroyAllMediaPlayers)
+    IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_RequestExternalSurface,
+                        OnRequestExternalSurface)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -95,8 +99,7 @@ void MediaPlayerManagerAndroid::SetVideoSurface(jobject surface) {
 }
 
 void MediaPlayerManagerAndroid::OnInitialize(
-    int player_id, const std::string& url,
-    const std::string& first_party_for_cookies) {
+    int player_id, const GURL& url, const GURL& first_party_for_cookies) {
   for (ScopedVector<MediaPlayerBridge>::iterator it = players_.begin();
       it != players_.end(); ++it) {
     if ((*it)->player_id() == player_id) {
@@ -107,9 +110,13 @@ void MediaPlayerManagerAndroid::OnInitialize(
 
   RenderProcessHost* host = render_view_host()->GetProcess();
   BrowserContext* context = host->GetBrowserContext();
+  StoragePartition* partition = host->GetStoragePartition();
+  fileapi::FileSystemContext* file_system_context =
+      partition ? partition->GetFileSystemContext() : NULL;
   players_.push_back(new MediaPlayerBridge(
       player_id, url, first_party_for_cookies,
-      new CookieGetterImpl(context, host->GetID(), routing_id()),
+      new MediaResourceGetterImpl(context, file_system_context, host->GetID(),
+                                  routing_id()),
       context->IsOffTheRecord(), this,
       base::Bind(&MediaPlayerManagerAndroid::OnError, base::Unretained(this)),
       base::Bind(&MediaPlayerManagerAndroid::OnVideoSizeChanged,
@@ -123,6 +130,8 @@ void MediaPlayerManagerAndroid::OnInitialize(
       base::Bind(&MediaPlayerManagerAndroid::OnSeekComplete,
                  base::Unretained(this)),
       base::Bind(&MediaPlayerManagerAndroid::OnTimeUpdate,
+                 base::Unretained(this)),
+      base::Bind(&MediaPlayerManagerAndroid::OnMediaInterrupted,
                  base::Unretained(this))));
 
   // Send a MediaPrepared message to webkit so that Load() can finish.
@@ -194,6 +203,28 @@ void MediaPlayerManagerAndroid::DestroyAllMediaPlayers() {
   }
 }
 
+void MediaPlayerManagerAndroid::AttachExternalVideoSurface(int player_id,
+                                                           jobject surface) {
+  MediaPlayerBridge* player = GetPlayer(player_id);
+  if (player)
+    player->SetVideoSurface(surface);
+}
+
+void MediaPlayerManagerAndroid::DetachExternalVideoSurface(int player_id) {
+  MediaPlayerBridge* player = GetPlayer(player_id);
+  if (player)
+    player->SetVideoSurface(NULL);
+}
+
+void MediaPlayerManagerAndroid::OnRequestExternalSurface(int player_id) {
+  if (web_contents_) {
+    WebContentsViewAndroid* view =
+        static_cast<WebContentsViewAndroid*>(web_contents_->GetView());
+    if (view)
+      view->RequestExternalVideoSurface(player_id);
+  }
+}
+
 MediaPlayerBridge* MediaPlayerManagerAndroid::GetPlayer(int player_id) {
   for (ScopedVector<MediaPlayerBridge>::iterator it = players_.begin();
       it != players_.end(); ++it) {
@@ -218,6 +249,12 @@ void MediaPlayerManagerAndroid::OnPlaybackComplete(int player_id) {
   Send(new MediaPlayerMsg_MediaPlaybackCompleted(routing_id(), player_id));
   if (fullscreen_player_id_ != -1)
     video_view_.OnPlaybackComplete();
+}
+
+void MediaPlayerManagerAndroid::OnMediaInterrupted(int player_id) {
+  // Tell WebKit that the audio should be paused, then release all resources
+  Send(new MediaPlayerMsg_DidMediaPlayerPause(routing_id(), player_id));
+  OnReleaseResources(player_id);
 }
 
 void MediaPlayerManagerAndroid::OnBufferingUpdate(

@@ -16,6 +16,7 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/text_constants.h"
 #include "ui/views/controls/textfield/native_textfield_wrapper.h"
 #include "ui/views/view.h"
 
@@ -24,8 +25,8 @@
 #endif
 
 namespace gfx {
-struct StyleRange;
-}  // namespace gfx
+class ImageSkia;
+}
 
 namespace ui {
 class Range;
@@ -33,6 +34,8 @@ class TextInputClient;
 }  // namespace ui
 
 namespace views {
+
+class ImageView;
 
 class TextfieldController;
 
@@ -84,6 +87,9 @@ class VIEWS_EXPORT Textfield : public View {
   // Appends the given string to the previously-existing text in the field.
   void AppendText(const string16& text);
 
+  // Replaces the selected text with |text|.
+  void ReplaceSelection(const string16& text);
+
   // Returns the text direction.
   base::i18n::TextDirection GetTextDirection() const;
 
@@ -105,36 +111,20 @@ class VIEWS_EXPORT Textfield : public View {
   StyleFlags style() const { return style_; }
 
   // Gets/Sets the text color to be used when painting the Textfield.
-  // Call |UseDefaultTextColor| to return to the system default colors.
-  SkColor text_color() const { return text_color_; }
+  // Call |UseDefaultTextColor| to restore the default system color.
+  SkColor GetTextColor() const;
   void SetTextColor(SkColor color);
-
-  // Gets/Sets whether the default text color should be used when painting the
-  // Textfield.
-  bool use_default_text_color() const {
-    return use_default_text_color_;
-  }
   void UseDefaultTextColor();
 
   // Gets/Sets the background color to be used when painting the Textfield.
-  // Call |UseDefaultBackgroundColor| to return to the system default colors.
-  SkColor background_color() const { return background_color_; }
+  // Call |UseDefaultBackgroundColor| to restore the default system color.
+  SkColor GetBackgroundColor() const;
   void SetBackgroundColor(SkColor color);
-
-  // Gets/Sets whether the default background color should be used when painting
-  // the Textfield.
-  bool use_default_background_color() const {
-    return use_default_background_color_;
-  }
   void UseDefaultBackgroundColor();
 
-  // Gets/Sets the color to be used for the cursor.
-  SkColor cursor_color() const { return cursor_color_; }
-  void SetCursorColor(SkColor color);
-
-  // Gets/Sets whether we use the system's default color for the cursor.
-  bool use_default_cursor_color() const { return use_default_cursor_color_; }
-  void UseDefaultCursorColor();
+  // Gets/Sets whether or not the cursor is enabled.
+  bool GetCursorEnabled() const;
+  void SetCursorEnabled(bool enabled);
 
   // Gets/Sets the font used when rendering the text within the Textfield.
   const gfx::Font& font() const { return font_; }
@@ -158,6 +148,13 @@ class VIEWS_EXPORT Textfield : public View {
   bool draw_border() const { return draw_border_; }
   void RemoveBorder();
 
+  // Sets the border color (if one is in use).
+  void SetBorderColor(SkColor color);
+  // Reverts the textfield to the system default border color.
+  void UseDefaultBorderColor();
+  SkColor border_color() const { return border_color_; }
+  bool use_default_border_color() const { return use_default_border_color_; }
+
   // Sets the text to display when empty.
   void set_placeholder_text(const string16& text) {
     placeholder_text_ = text;
@@ -173,6 +170,10 @@ class VIEWS_EXPORT Textfield : public View {
   void set_placeholder_text_color(SkColor color) {
     placeholder_text_color_ = color;
   }
+
+  // Adds an icon which displays inside the border on the right side of the view
+  // (left in RTL).
+  void SetIcon(const gfx::ImageSkia& icon);
 
   // Getter for the horizontal margins that were set. Returns false if
   // horizontal margins weren't set.
@@ -197,7 +198,8 @@ class VIEWS_EXPORT Textfield : public View {
 
   // Gets the selected range. This is views-implementation only and
   // has to be called after the wrapper is created.
-  void GetSelectedRange(ui::Range* range) const;
+  // TODO(msw): Return a const reference when NativeTextfieldWin is gone.
+  ui::Range GetSelectedRange() const;
 
   // Selects the text given by |range|. This is views-implementation only and
   // has to be called after the wrapper is created.
@@ -205,7 +207,8 @@ class VIEWS_EXPORT Textfield : public View {
 
   // Gets the selection model. This is views-implementation only and
   // has to be called after the wrapper is created.
-  void GetSelectionModel(gfx::SelectionModel* sel) const;
+  // TODO(msw): Return a const reference when NativeTextfieldWin is gone.
+  gfx::SelectionModel GetSelectionModel() const;
 
   // Selects the text given by |sel|. This is views-implementation only and
   // has to be called after the wrapper is created.
@@ -215,20 +218,27 @@ class VIEWS_EXPORT Textfield : public View {
   // only and has to be called after the wrapper is created.
   size_t GetCursorPosition() const;
 
-  // Applies |style| to the text specified by its range. The style will be
-  // ignored if range is empty or invalid. This is views-implementation only and
+  // Set the text color over the entire text or a logical character range.
+  // Empty and invalid ranges are ignored. This is views-implementation only and
   // has to be called after the wrapper is created.
-  void ApplyStyleRange(const gfx::StyleRange& style);
+  void SetColor(SkColor value);
+  void ApplyColor(SkColor value, const ui::Range& range);
 
-  // Applies the default style to the textfield. This is views-implementation
-  // only and has to be called after the wrapper is created.
-  void ApplyDefaultStyle();
+  // Set various text styles over the entire text or a logical character range.
+  // The respective |style| is applied if |value| is true, or removed if false.
+  // Empty and invalid ranges are ignored. This is views-implementation only and
+  // has to be called after the wrapper is created.
+  void SetStyle(gfx::TextStyle style, bool value);
+  void ApplyStyle(gfx::TextStyle style, bool value, const ui::Range& range);
 
   // Clears Edit history.
   void ClearEditHistory();
 
   // Set the accessible name of the text field.
   void SetAccessibleName(const string16& name);
+
+  // Performs the action associated with the specified command id.
+  void ExecuteCommand(int command_id);
 
   // Provided only for testing:
   gfx::NativeView GetTestingHandle() const {
@@ -240,6 +250,7 @@ class VIEWS_EXPORT Textfield : public View {
 
   // Overridden from View:
   virtual void Layout() OVERRIDE;
+  virtual int GetBaseline() const OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE;
   virtual bool SkipDefaultKeyEventProcessing(const ui::KeyEvent& e) OVERRIDE;
@@ -296,11 +307,11 @@ class VIEWS_EXPORT Textfield : public View {
   // Should we use the system background color instead of |background_color_|?
   bool use_default_background_color_;
 
-  // Cursor color.  Only used if |use_default_cursor_color_| is false.
-  SkColor cursor_color_;
+  // Border color.  Only used if |use_default_border_color_| is false.
+  SkColor border_color_;
 
-  // Should we use the system cursor color instead of |cursor_color_|?
-  bool use_default_cursor_color_;
+  // Should we use the system border color instead of |border_color_|?
+  bool use_default_border_color_;
 
   // TODO(beng): remove this once NativeTextfieldWin subclasses
   //             NativeControlWin.
@@ -318,6 +329,9 @@ class VIEWS_EXPORT Textfield : public View {
 
   // Placeholder text color.
   SkColor placeholder_text_color_;
+
+  // When non-NULL, an icon to display inside the border of the textfield.
+  views::ImageView* icon_view_;
 
   // The accessible name of the text field.
   string16 accessible_name_;

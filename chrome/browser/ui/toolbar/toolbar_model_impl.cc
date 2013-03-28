@@ -4,17 +4,20 @@
 
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
 
+#include "base/command_line.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/autocomplete/autocomplete_classifier.h"
+#include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
-#include "chrome/browser/ui/search/search.h"
 #include "chrome/browser/ui/toolbar/toolbar_model_delegate.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/cert_store.h"
@@ -24,6 +27,7 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/ssl_status.h"
+#include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/cert_status_flags.h"
@@ -44,87 +48,12 @@ ToolbarModelImpl::ToolbarModelImpl(ToolbarModelDelegate* delegate)
 ToolbarModelImpl::~ToolbarModelImpl() {
 }
 
-// ToolbarModelImpl Implementation.
-string16 ToolbarModelImpl::GetText(
-    bool display_search_urls_as_search_terms) const {
-  GURL url(GetURL());
-
-  if (display_search_urls_as_search_terms) {
-    string16 search_terms = TryToExtractSearchTermsFromURL(url);
-    if (!search_terms.empty())
-      return search_terms;
-  }
-  std::string languages;  // Empty if we don't have a |navigation_controller|.
-  Profile* profile = GetProfile();
-  if (profile)
-    languages = profile->GetPrefs()->GetString(prefs::kAcceptLanguages);
-
-  if (url.spec().length() > content::kMaxURLDisplayChars)
-    url = url.IsStandard() ? url.GetOrigin() : GURL(url.scheme() + ":");
-  // Note that we can't unescape spaces here, because if the user copies this
-  // and pastes it into another program, that program may think the URL ends at
-  // the space.
-  return AutocompleteInput::FormattedStringWithEquivalentMeaning(
-      url, net::FormatUrl(url, languages, net::kFormatUrlOmitAll,
-                          net::UnescapeRule::NORMAL, NULL, NULL, NULL));
-}
-
-GURL ToolbarModelImpl::GetURL() const {
-  const NavigationController* navigation_controller = GetNavigationController();
-  if (navigation_controller) {
-    const NavigationEntry* entry = navigation_controller->GetVisibleEntry();
-    if (entry)
-      return ShouldDisplayURL() ? entry->GetVirtualURL() : GURL();
-  }
-
-  return GURL(chrome::kAboutBlankURL);
-}
-
-bool ToolbarModelImpl::WouldReplaceSearchURLWithSearchTerms() const {
-  return !TryToExtractSearchTermsFromURL(GetURL()).empty();
-}
-
-bool ToolbarModelImpl::ShouldDisplayURL() const {
-  // Note: The order here is important.
-  // - The WebUI test must come before the extension scheme test because there
-  //   can be WebUIs that have extension schemes (e.g. the bookmark manager). In
-  //   that case, we should prefer what the WebUI instance says.
-  // - The view-source test must come before the WebUI test because of the case
-  //   of view-source:chrome://newtab, which should display its URL despite what
-  //   chrome://newtab's WebUI says.
-  NavigationController* controller = GetNavigationController();
-  NavigationEntry* entry = controller ? controller->GetVisibleEntry() : NULL;
-  if (entry) {
-    if (entry->IsViewSourceMode() ||
-        entry->GetPageType() == content::PAGE_TYPE_INTERSTITIAL) {
-      return true;
-    }
-  }
-
-  WebContents* web_contents = delegate_->GetActiveWebContents();
-  if (web_contents && web_contents->GetWebUIForCurrentState())
-    return !web_contents->GetWebUIForCurrentState()->ShouldHideURL();
-
-  if (entry && entry->GetURL().SchemeIs(chrome::kExtensionScheme))
-    return false;
-
-#if defined(OS_CHROMEOS)
-  if (entry && entry->GetURL().SchemeIs(chrome::kDriveScheme))
-    return false;
-#endif
-
-  return true;
-}
-
-ToolbarModelImpl::SecurityLevel ToolbarModelImpl::GetSecurityLevel() const {
-  if (input_in_progress_)  // When editing, assume no security style.
+ToolbarModel::SecurityLevel ToolbarModelImpl::GetSecurityLevelForWebContents(
+      content::WebContents* web_contents) {
+  if (!web_contents)
     return NONE;
 
-  NavigationController* navigation_controller = GetNavigationController();
-  if (!navigation_controller)  // We might not have a controller on init.
-    return NONE;
-
-  NavigationEntry* entry = navigation_controller->GetVisibleEntry();
+  NavigationEntry* entry = web_contents->GetController().GetVisibleEntry();
   if (!entry)
     return NONE;
 
@@ -155,7 +84,111 @@ ToolbarModelImpl::SecurityLevel ToolbarModelImpl::GetSecurityLevel() const {
   }
 }
 
+// ToolbarModelImpl Implementation.
+string16 ToolbarModelImpl::GetText(
+    bool display_search_urls_as_search_terms) const {
+  if (display_search_urls_as_search_terms) {
+    string16 search_terms = GetSearchTerms();
+    if (!search_terms.empty())
+      return search_terms;
+  }
+  std::string languages;  // Empty if we don't have a |navigation_controller|.
+  Profile* profile = GetProfile();
+  if (profile)
+    languages = profile->GetPrefs()->GetString(prefs::kAcceptLanguages);
+
+  GURL url(GetURL());
+  if (url.spec().length() > content::kMaxURLDisplayChars)
+    url = url.IsStandard() ? url.GetOrigin() : GURL(url.scheme() + ":");
+  // Note that we can't unescape spaces here, because if the user copies this
+  // and pastes it into another program, that program may think the URL ends at
+  // the space.
+  return AutocompleteInput::FormattedStringWithEquivalentMeaning(
+      url, net::FormatUrl(url, languages, net::kFormatUrlOmitAll,
+                          net::UnescapeRule::NORMAL, NULL, NULL, NULL));
+}
+
+string16 ToolbarModelImpl::GetCorpusNameForMobile() const {
+  if (!WouldReplaceSearchURLWithSearchTerms())
+    return string16();
+  GURL url(GetURL());
+  // If there is a query in the url fragment look for the corpus name there,
+  // otherwise look for the corpus name in the query parameters.
+  const std::string& query_str(google_util::HasGoogleSearchQueryParam(
+      url.ref()) ? url.ref() : url.query());
+  url_parse::Component query(0, query_str.length()), key, value;
+  const char kChipKey[] = "sboxchip";
+  while (url_parse::ExtractQueryKeyValue(query_str.c_str(), &query, &key,
+                                         &value)) {
+    if (key.is_nonempty() && query_str.substr(key.begin, key.len) == kChipKey) {
+      return net::UnescapeAndDecodeUTF8URLComponent(
+          query_str.substr(value.begin, value.len),
+          net::UnescapeRule::NORMAL, NULL);
+    }
+  }
+  return string16();
+}
+
+GURL ToolbarModelImpl::GetURL() const {
+  const NavigationController* navigation_controller = GetNavigationController();
+  if (navigation_controller) {
+    const NavigationEntry* entry = navigation_controller->GetVisibleEntry();
+    if (entry)
+      return ShouldDisplayURL() ? entry->GetVirtualURL() : GURL();
+  }
+
+  return GURL(chrome::kAboutBlankURL);
+}
+
+bool ToolbarModelImpl::WouldReplaceSearchURLWithSearchTerms() const {
+  return !GetSearchTerms().empty();
+}
+
+bool ToolbarModelImpl::ShouldDisplayURL() const {
+  // Note: The order here is important.
+  // - The WebUI test must come before the extension scheme test because there
+  //   can be WebUIs that have extension schemes (e.g. the bookmark manager). In
+  //   that case, we should prefer what the WebUI instance says.
+  // - The view-source test must come before the WebUI test because of the case
+  //   of view-source:chrome://newtab, which should display its URL despite what
+  //   chrome://newtab's WebUI says.
+  NavigationController* controller = GetNavigationController();
+  NavigationEntry* entry = controller ? controller->GetVisibleEntry() : NULL;
+  if (entry) {
+    if (entry->IsViewSourceMode() ||
+        entry->GetPageType() == content::PAGE_TYPE_INTERSTITIAL) {
+      return true;
+    }
+  }
+
+  WebContents* web_contents = delegate_->GetActiveWebContents();
+  if (web_contents && web_contents->GetWebUIForCurrentState())
+    return !web_contents->GetWebUIForCurrentState()->ShouldHideURL();
+
+  if (entry && entry->GetURL().SchemeIs(extensions::kExtensionScheme))
+    return false;
+
+#if defined(OS_CHROMEOS)
+  if (entry && entry->GetURL().SchemeIs(chrome::kDriveScheme))
+    return false;
+#endif
+
+  if (chrome::search::IsInstantNTP(web_contents))
+    return false;
+
+  return true;
+}
+
+ToolbarModel::SecurityLevel ToolbarModelImpl::GetSecurityLevel() const {
+  if (input_in_progress_)  // When editing, assume no security style.
+    return NONE;
+
+  return GetSecurityLevelForWebContents(delegate_->GetActiveWebContents());
+}
+
 int ToolbarModelImpl::GetIcon() const {
+  if (WouldReplaceSearchURLWithSearchTerms())
+    return IDR_OMNIBOX_SEARCH;
   static int icon_ids[NUM_SECURITY_LEVELS] = {
     IDR_LOCATION_BAR_HTTP,
     IDR_OMNIBOX_HTTPS_VALID,
@@ -208,30 +241,30 @@ NavigationController* ToolbarModelImpl::GetNavigationController() const {
   return current_tab ? &current_tab->GetController() : NULL;
 }
 
-string16 ToolbarModelImpl::TryToExtractSearchTermsFromURL(
-    const GURL& url) const {
-  Profile* profile = GetProfile();
-
-  // Ensure instant extended API is enabled and query URL is HTTPS.
-  if (!profile || !chrome::search::IsInstantExtendedAPIEnabled(profile) ||
-      !url.SchemeIs(chrome::kHttpsScheme))
-    return string16();
-
-  TemplateURLService* template_url_service =
-      TemplateURLServiceFactory::GetForProfile(profile);
-
-  TemplateURL *template_url = template_url_service->GetDefaultSearchProvider();
-  if (!template_url)
-    return string16();
-
-  string16 result;
-  template_url->ExtractSearchTermsFromURL(url, &result);
-  return result;
-}
-
 Profile* ToolbarModelImpl::GetProfile() const {
   NavigationController* navigation_controller = GetNavigationController();
   return navigation_controller ?
       Profile::FromBrowserContext(navigation_controller->GetBrowserContext()) :
       NULL;
+}
+
+string16 ToolbarModelImpl::GetSearchTerms() const {
+  const WebContents* contents = delegate_->GetActiveWebContents();
+  string16 search_terms = chrome::search::GetSearchTerms(contents);
+
+  // Don't extract search terms that the omnibox would treat as a navigation.
+  // This might confuse users into believing that the search terms were the
+  // URL of the current page, and could cause problems if users hit enter in
+  // the omnibox expecting to reload the page.
+  if (!search_terms.empty()) {
+    AutocompleteMatch match;
+    Profile* profile =
+        Profile::FromBrowserContext(contents->GetBrowserContext());
+    AutocompleteClassifierFactory::GetForProfile(profile)->Classify(
+        search_terms, false, false, &match, NULL);
+    if (!AutocompleteMatch::IsSearchType(match.type))
+      search_terms.clear();
+  }
+
+  return search_terms;
 }

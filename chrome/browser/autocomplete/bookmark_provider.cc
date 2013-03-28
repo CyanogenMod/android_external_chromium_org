@@ -9,11 +9,11 @@
 #include <vector>
 
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/time.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "net/base/net_util.h"
@@ -45,7 +45,6 @@ void BookmarkProvider::Start(const AutocompleteInput& input,
   // matches can score high enough to qualify.
   if (input.text().empty() ||
       ((input.type() != AutocompleteInput::UNKNOWN) &&
-       (input.type() != AutocompleteInput::REQUESTED_URL) &&
        (input.type() != AutocompleteInput::QUERY)) ||
       ((input.matches_requested() == AutocompleteInput::BEST_MATCH) &&
        input.prevent_inline_autocomplete()))

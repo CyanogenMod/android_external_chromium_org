@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 #include "chrome/browser/view_type_utils.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -28,7 +29,6 @@
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/renderer_preferences.h"
 #include "ipc/ipc_message.h"
-#include "webkit/glue/webpreferences.h"
 
 using content::SiteInstance;
 using content::WebContents;
@@ -47,6 +47,8 @@ BalloonHost::BalloonHost(Balloon* balloon)
 void BalloonHost::Shutdown() {
   NotifyDisconnect();
   web_contents_.reset();
+  site_instance_ = NULL;
+  balloon_ = NULL;  // No longer safe to access |balloon_|
 }
 
 extensions::WindowController*
@@ -64,17 +66,21 @@ const string16& BalloonHost::GetSource() const {
 }
 
 void BalloonHost::CloseContents(WebContents* source) {
+  if (!balloon_)
+    return;
   balloon_->CloseByScript();
   NotifyDisconnect();
 }
 
 void BalloonHost::HandleMouseDown() {
-  balloon_->OnClick();
+  if (balloon_)
+    balloon_->OnClick();
 }
 
 void BalloonHost::ResizeDueToAutoResize(WebContents* source,
                                         const gfx::Size& pref_size) {
-  balloon_->ResizeDueToAutoResize(pref_size);
+  if (balloon_)
+    balloon_->ResizeDueToAutoResize(pref_size);
 }
 
 void BalloonHost::AddNewContents(WebContents* source,
@@ -84,7 +90,8 @@ void BalloonHost::AddNewContents(WebContents* source,
                                  bool user_gesture,
                                  bool* was_blocked) {
   Browser* browser = chrome::FindLastActiveWithProfile(
-      Profile::FromBrowserContext(new_contents->GetBrowserContext()));
+      Profile::FromBrowserContext(new_contents->GetBrowserContext()),
+      chrome::GetActiveDesktop());
   if (browser) {
     chrome::AddWebContents(browser, NULL, new_contents, disposition,
                            initial_pos, user_gesture, was_blocked);
@@ -131,10 +138,7 @@ void BalloonHost::OnRequest(const ExtensionHostMsg_Request_Params& params) {
 void BalloonHost::Init() {
   DCHECK(!web_contents_.get()) << "BalloonViewHost already initialized.";
   web_contents_.reset(WebContents::Create(
-      balloon_->profile(),
-      site_instance_.get(),
-      MSG_ROUTING_NONE,
-      NULL));
+      WebContents::CreateParams(balloon_->profile(), site_instance_.get())));
   chrome::SetViewType(web_contents_.get(), chrome::VIEW_TYPE_NOTIFICATION);
   web_contents_->SetDelegate(this);
   Observe(web_contents_.get());

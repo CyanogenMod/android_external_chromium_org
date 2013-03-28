@@ -14,8 +14,8 @@
 #include "chrome/browser/notifications/notification_delegate.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
-#include "ui/gfx/image/image_skia.h"
-#include "ui/notifications/notification_types.h"
+#include "ui/gfx/image/image.h"
+#include "ui/message_center/notification_types.h"
 
 // Representation of a notification to be shown to the user.
 // On non-Ash platforms these are rendered as HTML, sometimes described by a
@@ -43,7 +43,8 @@ class Notification {
 
   // Initializes a notification with a given type. Takes ownership of
   // optional_fields.
-  Notification(ui::notifications::NotificationType type,
+  Notification(message_center::NotificationType type,
+               const GURL& origin_url,
                const GURL& icon_url,
                const string16& title,
                const string16& body,
@@ -56,7 +57,7 @@ class Notification {
   // Initializes a notification with text content and an icon image. Currently
   // only used on Ash. Does not generate content_url_.
   Notification(const GURL& origin_url,
-               const gfx::ImageSkia& icon,
+               const gfx::Image& icon,
                const string16& title,
                const string16& body,
                WebKit::WebTextDirection dir,
@@ -71,7 +72,7 @@ class Notification {
   // If this is a HTML notification.
   bool is_html() const { return is_html_; }
 
-  ui::notifications::NotificationType type() const {
+  message_center::NotificationType type() const {
     return type_;
   }
 
@@ -89,7 +90,7 @@ class Notification {
   const GURL& icon_url() const { return icon_url_; }
 
   // An image for the icon to be shown (optional).
-  const gfx::ImageSkia& icon() const { return icon_; }
+  const gfx::Image& icon() const { return icon_; }
 
   // A display string for the source of the notification.
   const string16& display_source() const { return display_source_; }
@@ -104,6 +105,7 @@ class Notification {
   void Display() const { delegate()->Display(); }
   void Error() const { delegate()->Error(); }
   void Click() const { delegate()->Click(); }
+  void ButtonClick(int index) const { delegate()->ButtonClick(index); }
   void Close(bool by_user) const { delegate()->Close(by_user); }
 
   std::string notification_id() const { return delegate()->id(); }
@@ -116,13 +118,13 @@ class Notification {
   NotificationDelegate* delegate() const { return delegate_.get(); }
 
   // The type of notification we'd like displayed.
-  ui::notifications::NotificationType type_;
+  message_center::NotificationType type_;
 
   // The Origin of the page/worker which created this notification.
   GURL origin_url_;
 
   // Image data for the associated icon, used by Ash when available.
-  gfx::ImageSkia icon_;
+  gfx::Image icon_;
 
   // URL for the icon associated with the notification. Requires delegate_
   // to have a non NULL RenderViewHost.

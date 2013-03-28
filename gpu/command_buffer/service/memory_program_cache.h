@@ -11,6 +11,7 @@
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/program_cache.h"
 #include "gpu/command_buffer/service/program_cache_lru_helper.h"
 #include "gpu/command_buffer/service/shader_translator.h"
@@ -21,22 +22,23 @@ namespace gles2 {
 // Program cache that stores binaries completely in-memory
 class GPU_EXPORT MemoryProgramCache : public ProgramCache {
  public:
-  static const size_t kDefaultMaxProgramCacheMemoryBytes = 6 * 1024 * 1024;
-
   MemoryProgramCache();
   explicit MemoryProgramCache(const size_t max_cache_size_bytes);
   virtual ~MemoryProgramCache();
 
   virtual ProgramLoadResult LoadLinkedProgram(
       GLuint program,
-      ShaderManager::ShaderInfo* shader_a,
-      ShaderManager::ShaderInfo* shader_b,
+      Shader* shader_a,
+      Shader* shader_b,
       const LocationMap* bind_attrib_location_map) const OVERRIDE;
   virtual void SaveLinkedProgram(
       GLuint program,
-      const ShaderManager::ShaderInfo* shader_a,
-      const ShaderManager::ShaderInfo* shader_b,
-      const LocationMap* bind_attrib_location_map) OVERRIDE;
+      const Shader* shader_a,
+      const Shader* shader_b,
+      const LocationMap* bind_attrib_location_map,
+      const ShaderCacheCallback& shader_callback) OVERRIDE;
+
+  virtual void LoadProgram(const std::string& program) OVERRIDE;
 
  private:
   virtual void ClearBackend() OVERRIDE;
@@ -62,12 +64,11 @@ class GPU_EXPORT MemoryProgramCache : public ProgramCache {
     const ShaderTranslator::VariableMap attrib_map_1;
     const ShaderTranslator::VariableMap uniform_map_1;
 
-   protected:
+   private:
     friend class base::RefCounted<ProgramCacheValue>;
 
     ~ProgramCacheValue();
 
-   private:
     DISALLOW_COPY_AND_ASSIGN(ProgramCacheValue);
   };
 

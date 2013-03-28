@@ -6,17 +6,22 @@
 
 #include "base/bind.h"
 #include "base/message_loop.h"
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/net/url_fixer_upper.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "google_apis/gaia/gaia_urls.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/load_flags.h"
+#include "net/url_request/url_request.h"
 
 using content::BrowserThread;
 using extensions::URLMatcher;
@@ -43,12 +48,25 @@ const char* kStandardSchemes[] = {
   "wss"
 };
 
+const char kServiceLoginAuth[] = "/ServiceLoginAuth";
+
 bool IsStandardScheme(const std::string& scheme) {
   for (size_t i = 0; i < arraysize(kStandardSchemes); ++i) {
     if (scheme == kStandardSchemes[i])
       return true;
   }
   return false;
+}
+
+bool IsSigninFlowURL(const GURL& url) {
+  // Whitelist all the signin flow URLs flagged by the SigninManager.
+  if (SigninManager::IsWebBasedSigninFlowURL(url))
+    return true;
+
+  // Additionally whitelist /ServiceLoginAuth.
+  if (url.GetOrigin() != GURL(GaiaUrls::GetInstance()->gaia_origin_url()))
+    return false;
+  return url.path() == kServiceLoginAuth;
 }
 
 // A task that builds the blacklist on the FILE thread.
@@ -139,6 +157,10 @@ bool URLBlacklist::IsURLBlocked(const GURL& url) const {
     return false;
 
   return !max->allow;
+}
+
+size_t URLBlacklist::Size() const {
+  return filters_.size();
 }
 
 // static
@@ -278,8 +300,10 @@ URLBlacklistManager::URLBlacklistManager(PrefService* pref_service)
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   pref_change_registrar_.Init(pref_service_);
-  pref_change_registrar_.Add(prefs::kUrlBlacklist, this);
-  pref_change_registrar_.Add(prefs::kUrlWhitelist, this);
+  base::Closure callback = base::Bind(&URLBlacklistManager::ScheduleUpdate,
+                                      base::Unretained(this));
+  pref_change_registrar_.Add(prefs::kUrlBlacklist, callback);
+  pref_change_registrar_.Add(prefs::kUrlWhitelist, callback);
 
   // Start enforcing the policies without a delay when they are present at
   // startup.
@@ -295,15 +319,6 @@ void URLBlacklistManager::ShutdownOnUIThread() {
 }
 
 URLBlacklistManager::~URLBlacklistManager() {
-}
-
-void URLBlacklistManager::OnPreferenceChanged(PrefServiceBase* prefs,
-                                              const std::string& pref_name) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(prefs == pref_service_);
-  DCHECK(pref_name == prefs::kUrlBlacklist ||
-         pref_name == prefs::kUrlWhitelist);
-  ScheduleUpdate();
 }
 
 void URLBlacklistManager::ScheduleUpdate() {
@@ -361,12 +376,23 @@ bool URLBlacklistManager::IsURLBlocked(const GURL& url) const {
   return blacklist_->IsURLBlocked(url);
 }
 
+bool URLBlacklistManager::IsRequestBlocked(
+    const net::URLRequest& request) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  int filter_flags = net::LOAD_MAIN_FRAME | net::LOAD_SUB_FRAME;
+  if ((request.load_flags() & filter_flags) == 0)
+    return false;
+  if (IsSigninFlowURL(request.url()))
+    return false;
+  return IsURLBlocked(request.url());
+}
+
 // static
-void URLBlacklistManager::RegisterPrefs(PrefService* pref_service) {
-  pref_service->RegisterListPref(prefs::kUrlBlacklist,
-                                 PrefService::UNSYNCABLE_PREF);
-  pref_service->RegisterListPref(prefs::kUrlWhitelist,
-                                 PrefService::UNSYNCABLE_PREF);
+void URLBlacklistManager::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterListPref(prefs::kUrlBlacklist,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kUrlWhitelist,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 }  // namespace policy

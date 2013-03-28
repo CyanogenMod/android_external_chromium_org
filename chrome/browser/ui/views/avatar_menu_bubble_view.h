@@ -16,6 +16,7 @@
 
 class AvatarMenuModel;
 class Browser;
+class ProfileItemView;
 
 namespace views {
 class CustomButton;
@@ -30,10 +31,24 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
                              public views::LinkListener,
                              public AvatarMenuModelObserver {
  public:
-  AvatarMenuBubbleView(views::View* anchor_view,
-                       views::BubbleBorder::ArrowLocation arrow_location,
-                       const gfx::Rect& anchor_rect,
-                       Browser* browser);
+  // Helper function to show the bubble and ensure that it doesn't reshow.
+  // Normally this bubble is shown when there's a mouse down event on a button.
+  // If the bubble is already showing when the user clicks on the button then
+  // this will cause two things to happen:
+  // - (1) the button will show a new instance of the bubble
+  // - (2) the old instance of the bubble will get a deactivate event and
+  //   close
+  // To prevent this reshow this function checks if an instance of the bubble
+  // is already showing and do nothing. This means that (1) will do nothing
+  // and (2) will correctly hide the old bubble instance.
+  static void ShowBubble(views::View* anchor_view,
+                         views::BubbleBorder::ArrowLocation arrow_location,
+                         views::BubbleBorder::BubbleAlignment border_alignment,
+                         const gfx::Rect& anchor_rect,
+                         Browser* browser);
+  static bool IsShowing();
+  static void Hide();
+
   virtual ~AvatarMenuBubbleView();
 
   // views::View implementation.
@@ -51,18 +66,35 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   // BubbleDelegate implementation.
   virtual gfx::Rect GetAnchorRect() OVERRIDE;
   virtual void Init() OVERRIDE;
+  virtual void WindowClosing() OVERRIDE;
 
   // AvatarMenuModelObserver implementation.
   virtual void OnAvatarMenuModelChanged(
       AvatarMenuModel* avatar_menu_model) OVERRIDE;
 
  private:
-  views::Link* add_profile_link_;
+  AvatarMenuBubbleView(views::View* anchor_view,
+                       views::BubbleBorder::ArrowLocation arrow_location,
+                       const gfx::Rect& anchor_rect,
+                       Browser* browser);
+
+  // Sets the colors on all the |item_views_|. Called after the
+  // BubbleDelegateView is created and has loaded the colors from the
+  // NativeTheme.
+  void SetBackgroundColors();
+
   scoped_ptr<AvatarMenuModel> avatar_menu_model_;
   gfx::Rect anchor_rect_;
   Browser* browser_;
-  std::vector<views::CustomButton*> item_views_;
+  std::vector<ProfileItemView*> item_views_;
+
+  // These will be non-NULL iff
+  // avatar_menu_model_->ShouldShowAddNewProfileLink() returns true.  See
+  // OnAvatarMenuModelChanged().
   views::Separator* separator_;
+  views::Link* add_profile_link_;
+
+  static AvatarMenuBubbleView* avatar_bubble_;
 
   DISALLOW_COPY_AND_ASSIGN(AvatarMenuBubbleView);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,12 +10,19 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/gtest_prod_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "ui/base/ui_export.h"
+#include "ui/gfx/point.h"
+#include "ui/gfx/size.h"
+
+namespace base {
+class FilePath;
+}
 
 namespace gfx {
 class Size;
 }
-class FilePath;
 class SkBitmap;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -51,6 +58,9 @@ class SkBitmap;
 ///////////////////////////////////////////////////////////////////////////////
 class UI_EXPORT IconUtil {
  public:
+  // The size of the large icon entries in .ico files on Windows Vista+.
+  static const int kLargeIconSize = 256;
+
   // Given an SkBitmap object, the function converts the bitmap to a Windows
   // icon and returns the corresponding HICON handle. If the function cannot
   // convert the bitmap, NULL is returned.
@@ -70,6 +80,14 @@ class UI_EXPORT IconUtil {
   // it when it is no longer needed.
   static SkBitmap* CreateSkBitmapFromHICON(HICON icon, const gfx::Size& s);
 
+  // Loads an icon resource  as a SkBitmap for the specified |size| from a
+  // loaded .dll or .exe |module|. Supports loading smaller icon sizes as well
+  // as the Vista+ 256x256 PNG icon size. If the icon could not be loaded or
+  // found, returns a NULL scoped_ptr.
+  static scoped_ptr<SkBitmap> CreateSkBitmapFromIconResource(HMODULE module,
+                                                             int resource_id,
+                                                             int size);
+
   // Given a valid HICON handle representing an icon, this function converts
   // the icon into an SkBitmap object containing an ARGB bitmap using the
   // dimensions of HICON. If the function cannot convert the icon to a bitmap
@@ -79,23 +97,34 @@ class UI_EXPORT IconUtil {
   // it when it is no longer needed.
   static SkBitmap* CreateSkBitmapFromHICON(HICON icon);
 
-  // Given an initialized SkBitmap object and a file name, this function
-  // creates a .ico file with the given name using the provided bitmap. The
-  // icon file is created with multiple icon images of varying predefined
-  // dimensions because Windows uses different image sizes when loading icons,
+  // Creates Windows .ico file at |icon_path|. The icon file is created with
+  // multiple BMP representations at varying predefined dimensions (by resizing
+  // |bitmap|) because Windows uses different image sizes when loading icons,
   // depending on where the icon is drawn (ALT+TAB window, desktop shortcut,
-  // Quick Launch, etc.). |icon_file_name| needs to specify the full path for
-  // the desired .ico file.
+  // Quick Launch, etc.).
+  //
+  // To create an icon file containing a 256x256 PNG entry, which is used by
+  // Vista+ for high res icons, specify a non-empty 256x256 SkBitmap for the
+  // |large_bitmap| parameter.
   //
   // The function returns true on success and false otherwise.
   static bool CreateIconFileFromSkBitmap(const SkBitmap& bitmap,
-                                         const FilePath& icon_path);
+                                         const SkBitmap& large_bitmap,
+                                         const base::FilePath& icon_path);
+
+  // Creates a cursor of the specified size from the DIB passed in.
+  // Returns the cursor on success or NULL on failure.
+  static HICON CreateCursorFromDIB(const gfx::Size& icon_size,
+                                   const gfx::Point& hotspot,
+                                   const void* dib_bits,
+                                   size_t dib_size);
 
  private:
   // The icon format is published in the MSDN but there is no definition of
   // the icon file structures in any of the Windows header files so we need to
   // define these structure within the class. We must make sure we use 2 byte
   // packing so that the structures are layed out properly within the file.
+  // See: http://msdn.microsoft.com/en-us/library/ms997538.aspx
 #pragma pack(push)
 #pragma pack(2)
 
@@ -121,6 +150,28 @@ class UI_EXPORT IconUtil {
     ICONDIRENTRY idEntries[1];
   };
 
+  // GRPICONDIRENTRY contains meta data for an individual icon image within a
+  // RT_GROUP_ICON resource in an .exe or .dll.
+  struct GRPICONDIRENTRY {
+    BYTE bWidth;
+    BYTE bHeight;
+    BYTE bColorCount;
+    BYTE bReserved;
+    WORD wPlanes;
+    WORD wBitCount;
+    DWORD dwBytesInRes;
+    WORD nID;
+  };
+
+  // GRPICONDIR Contains information about all the icon images contained within
+  // a RT_GROUP_ICON resource in an .exe or .dll.
+  struct GRPICONDIR {
+    WORD idReserved;
+    WORD idType;
+    WORD idCount;
+    GRPICONDIRENTRY idEntries[1];
+  };
+
   // Contains the actual icon image.
   struct ICONIMAGE {
     BITMAPINFOHEADER icHeader;
@@ -129,6 +180,8 @@ class UI_EXPORT IconUtil {
     BYTE icAND[1];
   };
 #pragma pack(pop)
+
+  FRIEND_TEST_ALL_PREFIXES(IconUtilTest, TestCreateIconFileWithLargeBitmap);
 
   // Used for indicating that the .ico contains an icon (rather than a cursor)
   // image. This value is set in the |idType| field of the ICONDIR structure.
@@ -199,7 +252,6 @@ class UI_EXPORT IconUtil {
   // A helper function of CreateSkBitmapFromHICON.
   static SkBitmap CreateSkBitmapFromHICONHelper(HICON icon,
                                                 const gfx::Size& s);
-
 
   // Prevent clients from instantiating objects of that class by declaring the
   // ctor/dtor as private.

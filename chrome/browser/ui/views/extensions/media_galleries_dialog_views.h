@@ -8,14 +8,14 @@
 #include <map>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/media_gallery/media_galleries_dialog_controller.h"
+#include "chrome/browser/media_galleries/media_galleries_dialog_controller.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/window/dialog_delegate.h"
 
-class ConstrainedWindowViews;
-
 namespace views {
 class Checkbox;
+class LabelButton;
+class Widget;
 }
 
 namespace chrome {
@@ -33,6 +33,7 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   // MediaGalleriesDialog implementation:
   virtual void UpdateGallery(const MediaGalleryPrefInfo* gallery,
                              bool permitted) OVERRIDE;
+  virtual void ForgetGallery(const MediaGalleryPrefInfo* gallery) OVERRIDE;
 
   // views::DialogDelegate implementation:
   virtual string16 GetWindowTitle() const OVERRIDE;
@@ -43,10 +44,11 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   virtual views::View* GetContentsView() OVERRIDE;
   virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
-  virtual bool UseChromeStyle() const OVERRIDE;
-  virtual views::View* GetExtraView() OVERRIDE;
+  virtual ui::ModalType GetModalType() const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
+  virtual views::NonClientFrameView* CreateNonClientFrameView(
+      views::Widget* widget) OVERRIDE;
 
   // views::ButtonListener implementation:
   virtual void ButtonPressed(views::Button* sender,
@@ -60,12 +62,13 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   // Adds a checkbox or updates an existing checkbox. Returns true if a new one
   // was added.
   bool AddOrUpdateGallery(const MediaGalleryPrefInfo* gallery,
-                          bool permitted);
+                          bool permitted,
+                          views::View* container);
 
   MediaGalleriesDialogController* controller_;
 
-  // The constrained window (a weak pointer).
-  ConstrainedWindowViews* window_;
+  // The containing window (a weak pointer).
+  views::Widget* window_;
 
   // The contents of the dialog. Owned by |window_|'s RootView.
   views::View* contents_;
@@ -73,8 +76,9 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   // A map from media gallery to views::Checkbox view.
   CheckboxMap checkbox_map_;
 
-  views::View* checkbox_container_;
-  views::View* add_gallery_container_;
+  // Pointer to the button to add a new gallery. Owned by parent in
+  // the dialog views tree.
+  views::LabelButton* add_gallery_button_;
 
   // This tracks whether the confirm button can be clicked. It starts as false
   // if no checkboxes are ticked. After there is any interaction, or some
@@ -83,9 +87,6 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
 
   // True if the user has pressed accept.
   bool accepted_;
-
-  // True if using the new "chrome style" constrained dialogs.
-  bool enable_chrome_style_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaGalleriesDialogViews);
 };

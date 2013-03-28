@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From dev/pp_video_dev.idl modified Fri Jul 20 12:22:28 2012. */
+/* From dev/pp_video_dev.idl modified Fri Dec  7 15:33:11 2012. */
 
 #ifndef PPAPI_C_DEV_PP_VIDEO_DEV_H_
 #define PPAPI_C_DEV_PP_VIDEO_DEV_H_
@@ -61,7 +61,8 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_VideoDecoder_Profile, 4);
  */
 struct PP_VideoBitstreamBuffer_Dev {
   /**
-   * Client-specified identifier for the bitstream buffer.
+   * Client-specified identifier for the bitstream buffer. Valid values are
+   * non-negative.
    */
   int32_t id;
   /**
@@ -72,7 +73,7 @@ struct PP_VideoBitstreamBuffer_Dev {
   /**
    * Size of the bitstream contained in buffer (in bytes).
    */
-  int32_t size;
+  uint32_t size;
 };
 PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_VideoBitstreamBuffer_Dev, 12);
 
@@ -83,7 +84,7 @@ struct PP_PictureBuffer_Dev {
   /**
    * Client-specified id for the picture buffer. By using this value client can
    * keep track of the buffers it has assigned to the video decoder and how they
-   * are passed back to it.
+   * are passed back to it. Valid values are non-negative.
    */
   int32_t id;
   /**

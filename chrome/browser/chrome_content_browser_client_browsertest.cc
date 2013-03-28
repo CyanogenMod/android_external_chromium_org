@@ -4,13 +4,15 @@
 
 #include <string>
 
+#include "base/command_line.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "googleurl/src/gurl.h"
 
 namespace content {
@@ -20,8 +22,8 @@ class ChromeContentBrowserClientBrowserTest : public InProcessBrowserTest {
   // Returns the last committed navigation entry of the first tab. May be NULL
   // if there is no such entry.
   NavigationEntry* GetLastCommittedEntry() {
-    return chrome::GetTabContentsAt(browser(), 0)->web_contents()
-        ->GetController().GetLastCommittedEntry();
+    return browser()->tab_strip_model()->GetWebContentsAt(0)->
+        GetController().GetLastCommittedEntry();
   }
 };
 
@@ -54,6 +56,24 @@ IN_PROC_BROWSER_TEST_F(ChromeContentBrowserClientBrowserTest,
 IN_PROC_BROWSER_TEST_F(ChromeContentBrowserClientBrowserTest,
                        UberURLHandler_AboutPage) {
   const GURL url(std::string("chrome://chrome/"));
+
+  ui_test_utils::NavigateToURL(browser(), url);
+  NavigationEntry* entry = GetLastCommittedEntry();
+
+  ASSERT_TRUE(entry != NULL);
+  EXPECT_EQ(url, entry->GetURL());
+  EXPECT_EQ(url, entry->GetVirtualURL());
+}
+
+// Test that a basic navigation works in --site-per-process mode.  This prevents
+// regressions when that mode calls out into the ChromeContentBrowserClient,
+// such as http://crbug.com/164223.
+IN_PROC_BROWSER_TEST_F(ChromeContentBrowserClientBrowserTest,
+                       SitePerProcessNavigation) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kSitePerProcess);
+  ASSERT_TRUE(test_server()->Start());
+  const GURL url(test_server()->GetURL("files/title1.html"));
 
   ui_test_utils::NavigateToURL(browser(), url);
   NavigationEntry* entry = GetLastCommittedEntry();

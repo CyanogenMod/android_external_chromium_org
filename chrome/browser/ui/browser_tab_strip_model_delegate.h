@@ -24,6 +24,7 @@ class BrowserTabStripModelDelegate : public TabStripModelDelegate {
       const gfx::Rect& window_bounds,
       const DockInfo& dock_info,
       bool maximize) OVERRIDE;
+  virtual void WillAddWebContents(content::WebContents* contents) OVERRIDE;
   virtual int GetDragActions() const OVERRIDE;
   virtual bool CanDuplicateContentsAt(int index) OVERRIDE;
   virtual void DuplicateContentsAt(int index) OVERRIDE;
@@ -33,7 +34,7 @@ class BrowserTabStripModelDelegate : public TabStripModelDelegate {
       content::WebContents* contents) OVERRIDE;
   virtual bool CanBookmarkAllTabs() const OVERRIDE;
   virtual void BookmarkAllTabs() OVERRIDE;
-  virtual bool CanRestoreTab() OVERRIDE;
+  virtual RestoreTabType GetRestoreTabType() OVERRIDE;
   virtual void RestoreTab() OVERRIDE;
 
   void CloseFrame();

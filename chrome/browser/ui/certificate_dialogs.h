@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_CERTIFICATE_DIALOGS_H_
 
 #include "net/base/x509_certificate.h"
-#include "ui/base/dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 namespace content {
 class WebContents;
@@ -14,7 +14,7 @@ class WebContents;
 
 void ShowCertSelectFileDialog(ui::SelectFileDialog* select_file_dialog,
                               ui::SelectFileDialog::Type type,
-                              const FilePath& suggested_path,
+                              const base::FilePath& suggested_path,
                               gfx::NativeWindow parent,
                               void* params);
 

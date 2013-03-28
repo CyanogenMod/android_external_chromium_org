@@ -8,19 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern "C" {
-#if defined(USE_SYSTEM_LIBPNG)
-#include <png.h>
-#else
 #include "third_party/libpng/png.h"
-#endif
-
-#if defined(USE_SYSTEM_ZLIB)
-#include <zlib.h>
-#else
 #include "third_party/zlib/zlib.h"
-#endif
-}
 
 namespace webkit_support {
 
@@ -496,11 +485,18 @@ bool DoLibpngWrite(png_struct* png_ptr, png_info* info_ptr,
                    int png_output_color_type, int output_color_components,
                    FormatConverter converter,
                    const std::vector<Comment>& comments) {
+#ifdef PNG_TEXT_SUPPORTED
+  CommentWriter comment_writer(comments);
+#endif
+  unsigned char* row_buffer = NULL;
+
   // Make sure to not declare any locals here -- locals in the presence
   // of setjmp() in C++ code makes gcc complain.
 
-  if (setjmp(png_jmpbuf(png_ptr)))
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    delete[] row_buffer;
     return false;
+  }
 
   png_set_compression_level(png_ptr, compression_level);
 
@@ -512,7 +508,6 @@ bool DoLibpngWrite(png_struct* png_ptr, png_info* info_ptr,
                PNG_FILTER_TYPE_DEFAULT);
 
 #ifdef PNG_TEXT_SUPPORTED
-  CommentWriter comment_writer(comments);
   if (comment_writer.HasComments()) {
     png_set_text(png_ptr, info_ptr, comment_writer.get_png_text(),
                  comment_writer.size());
@@ -529,12 +524,12 @@ bool DoLibpngWrite(png_struct* png_ptr, png_info* info_ptr,
     }
   } else {
     // Needs conversion using a separate buffer.
-    unsigned char* row = new unsigned char[width * output_color_components];
+    row_buffer = new unsigned char[width * output_color_components];
     for (int y = 0; y < height; y ++) {
-      converter(&input[y * row_byte_width], width, row, NULL);
-      png_write_row(png_ptr, row);
+      converter(&input[y * row_byte_width], width, row_buffer, NULL);
+      png_write_row(png_ptr, row_buffer);
     }
-    delete[] row;
+    delete[] row_buffer;
   }
 
   png_write_end(png_ptr, info_ptr);

@@ -5,12 +5,6 @@
 #include <fstream>
 #include <ostream>
 
-#if defined(USE_SYSTEM_ZLIB)
-#include <zlib.h>
-#else
-#include "third_party/zlib/zlib.h"
-#endif
-
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -19,6 +13,7 @@
 #include "net/base/io_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+#include "third_party/zlib/zlib.h"
 
 namespace {
 
@@ -66,7 +61,7 @@ class GZipUnitTest : public PlatformTest {
     gzip_encode_buffer_ = NULL;
 
     // Get the path of source data file.
-    FilePath file_path;
+    base::FilePath file_path;
     PathService::Get(base::DIR_SOURCE_ROOT, &file_path);
     file_path = file_path.AppendASCII("net");
     file_path = file_path.AppendASCII("data");

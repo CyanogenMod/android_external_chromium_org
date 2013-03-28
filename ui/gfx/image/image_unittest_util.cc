@@ -5,11 +5,15 @@
 // Because the unit tests for gfx::Image are spread across multiple
 // implementation files, this header contains the reusable components.
 
-#include "base/memory/scoped_ptr.h"
-#include "ui/base/layout.h"
 #include "ui/gfx/image/image_unittest_util.h"
+
+#include <cmath>
+
+#include "base/memory/scoped_ptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/image/image_skia.h"
 
 #if defined(TOOLKIT_GTK)
 #include <gtk/gtk.h>
@@ -26,11 +30,29 @@
 namespace gfx {
 namespace test {
 
-void SetSupportedScaleFactorsTo1xAnd2x() {
-  std::vector<ui::ScaleFactor> supported_scale_factors;
-  supported_scale_factors.push_back(ui::SCALE_FACTOR_100P);
-  supported_scale_factors.push_back(ui::SCALE_FACTOR_200P);
-  ui::test::SetSupportedScaleFactors(supported_scale_factors);
+namespace {
+
+bool ColorComponentsClose(SkColor component1, SkColor component2) {
+  int c1 = static_cast<int>(component1);
+  int c2 = static_cast<int>(component2);
+  return std::abs(c1 - c2) <= 40;
+}
+
+bool ColorsClose(SkColor color1, SkColor color2) {
+  // Be tolerant of floating point rounding and lossy color space conversions.
+  return ColorComponentsClose(SkColorGetR(color1), SkColorGetR(color2)) &&
+         ColorComponentsClose(SkColorGetG(color1), SkColorGetG(color2)) &&
+         ColorComponentsClose(SkColorGetB(color1), SkColorGetB(color2)) &&
+         ColorComponentsClose(SkColorGetA(color1), SkColorGetA(color2));
+}
+
+}  // namespace
+
+std::vector<ui::ScaleFactor> Get1xAnd2xScaleFactors() {
+  std::vector<ui::ScaleFactor> scale_factors;
+  scale_factors.push_back(ui::SCALE_FACTOR_100P);
+  scale_factors.push_back(ui::SCALE_FACTOR_200P);
+  return scale_factors;
 }
 
 const SkBitmap CreateBitmap(int width, int height) {
@@ -41,17 +63,46 @@ const SkBitmap CreateBitmap(int width, int height) {
   return bitmap;
 }
 
+gfx::ImageSkia CreateImageSkia(int width, int height) {
+  return gfx::ImageSkia::CreateFrom1xBitmap(CreateBitmap(width, height));
+}
+
+scoped_refptr<base::RefCountedMemory> CreatePNGBytes(int edge_size) {
+  SkBitmap bitmap = CreateBitmap(edge_size, edge_size);
+  scoped_refptr<base::RefCountedBytes> bytes(new base::RefCountedBytes());
+  PNGCodec::EncodeBGRASkBitmap(bitmap, false, &bytes->data());
+  return bytes;
+}
+
 gfx::Image CreateImage() {
   return CreateImage(100, 50);
 }
 
 gfx::Image CreateImage(int width, int height) {
-  return gfx::Image(CreateBitmap(width, height));
+  return gfx::Image::CreateFrom1xBitmap(CreateBitmap(width, height));
 }
 
-bool IsEqual(const gfx::Image& image1, const gfx::Image& image2) {
-  const SkBitmap& bmp1 = *image1.ToSkBitmap();
-  const SkBitmap& bmp2 = *image2.ToSkBitmap();
+bool IsEqual(const gfx::Image& img1, const gfx::Image& img2) {
+  std::vector<gfx::ImageSkiaRep> img1_reps = img1.AsImageSkia().image_reps();
+  gfx::ImageSkia image_skia2 = img2.AsImageSkia();
+  if (image_skia2.image_reps().size() != img1_reps.size())
+    return false;
+
+  for (size_t i = 0; i < img1_reps.size(); ++i) {
+    ui::ScaleFactor scale_factor = img1_reps[i].scale_factor();
+    const gfx::ImageSkiaRep& image_rep2 = image_skia2.GetRepresentation(
+        scale_factor);
+    if (image_rep2.scale_factor() != scale_factor ||
+        !IsEqual(img1_reps[i].sk_bitmap(), image_rep2.sk_bitmap())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool IsEqual(const SkBitmap& bmp1, const SkBitmap& bmp2) {
+  if (bmp1.isNull() && bmp2.isNull())
+    return true;
 
   if (bmp1.width() != bmp2.width() ||
       bmp1.height() != bmp2.height() ||
@@ -67,11 +118,59 @@ bool IsEqual(const gfx::Image& image1, const gfx::Image& image2) {
 
   for (int y = 0; y < bmp1.height(); ++y) {
     for (int x = 0; x < bmp1.width(); ++x) {
-      if (*bmp1.getAddr32(x,y) != *bmp2.getAddr32(x,y))
+      if (!ColorsClose(bmp1.getColor(x,y), bmp2.getColor(x,y)))
         return false;
     }
   }
 
+  return true;
+}
+
+bool IsEqual(const scoped_refptr<base::RefCountedMemory>& bytes,
+             const SkBitmap& bitmap) {
+  SkBitmap decoded;
+  if (!bytes.get() ||
+      !PNGCodec::Decode(bytes->front(), bytes->size(), &decoded)) {
+    return bitmap.isNull();
+  }
+
+  return IsEqual(bitmap, decoded);
+}
+
+void CheckImageIndicatesPNGDecodeFailure(const gfx::Image& image) {
+  SkBitmap bitmap = image.AsBitmap();
+  EXPECT_FALSE(bitmap.isNull());
+  EXPECT_LE(16, bitmap.width());
+  EXPECT_LE(16, bitmap.height());
+  SkAutoLockPixels auto_lock(bitmap);
+  CheckColors(bitmap.getColor(10, 10), SK_ColorRED);
+}
+
+bool ImageSkiaStructureMatches(
+    const gfx::ImageSkia& image_skia,
+    int width,
+    int height,
+    const std::vector<ui::ScaleFactor>& scale_factors) {
+  if (image_skia.isNull() ||
+      image_skia.width() != width ||
+      image_skia.height() != height ||
+      image_skia.image_reps().size() != scale_factors.size()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < scale_factors.size(); ++i) {
+    gfx::ImageSkiaRep image_rep =
+        image_skia.GetRepresentation(scale_factors[i]);
+    if (image_rep.is_null() ||
+        image_rep.scale_factor() != scale_factors[i])
+      return false;
+
+    float scale = ui::GetScaleFactorScale(scale_factors[i]);
+    if (image_rep.pixel_width() != static_cast<int>(width * scale) ||
+        image_rep.pixel_height() != static_cast<int>(height * scale)) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -100,7 +199,7 @@ PlatformImage CreatePlatformImage() {
 #elif defined(TOOLKIT_GTK)
   return gfx::GdkPixbufFromSkBitmap(bitmap);
 #else
-  return bitmap;
+  return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
 #endif
 }
 
@@ -124,7 +223,7 @@ PlatformImage ToPlatformType(const gfx::Image& image) {
 #elif defined(TOOLKIT_GTK)
   return image.ToGdkPixbuf();
 #else
-  return *image.ToSkBitmap();
+  return image.AsImageSkia();
 #endif
 }
 
@@ -136,7 +235,7 @@ PlatformImage CopyPlatformType(const gfx::Image& image) {
 #elif defined(TOOLKIT_GTK)
   return image.CopyGdkPixbuf();
 #else
-  return *image.ToSkBitmap();
+  return image.AsImageSkia();
 #endif
 }
 
@@ -154,22 +253,18 @@ SkColor GetPlatformImageColor(PlatformImage image, int x, int y) {
 }
 #else
 SkColor GetPlatformImageColor(PlatformImage image, int x, int y) {
-  SkAutoLockPixels auto_lock(image);
-  return image.getColor(x, y);
+  SkBitmap bitmap = *image.bitmap();
+  SkAutoLockPixels auto_lock(bitmap);
+  return bitmap.getColor(x, y);
 }
 #endif
 
-void CheckColor(SkColor color, bool is_red) {
-  // Be tolerant of floating point rounding and lossy color space conversions.
-  if (is_red) {
-    EXPECT_GT(SkColorGetR(color) / 255.0, 0.95);
-    EXPECT_LT(SkColorGetG(color) / 255.0, 0.05);
-  } else {
-    EXPECT_GT(SkColorGetG(color) / 255.0, 0.95);
-    EXPECT_LT(SkColorGetR(color) / 255.0, 0.05);
-  }
-  EXPECT_LT(SkColorGetB(color) / 255.0, 0.05);
-  EXPECT_GT(SkColorGetA(color) / 255.0, 0.95);
+void CheckColors(SkColor color1, SkColor color2) {
+  EXPECT_TRUE(ColorsClose(color1, color2));
+}
+
+void CheckIsTransparent(SkColor color) {
+  EXPECT_LT(SkColorGetA(color) / 255.0, 0.05);
 }
 
 bool IsPlatformImageValid(PlatformImage image) {
@@ -184,7 +279,7 @@ bool PlatformImagesEqual(PlatformImage image1, PlatformImage image2) {
 #if defined(OS_MACOSX) || defined(TOOLKIT_GTK)
   return image1 == image2;
 #else
-  return image1.getPixels() == image2.getPixels();
+  return image1.BackedBySameObjectAs(image2);
 #endif
 }
 

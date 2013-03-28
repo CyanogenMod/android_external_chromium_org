@@ -8,16 +8,18 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/browser/ui/views/login_view.h"
+#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 
 using content::BrowserThread;
@@ -36,8 +38,8 @@ class LoginHandlerViews : public LoginHandler,
  public:
   LoginHandlerViews(net::AuthChallengeInfo* auth_info, net::URLRequest* request)
       : LoginHandler(auth_info, request),
-        enable_chrome_style_(chrome::UseChromeStyleDialogs()),
-        login_view_(NULL) {
+        login_view_(NULL),
+        dialog_(NULL) {
   }
 
   // LoginModelObserver implementation.
@@ -66,7 +68,7 @@ class LoginHandlerViews : public LoginHandler,
       tab->GetRenderViewHost()->SetIgnoreInputEvents(false);
 
     // Reference is no longer valid.
-    SetDialog(NULL);
+    dialog_ = NULL;
 
     CancelAuth();
   }
@@ -74,15 +76,19 @@ class LoginHandlerViews : public LoginHandler,
   virtual void DeleteDelegate() OVERRIDE {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-    // The constrained window is going to delete itself; clear our pointer.
-    SetDialog(NULL);
+    // The widget is going to delete itself; clear our pointer.
+    dialog_ = NULL;
     SetModel(NULL);
 
     ReleaseSoon();
   }
 
-  virtual bool UseChromeStyle() const OVERRIDE {
-    return enable_chrome_style_;
+  virtual ui::ModalType GetModalType() const OVERRIDE {
+#if defined(USE_ASH)
+    return ui::MODAL_TYPE_CHILD;
+#else
+    return views::WidgetDelegate::GetModalType();
+#endif
   }
 
   virtual bool Cancel() OVERRIDE {
@@ -97,6 +103,15 @@ class LoginHandlerViews : public LoginHandler,
 
     SetAuth(login_view_->GetUsername(), login_view_->GetPassword());
     return true;
+  }
+
+  // TODO(wittman): Remove this override once we move to the new style frame
+  // view on all dialogs.
+  virtual views::NonClientFrameView* CreateNonClientFrameView(
+      views::Widget* widget) OVERRIDE {
+    return CreateConstrainedStyleNonClientFrameView(
+        widget,
+        GetWebContentsForLogin()->GetBrowserContext());
   }
 
   virtual views::View* GetInitiallyFocusedView() OVERRIDE {
@@ -125,7 +140,7 @@ class LoginHandlerViews : public LoginHandler,
     // so natural destruction order means we don't have to worry about
     // disassociating the model from the view, because the view will
     // be deleted before the password manager.
-    login_view_ = new LoginView(explanation, manager, enable_chrome_style_);
+    login_view_ = new LoginView(explanation, manager);
 
     // Scary thread safety note: This can potentially be called *after* SetAuth
     // or CancelAuth (say, if the request was cancelled before the UI thread got
@@ -133,24 +148,31 @@ class LoginHandlerViews : public LoginHandler,
     // will occur via an InvokeLater on the UI thread, which is guaranteed
     // to happen after this is called (since this was InvokeLater'd first).
     WebContents* requesting_contents = GetWebContentsForLogin();
-    SetDialog(new ConstrainedWindowViews(
-        requesting_contents,
+    dialog_ = CreateWebContentsModalDialogViews(
         this,
-        enable_chrome_style_,
-        ConstrainedWindowViews::DEFAULT_INSETS));
+        requesting_contents->GetView()->GetNativeView());
+    WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+        WebContentsModalDialogManager::FromWebContents(requesting_contents);
+    web_contents_modal_dialog_manager->ShowDialog(dialog_->GetNativeView());
     NotifyAuthNeeded();
+  }
+
+  virtual void CloseDialog() OVERRIDE {
+    // The hosting widget may have been freed.
+    if (dialog_)
+      dialog_->Close();
   }
 
  private:
   friend class base::RefCountedThreadSafe<LoginHandlerViews>;
   friend class LoginPrompt;
 
-  ~LoginHandlerViews() {}
-
-  bool enable_chrome_style_;
+  virtual ~LoginHandlerViews() {}
 
   // The LoginView that contains the user's login information
   LoginView* login_view_;
+
+  views::Widget* dialog_;
 
   DISALLOW_COPY_AND_ASSIGN(LoginHandlerViews);
 };

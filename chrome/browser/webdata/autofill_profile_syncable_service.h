@@ -10,11 +10,12 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_vector.h"
+#include "base/supports_user_data.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/non_thread_safe.h"
-#include "chrome/browser/autofill/autofill_type.h"
 #include "chrome/browser/webdata/autofill_change.h"
 #include "chrome/browser/webdata/autofill_entry.h"
+#include "components/autofill/browser/autofill_type.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
@@ -26,9 +27,10 @@
 
 class AutofillProfile;
 class AutofillTable;
+class AutofillWebDataService;
 class FormGroup;
 class ProfileSyncServiceAutofillTest;
-class WebDataService;
+class WebDataServiceBase;
 
 extern const char kAutofillProfileTag[];
 
@@ -37,17 +39,24 @@ extern const char kAutofillProfileTag[];
 // local->cloud syncs. Then for each cloud change we receive
 // ProcessSyncChanges() and for each local change Observe() is called.
 class AutofillProfileSyncableService
-    : public syncer::SyncableService,
+    : public base::SupportsUserData::Data,
+      public syncer::SyncableService,
       public content::NotificationObserver,
       public base::NonThreadSafe {
  public:
-  explicit AutofillProfileSyncableService(WebDataService* web_data_service);
   virtual ~AutofillProfileSyncableService();
+
+  // Creates a new AutofillProfileSyncableService and hangs it off of
+  // |web_data_service|, which takes ownership.
+  static void CreateForWebDataService(AutofillWebDataService* web_data_service);
+  // Retrieves the AutofillProfileSyncableService stored on |web_data_service|.
+  static AutofillProfileSyncableService* FromWebDataService(
+      AutofillWebDataService* web_data_service);
 
   static syncer::ModelType model_type() { return syncer::AUTOFILL_PROFILE; }
 
   // syncer::SyncableService implementation.
-  virtual syncer::SyncError MergeDataAndStartSyncing(
+  virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
       syncer::ModelType type,
       const syncer::SyncDataList& initial_sync_data,
       scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
@@ -65,6 +74,9 @@ class AutofillProfileSyncableService
                        const content::NotificationDetails& details) OVERRIDE;
 
  protected:
+  explicit AutofillProfileSyncableService(
+      AutofillWebDataService* web_data_service);
+
   // A convenience wrapper of a bunch of state we pass around while
   // associating models, and send to the WebDatabase for persistence.
   // We do this so we hold the write lock for only a small period.
@@ -157,7 +169,7 @@ class AutofillProfileSyncableService
     sync_processor_.reset(sync_processor);
   }
 
-  WebDataService* web_data_service_;  // WEAK
+  AutofillWebDataService* web_data_service_;  // WEAK
   content::NotificationRegistrar notification_registrar_;
 
   // Cached Autofill profiles. *Warning* deleted profiles are still in the

@@ -10,27 +10,28 @@
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_url_loader.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/url_response_info_data.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_url_request_info_api.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoader.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoader.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/resource_helper.h"
 #include "webkit/plugins/ppapi/url_request_info_util.h"
-#include "webkit/plugins/ppapi/ppb_url_response_info_impl.h"
+#include "webkit/plugins/ppapi/url_response_info_util.h"
 
 using appcache::WebApplicationCacheHostImpl;
 using ppapi::Resource;
@@ -85,6 +86,12 @@ PPB_URLLoader_Impl::PPB_URLLoader_Impl(PP_Instance instance,
 }
 
 PPB_URLLoader_Impl::~PPB_URLLoader_Impl() {
+  // There is a path whereby the destructor for the loader_ member can
+  // invoke InstanceWasDeleted() upon this PPB_URLLoader_Impl, thereby
+  // re-entering the scoped_ptr destructor with the same scoped_ptr object
+  // via loader_.reset(). Be sure that loader_ is first NULL then destroy
+  // the scoped_ptr. See http://crbug.com/159429.
+  scoped_ptr<WebKit::WebURLLoader> for_destruction_only(loader_.release());
 }
 
 PPB_URLLoader_API* PPB_URLLoader_Impl::AsPPB_URLLoader_API() {
@@ -219,9 +226,20 @@ PP_Bool PPB_URLLoader_Impl::GetDownloadProgress(
 }
 
 PP_Resource PPB_URLLoader_Impl::GetResponseInfo() {
-  if (!response_info_)
+  ::ppapi::thunk::EnterResourceCreationNoLock enter(pp_instance());
+  if (enter.failed() || !response_info_.get())
     return 0;
-  return response_info_->GetReference();
+
+  // Since we're the "host" the process-local resource for the file ref is
+  // the same as the host resource. We pass a ref to the file ref.
+  if (!response_info_->body_as_file_ref.resource.is_null()) {
+    ::ppapi::PpapiGlobals::Get()->GetResourceTracker()->AddRefResource(
+        response_info_->body_as_file_ref.resource.host_resource());
+  }
+  return enter.functions()->CreateURLResponseInfo(
+      pp_instance(),
+      *response_info_,
+      response_info_->body_as_file_ref.resource.host_resource());
 }
 
 int32_t PPB_URLLoader_Impl::ReadResponseBody(
@@ -231,7 +249,8 @@ int32_t PPB_URLLoader_Impl::ReadResponseBody(
   int32_t rv = ValidateCallback(callback);
   if (rv != PP_OK)
     return rv;
-  if (!response_info_ || response_info_->body())
+  if (!response_info_.get() ||
+      !response_info_->body_as_file_ref.resource.is_null())
     return PP_ERROR_FAILED;
   if (bytes_to_read <= 0 || !buffer)
     return PP_ERROR_BADARGUMENT;
@@ -258,7 +277,8 @@ int32_t PPB_URLLoader_Impl::FinishStreamingToFile(
   int32_t rv = ValidateCallback(callback);
   if (rv != PP_OK)
     return rv;
-  if (!response_info_ || !response_info_->body())
+  if (!response_info_.get() ||
+      response_info_->body_as_file_ref.resource.is_null())
     return PP_ERROR_FAILED;
 
   // We may have already reached EOF.
@@ -279,8 +299,12 @@ void PPB_URLLoader_Impl::Close() {
     loader_->cancel();
   else if (main_document_loader_)
     GetFrameForResource(this)->stopLoading();
-  // TODO(viettrungluu): Check what happens to the callback (probably the
-  // wrong thing). May need to post abort here. crbug.com/69457
+
+  // We must not access the buffer provided by the caller from this point on.
+  user_buffer_ = NULL;
+  user_buffer_size_ = 0;
+  if (TrackedCallback::IsPending(pending_callback_))
+    pending_callback_->PostAbort();
 }
 
 void PPB_URLLoader_Impl::GrantUniversalAccess() {
@@ -290,6 +314,21 @@ void PPB_URLLoader_Impl::GrantUniversalAccess() {
 void PPB_URLLoader_Impl::SetStatusCallback(
     PP_URLLoaderTrusted_StatusCallback cb) {
   status_callback_ = cb;
+}
+
+bool PPB_URLLoader_Impl::GetResponseInfoData(
+    ::ppapi::URLResponseInfoData* data) {
+  if (!response_info_.get())
+    return false;
+
+  *data = *response_info_;
+
+  // We transfer one plugin reference to the FileRef to the caller.
+  if (!response_info_->body_as_file_ref.resource.is_null()) {
+    ::ppapi::PpapiGlobals::Get()->GetResourceTracker()->AddRefResource(
+        response_info_->body_as_file_ref.resource.host_resource());
+  }
+  return true;
 }
 
 void PPB_URLLoader_Impl::willSendRequest(
@@ -473,10 +512,13 @@ size_t PPB_URLLoader_Impl::FillUserBuffer() {
 }
 
 void PPB_URLLoader_Impl::SaveResponse(const WebURLResponse& response) {
-  scoped_refptr<PPB_URLResponseInfo_Impl> response_info(
-      new PPB_URLResponseInfo_Impl(pp_instance()));
-  if (response_info->Initialize(response))
-    response_info_ = response_info;
+  // DataFromWebURLResponse returns a file ref with one reference to it, which
+  // we take over via our ScopedPPResource.
+  response_info_.reset(new ::ppapi::URLResponseInfoData(
+      DataFromWebURLResponse(pp_instance(), response)));
+  response_info_file_ref_ = ::ppapi::ScopedPPResource(
+      ::ppapi::ScopedPPResource::PassRef(),
+      response_info_->body_as_file_ref.resource.host_resource());
 }
 
 void PPB_URLLoader_Impl::UpdateStatus() {

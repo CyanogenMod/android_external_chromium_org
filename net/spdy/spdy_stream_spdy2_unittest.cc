@@ -2,14 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <cstddef>
+#include <string>
+
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/string_piece.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_log_unittest.h"
+#include "net/base/request_priority.h"
 #include "net/spdy/buffered_spdy_framer.h"
 #include "net/spdy/spdy_stream.h"
 #include "net/spdy/spdy_http_utils.h"
+#include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_stream_test_util.h"
+#include "net/spdy/spdy_test_util_common.h"
 #include "net/spdy/spdy_test_util_spdy2.h"
 #include "net/spdy/spdy_websocket_test_util_spdy2.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -20,79 +28,60 @@ using namespace net::test_spdy2;
 //
 namespace net {
 
+namespace test {
+
 namespace {
 
-SpdyFrame* ConstructSpdyBodyFrame(const char* data, int length) {
-  BufferedSpdyFramer framer(2);
-  return framer.CreateDataFrame(1, data, length, DATA_FLAG_NONE);
-}
-
-}  // anonymous namespace
-
-namespace test {
+const char kStreamUrl[] = "http://www.google.com/";
+const char kPostBody[] = "\0hello!\xff";
+const size_t kPostBodyLength = arraysize(kPostBody);
+const base::StringPiece kPostBodyStringPiece(kPostBody, kPostBodyLength);
 
 class SpdyStreamSpdy2Test : public testing::Test {
  protected:
-  SpdyStreamSpdy2Test() {
+  SpdyStreamSpdy2Test() : host_port_pair_("www.google.com", 80) {
   }
 
   scoped_refptr<SpdySession> CreateSpdySession() {
-    HostPortPair host_port_pair("www.google.com", 80);
-    HostPortProxyPair pair(host_port_pair, ProxyServer::Direct());
+    HostPortProxyPair pair(host_port_pair_, ProxyServer::Direct());
     scoped_refptr<SpdySession> session(
         session_->spdy_session_pool()->Get(pair, BoundNetLog()));
     return session;
   }
 
-  virtual void SetUp() {
-    SpdySession::set_default_protocol(kProtoSPDY2);
+  void InitializeSpdySession(const scoped_refptr<SpdySession>& session,
+                             const HostPortPair& host_port_pair) {
+    scoped_refptr<TransportSocketParams> transport_params(
+        new TransportSocketParams(host_port_pair, LOWEST, false, false,
+                                  OnHostResolutionCallback()));
+
+    scoped_ptr<ClientSocketHandle> connection(new ClientSocketHandle);
+    EXPECT_EQ(OK, connection->Init(host_port_pair_.ToString(), transport_params,
+                                   LOWEST, CompletionCallback(),
+                                   session_->GetTransportSocketPool(
+                                       HttpNetworkSession::NORMAL_SOCKET_POOL),
+                                   BoundNetLog()));
+    session->InitializeWithSocket(connection.release(), false, OK);
   }
 
   virtual void TearDown() {
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
   }
 
+  HostPortPair host_port_pair_;
+  SpdySessionDependencies session_deps_;
   scoped_refptr<HttpNetworkSession> session_;
-
- private:
-  SpdyTestStateHelper spdy_state_;
 };
 
 TEST_F(SpdyStreamSpdy2Test, SendDataAfterOpen) {
-  SpdySessionDependencies session_deps;
+  GURL url(kStreamUrl);
 
-  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps);
-  SpdySessionPoolPeer pool_peer_(session_->spdy_session_pool());
+  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
 
-  const SpdyHeaderInfo kSynStartHeader = {
-    SYN_STREAM,
-    1,
-    0,
-    ConvertRequestPriorityToSpdyPriority(LOWEST, 2),
-    CONTROL_FLAG_NONE,
-    false,
-    INVALID,
-    NULL,
-    0,
-    DATA_FLAG_NONE
-  };
-  static const char* const kGetHeaders[] = {
-    "method",
-    "GET",
-    "scheme",
-    "http",
-    "host",
-    "www.google.com",
-    "url",
-    "/",
-    "version",
-    "HTTP/1.1",
-  };
   scoped_ptr<SpdyFrame> req(
-      ConstructSpdyPacket(
-          kSynStartHeader, NULL, 0, kGetHeaders, arraysize(kGetHeaders) / 2));
+      ConstructSpdyPost(kStreamUrl, kPostBodyLength, NULL, 0));
   scoped_ptr<SpdyFrame> msg(
-      ConstructSpdyBodyFrame("\0hello!\xff", 8));
+      ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   MockWrite writes[] = {
     CreateMockWrite(*req),
     CreateMockWrite(*msg),
@@ -100,9 +89,9 @@ TEST_F(SpdyStreamSpdy2Test, SendDataAfterOpen) {
   writes[0].sequence_number = 0;
   writes[1].sequence_number = 2;
 
-  scoped_ptr<SpdyFrame> resp(ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> resp(ConstructSpdyPostSynReply(NULL, 0));
   scoped_ptr<SpdyFrame> echo(
-      ConstructSpdyBodyFrame("\0hello!\xff", 8));
+      ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   MockRead reads[] = {
     CreateMockRead(*resp),
     CreateMockRead(*echo),
@@ -117,68 +106,40 @@ TEST_F(SpdyStreamSpdy2Test, SendDataAfterOpen) {
   MockConnect connect_data(SYNCHRONOUS, OK);
   data.set_connect_data(connect_data);
 
-  session_deps.socket_factory->AddSocketDataProvider(&data);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
 
   scoped_refptr<SpdySession> session(CreateSpdySession());
-  const char* kStreamUrl = "http://www.google.com/";
-  GURL url(kStreamUrl);
 
-  HostPortPair host_port_pair("www.google.com", 80);
-  scoped_refptr<TransportSocketParams> transport_params(
-      new TransportSocketParams(host_port_pair, LOWEST, false, false,
-                                OnHostResolutionCallback()));
+  InitializeSpdySession(session, host_port_pair_);
 
-  scoped_ptr<ClientSocketHandle> connection(new ClientSocketHandle);
-  EXPECT_EQ(OK, connection->Init(host_port_pair.ToString(), transport_params,
-                                 LOWEST, CompletionCallback(),
-                                 session_->GetTransportSocketPool(
-                                     HttpNetworkSession::NORMAL_SOCKET_POOL),
-                                 BoundNetLog()));
-  session->InitializeWithSocket(connection.release(), false, OK);
+  scoped_refptr<SpdyStream> stream =
+      CreateStreamSynchronously(session, url, LOWEST, BoundNetLog());
+  ASSERT_TRUE(stream.get() != NULL);
 
-  scoped_refptr<SpdyStream> stream;
-  ASSERT_EQ(
-      OK,
-      session->CreateStream(url, LOWEST, &stream, BoundNetLog(),
-                            CompletionCallback()));
-  scoped_refptr<IOBufferWithSize> buf(new IOBufferWithSize(8));
-  memcpy(buf->data(), "\0hello!\xff", 8);
-  TestCompletionCallback callback;
-
-  scoped_ptr<TestSpdyStreamDelegate> delegate(
-      new TestSpdyStreamDelegate(
-          stream.get(), NULL, buf.get(), callback.callback()));
-  stream->SetDelegate(delegate.get());
+  StreamDelegateSendImmediate delegate(
+      stream.get(), scoped_ptr<SpdyHeaderBlock>(), kPostBodyStringPiece);
+  stream->SetDelegate(&delegate);
 
   EXPECT_FALSE(stream->HasUrl());
 
-  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock);
-  (*headers)["method"] = "GET";
-  (*headers)["scheme"] = url.scheme();
-  (*headers)["host"] = url.host();
-  (*headers)["url"] = url.path();
-  (*headers)["version"] = "HTTP/1.1";
-  stream->set_spdy_headers(headers.Pass());
+  stream->set_spdy_headers(
+      ConstructPostHeaderBlock(kStreamUrl, kPostBodyLength));
   EXPECT_TRUE(stream->HasUrl());
   EXPECT_EQ(kStreamUrl, stream->GetUrl().spec());
 
   EXPECT_EQ(ERR_IO_PENDING, stream->SendRequest(true));
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_EQ(ERR_CONNECTION_CLOSED, delegate.WaitForClose());
 
-  EXPECT_TRUE(delegate->send_headers_completed());
-  EXPECT_EQ("200", (*delegate->response())["status"]);
-  EXPECT_EQ("HTTP/1.1", (*delegate->response())["version"]);
-  EXPECT_EQ(std::string("\0hello!\xff", 8), delegate->received_data());
-  EXPECT_EQ(8, delegate->data_sent());
-  EXPECT_TRUE(delegate->closed());
+  EXPECT_TRUE(delegate.send_headers_completed());
+  EXPECT_EQ("200", delegate.GetResponseHeaderValue("status"));
+  EXPECT_EQ("HTTP/1.1", delegate.GetResponseHeaderValue("version"));
+  EXPECT_EQ(std::string(kPostBody, kPostBodyLength), delegate.received_data());
+  EXPECT_EQ(static_cast<int>(kPostBodyLength), delegate.data_sent());
 }
 
 TEST_F(SpdyStreamSpdy2Test, SendHeaderAndDataAfterOpen) {
-  SpdySessionDependencies session_deps;
-
-  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps);
-  SpdySessionPoolPeer pool_peer_(session_->spdy_session_pool());
+  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
 
   scoped_ptr<SpdyFrame> expected_request(ConstructSpdyWebSocketSynStream(
       1,
@@ -187,7 +148,8 @@ TEST_F(SpdyStreamSpdy2Test, SendHeaderAndDataAfterOpen) {
       "http://example.com"));
   scoped_ptr<SpdyFrame> expected_headers(ConstructSpdyWebSocketHeadersFrame(
       1, "6", true));
-  scoped_ptr<SpdyFrame> expected_message(ConstructSpdyBodyFrame("hello!", 6));
+  scoped_ptr<SpdyFrame> expected_message(
+      ConstructSpdyBodyFrame(1, "hello!", 6, false));
   MockWrite writes[] = {
     CreateMockWrite(*expected_request),
     CreateMockWrite(*expected_headers),
@@ -211,44 +173,25 @@ TEST_F(SpdyStreamSpdy2Test, SendHeaderAndDataAfterOpen) {
   MockConnect connect_data(SYNCHRONOUS, OK);
   data.set_connect_data(connect_data);
 
-  session_deps.socket_factory->AddSocketDataProvider(&data);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
 
   scoped_refptr<SpdySession> session(CreateSpdySession());
-  const char* kStreamUrl = "ws://server.example.com/chat";
-  GURL url(kStreamUrl);
+  GURL url("ws://server.example.com/chat");
 
   HostPortPair host_port_pair("server.example.com", 80);
-  scoped_refptr<TransportSocketParams> transport_params(
-      new TransportSocketParams(host_port_pair, LOWEST, false, false,
-                                OnHostResolutionCallback()));
+  InitializeSpdySession(session, host_port_pair);
 
-  scoped_ptr<ClientSocketHandle> connection(new ClientSocketHandle);
-  EXPECT_EQ(OK, connection->Init(host_port_pair.ToString(), transport_params,
-                                 LOWEST, CompletionCallback(),
-                                 session_->GetTransportSocketPool(
-                                     HttpNetworkSession::NORMAL_SOCKET_POOL),
-                                 BoundNetLog()));
-  session->InitializeWithSocket(connection.release(), false, OK);
-
-  scoped_refptr<SpdyStream> stream;
-  ASSERT_EQ(
-      OK,
-      session->CreateStream(url, HIGHEST, &stream, BoundNetLog(),
-                            CompletionCallback()));
-  scoped_refptr<IOBufferWithSize> buf(new IOBufferWithSize(6));
-  memcpy(buf->data(), "hello!", 6);
-  TestCompletionCallback callback;
+  scoped_refptr<SpdyStream> stream =
+      CreateStreamSynchronously(session, url, HIGHEST, BoundNetLog());
+  ASSERT_TRUE(stream.get() != NULL);
   scoped_ptr<SpdyHeaderBlock> message_headers(new SpdyHeaderBlock);
   (*message_headers)["opcode"] = "1";
   (*message_headers)["length"] = "6";
   (*message_headers)["fin"] = "1";
 
-  scoped_ptr<TestSpdyStreamDelegate> delegate(
-      new TestSpdyStreamDelegate(stream.get(),
-                                 message_headers.release(),
-                                 buf.get(),
-                                 callback.callback()));
-  stream->SetDelegate(delegate.get());
+  StreamDelegateSendImmediate delegate(
+      stream.get(), message_headers.Pass(), base::StringPiece("hello!", 6));
+  stream->SetDelegate(&delegate);
 
   EXPECT_FALSE(stream->HasUrl());
 
@@ -263,21 +206,18 @@ TEST_F(SpdyStreamSpdy2Test, SendHeaderAndDataAfterOpen) {
 
   EXPECT_EQ(ERR_IO_PENDING, stream->SendRequest(true));
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_EQ(ERR_CONNECTION_CLOSED, delegate.WaitForClose());
 
-  EXPECT_TRUE(delegate->send_headers_completed());
-  EXPECT_EQ("101", (*delegate->response())["status"]);
-  EXPECT_EQ(1, delegate->headers_sent());
-  EXPECT_EQ(std::string(), delegate->received_data());
-  EXPECT_EQ(6, delegate->data_sent());
+  EXPECT_TRUE(delegate.send_headers_completed());
+  EXPECT_EQ("101", delegate.GetResponseHeaderValue("status"));
+  EXPECT_EQ(1, delegate.headers_sent());
+  EXPECT_EQ(std::string(), delegate.received_data());
+  EXPECT_EQ(6, delegate.data_sent());
 }
 
 TEST_F(SpdyStreamSpdy2Test, PushedStream) {
-  const char kStreamUrl[] = "http://www.google.com/";
-
   SpdySessionDependencies session_deps;
-  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps);
-  SpdySessionPoolPeer pool_peer_(session_->spdy_session_pool());
+  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
   scoped_refptr<SpdySession> spdy_session(CreateSpdySession());
 
   MockRead reads[] = {
@@ -288,26 +228,20 @@ TEST_F(SpdyStreamSpdy2Test, PushedStream) {
   MockConnect connect_data(SYNCHRONOUS, OK);
   data.set_connect_data(connect_data);
 
-  session_deps.socket_factory->AddSocketDataProvider(&data);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
 
-  HostPortPair host_port_pair("www.google.com", 80);
-  scoped_refptr<TransportSocketParams> transport_params(
-      new TransportSocketParams(host_port_pair, LOWEST, false, false,
-                                OnHostResolutionCallback()));
-
-  scoped_ptr<ClientSocketHandle> connection(new ClientSocketHandle);
-  EXPECT_EQ(OK, connection->Init(host_port_pair.ToString(), transport_params,
-                                 LOWEST, CompletionCallback(),
-                                 session_->GetTransportSocketPool(
-                                     HttpNetworkSession::NORMAL_SOCKET_POOL),
-                                 BoundNetLog()));
-  spdy_session->InitializeWithSocket(connection.release(), false, OK);
+  InitializeSpdySession(spdy_session, host_port_pair_);
   BoundNetLog net_log;
 
   // Conjure up a stream.
-  scoped_refptr<SpdyStream> stream = new SpdyStream(spdy_session,
-                                                    true,
-                                                    net_log);
+  scoped_refptr<SpdyStream> stream =
+      new SpdyStream(spdy_session,
+                     std::string(),
+                     DEFAULT_PRIORITY,
+                     kSpdyStreamInitialWindowSize,
+                     kSpdyStreamInitialWindowSize,
+                     true,
+                     net_log);
   stream->set_stream_id(2);
   EXPECT_FALSE(stream->response_received());
   EXPECT_FALSE(stream->HasUrl());
@@ -330,40 +264,14 @@ TEST_F(SpdyStreamSpdy2Test, PushedStream) {
 }
 
 TEST_F(SpdyStreamSpdy2Test, StreamError) {
-  SpdySessionDependencies session_deps;
+  GURL url(kStreamUrl);
 
-  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps);
-  SpdySessionPoolPeer pool_peer_(session_->spdy_session_pool());
+  session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
 
-  const SpdyHeaderInfo kSynStartHeader = {
-    SYN_STREAM,
-    1,
-    0,
-    ConvertRequestPriorityToSpdyPriority(LOWEST, 2),
-    CONTROL_FLAG_NONE,
-    false,
-    INVALID,
-    NULL,
-    0,
-    DATA_FLAG_NONE
-  };
-  static const char* const kGetHeaders[] = {
-    "method",
-    "GET",
-    "scheme",
-    "http",
-    "host",
-    "www.google.com",
-    "url",
-    "/",
-    "version",
-    "HTTP/1.1",
-  };
   scoped_ptr<SpdyFrame> req(
-      ConstructSpdyPacket(
-          kSynStartHeader, NULL, 0, kGetHeaders, arraysize(kGetHeaders) / 2));
+      ConstructSpdyPost(kStreamUrl, kPostBodyLength, NULL, 0));
   scoped_ptr<SpdyFrame> msg(
-      ConstructSpdyBodyFrame("\0hello!\xff", 8));
+      ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   MockWrite writes[] = {
     CreateMockWrite(*req),
     CreateMockWrite(*msg),
@@ -373,7 +281,7 @@ TEST_F(SpdyStreamSpdy2Test, StreamError) {
 
   scoped_ptr<SpdyFrame> resp(ConstructSpdyGetSynReply(NULL, 0, 1));
   scoped_ptr<SpdyFrame> echo(
-      ConstructSpdyBodyFrame("\0hello!\xff", 8));
+      ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   MockRead reads[] = {
     CreateMockRead(*resp),
     CreateMockRead(*echo),
@@ -390,63 +298,38 @@ TEST_F(SpdyStreamSpdy2Test, StreamError) {
   MockConnect connect_data(SYNCHRONOUS, OK);
   data.set_connect_data(connect_data);
 
-  session_deps.socket_factory->AddSocketDataProvider(&data);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
 
   scoped_refptr<SpdySession> session(CreateSpdySession());
-  const char* kStreamUrl = "http://www.google.com/";
-  GURL url(kStreamUrl);
 
-  HostPortPair host_port_pair("www.google.com", 80);
-  scoped_refptr<TransportSocketParams> transport_params(
-      new TransportSocketParams(host_port_pair, LOWEST, false, false,
-                                OnHostResolutionCallback()));
+  InitializeSpdySession(session, host_port_pair_);
 
-  scoped_ptr<ClientSocketHandle> connection(new ClientSocketHandle);
-  EXPECT_EQ(OK, connection->Init(host_port_pair.ToString(), transport_params,
-                                 LOWEST, CompletionCallback(),
-                                 session_->GetTransportSocketPool(
-                                     HttpNetworkSession::NORMAL_SOCKET_POOL),
-                                 log.bound()));
-  session->InitializeWithSocket(connection.release(), false, OK);
+  scoped_refptr<SpdyStream> stream =
+      CreateStreamSynchronously(session, url, LOWEST, log.bound());
+  ASSERT_TRUE(stream.get() != NULL);
 
-  scoped_refptr<SpdyStream> stream;
-  ASSERT_EQ(
-      OK,
-      session->CreateStream(url, LOWEST, &stream, log.bound(),
-                            CompletionCallback()));
-  scoped_refptr<IOBufferWithSize> buf(new IOBufferWithSize(8));
-  memcpy(buf->data(), "\0hello!\xff", 8);
-  TestCompletionCallback callback;
-
-  scoped_ptr<TestSpdyStreamDelegate> delegate(
-      new TestSpdyStreamDelegate(
-          stream.get(), NULL, buf.get(), callback.callback()));
-  stream->SetDelegate(delegate.get());
+  StreamDelegateSendImmediate delegate(
+      stream.get(), scoped_ptr<SpdyHeaderBlock>(), kPostBodyStringPiece);
+  stream->SetDelegate(&delegate);
 
   EXPECT_FALSE(stream->HasUrl());
 
-  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock);
-  (*headers)["method"] = "GET";
-  (*headers)["scheme"] = url.scheme();
-  (*headers)["host"] = url.host();
-  (*headers)["url"] = url.path();
-  (*headers)["version"] = "HTTP/1.1";
-  stream->set_spdy_headers(headers.Pass());
+  stream->set_spdy_headers(
+      ConstructPostHeaderBlock(kStreamUrl, kPostBodyLength));
   EXPECT_TRUE(stream->HasUrl());
   EXPECT_EQ(kStreamUrl, stream->GetUrl().spec());
 
   EXPECT_EQ(ERR_IO_PENDING, stream->SendRequest(true));
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_EQ(ERR_CONNECTION_CLOSED, delegate.WaitForClose());
 
   const SpdyStreamId stream_id = stream->stream_id();
 
-  EXPECT_TRUE(delegate->send_headers_completed());
-  EXPECT_EQ("200", (*delegate->response())["status"]);
-  EXPECT_EQ("HTTP/1.1", (*delegate->response())["version"]);
-  EXPECT_EQ(std::string("\0hello!\xff", 8), delegate->received_data());
-  EXPECT_EQ(8, delegate->data_sent());
-  EXPECT_TRUE(delegate->closed());
+  EXPECT_TRUE(delegate.send_headers_completed());
+  EXPECT_EQ("200", delegate.GetResponseHeaderValue("status"));
+  EXPECT_EQ("HTTP/1.1", delegate.GetResponseHeaderValue("version"));
+  EXPECT_EQ(std::string(kPostBody, kPostBodyLength), delegate.received_data());
+  EXPECT_EQ(static_cast<int>(kPostBodyLength), delegate.data_sent());
 
   // Check that the NetLog was filled reasonably.
   net::CapturingNetLog::CapturedEntryList entries;
@@ -464,6 +347,8 @@ TEST_F(SpdyStreamSpdy2Test, StreamError) {
   EXPECT_EQ(static_cast<int>(stream_id), stream_id2);
 }
 
-} //namespace test
+}  // namespace
+
+}  // namespace test
 
 }  // namespace net

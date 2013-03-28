@@ -13,12 +13,14 @@
 #include "content/renderer/browser_plugin/mock_browser_plugin_manager.h"
 #include "content/renderer/render_view_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 class RenderThreadImpl;
 
 namespace content {
+
+class TestContentRendererClient;
 
 class BrowserPluginTest : public RenderViewTest {
  public:
@@ -28,13 +30,14 @@ class BrowserPluginTest : public RenderViewTest {
   virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
   MockBrowserPluginManager* browser_plugin_manager() const {
-    return browser_plugin_manager_.get();
+    return static_cast<MockBrowserPluginManager*>(
+        static_cast<RenderViewImpl*>(view_)->browser_plugin_manager());
   }
   std::string ExecuteScriptAndReturnString(const std::string& script);
   int ExecuteScriptAndReturnInt(const std::string& script);
+  bool ExecuteScriptAndReturnBool(const std::string& script, bool* result);
  private:
-  scoped_ptr<MockBrowserPluginManager> browser_plugin_manager_;
-  ContentRendererClient content_renderer_client_;
+  scoped_ptr<TestContentRendererClient> test_content_renderer_client_;
 };
 
 }  // namespace content

@@ -42,6 +42,7 @@ class AccessiblePaneViewFocusSearch : public FocusSearch {
 
 AccessiblePaneView::AccessiblePaneView()
     : pane_has_focus_(false),
+      allow_deactivate_on_esc_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)),
       focus_manager_(NULL),
       home_key_(ui::VKEY_HOME, ui::EF_NONE),
@@ -65,7 +66,7 @@ bool AccessiblePaneView::SetPaneFocus(views::View* initial_focus) {
   if (!focus_manager_)
     focus_manager_ = GetFocusManager();
 
-  focus_manager_->StoreFocusedView();
+  focus_manager_->StoreFocusedView(true);
 
   // Use the provided initial focus if it's visible and enabled, otherwise
   // use the first focusable child.
@@ -156,14 +157,16 @@ views::FocusTraversable* AccessiblePaneView::GetPaneFocusTraversable() {
 bool AccessiblePaneView::AcceleratorPressed(
     const ui::Accelerator& accelerator) {
 
-  const views::View* focused_view = focus_manager_->GetFocusedView();
+  views::View* focused_view = focus_manager_->GetFocusedView();
   if (!ContainsForFocusSearch(this, focused_view))
     return false;
 
   switch (accelerator.key_code()) {
     case ui::VKEY_ESCAPE:
       RemovePaneFocus();
-      focus_manager_->RestoreFocusedView();
+      if (!focus_manager_->RestoreFocusedView() &&
+          allow_deactivate_on_esc_)
+        focused_view->GetWidget()->Deactivate();
       return true;
     case ui::VKEY_LEFT:
       focus_manager_->AdvanceFocus(true);

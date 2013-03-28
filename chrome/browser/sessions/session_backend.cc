@@ -41,7 +41,7 @@ class SessionFileReader {
   typedef SessionCommand::id_type id_type;
   typedef SessionCommand::size_type size_type;
 
-  explicit SessionFileReader(const FilePath& path)
+  explicit SessionFileReader(const base::FilePath& path)
       : errored_(false),
         buffer_(SessionBackend::kFileReadBufferSize, 0),
         buffer_position_(0),
@@ -202,7 +202,7 @@ static const char* kLastSessionFileName = "Last Session";
 const int SessionBackend::kFileReadBufferSize = 1024;
 
 SessionBackend::SessionBackend(BaseSessionService::SessionType type,
-                               const FilePath& path_to_dir)
+                               const base::FilePath& path_to_dir)
     : type_(type),
       path_to_dir_(path_to_dir),
       last_session_valid_(false),
@@ -244,12 +244,16 @@ void SessionBackend::AppendCommands(
 }
 
 void SessionBackend::ReadLastSessionCommands(
-    scoped_refptr<BaseSessionService::InternalGetCommandsRequest> request) {
-  if (request->canceled())
+    const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+    const BaseSessionService::InternalGetCommandsCallback& callback) {
+  if (is_canceled.Run())
     return;
+
   Init();
-  ReadLastSessionCommandsImpl(&(request->commands));
-  request->ForwardResult(request->handle(), request);
+
+  ScopedVector<SessionCommand> commands;
+  ReadLastSessionCommandsImpl(&(commands.get()));
+  callback.Run(commands.Pass());
 }
 
 bool SessionBackend::ReadLastSessionCommandsImpl(
@@ -268,8 +272,8 @@ void SessionBackend::MoveCurrentSessionToLastSession() {
   Init();
   current_session_file_.reset(NULL);
 
-  const FilePath current_session_path = GetCurrentSessionPath();
-  const FilePath last_session_path = GetLastSessionPath();
+  const base::FilePath current_session_path = GetCurrentSessionPath();
+  const base::FilePath last_session_path = GetLastSessionPath();
   if (file_util::PathExists(last_session_path))
     file_util::Delete(last_session_path, false);
   if (file_util::PathExists(current_session_path)) {
@@ -292,15 +296,6 @@ void SessionBackend::MoveCurrentSessionToLastSession() {
 
   // Create and open the file for the current session.
   ResetFile();
-}
-
-void SessionBackend::ReadCurrentSessionCommands(
-    scoped_refptr<BaseSessionService::InternalGetCommandsRequest> request) {
-  if (request->canceled())
-    return;
-  Init();
-  ReadCurrentSessionCommandsImpl(&(request->commands));
-  request->ForwardResult(request->handle(), request);
 }
 
 bool SessionBackend::ReadCurrentSessionCommandsImpl(
@@ -372,7 +367,8 @@ void SessionBackend::ResetFile() {
   empty_file_ = true;
 }
 
-net::FileStream* SessionBackend::OpenAndWriteHeader(const FilePath& path) {
+net::FileStream* SessionBackend::OpenAndWriteHeader(
+    const base::FilePath& path) {
   DCHECK(!path.empty());
   scoped_ptr<net::FileStream> file(new net::FileStream(NULL));
   if (file->OpenSync(path, base::PLATFORM_FILE_CREATE_ALWAYS |
@@ -389,8 +385,8 @@ net::FileStream* SessionBackend::OpenAndWriteHeader(const FilePath& path) {
   return file.release();
 }
 
-FilePath SessionBackend::GetLastSessionPath() {
-  FilePath path = path_to_dir_;
+base::FilePath SessionBackend::GetLastSessionPath() {
+  base::FilePath path = path_to_dir_;
   if (type_ == BaseSessionService::TAB_RESTORE)
     path = path.AppendASCII(kLastTabSessionFileName);
   else
@@ -398,8 +394,8 @@ FilePath SessionBackend::GetLastSessionPath() {
   return path;
 }
 
-FilePath SessionBackend::GetCurrentSessionPath() {
-  FilePath path = path_to_dir_;
+base::FilePath SessionBackend::GetCurrentSessionPath() {
+  base::FilePath path = path_to_dir_;
   if (type_ == BaseSessionService::TAB_RESTORE)
     path = path.AppendASCII(kCurrentTabSessionFileName);
   else

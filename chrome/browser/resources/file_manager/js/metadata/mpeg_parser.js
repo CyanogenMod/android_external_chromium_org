@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @param {MetadataDispatcher} parent Parent object.
  * @constructor
@@ -20,7 +22,7 @@ MpegParser.HEADER_SIZE = 8;
 
 /**
  * @param {ByteReader} br ByteReader instance.
- * @param {number} opt_end End of atom position.
+ * @param {number=} opt_end End of atom position.
  * @return {number} Atom size.
  */
 MpegParser.readAtomSize = function(br, opt_end) {
@@ -46,7 +48,7 @@ MpegParser.readAtomSize = function(br, opt_end) {
 
 /**
  * @param {ByteReader} br ByteReader instance.
- * @param {number} opt_end End of atom position.
+ * @param {number=} opt_end End of atom position.
  * @return {string} Atom name.
  */
 MpegParser.readAtomName = function(br, opt_end) {

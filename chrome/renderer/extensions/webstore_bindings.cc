@@ -15,6 +15,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebUserGestureIndicator.h"
 #include "v8/include/v8.h"
 
 using WebKit::WebDocument;
@@ -22,6 +23,7 @@ using WebKit::WebElement;
 using WebKit::WebFrame;
 using WebKit::WebNode;
 using WebKit::WebNodeList;
+using WebKit::WebUserGestureIndicator;
 
 namespace extensions {
 
@@ -53,7 +55,7 @@ int g_next_install_id = 0;
 
 WebstoreBindings::WebstoreBindings(Dispatcher* dispatcher,
                                    ChromeV8Context* context)
-    : ChromeV8Extension(dispatcher),
+    : ChromeV8Extension(dispatcher, context->v8_context()),
       ChromeV8ExtensionHandler(context) {
   RouteFunction("Install",
                 base::Bind(&WebstoreBindings::Install, base::Unretained(this)));
@@ -61,7 +63,7 @@ WebstoreBindings::WebstoreBindings(Dispatcher* dispatcher,
 
 v8::Handle<v8::Value> WebstoreBindings::Install(
     const v8::Arguments& args) {
-  WebFrame* frame = WebFrame::frameForCurrentContext();
+  WebFrame* frame = WebFrame::frameForContext(v8_context());
   if (!frame || !frame->view())
     return v8::Undefined();
 
@@ -118,7 +120,7 @@ bool WebstoreBindings::GetWebstoreItemIdFromFrame(
     return false;
   }
 
-  if (!frame->isProcessingUserGesture()) {
+  if (!WebUserGestureIndicator::isProcessingUserGesture()) {
     *error = kNotUserGestureError;
     return false;
   }
@@ -215,8 +217,8 @@ void WebstoreBindings::OnInlineWebstoreInstallResponse(
   argv[0] = v8::Integer::New(install_id);
   argv[1] = v8::Boolean::New(success);
   argv[2] = v8::String::New(error.c_str());
-  CHECK(context_->CallChromeHiddenMethod("webstore.onInstallResponse",
-                                         arraysize(argv), argv, NULL));
+  context_->CallChromeHiddenMethod("webstore.onInstallResponse",
+                                   arraysize(argv), argv, NULL);
 }
 
 }  // namespace extensions

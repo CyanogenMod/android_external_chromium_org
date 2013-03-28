@@ -20,7 +20,6 @@
 
 class Browser;
 class LauncherFaviconLoader;
-class TabContents;
 
 namespace ash {
 class LauncherModel;
@@ -54,6 +53,9 @@ class BrowserLauncherItemController : public LauncherItemController,
                                 const std::string& app_id);
   virtual ~BrowserLauncherItemController();
 
+  // Overriding the app id for V1 apps.
+  virtual const std::string& app_id() const OVERRIDE;
+
   // Sets up this BrowserLauncherItemController.
   void Init();
 
@@ -74,17 +76,19 @@ class BrowserLauncherItemController : public LauncherItemController,
   virtual string16 GetTitle() OVERRIDE;
   virtual bool HasWindow(aura::Window* window) const OVERRIDE;
   virtual bool IsOpen() const OVERRIDE;
+  virtual bool IsVisible() const OVERRIDE;
   virtual void Launch(int event_flags) OVERRIDE;
   virtual void Activate() OVERRIDE;
   virtual void Close() OVERRIDE;
-  virtual void Clicked() OVERRIDE;
+  virtual void Clicked(const ui::Event& event) OVERRIDE;
   virtual void OnRemoved() OVERRIDE;
   virtual void LauncherItemChanged(int index,
                                    const ash::LauncherItem& old_item) OVERRIDE;
+  virtual ChromeLauncherAppMenuItems GetApplicationList() OVERRIDE;
 
   // TabStripModel overrides:
-  virtual void ActiveTabChanged(TabContents* old_contents,
-                                TabContents* new_contents,
+  virtual void ActiveTabChanged(content::WebContents* old_contents,
+                                content::WebContents* new_contents,
                                 int index,
                                 bool user_gesture) OVERRIDE;
   virtual void TabInsertedAt(content::WebContents* contents,
@@ -93,12 +97,12 @@ class BrowserLauncherItemController : public LauncherItemController,
   virtual void TabDetachedAt(content::WebContents* contents,
                              int index) OVERRIDE;
   virtual void TabChangedAt(
-      TabContents* tab,
+      content::WebContents* contents,
       int index,
       TabStripModelObserver::TabChangeType change_type) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int index) OVERRIDE;
 
   // LauncherFaviconLoader::Delegate overrides:
@@ -124,7 +128,7 @@ class BrowserLauncherItemController : public LauncherItemController,
   void UpdateItemStatus();
 
   // Updates the launcher from |tab|.
-  void UpdateLauncher(TabContents* tab);
+  void UpdateLauncher(content::WebContents* tab);
 
   void UpdateAppState(content::WebContents* tab);
 
@@ -132,6 +136,10 @@ class BrowserLauncherItemController : public LauncherItemController,
 
   // Browser window we're in.
   aura::Window* window_;
+
+  // If running a windowed V1 app with the new launcher, this (empty) app id
+  // will be returned by app_id().
+  std::string empty_app_id_;
 
   TabStripModel* tab_model_;
 

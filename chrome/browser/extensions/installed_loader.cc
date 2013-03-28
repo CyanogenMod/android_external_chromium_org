@@ -4,7 +4,7 @@
 
 #include "chrome/browser/extensions/installed_loader.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/metrics/histogram.h"
 #include "base/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
@@ -16,6 +16,7 @@
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
@@ -31,6 +32,7 @@ using content::BrowserThread;
 using content::UserMetricsAction;
 using extensions::Extension;
 using extensions::ExtensionInfo;
+using extensions::Manifest;
 
 namespace errors = extension_manifest_errors;
 
@@ -49,11 +51,12 @@ enum ManifestReloadReason {
 ManifestReloadReason ShouldReloadExtensionManifest(const ExtensionInfo& info) {
   // Always reload manifests of unpacked extensions, because they can change
   // on disk independent of the manifest in our prefs.
-  if (info.extension_location == Extension::LOAD)
+  if (Manifest::IsUnpackedLocation(info.extension_location))
     return UNPACKED_DIR;
 
   // Reload the manifest if it needs to be relocalized.
-  if (extension_l10n_util::ShouldRelocalizeManifest(info))
+  if (extension_l10n_util::ShouldRelocalizeManifest(
+          info.extension_manifest.get()))
     return NEEDS_RELOCALIZATION;
 
   return NOT_NEEDED;
@@ -104,7 +107,7 @@ void InstalledLoader::Load(const ExtensionInfo& info, bool write_to_prefs) {
   // updating the 'key' field in their manifest).
   // TODO(jstritar): migrate preferences when unpacked extensions change IDs.
   if (extension &&
-      extension->location() != Extension::LOAD &&
+      !Manifest::IsUnpackedLocation(extension->location()) &&
       info.extension_id != extension->id()) {
     error = errors::kCannotChangeExtensionID;
     extension = NULL;
@@ -150,10 +153,15 @@ void InstalledLoader::LoadAllExtensions() {
   for (size_t i = 0; i < extensions_info->size(); ++i) {
     ExtensionInfo* info = extensions_info->at(i).get();
 
+    // Skip extensions that were loaded from the command-line because we don't
+    // want those to persist across browser restart.
+    if (info->extension_location == Manifest::COMMAND_LINE)
+      continue;
+
     scoped_ptr<ExtensionInfo> pending_update(
-        extension_prefs_->GetIdleInstallInfo(info->extension_id));
+        extension_prefs_->GetDelayedInstallInfo(info->extension_id));
     if (pending_update) {
-      if (!extension_prefs_->FinishIdleInstallInfo(info->extension_id))
+      if (!extension_prefs_->FinishDelayedInstallInfo(info->extension_id))
         NOTREACHED();
 
       Version old_version;
@@ -211,6 +219,8 @@ void InstalledLoader::LoadAllExtensions() {
   }
 
   for (size_t i = 0; i < extensions_info->size(); ++i) {
+    if (extensions_info->at(i)->extension_location == Manifest::COMMAND_LINE)
+      continue;
     Load(*extensions_info->at(i), should_write_prefs);
   }
 
@@ -239,7 +249,9 @@ void InstalledLoader::LoadAllExtensions() {
   int app_external_count = 0;
   int hosted_app_count = 0;
   int legacy_packaged_app_count = 0;
+  int platform_app_count = 0;
   int user_script_count = 0;
+  int content_pack_count = 0;
   int extension_user_count = 0;
   int extension_external_count = 0;
   int theme_count = 0;
@@ -250,24 +262,24 @@ void InstalledLoader::LoadAllExtensions() {
   const ExtensionSet* extensions = extension_service_->extensions();
   ExtensionSet::const_iterator ex;
   for (ex = extensions->begin(); ex != extensions->end(); ++ex) {
-    Extension::Location location = (*ex)->location();
-    Extension::Type type = (*ex)->GetType();
+    Manifest::Location location = (*ex)->location();
+    Manifest::Type type = (*ex)->GetType();
     if ((*ex)->is_app()) {
       UMA_HISTOGRAM_ENUMERATION("Extensions.AppLocation",
                                 location, 100);
-    } else if (type == Extension::TYPE_EXTENSION) {
+    } else if (type == Manifest::TYPE_EXTENSION) {
       UMA_HISTOGRAM_ENUMERATION("Extensions.ExtensionLocation",
                                 location, 100);
     }
 
     // Don't count component extensions, since they are only extensions as an
     // implementation detail.
-    if (location == Extension::COMPONENT)
+    if (location == Manifest::COMPONENT)
       continue;
 
     // Don't count unpacked extensions, since they're a developer-specific
     // feature.
-    if (location == Extension::LOAD)
+    if (Manifest::IsUnpackedLocation(location))
       continue;
 
     // Using an enumeration shows us the total installed ratio across all users.
@@ -275,38 +287,46 @@ void InstalledLoader::LoadAllExtensions() {
     // usage for each user (e.g. 40% of users have at least one app installed).
     UMA_HISTOGRAM_ENUMERATION("Extensions.LoadType", type, 100);
     switch (type) {
-      case Extension::TYPE_THEME:
+      case Manifest::TYPE_THEME:
         ++theme_count;
         break;
-      case Extension::TYPE_USER_SCRIPT:
+      case Manifest::TYPE_USER_SCRIPT:
         ++user_script_count;
         break;
-      case Extension::TYPE_HOSTED_APP:
+      case Manifest::TYPE_HOSTED_APP:
         ++hosted_app_count;
-        if (Extension::IsExternalLocation(location)) {
+        if (Manifest::IsExternalLocation(location)) {
           ++app_external_count;
         } else {
           ++app_user_count;
         }
         break;
-      case Extension::TYPE_LEGACY_PACKAGED_APP:
+      case Manifest::TYPE_LEGACY_PACKAGED_APP:
         ++legacy_packaged_app_count;
-        if (Extension::IsExternalLocation(location)) {
+        if (Manifest::IsExternalLocation(location)) {
           ++app_external_count;
         } else {
           ++app_user_count;
         }
         break;
-      case Extension::TYPE_EXTENSION:
+      case Manifest::TYPE_PLATFORM_APP:
+        ++platform_app_count;
+        if (Manifest::IsExternalLocation(location)) {
+          ++app_external_count;
+        } else {
+          ++app_user_count;
+        }
+        break;
+      case Manifest::TYPE_EXTENSION:
       default:
-        if (Extension::IsExternalLocation(location)) {
+        if (Manifest::IsExternalLocation(location)) {
           ++extension_external_count;
         } else {
           ++extension_user_count;
         }
         break;
     }
-    if (!Extension::IsExternalLocation((*ex)->location()))
+    if (!Manifest::IsExternalLocation((*ex)->location()))
       ++item_user_count;
     ExtensionActionManager* extension_action_manager =
         ExtensionActionManager::Get(extension_service_->profile());
@@ -314,6 +334,9 @@ void InstalledLoader::LoadAllExtensions() {
       ++page_action_count;
     if (extension_action_manager->GetBrowserAction(**ex))
       ++browser_action_count;
+
+    if ((*ex)->is_content_pack())
+      ++content_pack_count;
 
     extension_service_->RecordPermissionMessagesHistogram(
         *ex, "Extensions.Permissions_Load");
@@ -336,6 +359,7 @@ void InstalledLoader::LoadAllExtensions() {
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadHostedApp", hosted_app_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadPackagedApp",
                            legacy_packaged_app_count);
+  UMA_HISTOGRAM_COUNTS_100("Extensions.LoadPlatformApp", platform_app_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadExtension",
                            extension_user_count + extension_external_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadExtensionUser",
@@ -347,13 +371,14 @@ void InstalledLoader::LoadAllExtensions() {
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadPageAction", page_action_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadBrowserAction",
                            browser_action_count);
+  UMA_HISTOGRAM_COUNTS_100("Extensions.LoadContentPack", content_pack_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.DisabledForPermissions",
                            disabled_for_permissions_count);
 }
 
 int InstalledLoader::GetCreationFlags(const ExtensionInfo* info) {
   int flags = extension_prefs_->GetCreationFlags(info->extension_id);
-  if (info->extension_location != Extension::LOAD)
+  if (!Manifest::IsUnpackedLocation(info->extension_location))
     flags |= Extension::REQUIRE_KEY;
   if (extension_prefs_->AllowFileAccess(info->extension_id))
     flags |= Extension::ALLOW_FILE_ACCESS;

@@ -11,6 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
+#include "content/port/common/input_event_ack_state.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 
@@ -44,7 +45,7 @@ class CONTENT_EXPORT InputEventFilter
   // leaving that responsibility up to the eventual handler on the main thread.
   //
   InputEventFilter(IPC::Listener* main_listener,
-                   base::MessageLoopProxy* target_loop,
+                   const scoped_refptr<base::MessageLoopProxy>& target_loop,
                    const Handler& handler);
 
   // Define the message routes to be filtered.
@@ -70,9 +71,9 @@ class CONTENT_EXPORT InputEventFilter
 
   void ForwardToMainListener(const IPC::Message& message);
   void ForwardToHandler(const IPC::Message& message);
-  void SendACK(const IPC::Message& message, bool processed);
+  void SendACK(const IPC::Message& message, InputEventAckState ack_result);
   void SendACKOnIOThread(int routing_id, WebKit::WebInputEvent::Type event_type,
-                         bool processed);
+                         InputEventAckState ack_result);
 
   scoped_refptr<base::MessageLoopProxy> main_loop_;
   IPC::Listener* main_listener_;

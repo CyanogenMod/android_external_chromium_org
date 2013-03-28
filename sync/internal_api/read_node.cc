@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,9 @@
 
 #include "base/logging.h"
 #include "sync/internal_api/public/base_transaction.h"
-#include "sync/syncable/base_transaction.h"
 #include "sync/syncable/entry.h"
+#include "sync/syncable/syncable_base_transaction.h"
+#include "sync/syncable/syncable_util.h"
 
 namespace syncer {
 
@@ -57,7 +58,7 @@ BaseNode::InitByLookupResult ReadNode::InitByClientTagLookup(
   if (tag.empty())
     return INIT_FAILED_PRECONDITION;
 
-  const std::string hash = GenerateSyncableHash(model_type, tag);
+  const std::string hash = syncable::GenerateSyncableHash(model_type, tag);
 
   entry_ = new syncable::Entry(transaction_->GetWrappedTrans(),
                                syncable::GET_BY_CLIENT_TAG, hash);

@@ -197,7 +197,7 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsInline) {
 
   // No warnings should trigger skinny prompt.
   ExtensionInstallPrompt::Prompt inline_prompt(
-      NULL, ExtensionInstallPrompt::INLINE_INSTALL_PROMPT);
+      ExtensionInstallPrompt::INLINE_INSTALL_PROMPT);
   inline_prompt.SetInlineInstallWebstoreData("1,000", 3.5, 200);
   inline_prompt.set_extension(extension_.get());
   inline_prompt.set_icon(chrome::LoadInstallPromptIcon());
@@ -237,6 +237,11 @@ TEST_F(ExtensionInstallViewControllerTest, BasicsInline) {
   EXPECT_TRUE([controller userCountField]);
   EXPECT_NE(0u, [[[controller userCountField] stringValue] length]);
 
+  EXPECT_TRUE([controller storeLinkButton]);
+  EXPECT_NE(0u, [[[controller storeLinkButton] stringValue] length]);
+  EXPECT_NE('^',
+            [[[controller storeLinkButton] stringValue] characterAtIndex:0]);
+
   // Though we have no permissions warnings, these should still be hooked up,
   // just invisible.
   EXPECT_TRUE([controller outlineView]);
@@ -274,4 +279,28 @@ TEST_F(ExtensionInstallViewControllerTest, OAuthIssues) {
                           objectValueForTableColumn:nil
                                              byItem:[outlineView itemAtRow:3]],
               base::SysUTF16ToNSString(prompt.GetOAuthIssue(0).description));
+}
+
+TEST_F(ExtensionInstallViewControllerTest, PostInstallPermissionsPrompt) {
+  chrome::MockExtensionInstallPromptDelegate delegate;
+
+  ExtensionInstallPrompt::Prompt prompt =
+      chrome::BuildExtensionPostInstallPermissionsPrompt(extension_.get());
+  std::vector<string16> permissions;
+  permissions.push_back(UTF8ToUTF16("warning 1"));
+  prompt.SetPermissions(permissions);
+
+  scoped_nsobject<ExtensionInstallViewController>
+  controller([[ExtensionInstallViewController alloc]
+               initWithNavigator:browser()
+                        delegate:&delegate
+                          prompt:prompt]);
+
+  [controller view];  // Force nib load.
+
+  EXPECT_TRUE([controller cancelButton]);
+  EXPECT_FALSE([controller okButton]);
+
+  [controller cancel:nil];
+  EXPECT_EQ(1, delegate.abort_count());
 }

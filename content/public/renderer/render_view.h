@@ -9,9 +9,12 @@
 #include "base/string16.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_sender.h"
+#include "skia/ext/refptr.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationPolicy.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPageVisibilityState.h"
 #include "ui/gfx/native_widget_types.h"
+
+class SkPicture;
 
 namespace webkit_glue {
 struct WebPreferences;
@@ -41,11 +44,15 @@ namespace content {
 class ContextMenuClient;
 class RenderViewVisitor;
 struct ContextMenuParams;
+struct SSLStatus;
 
 class CONTENT_EXPORT RenderView : public IPC::Sender {
  public:
   // Returns the RenderView containing the given WebView.
   static RenderView* FromWebView(WebKit::WebView* webview);
+
+  // Returns the RenderView for the given routing ID.
+  static RenderView* FromRoutingID(int routing_id);
 
   // Visit all RenderViews with a live WebView (i.e., RenderViews that have
   // been closed but not yet destroyed are excluded).
@@ -67,6 +74,11 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
 
   // Gets WebKit related preferences associated with this view.
   virtual webkit_glue::WebPreferences& GetWebkitPreferences() = 0;
+
+  // Overrides the WebKit related preferences associated with this view. Note
+  // that the browser process may update the preferences at any time.
+  virtual void SetWebkitPreferences(
+      const webkit_glue::WebPreferences& preferences) = 0;
 
   // Returns the associated WebView. May return NULL when the view is closing.
   virtual WebKit::WebView* GetWebView() = 0;
@@ -151,8 +163,25 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
                                              const std::string& value) = 0;
   virtual void ClearEditCommands() = 0;
 
+  // Returns a collection of security info about |frame|.
+  virtual SSLStatus GetSSLStatusOfFrame(WebKit::WebFrame* frame) const = 0;
+
+#if defined(OS_ANDROID)
+  // Returns a SkPicture with the full contents of the current frame as part of
+  // the legacy Android WebView capture picture API. As it involves playing back
+  // all the drawing commands of the current frame it can have an important
+  // performance impact and should not be used for other purposes.
+  // Requires enabling the impl-side painting feature in the compositor.
+  virtual skia::RefPtr<SkPicture> CapturePicture() = 0;
+#endif
+
  protected:
   virtual ~RenderView() {}
+
+ private:
+  // This interface should only be implemented inside content.
+  friend class RenderViewImpl;
+  RenderView() {}
 };
 
 }  // namespace content

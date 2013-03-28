@@ -13,19 +13,40 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if defined(OS_WIN)
+#include "base/win/scoped_com_initializer.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "base/android/jni_android.h"
+#include "media/video/capture/android/video_capture_device_android.h"
+#endif
+
 #if defined(OS_MACOSX)
 // Mac/QTKit will always give you the size you ask for and this case will fail.
 #define MAYBE_AllocateBadSize DISABLED_AllocateBadSize
 // We will always get ARGB from the Mac/QTKit implementation.
-#define MAYBE_MJPEG DISABLED_CaptureMjpeg
-#elif defined(OS_WINDOWS)
-#define MAYBE_AllocateBadSize AllocateBadSizei
+#define MAYBE_CaptureMjpeg DISABLED_CaptureMjpeg
+#elif defined(OS_WIN)
+#define MAYBE_AllocateBadSize AllocateBadSize
 // Windows currently uses DirectShow to convert from MJPEG and a raw format is
 // always delivered.
-#define MAYBE_MJPEG DISABLED_CaptureMjpeg
+#define MAYBE_CaptureMjpeg DISABLED_CaptureMjpeg
+#elif defined(OS_ANDROID)
+// TODO(wjia): enable those tests on Android.
+// On Android, native camera (JAVA) delivers frames on UI thread which is the
+// main thread for tests. This results in no frame received by
+// VideoCaptureAndroid.
+#define CaptureVGA DISABLED_CaptureVGA
+#define Capture720p DISABLED_Capture720p
+#define MAYBE_AllocateBadSize DISABLED_AllocateBadSize
+#define ReAllocateCamera DISABLED_ReAllocateCamera
+#define DeAllocateCameraWhileRunning DISABLED_DeAllocateCameraWhileRunning
+#define DeAllocateCameraWhileRunning DISABLED_DeAllocateCameraWhileRunning
+#define MAYBE_CaptureMjpeg DISABLED_CaptureMjpeg
 #else
 #define MAYBE_AllocateBadSize AllocateBadSize
-#define MAYBE_MJPEG CaptureMjpeg
+#define MAYBE_CaptureMjpeg CaptureMjpeg
 #endif
 
 using ::testing::_;
@@ -37,6 +58,7 @@ namespace media {
 
 class MockFrameObserver : public media::VideoCaptureDevice::EventHandler {
  public:
+  MOCK_METHOD0(ReserveOutputBuffer, scoped_refptr<media::VideoFrame>());
   MOCK_METHOD0(OnErr, void());
   MOCK_METHOD4(OnFrameInfo, void(int width, int height, int frame_rate,
                                  VideoCaptureCapability::Format format));
@@ -53,8 +75,19 @@ class MockFrameObserver : public media::VideoCaptureDevice::EventHandler {
     OnFrameInfo(info.width, info.height, info.frame_rate, info.color);
   }
 
-  virtual void OnIncomingCapturedFrame(const uint8* data, int length,
-                                       base::Time timestamp) OVERRIDE {
+  virtual void OnIncomingCapturedFrame(
+      const uint8* data,
+      int length,
+      base::Time timestamp,
+      int rotation,
+      bool flip_vert,
+      bool flip_horiz) OVERRIDE {
+    wait_event_->Signal();
+  }
+
+  virtual void OnIncomingCapturedVideoFrame(
+      const scoped_refptr<media::VideoFrame>& frame,
+      base::Time timestamp) OVERRIDE {
     wait_event_->Signal();
   }
 
@@ -75,11 +108,18 @@ class VideoCaptureDeviceTest : public testing::Test {
   virtual void SetUp() {
     frame_observer_.reset(new MockFrameObserver(&wait_event_));
     loop_.reset(new MessageLoopForUI());
+#if defined(OS_ANDROID)
+    media::VideoCaptureDeviceAndroid::RegisterVideoCaptureDevice(
+        base::android::AttachCurrentThread());
+#endif
   }
 
   virtual void TearDown() {
   }
 
+#if defined(OS_WIN)
+  base::win::ScopedCOMInitializer initialize_com_;
+#endif
   base::WaitableEvent wait_event_;
   scoped_ptr<MockFrameObserver> frame_observer_;
   VideoCaptureDevice::Names names_;
@@ -254,7 +294,7 @@ TEST_F(VideoCaptureDeviceTest, TestFakeCapture) {
 }
 
 // Start the camera in 720p to capture MJPEG instead of a raw format.
-TEST_F(VideoCaptureDeviceTest, CaptureMjpeg) {
+TEST_F(VideoCaptureDeviceTest, MAYBE_CaptureMjpeg) {
   VideoCaptureDevice::GetDeviceNames(&names_);
   if (!names_.size()) {
     DVLOG(1) << "No camera available. Exiting test.";

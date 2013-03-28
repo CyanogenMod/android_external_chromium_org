@@ -10,21 +10,26 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/extensions/extension_function.h"
 
+namespace base {
+class Value;
+}
+
 namespace extensions {
 
-class GetChromeosInfoFunction : public AsyncExtensionFunction {
+class ChromeosInfoPrivateGetFunction : public AsyncExtensionFunction {
  public:
-  GetChromeosInfoFunction();
+  ChromeosInfoPrivateGetFunction();
 
  protected:
-  virtual ~GetChromeosInfoFunction();
+  virtual ~ChromeosInfoPrivateGetFunction();
 
   virtual bool RunImpl() OVERRIDE;
 
  private:
-  bool GetValue(const std::string& property_name, Value** value);
+  // Returns a newly allocate value, or null.
+  base::Value* GetValue(const std::string& property_name);
 
-  DECLARE_EXTENSION_FUNCTION_NAME("chromeosInfoPrivate.get");
+  DECLARE_EXTENSION_FUNCTION("chromeosInfoPrivate.get", CHROMEOSINFOPRIVATE_GET)
 };
 
 }  // namespace extensions

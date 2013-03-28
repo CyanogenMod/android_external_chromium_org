@@ -121,7 +121,10 @@ ProfileSyncServiceHarness::ProfileSyncServiceHarness(
   }
 }
 
-ProfileSyncServiceHarness::~ProfileSyncServiceHarness() {}
+ProfileSyncServiceHarness::~ProfileSyncServiceHarness() {
+  if (service_->HasObserver(this))
+    service_->RemoveObserver(this);
+}
 
 // static
 ProfileSyncServiceHarness* ProfileSyncServiceHarness::CreateAndAttach(
@@ -186,6 +189,19 @@ bool ProfileSyncServiceHarness::SetupSync(
     return false;
   }
 
+  // Make sure that initial sync wasn't blocked by a missing passphrase.
+  if (wait_state_ == SET_PASSPHRASE_FAILED) {
+    LOG(ERROR) << "A passphrase is required for decryption. Sync cannot proceed"
+                  " until SetDecryptionPassphrase is called.";
+    return false;
+  }
+
+  // Make sure that initial sync wasn't blocked by rejected credentials.
+  if (wait_state_ == CREDENTIALS_REJECTED) {
+    LOG(ERROR) << "Credentials were rejected. Sync cannot proceed.";
+    return false;
+  }
+
   // Choose the datatypes to be synced. If all datatypes are to be synced,
   // set sync_everything to true; otherwise, set it to false.
   bool sync_everything =
@@ -199,13 +215,6 @@ bool ProfileSyncServiceHarness::SetupSync(
   // (possible only after choosing data types).
   if (!TryListeningToMigrationEvents()) {
     NOTREACHED();
-    return false;
-  }
-
-  // Make sure that a partner client hasn't already set an explicit passphrase.
-  if (wait_state_ == SET_PASSPHRASE_FAILED) {
-    LOG(ERROR) << "A passphrase is required for decryption. Sync cannot proceed"
-                  " until SetDecryptionPassphrase is called.";
     return false;
   }
 
@@ -237,6 +246,12 @@ bool ProfileSyncServiceHarness::SetupSync(
     return false;
   }
 
+  // Make sure that initial sync wasn't blocked by rejected credentials.
+  if (wait_state_ == CREDENTIALS_REJECTED) {
+    LOG(ERROR) << "Credentials were rejected. Sync cannot proceed.";
+    return false;
+  }
+
   // Indicate to the browser that sync setup is complete.
   service()->SetSyncSetupCompleted();
 
@@ -261,7 +276,7 @@ void ProfileSyncServiceHarness::SignalStateCompleteWithNextState(
 
 void ProfileSyncServiceHarness::SignalStateComplete() {
   if (waiting_for_status_change_)
-    MessageLoop::current()->Quit();
+    MessageLoop::current()->QuitWhenIdle();
 }
 
 bool ProfileSyncServiceHarness::RunStateChangeMachine() {
@@ -269,6 +284,12 @@ bool ProfileSyncServiceHarness::RunStateChangeMachine() {
   switch (wait_state_) {
     case WAITING_FOR_ON_BACKEND_INITIALIZED: {
       DVLOG(1) << GetClientInfoString("WAITING_FOR_ON_BACKEND_INITIALIZED");
+      if (service()->GetAuthError().state() ==
+          GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS) {
+        // Our credentials were rejected. Do not wait any more.
+        SignalStateCompleteWithNextState(CREDENTIALS_REJECTED);
+        break;
+      }
       if (service()->sync_initialized()) {
         // The sync backend is initialized.
         SignalStateCompleteWithNextState(WAITING_FOR_INITIAL_SYNC);
@@ -287,6 +308,12 @@ bool ProfileSyncServiceHarness::RunStateChangeMachine() {
         // A passphrase is required for decryption and we don't have it. Do not
         // wait any more.
         SignalStateCompleteWithNextState(SET_PASSPHRASE_FAILED);
+        break;
+      }
+      if (service()->GetAuthError().state() ==
+          GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS) {
+        // Our credentials were rejected. Do not wait any more.
+        SignalStateCompleteWithNextState(CREDENTIALS_REJECTED);
         break;
       }
       break;
@@ -927,6 +954,7 @@ bool ProfileSyncServiceHarness::DisableSyncForDatatype(
     return true;
   }
 
+  synced_datatypes.RetainAll(syncer::UserSelectableTypes());
   synced_datatypes.Remove(datatype);
   service()->OnUserChoseDatatypes(false, synced_datatypes);
   if (AwaitFullSyncCompletion("Datatype reconfiguration.")) {

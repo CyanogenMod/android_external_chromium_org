@@ -9,14 +9,14 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/pickle.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "base/win/windows_version.h"
 #include "build/build_config.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/url_pattern.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/url_pattern.h"
 #include "googleurl/src/gurl.h"
 
 namespace {
@@ -24,7 +24,7 @@ namespace {
 // An arbitrary delay to coalesce multiple writes to the cache.
 const int kValidationCacheCoalescingTimeMS = 6000;
 const char kValidationCacheSequenceName[] = "NaClValidationCache";
-const FilePath::CharType kValidationCacheFileName[] =
+const base::FilePath::CharType kValidationCacheFileName[] =
     FILE_PATH_LITERAL("nacl_validation_cache.bin");
 
 const bool kValidationCacheEnabledByDefault = true;
@@ -35,13 +35,8 @@ enum ValidationCacheStatus {
   CACHE_MAX
 };
 
-const FilePath::StringType NaClIrtName() {
-  FilePath::StringType irt_name;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableNaClSRPCProxy))
-    irt_name.append(FILE_PATH_LITERAL("nacl_irt_"));
-  else
-    irt_name.append(FILE_PATH_LITERAL("nacl_ipc_irt_"));
+const base::FilePath::StringType NaClIrtName() {
+  base::FilePath::StringType irt_name(FILE_PATH_LITERAL("nacl_irt_"));
 
 #if defined(ARCH_CPU_X86_FAMILY)
 #if defined(ARCH_CPU_X86_64)
@@ -80,19 +75,20 @@ bool CheckEnvVar(const char* name, bool default_value) {
   return result;
 }
 
-void ReadCache(const FilePath& filename, std::string* data) {
+void ReadCache(const base::FilePath& filename, std::string* data) {
   if (!file_util::ReadFileToString(filename, data)) {
     // Zero-size data used as an in-band error code.
     data->clear();
   }
 }
 
-void WriteCache(const FilePath& filename, const Pickle* pickle) {
+void WriteCache(const base::FilePath& filename, const Pickle* pickle) {
   file_util::WriteFile(filename, static_cast<const char*>(pickle->data()),
                        pickle->size());
 }
 
-void RemoveCache(const FilePath& filename, const base::Closure& callback) {
+void RemoveCache(const base::FilePath& filename,
+                 const base::Closure& callback) {
   file_util::Delete(filename, false);
   content::BrowserThread::PostTask(content::BrowserThread::IO, FROM_HERE,
                                    callback);
@@ -140,11 +136,11 @@ void NaClBrowser::InitIrtFilePath() {
   // variable that the standalone NaCl PPAPI plugin accepts.
   const char* irt_path_var = getenv("NACL_IRT_LIBRARY");
   if (irt_path_var != NULL) {
-    FilePath::StringType path_string(
+    base::FilePath::StringType path_string(
         irt_path_var, const_cast<const char*>(strchr(irt_path_var, '\0')));
-    irt_filepath_ = FilePath(path_string);
+    irt_filepath_ = base::FilePath(path_string);
   } else {
-    FilePath plugin_dir;
+    base::FilePath plugin_dir;
     if (!PathService::Get(chrome::DIR_INTERNAL_PLUGINS, &plugin_dir)) {
       DLOG(ERROR) << "Failed to locate the plugins directory, NaCl disabled.";
       MarkAsFailed();
@@ -258,18 +254,38 @@ bool NaClBrowser::URLMatchesDebugPatterns(GURL manifest_url) {
   }
 }
 
+void NaClBrowser::FireGdbDebugStubPortOpened(int port) {
+  content::BrowserThread::PostTask(
+      content::BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(debug_stub_port_listener_, port));
+}
+
+bool NaClBrowser::HasGdbDebugStubPortListener() {
+  return !debug_stub_port_listener_.is_null();
+}
+
+void NaClBrowser::SetGdbDebugStubPortListener(
+    base::Callback<void(int)> listener) {
+  debug_stub_port_listener_ = listener;
+}
+
+void NaClBrowser::ClearGdbDebugStubPortListener() {
+  debug_stub_port_listener_.Reset();
+}
+
 void NaClBrowser::InitValidationCacheFilePath() {
   // Determine where the validation cache resides in the file system.  It
   // exists in Chrome's cache directory and is not tied to any specific
   // profile.
   // Start by finding the user data directory.
-  FilePath user_data_dir;
+  base::FilePath user_data_dir;
   if (!PathService::Get(chrome::DIR_USER_DATA, &user_data_dir)) {
     RunWithoutValidationCache();
     return;
   }
   // The cache directory may or may not be the user data directory.
-  FilePath cache_file_path;
+  base::FilePath cache_file_path;
   chrome::GetUserCacheDirectory(user_data_dir, &cache_file_path);
   // Append the base file name to the cache directory.
 
@@ -351,7 +367,7 @@ void NaClBrowser::WaitForResources(const base::Closure& reply) {
   CheckWaiting();
 }
 
-const FilePath& NaClBrowser::GetIrtFilePath() {
+const base::FilePath& NaClBrowser::GetIrtFilePath() {
   return irt_filepath_;
 }
 

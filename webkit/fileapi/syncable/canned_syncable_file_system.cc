@@ -8,27 +8,33 @@
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/message_loop_proxy.h"
+#include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/task_runner_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/blob/mock_blob_url_request_context.h"
+#include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_task_runners.h"
-#include "webkit/fileapi/isolated_context.h"
 #include "webkit/fileapi/local_file_system_operation.h"
 #include "webkit/fileapi/mock_file_system_options.h"
+#include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/fileapi/syncable/local_file_change_tracker.h"
 #include "webkit/fileapi/syncable/local_file_sync_context.h"
 #include "webkit/quota/mock_special_storage_policy.h"
 #include "webkit/quota/quota_manager.h"
 
 using base::PlatformFileError;
+using fileapi::FileSystemContext;
+using fileapi::FileSystemOperation;
+using fileapi::FileSystemURL;
+using fileapi::FileSystemURLSet;
 using quota::QuotaManager;
 using webkit_blob::MockBlobURLRequestContext;
 using webkit_blob::ScopedTextBlob;
 
-namespace fileapi {
+namespace sync_file_system {
 
 namespace {
 
@@ -87,7 +93,7 @@ void OnGetMetadataAndVerifyData(
     const CannedSyncableFileSystem::StatusCallback& callback,
     base::PlatformFileError result,
     const base::PlatformFileInfo& file_info,
-    const FilePath& platform_path) {
+    const base::FilePath& platform_path) {
   if (result != base::PLATFORM_FILE_OK) {
     callback.Run(result);
     return;
@@ -97,6 +103,20 @@ void OnGetMetadataAndVerifyData(
   const bool read_status = file_util::ReadFileToString(platform_path, &data);
   EXPECT_TRUE(read_status);
   EXPECT_EQ(expected_data, data);
+  callback.Run(result);
+}
+
+void OnGetMetadata(
+    base::PlatformFileInfo* file_info_out,
+    base::FilePath* platform_path_out,
+    const CannedSyncableFileSystem::StatusCallback& callback,
+    base::PlatformFileError result,
+    const base::PlatformFileInfo& file_info,
+    const base::FilePath& platform_path) {
+  DCHECK(file_info_out);
+  DCHECK(platform_path_out);
+  *file_info_out = file_info;
+  *platform_path_out = platform_path;
   callback.Run(result);
 }
 
@@ -143,6 +163,13 @@ void DidGetUsageAndQuota(const quota::StatusCallback& callback,
   callback.Run(status);
 }
 
+void EnsureLastTaskRuns(base::SingleThreadTaskRunner* runner) {
+  base::RunLoop run_loop;
+  runner->PostTaskAndReply(
+      FROM_HERE, base::Bind(&base::DoNothing), run_loop.QuitClosure());
+  run_loop.Run();
+}
+
 }  // namespace
 
 CannedSyncableFileSystem::CannedSyncableFileSystem(
@@ -151,9 +178,9 @@ CannedSyncableFileSystem::CannedSyncableFileSystem(
     base::SingleThreadTaskRunner* file_task_runner)
     : service_name_(service),
       origin_(origin),
-      type_(kFileSystemTypeSyncable),
+      type_(fileapi::kFileSystemTypeSyncable),
       result_(base::PLATFORM_FILE_OK),
-      sync_status_(SYNC_STATUS_OK),
+      sync_status_(sync_file_system::SYNC_STATUS_OK),
       io_task_runner_(io_task_runner),
       file_task_runner_(file_task_runner),
       is_filesystem_set_up_(false),
@@ -178,14 +205,20 @@ void CannedSyncableFileSystem::SetUp() {
       storage_policy);
 
   file_system_context_ = new FileSystemContext(
-      make_scoped_ptr(new FileSystemTaskRunners(
+      make_scoped_ptr(new fileapi::FileSystemTaskRunners(
           io_task_runner_,
           file_task_runner_,
           file_task_runner_)),
+      fileapi::ExternalMountPoints::CreateRefCounted().get(),
       storage_policy,
       quota_manager_->proxy(),
       data_dir_.path(),
-      CreateAllowFileAccessOptions());
+      fileapi::CreateAllowFileAccessOptions());
+
+  // In testing we override this setting to support directory operations
+  // by default.
+  file_system_context_->sandbox_provider()->
+      set_enable_sync_directory_operation(true);
 
   is_filesystem_set_up_ = true;
 }
@@ -194,15 +227,17 @@ void CannedSyncableFileSystem::TearDown() {
   quota_manager_ = NULL;
   file_system_context_ = NULL;
 
-  io_task_runner_->PostTaskAndReply(
-      FROM_HERE, base::Bind(&base::DoNothing), base::Bind(&Quit));
-  MessageLoop::current()->Run();
+  // Make sure we give some more time to finish tasks on other threads.
+  EnsureLastTaskRuns(io_task_runner_);
+  EnsureLastTaskRuns(file_task_runner_);
 }
 
 FileSystemURL CannedSyncableFileSystem::URL(const std::string& path) const {
   EXPECT_TRUE(is_filesystem_set_up_);
   EXPECT_TRUE(is_filesystem_opened_);
-  return FileSystemURL(GURL(root_url_.spec() + path));
+
+  GURL url(root_url_.spec() + path);
+  return file_system_context_->CrackURL(url);
 }
 
 PlatformFileError CannedSyncableFileSystem::OpenFileSystem() {
@@ -237,7 +272,7 @@ void CannedSyncableFileSystem::RemoveSyncStatusObserver(
 SyncStatusCode CannedSyncableFileSystem::MaybeInitializeFileSystemContext(
     LocalFileSyncContext* sync_context) {
   DCHECK(sync_context);
-  sync_status_ = SYNC_STATUS_UNKNOWN;
+  sync_status_ = sync_file_system::SYNC_STATUS_UNKNOWN;
   VerifySameTaskRunner(io_task_runner_, sync_context->io_task_runner_);
   sync_context->MaybeInitializeFileSystemContext(
       origin_, service_name_, file_system_context_,
@@ -341,6 +376,17 @@ PlatformFileError CannedSyncableFileSystem::VerifyFile(
                  base::Unretained(this), url, expected_data));
 }
 
+PlatformFileError CannedSyncableFileSystem::GetMetadata(
+    const FileSystemURL& url,
+    base::PlatformFileInfo* info,
+    base::FilePath* platform_path) {
+  return RunOnThread<PlatformFileError>(
+      io_task_runner_,
+      FROM_HERE,
+      base::Bind(&CannedSyncableFileSystem::DoGetMetadata,
+                 base::Unretained(this), url, info, platform_path));
+}
+
 int64 CannedSyncableFileSystem::Write(
     net::URLRequestContext* url_request_context,
     const FileSystemURL& url, const GURL& blob_url) {
@@ -410,6 +456,12 @@ void CannedSyncableFileSystem::OnSyncEnabled(const FileSystemURL& url) {
 void CannedSyncableFileSystem::OnWriteEnabled(const FileSystemURL& url) {
   sync_status_observers_->Notify(&LocalFileSyncStatus::Observer::OnWriteEnabled,
                                  url);
+}
+
+void CannedSyncableFileSystem::EnableDirectoryOperations(bool flag) {
+  DCHECK(file_system_context_);
+  file_system_context_->sandbox_provider()->
+      set_enable_sync_directory_operation(flag);
 }
 
 void CannedSyncableFileSystem::DoCreateDirectory(
@@ -489,6 +541,16 @@ void CannedSyncableFileSystem::DoVerifyFile(
                       expected_data, callback));
 }
 
+void CannedSyncableFileSystem::DoGetMetadata(
+    const FileSystemURL& url,
+    base::PlatformFileInfo* info,
+    base::FilePath* platform_path,
+    const StatusCallback& callback) {
+  EXPECT_TRUE(is_filesystem_opened_);
+  NewOperation()->GetMetadata(
+      url, base::Bind(&OnGetMetadata, info, platform_path, callback));
+}
+
 void CannedSyncableFileSystem::DoWrite(
     net::URLRequestContext* url_request_context,
     const FileSystemURL& url, const GURL& blob_url,
@@ -541,4 +603,4 @@ void CannedSyncableFileSystem::InitializeSyncStatusObserver() {
   file_system_context_->sync_context()->sync_status()->AddObserver(this);
 }
 
-}  // namespace fileapi
+}  // namespace sync_file_system

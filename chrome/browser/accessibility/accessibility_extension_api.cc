@@ -5,20 +5,20 @@
 #include "chrome/browser/accessibility/accessibility_extension_api.h"
 
 #include "base/json/json_writer.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/accessibility/accessibility_extension_api_constants.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/api/infobars/infobar_delegate.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/common/error_utils.h"
 
 namespace keys = extension_accessibility_api_constants;
 
@@ -164,13 +164,14 @@ void ExtensionAccessibilityEventRouter::DispatchEvent(
     scoped_ptr<base::ListValue> event_args) {
   if (enabled_ && profile &&
       extensions::ExtensionSystem::Get(profile)->event_router()) {
+    scoped_ptr<extensions::Event> event(new extensions::Event(
+        event_name, event_args.Pass()));
     extensions::ExtensionSystem::Get(profile)->event_router()->
-        DispatchEventToRenderers(event_name, event_args.Pass(), NULL, GURL(),
-                                 extensions::EventFilteringInfo());
+        BroadcastEvent(event.Pass());
   }
 }
 
-bool SetAccessibilityEnabledFunction::RunImpl() {
+bool AccessibilitySetAccessibilityEnabledFunction::RunImpl() {
   bool enabled;
   EXTENSION_FUNCTION_VALIDATE(args_->GetBoolean(0, &enabled));
   ExtensionAccessibilityEventRouter::GetInstance()
@@ -178,7 +179,7 @@ bool SetAccessibilityEnabledFunction::RunImpl() {
   return true;
 }
 
-bool GetFocusedControlFunction::RunImpl() {
+bool AccessibilityGetFocusedControlFunction::RunImpl() {
   // Get the serialized dict from the last focused control and return it.
   // However, if the dict is empty, that means we haven't seen any focus
   // events yet, so return null instead.
@@ -194,7 +195,7 @@ bool GetFocusedControlFunction::RunImpl() {
   return true;
 }
 
-bool GetAlertsForTabFunction::RunImpl() {
+bool AccessibilityGetAlertsForTabFunction::RunImpl() {
   int tab_id;
   EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &tab_id));
 
@@ -203,7 +204,7 @@ bool GetAlertsForTabFunction::RunImpl() {
   int tab_index = -1;
   if (!ExtensionTabUtil::GetTabById(tab_id, profile(), include_incognito(),
                                     NULL, &tab_strip, &contents, &tab_index)) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = extensions::ErrorUtils::FormatErrorMessage(
         extensions::tabs_constants::kTabNotFoundError,
         base::IntToString(tab_id));
     return false;
@@ -211,13 +212,11 @@ bool GetAlertsForTabFunction::RunImpl() {
 
   ListValue* alerts_value = new ListValue;
 
-  InfoBarTabHelper* infobar_helper =
-      InfoBarTabHelper::FromWebContents(contents);
-  for (size_t i = 0; i < infobar_helper->GetInfoBarCount(); ++i) {
+  InfoBarService* infobar_service = InfoBarService::FromWebContents(contents);
+  for (size_t i = 0; i < infobar_service->GetInfoBarCount(); ++i) {
     // TODO(hashimoto): Make other kind of alerts available.  crosbug.com/24281
-    InfoBarDelegate* infobar_delegate = infobar_helper->GetInfoBarDelegateAt(i);
     ConfirmInfoBarDelegate* confirm_infobar_delegate =
-        infobar_delegate->AsConfirmInfoBarDelegate();
+        infobar_service->GetInfoBarDelegateAt(i)->AsConfirmInfoBarDelegate();
     if (confirm_infobar_delegate) {
       DictionaryValue* alert_value = new DictionaryValue;
       const string16 message_text = confirm_infobar_delegate->GetMessageText();

@@ -63,6 +63,7 @@ CommonDecoder::~CommonDecoder() {}
 void* CommonDecoder::GetAddressAndCheckSize(unsigned int shm_id,
                                             unsigned int offset,
                                             unsigned int size) {
+  CHECK(engine_);
   Buffer buffer = engine_->GetSharedMemoryBuffer(shm_id);
   if (!buffer.ptr)
     return NULL;
@@ -71,6 +72,10 @@ void* CommonDecoder::GetAddressAndCheckSize(unsigned int shm_id,
     return NULL;
   }
   return static_cast<int8*>(buffer.ptr) + offset;
+}
+
+Buffer CommonDecoder::GetSharedMemoryBuffer(unsigned int shm_id) {
+  return engine_->GetSharedMemoryBuffer(shm_id);
 }
 
 bool CommonDecoder::PushAddress(uint32 offset) {
@@ -166,7 +171,6 @@ error::Error CommonDecoder::DoCommonCommand(
       return error::kInvalidArguments;
     }
   }
-  return DoCommonCommand(command, arg_count, cmd_data);
   return error::kUnknownCommand;
 }
 
@@ -180,56 +184,6 @@ error::Error CommonDecoder::HandleSetToken(
     uint32 immediate_data_size,
     const cmd::SetToken& args) {
   engine_->set_token(args.token);
-  return error::kNoError;
-}
-
-error::Error CommonDecoder::HandleJump(
-    uint32 immediate_data_size,
-    const cmd::Jump& args) {
-  if (!engine_->SetGetOffset(args.offset)) {
-    return error::kInvalidArguments;
-  }
-  return error::kNoError;
-}
-
-error::Error CommonDecoder::HandleJumpRelative(
-    uint32 immediate_data_size,
-    const cmd::JumpRelative& args) {
-  if (!engine_->SetGetOffset(engine_->GetGetOffset() + args.offset)) {
-    return error::kInvalidArguments;
-  }
-  return error::kNoError;
-}
-
-error::Error CommonDecoder::HandleCall(
-    uint32 immediate_data_size,
-    const cmd::Call& args) {
-  if (!PushAddress(args.offset)) {
-    return error::kInvalidArguments;
-  }
-  return error::kNoError;
-}
-
-error::Error CommonDecoder::HandleCallRelative(
-    uint32 immediate_data_size,
-    const cmd::CallRelative& args) {
-  if (!PushAddress(engine_->GetGetOffset() + args.offset)) {
-    return error::kInvalidArguments;
-  }
-  return error::kNoError;
-}
-
-error::Error CommonDecoder::HandleReturn(
-    uint32 immediate_data_size,
-    const cmd::Return& args) {
-  if (call_stack_.empty()) {
-    return error::kInvalidArguments;
-  }
-  CommandAddress return_address = call_stack_.top();
-  call_stack_.pop();
-  if (!engine_->SetGetOffset(return_address.offset)) {
-    return error::kInvalidArguments;
-  }
   return error::kNoError;
 }
 

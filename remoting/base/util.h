@@ -74,14 +74,7 @@ SkIRect ScaleRect(const SkIRect& rect,
                   const SkISize& in_size,
                   const SkISize& out_size);
 
-// Copy pixels in the rectangle from source to destination.
-void CopyRect(const uint8* src_plane,
-              int src_plane_stride,
-              uint8* dest_plane,
-              int dest_plane_stride,
-              int bytes_per_pixel,
-              const SkIRect& rect);
-
+// Copy content of a rectangle in a RGB32 image.
 void CopyRGB32Rect(const uint8* source_buffer,
                    int source_stride,
                    const SkIRect& source_buffer_rect,
@@ -95,6 +88,9 @@ std::string ReplaceLfByCrLf(const std::string& in);
 
 // Replaces every occurrence of "\r\n" in a string by "\n".
 std::string ReplaceCrLfByLf(const std::string& in);
+
+// Checks if the given string is a valid UTF-8 string.
+bool StringIsUtf8(const char* data, size_t length);
 
 }  // namespace remoting
 

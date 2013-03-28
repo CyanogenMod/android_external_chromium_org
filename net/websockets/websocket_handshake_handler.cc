@@ -11,6 +11,7 @@
 #include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_tokenizer.h"
 #include "googleurl/src/gurl.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
@@ -42,7 +43,7 @@ void ParseHandshakeHeader(
 
   int header_len = len - (i + 2) - 2;
   if (header_len > 0) {
-    // |handshake_message| includes tailing \r\n\r\n.
+    // |handshake_message| includes trailing \r\n\r\n.
     // |headers| doesn't include 2nd \r\n.
     *headers = std::string(handshake_message + i + 2, header_len);
   } else {
@@ -89,7 +90,7 @@ std::string FilterHeaders(
     size_t headers_to_remove_len) {
   std::string filtered_headers;
 
-  StringTokenizer lines(headers.begin(), headers.end(), "\r\n");
+  base::StringTokenizer lines(headers.begin(), headers.end(), "\r\n");
   while (lines.GetNext()) {
     std::string::const_iterator line_begin = lines.token_begin();
     std::string::const_iterator line_end = lines.token_end();
@@ -299,7 +300,7 @@ bool WebSocketHandshakeRequestHandler::GetRequestHeaderBlock(
                                     iter.name_end(),
                                     "sec-websocket-key")) {
       *challenge = iter.values();
-      // Sec-WebSocket-Key is not sent to a server.
+      // Sec-WebSocket-Key is not sent to the server.
       continue;
     } else if (LowerCaseEqualsASCII(iter.name_begin(),
                                     iter.name_end(),

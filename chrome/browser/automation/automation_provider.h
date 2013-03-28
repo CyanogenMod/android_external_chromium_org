@@ -23,10 +23,10 @@
 #include "base/observer_list.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/string16.h"
-#include "chrome/browser/autofill/field_types.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/content_settings.h"
+#include "components/autofill/browser/field_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/trace_subscriber.h"
@@ -44,7 +44,6 @@ class AutomationTabTracker;
 class AutomationWindowTracker;
 class Browser;
 class ExternalTabContainer;
-class FilePath;
 class FindInPageNotificationObserver;
 class InitialLoadObserver;
 class LoginHandler;
@@ -147,7 +146,7 @@ class AutomationProvider
     return reply_message;
   }
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   // Adds the external tab passed in to the tab tracker.
   bool AddExternalTab(ExternalTabContainer* external_tab);
 #endif
@@ -235,12 +234,6 @@ class AutomationProvider
   // Clear and reinitialize the automation IPC channel.
   bool ReinitializeChannel();
 
-  // IPC Message callbacks.
-  void WindowSimulateDrag(int handle,
-                          const std::vector<gfx::Point>& drag_path,
-                          int flags,
-                          bool press_escape_en_route,
-                          IPC::Message* reply_message);
   void HandleUnused(const IPC::Message& message, int handle);
   void GetFilteredInetHitCount(int* hit_count);
   void SetProxyConfig(const std::string& new_proxy_config);
@@ -283,6 +276,8 @@ class AutomationProvider
   void Copy(int tab_handle);
   void Paste(int tab_handle);
 
+  void KeyPress(int tab_handle, int key);
+
   void ReloadAsync(int tab_handle);
   void StopAsync(int tab_handle);
   void SaveAsAsync(int tab_handle);
@@ -290,7 +285,7 @@ class AutomationProvider
   // Method called by the popup menu tracker when a popup menu is opened.
   void NotifyPopupMenuOpened();
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   // The functions in this block are for use with external tabs, so they are
   // Windows only.
 
@@ -309,16 +304,16 @@ class AutomationProvider
   void OnForwardContextMenuCommandToChrome(int tab_handle, int command);
 
   void CreateExternalTab(const ExternalTabSettings& settings,
-                         gfx::NativeWindow* tab_container_window,
-                         gfx::NativeWindow* tab_window,
+                         HWND* tab_container_window,
+                         HWND* tab_window,
                          int* tab_handle,
                          int* session_id);
 
   void ConnectExternalTab(uint64 cookie,
                           bool allow,
-                          gfx::NativeWindow parent_window,
-                          gfx::NativeWindow* tab_container_window,
-                          gfx::NativeWindow* tab_window,
+                          HWND parent_window,
+                          HWND* tab_container_window,
+                          HWND* tab_window,
                           int* tab_handle,
                           int* session_id);
 
@@ -340,7 +335,7 @@ class AutomationProvider
   void OnSetZoomLevel(int handle, int zoom_level);
 
   ExternalTabContainer* GetExternalTabForHandle(int handle);
-#endif  // defined(OS_WIN) && !defined(USE_AURA)
+#endif  // defined(OS_WIN)
 
   scoped_ptr<IPC::ChannelProxy> channel_;
   scoped_ptr<NewTabUILoadObserver> new_tab_ui_load_observer_;

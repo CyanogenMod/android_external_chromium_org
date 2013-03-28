@@ -9,11 +9,6 @@
 #include "../client/cmd_buffer_helper.h"
 
 namespace gpu {
-namespace {
-void DeleteMemoryChunk(MemoryChunk* chunk) {
-  delete chunk;
-}
-}
 
 MemoryChunk::MemoryChunk(
     int32 shm_id, gpu::Buffer shm, CommandBufferHelper* helper)
@@ -28,10 +23,13 @@ MappedMemoryManager::MappedMemoryManager(CommandBufferHelper* helper)
 }
 
 MappedMemoryManager::~MappedMemoryManager() {
-  std::for_each(chunks_.begin(),
-                chunks_.end(),
-                std::pointer_to_unary_function<MemoryChunk*, void>(
-                    DeleteMemoryChunk));
+  CommandBuffer* cmd_buf = helper_->command_buffer();
+  for (MemoryChunkVector::iterator iter = chunks_.begin();
+       iter != chunks_.end(); ++iter) {
+    MemoryChunk* chunk = *iter;
+    cmd_buf->DestroyTransferBuffer(chunk->shm_id());
+    delete chunk;
+  }
 }
 
 void* MappedMemoryManager::Alloc(
@@ -56,11 +54,10 @@ void* MappedMemoryManager::Alloc(
   unsigned int chunk_size =
       ((size + chunk_size_multiple_ - 1) / chunk_size_multiple_) *
       chunk_size_multiple_;
-  int32 id = cmd_buf->CreateTransferBuffer(chunk_size, -1);
-  if (id == -1) {
+  int32 id = -1;
+  gpu::Buffer shm = cmd_buf->CreateTransferBuffer(chunk_size, &id);
+  if (id  < 0)
     return NULL;
-  }
-  gpu::Buffer shm = cmd_buf->GetTransferBuffer(id);
   MemoryChunk* mc = new MemoryChunk(id, shm, helper_);
   chunks_.push_back(mc);
   void* mem = mc->Alloc(size);

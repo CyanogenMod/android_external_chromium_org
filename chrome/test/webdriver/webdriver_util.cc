@@ -7,16 +7,16 @@
 #include "base/base64.h"
 #include "base/basictypes.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/rand_util.h"
-#include "base/scoped_temp_dir.h"
-#include "base/stringprintf.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/third_party/icu/icu_utf.h"
 #include "chrome/common/automation_id.h"
 #include "chrome/common/zip.h"
@@ -48,15 +48,15 @@ bool Base64Decode(const std::string& base64,
 
 namespace {
 
-bool UnzipArchive(const FilePath& unzip_dir,
+bool UnzipArchive(const base::FilePath& unzip_dir,
                   const std::string& bytes,
                   std::string* error_msg) {
-  ScopedTempDir dir;
+  base::ScopedTempDir dir;
   if (!dir.CreateUniqueTempDir()) {
     *error_msg = "Unable to create temp dir";
     return false;
   }
-  FilePath archive = dir.path().AppendASCII("temp.zip");
+  base::FilePath archive = dir.path().AppendASCII("temp.zip");
   int length = bytes.length();
   if (file_util::WriteFile(archive, bytes.c_str(), length) != length) {
     *error_msg = "Could not write file to temp dir";
@@ -71,7 +71,7 @@ bool UnzipArchive(const FilePath& unzip_dir,
 
 }  // namespace
 
-bool Base64DecodeAndUnzip(const FilePath& unzip_dir,
+bool Base64DecodeAndUnzip(const base::FilePath& unzip_dir,
                           const std::string& base64,
                           std::string* error_msg) {
   std::string zip_data;
@@ -312,13 +312,13 @@ struct ZipEntry {
 
     // End of central directory.
     stream.WriteUInt32(kEndOfCentralDirSignature);
-    stream.WriteUInt16(0); // num of this disk
-    stream.WriteUInt16(0); // disk where cd starts
-    stream.WriteUInt16(1); // number of cds on this disk
-    stream.WriteUInt16(1); // total cds
-    stream.WriteUInt32(cd_size); // size of cd
-    stream.WriteUInt32(entry_size); // offset of cd
-    stream.WriteUInt16(0); // comment len
+    stream.WriteUInt16(0);  // num of this disk
+    stream.WriteUInt16(0);  // disk where cd starts
+    stream.WriteUInt16(1);  // number of cds on this disk
+    stream.WriteUInt16(1);  // total cds
+    stream.WriteUInt32(cd_size);  // size of cd
+    stream.WriteUInt32(entry_size);  // offset of cd
+    stream.WriteUInt16(0);  // comment len
 
     return stream.buffer();
   }
@@ -344,7 +344,7 @@ const uint32 ZipEntry::kDataDescriptorSignature = 0x08074b50;
 const uint32 ZipEntry::kCentralDirSignature = 0x02014b50;
 const uint32 ZipEntry::kEndOfCentralDirSignature = 0x06054b50;
 
-bool UnzipEntry(const FilePath& unzip_dir,
+bool UnzipEntry(const base::FilePath& unzip_dir,
                 const std::string& bytes,
                 std::string* error_msg) {
   ZipEntry entry;
@@ -359,9 +359,9 @@ bool UnzipEntry(const FilePath& unzip_dir,
 
 }  // namespace
 
-bool UnzipSoleFile(const FilePath& unzip_dir,
+bool UnzipSoleFile(const base::FilePath& unzip_dir,
                    const std::string& bytes,
-                   FilePath* file,
+                   base::FilePath* file,
                    std::string* error_msg) {
   std::string archive_error, entry_error;
   if (!UnzipArchive(unzip_dir, bytes, &archive_error) &&
@@ -375,12 +375,12 @@ bool UnzipSoleFile(const FilePath& unzip_dir,
   file_util::FileEnumerator enumerator(unzip_dir, false /* recursive */,
       file_util::FileEnumerator::FILES |
       file_util::FileEnumerator::DIRECTORIES);
-  FilePath first_file = enumerator.Next();
+  base::FilePath first_file = enumerator.Next();
   if (first_file.empty()) {
     *error_msg = "Zip contained 0 files";
     return false;
   }
-  FilePath second_file = enumerator.Next();
+  base::FilePath second_file = enumerator.Next();
   if (!second_file.empty()) {
     *error_msg = "Zip contained multiple files";
     return false;
@@ -409,19 +409,17 @@ void TruncateString(std::string* data) {
 
 // Truncates all strings contained in the given value.
 void TruncateContainedStrings(Value* value) {
-  ListValue* list;
-  if (value->IsType(Value::TYPE_DICTIONARY)) {
-    DictionaryValue* dict = static_cast<DictionaryValue*>(value);
-    DictionaryValue::key_iterator key = dict->begin_keys();
-    for (; key != dict->end_keys(); ++key) {
-      Value* child;
-      if (!dict->GetWithoutPathExpansion(*key, &child))
-        continue;
+  ListValue* list = NULL;
+  DictionaryValue* dict = NULL;
+  if (value->GetAsDictionary(&dict)) {
+    for (DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
       std::string data;
-      if (child->GetAsString(&data)) {
+      if (it.value().GetAsString(&data)) {
         TruncateString(&data);
-        dict->SetWithoutPathExpansion(*key, Value::CreateStringValue(data));
+        dict->SetWithoutPathExpansion(it.key(), new base::StringValue(data));
       } else {
+        Value* child = NULL;
+        dict->GetWithoutPathExpansion(it.key(), &child);
         TruncateContainedStrings(child);
       }
     }
@@ -433,7 +431,7 @@ void TruncateContainedStrings(Value* value) {
       std::string data;
       if (child->GetAsString(&data)) {
         TruncateString(&data);
-        list->Set(i, Value::CreateStringValue(data));
+        list->Set(i, new base::StringValue(data));
       } else {
         TruncateContainedStrings(child);
       }
@@ -449,7 +447,7 @@ std::string JsonStringifyForDisplay(const Value* value) {
     std::string data;
     value->GetAsString(&data);
     TruncateString(&data);
-    copy.reset(Value::CreateStringValue(data));
+    copy.reset(new base::StringValue(data));
   } else {
     copy.reset(value->DeepCopy());
     TruncateContainedStrings(copy.get());

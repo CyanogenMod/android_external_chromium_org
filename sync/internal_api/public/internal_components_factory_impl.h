@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -8,11 +8,13 @@
 #ifndef SYNC_INTERNAL_API_PUBLIC_INTERNAL_COMPONENTS_FACTORY_IMPL_H_
 #define SYNC_INTERNAL_API_PUBLIC_INTERNAL_COMPONENTS_FACTORY_IMPL_H_
 
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/internal_components_factory.h"
 
 namespace syncer {
 
-class InternalComponentsFactoryImpl : public InternalComponentsFactory {
+class SYNC_EXPORT InternalComponentsFactoryImpl
+    : public InternalComponentsFactory {
  public:
   InternalComponentsFactoryImpl(const Switches& switches);
   virtual ~InternalComponentsFactoryImpl();
@@ -29,12 +31,13 @@ class InternalComponentsFactoryImpl : public InternalComponentsFactory {
       ThrottledDataTypeTracker* throttled_data_type_tracker,
       const std::vector<SyncEngineEventListener*>& listeners,
       sessions::DebugInfoGetter* debug_info_getter,
-      TrafficRecorder* traffic_recorder) OVERRIDE;
+      TrafficRecorder* traffic_recorder,
+      const std::string& invalidator_client_id) OVERRIDE;
 
   virtual scoped_ptr<syncable::DirectoryBackingStore>
   BuildDirectoryBackingStore(
       const std::string& dir_name,
-      const FilePath& backing_filepath) OVERRIDE;
+      const base::FilePath& backing_filepath) OVERRIDE;
 
   virtual Switches GetSwitches() const OVERRIDE;
 

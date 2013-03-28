@@ -4,9 +4,9 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
-#include "base/scoped_temp_dir.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
@@ -124,15 +124,15 @@ TEST_F(DomStorageAreaTest, DomStorageAreaBasics) {
 
 TEST_F(DomStorageAreaTest, BackingDatabaseOpened) {
   const int64 kSessionStorageNamespaceId = kLocalStorageNamespaceId + 1;
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  const FilePath kExpectedOriginFilePath = temp_dir.path().Append(
+  const base::FilePath kExpectedOriginFilePath = temp_dir.path().Append(
       DomStorageArea::DatabaseFileNameFromOrigin(kOrigin));
 
   // No directory, backing should be null.
   {
     scoped_refptr<DomStorageArea> area(
-        new DomStorageArea(kOrigin, FilePath(), NULL));
+        new DomStorageArea(kOrigin, base::FilePath(), NULL));
     EXPECT_EQ(NULL, area->backing_.get());
     EXPECT_TRUE(area->is_initial_import_done_);
     EXPECT_FALSE(file_util::PathExists(kExpectedOriginFilePath));
@@ -183,7 +183,7 @@ TEST_F(DomStorageAreaTest, BackingDatabaseOpened) {
     EXPECT_TRUE(area->commit_batch_.get());
     EXPECT_EQ(0, area->commit_batches_in_flight_);
 
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
 
     EXPECT_FALSE(area->commit_batch_.get());
     EXPECT_EQ(0, area->commit_batches_in_flight_);
@@ -202,7 +202,7 @@ TEST_F(DomStorageAreaTest, BackingDatabaseOpened) {
 }
 
 TEST_F(DomStorageAreaTest, CommitTasks) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   scoped_refptr<DomStorageArea> area(
@@ -232,7 +232,7 @@ TEST_F(DomStorageAreaTest, CommitTasks) {
   EXPECT_TRUE(area->commit_batch_.get());
   EXPECT_FALSE(area->commit_batch_->clear_all_first);
   EXPECT_EQ(2u, area->commit_batch_->changed_values.size());
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_FALSE(area->HasUncommittedChanges());
   EXPECT_FALSE(area->commit_batch_.get());
   EXPECT_EQ(0, area->commit_batches_in_flight_);
@@ -248,7 +248,7 @@ TEST_F(DomStorageAreaTest, CommitTasks) {
   EXPECT_TRUE(area->commit_batch_.get());
   EXPECT_TRUE(area->commit_batch_->clear_all_first);
   EXPECT_TRUE(area->commit_batch_->changed_values.empty());
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_FALSE(area->commit_batch_.get());
   EXPECT_EQ(0, area->commit_batches_in_flight_);
   // Verify the changes made it to the database.
@@ -268,7 +268,7 @@ TEST_F(DomStorageAreaTest, CommitTasks) {
       FROM_HERE,
       base::Bind(&DomStorageAreaTest::InjectedCommitSequencingTask,
                  base::Unretained(this), area));
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(area->HasOneRef());
   EXPECT_FALSE(area->HasUncommittedChanges());
   // Verify the changes made it to the database.
@@ -280,7 +280,7 @@ TEST_F(DomStorageAreaTest, CommitTasks) {
 }
 
 TEST_F(DomStorageAreaTest, CommitChangesAtShutdown) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   scoped_refptr<DomStorageArea> area(
       new DomStorageArea(kOrigin,
@@ -299,7 +299,7 @@ TEST_F(DomStorageAreaTest, CommitChangesAtShutdown) {
   area->backing_->ReadAllValues(&values);
   EXPECT_TRUE(values.empty());  // not committed yet
   area->Shutdown();
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(area->HasOneRef());
   EXPECT_FALSE(area->backing_.get());
   // The VerifyChangesCommittedDatabase destructor verifies values
@@ -307,7 +307,7 @@ TEST_F(DomStorageAreaTest, CommitChangesAtShutdown) {
 }
 
 TEST_F(DomStorageAreaTest, DeleteOrigin) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   scoped_refptr<DomStorageArea> area(
       new DomStorageArea(kOrigin,
@@ -315,9 +315,9 @@ TEST_F(DomStorageAreaTest, DeleteOrigin) {
           new MockDomStorageTaskRunner(base::MessageLoopProxy::current())));
 
   // This test puts files on disk.
-  FilePath db_file_path = static_cast<LocalStorageDatabaseAdapter*>(
+  base::FilePath db_file_path = static_cast<LocalStorageDatabaseAdapter*>(
       area->backing_.get())->db_->file_path();
-  FilePath db_journal_file_path =
+  base::FilePath db_journal_file_path =
       DomStorageDatabase::GetJournalFilePath(db_file_path);
 
   // Nothing bad should happen when invoked w/o any files on disk.
@@ -327,7 +327,7 @@ TEST_F(DomStorageAreaTest, DeleteOrigin) {
   // Commit something in the database and then delete.
   NullableString16 old_value;
   area->SetItem(kKey, kValue, &old_value);
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(file_util::PathExists(db_file_path));
   area->DeleteOrigin();
   EXPECT_EQ(0u, area->Length());
@@ -342,14 +342,14 @@ TEST_F(DomStorageAreaTest, DeleteOrigin) {
   area->DeleteOrigin();
   EXPECT_TRUE(area->HasUncommittedChanges());
   EXPECT_EQ(0u, area->Length());
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_FALSE(area->HasUncommittedChanges());
   EXPECT_FALSE(file_util::PathExists(db_file_path));
 
   // Put some uncommitted changes to a an existing database in
   // and then delete.
   area->SetItem(kKey, kValue, &old_value);
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(file_util::PathExists(db_file_path));
   area->SetItem(kKey2, kValue2, &old_value);
   EXPECT_TRUE(area->HasUncommittedChanges());
@@ -357,18 +357,18 @@ TEST_F(DomStorageAreaTest, DeleteOrigin) {
   area->DeleteOrigin();
   EXPECT_TRUE(area->HasUncommittedChanges());
   EXPECT_EQ(0u, area->Length());
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_FALSE(area->HasUncommittedChanges());
   // Since the area had uncommitted changes at the time delete
   // was called, the file will linger until the shutdown time.
   EXPECT_TRUE(file_util::PathExists(db_file_path));
   area->Shutdown();
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_FALSE(file_util::PathExists(db_file_path));
 }
 
 TEST_F(DomStorageAreaTest, PurgeMemory) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   scoped_refptr<DomStorageArea> area(
       new DomStorageArea(kOrigin,
@@ -407,7 +407,7 @@ TEST_F(DomStorageAreaTest, PurgeMemory) {
   EXPECT_EQ(original_map, area->map_.get());
 
   // Commit the changes from above,
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_FALSE(area->HasUncommittedChanges());
   new_backing = static_cast<LocalStorageDatabaseAdapter*>(
       area->backing_.get())->db_.get();
@@ -443,9 +443,9 @@ TEST_F(DomStorageAreaTest, DatabaseFileNames) {
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kCases); ++i) {
     GURL origin = GURL(kCases[i].origin).GetOrigin();
-    FilePath file_name = FilePath().AppendASCII(kCases[i].file_name);
-    FilePath journal_file_name =
-        FilePath().AppendASCII(kCases[i].journal_file_name);
+    base::FilePath file_name = base::FilePath().AppendASCII(kCases[i].file_name);
+    base::FilePath journal_file_name =
+        base::FilePath().AppendASCII(kCases[i].journal_file_name);
 
     EXPECT_EQ(file_name,
               DomStorageArea::DatabaseFileNameFromOrigin(origin));
@@ -456,17 +456,17 @@ TEST_F(DomStorageAreaTest, DatabaseFileNames) {
   }
 
   // Also test some DomStorageDatabase::GetJournalFilePath cases here.
-  FilePath parent = FilePath().AppendASCII("a").AppendASCII("b");
+  base::FilePath parent = base::FilePath().AppendASCII("a").AppendASCII("b");
   EXPECT_EQ(
       parent.AppendASCII("file-journal"),
       DomStorageDatabase::GetJournalFilePath(parent.AppendASCII("file")));
   EXPECT_EQ(
-      FilePath().AppendASCII("-journal"),
-      DomStorageDatabase::GetJournalFilePath(FilePath()));
+      base::FilePath().AppendASCII("-journal"),
+      DomStorageDatabase::GetJournalFilePath(base::FilePath()));
   EXPECT_EQ(
-      FilePath().AppendASCII(".extensiononly-journal"),
+      base::FilePath().AppendASCII(".extensiononly-journal"),
       DomStorageDatabase::GetJournalFilePath(
-          FilePath().AppendASCII(".extensiononly")));
+          base::FilePath().AppendASCII(".extensiononly")));
 }
 
 }  // namespace dom_storage

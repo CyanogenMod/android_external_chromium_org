@@ -46,8 +46,8 @@ struct BrowserThreadGlobals {
 
   // This array is protected by |lock|. The threads are not owned by this
   // array. Typically, the threads are owned on the UI thread by
-  // content::BrowserMainLoop. BrowserThreadImpl objects remove themselves from
-  // this array upon destruction.
+  // BrowserMainLoop. BrowserThreadImpl objects remove themselves from this
+  // array upon destruction.
   BrowserThreadImpl* threads[BrowserThread::ID_COUNT];
 
   // Only atomic operations are used on this array. The delegates are not owned
@@ -78,8 +78,21 @@ BrowserThreadImpl::BrowserThreadImpl(ID identifier,
 
 // static
 void BrowserThreadImpl::ShutdownThreadPool() {
+  // The goal is to make it impossible for chrome to 'infinite loop' during
+  // shutdown, but to reasonably expect that all BLOCKING_SHUTDOWN tasks queued
+  // during shutdown get run. There's nothing particularly scientific about the
+  // number chosen.
+  const int kMaxNewShutdownBlockingTasks = 1000;
   BrowserThreadGlobals& globals = g_globals.Get();
-  globals.blocking_pool->Shutdown();
+  globals.blocking_pool->Shutdown(kMaxNewShutdownBlockingTasks);
+}
+
+// static
+void BrowserThreadImpl::FlushThreadPoolHelper() {
+  // We don't want to create a pool if none exists.
+  if (g_globals == NULL)
+    return;
+  g_globals.Get().blocking_pool->FlushForTesting();
 }
 
 void BrowserThreadImpl::Init() {

@@ -19,12 +19,12 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/eintr_wrapper.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
@@ -52,7 +52,7 @@ enum EventType {
 };
 
 string MakeSocketPath() {
-  FilePath temp_dir;
+  base::FilePath temp_dir;
   file_util::GetTempDir(&temp_dir);
   return temp_dir.Append(kSocketFilename).value();
 }
@@ -212,7 +212,7 @@ class UnixDomainSocketTestHelper : public testing::Test {
     return thread.Pass();
   }
 
-  const FilePath file_path_;
+  const base::FilePath file_path_;
   const bool allow_user_;
   scoped_refptr<EventManager> event_manager_;
   scoped_ptr<TestListenSocketDelegate> socket_delegate_;

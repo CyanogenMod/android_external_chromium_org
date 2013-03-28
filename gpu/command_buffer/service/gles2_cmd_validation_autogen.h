@@ -10,6 +10,7 @@
 #define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_VALIDATION_AUTOGEN_H_
 
 ValueValidator<GLenum> attachment;
+ValueValidator<GLenum> backbuffer_attachment;
 ValueValidator<GLenum> blit_filter;
 ValueValidator<GLenum> buffer_parameter;
 ValueValidator<GLenum> buffer_target;
@@ -43,6 +44,7 @@ ValueValidator<GLenum> read_pixel_type;
 ValueValidator<GLenum> render_buffer_format;
 ValueValidator<GLenum> render_buffer_parameter;
 ValueValidator<GLenum> render_buffer_target;
+ValueValidator<GLenum> reset_status;
 ValueValidator<GLenum> shader_binary_format;
 ValueValidator<GLenum> shader_parameter;
 ValueValidator<GLenum> shader_precision;
@@ -58,6 +60,7 @@ ValueValidator<GLenum> texture_internal_format_storage;
 ValueValidator<GLenum> texture_mag_filter_mode;
 ValueValidator<GLenum> texture_min_filter_mode;
 ValueValidator<GLenum> texture_parameter;
+ValueValidator<GLenum> texture_pool;
 ValueValidator<GLenum> texture_target;
 ValueValidator<GLenum> texture_usage;
 ValueValidator<GLenum> texture_wrap_mode;

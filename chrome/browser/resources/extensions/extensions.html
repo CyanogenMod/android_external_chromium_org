@@ -30,7 +30,7 @@
 <div id="overlay" class="overlay" hidden>
   <include src="extension_commands_overlay.html">
   <include src="pack_extension_overlay.html">
-  <include src="../shared/html/alert_overlay.html">
+  <include src="../../../../ui/webui/resources/html/alert_overlay.html">
   <div id="dropTargetOverlay" class="page">
     <div i18n-content="extensionSettingsInstallDropTarget"></div>
   </div>
@@ -38,11 +38,19 @@
 
 <div class="page" id="extension-settings">
   <header id="page-header"><h1 i18n-content="extensionSettings"></h1>
-    <div id="dev-toggle" class="checkbox header-extras"><label>
-      <input id="toggle-dev-on" type="checkbox">
-      <span i18n-content="extensionSettingsDeveloperMode">
-    </label></div>
-    <div class="page-banner managed-mode-banner">
+    <div id="header-controls" class="header-extras">
+      <div id="dev-toggle" class="checkbox">
+        <label>
+          <input id="toggle-dev-on" type="checkbox">
+          <span i18n-content="extensionSettingsDeveloperMode">
+        </label>
+      </div>
+      <div id="managed-user-control-div">
+        <button id="unlock-button" i18n-content="unlockButton"></button>
+        <button id="lock-button" i18n-content="lockButton"></button>
+      </div>
+    </div>
+    <div class="page-banner profile-is-managed-banner">
       <div class="page-banner-gradient">
         <span class="page-banner-text"
             i18n-content="extensionSettingsManagedMode"></span>
@@ -53,7 +61,8 @@
       <div class="page-banner-gradient">
         <span id="sideload-wipeout-text" class="page-banner-text">
           <span i18n-content="extensionSettingsSideloadWipeout"></span>
-          <a i18n-values="href:sideloadWipeoutUrl"
+          <a class="sideload-wipeout-learn-more"
+             i18n-values="href:sideloadWipeoutUrl"
              i18n-content="sideloadWipoutLearnMore"
              target="_blank"></a>
          </span>
@@ -102,6 +111,10 @@
         </div>
         <p class="extension-description">
           <span></span>
+          <a class="permissions-link"
+              i18n-content="extensionSettingsPermissions"
+              href="#">
+          </a>
           <a class="site-link" target="_parent" hidden></a>
         </p>
         <div class="developer-extras">
@@ -147,6 +160,10 @@
               href="#" hidden></a>
           <a class="reload-link" i18n-content="extensionSettingsReloadUnpacked"
               href="#" hidden></a>
+          <a class="launch-link" i18n-content="extensionSettingsLaunch"
+              href="#" hidden></a>
+          <a class="restart-link" i18n-content="extensionSettingsRestart"
+              href="#" hidden></a>
           </span>
         </div>
         <div class="butter-bar"
@@ -171,7 +188,7 @@
     </div>
   </div>
 
-  <include src="../shared/html/trash.html">
+  <include src="../../../../ui/webui/resources/html/trash.html">
 
 </div>
 

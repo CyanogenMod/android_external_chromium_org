@@ -20,10 +20,10 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/metrics/stats_table.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -37,15 +37,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_dialogs.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/process_type.h"
@@ -59,6 +57,8 @@
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/webui/jstemplate_builder.h"
+#include "ui/webui/web_ui_util.h"
 
 #if defined(ENABLE_THEMES)
 #include "chrome/browser/ui/webui/theme_source.h"
@@ -74,16 +74,14 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/customization_document.h"
-#include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
+#include "chrome/browser/ui/webui/chromeos/about_network.h"
 #endif
 
 #if defined(USE_ASH)
 #include "ash/wm/frame_painter.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #endif
 
 using base::Time;
@@ -95,6 +93,7 @@ namespace {
 
 const char kCreditsJsPath[] = "credits.js";
 const char kMemoryJsPath[] = "memory.js";
+const char kMemoryCssPath[] = "about_memory.css";
 const char kStatsJsPath[] = "stats.js";
 const char kStringsJsPath[] = "strings.js";
 
@@ -109,8 +108,8 @@ const char kStringsJsPath[] = "strings.js";
 // redirect solves the problem by eliminating the process transition during the
 // time that about memory is being computed.
 std::string GetAboutMemoryRedirectResponse(Profile* profile) {
-  return StringPrintf("<meta http-equiv=\"refresh\" content=\"0;%s\">",
-                      chrome::kChromeUIMemoryRedirectURL);
+  return base::StringPrintf("<meta http-equiv=\"refresh\" content=\"0;%s\">",
+                            chrome::kChromeUIMemoryRedirectURL);
 }
 
 // Handling about:memory is complicated enough to encapsulate its related
@@ -118,22 +117,21 @@ std::string GetAboutMemoryRedirectResponse(Profile* profile) {
 // its |StartFetch()| method.
 class AboutMemoryHandler : public MemoryDetails {
  public:
-  AboutMemoryHandler(AboutUIHTMLSource* source, int request_id)
-      : source_(source),
-        request_id_(request_id) {
+  explicit AboutMemoryHandler(
+      const content::URLDataSource::GotDataCallback& callback)
+      : callback_(callback) {
   }
 
   virtual void OnDetailsAvailable() OVERRIDE;
 
  private:
-  ~AboutMemoryHandler() {}
+  virtual ~AboutMemoryHandler() {}
 
   void BindProcessMetrics(DictionaryValue* data,
                           ProcessMemoryInformation* info);
   void AppendProcess(ListValue* child_data, ProcessMemoryInformation* info);
 
-  scoped_refptr<AboutUIHTMLSource> source_;
-  int request_id_;
+  content::URLDataSource::GotDataCallback callback_;
 
   DISALLOW_COPY_AND_ASSIGN(AboutMemoryHandler);
 };
@@ -142,24 +140,22 @@ class AboutMemoryHandler : public MemoryDetails {
 class ChromeOSTermsHandler
     : public base::RefCountedThreadSafe<ChromeOSTermsHandler> {
  public:
-  static void Start(AboutUIHTMLSource* source,
-                    const std::string& path,
-                    int request_id) {
+  static void Start(const std::string& path,
+                    const content::URLDataSource::GotDataCallback& callback) {
     scoped_refptr<ChromeOSTermsHandler> handler(
-        new ChromeOSTermsHandler(source, path, request_id));
+        new ChromeOSTermsHandler(path, callback));
     handler->StartOnUIThread();
   }
 
  private:
   friend class base::RefCountedThreadSafe<ChromeOSTermsHandler>;
 
-  ChromeOSTermsHandler(AboutUIHTMLSource* source,
-                       const std::string& path,
-                       int request_id)
-    : source_(source),
-      path_(path),
-      request_id_(request_id),
-      locale_(chromeos::WizardController::GetInitialLocale()) {
+  ChromeOSTermsHandler(const std::string& path,
+                       const content::URLDataSource::GotDataCallback& callback)
+    : path_(path),
+      callback_(callback),
+      // Previously we were using "initial locale" http://crbug.com/145142
+      locale_(g_browser_process->GetApplicationLocale()) {
   }
 
   ~ChromeOSTermsHandler() {}
@@ -177,7 +173,7 @@ class ChromeOSTermsHandler
       const chromeos::StartupCustomizationDocument* customization =
           chromeos::StartupCustomizationDocument::GetInstance();
       if (customization->IsReady()) {
-        FilePath oem_eula_file_path;
+        base::FilePath oem_eula_file_path;
         if (net::FileURLToFilePath(GURL(customization->GetEULAPage(locale_)),
                                    &oem_eula_file_path)) {
           if (!file_util::ReadFileToString(oem_eula_file_path, &contents_)) {
@@ -187,11 +183,12 @@ class ChromeOSTermsHandler
       }
     } else {
       std::string file_path =
-          StringPrintf(chrome::kEULAPathFormat, locale_.c_str());
-      if (!file_util::ReadFileToString(FilePath(file_path), &contents_)) {
+          base::StringPrintf(chrome::kEULAPathFormat, locale_.c_str());
+      if (!file_util::ReadFileToString(base::FilePath(file_path), &contents_)) {
         // No EULA for given language - try en-US as default.
-        file_path = StringPrintf(chrome::kEULAPathFormat, "en-US");
-        if (!file_util::ReadFileToString(FilePath(file_path), &contents_)) {
+        file_path = base::StringPrintf(chrome::kEULAPathFormat, "en-US");
+        if (!file_util::ReadFileToString(base::FilePath(file_path),
+                                         &contents_)) {
           // File with EULA not found, ResponseOnUIThread will load EULA from
           // resources if contents_ is empty.
           contents_.clear();
@@ -209,17 +206,14 @@ class ChromeOSTermsHandler
     // Do nothing if OEM EULA load failed.
     if (contents_.empty() && path_ != chrome::kOemEulaURLPath)
       contents_ = l10n_util::GetStringUTF8(IDS_TERMS_HTML);
-    source_->FinishDataRequest(contents_, request_id_);
+    callback_.Run(base::RefCountedString::TakeString(&contents_));
   }
-
-  // Where the results are fed to.
-  scoped_refptr<AboutUIHTMLSource> source_;
 
   // Path in the URL.
   std::string path_;
 
-  // ID identifying the request.
-  int request_id_;
+  // Callback to run with the response.
+  content::URLDataSource::GotDataCallback callback_;
 
   // Locale of the EULA.
   std::string locale_;
@@ -232,7 +226,11 @@ class ChromeOSTermsHandler
 
 #endif
 
+}  // namespace
+
 // Individual about handlers ---------------------------------------------------
+
+namespace about_ui {
 
 void AppendHeader(std::string* output, int refresh,
                   const std::string& unescaped_title) {
@@ -258,6 +256,14 @@ void AppendFooter(std::string *output) {
   output->append("</body>\n</html>\n");
 }
 
+}  // namespace about_ui
+
+using about_ui::AppendHeader;
+using about_ui::AppendBody;
+using about_ui::AppendFooter;
+
+namespace {
+
 std::string ChromeURLs() {
   std::string html;
   AppendHeader(&html, 0, "Chrome URLs");
@@ -281,16 +287,10 @@ std::string ChromeURLs() {
 #if defined(OS_CHROMEOS)
 
 // Html output helper functions
-// TODO(stevenjb): L10N this.
 
 // Helper function to wrap HTML with a tag.
 std::string WrapWithTag(const std::string& tag, const std::string& text) {
   return "<" + tag + ">" + text + "</" + tag + ">";
-}
-
-// Helper function to wrap Html with <th> tag.
-std::string WrapWithTH(const std::string& text) {
-  return "<th>" + text + "</th>";
 }
 
 // Helper function to wrap Html with <td> tag.
@@ -303,168 +303,6 @@ std::string WrapWithTR(const std::string& text) {
   return "<tr>" + text + "</tr>";
 }
 
-void AppendRefresh(std::string *output, int refresh, const std::string& name) {
-  if (refresh > 0) {
-    output->append("(Auto-refreshing page every ");
-    output->append(base::IntToString(refresh));
-    output->append("s)");
-  } else {
-    output->append("(To auto-refresh this page: about:");
-    output->append(name);
-    output->append("/&lt;secs&gt;)");
-  }
-}
-
-// Helper function to create an Html table header for a Network.
-std::string ToHtmlTableHeader(const chromeos::Network* network) {
-  std::string str =
-      WrapWithTH("Name") +
-      WrapWithTH("Active") +
-      WrapWithTH("State");
-  if (network->type() == chromeos::TYPE_WIFI ||
-      network->type() == chromeos::TYPE_CELLULAR) {
-    str += WrapWithTH("Auto-Connect");
-    str += WrapWithTH("Strength");
-  }
-  if (network->type() == chromeos::TYPE_WIFI) {
-    str += WrapWithTH("Encryption");
-    str += WrapWithTH("Passphrase");
-    str += WrapWithTH("Identity");
-    str += WrapWithTH("Frequency");
-  }
-  if (network->type() == chromeos::TYPE_CELLULAR) {
-    str += WrapWithTH("Technology");
-    str += WrapWithTH("Connectivity");
-    str += WrapWithTH("Activation");
-    str += WrapWithTH("Roaming");
-  }
-  if (network->type() == chromeos::TYPE_VPN) {
-    str += WrapWithTH("Host");
-    str += WrapWithTH("Provider Type");
-    str += WrapWithTH("PSK Passphrase");
-    str += WrapWithTH("Username");
-    str += WrapWithTH("User Passphrase");
-  }
-  str += WrapWithTH("Error");
-  str += WrapWithTH("IP Address");
-  return WrapWithTR(str);
-}
-
-// Helper function to create an Html table row for a Network.
-std::string ToHtmlTableRow(const chromeos::Network* network) {
-  std::string str =
-      WrapWithTD(network->name()) +
-      WrapWithTD(base::IntToString(network->is_active())) +
-      WrapWithTD(network->GetStateString());
-  if (network->type() == chromeos::TYPE_WIFI ||
-      network->type() == chromeos::TYPE_CELLULAR) {
-    const chromeos::WirelessNetwork* wireless =
-        static_cast<const chromeos::WirelessNetwork*>(network);
-    str += WrapWithTD(base::IntToString(wireless->auto_connect()));
-    str += WrapWithTD(base::IntToString(wireless->strength()));
-  }
-  if (network->type() == chromeos::TYPE_WIFI) {
-    const chromeos::WifiNetwork* wifi =
-        static_cast<const chromeos::WifiNetwork*>(network);
-    str += WrapWithTD(wifi->GetEncryptionString());
-    str += WrapWithTD(std::string(wifi->passphrase().length(), '*'));
-    str += WrapWithTD(wifi->identity());
-    str += WrapWithTD(base::IntToString(wifi->frequency()));
-  }
-  if (network->type() == chromeos::TYPE_CELLULAR) {
-    const chromeos::CellularNetwork* cell =
-        static_cast<const chromeos::CellularNetwork*>(network);
-    str += WrapWithTH(cell->GetNetworkTechnologyString());
-    str += WrapWithTH(cell->GetActivationStateString());
-    str += WrapWithTH(cell->GetRoamingStateString());
-  }
-  if (network->type() == chromeos::TYPE_VPN) {
-    const chromeos::VirtualNetwork* vpn =
-        static_cast<const chromeos::VirtualNetwork*>(network);
-    str += WrapWithTH(vpn->server_hostname());
-    str += WrapWithTH(vpn->GetProviderTypeString());
-    str += WrapWithTD(std::string(vpn->psk_passphrase().length(), '*'));
-    str += WrapWithTH(vpn->username());
-    str += WrapWithTD(std::string(vpn->user_passphrase().length(), '*'));
-  }
-  str += WrapWithTD(network->failed() ? network->GetErrorString() : "");
-  str += WrapWithTD(network->ip_address());
-  return WrapWithTR(str);
-}
-
-std::string GetNetworkHtmlInfo(int refresh) {
-  chromeos::NetworkLibrary* cros =
-      chromeos::CrosLibrary::Get()->GetNetworkLibrary();
-  std::string output;
-  AppendHeader(&output, refresh, "About Network");
-  AppendBody(&output);
-  AppendRefresh(&output, refresh, "network");
-
-  if (cros->ethernet_enabled()) {
-    output.append("<h3>Ethernet:</h3><table border=1>");
-    const chromeos::EthernetNetwork* ethernet = cros->ethernet_network();
-    if (ethernet) {
-      output.append(ToHtmlTableHeader(ethernet));
-      output.append(ToHtmlTableRow(ethernet));
-    }
-  }
-
-  if (cros->wifi_enabled()) {
-    output.append("</table><h3>Wifi Networks:</h3><table border=1>");
-    const chromeos::WifiNetworkVector& wifi_networks = cros->wifi_networks();
-    for (size_t i = 0; i < wifi_networks.size(); ++i) {
-      if (i == 0)
-        output.append(ToHtmlTableHeader(wifi_networks[i]));
-      output.append(ToHtmlTableRow(wifi_networks[i]));
-    }
-  }
-
-  if (cros->cellular_enabled()) {
-    output.append("</table><h3>Cellular Networks:</h3><table border=1>");
-    const chromeos::CellularNetworkVector& cellular_networks =
-        cros->cellular_networks();
-    for (size_t i = 0; i < cellular_networks.size(); ++i) {
-      if (i == 0)
-        output.append(ToHtmlTableHeader(cellular_networks[i]));
-      output.append(ToHtmlTableRow(cellular_networks[i]));
-    }
-  }
-
-  {
-    output.append("</table><h3>Virtual Networks:</h3><table border=1>");
-    const chromeos::VirtualNetworkVector& virtual_networks =
-        cros->virtual_networks();
-    for (size_t i = 0; i < virtual_networks.size(); ++i) {
-      if (i == 0)
-        output.append(ToHtmlTableHeader(virtual_networks[i]));
-      output.append(ToHtmlTableRow(virtual_networks[i]));
-    }
-  }
-
-  {
-    output.append(
-        "</table><h3>Remembered Wi-Fi Networks:</h3><table border=1>");
-    const chromeos::WifiNetworkVector& remembered_wifi_networks =
-        cros->remembered_wifi_networks();
-    for (size_t i = 0; i < remembered_wifi_networks.size(); ++i) {
-      if (i == 0)
-        output.append(
-            ToHtmlTableHeader(remembered_wifi_networks[i]));
-      output.append(ToHtmlTableRow(remembered_wifi_networks[i]));
-    }
-  }
-
-  output.append("</table>");
-  AppendFooter(&output);
-  return output;
-}
-
-std::string AboutNetwork(const std::string& query) {
-  int refresh;
-  base::StringToInt(query, &refresh);
-  return GetNetworkHtmlInfo(refresh);
-}
-
 std::string AddStringRow(const std::string& name, const std::string& value) {
   std::string row;
   row.append(WrapWithTD(name));
@@ -472,11 +310,14 @@ std::string AddStringRow(const std::string& name, const std::string& value) {
   return WrapWithTR(row);
 }
 
+// TODO(stevenjb): L10N AboutDiscards.
+
 std::string AboutDiscardsRun() {
   std::string output;
   AppendHeader(&output, 0, "About discards");
-  output.append(StringPrintf("<meta http-equiv=\"refresh\" content=\"2;%s\">",
-                             chrome::kChromeUIDiscardsURL));
+  output.append(
+      base::StringPrintf("<meta http-equiv=\"refresh\" content=\"2;%s\">",
+      chrome::kChromeUIDiscardsURL));
   output.append(WrapWithTag("p", "Discarding a tab..."));
   g_browser_process->oom_priority_manager()->LogMemoryAndDiscardTab();
   AppendFooter(&output);
@@ -498,43 +339,53 @@ std::string AboutDiscards(const std::string& path) {
   chromeos::OomPriorityManager* oom = g_browser_process->oom_priority_manager();
   std::vector<string16> titles = oom->GetTabTitles();
   if (!titles.empty()) {
-    output.append("<ol>");
+    output.append("<ul>");
     std::vector<string16>::iterator it = titles.begin();
     for ( ; it != titles.end(); ++it) {
       std::string title = UTF16ToUTF8(*it);
       output.append(WrapWithTag("li", title));
     }
-    output.append("</ol>");
+    output.append("</ul>");
   } else {
     output.append("<p>None found.  Wait 10 seconds, then refresh.</p>");
   }
-  output.append(StringPrintf("%d discards this session. ",
+  output.append(base::StringPrintf("%d discards this session. ",
                              oom->discard_count()));
-  output.append(StringPrintf("<a href='%s%s'>Discard tab now</a>",
-                             chrome::kChromeUIDiscardsURL,
-                             kRunCommand));
+  output.append(base::StringPrintf("<a href='%s%s'>Discard tab now</a>",
+                                   chrome::kChromeUIDiscardsURL,
+                                   kRunCommand));
 
   base::SystemMemoryInfoKB meminfo;
   base::GetSystemMemoryInfo(&meminfo);
   output.append("<h3>System memory information in MB</h3>");
   output.append("<table>");
+  // Start with summary statistics.
   output.append(AddStringRow(
-    "Total", base::IntToString(meminfo.total / 1024)));
+      "Total", base::IntToString(meminfo.total / 1024)));
   output.append(AddStringRow(
-    "Free", base::IntToString(meminfo.free / 1024)));
+      "Free", base::IntToString(meminfo.free / 1024)));
+  int mem_allocated_kb = meminfo.active_anon + meminfo.inactive_anon;
+#if defined(ARCH_CPU_ARM_FAMILY)
+  // ARM counts allocated graphics memory separately from anonymous.
+  if (meminfo.gem_size != -1)
+    mem_allocated_kb += meminfo.gem_size / 1024;
+#endif
   output.append(AddStringRow(
-    "Buffered", base::IntToString(meminfo.buffers / 1024)));
+      "Allocated", base::IntToString(mem_allocated_kb / 1024)));
+  // Add some space, then detailed numbers.
+  output.append(AddStringRow("&nbsp;", "&nbsp;"));
   output.append(AddStringRow(
-    "Cached", base::IntToString(meminfo.cached / 1024)));
+      "Buffered", base::IntToString(meminfo.buffers / 1024)));
   output.append(AddStringRow(
-    "Committed", base::IntToString(
-    (meminfo.total - meminfo.free - meminfo.buffers - meminfo.cached) / 1024)));
+      "Cached", base::IntToString(meminfo.cached / 1024)));
   output.append(AddStringRow(
-    "Active Anon", base::IntToString(meminfo.active_anon / 1024)));
+      "Active Anon", base::IntToString(meminfo.active_anon / 1024)));
   output.append(AddStringRow(
-    "Inactive Anon", base::IntToString(meminfo.inactive_anon / 1024)));
+      "Inactive Anon", base::IntToString(meminfo.inactive_anon / 1024)));
   output.append(AddStringRow(
-    "Shared", base::IntToString(meminfo.shmem / 1024)));
+      "Shared", base::IntToString(meminfo.shmem / 1024)));
+  output.append(AddStringRow(
+      "Graphics", base::IntToString(meminfo.gem_size / 1024 / 1024)));
   output.append("</table>");
 
   AppendFooter(&output);
@@ -554,7 +405,7 @@ std::string AboutDiscards(const std::string& path) {
 std::string TransparencyLink(const std::string& label,
                              int value,
                              const std::string& key) {
-  return StringPrintf("<p>%s</p>"
+  return base::StringPrintf("<p>%s</p>"
       "<p>"
       "<a href='%s%s=%d'>--</a> "
       "<a href='%s%s=%d'>-</a> "
@@ -623,7 +474,7 @@ std::string AboutTransparency(const std::string& path) {
   output.append(TransparencyLink("Solo window:",
       TransparencyFromOpacity(ash::FramePainter::kSoloWindowOpacity),
       kSolo));
-  output.append(StringPrintf(
+  output.append(base::StringPrintf(
       "<p>Share: %s%s=%d&%s=%d&%s=%d</p>",
       chrome::kChromeUITransparencyURL,
       kActive,
@@ -643,18 +494,20 @@ std::string AboutTransparency(const std::string& path) {
 // the DNS information.
 class AboutDnsHandler : public base::RefCountedThreadSafe<AboutDnsHandler> {
  public:
-  static void Start(AboutUIHTMLSource* source, int request_id) {
+  static void Start(Profile* profile,
+                    const content::URLDataSource::GotDataCallback& callback) {
     scoped_refptr<AboutDnsHandler> handler(
-        new AboutDnsHandler(source, request_id));
+        new AboutDnsHandler(profile, callback));
     handler->StartOnUIThread();
   }
 
  private:
   friend class base::RefCountedThreadSafe<AboutDnsHandler>;
 
-  AboutDnsHandler(AboutUIHTMLSource* source, int request_id)
-      : source_(source),
-        request_id_(request_id) {
+  AboutDnsHandler(Profile* profile,
+                  const content::URLDataSource::GotDataCallback& callback)
+      : profile_(profile),
+        callback_(callback) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   }
 
@@ -663,8 +516,7 @@ class AboutDnsHandler : public base::RefCountedThreadSafe<AboutDnsHandler> {
   // Calls FinishOnUIThread() on completion.
   void StartOnUIThread() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    chrome_browser_net::Predictor* predictor =
-        source_->profile()->GetNetworkPredictor();
+    chrome_browser_net::Predictor* predictor = profile_->GetNetworkPredictor();
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&AboutDnsHandler::StartOnIOThread, this, predictor));
@@ -686,33 +538,38 @@ class AboutDnsHandler : public base::RefCountedThreadSafe<AboutDnsHandler> {
 
   void FinishOnUIThread(const std::string& data) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    source_->FinishDataRequest(data, request_id_);
+    std::string data_copy(data);
+    callback_.Run(base::RefCountedString::TakeString(&data_copy));
   }
 
-  // Where the results are fed to.
-  scoped_refptr<AboutUIHTMLSource> source_;
+  Profile* profile_;
 
-  // ID identifying the request.
-  int request_id_;
+  // Callback to run with the response.
+  content::URLDataSource::GotDataCallback callback_;
 
   DISALLOW_COPY_AND_ASSIGN(AboutDnsHandler);
 };
 
-void FinishMemoryDataRequest(const std::string& path,
-                             AboutUIHTMLSource* source,
-                             int request_id) {
+void FinishMemoryDataRequest(
+    const std::string& path,
+    const content::URLDataSource::GotDataCallback& callback) {
   if (path == kStringsJsPath) {
     // The AboutMemoryHandler cleans itself up, but |StartFetch()| will want
     // the refcount to be greater than 0.
-    scoped_refptr<AboutMemoryHandler>
-        handler(new AboutMemoryHandler(source, request_id));
+    scoped_refptr<AboutMemoryHandler> handler(new AboutMemoryHandler(callback));
     // TODO(jamescook): Maybe this shouldn't update UMA?
     handler->StartFetch(MemoryDetails::UPDATE_USER_METRICS);
   } else {
-    source->FinishDataRequest(
-        ResourceBundle::GetSharedInstance().GetRawDataResource(
-            path == kMemoryJsPath ? IDR_ABOUT_MEMORY_JS :
-            IDR_ABOUT_MEMORY_HTML).as_string(), request_id);
+    int id = IDR_ABOUT_MEMORY_HTML;
+    if (path == kMemoryJsPath) {
+      id = IDR_ABOUT_MEMORY_JS;
+    } else if (path == kMemoryCssPath) {
+      id = IDR_ABOUT_MEMORY_CSS;
+    }
+
+    std::string result =
+        ResourceBundle::GetSharedInstance().GetRawDataResource(id).as_string();
+    callback.Run(base::RefCountedString::TakeString(&result));
   }
 }
 
@@ -832,7 +689,7 @@ std::string AboutStats(const std::string& query) {
   } else if (query == "raw") {
     // Dump the raw counters which have changed in text format.
     data = "<pre>";
-    data.append(StringPrintf("Counter changes in the last %ldms\n",
+    data.append(base::StringPrintf("Counter changes in the last %ldms\n",
         static_cast<long int>(time_since_last_sample.InMilliseconds())));
     for (size_t i = 0; i < counters->GetSize(); ++i) {
       Value* entry = NULL;
@@ -889,7 +746,7 @@ std::string AboutLinuxProxyConfig() {
                l10n_util::GetStringUTF8(IDS_ABOUT_LINUX_PROXY_CONFIG_TITLE));
   data.append("<style>body { max-width: 70ex; padding: 2ex 5ex; }</style>");
   AppendBody(&data);
-  FilePath binary = CommandLine::ForCurrentProcess()->GetProgram();
+  base::FilePath binary = CommandLine::ForCurrentProcess()->GetProgram();
   data.append(l10n_util::GetStringFUTF8(
       IDS_ABOUT_LINUX_PROXY_CONFIG_BODY,
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
@@ -923,6 +780,7 @@ std::string AboutSandbox() {
   data.append(l10n_util::GetStringUTF8(IDS_ABOUT_SANDBOX_TITLE));
   data.append("</h1>");
 
+  // Get expected sandboxing status of renderers.
   const int status = content::ZygoteHost::GetInstance()->GetSandboxStatus();
 
   data.append("<table>");
@@ -940,12 +798,14 @@ std::string AboutSandbox() {
 
   data.append("</table>");
 
-  // We do not consider the seccomp-bpf status here as the renderers
-  // policy is weak at the moment.
-  // TODO(jln): fix when whe have better renderer policies.
-  bool good = ((status & content::kSandboxLinuxSUID) &&
-               (status & content::kSandboxLinuxPIDNS)) ||
-              (status & content::kSandboxLinuxSeccompLegacy);
+  // The setuid sandbox is required as our first-layer sandbox.
+  bool good_layer1 = status & content::kSandboxLinuxSUID &&
+                     status & content::kSandboxLinuxPIDNS &&
+                     status & content::kSandboxLinuxNetNS;
+  // A second-layer sandbox is also required to be adequately sandboxed.
+  bool good_layer2 = status & content::kSandboxLinuxSeccompBpf;
+  bool good = good_layer1 && good_layer2;
+
   if (good) {
     data.append("<p style=\"color: green\">");
     data.append(l10n_util::GetStringUTF8(IDS_ABOUT_SANDBOX_OK));
@@ -994,7 +854,7 @@ void AboutMemoryHandler::AppendProcess(ListValue* child_data,
   BindProcessMetrics(child, info);
 
   std::string child_label(
-      ProcessMemoryInformation::GetFullTypeNameInEnglish(info->type,
+      ProcessMemoryInformation::GetFullTypeNameInEnglish(info->process_type,
                                                          info->renderer_type));
   if (info->is_diagnostics)
     child_label.append(" (diagnostics)");
@@ -1007,14 +867,14 @@ void AboutMemoryHandler::AppendProcess(ListValue* child_data,
 
 void AboutMemoryHandler::OnDetailsAvailable() {
   // the root of the JSON hierarchy for about:memory jstemplate
-  DictionaryValue root;
+  scoped_ptr<DictionaryValue> root(new DictionaryValue);
   ListValue* browsers = new ListValue();
-  root.Set("browsers", browsers);
+  root->Set("browsers", browsers);
 
   const std::vector<ProcessData>& browser_processes = processes();
 
   // Aggregate per-process data into browser summary data.
-  std::wstring log_string;
+  string16 log_string;
   for (size_t index = 0; index < browser_processes.size(); index++) {
     if (browser_processes[index].processes.empty())
       continue;
@@ -1045,48 +905,48 @@ void AboutMemoryHandler::OnDetailsAvailable() {
     BindProcessMetrics(browser_data, &aggregate);
 
     // We log memory info as we record it.
-    if (log_string.length() > 0)
-      log_string.append(L", ");
-    log_string.append(UTF16ToWide(browser_processes[index].name));
-    log_string.append(L", ");
-    log_string.append(UTF8ToWide(
-        base::Int64ToString(aggregate.working_set.priv)));
-    log_string.append(L", ");
-    log_string.append(UTF8ToWide(
-        base::Int64ToString(aggregate.working_set.shared)));
-    log_string.append(L", ");
-    log_string.append(UTF8ToWide(
-        base::Int64ToString(aggregate.working_set.shareable)));
+    if (!log_string.empty())
+      log_string += ASCIIToUTF16(", ");
+    log_string += browser_processes[index].name + ASCIIToUTF16(", ") +
+                  base::Int64ToString16(aggregate.working_set.priv) +
+                  ASCIIToUTF16(", ") +
+                  base::Int64ToString16(aggregate.working_set.shared) +
+                  ASCIIToUTF16(", ") +
+                  base::Int64ToString16(aggregate.working_set.shareable);
   }
-  if (log_string.length() > 0)
+  if (!log_string.empty())
     VLOG(1) << "memory: " << log_string;
 
   // Set the browser & renderer detailed process data.
   DictionaryValue* browser_data = new DictionaryValue();
-  root.Set("browzr_data", browser_data);
+  root->Set("browzr_data", browser_data);
   ListValue* child_data = new ListValue();
-  root.Set("child_data", child_data);
+  root->Set("child_data", child_data);
 
   ProcessData process = browser_processes[0];  // Chrome is the first browser.
-  root.SetString("current_browser_name", process.name);
+  root->SetString("current_browser_name", process.name);
 
   for (size_t index = 0; index < process.processes.size(); index++) {
-    if (process.processes[index].type == content::PROCESS_TYPE_BROWSER)
+    if (process.processes[index].process_type == content::PROCESS_TYPE_BROWSER)
       BindProcessMetrics(browser_data, &process.processes[index]);
     else
       AppendProcess(child_data, &process.processes[index]);
   }
 
-  root.SetBoolean("show_other_browsers",
+  root->SetBoolean("show_other_browsers",
       browser_defaults::kShowOtherBrowsersInAboutMemory);
-  root.SetString("summary_desc",
-                 l10n_util::GetStringUTF16(IDS_MEMORY_USAGE_SUMMARY_DESC));
 
-  ChromeWebUIDataSource::SetFontAndTextDirection(&root);
+  DictionaryValue load_time_data;
+  load_time_data.SetString(
+      "summary_desc",
+      l10n_util::GetStringUTF16(IDS_MEMORY_USAGE_SUMMARY_DESC));
+  webui::SetFontAndTextDirection(&load_time_data);
+  load_time_data.Set("jstemplateData", root.release());
 
+  webui::UseVersion2 version2;
   std::string data;
-  jstemplate_builder::AppendJsonJS(&root, &data);
-  source_->FinishDataRequest(data, request_id_);
+  webui::AppendJsonJS(&load_time_data, &data);
+  callback_.Run(base::RefCountedString::TakeString(&data));
 }
 
 }  // namespace
@@ -1095,74 +955,77 @@ void AboutMemoryHandler::OnDetailsAvailable() {
 
 AboutUIHTMLSource::AboutUIHTMLSource(const std::string& source_name,
                                      Profile* profile)
-    : DataSource(source_name, MessageLoop::current()),
-      profile_(profile) {
+    : source_name_(source_name),
+      profile_(profile) {}
+
+AboutUIHTMLSource::~AboutUIHTMLSource() {}
+
+std::string AboutUIHTMLSource::GetSource() {
+  return source_name_;
 }
 
-AboutUIHTMLSource::~AboutUIHTMLSource() {
-}
-
-void AboutUIHTMLSource::StartDataRequest(const std::string& path,
-                                         bool is_incognito,
-                                         int request_id) {
+void AboutUIHTMLSource::StartDataRequest(
+    const std::string& path,
+    bool is_incognito,
+    const content::URLDataSource::GotDataCallback& callback) {
   std::string response;
-  std::string host = source_name();
   // Add your data source here, in alphabetical order.
-  if (host == chrome::kChromeUIChromeURLsHost) {
+  if (source_name_ == chrome::kChromeUIChromeURLsHost) {
     response = ChromeURLs();
-  } else if (host == chrome::kChromeUICreditsHost) {
+  } else if (source_name_ == chrome::kChromeUICreditsHost) {
     int idr = (path == kCreditsJsPath) ? IDR_CREDITS_JS : IDR_CREDITS_HTML;
     response = ResourceBundle::GetSharedInstance().GetRawDataResource(
         idr).as_string();
 #if defined(OS_CHROMEOS)
-  } else if (host == chrome::kChromeUIDiscardsHost) {
+  } else if (source_name_ == chrome::kChromeUIDiscardsHost) {
     response = AboutDiscards(path);
 #endif
 #if defined(USE_ASH)
-  } else if (host == chrome::kChromeUITransparencyHost) {
+  } else if (source_name_ == chrome::kChromeUITransparencyHost) {
     response = AboutTransparency(path);
 #endif
-  } else if (host == chrome::kChromeUIDNSHost) {
-    AboutDnsHandler::Start(this, request_id);
+  } else if (source_name_ == chrome::kChromeUIDNSHost) {
+    AboutDnsHandler::Start(profile(), callback);
     return;
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
-  } else if (host == chrome::kChromeUILinuxProxyConfigHost) {
+  } else if (source_name_ == chrome::kChromeUILinuxProxyConfigHost) {
     response = AboutLinuxProxyConfig();
 #endif
-  } else if (host == chrome::kChromeUIMemoryHost) {
+  } else if (source_name_ == chrome::kChromeUIMemoryHost) {
     response = GetAboutMemoryRedirectResponse(profile());
-  } else if (host == chrome::kChromeUIMemoryRedirectHost) {
-    FinishMemoryDataRequest(path, this, request_id);
+  } else if (source_name_ == chrome::kChromeUIMemoryRedirectHost) {
+    FinishMemoryDataRequest(path, callback);
     return;
 #if defined(OS_CHROMEOS)
-  } else if (host == chrome::kChromeUINetworkHost) {
-    response = AboutNetwork(path);
-  } else if (host == chrome::kChromeUIOSCreditsHost) {
+  } else if (source_name_ == chrome::kChromeUINetworkHost) {
+    response = chromeos::about_ui::AboutNetwork(path);
+  } else if (source_name_ == chrome::kChromeUIOSCreditsHost) {
     response = ResourceBundle::GetSharedInstance().GetRawDataResource(
         IDR_OS_CREDITS_HTML).as_string();
 #endif
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
-  } else if (host == chrome::kChromeUISandboxHost) {
+  } else if (source_name_ == chrome::kChromeUISandboxHost) {
     response = AboutSandbox();
 #endif
-  } else if (host == chrome::kChromeUIStatsHost) {
+  } else if (source_name_ == chrome::kChromeUIStatsHost) {
     response = AboutStats(path);
-  } else if (host == chrome::kChromeUITermsHost) {
+  } else if (source_name_ == chrome::kChromeUITermsHost) {
 #if defined(OS_CHROMEOS)
-    ChromeOSTermsHandler::Start(this, path, request_id);
+    ChromeOSTermsHandler::Start(path, callback);
     return;
 #else
     response = l10n_util::GetStringUTF8(IDS_TERMS_HTML);
 #endif
   }
 
-  FinishDataRequest(response, request_id);
+  FinishDataRequest(response, callback);
 }
 
-void AboutUIHTMLSource::FinishDataRequest(const std::string& html,
-                                          int request_id) {
+void AboutUIHTMLSource::FinishDataRequest(
+    const std::string& html,
+    const content::URLDataSource::GotDataCallback& callback) {
   std::string html_copy(html);
-  SendResponse(request_id, base::RefCountedString::TakeString(&html_copy));
+  callback.Run(base::RefCountedString::TakeString(&html_copy));
 }
 
 std::string AboutUIHTMLSource::GetMimeType(const std::string& path) const {
@@ -1175,6 +1038,24 @@ std::string AboutUIHTMLSource::GetMimeType(const std::string& path) const {
   return "text/html";
 }
 
+bool AboutUIHTMLSource::ShouldAddContentSecurityPolicy() const {
+#if defined(OS_CHROMEOS)
+  if (source_name_ == chrome::kChromeUIOSCreditsHost)
+    return false;
+#endif
+  return content::URLDataSource::ShouldAddContentSecurityPolicy();
+}
+
+bool AboutUIHTMLSource::ShouldDenyXFrameOptions() const {
+#if defined(OS_CHROMEOS)
+  if (source_name_ == chrome::kChromeUITermsHost) {
+    // chrome://terms page is embedded in iframe to chrome://oobe.
+    return false;
+  }
+#endif
+  return content::URLDataSource::ShouldDenyXFrameOptions();
+}
+
 AboutUI::AboutUI(content::WebUI* web_ui, const std::string& name)
     : WebUIController(web_ui) {
   Profile* profile = Profile::FromWebUI(web_ui);
@@ -1182,12 +1063,8 @@ AboutUI::AboutUI(content::WebUI* web_ui, const std::string& name)
 #if defined(ENABLE_THEMES)
   // Set up the chrome://theme/ source.
   ThemeSource* theme = new ThemeSource(profile);
-  ChromeURLDataManager::AddDataSource(profile, theme);
+  content::URLDataSource::Add(profile, theme);
 #endif
 
-  ChromeURLDataManager::DataSource* source =
-      new AboutUIHTMLSource(name, profile);
-  if (source) {
-    ChromeURLDataManager::AddDataSource(profile, source);
-  }
+  content::URLDataSource::Add(profile, new AboutUIHTMLSource(name, profile));
 }

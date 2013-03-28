@@ -6,7 +6,7 @@
 
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/page_navigator.h"
@@ -16,14 +16,15 @@
 #include "ui/base/l10n/l10n_util.h"
 
 
-GoogleURLTrackerInfoBarDelegate::GoogleURLTrackerInfoBarDelegate(
-    InfoBarTabHelper* infobar_helper,
+// static
+GoogleURLTrackerInfoBarDelegate* GoogleURLTrackerInfoBarDelegate::Create(
+    InfoBarService* infobar_service,
     GoogleURLTracker* google_url_tracker,
-    const GURL& search_url)
-    : ConfirmInfoBarDelegate(infobar_helper),
-      google_url_tracker_(google_url_tracker),
-      search_url_(search_url),
-      pending_id_(0) {
+    const GURL& search_url) {
+  return static_cast<GoogleURLTrackerInfoBarDelegate*>(
+      infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
+          new GoogleURLTrackerInfoBarDelegate(
+              infobar_service, google_url_tracker, search_url))));
 }
 
 bool GoogleURLTrackerInfoBarDelegate::Accept() {
@@ -58,7 +59,7 @@ bool GoogleURLTrackerInfoBarDelegate::ShouldExpireInternal(
 }
 
 void GoogleURLTrackerInfoBarDelegate::Update(const GURL& search_url) {
-  StoreActiveEntryUniqueID(owner());
+  StoreActiveEntryUniqueID();
   search_url_ = search_url;
   pending_id_ = 0;
 }
@@ -79,6 +80,16 @@ void GoogleURLTrackerInfoBarDelegate::Close(bool redo_search) {
   }
 
   owner()->RemoveInfoBar(this);
+}
+
+GoogleURLTrackerInfoBarDelegate::GoogleURLTrackerInfoBarDelegate(
+    InfoBarService* infobar_service,
+    GoogleURLTracker* google_url_tracker,
+    const GURL& search_url)
+    : ConfirmInfoBarDelegate(infobar_service),
+      google_url_tracker_(google_url_tracker),
+      search_url_(search_url),
+      pending_id_(0) {
 }
 
 GoogleURLTrackerInfoBarDelegate::~GoogleURLTrackerInfoBarDelegate() {

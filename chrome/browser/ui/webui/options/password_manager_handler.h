@@ -9,8 +9,7 @@
 #include <vector>
 
 #include "base/memory/scoped_vector.h"
-#include "base/prefs/public/pref_observer.h"
-#include "chrome/browser/api/prefs/pref_member.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_consumer.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
@@ -22,8 +21,7 @@ struct PasswordForm;
 namespace options {
 
 class PasswordManagerHandler : public OptionsPageUIHandler,
-                               public PasswordStore::Observer,
-                               public PrefObserver {
+                               public PasswordStore::Observer {
  public:
   PasswordManagerHandler();
   virtual ~PasswordManagerHandler();
@@ -35,10 +33,6 @@ class PasswordManagerHandler : public OptionsPageUIHandler,
 
   // PasswordStore::Observer implementation.
   virtual void OnLoginsChanged() OVERRIDE;
-
-  // PrefObserver implementation.
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
 
  private:
   // The password store associated with the currently active profile.
@@ -79,11 +73,6 @@ class PasswordManagerHandler : public OptionsPageUIHandler,
     // Send a query to the password store to populate a list.
     virtual void Populate() = 0;
 
-    // Send the password store's reply back to the handler.
-    virtual void OnPasswordStoreRequestDone(
-        CancelableRequestProvider::Handle handle,
-        const std::vector<content::PasswordForm*>& result) = 0;
-
    protected:
     PasswordManagerHandler* page_;
     CancelableRequestProvider::Handle pending_login_query_;
@@ -101,6 +90,8 @@ class PasswordManagerHandler : public OptionsPageUIHandler,
     virtual void OnPasswordStoreRequestDone(
         CancelableRequestProvider::Handle handle,
         const std::vector<content::PasswordForm*>& result) OVERRIDE;
+    virtual void OnGetPasswordStoreResults(
+        const std::vector<content::PasswordForm*>& results) OVERRIDE;
   };
 
   // A short class to mediate requests to the password store for exceptions.
@@ -115,6 +106,8 @@ class PasswordManagerHandler : public OptionsPageUIHandler,
     virtual void OnPasswordStoreRequestDone(
         CancelableRequestProvider::Handle handle,
         const std::vector<content::PasswordForm*>& result) OVERRIDE;
+    virtual void OnGetPasswordStoreResults(
+        const std::vector<content::PasswordForm*>& results) OVERRIDE;
   };
 
   // Password store consumer for populating the password list and exceptions.

@@ -39,13 +39,13 @@ cr.define('options.browser_options', function() {
      */
     urlField_: null,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       InlineEditableItem.prototype.decorate.call(this);
 
       var pageInfo = this.pageInfo_;
 
-      if (pageInfo.modelIndex == '-1') {
+      if (pageInfo.modelIndex == -1) {
         this.isPlaceholder = true;
         pageInfo.title = loadTimeData.getString('startupAddLabel');
         pageInfo.url = '';
@@ -57,7 +57,7 @@ cr.define('options.browser_options', function() {
       titleEl.classList.add('weakrtl');
       titleEl.textContent = pageInfo.title;
       if (!this.isPlaceholder) {
-        titleEl.style.backgroundImage = url(getFaviconURL(pageInfo.url));
+        titleEl.style.backgroundImage = getFaviconImageSet(pageInfo.url);
         titleEl.title = pageInfo.tooltip;
       }
 
@@ -87,12 +87,12 @@ cr.define('options.browser_options', function() {
         this.draggable = true;
     },
 
-    /** @inheritDoc */
+    /** @override */
     get currentInputIsValid() {
       return this.urlField_.validity.valid;
     },
 
-    /** @inheritDoc */
+    /** @override */
     get hasBeenEdited() {
       return this.urlField_.value != this.pageInfo_.url;
     },
@@ -127,7 +127,7 @@ cr.define('options.browser_options', function() {
      */
     dropPos: null,
 
-    /** @inheritDoc */
+    /** @override */
     decorate: function() {
       InlineEditableItemList.prototype.decorate.call(this);
 
@@ -140,16 +140,16 @@ cr.define('options.browser_options', function() {
       this.addEventListener('dragend', this.handleDragEnd_.bind(this));
     },
 
-    /** @inheritDoc */
+    /** @override */
     createItem: function(pageInfo) {
       var item = new StartupPageListItem(pageInfo);
       item.urlField_.disabled = this.disabled;
       return item;
     },
 
-    /** @inheritDoc */
+    /** @override */
     deleteItemAtIndex: function(index) {
-      chrome.send('removeStartupPages', [String(index)]);
+      chrome.send('removeStartupPages', [index]);
     },
 
     /**
@@ -233,6 +233,12 @@ cr.define('options.browser_options', function() {
      */
     handleDrop_: function(e) {
       var dropTarget = this.getTargetFromDropEvent_(e);
+
+      if (!(dropTarget instanceof StartupPageListItem) ||
+          dropTarget.pageInfo_.modelIndex == -1) {
+        return;
+      }
+
       this.hideDropMarker_();
 
       // Insert the selection at the new position.
@@ -240,13 +246,8 @@ cr.define('options.browser_options', function() {
       if (this.dropPos == 'below')
         newIndex += 1;
 
-      var selected = this.selectionModel.selectedIndexes;
-      var stringized_selected = [];
-      for (var j = 0; j < selected.length; j++)
-        stringized_selected.push(String(selected[j]));
-
       chrome.send('dragDropStartupPage',
-          [String(newIndex), stringized_selected]);
+                  [newIndex, this.selectionModel.selectedIndexes]);
     },
 
     /**

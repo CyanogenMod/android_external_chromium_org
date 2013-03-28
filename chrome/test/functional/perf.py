@@ -206,8 +206,16 @@ class BasePerfTest(pyauto.PyUITest):
       logging.info('Current CPU utilization = %f.', fraction_non_idle_time)
       if time_passed > timeout:
         self._LogProcessActivity()
-        self.fail('CPU did not idle after %fs wait (utilization = %f).' % (
-                  time_passed, fraction_non_idle_time))
+        message = ('CPU did not idle after %fs wait (utilization = %f).' % (
+                   time_passed, fraction_non_idle_time))
+
+        # crosbug.com/37389
+        if self._IsPGOMode():
+          logging.info(message)
+          logging.info('Still continuing because we are in PGO mode.')
+          return
+
+        self.fail(message)
     logging.info('Wait for idle CPU took %fs (utilization = %f).',
                  time_passed, fraction_non_idle_time)
 
@@ -2278,17 +2286,25 @@ class PageCyclerReplay(object):
       'extension':  'src/tools/page_cycler/webpagereplay/extension',
       }
 
-  CHROME_FLAGS = webpagereplay.CHROME_FLAGS + [
-      '--log-level=0',
-      '--disable-background-networking',
-      '--enable-experimental-extension-apis',
-      '--enable-logging',
-      '--enable-benchmarking',
-      '--metrics-recording-only',
-      '--activate-on-launch',
-      '--no-first-run',
-      '--no-proxy-server',
-      ]
+  WEBPAGEREPLAY_HOST = '127.0.0.1'
+  WEBPAGEREPLAY_HTTP_PORT = 8080
+  WEBPAGEREPLAY_HTTPS_PORT = 8413
+
+  CHROME_FLAGS = webpagereplay.GetChromeFlags(
+      WEBPAGEREPLAY_HOST,
+      WEBPAGEREPLAY_HTTP_PORT,
+      WEBPAGEREPLAY_HTTPS_PORT) + [
+          '--log-level=0',
+          '--disable-background-networking',
+          '--enable-experimental-extension-apis',
+          '--enable-logging',
+          '--enable-benchmarking',
+          '--enable-net-benchmarking',
+          '--metrics-recording-only',
+          '--activate-on-launch',
+          '--no-first-run',
+          '--no-proxy-server',
+          ]
 
   @classmethod
   def Path(cls, key, **kwargs):
@@ -2297,7 +2313,11 @@ class PageCyclerReplay(object):
   @classmethod
   def ReplayServer(cls, test_name, replay_options=None):
     archive_path = cls.Path('archive', test_name=test_name)
-    return webpagereplay.ReplayServer(archive_path, replay_options)
+    return webpagereplay.ReplayServer(archive_path,
+                                      cls.WEBPAGEREPLAY_HOST,
+                                      cls.WEBPAGEREPLAY_HTTP_PORT,
+                                      cls.WEBPAGEREPLAY_HTTPS_PORT,
+                                      replay_options)
 
 
 class PageCyclerNetSimTest(BasePageCyclerTest):

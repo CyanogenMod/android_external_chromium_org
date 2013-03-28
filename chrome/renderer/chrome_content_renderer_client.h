@@ -18,17 +18,16 @@ class ExtensionSet;
 class RendererNetPredictor;
 class SpellCheck;
 class SpellCheckProvider;
-class VisitedLinkSlave;
 
 struct ChromeViewHostMsg_GetPluginInfo_Output;
+
+namespace components {
+class VisitedLinkSlave;
+}
 
 namespace extensions {
 class Dispatcher;
 class Extension;
-}
-
-namespace media {
-class AudioRendererSink;
 }
 
 namespace prerender {
@@ -58,6 +57,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual void RenderViewCreated(content::RenderView* render_view) OVERRIDE;
   virtual void SetNumberOfViews(int number_of_views) OVERRIDE;
   virtual SkBitmap* GetSadPluginBitmap() OVERRIDE;
+  virtual SkBitmap* GetSadWebViewBitmap() OVERRIDE;
   virtual std::string GetDefaultEncoding() OVERRIDE;
   virtual bool OverrideCreatePlugin(
       content::RenderView* render_view,
@@ -66,7 +66,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
       WebKit::WebPlugin** plugin) OVERRIDE;
   virtual WebKit::WebPlugin* CreatePluginReplacement(
       content::RenderView* render_view,
-      const FilePath& plugin_path) OVERRIDE;
+      const base::FilePath& plugin_path) OVERRIDE;
   virtual bool HasErrorPage(int http_status_code,
                             std::string* error_domain) OVERRIDE;
   virtual void GetNavigationErrorStrings(
@@ -79,21 +79,18 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
       WebKit::WebFrame* frame,
       WebKit::WebMediaPlayerClient* client,
       base::WeakPtr<webkit_media::WebMediaPlayerDelegate> delegate,
-      media::FilterCollection* collection,
-      WebKit::WebAudioSourceProvider* audio_source_provider,
-      media::AudioRendererSink* audio_renderer_sink,
-      media::MessageLoopFactory* message_loop_factory,
-      webkit_media::MediaStreamClient* media_stream_client,
-      media::MediaLog* media_log) OVERRIDE;
+      const webkit_media::WebMediaPlayerParams& params) OVERRIDE;
   virtual bool RunIdleHandlerWhenWidgetsHidden() OVERRIDE;
-  virtual bool AllowPopup(const GURL& creator) OVERRIDE;
+  virtual bool AllowPopup() OVERRIDE;
   virtual bool ShouldFork(WebKit::WebFrame* frame,
                           const GURL& url,
+                          const std::string& http_method,
                           bool is_initial_navigation,
                           bool* send_referrer) OVERRIDE;
   virtual bool WillSendRequest(WebKit::WebFrame* frame,
                                content::PageTransition transition_type,
                                const GURL& url,
+                               const GURL& first_party_for_cookies,
                                GURL* new_url) OVERRIDE;
   virtual bool ShouldPumpEventsDuringCookieMessage() OVERRIDE;
   virtual void DidCreateScriptContext(WebKit::WebFrame* frame,
@@ -118,6 +115,8 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
                                       const GURL& url,
                                       const GURL& first_party_for_cookies,
                                       const std::string& value) OVERRIDE;
+  virtual bool AllowBrowserPlugin(WebKit::WebPluginContainer* container) const
+      OVERRIDE;
 
   // TODO(mpcomplete): remove after we collect histogram data.
   // http://crbug.com/100411
@@ -129,6 +128,10 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
 
   // For testing.
   void SetExtensionDispatcher(extensions::Dispatcher* extension_dispatcher);
+
+  // Sets a new |spellcheck|. Used for low-mem restart and testing only.
+  // Takes ownership of |spellcheck|.
+  void SetSpellcheck(SpellCheck* spellcheck);
 
   // Called in low-memory conditions to dump the memory used by the spellchecker
   // and start over.
@@ -162,15 +165,14 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   static bool IsNaClAllowed(const GURL& manifest_url,
                             const GURL& top_url,
                             bool is_nacl_unrestricted,
-                            bool is_extension_unrestricted,
-                            bool is_extension_from_webstore,
+                            const extensions::Extension* extension,
                             WebKit::WebPluginParams* params);
 
   scoped_ptr<ChromeRenderProcessObserver> chrome_observer_;
   scoped_ptr<extensions::Dispatcher> extension_dispatcher_;
   scoped_ptr<RendererNetPredictor> net_predictor_;
   scoped_ptr<SpellCheck> spellcheck_;
-  scoped_ptr<VisitedLinkSlave> visited_link_slave_;
+  scoped_ptr<components::VisitedLinkSlave> visited_link_slave_;
   scoped_ptr<safe_browsing::PhishingClassifierFilter> phishing_classifier_;
   scoped_ptr<prerender::PrerenderDispatcher> prerender_dispatcher_;
 };

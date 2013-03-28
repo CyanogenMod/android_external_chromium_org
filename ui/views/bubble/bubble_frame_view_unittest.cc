@@ -19,12 +19,12 @@ namespace {
 const BubbleBorder::ArrowLocation kArrow = BubbleBorder::TOP_LEFT;
 const int kBubbleWidth = 200;
 const int kBubbleHeight = 200;
-const SkColor kBackgroundColor = SK_ColorRED;
-const int kDefaultMargin = 6;
+const SkColor kColor = SK_ColorRED;
+const int kMargin = 6;
 
 class SizedBubbleDelegateView : public BubbleDelegateView {
  public:
-  SizedBubbleDelegateView();
+  SizedBubbleDelegateView(View* anchor_view);
   virtual ~SizedBubbleDelegateView();
 
   // View overrides:
@@ -34,7 +34,9 @@ class SizedBubbleDelegateView : public BubbleDelegateView {
   DISALLOW_COPY_AND_ASSIGN(SizedBubbleDelegateView);
 };
 
-SizedBubbleDelegateView::SizedBubbleDelegateView() {}
+SizedBubbleDelegateView::SizedBubbleDelegateView(View* anchor_view)
+    : BubbleDelegateView(anchor_view, BubbleBorder::TOP_LEFT) {
+}
 
 SizedBubbleDelegateView::~SizedBubbleDelegateView() {}
 
@@ -57,13 +59,9 @@ class TestBubbleFrameView : public BubbleFrameView {
 };
 
 TestBubbleFrameView::TestBubbleFrameView()
-    : BubbleFrameView(gfx::Insets(kDefaultMargin,
-                                  kDefaultMargin,
-                                  kDefaultMargin,
-                                  kDefaultMargin),
-                      new BubbleBorder(kArrow, BubbleBorder::NO_SHADOW)),
+    : BubbleFrameView(gfx::Insets(kMargin, kMargin, kMargin, kMargin)),
       monitor_bounds_(gfx::Rect(0, 0, 1000, 1000)) {
-  bubble_border()->set_background_color(kBackgroundColor);
+  SetBubbleBorder(new BubbleBorder(kArrow, BubbleBorder::NO_SHADOW, kColor));
 }
 
 TestBubbleFrameView::~TestBubbleFrameView() {}
@@ -77,20 +75,27 @@ gfx::Rect TestBubbleFrameView::GetMonitorBounds(const gfx::Rect& rect) {
 TEST_F(BubbleFrameViewTest, GetBoundsForClientView) {
   TestBubbleFrameView frame;
   EXPECT_EQ(kArrow, frame.bubble_border()->arrow_location());
-  EXPECT_EQ(kBackgroundColor, frame.bubble_border()->background_color());
+  EXPECT_EQ(kColor, frame.bubble_border()->background_color());
 
   int margin_x = frame.content_margins().left();
   int margin_y = frame.content_margins().top();
-  gfx::Insets insets;
-  frame.bubble_border()->GetInsets(&insets);
+  gfx::Insets insets = frame.bubble_border()->GetInsets();
   EXPECT_EQ(insets.left() + margin_x, frame.GetBoundsForClientView().x());
   EXPECT_EQ(insets.top() + margin_y, frame.GetBoundsForClientView().y());
 }
 
 TEST_F(BubbleFrameViewTest, NonClientHitTest) {
-  BubbleDelegateView* delegate = new SizedBubbleDelegateView();
+  // Create the anchor and parent widgets.
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  scoped_ptr<Widget> anchor_widget(new Widget);
+  anchor_widget->Init(params);
+  anchor_widget->Show();
+
+  BubbleDelegateView* delegate =
+      new SizedBubbleDelegateView(anchor_widget->GetContentsView());
   Widget* widget(BubbleDelegateView::CreateBubble(delegate));
-  delegate->Show();
+  widget->Show();
   gfx::Point kPtInBound(100, 100);
   gfx::Point kPtOutsideBound(1000, 1000);
   BubbleFrameView* bubble_frame_view = delegate->GetBubbleFrameView();
@@ -105,8 +110,7 @@ TEST_F(BubbleFrameViewTest, GetUpdatedWindowBounds) {
   TestBubbleFrameView frame;
   gfx::Rect window_bounds;
 
-  gfx::Insets insets;
-  frame.bubble_border()->GetInsets(&insets);
+  gfx::Insets insets = frame.bubble_border()->GetInsets();
   int xposition = 95 - insets.width();
 
   // Test that the info bubble displays normally when it fits.
@@ -222,6 +226,44 @@ TEST_F(BubbleFrameViewTest, GetUpdatedWindowBoundsMirroringFails) {
       gfx::Size(500, 700),          // |client_size|
       true);                        // |adjust_if_offscreen|
   EXPECT_EQ(BubbleBorder::TOP_LEFT, frame.bubble_border()->arrow_location());
+}
+
+TEST_F(BubbleFrameViewTest, TestMirroringForCenteredArrow) {
+  TestBubbleFrameView frame;
+
+  // Test bubble not fitting above the anchor.
+  frame.bubble_border()->set_arrow_location(BubbleBorder::BOTTOM_CENTER);
+  gfx::Rect window_bounds = frame.GetUpdatedWindowBounds(
+      gfx::Rect(100, 100, 50, 50),  // |anchor_rect|
+      gfx::Size(500, 700),          // |client_size|
+      true);                        // |adjust_if_offscreen|
+  EXPECT_EQ(BubbleBorder::TOP_CENTER, frame.bubble_border()->arrow_location());
+
+  // Test bubble not fitting below the anchor.
+  frame.bubble_border()->set_arrow_location(BubbleBorder::TOP_CENTER);
+  window_bounds = frame.GetUpdatedWindowBounds(
+      gfx::Rect(300, 800, 50, 50),  // |anchor_rect|
+      gfx::Size(500, 200),          // |client_size|
+      true);                        // |adjust_if_offscreen|
+  EXPECT_EQ(BubbleBorder::BOTTOM_CENTER,
+            frame.bubble_border()->arrow_location());
+
+  // Test bubble not fitting to the right of the anchor.
+  frame.bubble_border()->set_arrow_location(BubbleBorder::LEFT_CENTER);
+  window_bounds = frame.GetUpdatedWindowBounds(
+      gfx::Rect(800, 300, 50, 50),  // |anchor_rect|
+      gfx::Size(200, 500),          // |client_size|
+      true);                        // |adjust_if_offscreen|
+  EXPECT_EQ(BubbleBorder::RIGHT_CENTER,
+            frame.bubble_border()->arrow_location());
+
+  // Test bubble not fitting to the left of the anchor.
+  frame.bubble_border()->set_arrow_location(BubbleBorder::RIGHT_CENTER);
+  window_bounds = frame.GetUpdatedWindowBounds(
+      gfx::Rect(100, 300, 50, 50),  // |anchor_rect|
+      gfx::Size(500, 500),          // |client_size|
+      true);                        // |adjust_if_offscreen|
+  EXPECT_EQ(BubbleBorder::LEFT_CENTER, frame.bubble_border()->arrow_location());
 }
 
 // Test that the arrow will not be mirrored when |adjust_if_offscreen| is false.

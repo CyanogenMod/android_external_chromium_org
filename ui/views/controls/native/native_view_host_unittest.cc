@@ -78,10 +78,10 @@ HWND GetNativeParent(HWND window) {
 TEST_F(NativeViewHostTest, NativeViewHierarchyChanged) {
   // Create the top level widget.
   scoped_ptr<Widget> toplevel(new Widget);
-  Widget::InitParams toplevel_params(Widget::InitParams::TYPE_WINDOW);
+  Widget::InitParams toplevel_params =
+      CreateParams(Widget::InitParams::TYPE_WINDOW);
   toplevel_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   toplevel->Init(toplevel_params);
-  toplevel->SetContentsView(new View);
 
   // And the child widget.
   NativeViewHierarchyChangedTestView* test_view =
@@ -89,7 +89,7 @@ TEST_F(NativeViewHostTest, NativeViewHierarchyChanged) {
   scoped_ptr<Widget> child(new Widget);
   Widget::InitParams child_params(Widget::InitParams::TYPE_CONTROL);
   child_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  child_params.parent_widget = toplevel.get();
+  child_params.parent = toplevel->GetNativeView();
   child->Init(child_params);
   child->SetContentsView(test_view);
 

@@ -10,8 +10,9 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/child_process_security_policy.h"
+#include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 
 // Static
 bool BrowsingDataHelper::IsWebScheme(const std::string& scheme) {
@@ -44,7 +45,7 @@ bool BrowsingDataHelper::HasWebScheme(const GURL& origin) {
 
 // Static
 bool BrowsingDataHelper::IsExtensionScheme(const std::string& scheme) {
-  return scheme == chrome::kExtensionScheme;
+  return scheme == extensions::kExtensionScheme;
 }
 
 // Static

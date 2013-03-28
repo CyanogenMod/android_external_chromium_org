@@ -5,13 +5,21 @@
 #ifndef CHROME_BROWSER_UI_SEARCH_SEARCH_UI_H_
 #define CHROME_BROWSER_UI_SEARCH_SEARCH_UI_H_
 
+#include "third_party/skia/include/core/SkColor.h"
+
+namespace ui {
+class ThemeProvider;
+}
+
 namespace chrome {
 namespace search {
 
-// The mininum height of content view to layout detached bookmark bar at bottom
-// for |NTP| search mode, calculated from chrome/browser/resources/ntp_search/
-// tile_page.js HEIGHT_FOR_BOTTOM_PANEL constant.
-extern const int kMinContentHeightForBottomBookmarkBar;
+// Returns the color to use to draw the detached bookmark bar background.
+SkColor GetDetachedBookmarkBarBackgroundColor(
+    ui::ThemeProvider* theme_provider);
+
+// Returns the color to use to draw the detached bookmark bar separator.
+SkColor GetDetachedBookmarkBarSeparatorColor(ui::ThemeProvider* theme_provider);
 
 }  // namespace search
 }  // namespace chrome

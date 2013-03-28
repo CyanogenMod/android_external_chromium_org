@@ -9,8 +9,10 @@
 #include "ash/ash_export.h"
 #include "ash/desktop_background/desktop_background_controller.h"
 #include "ash/desktop_background/desktop_background_widget_controller.h"
+#include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/property_util.h"
 #include "ash/wm/window_animations.h"
@@ -81,7 +83,7 @@ class ShowWallpaperAnimationObserver : public ui::ImplicitAnimationObserver,
   }
 
   // Overridden from views::WidgetObserver.
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE {
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE {
     desktop_widget_->RemoveObserver(this);
     desktop_widget_ = NULL;
   }
@@ -127,8 +129,8 @@ void DesktopBackgroundView::OnPaint(gfx::Canvas* canvas) {
   WallpaperLayout wallpaper_layout = controller->GetWallpaperLayout();
 
   gfx::Rect wallpaper_rect(0, 0, wallpaper.width(), wallpaper.height());
-  if (wallpaper_layout == ash::CENTER_CROPPED && wallpaper.width() > width()
-      && wallpaper.height() > height()) {
+  if (wallpaper_layout == WALLPAPER_LAYOUT_CENTER_CROPPED &&
+      wallpaper.width() > width() && wallpaper.height() > height()) {
     // The dimension with the smallest ratio must be cropped, the other one
     // is preserved. Both are set in gfx::Size cropped_size.
     double horizontal_ratio = static_cast<double>(width()) /
@@ -153,9 +155,9 @@ void DesktopBackgroundView::OnPaint(gfx::Canvas* canvas) {
         wallpaper_cropped_rect.width(), wallpaper_cropped_rect.height(),
         0, 0, width(), height(),
         true);
-  } else if (wallpaper_layout == ash::TILE) {
+  } else if (wallpaper_layout == WALLPAPER_LAYOUT_TILE) {
     canvas->TileImageInt(wallpaper, 0, 0, width(), height());
-  } else if (wallpaper_layout == ash::STRETCH) {
+  } else if (wallpaper_layout == WALLPAPER_LAYOUT_STRETCH) {
     // This is generally not recommended as it may show artifacts.
     canvas->DrawImageInt(wallpaper, 0, 0, wallpaper.width(),
         wallpaper.height(), 0, 0, width(), height(), true);
@@ -190,21 +192,27 @@ views::Widget* CreateDesktopBackground(aura::RootWindow* root_window,
   params.parent = root_window->GetChildById(container_id);
   desktop_widget->Init(params);
   desktop_widget->SetContentsView(new DesktopBackgroundView());
-  ash::WindowVisibilityAnimationType animation_type =
-      wallpaper_delegate->GetAnimationType();
-  ash::SetWindowVisibilityAnimationType(desktop_widget->GetNativeView(),
-                                        animation_type);
-  // Disable animation when creating the first widget. Otherwise, wallpaper
-  // will animate from a white screen. Note that boot animation is different.
-  // It animates from a white background.
-  if (animation_type == ash::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE &&
-      root_window->GetProperty(kAnimatingDesktopController) == NULL) {
-    ash::SetWindowVisibilityAnimationTransition(desktop_widget->GetNativeView(),
-                                                ash::ANIMATE_NONE);
+  int animation_type = wallpaper_delegate->GetAnimationType();
+  views::corewm::SetWindowVisibilityAnimationType(
+      desktop_widget->GetNativeView(), animation_type);
+
+  // Enable wallpaper transition for the following cases:
+  // 1. Initial(OOBE) wallpaper animation.
+  // 2. Wallpaper fades in from a non empty background.
+  // 3. From an empty background, chrome transit to a logged in user session.
+  // 4. From an empty background, guest user logged in.
+  if (wallpaper_delegate->ShouldShowInitialAnimation() ||
+      root_window->GetProperty(kAnimatingDesktopController) ||
+      Shell::GetInstance()->delegate()->IsGuestSession() ||
+      Shell::GetInstance()->delegate()->IsUserLoggedIn()) {
+    views::corewm::SetWindowVisibilityAnimationTransition(
+        desktop_widget->GetNativeView(), views::corewm::ANIMATE_SHOW);
   } else {
-    ash::SetWindowVisibilityAnimationTransition(desktop_widget->GetNativeView(),
-                                                ash::ANIMATE_SHOW);
+    // Disable animation if transition to login screen from an empty background.
+    views::corewm::SetWindowVisibilityAnimationTransition(
+        desktop_widget->GetNativeView(), views::corewm::ANIMATE_NONE);
   }
+
   desktop_widget->SetBounds(params.parent->bounds());
   ui::ScopedLayerAnimationSettings settings(
       desktop_widget->GetNativeView()->layer()->GetAnimator());

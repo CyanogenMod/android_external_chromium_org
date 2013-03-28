@@ -5,9 +5,13 @@
 #include "media/audio/audio_manager_base.h"
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/message_loop_proxy.h"
 #include "base/threading/thread.h"
+#if defined(OS_ANDROID)
+#include "jni/AudioManagerAndroid_jni.h"
+#endif
 #include "media/audio/audio_output_dispatcher_impl.h"
 #include "media/audio/audio_output_proxy.h"
 #include "media/audio/audio_output_resampler.h"
@@ -15,12 +19,6 @@
 #include "media/audio/fake_audio_input_stream.h"
 #include "media/audio/fake_audio_output_stream.h"
 #include "media/base/media_switches.h"
-
-// TODO(dalecurtis): Temporarily disabled while switching pipeline to use float,
-// http://crbug.com/114700
-#if defined(ENABLE_AUDIO_MIXER)
-#include "media/audio/audio_output_mixer.h"
-#endif
 
 namespace media {
 
@@ -36,6 +34,11 @@ static const int kDefaultMaxInputStreams = 16;
 
 static const int kMaxInputChannels = 2;
 
+#if defined(OS_ANDROID)
+static const int kAudioModeNormal = 0x00000000;
+static const int kAudioModeInCommunication = 0x00000003;
+#endif
+
 const char AudioManagerBase::kDefaultDeviceName[] = "Default";
 const char AudioManagerBase::kDefaultDeviceId[] = "default";
 
@@ -45,12 +48,28 @@ AudioManagerBase::AudioManagerBase()
       max_num_input_streams_(kDefaultMaxInputStreams),
       num_output_streams_(0),
       num_input_streams_(0),
+      output_listeners_(
+          ObserverList<AudioDeviceListener>::NOTIFY_EXISTING_ONLY),
       audio_thread_(new base::Thread("AudioThread")) {
 #if defined(OS_WIN)
   audio_thread_->init_com_with_mta(true);
 #endif
+#if defined(OS_MACOSX)
+  // On Mac, use a UI loop to get native message pump so that CoreAudio property
+  // listener callbacks fire.
+  CHECK(audio_thread_->StartWithOptions(
+      base::Thread::Options(MessageLoop::TYPE_UI, 0)));
+#else
   CHECK(audio_thread_->Start());
+#endif
   message_loop_ = audio_thread_->message_loop_proxy();
+
+#if defined(OS_ANDROID)
+  JNIEnv* env = base::android::AttachCurrentThread();
+  jobject context = base::android::GetApplicationContext();
+  j_audio_manager_.Reset(
+      Java_AudioManagerAndroid_createAudioManagerAndroid(env, context));
+#endif
 }
 
 AudioManagerBase::~AudioManagerBase() {
@@ -76,6 +95,10 @@ scoped_refptr<base::MessageLoopProxy> AudioManagerBase::GetMessageLoop() {
 
 AudioOutputStream* AudioManagerBase::MakeAudioOutputStream(
     const AudioParameters& params) {
+  // TODO(miu): Fix ~50 call points across several unit test modules to call
+  // this method on the audio thread, then uncomment the following:
+  // DCHECK(message_loop_->BelongsToCurrentThread());
+
   if (!params.IsValid()) {
     DLOG(ERROR) << "Audio parameters are invalid";
     return NULL;
@@ -93,29 +116,39 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStream(
     return NULL;
   }
 
-  // If there are no audio output devices we should use a FakeAudioOutputStream
-  // to ensure video playback continues to work.
-  bool audio_output_disabled =
-      params.format() == AudioParameters::AUDIO_FAKE ||
-      !HasAudioOutputDevices();
-
-  AudioOutputStream* stream = NULL;
-  if (audio_output_disabled) {
-    stream = FakeAudioOutputStream::MakeFakeStream(this, params);
-  } else if (params.format() == AudioParameters::AUDIO_PCM_LINEAR) {
-    stream = MakeLinearOutputStream(params);
-  } else if (params.format() == AudioParameters::AUDIO_PCM_LOW_LATENCY) {
-    stream = MakeLowLatencyOutputStream(params);
+  AudioOutputStream* stream;
+  switch (params.format()) {
+    case AudioParameters::AUDIO_PCM_LINEAR:
+      stream = MakeLinearOutputStream(params);
+      break;
+    case AudioParameters::AUDIO_PCM_LOW_LATENCY:
+      stream = MakeLowLatencyOutputStream(params);
+      break;
+    case AudioParameters::AUDIO_FAKE:
+      stream = FakeAudioOutputStream::MakeFakeStream(this, params);
+      break;
+    default:
+      stream = NULL;
+      break;
   }
 
-  if (stream)
+  if (stream) {
     ++num_output_streams_;
+#if defined(OS_ANDROID)
+    if (num_output_streams_ == 1)
+      RegisterHeadsetReceiver();
+#endif
+  }
 
   return stream;
 }
 
 AudioInputStream* AudioManagerBase::MakeAudioInputStream(
     const AudioParameters& params, const std::string& device_id) {
+  // TODO(miu): Fix ~20 call points across several unit test modules to call
+  // this method on the audio thread, then uncomment the following:
+  // DCHECK(message_loop_->BelongsToCurrentThread());
+
   if (!params.IsValid() || (params.channels() > kMaxInputChannels) ||
       device_id.empty()) {
     DLOG(ERROR) << "Audio parameters are invalid for device " << device_id;
@@ -129,17 +162,29 @@ AudioInputStream* AudioManagerBase::MakeAudioInputStream(
     return NULL;
   }
 
-  AudioInputStream* stream = NULL;
-  if (params.format() == AudioParameters::AUDIO_FAKE) {
-    stream = FakeAudioInputStream::MakeFakeStream(this, params);
-  } else if (params.format() == AudioParameters::AUDIO_PCM_LINEAR) {
-    stream = MakeLinearInputStream(params, device_id);
-  } else if (params.format() == AudioParameters::AUDIO_PCM_LOW_LATENCY) {
-    stream = MakeLowLatencyInputStream(params, device_id);
+  AudioInputStream* stream;
+  switch (params.format()) {
+    case AudioParameters::AUDIO_PCM_LINEAR:
+      stream = MakeLinearInputStream(params, device_id);
+      break;
+    case AudioParameters::AUDIO_PCM_LOW_LATENCY:
+      stream = MakeLowLatencyInputStream(params, device_id);
+      break;
+    case AudioParameters::AUDIO_FAKE:
+      stream = FakeAudioInputStream::MakeFakeStream(this, params);
+      break;
+    default:
+      stream = NULL;
+      break;
   }
 
-  if (stream)
+  if (stream) {
     ++num_input_streams_;
+#if defined(OS_ANDROID)
+    if (num_input_streams_ == 1)
+      SetAudioMode(kAudioModeInCommunication);
+#endif
+  }
 
   return stream;
 }
@@ -162,7 +207,7 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
   // as our input parameters.
   AudioParameters output_params = params;
   if (use_audio_output_resampler) {
-    output_params = GetPreferredLowLatencyOutputStreamParameters(params);
+    output_params = GetPreferredOutputStreamParameters(params);
 
     // Ensure we only pass on valid output parameters.
     if (!output_params.IsValid()) {
@@ -202,27 +247,11 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
     return new AudioOutputProxy(dispatcher);
   }
 
-#if defined(ENABLE_AUDIO_MIXER)
-  // TODO(dalecurtis): Browser side mixing has a couple issues that must be
-  // fixed before it can be turned on by default: http://crbug.com/138098 and
-  // http://crbug.com/140247
-  if (cmd_line->HasSwitch(switches::kEnableAudioMixer)) {
-    scoped_refptr<AudioOutputDispatcher> dispatcher =
-        new AudioOutputMixer(this, params, close_delay);
-    output_dispatchers_[dispatcher_key] = dispatcher;
-    return new AudioOutputProxy(dispatcher);
-  }
-#endif
-
   scoped_refptr<AudioOutputDispatcher> dispatcher =
-      new AudioOutputDispatcherImpl(this, params, close_delay);
+      new AudioOutputDispatcherImpl(this, output_params, close_delay);
   output_dispatchers_[dispatcher_key] = dispatcher;
   return new AudioOutputProxy(dispatcher);
 #endif  // defined(OS_IOS)
-}
-
-bool AudioManagerBase::CanShowAudioInputSettings() {
-  return false;
 }
 
 void AudioManagerBase::ShowAudioInputSettings() {
@@ -237,15 +266,23 @@ void AudioManagerBase::ReleaseOutputStream(AudioOutputStream* stream) {
   // TODO(xians) : Have a clearer destruction path for the AudioOutputStream.
   // For example, pass the ownership to AudioManager so it can delete the
   // streams.
-  num_output_streams_--;
+  --num_output_streams_;
   delete stream;
+#if defined(OS_ANDROID)
+  if (!num_output_streams_)
+    UnregisterHeadsetReceiver();
+#endif
 }
 
 void AudioManagerBase::ReleaseInputStream(AudioInputStream* stream) {
   DCHECK(stream);
   // TODO(xians) : Have a clearer destruction path for the AudioInputStream.
-  num_input_streams_--;
+  --num_input_streams_;
   delete stream;
+#if defined(OS_ANDROID)
+  if (!num_input_streams_)
+    SetAudioMode(kAudioModeNormal);
+#endif
 }
 
 void AudioManagerBase::IncreaseActiveInputStreamCount() {
@@ -313,20 +350,12 @@ void AudioManagerBase::ShutdownOnAudioThread() {
 #endif  // defined(OS_IOS)
 }
 
-AudioParameters AudioManagerBase::GetPreferredLowLatencyOutputStreamParameters(
-    const AudioParameters& input_params) {
-#if defined(OS_IOS)
-  // IOS implements audio input only.
-  NOTIMPLEMENTED();
-  return AudioParameters();
-#else
-  // TODO(dalecurtis): This should include bits per channel and channel layout
-  // eventually.
-  return AudioParameters(
-      AudioParameters::AUDIO_PCM_LOW_LATENCY, input_params.channel_layout(),
-      GetAudioHardwareSampleRate(), 16, GetAudioHardwareBufferSize());
-#endif  // defined(OS_IOS)
+#if defined(OS_ANDROID)
+// static
+bool AudioManagerBase::RegisterAudioManager(JNIEnv* env) {
+  return RegisterNativesImpl(env);
 }
+#endif
 
 void AudioManagerBase::AddOutputDeviceChangeListener(
     AudioDeviceListener* listener) {
@@ -345,5 +374,35 @@ void AudioManagerBase::NotifyAllOutputDeviceChangeListeners() {
   DVLOG(1) << "Firing OnDeviceChange() notifications.";
   FOR_EACH_OBSERVER(AudioDeviceListener, output_listeners_, OnDeviceChange());
 }
+
+AudioParameters AudioManagerBase::GetDefaultOutputStreamParameters() {
+  return GetPreferredOutputStreamParameters(AudioParameters());
+}
+
+AudioParameters AudioManagerBase::GetInputStreamParameters(
+    const std::string& device_id) {
+  NOTREACHED();
+  return AudioParameters();
+}
+
+#if defined(OS_ANDROID)
+void AudioManagerBase::SetAudioMode(int mode) {
+  Java_AudioManagerAndroid_setMode(
+      base::android::AttachCurrentThread(),
+      j_audio_manager_.obj(), mode);
+}
+
+void AudioManagerBase::RegisterHeadsetReceiver() {
+  Java_AudioManagerAndroid_registerHeadsetReceiver(
+      base::android::AttachCurrentThread(),
+      j_audio_manager_.obj());
+}
+
+void AudioManagerBase::UnregisterHeadsetReceiver() {
+  Java_AudioManagerAndroid_unregisterHeadsetReceiver(
+      base::android::AttachCurrentThread(),
+      j_audio_manager_.obj());
+}
+#endif  // defined(OS_ANDROID)
 
 }  // namespace media

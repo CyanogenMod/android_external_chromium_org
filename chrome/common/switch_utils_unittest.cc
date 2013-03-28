@@ -6,14 +6,14 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 TEST(SwitchUtilsTest, RemoveSwitches) {
   const CommandLine::CharType* argv[] = {
     FILE_PATH_LITERAL("program"),
     FILE_PATH_LITERAL("--app=http://www.google.com/"),
-    FILE_PATH_LITERAL("--first-run"),
+    FILE_PATH_LITERAL("--force-first-run"),
     FILE_PATH_LITERAL("--import"),
     FILE_PATH_LITERAL("--import-from-file=c:\\test.html"),
     FILE_PATH_LITERAL("--make-default-browser"),
@@ -39,7 +39,7 @@ TEST(SwitchUtilsTest, RemoveSwitchesFromString) {
   CommandLine cmd_line = CommandLine::FromString(
       L"program"
       L" --app=http://www.google.com/"
-      L" --first-run"
+      L" --force-first-run"
       L" --import"
       L" --import-from-file=c:\\test.html"
       L" --make-default-browser"

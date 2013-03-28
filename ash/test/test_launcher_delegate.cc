@@ -5,6 +5,7 @@
 #include "ash/test/test_launcher_delegate.h"
 
 #include "ash/launcher/launcher_model.h"
+#include "ash/launcher/launcher_util.h"
 #include "ash/wm/window_util.h"
 #include "base/utf_string_conversions.h"
 #include "grit/ash_resources.h"
@@ -33,7 +34,10 @@ void TestLauncherDelegate::AddLauncherItem(
     aura::Window* window,
     LauncherItemStatus status) {
   ash::LauncherItem item;
-  item.type = ash::TYPE_TABBED;
+  if (window->type() == aura::client::WINDOW_TYPE_PANEL)
+    item.type = ash::TYPE_APP_PANEL;
+  else
+    item.type = ash::TYPE_TABBED;
   DCHECK(window_to_id_.find(window) == window_to_id_.end());
   window_to_id_[window] = model_->next_id();
   item.status = status;
@@ -63,8 +67,9 @@ void TestLauncherDelegate::OnBrowserShortcutClicked(int event_flags) {
 }
 
 void TestLauncherDelegate::ItemClicked(const ash::LauncherItem& item,
-                                       int event_flags) {
+                                       const ui::Event& event) {
   aura::Window* window = GetWindowByID(item.id);
+  launcher::MoveToEventRootIfPanel(window, event);
   window->Show();
   ash::wm::ActivateWindow(window);
 }
@@ -74,12 +79,19 @@ int TestLauncherDelegate::GetBrowserShortcutResourceId() {
 }
 
 string16 TestLauncherDelegate::GetTitle(const ash::LauncherItem& item) {
-  return GetWindowByID(item.id)->title();
+  aura::Window* window = GetWindowByID(item.id);
+  return window ? window->title() : string16();
 }
 
 ui::MenuModel* TestLauncherDelegate::CreateContextMenu(
     const ash::LauncherItem& item,
     aura::RootWindow* root) {
+  return NULL;
+}
+
+ash::LauncherMenuModel* TestLauncherDelegate::CreateApplicationMenu(
+    const ash::LauncherItem& item,
+    int event_flags) {
   return NULL;
 }
 
@@ -101,6 +113,10 @@ aura::Window* TestLauncherDelegate::GetWindowByID(ash::LauncherID id) {
 }
 
 bool TestLauncherDelegate::IsDraggable(const ash::LauncherItem& item) {
+  return true;
+}
+
+bool TestLauncherDelegate::ShouldShowTooltip(const ash::LauncherItem& item) {
   return true;
 }
 

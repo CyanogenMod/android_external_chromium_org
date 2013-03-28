@@ -44,6 +44,9 @@ class VectorPlatformDeviceEmf : public SkDevice, public PlatformDevice {
                         const SkPaint& paint,
                         const SkMatrix* prePathMatrix = NULL,
                         bool pathIsMutable = false) OVERRIDE;
+  virtual void drawBitmapRect(const SkDraw& draw, const SkBitmap& bitmap,
+                              const SkRect* src, const SkRect& dst,
+                              const SkPaint& paint) SK_OVERRIDE;
   virtual void drawBitmap(const SkDraw& draw, const SkBitmap& bitmap,
                           const SkIRect* srcRectOrNull,
                           const SkMatrix& matrix,
@@ -126,6 +129,12 @@ class VectorPlatformDeviceEmf : public SkDevice, public PlatformDevice {
 
   DISALLOW_COPY_AND_ASSIGN(VectorPlatformDeviceEmf);
 };
+
+typedef void (*SkiaEnsureTypefaceCharactersAccessible)
+    (const LOGFONT& font, const wchar_t* text, unsigned int text_length);
+
+SK_API void SetSkiaEnsureTypefaceCharactersAccessible(
+    SkiaEnsureTypefaceCharactersAccessible func);
 
 }  // namespace skia
 

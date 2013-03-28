@@ -19,13 +19,13 @@
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
-#include "remoting/base/plugin_thread_task_runner.h"
+#include "remoting/base/auto_thread_task_runner.h"
 #include "remoting/host/chromoting_host_context.h"
-#include "remoting/host/host_key_pair.h"
 #include "remoting/host/log_to_server.h"
 #include "remoting/host/plugin/host_plugin_utils.h"
 #include "remoting/host/setup/daemon_controller.h"
 #include "remoting/host/ui_strings.h"
+#include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/npfunctions.h"
 #include "third_party/npapi/bindings/npruntime.h"
@@ -38,8 +38,9 @@ namespace remoting {
 // destroyed it synchronously shuts down the host and all threads.
 class HostNPScriptObject {
  public:
-  HostNPScriptObject(NPP plugin, NPObject* parent,
-                     PluginThreadTaskRunner::Delegate* plugin_thread_delegate);
+  HostNPScriptObject(NPP plugin,
+                     NPObject* parent,
+                     scoped_refptr<AutoThreadTaskRunner> plugin_task_runner);
   virtual ~HostNPScriptObject();
 
   // Implementations used to implement the NPObject interface.
@@ -103,7 +104,9 @@ class HostNPScriptObject {
   //////////////////////////////////////////////////////////
   // Plugin methods for Me2Me host.
 
-  // Returns host name. No arguments.
+  // Fetches the host name, passing it to the supplied callback. Args are:
+  //   function(string) callback
+  // Returns false if the parameters are invalid.
   bool GetHostName(const NPVariant* args,
                    uint32_t arg_count,
                    NPVariant* result);
@@ -111,7 +114,9 @@ class HostNPScriptObject {
   // Calculates PIN hash value to be stored in the config. Args are:
   //   string hostId Host ID.
   //   string pin The PIN.
-  // Returns the resulting hash value encoded with Base64.
+  //   function(string) callback
+  // Passes the resulting hash value base64-encoded to the callback.
+  // Returns false if the parameters are invalid.
   bool GetPinHash(const NPVariant* args,
                   uint32_t arg_count,
                   NPVariant* result);
@@ -251,9 +256,7 @@ class HostNPScriptObject {
 
   NPP plugin_;
   NPObject* parent_;
-  scoped_refptr<PluginThreadTaskRunner> plugin_task_runner_;
-
-  scoped_refptr<AutoThreadTaskRunner> auto_plugin_task_runner_;
+  scoped_refptr<AutoThreadTaskRunner> plugin_task_runner_;
 
   // True if we're in the middle of handling a log message.
   bool am_currently_logging_;
@@ -275,6 +278,12 @@ class HostNPScriptObject {
   // Localized strings for use by the |it2me_impl_| UI.
   UiStrings ui_strings_;
 
+  // IT2Me Talk server configuration used by |it2me_impl_| to connect.
+  XmppSignalStrategy::XmppServerConfig xmpp_server_config_;
+
+  // Chromoting Bot JID used by |it2me_impl_| to register the host.
+  std::string directory_bot_jid_;
+
   // Callbacks to notify in response to |it2me_impl_| events.
   ScopedRefNPObject on_nat_traversal_policy_changed_func_;
   ScopedRefNPObject on_state_changed_func_;
@@ -288,7 +297,7 @@ class HostNPScriptObject {
   // TODO(sergeyu): Replace this thread with
   // SequencedWorkerPool. Problem is that SequencedWorkerPool relies
   // on MessageLoopProxy::current().
-  base::Thread worker_thread_;
+  scoped_refptr<AutoThreadTaskRunner> worker_thread_;
 
   //////////////////////////////////////////////////////////
   // Plugin state used for both Ir2Me and Me2Me.

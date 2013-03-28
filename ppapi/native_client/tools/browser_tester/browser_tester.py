@@ -131,6 +131,14 @@ def BuildArgParser():
   parser.add_option('--nacl_exe_stderr', dest='nacl_exe_stderr',
                     type='string', default=None,
                     help='Redirect standard error of NaCl executable.')
+  parser.add_option('--expect_browser_process_crash',
+                    dest='expect_browser_process_crash',
+                    action='store_true',
+                    help='Do not signal a failure if the browser process '
+                    'crashes')
+  parser.add_option('--enable_crash_reporter', dest='enable_crash_reporter',
+                    action='store_true', default=False,
+                    help='Force crash reporting on.')
 
   return parser
 
@@ -251,6 +259,8 @@ def RunTestsOnce(url, options):
   try:
     while server.test_in_progress or options.interactive:
       if not browser.IsRunning():
+        if options.expect_browser_process_crash:
+          break
         listener.ServerError('Browser process ended during test '
                              '(return code %r)' % browser.GetReturnCode())
         # If Chrome exits prematurely without making a single request to the
@@ -297,7 +307,13 @@ def RunTestsOnce(url, options):
     except Exception:
       listener.ever_failed = 1
     browser.Cleanup()
-    server.server_close()
+    # We avoid calling server.server_close() here because it causes
+    # the HTTP server thread to exit uncleanly with an EBADF error,
+    # which adds noise to the logs (though it does not cause the test
+    # to fail).  server_close() does not attempt to tell the server
+    # loop to shut down before closing the socket FD it is
+    # select()ing.  Since we are about to exit, we don't really need
+    # to close the socket FD.
 
   if tool_failed:
     return 2

@@ -14,26 +14,22 @@ namespace {
 namespace net {
 
 FixRateReceiver::FixRateReceiver()
-    : bitrate_in_bytes_per_second_(kInitialBitrate) {
+    : configured_rate_(QuicBandwidth::FromBytesPerSecond(kInitialBitrate)) {
 }
 
-bool FixRateReceiver::GenerateCongestionInfo(CongestionInfo* congestion_info) {
-  congestion_info->type = kFixRate;
-  congestion_info->fix_rate.bitrate_in_bytes_per_second =
-      bitrate_in_bytes_per_second_;
+bool FixRateReceiver::GenerateCongestionFeedback(
+    QuicCongestionFeedbackFrame* feedback) {
+  feedback->type = kFixRate;
+  feedback->fix_rate.bitrate = configured_rate_;
   return true;
 }
 
 void FixRateReceiver::RecordIncomingPacket(
-    size_t /*bytes*/,
+    QuicByteCount /*bytes*/,
     QuicPacketSequenceNumber /*sequence_number*/,
     QuicTime /*timestamp*/,
     bool /*recovered*/) {
   // Nothing to do for this simple implementation.
-}
-
-void FixRateReceiver::SetBitrate(int bytes_per_second) {
-  bitrate_in_bytes_per_second_ = bytes_per_second;
 }
 
 }  // namespace net

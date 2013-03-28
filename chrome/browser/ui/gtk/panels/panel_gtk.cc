@@ -16,7 +16,6 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
-#include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/gtk_window_util.h"
 #include "chrome/browser/ui/gtk/panels/panel_titlebar_gtk.h"
@@ -29,9 +28,9 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/theme_resources.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/ui_resources.h"
-#include "ui/base/accelerators/accelerator_gtk.h"
+#include "ui/base/accelerators/platform_accelerator_gtk.h"
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_expanded_container.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
@@ -67,12 +66,9 @@ const int kResizeAreaCornerSize = 16;
 const SkColor kActiveBackgroundDefaultColor = SkColorSetRGB(0x3a, 0x3d, 0x3d);
 const SkColor kInactiveBackgroundDefaultColor = SkColorSetRGB(0x7a, 0x7c, 0x7c);
 const SkColor kAttentionBackgroundDefaultColor =
-    SkColorSetRGB(0xff, 0xab, 0x57);
+    SkColorSetRGB(0x53, 0xa9, 0x3f);
 const SkColor kMinimizeBackgroundDefaultColor = SkColorSetRGB(0xf5, 0xf4, 0xf0);
 const SkColor kMinimizeBorderDefaultColor = SkColorSetRGB(0xc9, 0xc9, 0xc9);
-
-// Color used to draw the divider line between the titlebar and the client area.
-const SkColor kDividerColor = SkColorSetRGB(0x2a, 0x2c, 0x2c);
 
 // Set minimium width for window really small.
 const int kMinWindowWidth = 26;
@@ -129,14 +125,15 @@ const struct AcceleratorMapping {
 };
 
 // Table of accelerator mappings to command ids.
-typedef std::map<ui::AcceleratorGtk, int> AcceleratorGtkMap;
+typedef std::map<ui::Accelerator, int> AcceleratorMap;
 
-const AcceleratorGtkMap& GetAcceleratorTable() {
-  CR_DEFINE_STATIC_LOCAL(AcceleratorGtkMap, accelerator_table, ());
+const AcceleratorMap& GetAcceleratorTable() {
+  CR_DEFINE_STATIC_LOCAL(AcceleratorMap, accelerator_table, ());
   if (accelerator_table.empty()) {
     for (size_t i = 0; i < arraysize(kAcceleratorMap); ++i) {
       const AcceleratorMapping& entry = kAcceleratorMap[i];
-      ui::AcceleratorGtk accelerator(entry.keyval, entry.modifier_type);
+      ui::Accelerator accelerator = ui::AcceleratorForGdkKeyCodeAndModifier(
+          entry.keyval, entry.modifier_type);
       accelerator_table[accelerator] = entry.command_id;
     }
   }
@@ -220,7 +217,8 @@ PanelGtk::PanelGtk(Panel* panel, const gfx::Rect& bounds)
       window_vbox_(NULL),
       render_area_event_box_(NULL),
       contents_expanded_(NULL),
-      accel_group_(NULL) {
+      accel_group_(NULL),
+      corner_style_(panel::ALL_ROUNDED) {
 }
 
 PanelGtk::~PanelGtk() {
@@ -278,7 +276,7 @@ void PanelGtk::Init() {
   gtk_widget_set_app_paintable(window_container_, TRUE);
   gtk_widget_set_double_buffered(window_container_, FALSE);
   gtk_widget_set_redraw_on_allocate(window_container_, TRUE);
-  gtk_alignment_set_padding(GTK_ALIGNMENT(window_container_), 1,
+  gtk_alignment_set_padding(GTK_ALIGNMENT(window_container_), 0,
       kFrameBorderThickness, kFrameBorderThickness, kFrameBorderThickness);
   g_signal_connect(window_container_, "expose-event",
                    G_CALLBACK(OnCustomFrameExposeThunk), this);
@@ -314,15 +312,49 @@ void PanelGtk::Init() {
   ConnectAccelerators();
 }
 
-void PanelGtk::UpdateWindowShape(int width, int height) {
-  // For panels, only top corners are rounded. The bottom corners are not
-  // rounded because panels are aligned to the bottom edge of the screen.
-  GdkRectangle top_top_rect = { 3, 0, width - 6, 1 };
-  GdkRectangle top_mid_rect = { 1, 1, width - 2, 2 };
-  GdkRectangle mid_rect = { 0, 3, width, height - 3 };
-  GdkRegion* mask = gdk_region_rectangle(&top_top_rect);
-  gdk_region_union_with_rect(mask, &top_mid_rect);
-  gdk_region_union_with_rect(mask, &mid_rect);
+void PanelGtk::SetWindowCornerStyle(panel::CornerStyle corner_style) {
+  corner_style_ = corner_style;
+  UpdateWindowShape();
+}
+
+void PanelGtk::MinimizePanelBySystem() {
+  NOTIMPLEMENTED();
+}
+
+bool PanelGtk::IsPanelMinimizedBySystem() const {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+void PanelGtk::UpdateWindowShape() {
+  int width = configure_size_.width();
+  int height = configure_size_.height();
+  if (!width || !height)
+    return;
+
+  GdkRegion* mask;
+  if (corner_style_ & panel::TOP_ROUNDED) {
+    GdkRectangle top_top_rect = { 3, 0, width - 6, 1 };
+    GdkRectangle top_mid_rect = { 1, 1, width - 2, 2 };
+    mask = gdk_region_rectangle(&top_top_rect);
+    gdk_region_union_with_rect(mask, &top_mid_rect);
+  } else {
+    GdkRectangle top_rect = { 0, 0, width, 3 };
+    mask = gdk_region_rectangle(&top_rect);
+  }
+
+  if (corner_style_ & panel::BOTTOM_ROUNDED) {
+    GdkRectangle mid_rect = { 0, 3, width, height - 6 };
+    GdkRectangle bottom_mid_rect = { 1, height - 3, width - 2, 2 };
+    GdkRectangle bottom_bottom_rect = { 3, height - 1, width - 6, 1 };
+    gdk_region_union_with_rect(mask, &mid_rect);
+    gdk_region_union_with_rect(mask, &bottom_mid_rect);
+    gdk_region_union_with_rect(mask, &bottom_bottom_rect);
+  } else {
+    GdkRectangle mid_rect = { 0, 3, width, height - 3 };
+    gdk_region_union_with_rect(mask, &mid_rect);
+  }
+
   gdk_window_shape_combine_region(
       gtk_widget_get_window(GTK_WIDGET(window_)), mask, 0, 0);
   if (mask)
@@ -337,9 +369,9 @@ gboolean PanelGtk::OnConfigure(GtkWidget* widget,
   gfx::Size new_size(event->width, event->height);
   if (new_size == configure_size_)
     return FALSE;
-
-  UpdateWindowShape(event->width, event->height);
   configure_size_ = new_size;
+
+  UpdateWindowShape();
 
   if (!GetFrameSize().IsEmpty())
     return FALSE;
@@ -362,13 +394,13 @@ void PanelGtk::ConnectAccelerators() {
   accel_group_ = gtk_accel_group_new();
   gtk_window_add_accel_group(window_, accel_group_);
 
-  const AcceleratorGtkMap& accelerator_table = GetAcceleratorTable();
-  for (AcceleratorGtkMap::const_iterator iter = accelerator_table.begin();
+  const AcceleratorMap& accelerator_table = GetAcceleratorTable();
+  for (AcceleratorMap::const_iterator iter = accelerator_table.begin();
        iter != accelerator_table.end(); ++iter) {
     gtk_accel_group_connect(
         accel_group_,
-        iter->first.GetGdkKeyCode(),
-        static_cast<GdkModifierType>(iter->first.modifiers()),
+        ui::GetGdkKeyCodeForAccelerator(iter->first),
+        ui::GetGdkModifierForAccelerator(iter->first),
         GtkAccelFlags(0),
         g_cclosure_new(G_CALLBACK(OnGtkAccelerator),
                        GINT_TO_POINTER(iter->second), NULL));
@@ -378,12 +410,13 @@ void PanelGtk::ConnectAccelerators() {
 void PanelGtk::DisconnectAccelerators() {
   // Disconnecting the keys we connected to our accelerator group frees the
   // closures allocated in ConnectAccelerators.
-  const AcceleratorGtkMap& accelerator_table = GetAcceleratorTable();
-  for (AcceleratorGtkMap::const_iterator iter = accelerator_table.begin();
+  const AcceleratorMap& accelerator_table = GetAcceleratorTable();
+  for (AcceleratorMap::const_iterator iter = accelerator_table.begin();
        iter != accelerator_table.end(); ++iter) {
-    gtk_accel_group_disconnect_key(accel_group_,
-        iter->first.GetGdkKeyCode(),
-        static_cast<GdkModifierType>(iter->first.modifiers()));
+    gtk_accel_group_disconnect_key(
+        accel_group_,
+        ui::GetGdkKeyCodeForAccelerator(iter->first),
+        ui::GetGdkModifierForAccelerator(iter->first));
   }
   gtk_window_remove_accel_group(window_, accel_group_);
   g_object_unref(accel_group_);
@@ -419,16 +452,6 @@ gboolean PanelGtk::OnKeyPress(GtkWidget* widget, GdkEventKey* event) {
   return TRUE;
 }
 
-bool PanelGtk::UsingDefaultTheme() const {
-  // No theme is provided for attention painting.
-  if (paint_state_ == PAINT_FOR_ATTENTION)
-    return true;
-
-  GtkThemeService* theme_provider = GtkThemeService::GetFrom(panel_->profile());
-  return theme_provider->UsingDefaultTheme() ||
-      theme_provider->UsingNativeTheme();
-}
-
 bool PanelGtk::GetWindowEdge(int x, int y, GdkWindowEdge* edge) const {
   // Only detect the window edge when panels can be resized by the user.
   // This method is used by the base class to detect when the cursor has
@@ -438,68 +461,52 @@ bool PanelGtk::GetWindowEdge(int x, int y, GdkWindowEdge* edge) const {
   if (panel::NOT_RESIZABLE == resizability)
     return false;
 
+  int width = bounds_.width();
+  int height = bounds_.height();
   if (x < kFrameBorderThickness) {
-    // Left edge.
-    if (y < kResizeAreaCornerSize - kTopResizeAdjust) {
+    if (y < kResizeAreaCornerSize - kTopResizeAdjust &&
+        (resizability & panel::RESIZABLE_TOP_LEFT)) {
       *edge = GDK_WINDOW_EDGE_NORTH_WEST;
-    } else if (y < bounds_.height() - kResizeAreaCornerSize) {
-      *edge = GDK_WINDOW_EDGE_WEST;
-    } else {
+      return true;
+    } else if (y >= height - kResizeAreaCornerSize &&
+              (resizability & panel::RESIZABLE_BOTTOM_LEFT)) {
       *edge = GDK_WINDOW_EDGE_SOUTH_WEST;
+      return true;
     }
-  } else if (x < bounds_.width() - kFrameBorderThickness) {
-    if (y < kFrameBorderThickness - kTopResizeAdjust) {
-      // Top edge.
-      if (x < kResizeAreaCornerSize) {
-        *edge = GDK_WINDOW_EDGE_NORTH_WEST;
-      } else if (x < bounds_.width() - kResizeAreaCornerSize) {
-        *edge = GDK_WINDOW_EDGE_NORTH;
-      } else {
-        *edge = GDK_WINDOW_EDGE_NORTH_EAST;
-      }
-    } else if (y < bounds_.height() - kFrameBorderThickness) {
-      // Ignore the middle content area.
-      return false;
-    } else {
-      // Bottom edge.
-      if (x < kResizeAreaCornerSize) {
-        *edge = GDK_WINDOW_EDGE_SOUTH_WEST;
-      } else if (x < bounds_.width() - kResizeAreaCornerSize) {
-        *edge = GDK_WINDOW_EDGE_SOUTH;
-      } else {
-        *edge = GDK_WINDOW_EDGE_SOUTH_EAST;
-      }
-    }
-  } else {
-    // Right edge.
-    if (y < kResizeAreaCornerSize - kTopResizeAdjust) {
+  } else if (x >= width - kFrameBorderThickness) {
+    if (y < kResizeAreaCornerSize - kTopResizeAdjust &&
+        (resizability & panel::RESIZABLE_TOP_RIGHT)) {
       *edge = GDK_WINDOW_EDGE_NORTH_EAST;
-    } else if (y < bounds_.height() - kResizeAreaCornerSize) {
-      *edge = GDK_WINDOW_EDGE_EAST;
-    } else {
+      return true;
+    } else if (y >= height - kResizeAreaCornerSize &&
+              (resizability & panel::RESIZABLE_BOTTOM_RIGHT)) {
       *edge = GDK_WINDOW_EDGE_SOUTH_EAST;
+      return true;
     }
   }
 
-  // Special handling if bottom edge is not resizable.
-  if (panel::RESIZABLE_ALL_SIDES_EXCEPT_BOTTOM == resizability) {
-    if (*edge == GDK_WINDOW_EDGE_SOUTH)
-      return FALSE;
-    if (*edge == GDK_WINDOW_EDGE_SOUTH_WEST)
-      *edge = GDK_WINDOW_EDGE_WEST;
-    else if (*edge == GDK_WINDOW_EDGE_SOUTH_EAST)
-      *edge = GDK_WINDOW_EDGE_EAST;
+  if (x < kFrameBorderThickness && (resizability & panel::RESIZABLE_LEFT)) {
+    *edge = GDK_WINDOW_EDGE_WEST;
+    return true;
+  } else if (x >= width - kFrameBorderThickness &&
+            (resizability & panel::RESIZABLE_RIGHT)) {
+    *edge = GDK_WINDOW_EDGE_EAST;
+    return true;
   }
 
-  return true;
+  if (y < kFrameBorderThickness && (resizability & panel::RESIZABLE_TOP)) {
+    *edge = GDK_WINDOW_EDGE_NORTH;
+    return true;
+  } else if (y >= height - kFrameBorderThickness &&
+            (resizability & panel::RESIZABLE_BOTTOM)) {
+    *edge = GDK_WINDOW_EDGE_SOUTH;
+    return true;
+  }
+
+  return false;
 }
 
 gfx::Image PanelGtk::GetFrameBackground() const {
-  return UsingDefaultTheme() ?
-      GetDefaultFrameBackground() : GetThemedFrameBackground();
-}
-
-gfx::Image PanelGtk::GetDefaultFrameBackground() const {
   switch (paint_state_) {
     case PAINT_AS_INACTIVE:
       return GetInactiveBackgroundDefaultImage();
@@ -513,12 +520,6 @@ gfx::Image PanelGtk::GetDefaultFrameBackground() const {
       NOTREACHED();
       return GetInactiveBackgroundDefaultImage();
   }
-}
-
-gfx::Image PanelGtk::GetThemedFrameBackground() const {
-  GtkThemeService* theme_provider = GtkThemeService::GetFrom(panel_->profile());
-  return theme_provider->GetImageNamed(paint_state_ == PAINT_AS_ACTIVE ?
-      IDR_THEME_TOOLBAR : IDR_THEME_TAB_BACKGROUND);
 }
 
 gboolean PanelGtk::OnCustomFrameExpose(GtkWidget* widget,
@@ -546,16 +547,6 @@ gboolean PanelGtk::OnCustomFrameExpose(GtkWidget* widget,
   cairo_rectangle(cr, event->area.x, event->area.y,
                   event->area.width, event->area.height);
   cairo_fill(cr);
-
-  // Draw the divider only if we're showing more than titlebar.
-  if (window_height > panel::kTitlebarHeight) {
-    cairo_set_source_rgb(cr,
-                         SkColorGetR(kDividerColor) / 255.0,
-                         SkColorGetG(kDividerColor) / 255.0,
-                         SkColorGetB(kDividerColor) / 255.0);
-    cairo_rectangle(cr, 0, panel::kTitlebarHeight - 1, bounds_.width(), 1);
-    cairo_fill(cr);
-  }
 
   // Draw the border for the minimized panel only.
   if (paint_state_ == PAINT_AS_MINIMIZED) {
@@ -808,6 +799,14 @@ void PanelGtk::ClosePanel() {
 
 void PanelGtk::ActivatePanel() {
   gtk_window_present(window_);
+
+  // When the user clicks to expand the minimized panel, the panel has already
+  // become an active window before gtk_window_present is called. Thus the
+  // active window change event, fired by ActiveWindowWatcherXObserver, is not
+  // triggered. We need to call ActiveWindowChanged manually to update panel's
+  // active status. It is OK to call ActiveWindowChanged with the same active
+  // window twice since the 2nd call is just a no-op.
+  ActiveWindowChanged(gtk_widget_get_window(GTK_WIDGET(window_)));
 }
 
 void PanelGtk::DeactivatePanel() {
@@ -831,7 +830,7 @@ void PanelGtk::PreventActivationByOS(bool prevent_activation) {
   gtk_window_set_accept_focus(window_, !prevent_activation);
 }
 
-gfx::NativeWindow PanelGtk::GetNativePanelHandle() {
+gfx::NativeWindow PanelGtk::GetNativePanelWindow() {
   return window_;
 }
 
@@ -866,11 +865,6 @@ void PanelGtk::UpdatePanelLoadingAnimations(bool should_animate) {
 
 void PanelGtk::LoadingAnimationCallback() {
   titlebar_->UpdateThrobber(panel_->GetWebContents());
-}
-
-void PanelGtk::NotifyPanelOnUserChangedTheme() {
-  titlebar_->UpdateTextColor();
-  InvalidateWindow();
 }
 
 void PanelGtk::PanelWebContentsFocused(content::WebContents* contents) {
@@ -929,7 +923,7 @@ void PanelGtk::PanelExpansionStateChanging(
 void PanelGtk::AttachWebContents(content::WebContents* contents) {
   if (!contents)
     return;
-  gfx::NativeView widget = contents->GetNativeView();
+  gfx::NativeView widget = contents->GetView()->GetNativeView();
   if (widget) {
     gtk_container_add(GTK_CONTAINER(contents_expanded_), widget);
     gtk_widget_show(widget);
@@ -938,7 +932,7 @@ void PanelGtk::AttachWebContents(content::WebContents* contents) {
 }
 
 void PanelGtk::DetachWebContents(content::WebContents* contents) {
-  gfx::NativeView widget = contents->GetNativeView();
+  gfx::NativeView widget = contents->GetView()->GetNativeView();
   if (widget) {
     GtkWidget* parent = gtk_widget_get_parent(widget);
     if (parent) {
@@ -965,7 +959,7 @@ gfx::Size PanelGtk::ContentSizeFromWindowSize(
 int PanelGtk::TitleOnlyHeight() const {
   gfx::Size& frame_size = GetFrameSize();
   if (!frame_size.IsEmpty())
-    return frame_size.height() - kFrameBorderThickness;
+    return panel::kTitlebarHeight;
 
   NOTREACHED() << "Checking title height before window allocated";
   return 0;
@@ -1033,10 +1027,12 @@ class GtkNativePanelTesting : public NativePanelTesting {
   virtual bool VerifyDrawingAttention() const OVERRIDE;
   virtual bool VerifyActiveState(bool is_active) OVERRIDE;
   virtual bool VerifyAppIcon() const OVERRIDE;
+  virtual bool VerifySystemMinimizeState() const OVERRIDE;
   virtual bool IsWindowSizeKnown() const OVERRIDE;
   virtual bool IsAnimatingBounds() const OVERRIDE;
   virtual bool IsButtonVisible(
       panel::TitlebarButtonType button_type) const OVERRIDE;
+  virtual panel::CornerStyle GetWindowCornerStyle() const OVERRIDE;
 
   PanelGtk* panel_gtk_;
 };
@@ -1061,7 +1057,7 @@ void GtkNativePanelTesting::PressLeftMouseButtonTitlebar(
   panel_gtk_->OnTitlebarButtonPressEvent(
       NULL, reinterpret_cast<GdkEventButton*>(event));
   gdk_event_free(event);
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
 }
 
 void GtkNativePanelTesting::ReleaseMouseButtonTitlebar(
@@ -1078,7 +1074,7 @@ void GtkNativePanelTesting::ReleaseMouseButtonTitlebar(
         NULL, reinterpret_cast<GdkEventButton*>(event));
   }
   gdk_event_free(event);
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
 }
 
 void GtkNativePanelTesting::DragTitlebar(const gfx::Point& mouse_location) {
@@ -1090,14 +1086,14 @@ void GtkNativePanelTesting::DragTitlebar(const gfx::Point& mouse_location) {
   panel_gtk_->drag_helper_->OnMouseMoveEvent(
       NULL, reinterpret_cast<GdkEventMotion*>(event));
   gdk_event_free(event);
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
 }
 
 void GtkNativePanelTesting::CancelDragTitlebar() {
   if (!panel_gtk_->drag_helper_.get())
     return;
   panel_gtk_->drag_helper_->OnGrabBrokenEvent(NULL, NULL);
-  MessageLoopForUI::current()->RunAllPending();
+  MessageLoopForUI::current()->RunUntilIdle();
 }
 
 void GtkNativePanelTesting::FinishDragTitlebar() {
@@ -1116,10 +1112,15 @@ bool GtkNativePanelTesting::VerifyActiveState(bool is_active) {
 }
 
 bool GtkNativePanelTesting::VerifyAppIcon() const {
-  GdkPixbuf* icon = gtk_window_get_icon(panel_gtk_->GetNativePanelHandle());
+  GdkPixbuf* icon = gtk_window_get_icon(panel_gtk_->GetNativePanelWindow());
   return icon &&
          gdk_pixbuf_get_width(icon) == panel::kPanelAppIconSize &&
          gdk_pixbuf_get_height(icon) == panel::kPanelAppIconSize;
+}
+
+bool GtkNativePanelTesting::VerifySystemMinimizeState() const {
+  // TODO(jianli): to be implemented.
+  return true;
 }
 
 bool GtkNativePanelTesting::IsWindowSizeKnown() const {
@@ -1149,4 +1150,8 @@ bool GtkNativePanelTesting::IsButtonVisible(
       return false;
   }
   return gtk_widget_get_visible(button->widget());
+}
+
+panel::CornerStyle GtkNativePanelTesting::GetWindowCornerStyle() const {
+  return panel_gtk_->corner_style_;
 }

@@ -12,7 +12,6 @@
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
 #include "sql/connection.h"
-#include "sql/diagnostic_error_delegate.h"
 #include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
@@ -29,15 +28,6 @@ const int kCompatibleVersion = 2;
 const char kHostQuotaTable[] = "HostQuotaTable";
 const char kOriginInfoTable[] = "OriginInfoTable";
 const char kIsOriginTableBootstrapped[] = "IsOriginTableBootstrapped";
-
-class HistogramUniquifier {
- public:
-  static const char* name() { return "Sqlite.Quota.Error"; }
-};
-
-sql::ErrorDelegate* GetErrorHandlerForQuotaDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier>();
-}
 
 bool VerifyValidQuotaConfig(const char* key) {
   return (key != NULL &&
@@ -131,7 +121,7 @@ QuotaDatabase::OriginInfoTableEntry::OriginInfoTableEntry(
 }
 
 // QuotaDatabase ------------------------------------------------------------
-QuotaDatabase::QuotaDatabase(const FilePath& path)
+QuotaDatabase::QuotaDatabase(const base::FilePath& path)
     : db_file_path_(path),
       is_recreating_(false),
       is_disabled_(false) {
@@ -457,7 +447,7 @@ bool QuotaDatabase::LazyOpen(bool create_if_needed) {
   db_.reset(new sql::Connection);
   meta_table_.reset(new sql::MetaTable);
 
-  db_->set_error_delegate(GetErrorHandlerForQuotaDb());
+  db_->set_error_histogram_name("Sqlite.Quota.Error");
 
   bool opened = false;
   if (in_memory_only) {
@@ -579,7 +569,7 @@ bool QuotaDatabase::ResetSchema() {
   if (is_recreating_)
     return false;
 
-  AutoReset<bool> auto_reset(&is_recreating_, true);
+  base::AutoReset<bool> auto_reset(&is_recreating_, true);
   return LazyOpen(true);
 }
 

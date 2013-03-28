@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -11,6 +11,7 @@
 
 #include <string>
 
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/notifier/invalidation_util.h"
 #include "sync/notifier/invalidator_state.h"
@@ -19,7 +20,7 @@
 namespace syncer {
 class InvalidationHandler;
 
-class Invalidator {
+class SYNC_EXPORT Invalidator {
  public:
   Invalidator() {}
   virtual ~Invalidator() {}
@@ -68,6 +69,10 @@ class Invalidator {
   // associated with |handler|.
   virtual void UnregisterHandler(InvalidationHandler* handler) = 0;
 
+  // Acknowledge that an invalidation for |id| was handled.
+  virtual void Acknowledge(const invalidation::ObjectId& id,
+                           const AckHandle& ack_handle) = 0;
+
   // Returns the current invalidator state.  When called from within
   // InvalidationHandler::OnInvalidatorStateChange(), this must return
   // the updated state.
@@ -77,11 +82,6 @@ class Invalidator {
   // UpdateCredentials.  |unique_id| should be a non-empty globally
   // unique string.
   virtual void SetUniqueId(const std::string& unique_id) = 0;
-
-  // SetState must be called once, before any call to
-  // UpdateCredentials.  |state| may be empty.
-  // Deprecated in favour of InvalidationStateTracker persistence.
-  virtual void SetStateDeprecated(const std::string& state) = 0;
 
   // The observers won't be notified of any notifications until
   // UpdateCredentials is called at least once. It can be called more than

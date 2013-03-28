@@ -4,6 +4,8 @@
 
 #include "ash/system/locale/tray_locale.h"
 
+#include "ash/shell.h"
+#include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_notification_view.h"
 #include "ash/system/tray/tray_views.h"
@@ -73,12 +75,12 @@ class LocaleMessageView : public views::View,
 
 class LocaleNotificationView : public TrayNotificationView {
  public:
-  LocaleNotificationView(TrayLocale* tray,
+  LocaleNotificationView(TrayLocale* owner,
                          LocaleObserver::Delegate* delegate,
                          const std::string& cur_locale,
                          const std::string& from_locale,
                          const std::string& to_locale)
-      : TrayNotificationView(tray, IDR_AURA_UBER_TRAY_LOCALE),
+      : TrayNotificationView(owner, IDR_AURA_UBER_TRAY_LOCALE),
         delegate_(delegate) {
     views::View* container = new LocaleMessageView(
         delegate, cur_locale, from_locale, to_locale);
@@ -109,12 +111,15 @@ class LocaleNotificationView : public TrayNotificationView {
 
 }  // namespace tray
 
-TrayLocale::TrayLocale()
-    : notification_(NULL),
+TrayLocale::TrayLocale(SystemTray* system_tray)
+    : SystemTrayItem(system_tray),
+      notification_(NULL),
       delegate_(NULL) {
+  Shell::GetInstance()->system_tray_notifier()->AddLocaleObserver(this);
 }
 
 TrayLocale::~TrayLocale() {
+  Shell::GetInstance()->system_tray_notifier()->RemoveLocaleObserver(this);
 }
 
 views::View* TrayLocale::CreateNotificationView(user::LoginStatus status) {

@@ -19,17 +19,18 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop_proxy.h"
-#include "base/time.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/time.h"
 #include "net/base/cache_type.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
+#include "net/base/request_priority.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/infinite_cache.h"
@@ -99,7 +100,7 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
     // |path| is the destination for any files used by the backend, and
     // |cache_thread| is the thread where disk operations should take place. If
     // |max_bytes| is  zero, a default value will be calculated automatically.
-    DefaultBackend(CacheType type, const FilePath& path, int max_bytes,
+    DefaultBackend(CacheType type, const base::FilePath& path, int max_bytes,
                    base::MessageLoopProxy* thread);
     virtual ~DefaultBackend();
 
@@ -113,7 +114,7 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
    private:
     CacheType type_;
-    const FilePath path_;
+    const base::FilePath path_;
     int max_bytes_;
     scoped_refptr<base::MessageLoopProxy> thread_;
   };
@@ -162,8 +163,11 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // referenced by |url|, as long as the entry's |expected_response_time| has
   // not changed. This method returns without blocking, and the operation will
   // be performed asynchronously without any completion notification.
-  void WriteMetadata(const GURL& url, base::Time expected_response_time,
-                     IOBuffer* buf, int buf_len);
+  void WriteMetadata(const GURL& url,
+                     RequestPriority priority,
+                     base::Time expected_response_time,
+                     IOBuffer* buf,
+                     int buf_len);
 
   // Get/Set the cache's mode.
   void set_mode(Mode value) { mode_ = value; }
@@ -182,13 +186,14 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   void OnExternalCacheHit(const GURL& url, const std::string& http_method);
 
   // Initializes the Infinite Cache, if selected by the field trial.
-  void InitializeInfiniteCache(const FilePath& path);
+  void InitializeInfiniteCache(const base::FilePath& path);
 
   // Returns a pointer to the Infinite Cache.
   InfiniteCache* infinite_cache() { return &infinite_cache_; }
 
   // HttpTransactionFactory implementation:
-  virtual int CreateTransaction(scoped_ptr<HttpTransaction>* trans,
+  virtual int CreateTransaction(RequestPriority priority,
+                                scoped_ptr<HttpTransaction>* trans,
                                 HttpTransactionDelegate* delegate) OVERRIDE;
   virtual HttpCache* GetCache() OVERRIDE;
   virtual HttpNetworkSession* GetSession() OVERRIDE;
@@ -265,6 +270,9 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // callback if this method returns ERR_IO_PENDING. The entry should not
   // be currently in use.
   int AsyncDoomEntry(const std::string& key, Transaction* trans);
+
+  // Dooms the entry associated with a GET for a given |url|.
+  void DoomMainEntryForUrl(const GURL& url);
 
   // Closes a previously doomed entry.
   void FinalizeDoomedEntry(ActiveEntry* entry);

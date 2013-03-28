@@ -7,9 +7,12 @@
 
 #include <vector>
 
-#include "base/string16.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "ui/base/models/combobox_model.h"
+
+class BookmarkModel;
+class BookmarkNode;
 
 // Model for the combobox showing the list of folders to choose from. The
 // list always contains the bookmark bar, other node and parent. The list
@@ -22,18 +25,18 @@ class RecentlyUsedFoldersComboModel : public ui::ComboboxModel {
   // Overridden from ui::ComboboxModel:
   virtual int GetItemCount() const OVERRIDE;
   virtual string16 GetItemAt(int index) OVERRIDE;
+  virtual int GetDefaultIndex() const OVERRIDE;
 
   // Returns the node at the specified |index|.
   const BookmarkNode* GetNodeAt(int index);
-
-  // Returns the index of the original parent folder.
-  int node_parent_index() const { return node_parent_index_; }
 
  private:
   // Removes |node| from |nodes_|. Does nothing if |node| is not in |nodes_|.
   void RemoveNode(const BookmarkNode* node);
 
   std::vector<const BookmarkNode*> nodes_;
+
+  // The index of the original parent folder.
   int node_parent_index_;
 
   DISALLOW_COPY_AND_ASSIGN(RecentlyUsedFoldersComboModel);

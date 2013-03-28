@@ -169,6 +169,122 @@ class JsStyleGuideTest(SuperMoxTestBase):
     for line in lines:
       self.ShouldPassGetElementByIdCheck(line)
 
+  def ShouldFailInheritDocCheck(self, line):
+    """Checks that the '@inheritDoc' checker flags |line| as a style error."""
+    error = self.checker.InheritDocCheck(1, line)
+    self.assertNotEqual('', error,
+        msg='Should be flagged as style error: ' + line)
+    self.assertEqual(self.GetHighlight(line, error), '@inheritDoc')
+
+  def ShouldPassInheritDocCheck(self, line):
+    """Checks that the '@inheritDoc' checker doesn't flag |line| as a style
+       error.
+    """
+    self.assertEqual('', self.checker.InheritDocCheck(1, line),
+        msg='Should not be flagged as style error: ' + line)
+
+  def testInheritDocFails(self):
+    lines = [
+        " /** @inheritDoc */",
+        "   * @inheritDoc",
+    ]
+    for line in lines:
+      self.ShouldFailInheritDocCheck(line)
+
+  def testInheritDocPasses(self):
+    lines = [
+        "And then I said, but I won't @inheritDoc! Hahaha!",
+        " If your dad's a doctor, do you inheritDoc?",
+        "  What's up, inherit doc?",
+        "   this.inheritDoc(someDoc)",
+    ]
+    for line in lines:
+      self.ShouldPassInheritDocCheck(line)
+
+  def ShouldFailWrapperTypeCheck(self, line):
+    """Checks that the use of wrapper types (i.e. new Number(), @type {Number})
+       is a style error.
+    """
+    error = self.checker.WrapperTypeCheck(1, line)
+    self.assertNotEqual('', error,
+        msg='Should be flagged as style error: ' + line)
+    highlight = self.GetHighlight(line, error)
+    self.assertTrue(highlight in ('Boolean', 'Number', 'String'))
+
+  def ShouldPassWrapperTypeCheck(self, line):
+    """Checks that the wrapper type checker doesn't flag |line| as a style
+       error.
+    """
+    self.assertEqual('', self.checker.WrapperTypeCheck(1, line),
+        msg='Should not be flagged as style error: ' + line)
+
+  def testWrapperTypePasses(self):
+    lines = [
+        "/** @param {!ComplexType} */",
+        "  * @type {Object}",
+        "   * @param {Function=} opt_callback",
+        "    * @param {} num Number of things to add to {blah}.",
+        "   *  @return {!print_preview.PageNumberSet}",
+        " /* @returns {Number} */",  # Should be /** @return {Number} */
+        "* @param {!LocalStrings}"
+        " Your type of Boolean is false!",
+        "  Then I parameterized her Number from her friend!",
+        "   A String of Pearls",
+        "    types.params.aBoolean.typeString(someNumber)",
+    ]
+    for line in lines:
+      self.ShouldPassWrapperTypeCheck(line)
+
+  def testWrapperTypeFails(self):
+    lines = [
+        "  /**@type {String}*/(string)",
+        "   * @param{Number=} opt_blah A number",
+        "/** @private @return {!Boolean} */",
+        " * @param {number|String}",
+    ]
+    for line in lines:
+      self.ShouldFailWrapperTypeCheck(line)
+
+  def ShouldFailVarNameCheck(self, line):
+    """Checks that var unix_hacker, $dollar are style errors."""
+    error = self.checker.VarNameCheck(1, line)
+    self.assertNotEqual('', error,
+        msg='Should be flagged as style error: ' + line)
+    highlight = self.GetHighlight(line, error)
+    self.assertFalse('var ' in highlight);
+
+  def ShouldPassVarNameCheck(self, line):
+    """Checks that variableNamesLikeThis aren't style errors."""
+    self.assertEqual('', self.checker.VarNameCheck(1, line),
+        msg='Should not be flagged as style error: ' + line)
+
+  def testVarNameFails(self):
+    lines = [
+        "var private_;",
+        " var _super_private",
+        "  var unix_hacker = someFunc();",
+    ]
+    for line in lines:
+      self.ShouldFailVarNameCheck(line)
+
+  def testVarNamePasses(self):
+    lines = [
+        "  var namesLikeThis = [];",
+        " for (var i = 0; i < 10; ++i) { ",
+        "for (var i in obj) {",
+        " var one, two, three;",
+        "  var magnumPI = {};",
+        " var g_browser = 'da browzer';",
+        "/** @const */ var Bla = options.Bla;",  # goog.scope() replacement.
+        " var $ = function() {",                 # For legacy reasons.
+        "  var StudlyCaps = cr.define('bla')",   # Classes.
+        " var SCARE_SMALL_CHILDREN = [",         # TODO(dbeam): add @const in
+                                                 # front of all these vars like
+        "/** @const */ CONST_VAR = 1;",          # this line has (<--).
+    ]
+    for line in lines:
+      self.ShouldPassVarNameCheck(line)
+
 
 class CssStyleGuideTest(SuperMoxTestBase):
   def setUp(self):
@@ -416,6 +532,25 @@ div,a {
     div,a,
     div, span,
     div,a {""")
+
+  def testCssPseudoElementDoubleColon(self):
+    self.VerifyContentsProducesOutput("""
+a:href,
+br::after,
+::-webkit-scrollbar-thumb,
+a:not([empty]):hover:focus:active, /* shouldn't catch here and above */
+abbr:after,
+.tree-label:empty:after,
+b:before,
+:-WebKit-ScrollBar {
+  rule: value;
+}""", """
+- Pseudo-elements should use double colon (i.e. ::after).
+    :after (should be ::after)
+    :after (should be ::after)
+    :before (should be ::before)
+    :-WebKit-ScrollBar (should be ::-WebKit-ScrollBar)
+    """)
 
   def testCssRgbIfNotGray(self):
     self.VerifyContentsProducesOutput("""

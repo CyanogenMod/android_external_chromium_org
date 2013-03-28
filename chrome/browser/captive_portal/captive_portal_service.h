@@ -7,11 +7,10 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/prefs/pref_member.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
 #include "base/timer.h"
-#include "chrome/browser/api/prefs/pref_member.h"
 #include "chrome/browser/captive_portal/captive_portal_detector.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "googleurl/src/gurl.h"
@@ -29,7 +28,6 @@ namespace captive_portal {
 // be accessed on the UI thread.
 // Design doc: https://docs.google.com/document/d/1k-gP2sswzYNvryu9NcgN7q5XrsMlUdlUdoW9WRaEmfM/edit
 class CaptivePortalService : public ProfileKeyedService,
-                             public PrefObserver,
                              public base::NonThreadSafe {
  public:
   enum TestingState {
@@ -115,10 +113,6 @@ class CaptivePortalService : public ProfileKeyedService,
   // Called by CaptivePortalDetector when detection completes.
   void OnPortalDetectionCompleted(
       const CaptivePortalDetector::Results& results);
-
-  // PrefObserver
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
 
   // ProfileKeyedService:
   virtual void Shutdown() OVERRIDE;

@@ -6,10 +6,13 @@
 #define ASH_WM_PARTIAL_SCREENSHOT_VIEW_H_
 
 #include "ash/ash_export.h"
-#include "ash/wm/overlay_event_filter.h"
 #include "base/compiler_specific.h"
 #include "ui/gfx/point.h"
 #include "ui/views/widget/widget_delegate.h"
+
+namespace aura {
+class RootWindow;
+}
 
 namespace ash {
 class ScreenshotDelegate;
@@ -17,30 +20,27 @@ class ScreenshotDelegate;
 // The view of taking partial screenshot, i.e.: drawing region
 // rectangles during drag, and changing the mouse cursor to indicate
 // the current mode.
-class ASH_EXPORT PartialScreenshotView
-    : public views::WidgetDelegateView,
-      public internal::OverlayEventFilter::Delegate {
+class ASH_EXPORT PartialScreenshotView : public views::WidgetDelegateView {
  public:
-  PartialScreenshotView(ScreenshotDelegate* screenshot_delegate);
-  virtual ~PartialScreenshotView();
-
   // Starts the UI for taking partial screenshot; dragging to select a region.
   static void StartPartialScreenshot(ScreenshotDelegate* screenshot_delegate);
 
-  // Overriddden from View:
-  virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
-
-  // Overridden from internal::OverlayEventFilter::Delegate:
-  virtual void Cancel() OVERRIDE;
-  virtual bool IsCancelingKeyEvent(ui::KeyEvent* event) OVERRIDE;
-  virtual aura::Window* GetWindow() OVERRIDE;
-
  private:
+  class OverlayDelegate;
+
+  PartialScreenshotView(OverlayDelegate* overlay_delegate,
+                        ScreenshotDelegate* screenshot_delegate);
+  virtual ~PartialScreenshotView();
+
+  // Initializes partial screenshot UI widget for |root_window|.
+  void Init(aura::RootWindow* root_window);
+
+  // Returns the currently selected region.
   gfx::Rect GetScreenshotRect() const;
 
-  // Overridden from View:
+  // Overridden from views::View:
+  virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void OnMouseCaptureLost() OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
@@ -49,6 +49,11 @@ class ASH_EXPORT PartialScreenshotView
   bool is_dragging_;
   gfx::Point start_position_;
   gfx::Point current_position_;
+
+  // The delegate to receive Cancel. No ownership.
+  OverlayDelegate* overlay_delegate_;
+
+  // ScreenshotDelegate to take the actual screenshot. No ownership.
   ScreenshotDelegate* screenshot_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(PartialScreenshotView);

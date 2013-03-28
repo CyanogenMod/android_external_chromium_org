@@ -7,26 +7,30 @@
 
 #include "base/compiler_specific.h"
 #include "base/string16.h"
-#include "chrome/browser/api/infobars/link_infobar_delegate.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "googleurl/src/gurl.h"
 
-class InfoBarTabHelper;
+class InfoBarService;
 
 namespace chrome {
 
 // An infobar that is run with a string and a "Learn More" link.
-class ObsoleteOSInfoBar : public LinkInfoBarDelegate {
+class ObsoleteOSInfoBar : public ConfirmInfoBarDelegate {
  public:
-  ObsoleteOSInfoBar(InfoBarTabHelper* infobar_helper,
+  // Creates an obsolete OS delegate and adds it to |infobar_service|.
+  static void Create(InfoBarService* infobar_service);
+
+ private:
+  virtual string16 GetMessageText() const OVERRIDE;
+  virtual int GetButtons() const OVERRIDE;
+  virtual string16 GetLinkText() const OVERRIDE;
+  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
+
+  ObsoleteOSInfoBar(InfoBarService* infobar_service,
                     const string16& message,
                     const GURL& url);
   virtual ~ObsoleteOSInfoBar();
 
-  virtual string16 GetMessageTextWithOffset(size_t* link_offset) const OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
-  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
-
- private:
   const string16 message_;
   const GURL learn_more_url_;
 

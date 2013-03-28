@@ -8,6 +8,7 @@
 #include "base/sha1.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/online_attempt.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -23,25 +24,26 @@ OnlineAttemptHost::~OnlineAttemptHost() {
 }
 
 void OnlineAttemptHost::Check(Profile* profile,
-                              const std::string& username,
-                              const std::string& password) {
+                              const UserCredentials& credentials) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  std::string attempt_hash = base::SHA1HashString(username + "\n" + password);
+  std::string attempt_hash = base::SHA1HashString(
+      credentials.username + "\n" + credentials.password);
   if (attempt_hash != current_attempt_hash_) {
     Reset();
     current_attempt_hash_ = attempt_hash;
-    current_username_ = username;
+    current_username_ = credentials.username;
 
     state_.reset(
         new AuthAttemptState(
-            gaia::CanonicalizeEmail(username),
-            password,
-            std::string(),
-            std::string(),
-            std::string(),
-            false));  // Isn't a new user.
-    online_attempt_.reset(new OnlineAttempt(false,  // Don't use oauth.
-                                            state_.get(),
+            UserCredentials(gaia::CanonicalizeEmail(credentials.username),
+                            credentials.password,
+                            credentials.auth_code),
+            std::string(),  // ascii_hash
+            std::string(),  // login_token
+            std::string(),  // login_captcha
+            User::USER_TYPE_REGULAR,
+            false));  // user_is_new.
+    online_attempt_.reset(new OnlineAttempt(state_.get(),
                                             this));
     online_attempt_->Initiate(profile);
   }

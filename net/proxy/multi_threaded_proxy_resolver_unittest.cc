@@ -49,7 +49,7 @@ class MockProxyResolver : public ProxyResolver {
     EXPECT_TRUE(request == NULL);
 
     // Write something into |net_log| (doesn't really have any meaning.)
-    net_log.BeginEvent(NetLog::TYPE_PAC_JAVASCRIPT_DNS_RESOLVE);
+    net_log.BeginEvent(NetLog::TYPE_PAC_JAVASCRIPT_ALERT);
 
     results->UseNamedProxy(query_url.host());
 
@@ -62,12 +62,6 @@ class MockProxyResolver : public ProxyResolver {
   }
 
   virtual LoadState GetLoadState(RequestHandle request) const OVERRIDE {
-    NOTREACHED();
-    return LOAD_STATE_IDLE;
-  }
-
-  virtual LoadState GetLoadStateThreadSafe(
-      RequestHandle request) const OVERRIDE {
     NOTREACHED();
     return LOAD_STATE_IDLE;
   }
@@ -190,12 +184,6 @@ class ForwardingProxyResolver : public ProxyResolver {
     return LOAD_STATE_IDLE;
   }
 
-  virtual LoadState GetLoadStateThreadSafe(
-      RequestHandle request) const OVERRIDE {
-    NOTREACHED();
-    return LOAD_STATE_IDLE;
-  }
-
   virtual void CancelSetPacScript() OVERRIDE {
     impl_->CancelSetPacScript();
   }
@@ -235,7 +223,7 @@ class BlockableProxyResolverFactory : public ProxyResolverFactory {
  public:
   BlockableProxyResolverFactory() : ProxyResolverFactory(true) {}
 
-  ~BlockableProxyResolverFactory() {
+  virtual ~BlockableProxyResolverFactory() {
     STLDeleteElements(&resolvers_);
   }
 
@@ -573,7 +561,7 @@ TEST(MultiThreadedProxyResolverTest, SingleThread_CancelRequestByDeleting) {
   resolver.reset();
 
   // Give any posted tasks a chance to run (in case there is badness).
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   // Check that none of the outstanding requests were completed.
   EXPECT_FALSE(callback0.have_result());
@@ -657,7 +645,7 @@ TEST(MultiThreadedProxyResolverTest, ThreeThreads_Basic) {
   ASSERT_EQ(1u, factory->resolvers().size());
   EXPECT_EQ(1, factory->resolvers()[0]->request_count());
 
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   // We now start 8 requests in parallel -- this will cause the maximum of
   // three threads to be provisioned (an additional two from what we already

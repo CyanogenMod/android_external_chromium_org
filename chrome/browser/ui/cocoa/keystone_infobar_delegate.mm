@@ -12,18 +12,19 @@
 #include "base/command_line.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #import "chrome/browser/mac/keystone_glue.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/navigation_details.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -38,10 +39,13 @@ namespace {
 
 class KeystonePromotionInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  KeystonePromotionInfoBarDelegate(InfoBarService* infobar_service,
-                                   PrefService* prefs);
+  // If there's an active tab, creates a keystone promotion delegate and adds it
+  // to the InfoBarService associated with that tab.
+  static void Create();
 
  private:
+  KeystonePromotionInfoBarDelegate(InfoBarService* infobar_service,
+                                   PrefService* prefs);
   virtual ~KeystonePromotionInfoBarDelegate();
 
   // Sets this info bar to be able to expire.  Called a predetermined amount
@@ -68,6 +72,25 @@ class KeystonePromotionInfoBarDelegate : public ConfirmInfoBarDelegate {
 
   DISALLOW_COPY_AND_ASSIGN(KeystonePromotionInfoBarDelegate);
 };
+
+// static
+void KeystonePromotionInfoBarDelegate::Create() {
+  Browser* browser = chrome::GetLastActiveBrowser();
+  if (browser) {
+    content::WebContents* webContents =
+        browser->tab_strip_model()->GetActiveWebContents();
+
+    if (webContents) {
+      InfoBarService* infobar_service =
+          InfoBarService::FromWebContents(webContents);
+      infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
+          new KeystonePromotionInfoBarDelegate(
+              infobar_service,
+              Profile::FromBrowserContext(
+                  webContents->GetBrowserContext())->GetPrefs())));
+    }
+  }
+}
 
 KeystonePromotionInfoBarDelegate::KeystonePromotionInfoBarDelegate(
     InfoBarService* infobar_service,
@@ -189,24 +212,7 @@ bool KeystonePromotionInfoBarDelegate::ShouldExpireInternal(
 
   if (status != kAutoupdateRegisterFailed &&
       [[KeystoneGlue defaultKeystoneGlue] needsPromotion]) {
-    Browser* browser = chrome::GetLastActiveBrowser();
-    if (browser) {
-      content::WebContents* webContents = chrome::GetActiveWebContents(browser);
-
-      // Only show if no other info bars are showing, because that's how the
-      // default browser info bar works.
-      if (webContents) {
-        InfoBarTabHelper* infobarTabHelper =
-            InfoBarTabHelper::FromWebContents(webContents);
-        if (infobarTabHelper->GetInfoBarCount() == 0) {
-          infobarTabHelper->AddInfoBar(
-              new KeystonePromotionInfoBarDelegate(
-                  infobarTabHelper,
-                  Profile::FromBrowserContext(
-                      webContents->GetBrowserContext())->GetPrefs()));
-        }
-      }
-    }
+    KeystonePromotionInfoBarDelegate::Create();
   }
 
   [self release];

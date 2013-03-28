@@ -4,6 +4,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/mac/foundation_util.h"
 #include "base/memory/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
@@ -29,7 +30,9 @@ namespace {
 
 class MockDecoration : public LocationBarDecoration {
  public:
-  virtual CGFloat GetWidthForSpace(CGFloat width) { return 20.0; }
+  virtual CGFloat GetWidthForSpace(CGFloat width, CGFloat text_width) {
+    return 20.0;
+  }
 
   virtual void DrawInFrame(NSRect frame, NSView* control_view) { ; }
   MOCK_METHOD0(AcceptsMousePress, bool());
@@ -120,6 +123,11 @@ class AutocompleteTextFieldTest : public CocoaTest {
     }
   }
 
+  AutocompleteTextFieldEditor* FieldEditor() {
+    return base::mac::ObjCCastStrict<AutocompleteTextFieldEditor>(
+        [field_ currentEditor]);
+  }
+
   AutocompleteTextField* field_;
   MockDecoration mock_left_decoration_;
   MockDecoration mock_right_decoration_;
@@ -207,6 +215,15 @@ TEST_F(AutocompleteTextFieldTest, Display) {
 
   // Test focussed drawing.
   [test_window() makePretendKeyWindowAndSetFirstResponder:field_];
+  [field_ display];
+}
+
+// Test setting instant suggestion, mostly to ensure nothing leaks or crashes.
+TEST_F(AutocompleteTextFieldTest, InstantSuggestion) {
+  [field_ display];
+  EXPECT_FALSE([field_ needsDisplay]);
+  [field_ setInstantSuggestion:@"foo" textColor:[NSColor redColor]];
+  EXPECT_TRUE([field_ needsDisplay]);
   [field_ display];
 }
 
@@ -733,6 +750,26 @@ TEST_F(AutocompleteTextFieldTest, EditorGetsCorrectUndoManager) {
   NSTextView* editor = static_cast<NSTextView*>([field_ currentEditor]);
   EXPECT_TRUE(editor);
   EXPECT_EQ([field_ undoManagerForTextView:editor], [editor undoManager]);
+}
+
+// Verify that hideFocusState correctly hides the focus ring and insertion
+// pointer.
+TEST_F(AutocompleteTextFieldTest, HideFocusState) {
+  [test_window() makePretendKeyWindowAndSetFirstResponder:field_];
+  [[field_ cell] setShowsFirstResponder:YES];
+
+  EXPECT_TRUE([[field_ cell] showsFirstResponder]);
+  EXPECT_TRUE([FieldEditor() shouldDrawInsertionPoint]);
+
+  [[field_ cell] setHideFocusState:YES
+                            ofView:field_];
+  EXPECT_FALSE([[field_ cell] showsFirstResponder]);
+  EXPECT_FALSE([FieldEditor() shouldDrawInsertionPoint]);
+
+  [[field_ cell] setHideFocusState:NO
+                            ofView:field_];
+  EXPECT_TRUE([[field_ cell] showsFirstResponder]);
+  EXPECT_TRUE([FieldEditor() shouldDrawInsertionPoint]);
 }
 
 TEST_F(AutocompleteTextFieldObserverTest, SendsEditingMessages) {

@@ -10,6 +10,44 @@
 #include "base/time.h"
 #include "media/video/capture/mac/video_capture_device_qtkit_mac.h"
 
+namespace {
+
+const int kMinFrameRate = 1;
+const int kMaxFrameRate = 30;
+
+struct Resolution {
+  int width;
+  int height;
+};
+
+const Resolution kWellSupportedResolutions[] = {
+   { 320, 240 },
+   { 640, 480 },
+   { 1280, 720 },
+};
+
+// TODO(ronghuawu): Replace this with CapabilityList::GetBestMatchedCapability.
+void GetBestMatchSupportedResolution(int* width, int* height) {
+  int min_diff = kint32max;
+  int matched_width = *width;
+  int matched_height = *height;
+  int desired_res_area = *width * *height;
+  for (size_t i = 0; i < arraysize(kWellSupportedResolutions); ++i) {
+    int area = kWellSupportedResolutions[i].width *
+               kWellSupportedResolutions[i].height;
+    int diff = std::abs(desired_res_area - area);
+    if (diff < min_diff) {
+      min_diff = diff;
+      matched_width = kWellSupportedResolutions[i].width;
+      matched_height = kWellSupportedResolutions[i].height;
+    }
+  }
+  *width = matched_width;
+  *height = matched_height;
+}
+
+}
+
 namespace media {
 
 void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
@@ -52,6 +90,12 @@ void VideoCaptureDeviceMac::Allocate(int width, int height, int frame_rate,
   if (state_ != kIdle) {
     return;
   }
+
+  // QTKit can scale captured frame to any size requested, which would lead to
+  // undesired aspect ratio change. Tries to open the camera with a natively
+  // supported format and let the client to crop/pad the captured frames.
+  GetBestMatchSupportedResolution(&width, &height);
+
   observer_ = observer;
   NSString* deviceId =
       [NSString stringWithUTF8String:device_name_.unique_id.c_str()];
@@ -62,6 +106,11 @@ void VideoCaptureDeviceMac::Allocate(int width, int height, int frame_rate,
     SetErrorState("Could not open capture device.");
     return;
   }
+  if (frame_rate < kMinFrameRate)
+    frame_rate = kMinFrameRate;
+  else if (frame_rate > kMaxFrameRate)
+    frame_rate = kMaxFrameRate;
+
   if (![capture_device_ setCaptureHeight:height
                                    width:width
                                frameRate:frame_rate]) {
@@ -138,8 +187,8 @@ void VideoCaptureDeviceMac::ReceiveFrame(
     const uint8* video_frame,
     int video_frame_length,
     const VideoCaptureCapability& frame_info) {
-  observer_->OnIncomingCapturedFrame(video_frame, video_frame_length,
-                                     base::Time::Now());
+  observer_->OnIncomingCapturedFrame(
+      video_frame, video_frame_length, base::Time::Now(), 0, false, false);
 }
 
 void VideoCaptureDeviceMac::SetErrorState(const std::string& reason) {

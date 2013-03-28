@@ -9,7 +9,7 @@
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
@@ -50,6 +50,11 @@ class BASE_EXPORT ImportantFileWriter : public NonThreadSafe {
    protected:
     virtual ~DataSerializer() {}
   };
+
+  // Save |data| to |path| in an atomic manner (see the class comment above).
+  // Blocks and writes data on the current thread.
+  static bool WriteFileAtomically(const FilePath& path,
+                                  const std::string& data);
 
   // Initialize the writer.
   // |path| is the name of file to write.

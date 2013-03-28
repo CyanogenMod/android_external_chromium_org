@@ -45,10 +45,10 @@
   # anything to be done in this file (instead of a higher-level .gyp file).
   'targets': [
     {
-      'target_name': 'widevinecdmplugin',
+      'target_name': 'widevinecdmadapter',
       'type': 'none',
       'conditions': [
-        [ 'branding == "Chrome"', {
+        [ 'branding == "Chrome" and OS != "android" and OS != "ios"', {
           'dependencies': [
             '<(DEPTH)/ppapi/ppapi.gyp:ppapi_cpp',
             'widevine_cdm_version_h',
@@ -56,7 +56,7 @@
           ],
           'sources': [
             '<(DEPTH)/webkit/media/crypto/ppapi/cdm_wrapper.cc',
-            '<(DEPTH)/webkit/media/crypto/ppapi/content_decryption_module.h',
+            '<(DEPTH)/webkit/media/crypto/ppapi/cdm/content_decryption_module.h',
             '<(DEPTH)/webkit/media/crypto/ppapi/linked_ptr.h',
           ],
           'conditions': [
@@ -65,8 +65,6 @@
               'type': 'loadable_module',
               # Allow the plugin wrapper to find the CDM in the same directory.
               'ldflags': ['-Wl,-rpath=\$$ORIGIN'],
-            }],
-            [ 'chromeos == 1 and target_arch == "arm"', {
               'libraries': [
                 # Copied by widevine_cdm_binaries.
                 '<(PRODUCT_DIR)/libwidevinecdm.so',
@@ -79,6 +77,10 @@
               'type': 'loadable_module',
               'mac_bundle': 1,
               'product_extension': 'plugin',
+              'libraries': [
+                # Copied by widevine_cdm_binaries.
+                '<(PRODUCT_DIR)/libwidevinecdm.dylib',
+              ],
               'xcode_settings': {
                 'OTHER_LDFLAGS': [
                   # Not to strip important symbols by -Wl,-dead_strip.
@@ -86,6 +88,15 @@
                   '-Wl,-exported_symbol,_PPP_InitializeModule',
                   '-Wl,-exported_symbol,_PPP_ShutdownModule'
                 ]},
+              'copies': [
+                {
+                  'destination':
+                      '<(PRODUCT_DIR)/widevinecdmadapter.plugin/Contents/MacOS/',
+                  'files': [
+                    '<(PRODUCT_DIR)/libwidevinecdm.dylib',
+                  ]
+                }
+              ]
             }],
           ],
         }],

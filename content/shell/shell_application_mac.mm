@@ -17,7 +17,7 @@
 }
 
 - (void)sendEvent:(NSEvent*)event {
-  AutoReset<BOOL> scoper(&handlingSendEvent_, YES);
+  base::AutoReset<BOOL> scoper(&handlingSendEvent_, YES);
   [super sendEvent:event];
 }
 
@@ -33,7 +33,7 @@
                                   GURL("about:blank"),
                                   NULL,
                                   MSG_ROUTING_NONE,
-                                  NULL);
+                                  gfx::Size());
 }
 
 @end

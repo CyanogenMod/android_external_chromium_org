@@ -15,7 +15,6 @@
 
 #if defined(OS_ANDROID)
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/android/crash_dump_manager.h"
 #endif
 
 namespace content {
@@ -26,7 +25,7 @@ namespace extensions {
 class Extension;
 }
 
-class PrefService;
+class PrefRegistrySyncable;
 
 namespace chrome {
 
@@ -35,14 +34,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   ChromeContentBrowserClient();
   virtual ~ChromeContentBrowserClient();
 
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
   virtual content::BrowserMainParts* CreateBrowserMainParts(
       const content::MainFunctionParams& parameters) OVERRIDE;
-  virtual content::WebContentsView* OverrideCreateWebContentsView(
-      content::WebContents* web_contents,
-      content::RenderViewHostDelegateView** render_view_host_delegate_view)
-          OVERRIDE;
   virtual std::string GetStoragePartitionIdForSite(
       content::BrowserContext* browser_context,
       const GURL& site) OVERRIDE;
@@ -52,6 +47,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual void GetStoragePartitionConfigForSite(
       content::BrowserContext* browser_context,
       const GURL& site,
+      bool can_be_default,
       std::string* partition_domain,
       std::string* partition_name,
       bool* in_memory) OVERRIDE;
@@ -59,15 +55,24 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::WebContents* web_contents) OVERRIDE;
   virtual void RenderViewHostCreated(
       content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void GuestWebContentsCreated(
+      content::WebContents* guest_web_contents,
+      content::WebContents* embedder_web_contents) OVERRIDE;
   virtual void RenderProcessHostCreated(
       content::RenderProcessHost* host) OVERRIDE;
-  virtual void BrowserChildProcessHostCreated(
-      content::BrowserChildProcessHost* host) OVERRIDE;
-  virtual content::WebUIControllerFactory* GetWebUIControllerFactory() OVERRIDE;
   virtual bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
                                        const GURL& effective_url) OVERRIDE;
   virtual GURL GetEffectiveURL(content::BrowserContext* browser_context,
                                const GURL& url) OVERRIDE;
+  virtual std::vector<std::string> GetAdditionalWebUISchemes() OVERRIDE;
+  virtual net::URLRequestContextGetter* CreateRequestContext(
+      content::BrowserContext* browser_context,
+      content::ProtocolHandlerMap* protocol_handlers) OVERRIDE;
+  virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
+      content::BrowserContext* browser_context,
+      const base::FilePath& partition_path,
+      bool in_memory,
+      content::ProtocolHandlerMap* protocol_handlers) OVERRIDE;
   virtual bool IsHandledURL(const GURL& url) OVERRIDE;
   virtual bool IsSuitableHost(content::RenderProcessHost* process_host,
                               const GURL& url) OVERRIDE;
@@ -77,8 +82,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::SiteInstance* site_instance) OVERRIDE;
   virtual void SiteInstanceDeleting(content::SiteInstance* site_instance)
       OVERRIDE;
-  virtual bool ShouldSwapProcessesForNavigation(const GURL& current_url,
-                                                const GURL& new_url) OVERRIDE;
+  virtual bool ShouldSwapProcessesForNavigation(
+      content::SiteInstance* site_instance,
+      const GURL& current_url,
+      const GURL& new_url) OVERRIDE;
   virtual bool ShouldSwapProcessesForRedirect(
       content::ResourceContext* resource_context,
       const GURL& current_url,
@@ -107,13 +114,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
                               int render_process_id,
                               int render_view_id,
                               net::CookieOptions* options) OVERRIDE;
-  virtual bool AllowPluginLocalDataAccess(
-      const GURL& document_url,
-      const GURL& plugin_url,
-      content::ResourceContext* context) OVERRIDE;
-  virtual bool AllowPluginLocalDataSessionOnly(
-      const GURL& url,
-      content::ResourceContext* context) OVERRIDE;
   virtual bool AllowSaveLocalState(content::ResourceContext* context) OVERRIDE;
   virtual bool AllowWorkerDatabase(
       const GURL& url,
@@ -135,14 +135,13 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const GURL& url, content::ResourceContext* context) OVERRIDE;
   virtual content::QuotaPermissionContext*
       CreateQuotaPermissionContext() OVERRIDE;
-  virtual void OpenItem(const FilePath& path) OVERRIDE;
-  virtual void ShowItemInFolder(const FilePath& path) OVERRIDE;
   virtual void AllowCertificateError(
       int render_process_id,
       int render_view_id,
       int cert_error,
       const net::SSLInfo& ssl_info,
       const GURL& request_url,
+      ResourceType::Type resource_type,
       bool overridable,
       bool strict_enforcement,
       const base::Callback<void(bool)>& callback,
@@ -153,9 +152,11 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) OVERRIDE;
-  virtual void AddNewCertificate(
+  virtual void AddCertificate(
       net::URLRequest* request,
-      net::X509Certificate* cert,
+      net::CertificateMimeType cert_type,
+      const void* cert_data,
+      size_t cert_size,
       int render_process_id,
       int render_view_id) OVERRIDE;
   virtual content::MediaObserver* GetMediaObserver() OVERRIDE;
@@ -204,18 +205,21 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::BrowserURLHandler* handler) OVERRIDE;
   virtual void ClearCache(content::RenderViewHost* rvh) OVERRIDE;
   virtual void ClearCookies(content::RenderViewHost* rvh) OVERRIDE;
-  virtual FilePath GetDefaultDownloadDirectory() OVERRIDE;
+  virtual base::FilePath GetDefaultDownloadDirectory() OVERRIDE;
   virtual std::string GetDefaultDownloadName() OVERRIDE;
   virtual void DidCreatePpapiPlugin(
       content::BrowserPpapiHost* browser_host) OVERRIDE;
   virtual content::BrowserPpapiHost* GetExternalBrowserPpapiHost(
       int plugin_process_id) OVERRIDE;
+  virtual bool SupportsBrowserPlugin(content::BrowserContext* browser_context,
+                                     const GURL& site_url) OVERRIDE;
   virtual bool AllowPepperSocketAPI(
       content::BrowserContext* browser_context,
       const GURL& url,
       const content::SocketPermissionRequest& params) OVERRIDE;
-  virtual bool AllowPepperPrivateFileAPI() OVERRIDE;
-  virtual FilePath GetHyphenDictionaryDirectory() OVERRIDE;
+  virtual base::FilePath GetHyphenDictionaryDirectory() OVERRIDE;
+  virtual ui::SelectFilePolicy* CreateSelectFilePolicy(
+      content::WebContents* web_contents) OVERRIDE;
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   virtual void GetAdditionalMappedFilesForChildProcess(
@@ -225,6 +229,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
 #endif
 #if defined(OS_WIN)
   virtual const wchar_t* GetResourceDllName() OVERRIDE;
+  virtual void PreSpawnRenderer(sandbox::TargetPolicy* policy,
+                                bool* success) OVERRIDE;
 #endif
 #if defined(USE_NSS)
   virtual
@@ -239,12 +245,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
  private:
   // Sets io_thread_application_locale_ to the given value.
   void SetApplicationLocaleOnIOThread(const std::string& locale);
-
-#if defined(OS_ANDROID)
-  void InitCrashDumpManager();
-
-  scoped_ptr<CrashDumpManager> crash_dump_manager_;
-#endif
 
   // Set of origins that can use TCP/UDP private APIs from NaCl.
   std::set<std::string> allowed_socket_origins_;

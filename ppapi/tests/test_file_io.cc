@@ -68,7 +68,8 @@ int32_t ReadEntireFile(PP_Instance instance,
   int32_t read_offset = offset;
 
   for (;;) {
-    int32_t rv = file_io->Read(read_offset, buf, sizeof(buf), callback);
+    int32_t rv = file_io->Read(read_offset, buf, sizeof(buf),
+                               callback.GetCallback());
     if (rv == PP_OK_COMPLETIONPENDING)
       rv = callback.WaitForResult();
     if (rv < 0)
@@ -77,6 +78,29 @@ int32_t ReadEntireFile(PP_Instance instance,
       break;
     read_offset += rv;
     data->append(buf, rv);
+  }
+
+  return PP_OK;
+}
+
+int32_t ReadToArrayEntireFile(PP_Instance instance,
+                              pp::FileIO* file_io,
+                              int32_t offset,
+                              std::string* data,
+                              bool force_async) {
+  TestCompletionCallbackWithOutput< std::vector<char> > callback(
+      instance, force_async);
+
+  for (;;) {
+    callback.WaitForResult(file_io->Read(offset, 256, callback));
+    int32_t rv = callback.result();
+    if (rv < 0)
+      return rv;
+    if (rv == 0)
+      break;
+    assert(rv == static_cast<int32_t>(callback.output().size()));
+    offset += rv;
+    data->append(callback.output().begin(), callback.output().end());
   }
 
   return PP_OK;
@@ -93,7 +117,8 @@ int32_t WriteEntireBuffer(PP_Instance instance,
 
   while (write_offset < offset + size) {
     int32_t rv = file_io->Write(write_offset, &buf[write_offset - offset],
-                                size - write_offset + offset, callback);
+                                size - write_offset + offset,
+                                callback.GetCallback());
     if (rv == PP_OK_COMPLETIONPENDING)
       rv = callback.WaitForResult();
     if (rv < 0)
@@ -114,7 +139,9 @@ bool TestFileIO::Init() {
 
 void TestFileIO::RunTests(const std::string& filter) {
   RUN_TEST_FORCEASYNC_AND_NOT(Open, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(OpenDirectory, filter);
   RUN_TEST_FORCEASYNC_AND_NOT(ReadWriteSetLength, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(ReadToArrayWriteSetLength, filter);
   RUN_TEST_FORCEASYNC_AND_NOT(TouchQuery, filter);
   RUN_TEST_FORCEASYNC_AND_NOT(AbortCalls, filter);
   RUN_TEST_FORCEASYNC_AND_NOT(ParallelReads, filter);
@@ -132,7 +159,7 @@ std::string TestFileIO::TestOpen() {
 
   pp::FileSystem file_system(instance_, PP_FILESYSTEMTYPE_LOCALTEMPORARY);
   pp::FileRef file_ref(file_system, "/file_open");
-  int32_t rv = file_system.Open(1024, callback);
+  int32_t rv = file_system.Open(1024, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileSystem::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -225,12 +252,49 @@ std::string TestFileIO::TestOpen() {
   PASS();
 }
 
+std::string TestFileIO::TestOpenDirectory() {
+  TestCompletionCallback callback(instance_->pp_instance(), force_async_);
+
+  pp::FileSystem file_system(instance_, PP_FILESYSTEMTYPE_LOCALTEMPORARY);
+  int32_t rv = file_system.Open(1024, callback.GetCallback());
+  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
+    return ReportError("FileSystem::Open force_async", rv);
+  if (rv == PP_OK_COMPLETIONPENDING)
+    rv = callback.WaitForResult();
+  if (rv != PP_OK)
+    return ReportError("FileSystem::Open", rv);
+
+  // Make a directory.
+  pp::FileRef dir_ref(file_system, "/test_dir_open_directory");
+  rv = dir_ref.MakeDirectory(callback.GetCallback());
+  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
+    return ReportError("FileSystem::MakeDirectory force_async", rv);
+  if (rv == PP_OK_COMPLETIONPENDING)
+    rv = callback.WaitForResult();
+  if (rv != PP_OK)
+    return ReportError("FileSystem::MakeDirectory", rv);
+
+  // Open the directory. This is expected to fail since directories cannot be
+  // opened.
+  pp::FileIO file_io(instance_);
+  rv = file_io.Open(dir_ref, PP_FILEOPENFLAG_READ, callback.GetCallback());
+  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
+    return ReportError("FileIO::Open force_async", rv);
+  if (rv == PP_OK_COMPLETIONPENDING)
+    rv = callback.WaitForResult();
+  // Check for failing open operation for the directory.
+  if (rv != PP_ERROR_NOTAFILE)
+    return ReportError("FileIO::Open", rv);
+
+  PASS();
+}
+
 std::string TestFileIO::TestReadWriteSetLength() {
   TestCompletionCallback callback(instance_->pp_instance(), force_async_);
 
   pp::FileSystem file_system(instance_, PP_FILESYSTEMTYPE_LOCALTEMPORARY);
   pp::FileRef file_ref(file_system, "/file_read_write_setlength");
-  int32_t rv = file_system.Open(1024, callback);
+  int32_t rv = file_system.Open(1024, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileSystem::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -244,7 +308,7 @@ std::string TestFileIO::TestReadWriteSetLength() {
                     PP_FILEOPENFLAG_TRUNCATE |
                     PP_FILEOPENFLAG_READ |
                     PP_FILEOPENFLAG_WRITE,
-                    callback);
+                    callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -260,7 +324,7 @@ std::string TestFileIO::TestReadWriteSetLength() {
   // Check for failing read operation.
   char buf[256];
   rv = file_io.Read(0, buf, -1,  // negative number of bytes to read
-                    callback);
+                    callback.GetCallback());
   if (rv == PP_OK_COMPLETIONPENDING)
     rv = callback.WaitForResult();
   if (rv != PP_ERROR_FAILED)
@@ -275,7 +339,7 @@ std::string TestFileIO::TestReadWriteSetLength() {
     return ReportMismatch("FileIO::Read", read_buffer, "test_test");
 
   // Truncate the file.
-  rv = file_io.SetLength(4, callback);
+  rv = file_io.SetLength(4, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::SetLength force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -314,7 +378,7 @@ std::string TestFileIO::TestReadWriteSetLength() {
                           std::string("test\0\0\0\0test", 12));
 
   // Extend the file.
-  rv = file_io.SetLength(16, callback);
+  rv = file_io.SetLength(16, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::SetLength force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -357,11 +421,155 @@ std::string TestFileIO::TestReadWriteSetLength() {
   PASS();
 }
 
+// This is basically a copy of TestReadWriteSetLength, but with the new Read
+// API.  With this test case, we can make sure the two Read's have the same
+// behavior.
+std::string TestFileIO::TestReadToArrayWriteSetLength() {
+  TestCompletionCallback callback(instance_->pp_instance(), force_async_);
+
+  pp::FileSystem file_system(instance_, PP_FILESYSTEMTYPE_LOCALTEMPORARY);
+  pp::FileRef file_ref(file_system, "/file_read_write_setlength");
+  int32_t rv = file_system.Open(1024, callback.GetCallback());
+  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
+    return ReportError("FileSystem::Open force_async", rv);
+  if (rv == PP_OK_COMPLETIONPENDING)
+    rv = callback.WaitForResult();
+  if (rv != PP_OK)
+    return ReportError("FileSystem::Open", rv);
+
+  pp::FileIO file_io(instance_);
+  rv = file_io.Open(file_ref,
+                    PP_FILEOPENFLAG_CREATE |
+                    PP_FILEOPENFLAG_TRUNCATE |
+                    PP_FILEOPENFLAG_READ |
+                    PP_FILEOPENFLAG_WRITE,
+                    callback.GetCallback());
+  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
+    return ReportError("FileIO::Open force_async", rv);
+  if (rv == PP_OK_COMPLETIONPENDING)
+    rv = callback.WaitForResult();
+  if (rv != PP_OK)
+    return ReportError("FileIO::Open", rv);
+
+  // Write something to the file.
+  rv = WriteEntireBuffer(instance_->pp_instance(), &file_io, 0, "test_test");
+  if (rv != PP_OK)
+    return ReportError("FileIO::Write", rv);
+
+  TestCompletionCallbackWithOutput< std::vector<char> > callback2(
+      instance_->pp_instance(), force_async_);
+  // Check for failing read operation.
+  callback2.WaitForResult(
+      file_io.Read(0, -1,  // negative number of bytes to read
+                   callback2));
+  CHECK_CALLBACK_BEHAVIOR(callback2);
+  if (callback2.result() != PP_ERROR_FAILED)
+    return ReportError("FileIO::Read", callback2.result());
+
+  // Read the entire file.
+  std::string read_buffer;
+  read_buffer.reserve(10);
+  rv = ReadToArrayEntireFile(instance_->pp_instance(), &file_io, 0,
+                             &read_buffer, force_async_);
+  if (rv != PP_OK)
+    return ReportError("FileIO::Read", rv);
+  if (read_buffer != "test_test")
+    return ReportMismatch("FileIO::Read", read_buffer, "test_test");
+
+  // Truncate the file.
+  rv = file_io.SetLength(4, callback.GetCallback());
+  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
+    return ReportError("FileIO::SetLength force_async", rv);
+  if (rv == PP_OK_COMPLETIONPENDING)
+    rv = callback.WaitForResult();
+  if (rv != PP_OK)
+    return ReportError("FileIO::SetLength", rv);
+
+  // Check the file contents.
+  read_buffer.clear();
+  rv = ReadToArrayEntireFile(instance_->pp_instance(), &file_io, 0,
+                             &read_buffer, force_async_);
+  if (rv != PP_OK)
+    return ReportError("FileIO::Read", rv);
+  if (read_buffer != "test")
+    return ReportMismatch("FileIO::Read", read_buffer, "test");
+
+  // Try to read past the end of the file.
+  read_buffer.clear();
+  rv = ReadToArrayEntireFile(instance_->pp_instance(), &file_io, 100,
+                             &read_buffer, force_async_);
+  if (rv != PP_OK)
+    return ReportError("FileIO::Read", rv);
+  if (!read_buffer.empty())
+    return ReportMismatch("FileIO::Read", read_buffer, "<empty string>");
+
+  // Write past the end of the file. The file should be zero-padded.
+  rv = WriteEntireBuffer(instance_->pp_instance(), &file_io, 8, "test");
+  if (rv != PP_OK)
+    return ReportError("FileIO::Write", rv);
+
+  // Check the contents of the file.
+  read_buffer.clear();
+  rv = ReadToArrayEntireFile(instance_->pp_instance(), &file_io, 0,
+                             &read_buffer, force_async_);
+  if (rv != PP_OK)
+    return ReportError("FileIO::Read", rv);
+  if (read_buffer != std::string("test\0\0\0\0test", 12))
+    return ReportMismatch("FileIO::Read", read_buffer,
+                          std::string("test\0\0\0\0test", 12));
+
+  // Extend the file.
+  rv = file_io.SetLength(16, callback.GetCallback());
+  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
+    return ReportError("FileIO::SetLength force_async", rv);
+  if (rv == PP_OK_COMPLETIONPENDING)
+    rv = callback.WaitForResult();
+  if (rv != PP_OK)
+    return ReportError("FileIO::SetLength", rv);
+
+  // Check the contents of the file.
+  read_buffer.clear();
+  rv = ReadToArrayEntireFile(instance_->pp_instance(), &file_io, 0,
+                             &read_buffer, force_async_);
+  if (rv != PP_OK)
+    return ReportError("FileIO::Read", rv);
+  if (read_buffer != std::string("test\0\0\0\0test\0\0\0\0", 16))
+    return ReportMismatch("FileIO::Read", read_buffer,
+                          std::string("test\0\0\0\0test\0\0\0\0", 16));
+
+  // Write in the middle of the file.
+  rv = WriteEntireBuffer(instance_->pp_instance(), &file_io, 4, "test");
+  if (rv != PP_OK)
+    return ReportError("FileIO::Write", rv);
+
+  // Check the contents of the file.
+  read_buffer.clear();
+  rv = ReadToArrayEntireFile(instance_->pp_instance(), &file_io, 0,
+                             &read_buffer, force_async_);
+  if (rv != PP_OK)
+    return ReportError("FileIO::Read", rv);
+  if (read_buffer != std::string("testtesttest\0\0\0\0", 16))
+    return ReportMismatch("FileIO::Read", read_buffer,
+                          std::string("testtesttest\0\0\0\0", 16));
+
+  // Read from the middle of the file.
+  read_buffer.clear();
+  rv = ReadToArrayEntireFile(instance_->pp_instance(), &file_io, 4,
+                             &read_buffer, force_async_);
+  if (rv != PP_OK)
+    return ReportError("FileIO::Read", rv);
+  if (read_buffer != std::string("testtest\0\0\0\0", 12))
+    return ReportMismatch("FileIO::Read", read_buffer,
+                          std::string("testtest\0\0\0\0", 12));
+
+  PASS();
+}
+
 std::string TestFileIO::TestTouchQuery() {
   TestCompletionCallback callback(instance_->pp_instance(), force_async_);
 
   pp::FileSystem file_system(instance_, PP_FILESYSTEMTYPE_LOCALTEMPORARY);
-  int32_t rv = file_system.Open(1024, callback);
+  int32_t rv = file_system.Open(1024, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileSystem::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -375,7 +583,7 @@ std::string TestFileIO::TestTouchQuery() {
                     PP_FILEOPENFLAG_CREATE |
                     PP_FILEOPENFLAG_TRUNCATE |
                     PP_FILEOPENFLAG_WRITE,
-                    callback);
+                    callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -384,7 +592,7 @@ std::string TestFileIO::TestTouchQuery() {
     return ReportError("FileIO::Open", rv);
 
   // Write some data to have a non-zero file size.
-  rv = file_io.Write(0, "test", 4, callback);
+  rv = file_io.Write(0, "test", 4, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Write force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -396,7 +604,8 @@ std::string TestFileIO::TestTouchQuery() {
   // last_modified_time's granularity is 2 seconds
   const PP_Time last_access_time = 123 * 24 * 3600.0;
   const PP_Time last_modified_time = 246.0;
-  rv = file_io.Touch(last_access_time, last_modified_time, callback);
+  rv = file_io.Touch(last_access_time, last_modified_time,
+                     callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Touch force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -405,7 +614,7 @@ std::string TestFileIO::TestTouchQuery() {
     return ReportError("FileIO::Touch", rv);
 
   PP_FileInfo info;
-  rv = file_io.Query(&info, callback);
+  rv = file_io.Query(&info, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Query force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -421,7 +630,7 @@ std::string TestFileIO::TestTouchQuery() {
     return "FileIO::Query() has returned bad data.";
 
   // Call |Query()| again, to make sure it works a second time.
-  rv = file_io.Query(&info, callback);
+  rv = file_io.Query(&info, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Query force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -437,7 +646,7 @@ std::string TestFileIO::TestAbortCalls() {
 
   pp::FileSystem file_system(instance_, PP_FILESYSTEMTYPE_LOCALTEMPORARY);
   pp::FileRef file_ref(file_system, "/file_abort_calls");
-  int32_t rv = file_system.Open(1024, callback);
+  int32_t rv = file_system.Open(1024, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileSystem::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -450,7 +659,7 @@ std::string TestFileIO::TestAbortCalls() {
     pp::FileIO file_io(instance_);
     rv = file_io.Open(file_ref,
                       PP_FILEOPENFLAG_CREATE | PP_FILEOPENFLAG_WRITE,
-                      callback);
+                      callback.GetCallback());
     if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
       return ReportError("FileIO::Open force_async", rv);
     if (rv == PP_OK_COMPLETIONPENDING)
@@ -470,8 +679,8 @@ std::string TestFileIO::TestAbortCalls() {
   // Abort |Open()|.
   {
     callback.reset_run_count();
-    rv = pp::FileIO(instance_)
-        .Open(file_ref, PP_FILEOPENFLAG_READ,callback);
+    rv = pp::FileIO(instance_).Open(file_ref, PP_FILEOPENFLAG_READ,
+                                    callback.GetCallback());
     if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
       return ReportError("FileIO::Open force_async", rv);
     if (callback.run_count() > 0)
@@ -490,7 +699,7 @@ std::string TestFileIO::TestAbortCalls() {
     PP_FileInfo info = { 0 };
     {
       pp::FileIO file_io(instance_);
-      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_READ, callback);
+      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_READ, callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Open force_async", rv);
       if (rv == PP_OK_COMPLETIONPENDING)
@@ -499,7 +708,7 @@ std::string TestFileIO::TestAbortCalls() {
         return ReportError("FileIO::Open", rv);
 
       callback.reset_run_count();
-      rv = file_io.Query(&info, callback);
+      rv = file_io.Query(&info, callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Query force_async", rv);
     }  // Destroy |file_io|.
@@ -521,7 +730,8 @@ std::string TestFileIO::TestAbortCalls() {
   {
     {
       pp::FileIO file_io(instance_);
-      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_WRITE, callback);
+      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_WRITE,
+                        callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Open force_async", rv);
       if (rv == PP_OK_COMPLETIONPENDING)
@@ -530,7 +740,7 @@ std::string TestFileIO::TestAbortCalls() {
         return ReportError("FileIO::Open", rv);
 
       callback.reset_run_count();
-      rv = file_io.Touch(0, 0, callback);
+      rv = file_io.Touch(0, 0, callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Touch force_async", rv);
     }  // Destroy |file_io|.
@@ -548,7 +758,7 @@ std::string TestFileIO::TestAbortCalls() {
     char buf[3] = { 0 };
     {
       pp::FileIO file_io(instance_);
-      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_READ, callback);
+      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_READ, callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Open force_async", rv);
       if (rv == PP_OK_COMPLETIONPENDING)
@@ -557,7 +767,7 @@ std::string TestFileIO::TestAbortCalls() {
         return ReportError("FileIO::Open", rv);
 
       callback.reset_run_count();
-      rv = file_io.Read(0, buf, sizeof(buf), callback);
+      rv = file_io.Read(0, buf, sizeof(buf), callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Read force_async", rv);
     }  // Destroy |file_io|.
@@ -580,7 +790,7 @@ std::string TestFileIO::TestAbortCalls() {
     char buf[3] = { 0 };
     {
       pp::FileIO file_io(instance_);
-      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_READ, callback);
+      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_READ, callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Open force_async", rv);
       if (rv == PP_OK_COMPLETIONPENDING)
@@ -589,7 +799,7 @@ std::string TestFileIO::TestAbortCalls() {
         return ReportError("FileIO::Open", rv);
 
       callback.reset_run_count();
-      rv = file_io.Write(0, buf, sizeof(buf), callback);
+      rv = file_io.Write(0, buf, sizeof(buf), callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Write force_async", rv);
     }  // Destroy |file_io|.
@@ -606,7 +816,7 @@ std::string TestFileIO::TestAbortCalls() {
   {
     {
       pp::FileIO file_io(instance_);
-      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_READ, callback);
+      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_READ, callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Open force_async", rv);
       if (rv == PP_OK_COMPLETIONPENDING)
@@ -615,7 +825,7 @@ std::string TestFileIO::TestAbortCalls() {
         return ReportError("FileIO::Open", rv);
 
       callback.reset_run_count();
-      rv = file_io.SetLength(3, callback);
+      rv = file_io.SetLength(3, callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::SetLength force_async", rv);
     }  // Destroy |file_io|.
@@ -632,7 +842,7 @@ std::string TestFileIO::TestAbortCalls() {
   {
     {
       pp::FileIO file_io(instance_);
-      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_READ, callback);
+      rv = file_io.Open(file_ref, PP_FILEOPENFLAG_READ, callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Open force_async", rv);
       if (rv == PP_OK_COMPLETIONPENDING)
@@ -641,7 +851,7 @@ std::string TestFileIO::TestAbortCalls() {
         return ReportError("FileIO::Open", rv);
 
       callback.reset_run_count();
-      rv = file_io.Flush(callback);
+      rv = file_io.Flush(callback.GetCallback());
       if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Flush force_async", rv);
     }  // Destroy |file_io|.
@@ -664,7 +874,7 @@ std::string TestFileIO::TestParallelReads() {
   TestCompletionCallback callback(instance_->pp_instance(), force_async_);
   pp::FileSystem file_system(instance_, PP_FILESYSTEMTYPE_LOCALTEMPORARY);
   pp::FileRef file_ref(file_system, "/file_parallel_reads");
-  int32_t rv = file_system.Open(1024, callback);
+  int32_t rv = file_system.Open(1024, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileSystem::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -678,7 +888,7 @@ std::string TestFileIO::TestParallelReads() {
                     PP_FILEOPENFLAG_TRUNCATE |
                     PP_FILEOPENFLAG_READ |
                     PP_FILEOPENFLAG_WRITE,
-                    callback);
+                    callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -715,13 +925,15 @@ std::string TestFileIO::TestParallelReads() {
   int32_t rv_2 = PP_OK;
   while (size_1 >= 0 && size_2 >= 0 && size_1 + size_2 > 0) {
     if (size_1 > 0) {
-      rv_1 = file_io.Read(read_offset_1, buf_1, size_1, callback_1);
+      rv_1 = file_io.Read(read_offset_1, buf_1, size_1,
+                          callback_1.GetCallback());
       if (rv_1 != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Read", rv_1);
     }
 
     if (size_2 > 0) {
-      rv_2 = file_io.Read(read_offset_2, buf_2, size_2, callback_2);
+      rv_2 = file_io.Read(read_offset_2, buf_2, size_2,
+                          callback_2.GetCallback());
       if (rv_2 != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Read", rv_2);
     }
@@ -770,7 +982,7 @@ std::string TestFileIO::TestParallelWrites() {
   TestCompletionCallback callback(instance_->pp_instance(), force_async_);
   pp::FileSystem file_system(instance_, PP_FILESYSTEMTYPE_LOCALTEMPORARY);
   pp::FileRef file_ref(file_system, "/file_parallel_writes");
-  int32_t rv = file_system.Open(1024, callback);
+  int32_t rv = file_system.Open(1024, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileSystem::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -784,7 +996,7 @@ std::string TestFileIO::TestParallelWrites() {
                     PP_FILEOPENFLAG_TRUNCATE |
                     PP_FILEOPENFLAG_READ |
                     PP_FILEOPENFLAG_WRITE,
-                    callback);
+                    callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -807,13 +1019,15 @@ std::string TestFileIO::TestParallelWrites() {
   int32_t rv_2 = PP_OK;
   while (size_1 >= 0 && size_2 >= 0 && size_1 + size_2 > 0) {
     if (size_1 > 0) {
-      rv_1 = file_io.Write(write_offset_1, buf_1, size_1, callback_1);
+      rv_1 = file_io.Write(write_offset_1, buf_1, size_1,
+                           callback_1.GetCallback());
       if (rv_1 != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Write", rv_1);
     }
 
     if (size_2 > 0) {
-      rv_2 = file_io.Write(write_offset_2, buf_2, size_2, callback_2);
+      rv_2 = file_io.Write(write_offset_2, buf_2, size_2,
+                           callback_2.GetCallback());
       if (rv_2 != PP_OK_COMPLETIONPENDING)
         return ReportError("FileIO::Write", rv_2);
     }
@@ -860,7 +1074,7 @@ std::string TestFileIO::TestNotAllowMixedReadWrite() {
 
   pp::FileSystem file_system(instance_, PP_FILESYSTEMTYPE_LOCALTEMPORARY);
   pp::FileRef file_ref(file_system, "/file_not_allow_mixed_read_write");
-  int32_t rv = file_system.Open(1024, callback);
+  int32_t rv = file_system.Open(1024, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileSystem::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -874,7 +1088,7 @@ std::string TestFileIO::TestNotAllowMixedReadWrite() {
                     PP_FILEOPENFLAG_TRUNCATE |
                     PP_FILEOPENFLAG_READ |
                     PP_FILEOPENFLAG_WRITE,
-                    callback);
+                    callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -887,7 +1101,7 @@ std::string TestFileIO::TestNotAllowMixedReadWrite() {
   int32_t write_offset_1 = 0;
   const char* buf_1 = "mnopqrstuvw";
   int32_t rv_1 = file_io.Write(write_offset_1, buf_1, strlen(buf_1),
-                               callback_1);
+                               callback_1.GetCallback());
   if (rv_1 != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Write", rv_1);
 
@@ -895,7 +1109,7 @@ std::string TestFileIO::TestNotAllowMixedReadWrite() {
   int32_t read_offset_2 = 4;
   char buf_2[3];
   int32_t rv_2 = file_io.Read(read_offset_2, buf_2, sizeof(buf_2),
-                              callback_2);
+                              callback_2.GetCallback());
   if (force_async_ && rv_2 != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Read force_async", rv_2);
   if (rv_2 == PP_OK_COMPLETIONPENDING)
@@ -905,11 +1119,12 @@ std::string TestFileIO::TestNotAllowMixedReadWrite() {
   callback_1.WaitForResult();
 
   // Cannot query while a write is pending.
-  rv_1 = file_io.Write(write_offset_1, buf_1, strlen(buf_1), callback_1);
+  rv_1 = file_io.Write(write_offset_1, buf_1, strlen(buf_1),
+                       callback_1.GetCallback());
   ASSERT_EQ(PP_OK_COMPLETIONPENDING, rv_1);
   TestCompletionCallback callback_3(instance_->pp_instance(), force_async_);
   PP_FileInfo info;
-  int32_t rv_3 = file_io.Query(&info, callback_3);
+  int32_t rv_3 = file_io.Query(&info, callback_3.GetCallback());
   if (rv_3 == PP_OK_COMPLETIONPENDING)
     rv_3 = callback_3.WaitForResult();
   if (rv_3 != PP_ERROR_INPROGRESS)
@@ -917,10 +1132,11 @@ std::string TestFileIO::TestNotAllowMixedReadWrite() {
   callback_1.WaitForResult();
 
   // Cannot touch while a write is pending.
-  rv_1 = file_io.Write(write_offset_1, buf_1, strlen(buf_1), callback_1);
+  rv_1 = file_io.Write(write_offset_1, buf_1, strlen(buf_1),
+                       callback_1.GetCallback());
   ASSERT_EQ(PP_OK_COMPLETIONPENDING, rv_1);
   TestCompletionCallback callback_4(instance_->pp_instance(), force_async_);
-  int32_t rv_4 = file_io.Touch(1234.0, 5678.0, callback_4);
+  int32_t rv_4 = file_io.Touch(1234.0, 5678.0, callback_4.GetCallback());
   if (rv_4 == PP_OK_COMPLETIONPENDING)
     rv_4 = callback_4.WaitForResult();
   if (rv_4 != PP_ERROR_INPROGRESS)
@@ -928,10 +1144,11 @@ std::string TestFileIO::TestNotAllowMixedReadWrite() {
   callback_1.WaitForResult();
 
   // Cannot set length while a write is pending.
-  rv_1 = file_io.Write(write_offset_1, buf_1, strlen(buf_1), callback_1);
+  rv_1 = file_io.Write(write_offset_1, buf_1, strlen(buf_1),
+                       callback_1.GetCallback());
   ASSERT_EQ(PP_OK_COMPLETIONPENDING, rv_1);
   TestCompletionCallback callback_5(instance_->pp_instance(), force_async_);
-  int32_t rv_5 = file_io.SetLength(123, callback_5);
+  int32_t rv_5 = file_io.SetLength(123, callback_5.GetCallback());
   if (rv_5 == PP_OK_COMPLETIONPENDING)
     rv_5 = callback_5.WaitForResult();
   if (rv_5 != PP_ERROR_INPROGRESS)
@@ -946,7 +1163,7 @@ std::string TestFileIO::TestWillWriteWillSetLength() {
 
   pp::FileSystem file_system(instance_, PP_FILESYSTEMTYPE_LOCALTEMPORARY);
   pp::FileRef file_ref(file_system, "/file_will_write");
-  int32_t rv = file_system.Open(1024, callback);
+  int32_t rv = file_system.Open(1024, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileSystem::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -960,7 +1177,7 @@ std::string TestFileIO::TestWillWriteWillSetLength() {
                     PP_FILEOPENFLAG_TRUNCATE |
                     PP_FILEOPENFLAG_READ |
                     PP_FILEOPENFLAG_WRITE,
-                    callback);
+                    callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -985,7 +1202,7 @@ std::string TestFileIO::TestWillWriteWillSetLength() {
   // Calling WillWrite.
   rv = trusted->WillWrite(
       file_io.pp_resource(), 0, 9,
-      static_cast<pp::CompletionCallback>(callback).pp_completion_callback());
+      callback.GetCallback().pp_completion_callback());
   if (rv == PP_OK_COMPLETIONPENDING)
     rv = callback.WaitForResult();
   if (rv != 9)
@@ -1006,14 +1223,14 @@ std::string TestFileIO::TestWillWriteWillSetLength() {
   // Calling WillSetLength.
   rv = trusted->WillSetLength(
       file_io.pp_resource(), 4,
-      static_cast<pp::CompletionCallback>(callback).pp_completion_callback());
+      callback.GetCallback().pp_completion_callback());
   if (rv == PP_OK_COMPLETIONPENDING)
     rv = callback.WaitForResult();
   if (rv != PP_OK)
     return ReportError("WillSetLength", rv);
 
   // Calling actual SetLength.
-  rv = file_io.SetLength(4, callback);
+  rv = file_io.SetLength(4, callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::SetLength force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -1061,7 +1278,7 @@ std::string TestFileIO::MatchOpenExpectations(pp::FileSystem* file_system,
 
   // Setup files for test.
   {
-    int32_t rv = existent_file_ref.Delete(callback);
+    int32_t rv = existent_file_ref.Delete(callback.GetCallback());
     if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
       return ReportError("FileRef::Delete force_async", rv);
     if (rv == PP_OK_COMPLETIONPENDING)
@@ -1069,7 +1286,7 @@ std::string TestFileIO::MatchOpenExpectations(pp::FileSystem* file_system,
     if (rv != PP_OK && rv != PP_ERROR_FILENOTFOUND)
       return ReportError("FileRef::Delete", rv);
 
-    rv = nonexistent_file_ref.Delete(callback);
+    rv = nonexistent_file_ref.Delete(callback.GetCallback());
     if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
       return ReportError("FileRef::Delete force_async", rv);
     if (rv == PP_OK_COMPLETIONPENDING)
@@ -1080,7 +1297,7 @@ std::string TestFileIO::MatchOpenExpectations(pp::FileSystem* file_system,
     pp::FileIO existent_file_io(instance_);
     rv = existent_file_io.Open(existent_file_ref,
                                PP_FILEOPENFLAG_CREATE | PP_FILEOPENFLAG_WRITE,
-                               callback);
+                               callback.GetCallback());
     if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
       return ReportError("FileIO::Open force_async", rv);
     if (rv == PP_OK_COMPLETIONPENDING)
@@ -1095,7 +1312,8 @@ std::string TestFileIO::MatchOpenExpectations(pp::FileSystem* file_system,
   }
 
   pp::FileIO existent_file_io(instance_);
-  int32_t rv = existent_file_io.Open(existent_file_ref, open_flags, callback);
+  int32_t rv = existent_file_io.Open(existent_file_ref, open_flags,
+                                     callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)
@@ -1107,7 +1325,7 @@ std::string TestFileIO::MatchOpenExpectations(pp::FileSystem* file_system,
 
   if (!invalid_combination && open_if_exists) {
     PP_FileInfo info;
-    rv = existent_file_io.Query(&info, callback);
+    rv = existent_file_io.Query(&info, callback.GetCallback());
     if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
       return ReportError("FileIO::Query force_async", rv);
     if (rv == PP_OK_COMPLETIONPENDING)
@@ -1120,7 +1338,8 @@ std::string TestFileIO::MatchOpenExpectations(pp::FileSystem* file_system,
   }
 
   pp::FileIO nonexistent_file_io(instance_);
-  rv = nonexistent_file_io.Open(nonexistent_file_ref, open_flags, callback);
+  rv = nonexistent_file_io.Open(nonexistent_file_ref, open_flags,
+                                callback.GetCallback());
   if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
     return ReportError("FileIO::Open force_async", rv);
   if (rv == PP_OK_COMPLETIONPENDING)

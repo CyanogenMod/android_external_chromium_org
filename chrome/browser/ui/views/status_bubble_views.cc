@@ -11,7 +11,7 @@
 #include "base/message_loop.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -21,13 +21,14 @@
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/linear_animation.h"
-#include "ui/base/native_theme/native_theme.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/text_elider.h"
+#include "ui/base/theme_provider.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/scrollbar/native_scroll_bar.h"
 #include "ui/views/widget/root_view.h"
@@ -155,10 +156,10 @@ class StatusBubbleViews::StatusView : public views::Label,
   // Animation functions.
   double GetCurrentOpacity();
   void SetOpacity(double opacity);
-  void AnimateToState(double state);
-  void AnimationEnded(const Animation* animation);
+  virtual void AnimateToState(double state) OVERRIDE;
+  virtual void AnimationEnded(const Animation* animation) OVERRIDE;
 
-  virtual void OnPaint(gfx::Canvas* canvas);
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
   BubbleStage stage_;
   BubbleStyle style_;
@@ -347,7 +348,8 @@ void StatusBubbleViews::StatusView::OnPaint(gfx::Canvas* canvas) {
   SkPaint paint;
   paint.setStyle(SkPaint::kFill_Style);
   paint.setAntiAlias(true);
-  SkColor toolbar_color = theme_service_->GetColor(ThemeService::COLOR_TOOLBAR);
+  SkColor toolbar_color = theme_service_->GetColor(
+      ThemeProperties::COLOR_TOOLBAR);
   paint.setColor(toolbar_color);
 
   gfx::Rect popup_bounds = popup_->GetWindowBoundsInScreen();
@@ -442,7 +444,7 @@ void StatusBubbleViews::StatusView::OnPaint(gfx::Canvas* canvas) {
                         std::max(0, text_height));
   body_bounds.set_x(GetMirroredXForRect(body_bounds));
   SkColor text_color =
-      theme_service_->GetColor(ThemeService::COLOR_TAB_TEXT);
+      theme_service_->GetColor(ThemeProperties::COLOR_TAB_TEXT);
 
   // DrawStringInt doesn't handle alpha, so we'll do the blending ourselves.
   text_color = SkColorSetARGB(
@@ -487,8 +489,8 @@ class StatusBubbleViews::StatusViewExpander : public ui::LinearAnimation,
   // Animation functions.
   int GetCurrentBubbleWidth();
   void SetBubbleWidth(int width);
-  void AnimateToState(double state);
-  void AnimationEnded(const ui::Animation* animation);
+  virtual void AnimateToState(double state) OVERRIDE;
+  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
 
   // Manager that owns us.
   StatusBubbleViews* status_bubble_;
@@ -574,7 +576,8 @@ void StatusBubbleViews::Init() {
     params.transparent = true;
     params.accept_events = false;
     params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    params.parent_widget = frame;
+    params.parent = frame->GetNativeView();
+    params.context = frame->GetNativeView();
     popup_->Init(params);
     // We do our own animation and don't want any from the system.
     popup_->SetVisibilityChangedAnimationsEnabled(false);

@@ -9,21 +9,21 @@
 
 #include "base/json/json_reader.h"
 #include "base/string16.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/json_schema_validator.h"
+#include "chrome/common/json_schema/json_schema_validator.h"
 #include "googleurl/src/gurl.h"
 #include "grit/common_resources.h"
 #include "grit/generated_resources.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/size.h"
@@ -85,7 +85,7 @@ void AddInstallIcon(const WebElement& link,
   icons->push_back(icon_info);
 }
 
-}
+}  // namespace
 
 const char WebApplicationInfo::kInvalidDefinitionURL[] =
     "Invalid application definition URL. Must be a valid relative URL or "
@@ -288,16 +288,16 @@ bool ParseWebAppFromDefinitionFile(Value* definition_value,
   std::vector<WebApplicationInfo::IconInfo> icons;
   DictionaryValue* icons_value = NULL;
   if (definition->GetDictionary("icons", &icons_value)) {
-    for (DictionaryValue::key_iterator iter = icons_value->begin_keys();
-         iter != icons_value->end_keys(); ++iter) {
+    for (DictionaryValue::Iterator iter(*icons_value); !iter.IsAtEnd();
+         iter.Advance()) {
       // Ignore unknown properties. Better for forward compat.
       int size = 0;
-      if (!base::StringToInt(*iter, &size) || size < 0 || size > 128)
+      if (!base::StringToInt(iter.key(), &size) || size < 0 || size > 128)
         continue;
 
       std::string icon_url_string;
       GURL icon_url;
-      if (!icons_value->GetString(*iter, &icon_url_string) ||
+      if (!iter.value().GetAsString(&icon_url_string) ||
           !(icon_url = web_app->manifest_url.Resolve(
               icon_url_string)).is_valid()) {
         *error = UTF8ToUTF16(
@@ -327,7 +327,6 @@ bool ParseWebAppFromDefinitionFile(Value* definition_value,
   web_app->icons = icons;
 
   return true;
-
 }
 
 }  // namespace web_apps

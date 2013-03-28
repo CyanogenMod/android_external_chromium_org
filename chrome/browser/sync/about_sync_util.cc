@@ -179,7 +179,8 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
   StringSyncStat server_url(section_version, "Server URL");
 
   ListValue* section_credentials = AddSection(stats_list, kCredentialsTitle);
-  StringSyncStat client_id(section_credentials, "Client ID");
+  StringSyncStat sync_id(section_credentials, "Sync Client ID");
+  StringSyncStat invalidator_id(section_credentials, "Invalidator Client ID");
   StringSyncStat username(section_credentials, "Username");
   BoolSyncStat is_token_available(section_credentials, "Sync Token Available");
 
@@ -187,13 +188,13 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
   StringSyncStat last_synced(section_local, "Last Synced");
   BoolSyncStat is_setup_complete(section_local,
                                  "Sync First-Time Setup Complete");
-  BoolSyncStat is_backend_initialized(section_local,
-                                      "Sync Backend Initialized");
-  BoolSyncStat is_download_complete(section_local, "Initial Download Complete");
+  StringSyncStat backend_initialization(section_local,
+                                        "Sync Backend Initialization");
   BoolSyncStat is_syncing(section_local, "Syncing");
 
   ListValue* section_network = AddSection(stats_list, "Network");
   BoolSyncStat is_throttled(section_network, "Throttled");
+  StringSyncStat retry_time(section_network, "Retry time (maybe stale)");
   BoolSyncStat are_notifications_enabled(section_network,
                                          "Notifications Enabled");
 
@@ -289,18 +290,22 @@ scoped_ptr<DictionaryValue> ConstructAboutInformation(
 
   server_url.SetValue(service->sync_service_url().spec());
 
-  if (is_status_valid && !full_status.unique_id.empty())
-    client_id.SetValue(full_status.unique_id);
+  if (is_status_valid && !full_status.sync_id.empty())
+    sync_id.SetValue(full_status.sync_id);
+  if (is_status_valid && !full_status.invalidator_client_id.empty())
+    invalidator_id.SetValue(full_status.invalidator_client_id);
   if (service->signin())
     username.SetValue(service->signin()->GetAuthenticatedUsername());
   is_token_available.SetValue(service->IsSyncTokenAvailable());
 
   last_synced.SetValue(service->GetLastSyncedTimeString());
   is_setup_complete.SetValue(service->HasSyncSetupCompleted());
-  is_backend_initialized.SetValue(sync_initialized);
+  backend_initialization.SetValue(
+      service->GetBackendInitializationStateString());
   if (is_status_valid) {
-    is_download_complete.SetValue(full_status.initial_sync_ended);
     is_syncing.SetValue(full_status.syncing);
+    retry_time.SetValue(GetTimeStr(full_status.retry_time,
+        "Scheduler is not in backoff or throttled"));
   }
 
   if (snapshot.is_initialized())

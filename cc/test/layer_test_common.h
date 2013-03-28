@@ -5,19 +5,19 @@
 #ifndef CC_TEST_LAYER_TEST_COMMON_H_
 #define CC_TEST_LAYER_TEST_COMMON_H_
 
+namespace gfx { class Rect; }
+
 namespace cc {
 class QuadList;
-}
 
-namespace gfx {
-class Rect;
-}
+class LayerTestCommon {
+ public:
+  static const char* quad_string;
 
-namespace LayerTestCommon {
+  static void VerifyQuadsExactlyCoverRect(const cc::QuadList& quads,
+                                          gfx::Rect rect);
+};
 
-extern const char* quadString;
+}  // namespace cc
 
-void verifyQuadsExactlyCoverRect(const cc::QuadList&, const gfx::Rect&);
-
-} // namespace LayerTestCommon
 #endif  // CC_TEST_LAYER_TEST_COMMON_H_

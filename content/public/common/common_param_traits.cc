@@ -50,6 +50,18 @@ namespace IPC {
 
 void ParamTraits<GURL>::Write(Message* m, const GURL& p) {
   DCHECK(p.possibly_invalid_spec().length() <= content::kMaxURLChars);
+
+  // Beware of print-parse inconsistency which would change an invalid
+  // URL into a valid one. Ideally, the message would contain this flag
+  // so that the read side could make the check, but performing it here
+  // avoids changing the on-the-wire representation of such a fundamental
+  // type as GURL. See https://crbug.com/166486 for additional work in
+  // this area.
+  if (!p.is_valid()) {
+    m->WriteString(std::string());
+    return;
+  }
+
   m->WriteString(p.possibly_invalid_spec());
   // TODO(brettw) bug 684583: Add encoding for query params.
 }
@@ -61,6 +73,10 @@ bool ParamTraits<GURL>::Read(const Message* m, PickleIterator* iter, GURL* p) {
     return false;
   }
   *p = GURL(s);
+  if (!s.empty() && !p->is_valid()) {
+    *p = GURL();
+    return false;
+  }
   return true;
 }
 
@@ -130,7 +146,30 @@ void ParamTraits<gfx::Point>::Log(const gfx::Point& p, std::string* l) {
   l->append(base::StringPrintf("(%d, %d)", p.x(), p.y()));
 }
 
+void ParamTraits<gfx::PointF>::Write(Message* m, const gfx::PointF& v) {
+  ParamTraits<float>::Write(m, v.x());
+  ParamTraits<float>::Write(m, v.y());
+}
+
+bool ParamTraits<gfx::PointF>::Read(const Message* m,
+                                      PickleIterator* iter,
+                                      gfx::PointF* r) {
+  float x, y;
+  if (!ParamTraits<float>::Read(m, iter, &x) ||
+      !ParamTraits<float>::Read(m, iter, &y))
+    return false;
+  r->set_x(x);
+  r->set_y(y);
+  return true;
+}
+
+void ParamTraits<gfx::PointF>::Log(const gfx::PointF& v, std::string* l) {
+  l->append(base::StringPrintf("(%f, %f)", v.x(), v.y()));
+}
+
 void ParamTraits<gfx::Size>::Write(Message* m, const gfx::Size& p) {
+  DCHECK_GE(p.width(), 0);
+  DCHECK_GE(p.height(), 0);
   m->WriteInt(p.width());
   m->WriteInt(p.height());
 }
@@ -139,8 +178,8 @@ bool ParamTraits<gfx::Size>::Read(const Message* m,
                                   PickleIterator* iter,
                                   gfx::Size* r) {
   int w, h;
-  if (!m->ReadInt(iter, &w) ||
-      !m->ReadInt(iter, &h))
+  if (!m->ReadInt(iter, &w) || w < 0 ||
+      !m->ReadInt(iter, &h) || h < 0)
     return false;
   r->set_width(w);
   r->set_height(h);
@@ -149,6 +188,27 @@ bool ParamTraits<gfx::Size>::Read(const Message* m,
 
 void ParamTraits<gfx::Size>::Log(const gfx::Size& p, std::string* l) {
   l->append(base::StringPrintf("(%d, %d)", p.width(), p.height()));
+}
+
+void ParamTraits<gfx::SizeF>::Write(Message* m, const gfx::SizeF& p) {
+  ParamTraits<float>::Write(m, p.width());
+  ParamTraits<float>::Write(m, p.height());
+}
+
+bool ParamTraits<gfx::SizeF>::Read(const Message* m,
+                                   PickleIterator* iter,
+                                   gfx::SizeF* p) {
+  float w, h;
+  if (!ParamTraits<float>::Read(m, iter, &w) ||
+      !ParamTraits<float>::Read(m, iter, &h))
+    return false;
+  p->set_width(w);
+  p->set_height(h);
+  return true;
+}
+
+void ParamTraits<gfx::SizeF>::Log(const gfx::SizeF& p, std::string* l) {
+  l->append(base::StringPrintf("(%f, %f)", p.width(), p.height()));
 }
 
 void ParamTraits<gfx::Vector2d>::Write(Message* m, const gfx::Vector2d& v) {
@@ -172,26 +232,42 @@ void ParamTraits<gfx::Vector2d>::Log(const gfx::Vector2d& v, std::string* l) {
   l->append(base::StringPrintf("(%d, %d)", v.x(), v.y()));
 }
 
+void ParamTraits<gfx::Vector2dF>::Write(Message* m, const gfx::Vector2dF& v) {
+  ParamTraits<float>::Write(m, v.x());
+  ParamTraits<float>::Write(m, v.y());
+}
+
+bool ParamTraits<gfx::Vector2dF>::Read(const Message* m,
+                                      PickleIterator* iter,
+                                      gfx::Vector2dF* r) {
+  float x, y;
+  if (!ParamTraits<float>::Read(m, iter, &x) ||
+      !ParamTraits<float>::Read(m, iter, &y))
+    return false;
+  r->set_x(x);
+  r->set_y(y);
+  return true;
+}
+
+void ParamTraits<gfx::Vector2dF>::Log(const gfx::Vector2dF& v, std::string* l) {
+  l->append(base::StringPrintf("(%f, %f)", v.x(), v.y()));
+}
+
 void ParamTraits<gfx::Rect>::Write(Message* m, const gfx::Rect& p) {
-  m->WriteInt(p.x());
-  m->WriteInt(p.y());
-  m->WriteInt(p.width());
-  m->WriteInt(p.height());
+  WriteParam(m, p.origin());
+  WriteParam(m, p.size());
 }
 
 bool ParamTraits<gfx::Rect>::Read(const Message* m,
                                   PickleIterator* iter,
                                   gfx::Rect* r) {
-  int x, y, w, h;
-  if (!m->ReadInt(iter, &x) ||
-      !m->ReadInt(iter, &y) ||
-      !m->ReadInt(iter, &w) ||
-      !m->ReadInt(iter, &h))
+  gfx::Point origin;
+  gfx::Size size;
+  if (!ReadParam(m, iter, &origin) ||
+      !ReadParam(m, iter, &size))
     return false;
-  r->set_x(x);
-  r->set_y(y);
-  r->set_width(w);
-  r->set_height(h);
+  r->set_origin(origin);
+  r->set_size(size);
   return true;
 }
 

@@ -8,13 +8,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "content/browser/download/download_file_impl.h"
 #include "content/browser/download/download_file_factory.h"
+#include "content/browser/download/download_file_impl.h"
 #include "content/browser/download/download_interrupt_reasons_impl.h"
 #include "content/browser/download/download_manager_impl.h"
-#include "content/browser/power_save_blocker.h"
-#include "content/browser/renderer_host/resource_dispatcher_host_impl.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/power_save_blocker.h"
 #include "googleurl/src/gurl.h"
 
 namespace content {
@@ -30,7 +30,7 @@ class DownloadFileWithErrors: public DownloadFileImpl {
 
   DownloadFileWithErrors(
       scoped_ptr<DownloadSaveInfo> save_info,
-      const FilePath& default_download_directory,
+      const base::FilePath& default_download_directory,
       const GURL& url,
       const GURL& referrer_url,
       bool calculate_hash,
@@ -42,7 +42,7 @@ class DownloadFileWithErrors: public DownloadFileImpl {
       const ConstructionCallback& ctor_callback,
       const DestructionCallback& dtor_callback);
 
-  ~DownloadFileWithErrors();
+  virtual ~DownloadFileWithErrors();
 
   virtual void Initialize(const InitializeCallback& callback) OVERRIDE;
 
@@ -50,10 +50,10 @@ class DownloadFileWithErrors: public DownloadFileImpl {
   virtual DownloadInterruptReason AppendDataToFile(
       const char* data, size_t data_len) OVERRIDE;
   virtual void RenameAndUniquify(
-      const FilePath& full_path,
+      const base::FilePath& full_path,
       const RenameCompletionCallback& callback) OVERRIDE;
   virtual void RenameAndAnnotate(
-      const FilePath& full_path,
+      const base::FilePath& full_path,
       const RenameCompletionCallback& callback) OVERRIDE;
 
  private:
@@ -96,16 +96,16 @@ static void RenameErrorCallback(
     const DownloadFile::RenameCompletionCallback original_callback,
     DownloadInterruptReason overwrite_error,
     DownloadInterruptReason original_error,
-    const FilePath& path_result) {
+    const base::FilePath& path_result) {
   original_callback.Run(
       overwrite_error,
       overwrite_error == DOWNLOAD_INTERRUPT_REASON_NONE ?
-      path_result : FilePath());
+      path_result : base::FilePath());
 }
 
 DownloadFileWithErrors::DownloadFileWithErrors(
     scoped_ptr<DownloadSaveInfo> save_info,
-    const FilePath& default_download_directory,
+    const base::FilePath& default_download_directory,
     const GURL& url,
     const GURL& referrer_url,
     bool calculate_hash,
@@ -139,6 +139,16 @@ void DownloadFileWithErrors::Initialize(
   if (OverwriteError(
           TestFileErrorInjector::FILE_OPERATION_INITIALIZE,
           &error_to_return)) {
+    if (DOWNLOAD_INTERRUPT_REASON_NONE != error_to_return) {
+      // Don't execute a, probably successful, Initialize; just
+      // return the error.
+      BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE, base::Bind(
+              callback, error_to_return));
+      return;
+    }
+
+    // Otherwise, just wrap the return.
     callback_to_use = base::Bind(&InitializeErrorCallback, callback,
                                  error_to_return);
   }
@@ -154,7 +164,7 @@ DownloadInterruptReason DownloadFileWithErrors::AppendDataToFile(
 }
 
 void DownloadFileWithErrors::RenameAndUniquify(
-    const FilePath& full_path,
+    const base::FilePath& full_path,
     const RenameCompletionCallback& callback) {
   DownloadInterruptReason error_to_return = DOWNLOAD_INTERRUPT_REASON_NONE;
   RenameCompletionCallback callback_to_use = callback;
@@ -163,6 +173,16 @@ void DownloadFileWithErrors::RenameAndUniquify(
   if (OverwriteError(
           TestFileErrorInjector::FILE_OPERATION_RENAME_UNIQUIFY,
           &error_to_return)) {
+    if (DOWNLOAD_INTERRUPT_REASON_NONE != error_to_return) {
+      // Don't execute a, probably successful, RenameAndUniquify; just
+      // return the error.
+      BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE, base::Bind(
+              callback, error_to_return, base::FilePath()));
+      return;
+    }
+
+    // Otherwise, just wrap the return.
     callback_to_use = base::Bind(&RenameErrorCallback, callback,
                                  error_to_return);
   }
@@ -171,7 +191,7 @@ void DownloadFileWithErrors::RenameAndUniquify(
 }
 
 void DownloadFileWithErrors::RenameAndAnnotate(
-    const FilePath& full_path,
+    const base::FilePath& full_path,
     const RenameCompletionCallback& callback) {
   DownloadInterruptReason error_to_return = DOWNLOAD_INTERRUPT_REASON_NONE;
   RenameCompletionCallback callback_to_use = callback;
@@ -180,6 +200,16 @@ void DownloadFileWithErrors::RenameAndAnnotate(
   if (OverwriteError(
           TestFileErrorInjector::FILE_OPERATION_RENAME_ANNOTATE,
           &error_to_return)) {
+    if (DOWNLOAD_INTERRUPT_REASON_NONE != error_to_return) {
+      // Don't execute a, probably successful, RenameAndAnnotate; just
+      // return the error.
+      BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE, base::Bind(
+              callback, error_to_return, base::FilePath()));
+      return;
+    }
+
+    // Otherwise, just wrap the return.
     callback_to_use = base::Bind(&RenameErrorCallback, callback,
                                  error_to_return);
   }
@@ -223,7 +253,7 @@ class DownloadFileWithErrorsFactory : public DownloadFileFactory {
   // DownloadFileFactory interface.
   virtual DownloadFile* CreateFile(
       scoped_ptr<DownloadSaveInfo> save_info,
-      const FilePath& default_download_directory,
+      const base::FilePath& default_download_directory,
       const GURL& url,
       const GURL& referrer_url,
       bool calculate_hash,
@@ -257,7 +287,7 @@ DownloadFileWithErrorsFactory::~DownloadFileWithErrorsFactory() {
 
 DownloadFile* DownloadFileWithErrorsFactory::CreateFile(
     scoped_ptr<DownloadSaveInfo> save_info,
-    const FilePath& default_download_directory,
+    const base::FilePath& default_download_directory,
     const GURL& url,
     const GURL& referrer_url,
     bool calculate_hash,
@@ -276,7 +306,7 @@ DownloadFile* DownloadFileWithErrorsFactory::CreateFile(
   }
 
   scoped_ptr<PowerSaveBlocker> psb(
-      new PowerSaveBlocker(
+      PowerSaveBlocker::Create(
           PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
           "Download in progress"));
 
@@ -313,7 +343,7 @@ TestFileErrorInjector::TestFileErrorInjector(
       // This code is only used for browser_tests, so a
       // DownloadManager is always a DownloadManagerImpl.
       download_manager_(
-          static_cast<DownloadManagerImpl*>(download_manager.release())) {
+          static_cast<DownloadManagerImpl*>(download_manager.get())) {
   // Record the value of the pointer, for later validation.
   created_factory_ =
       new DownloadFileWithErrorsFactory(

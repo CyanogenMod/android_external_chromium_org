@@ -10,13 +10,14 @@
 #include <utility>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/common/content_export.h"
 #include "content/browser/worker_host/worker_document_set.h"
 #include "content/browser/worker_host/worker_storage_partition.h"
+#include "content/common/content_export.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
+#include "content/public/common/process_type.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_sender.h"
 

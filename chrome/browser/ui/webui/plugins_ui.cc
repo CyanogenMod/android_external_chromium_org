@@ -16,29 +16,29 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_member.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/api/prefs/pref_member.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
@@ -62,10 +62,10 @@ void AssertPluginEnabled(bool did_enable) {
   DCHECK(did_enable);
 }
 
-ChromeWebUIDataSource* CreatePluginsUIHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIPluginsHost);
-  source->set_use_json_js_format_v2();
+content::WebUIDataSource* CreatePluginsUIHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIPluginsHost);
+  source->SetUseJsonJSFormatV2();
 
   source->AddLocalizedString("pluginsTitle", IDS_PLUGINS_TITLE);
   source->AddLocalizedString("pluginsDetailsModeLink",
@@ -97,9 +97,9 @@ ChromeWebUIDataSource* CreatePluginsUIHTMLSource() {
   source->AddLocalizedString("alwaysAllowed", IDS_PLUGINS_ALWAYS_ALLOWED);
   source->AddLocalizedString("noPlugins", IDS_PLUGINS_NO_PLUGINS);
 
-  source->set_json_path("strings.js");
-  source->add_resource_path("plugins.js", IDR_PLUGINS_JS);
-  source->set_default_resource(IDR_PLUGINS_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("plugins.js", IDR_PLUGINS_JS);
+  source->SetDefaultResource(IDR_PLUGINS_HTML);
 #if defined(OS_CHROMEOS)
   chromeos::AddAccountUITweaksLocalizedValues(source);
 #endif
@@ -193,7 +193,7 @@ void PluginsDOMHandler::RegisterMessages() {
   Profile* profile = Profile::FromWebUI(web_ui());
 
   PrefService* prefs = profile->GetPrefs();
-  show_details_.Init(prefs::kPluginsShowDetails, prefs, NULL);
+  show_details_.Init(prefs::kPluginsShowDetails, prefs);
 
   registrar_.Add(this,
                  chrome::NOTIFICATION_PLUGIN_ENABLE_STATUS_CHANGED,
@@ -259,13 +259,13 @@ void PluginsDOMHandler::HandleEnablePluginMessage(const ListValue* args) {
         plugin_prefs->EnablePluginGroup(false, adobereader);
     }
   } else {
-    FilePath::StringType file_path;
+    base::FilePath::StringType file_path;
     if (!args->GetString(0, &file_path)) {
       NOTREACHED();
       return;
     }
 
-    plugin_prefs->EnablePlugin(enable, FilePath(file_path),
+    plugin_prefs->EnablePlugin(enable, base::FilePath(file_path),
                                base::Bind(&AssertPluginEnabled));
   }
 }
@@ -480,7 +480,7 @@ PluginsUI::PluginsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
 
   // Set up the chrome://plugins/ source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, CreatePluginsUIHTMLSource());
+  content::WebUIDataSource::Add(profile, CreatePluginsUIHTMLSource());
 }
 
 // static
@@ -491,10 +491,10 @@ base::RefCountedMemory* PluginsUI::GetFaviconResourceBytes(
 }
 
 // static
-void PluginsUI::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kPluginsShowDetails,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterDictionaryPref(prefs::kContentSettingsPluginWhitelist,
-                                PrefService::SYNCABLE_PREF);
+void PluginsUI::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(prefs::kPluginsShowDetails,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterDictionaryPref(prefs::kContentSettingsPluginWhitelist,
+                                   PrefRegistrySyncable::SYNCABLE_PREF);
 }

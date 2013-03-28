@@ -7,9 +7,9 @@
 
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/scoped_temp_dir.h"
 #include "chrome/installer/util/work_item.h"
 
 // A WorkItem subclass that recursively deletes a file system hierarchy at the
@@ -28,30 +28,30 @@ class DeleteTreeWorkItem : public WorkItem {
  private:
   friend class WorkItem;
 
-  DeleteTreeWorkItem(const FilePath& root_path,
-                     const FilePath& temp_path,
-                     const std::vector<FilePath>& key_paths);
+  DeleteTreeWorkItem(const base::FilePath& root_path,
+                     const base::FilePath& temp_path,
+                     const std::vector<base::FilePath>& key_paths);
 
   // Root path to delete.
-  FilePath root_path_;
+  base::FilePath root_path_;
 
   // Temporary directory that can be used.
-  FilePath temp_path_;
+  base::FilePath temp_path_;
 
   // The number of key files.
   ptrdiff_t num_key_files_;
 
   // Contains the paths to the key files. If specified, deletion will be
   // performed only if none of the key files are in use.
-  scoped_array<FilePath> key_paths_;
+  scoped_array<base::FilePath> key_paths_;
 
   // Contains the temp directories for the backed-up key files. The directories
   // are created and populated in Do() as-needed. We don't use a standard
-  // container for this since ScopedTempDir isn't CopyConstructible.
-  scoped_array<ScopedTempDir> key_backup_paths_;
+  // container for this since base::ScopedTempDir isn't CopyConstructible.
+  scoped_array<base::ScopedTempDir> key_backup_paths_;
 
   // The temporary directory into which the original root_path_ has been moved.
-  ScopedTempDir backup_path_;
+  base::ScopedTempDir backup_path_;
 
   // Set to true once root_path_ has been copied into backup_path_.
   bool copied_to_backup_;

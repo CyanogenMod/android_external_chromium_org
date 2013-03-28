@@ -4,8 +4,8 @@
 
 #include "chrome/browser/webdata/autofill_change.h"
 
-#include "chrome/browser/autofill/autofill_profile.h"
-#include "chrome/browser/autofill/credit_card.h"
+#include "components/autofill/browser/autofill_profile.h"
+#include "components/autofill/browser/credit_card.h"
 
 AutofillChange::AutofillChange(Type type, const AutofillKey& key)
     : GenericAutofillChange<AutofillKey>(type, key) {
@@ -31,22 +31,4 @@ bool AutofillProfileChange::operator==(
   return type() == change.type() &&
          key() == change.key() &&
          (type() != REMOVE) ? *profile() == *change.profile() : true;
-}
-
-AutofillCreditCardChange::AutofillCreditCardChange(
-  Type type, const std::string& key, const CreditCard* credit_card)
-    : GenericAutofillChange<std::string>(type, key), credit_card_(credit_card) {
-  DCHECK(type == ADD ? (credit_card && credit_card->guid() == key) : true);
-  DCHECK(type == UPDATE ? (credit_card && credit_card->guid() == key) : true);
-  DCHECK(type == REMOVE ? !credit_card : true);
-}
-
-AutofillCreditCardChange::~AutofillCreditCardChange() {
-}
-
-bool AutofillCreditCardChange::operator==(
-    const AutofillCreditCardChange& change) const {
-  return type() == change.type() &&
-         key() == change.key() &&
-         (type() != REMOVE) ? *credit_card() == *change.credit_card() : true;
 }

@@ -31,10 +31,6 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
   static const char* const kViewClassName;
 
   ScrollView();
-  // Initialize with specific views. resize_corner is optional.
-  ScrollView(ScrollBar* horizontal_scrollbar,
-             ScrollBar* vertical_scrollbar,
-             View* resize_corner);
   virtual ~ScrollView();
 
   // Creates a ScrollView with a theme specific border.
@@ -43,51 +39,54 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
   // Set the contents. Any previous contents will be deleted. The contents
   // is the view that needs to scroll.
   void SetContents(View* a_view);
-  View* GetContents() const;
+  const View* contents() const { return contents_; }
+  View* contents() { return contents_; }
 
-  // Overridden to layout the viewport and scrollbars.
-  virtual void Layout() OVERRIDE;
+  // Sets the header, deleting the previous header.
+  void SetHeader(View* header);
 
   // Returns the visible region of the content View.
   gfx::Rect GetVisibleRect() const;
+
+  // Retrieves the width/height of scrollbars. These return 0 if the scrollbar
+  // has not yet been created.
+  int GetScrollBarWidth() const;
+  int GetScrollBarHeight() const;
+
+  // Returns the horizontal/vertical scrollbar. This may return NULL.
+  const ScrollBar* horizontal_scroll_bar() const { return horiz_sb_; }
+  const ScrollBar* vertical_scroll_bar() const { return vert_sb_; }
+
+  // Customize the scrollbar design. ScrollView takes the ownership of the
+  // specified ScrollBar. |horiz_sb| and |vert_sb| cannot be NULL.
+  void SetHorizontalScrollBar(ScrollBar* horiz_sb);
+  void SetVerticalScrollBar(ScrollBar* vert_sb);
+
+  // View overrides:
+  virtual void Layout() OVERRIDE;
+  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
+  virtual bool OnMouseWheel(const ui::MouseWheelEvent& e) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual std::string GetClassName() const OVERRIDE;
+
+  // ScrollBarController overrides:
+  virtual void ScrollToPosition(ScrollBar* source, int position) OVERRIDE;
+  virtual int GetScrollIncrement(ScrollBar* source,
+                                 bool is_page,
+                                 bool is_positive) OVERRIDE;
+
+ private:
+  class Viewport;
+
+  // Used internally by SetHeader() and SetContents() to reset the view.  Sets
+  // |member| to |new_view|. If |new_view| is non-null it is added to |parent|.
+  void SetHeaderOrContents(View* parent, View* new_view, View** member);
 
   // Scrolls the minimum amount necessary to make the specified rectangle
   // visible, in the coordinates of the contents view. The specified rectangle
   // is constrained by the bounds of the contents view. This has no effect if
   // the contents have not been set.
-  //
-  // Client code should use ScrollRectToVisible, which invokes this
-  // appropriately.
   void ScrollContentsRegionToBeVisible(const gfx::Rect& rect);
-
-  // ScrollBarController.
-  // NOTE: this is intended to be invoked by the ScrollBar, and NOT general
-  // client code.
-  // See also ScrollRectToVisible.
-  virtual void ScrollToPosition(ScrollBar* source, int position) OVERRIDE;
-
-  // Returns the amount to scroll relative to the visible bounds. This invokes
-  // either GetPageScrollIncrement or GetLineScrollIncrement to determine the
-  // amount to scroll. If the view returns 0 (or a negative value) a default
-  // value is used.
-  virtual int GetScrollIncrement(ScrollBar* source,
-                                 bool is_page,
-                                 bool is_positive) OVERRIDE;
-
-  // Keyboard events
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool OnMouseWheel(const ui::MouseWheelEvent& e) OVERRIDE;
-
-  // Overridden from ui::EventHandler:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-
-  virtual std::string GetClassName() const OVERRIDE;
-
-  // Retrieves the vertical scrollbar width.
-  int GetScrollBarWidth() const;
-
-  // Retrieves the horizontal scrollbar height.
-  int GetScrollBarHeight() const;
 
   // Computes the visibility of both scrollbars, taking in account the view port
   // and content sizes.
@@ -96,16 +95,6 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
                                    bool* horiz_is_shown,
                                    bool* vert_is_shown) const;
 
-  ScrollBar* horizontal_scroll_bar() const { return horiz_sb_; }
-
-  ScrollBar* vertical_scroll_bar() const { return vert_sb_; }
-
- private:
-  // Initialize the ScrollView. resize_corner is optional.
-  void Init(ScrollBar* horizontal_scrollbar,
-            ScrollBar* vertical_scrollbar,
-            View* resize_corner);
-
   // Shows or hides the scrollbar/resize_corner based on the value of
   // |should_show|.
   void SetControlVisibility(View* control, bool should_show);
@@ -113,17 +102,15 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
   // Update the scrollbars positions given viewport and content sizes.
   void UpdateScrollBarPositions();
 
-  // Make sure the content is not scrolled out of bounds
-  void CheckScrollBounds();
-
-  // Make sure the content is not scrolled out of bounds in one dimension
-  int CheckScrollBounds(int viewport_size, int content_size, int current_pos);
-
-  // The clipping viewport. Content is added to that view.
-  View* viewport_;
-
-  // The current contents
+  // The current contents and its viewport. |contents_| is contained in
+  // |contents_viewport_|.
   View* contents_;
+  View* contents_viewport_;
+
+  // The current header and its viewport. |header_| is contained in
+  // |header_viewport_|.
+  View* header_;
+  View* header_viewport_;
 
   // Horizontal scrollbar.
   ScrollBar* horiz_sb_;

@@ -16,6 +16,12 @@ const char kAccountsPrefShowUserNamesOnSignIn[]
 const char kAccountsPrefUsers[] = "cros.accounts.users";
 const char kAccountsPrefEphemeralUsersEnabled[] =
     "cros.accounts.ephemeralUsersEnabled";
+const char kAccountsPrefDeviceLocalAccounts[] =
+    "cros.accounts.deviceLocalAccounts";
+const char kAccountsPrefDeviceLocalAccountAutoLoginId[] =
+    "cros.accounts.deviceLocalAccountAutoLoginId";
+const char kAccountsPrefDeviceLocalAccountAutoLoginDelay[] =
+    "cros.accounts.deviceLocalAccountAutoLoginDelay";
 
 // Name of signed setting persisted on device, writeable only by owner.
 const char kSettingProxyEverywhere[] = "cros.proxy.everywhere";
@@ -81,4 +87,13 @@ const char kStartUpUrls[] = "cros.start_up_urls";
 // signal that we are running in a "safe-mode" for policy recovery.
 const char kPolicyMissingMitigationMode[] =
     "cros.internal.policy_mitigation_mode";
+
+// A boolean pref that indicates whether users are allowed to redeem offers
+// through Chrome OS Registration.
+const char kAllowRedeemChromeOsRegistrationOffers[] =
+    "cros.echo.allow_redeem_chrome_os_registration_offers";
+
+// A list pref storing the flags that need to be applied to the browser upon
+// start-up.
+const char kStartUpFlags[] = "cros.startup_flags";
 }  // namespace chromeos

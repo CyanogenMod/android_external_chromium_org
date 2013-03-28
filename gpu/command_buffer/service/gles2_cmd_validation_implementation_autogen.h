@@ -15,6 +15,12 @@ static GLenum valid_attachment_table[] = {
   GL_STENCIL_ATTACHMENT,
 };
 
+static GLenum valid_backbuffer_attachment_table[] = {
+  GL_COLOR_EXT,
+  GL_DEPTH_EXT,
+  GL_STENCIL_EXT,
+};
+
 static GLenum valid_blit_filter_table[] = {
   GL_NEAREST,
   GL_LINEAR,
@@ -166,6 +172,7 @@ static GLenum valid_g_l_state_table[] = {
   GL_UNPACK_FLIP_Y_CHROMIUM,
   GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
   GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM,
+  GL_VERTEX_ARRAY_BINDING_OES,
   GL_VIEWPORT,
   GL_BLEND_COLOR,
   GL_BLEND_EQUATION_RGB,
@@ -289,6 +296,7 @@ static GLenum valid_query_target_table[] = {
   GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT,
   GL_COMMANDS_ISSUED_CHROMIUM,
   GL_LATENCY_QUERY_CHROMIUM,
+  GL_ASYNC_PIXEL_TRANSFERS_COMPLETED_CHROMIUM,
 };
 
 static GLenum valid_read_pixel_format_table[] = {
@@ -326,6 +334,12 @@ static GLenum valid_render_buffer_parameter_table[] = {
 
 static GLenum valid_render_buffer_target_table[] = {
   GL_RENDERBUFFER,
+};
+
+static GLenum valid_reset_status_table[] = {
+  GL_GUILTY_CONTEXT_RESET_ARB,
+  GL_INNOCENT_CONTEXT_RESET_ARB,
+  GL_UNKNOWN_CONTEXT_RESET_ARB,
 };
 
 static GLenum valid_shader_parameter_table[] = {
@@ -441,8 +455,14 @@ static GLenum valid_texture_min_filter_mode_table[] = {
 static GLenum valid_texture_parameter_table[] = {
   GL_TEXTURE_MAG_FILTER,
   GL_TEXTURE_MIN_FILTER,
+  GL_TEXTURE_POOL_CHROMIUM,
   GL_TEXTURE_WRAP_S,
   GL_TEXTURE_WRAP_T,
+};
+
+static GLenum valid_texture_pool_table[] = {
+  GL_TEXTURE_POOL_MANAGED_CHROMIUM,
+  GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
 };
 
 static GLenum valid_texture_target_table[] = {
@@ -502,6 +522,9 @@ static GLint valid_zero_only_table[] = {
 Validators::Validators()
     : attachment(
           valid_attachment_table, arraysize(valid_attachment_table)),
+      backbuffer_attachment(
+          valid_backbuffer_attachment_table, arraysize(
+              valid_backbuffer_attachment_table)),
       blit_filter(
           valid_blit_filter_table, arraysize(valid_blit_filter_table)),
       buffer_parameter(
@@ -580,6 +603,8 @@ Validators::Validators()
       render_buffer_target(
           valid_render_buffer_target_table, arraysize(
               valid_render_buffer_target_table)),
+      reset_status(
+          valid_reset_status_table, arraysize(valid_reset_status_table)),
       shader_binary_format(),
       shader_parameter(
           valid_shader_parameter_table, arraysize(
@@ -618,6 +643,8 @@ Validators::Validators()
       texture_parameter(
           valid_texture_parameter_table, arraysize(
               valid_texture_parameter_table)),
+      texture_pool(
+          valid_texture_pool_table, arraysize(valid_texture_pool_table)),
       texture_target(
           valid_texture_target_table, arraysize(valid_texture_target_table)),
       texture_usage(

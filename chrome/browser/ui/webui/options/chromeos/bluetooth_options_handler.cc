@@ -8,7 +8,7 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/public/browser/web_ui.h"
@@ -40,6 +40,7 @@ const char kForgetCommand[] = "forget";
 // |SendDeviceNotification| may include a pairing parameter whose value
 // is one of the following constants instructing the UI to perform a certain
 // action.
+const char kStartConnecting[] = "bluetoothStartConnecting";
 const char kEnterPinCode[] = "bluetoothEnterPinCode";
 const char kEnterPasskey[] = "bluetoothEnterPasskey";
 const char kRemotePinCode[] = "bluetoothRemotePinCode";
@@ -51,10 +52,17 @@ const char kConfirmPasskey[] = "bluetoothConfirmPasskey";
 namespace chromeos {
 namespace options {
 
-BluetoothOptionsHandler::BluetoothOptionsHandler() : weak_ptr_factory_(this) {
+BluetoothOptionsHandler::BluetoothOptionsHandler() : discovering_(false),
+                                                     weak_ptr_factory_(this) {
 }
 
 BluetoothOptionsHandler::~BluetoothOptionsHandler() {
+  if (discovering_) {
+    adapter_->StopDiscovering(
+        base::Bind(&base::DoNothing),
+        base::Bind(&base::DoNothing));
+    discovering_ = false;
+  }
   if (adapter_.get())
     adapter_->RemoveObserver(this);
 }
@@ -112,8 +120,22 @@ void BluetoothOptionsHandler::GetLocalizedValues(
         IDS_OPTIONS_SETTINGS_BLUETOOTH_STOP_DISCOVERY_FAILED },
     { "bluetoothChangePowerFailed",
         IDS_OPTIONS_SETTINGS_BLUETOOTH_CHANGE_POWER_FAILED },
+    { "bluetoothConnectUnknownError",
+        IDS_OPTIONS_SETTINGS_BLUETOOTH_CONNECT_UNKNOWN_ERROR },
+    { "bluetoothConnectInProgress",
+        IDS_OPTIONS_SETTINGS_BLUETOOTH_CONNECT_IN_PROGRESS },
     { "bluetoothConnectFailed",
         IDS_OPTIONS_SETTINGS_BLUETOOTH_CONNECT_FAILED },
+    { "bluetoothConnectAuthFailed",
+        IDS_OPTIONS_SETTINGS_BLUETOOTH_CONNECT_AUTH_FAILED },
+    { "bluetoothConnectAuthCanceled",
+        IDS_OPTIONS_SETTINGS_BLUETOOTH_CONNECT_AUTH_CANCELED },
+    { "bluetoothConnectAuthRejected",
+        IDS_OPTIONS_SETTINGS_BLUETOOTH_CONNECT_AUTH_REJECTED },
+    { "bluetoothConnectAuthTimeout",
+        IDS_OPTIONS_SETTINGS_BLUETOOTH_CONNECT_AUTH_TIMEOUT },
+    { "bluetoothConnectUnsupportedDevice",
+        IDS_OPTIONS_SETTINGS_BLUETOOTH_CONNECT_UNSUPPORTED_DEVICE },
     { "bluetoothDisconnectFailed",
         IDS_OPTIONS_SETTINGS_BLUETOOTH_DISCONNECT_FAILED },
     { "bluetoothForgetFailed",
@@ -169,9 +191,9 @@ void BluetoothOptionsHandler::RegisterMessages() {
 }
 
 void BluetoothOptionsHandler::InitializeHandler() {
-  adapter_ = device::BluetoothAdapterFactory::DefaultAdapter();
-  DCHECK(adapter_.get());
-  adapter_->AddObserver(this);
+  device::BluetoothAdapterFactory::GetAdapter(
+      base::Bind(&BluetoothOptionsHandler::InitializeAdapter,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void BluetoothOptionsHandler::InitializePage() {
@@ -182,6 +204,13 @@ void BluetoothOptionsHandler::InitializePage() {
   // overlay is visible.
   web_ui()->CallJavascriptFunction(
       "options.BluetoothOptions.updateDiscovery");
+}
+
+void BluetoothOptionsHandler::InitializeAdapter(
+    scoped_refptr<device::BluetoothAdapter> adapter) {
+  adapter_ = adapter;
+  CHECK(adapter_);
+  adapter_->AddObserver(this);
 }
 
 void BluetoothOptionsHandler::EnableChangeCallback(
@@ -196,21 +225,23 @@ void BluetoothOptionsHandler::EnableChangeCallback(
 }
 
 void BluetoothOptionsHandler::EnableChangeError() {
-  DVLOG(1) << "Failed to change power state.";
+  VLOG(1) << "Failed to change power state.";
   ReportError("bluetoothChangePowerFailed", std::string());
 }
 
 void BluetoothOptionsHandler::FindDevicesCallback(
     const ListValue* args) {
-  adapter_->SetDiscovering(
-      true,
-      base::Bind(&base::DoNothing),
-      base::Bind(&BluetoothOptionsHandler::FindDevicesError,
-                 weak_ptr_factory_.GetWeakPtr()));
+  if (!discovering_) {
+    discovering_ = true;
+    adapter_->StartDiscovering(
+        base::Bind(&base::DoNothing),
+        base::Bind(&BluetoothOptionsHandler::FindDevicesError,
+                   weak_ptr_factory_.GetWeakPtr()));
+  }
 }
 
 void BluetoothOptionsHandler::FindDevicesError() {
-  DVLOG(1) << "Failed to start discovery.";
+  VLOG(1) << "Failed to start discovery.";
   ReportError("bluetoothStartDiscoveryFailed", std::string());
 }
 
@@ -234,13 +265,15 @@ void BluetoothOptionsHandler::UpdateDeviceCallback(
       args->GetString(kUpdateDeviceAuthTokenIndex, &auth_token);
 
       if (device->ExpectingPinCode()) {
+        DeviceConnecting(device);
         // PIN Code is an array of 1 to 16 8-bit bytes, the usual
         // interpretation, and the one shared by BlueZ, is a UTF-8 string
         // of as many characters that will fit in that space, thus we
         // can use the auth token from JavaScript unmodified.
-        DVLOG(1) << "PIN Code supplied: " << address << ": " << auth_token;
+        VLOG(1) << "PIN Code supplied: " << address << ": " << auth_token;
         device->SetPinCode(auth_token);
       } else if (device->ExpectingPasskey()) {
+        DeviceConnecting(device);
         // Passkey is a numeric in the range 0-999999, in this case the
         // JavaScript code should have ensured the auth token string only
         // contains digits so a simple conversion is sufficient. In the
@@ -249,7 +282,7 @@ void BluetoothOptionsHandler::UpdateDeviceCallback(
         unsigned passkey = 0;
         base::StringToUint(auth_token, &passkey);
 
-        DVLOG(1) << "Passkey supplied: " << address << ": " << passkey;
+        VLOG(1) << "Passkey supplied: " << address << ": " << passkey;
         device->SetPasskey(passkey);
       } else {
         LOG(WARNING) << "Auth token supplied after pairing ended: " << address
@@ -257,7 +290,7 @@ void BluetoothOptionsHandler::UpdateDeviceCallback(
       }
     } else {
       // Connection request.
-      DVLOG(1) << "Connect: " << address;
+      VLOG(1) << "Connect: " << address;
       device->Connect(
           this,
           base::Bind(&base::DoNothing),
@@ -267,19 +300,19 @@ void BluetoothOptionsHandler::UpdateDeviceCallback(
     }
   } else if (command == kCancelCommand) {
     // Cancel pairing.
-    DVLOG(1) << "Cancel pairing: " << address;
+    VLOG(1) << "Cancel pairing: " << address;
     device->CancelPairing();
   } else if (command == kAcceptCommand) {
     // Confirm displayed Passkey.
-    DVLOG(1) << "Confirm pairing: " << address;
+    VLOG(1) << "Confirm pairing: " << address;
     device->ConfirmPairing();
   } else if (command == kRejectCommand) {
     // Reject displayed Passkey.
-    DVLOG(1) << "Reject pairing: " << address;
+    VLOG(1) << "Reject pairing: " << address;
     device->RejectPairing();
   } else if (command == kDisconnectCommand) {
     // Disconnect from device.
-    DVLOG(1) << "Disconnect device: " << address;
+    VLOG(1) << "Disconnect device: " << address;
     device->Disconnect(
         base::Bind(&base::DoNothing),
         base::Bind(&BluetoothOptionsHandler::DisconnectError,
@@ -287,7 +320,7 @@ void BluetoothOptionsHandler::UpdateDeviceCallback(
                    device->address()));
   } else if (command == kForgetCommand) {
     // Disconnect from device and delete pairing information.
-    DVLOG(1) << "Forget device: " << address;
+    VLOG(1) << "Forget device: " << address;
     device->Forget(base::Bind(&BluetoothOptionsHandler::ForgetError,
                               weak_ptr_factory_.GetWeakPtr(),
                               device->address()));
@@ -296,32 +329,66 @@ void BluetoothOptionsHandler::UpdateDeviceCallback(
   }
 }
 
-void BluetoothOptionsHandler::ConnectError(const std::string& address) {
-  DVLOG(1) << "Failed to connect to device: " << address;
-  ReportError("bluetoothConnectFailed", address);
+void BluetoothOptionsHandler::ConnectError(
+    const std::string& address,
+    device::BluetoothDevice::ConnectErrorCode error_code) {
+  const char* error_name = NULL;
+
+  VLOG(1) << "Failed to connect to device: " << address;
+  switch (error_code) {
+    case device::BluetoothDevice::ERROR_UNKNOWN:
+      error_name = "bluetoothConnectUnknownError";
+      break;
+    case device::BluetoothDevice::ERROR_INPROGRESS:
+      error_name = "bluetoothConnectInProgress";
+      break;
+    case device::BluetoothDevice::ERROR_FAILED:
+      error_name = "bluetoothConnectFailed";
+      break;
+    case device::BluetoothDevice::ERROR_AUTH_FAILED:
+      error_name = "bluetoothConnectAuthFailed";
+      break;
+    case device::BluetoothDevice::ERROR_AUTH_CANCELED:
+      error_name = "bluetoothConnectAuthCanceled";
+      break;
+    case device::BluetoothDevice::ERROR_AUTH_REJECTED:
+      error_name = "bluetoothConnectAuthRejected";
+      break;
+    case device::BluetoothDevice::ERROR_AUTH_TIMEOUT:
+      error_name = "bluetoothConnectAuthTimeout";
+      break;
+    case device::BluetoothDevice::ERROR_UNSUPPORTED_DEVICE:
+      error_name = "bluetoothConnectUnsupportedDevice";
+      break;
+  }
+  // Report an error only if there's an error to report.
+  if (error_name)
+    ReportError(error_name, address);
 }
 
 void BluetoothOptionsHandler::DisconnectError(const std::string& address) {
-  DVLOG(1) << "Failed to disconnect from device: " << address;
+  VLOG(1) << "Failed to disconnect from device: " << address;
   ReportError("bluetoothDisconnectFailed", address);
 }
 
 void BluetoothOptionsHandler::ForgetError(const std::string& address) {
-  DVLOG(1) << "Failed to disconnect and unpair device: " << address;
+  VLOG(1) << "Failed to disconnect and unpair device: " << address;
   ReportError("bluetoothForgetFailed", address);
 }
 
 void BluetoothOptionsHandler::StopDiscoveryCallback(
     const ListValue* args) {
-  adapter_->SetDiscovering(
-      false,
-      base::Bind(&base::DoNothing),
-      base::Bind(&BluetoothOptionsHandler::StopDiscoveryError,
-                 weak_ptr_factory_.GetWeakPtr()));
+  if (discovering_) {
+    adapter_->StopDiscovering(
+        base::Bind(&base::DoNothing),
+        base::Bind(&BluetoothOptionsHandler::StopDiscoveryError,
+                   weak_ptr_factory_.GetWeakPtr()));
+    discovering_ = false;
+  }
 }
 
 void BluetoothOptionsHandler::StopDiscoveryError() {
-  DVLOG(1) << "Failed to stop discovery.";
+  VLOG(1) << "Failed to stop discovery.";
   ReportError("bluetoothStopDiscoveryFailed", std::string());
 }
 
@@ -343,9 +410,9 @@ void BluetoothOptionsHandler::SendDeviceNotification(
   js_properties.SetBoolean("paired", device->IsPaired());
   js_properties.SetBoolean("bonded", device->IsBonded());
   js_properties.SetBoolean("connected", device->IsConnected());
-  if (params) {
+  js_properties.SetBoolean("connectable", device->IsConnectable());
+  if (params)
     js_properties.MergeDictionary(params);
-  }
   web_ui()->CallJavascriptFunction(
       "options.BrowserOptions.addBluetoothDevice",
       js_properties);
@@ -426,6 +493,14 @@ void BluetoothOptionsHandler::DeviceRemoved(device::BluetoothAdapter* adapter,
   web_ui()->CallJavascriptFunction(
       "options.BrowserOptions.removeBluetoothDevice",
       address);
+}
+
+void BluetoothOptionsHandler::DeviceConnecting(
+    device::BluetoothDevice* device) {
+  DCHECK(device);
+  DictionaryValue params;
+  params.SetString("pairing", kStartConnecting);
+  SendDeviceNotification(device, &params);
 }
 
 }  // namespace options

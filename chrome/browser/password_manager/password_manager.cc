@@ -5,15 +5,16 @@
 #include "chrome/browser/password_manager/password_manager.h"
 
 #include "base/metrics/histogram.h"
-#include "base/threading/platform_thread.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
+#include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/browser/password_manager/password_manager_delegate.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/autofill_messages.h"
 #include "chrome/common/pref_names.h"
+#include "components/autofill/common/autofill_messages.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/frame_navigate_params.h"
@@ -24,7 +25,7 @@ using content::WebContents;
 using content::PasswordForm;
 using content::PasswordFormMap;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(PasswordManager)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(PasswordManager);
 
 namespace {
 
@@ -57,13 +58,13 @@ void ReportMetrics(bool password_manager_enabled) {
 }  // anonymous namespace
 
 // static
-void PasswordManager::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kPasswordManagerEnabled,
-                             true,
-                             PrefService::SYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kPasswordManagerAllowShowPasswords,
-                             true,
-                             PrefService::UNSYNCABLE_PREF);
+void PasswordManager::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(prefs::kPasswordManagerEnabled,
+                                true,
+                                PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kPasswordManagerAllowShowPasswords,
+                                true,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // static
@@ -86,7 +87,7 @@ PasswordManager::PasswordManager(WebContents* web_contents,
       observer_(NULL) {
   DCHECK(delegate_);
   password_manager_enabled_.Init(prefs::kPasswordManagerEnabled,
-                                 delegate_->GetProfile()->GetPrefs(), NULL);
+                                 delegate_->GetProfile()->GetPrefs());
 
   ReportMetrics(*password_manager_enabled_);
 }
@@ -179,6 +180,12 @@ void PasswordManager::ProvisionallySavePassword(const PasswordForm& form) {
 
   // Bail if we're missing any of the necessary form components.
   if (!manager->HasValidPasswordForm())
+    return;
+
+  // Always save generated passwords, as the user expresses explicit intent for
+  // Chrome to manage such passwords. For other passwords, respect the
+  // autocomplete attribute.
+  if (!manager->HasGeneratedPassword() && !form.password_autocomplete_set)
     return;
 
   PasswordForm provisionally_saved_form(form);

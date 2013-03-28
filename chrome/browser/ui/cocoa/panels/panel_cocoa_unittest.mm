@@ -298,6 +298,10 @@ TEST_F(PanelCocoaTest, MenuItems) {
 
   scoped_nsobject<NSMenu> menu([[NSMenu alloc] initWithTitle:@""]);
   NSMenuItem* close_tab_menu_item = CreateMenuItem(menu, IDC_CLOSE_TAB);
+  NSMenuItem* new_tab_menu_item = CreateMenuItem(menu, IDC_NEW_TAB);
+  NSMenuItem* new_tab_window_item = CreateMenuItem(menu, IDC_NEW_WINDOW);
+  NSMenuItem* new_tab_incognito_window_item =
+      CreateMenuItem(menu, IDC_NEW_INCOGNITO_WINDOW);
   NSMenuItem* close_window_menu_item = CreateMenuItem(menu, IDC_CLOSE_WINDOW);
   NSMenuItem* find_menu_item = CreateMenuItem(menu, IDC_FIND);
   NSMenuItem* find_previous_menu_item = CreateMenuItem(menu, IDC_FIND_PREVIOUS);
@@ -325,6 +329,13 @@ TEST_F(PanelCocoaTest, MenuItems) {
   EXPECT_FALSE([fullscreen_menu_item isEnabled]);
   EXPECT_FALSE([presentation_menu_item isEnabled]);
   EXPECT_FALSE([sync_menu_item isEnabled]);
+  // These are not enabled by Panel, so they are expected to be disabled for
+  // this unit_test. In real Chrome app, they are enabled by Chrome NSApp
+  // controller. PanelCocoaBrowsertest.MenuItems verifies that.
+  EXPECT_FALSE([new_tab_menu_item isEnabled]);
+  EXPECT_FALSE([new_tab_window_item isEnabled]);
+  EXPECT_FALSE([new_tab_incognito_window_item isEnabled]);
+
   EXPECT_TRUE([dev_tools_item isEnabled]);
   EXPECT_TRUE([dev_tools_console_item isEnabled]);
 
@@ -351,17 +362,6 @@ TEST_F(PanelCocoaTest, KeyEvent) {
   PanelCocoa* native_window = static_cast<PanelCocoa*>(panel->native_panel());
   [BrowserWindowUtils handleKeyboardEvent:event
                       inWindow:[native_window->controller_ window]];
-  ClosePanelAndWait(panel);
-}
-
-// Verify that the theme provider is properly plumbed through.
-TEST_F(PanelCocoaTest, ThemeProvider) {
-  Panel* panel = CreateTestPanel("Test Panel");
-  ASSERT_TRUE(panel);
-
-  PanelCocoa* native_window = static_cast<PanelCocoa*>(panel->native_panel());
-  ASSERT_TRUE(native_window);
-  EXPECT_TRUE(NULL != [[native_window->controller_ window] themeProvider]);
   ClosePanelAndWait(panel);
 }
 

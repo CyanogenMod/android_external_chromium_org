@@ -16,7 +16,7 @@
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 namespace content {
 
@@ -63,6 +63,10 @@ struct CONTENT_EXPORT OpenURLParams {
   // Reference to the old request id in case this is a navigation that is being
   // transferred to a new renderer.
   GlobalRequestID transferred_global_request_id;
+
+  // Indicates whether this navigation involves a cross-process redirect,
+  // in which case it should replace the current navigation entry.
+  bool is_cross_site_redirect;
 
  private:
   OpenURLParams();

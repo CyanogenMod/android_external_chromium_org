@@ -6,7 +6,7 @@
 
 #import  <Cocoa/Cocoa.h>
 
-#include "content/public/browser/devtools_http_handler.h"
+#include "base/command_line.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -17,7 +17,8 @@
 #include "content/shell/shell_browser_context.h"
 #include "content/shell/shell_browser_main_parts.h"
 #include "content/shell/shell_content_browser_client.h"
-#include "content/shell/shell_devtools_delegate.h"
+#include "content/shell/shell_devtools_frontend.h"
+#include "content/shell/shell_switches.h"
 #include "content/shell/shell_web_contents_view_delegate_creator.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
 
@@ -94,6 +95,9 @@ ShellWebContentsViewDelegate::~ShellWebContentsViewDelegate() {
 void ShellWebContentsViewDelegate::ShowContextMenu(
     const ContextMenuParams& params,
     ContextMenuSourceType type) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+    return;
+
   params_ = params;
   bool has_link = !params_.unfiltered_link_url.is_empty();
   bool has_selection = ! params_.selection_text.empty();
@@ -197,7 +201,7 @@ void ShellWebContentsViewDelegate::ShowContextMenu(
                       YES,
                       delegate);
 
-  NSView* parent_view = web_contents_->GetContentNativeView();
+  NSView* parent_view = web_contents_->GetView()->GetContentNativeView();
   NSEvent* currentEvent = [NSApp currentEvent];
   NSWindow* window = [parent_view window];
   NSPoint position = [window mouseLocationOutsideOfEventStream];
@@ -239,35 +243,24 @@ void ShellWebContentsViewDelegate::ActionPerformed(int tag) {
                              params_.link_url,
                              NULL,
                              MSG_ROUTING_NONE,
-                             NULL);
+                             gfx::Size());
       break;
     }
     case ShellContextMenuItemBackTag:
       web_contents_->GetController().GoToOffset(-1);
-      web_contents_->Focus();
+      web_contents_->GetView()->Focus();
       break;
     case ShellContextMenuItemForwardTag:
       web_contents_->GetController().GoToOffset(1);
-      web_contents_->Focus();
+      web_contents_->GetView()->Focus();
       break;
     case ShellContextMenuItemReloadTag: {
       web_contents_->GetController().Reload(false);
-      web_contents_->Focus();
+      web_contents_->GetView()->Focus();
       break;
     }
     case ShellContextMenuItemInspectTag: {
-      ShellContentBrowserClient* browser_client =
-          static_cast<ShellContentBrowserClient*>(
-            GetContentClient()->browser());
-      ShellDevToolsDelegate* delegate =
-          browser_client->shell_browser_main_parts()->devtools_delegate();
-      GURL url = delegate->devtools_http_handler()->GetFrontendURL(
-          web_contents_->GetRenderViewHost());
-      Shell::CreateNewWindow(web_contents_->GetBrowserContext(),
-                             url,
-                             NULL,
-                             MSG_ROUTING_NONE,
-                             NULL);
+      ShellDevToolsFrontend::Show(web_contents_);
       break;
     }
   }

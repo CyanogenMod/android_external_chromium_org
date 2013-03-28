@@ -8,6 +8,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/url_constants.h"
@@ -40,20 +41,6 @@ void LoginUIService::LoginUIClosed(LoginUI* ui) {
   FOR_EACH_OBSERVER(Observer, observer_list_, OnLoginUIClosed(ui));
 }
 
-void LoginUIService::ShowLoginUI(Browser* browser) {
-  if (ui_) {
-    // We already have active login UI - make it visible.
-    ui_->FocusUI();
-    return;
-  }
-
-  // Need to navigate to the settings page and display the UI.
-  chrome::ShowSettingsSubPage(browser, chrome::kSyncSetupSubPage);
-}
-
-// TODO(petewil) This is very similar to ShowLoginUI -
-// can we merge the two into one function?  We should wait until
-// the design of the login experience is done before we merge them.
 void LoginUIService::ShowLoginPopup() {
   if (current_login_ui()) {
     current_login_ui()->FocusUI();
@@ -61,7 +48,8 @@ void LoginUIService::ShowLoginPopup() {
   }
 
   Browser* browser =
-      new Browser(Browser::CreateParams(Browser::TYPE_POPUP, profile_));
+      new Browser(Browser::CreateParams(Browser::TYPE_POPUP, profile_,
+                                        chrome::GetActiveDesktop()));
   // TODO(munjal): Change the source from SOURCE_NTP_LINK to something else
   // once we have added a new source for extension API.
   GURL signin_url(SyncPromoUI::GetSyncPromoURL(GURL(),

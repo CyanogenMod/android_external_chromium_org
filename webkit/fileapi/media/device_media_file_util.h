@@ -5,7 +5,7 @@
 #ifndef WEBKIT_FILEAPI_MEDIA_DEVICE_MEDIA_FILE_UTIL_H_
 #define WEBKIT_FILEAPI_MEDIA_DEVICE_MEDIA_FILE_UTIL_H_
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "webkit/fileapi/file_system_file_util.h"
@@ -22,7 +22,7 @@ class FileSystemOperationContext;
 class WEBKIT_STORAGE_EXPORT_PRIVATE DeviceMediaFileUtil
     : public FileSystemFileUtil {
  public:
-  explicit DeviceMediaFileUtil(const FilePath& profile_path);
+  explicit DeviceMediaFileUtil(const base::FilePath& profile_path);
   virtual ~DeviceMediaFileUtil() {}
 
   // FileSystemFileUtil overrides.
@@ -47,15 +47,15 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE DeviceMediaFileUtil
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       base::PlatformFileInfo* file_info,
-      FilePath* platform_path) OVERRIDE;
+      base::FilePath* platform_path) OVERRIDE;
   virtual scoped_ptr<AbstractFileEnumerator> CreateFileEnumerator(
       FileSystemOperationContext* context,
       const FileSystemURL& root_url,
       bool recursive) OVERRIDE;
-  virtual PlatformFileError GetLocalFilePath(
+  virtual base::PlatformFileError GetLocalFilePath(
       FileSystemOperationContext* context,
       const FileSystemURL& file_system_url,
-      FilePath* local_file_path) OVERRIDE;
+      base::FilePath* local_file_path) OVERRIDE;
   virtual base::PlatformFileError Touch(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
@@ -65,9 +65,6 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE DeviceMediaFileUtil
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       int64 length) OVERRIDE;
-  virtual bool IsDirectoryEmpty(
-      FileSystemOperationContext* context,
-      const FileSystemURL& url) OVERRIDE;
   virtual base::PlatformFileError CopyOrMoveFile(
       FileSystemOperationContext* context,
       const FileSystemURL& src_url,
@@ -75,24 +72,24 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE DeviceMediaFileUtil
       bool copy) OVERRIDE;
   virtual base::PlatformFileError CopyInForeignFile(
       FileSystemOperationContext* context,
-      const FilePath& src_file_path,
+      const base::FilePath& src_file_path,
       const FileSystemURL& dest_url) OVERRIDE;
   virtual base::PlatformFileError DeleteFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url) OVERRIDE;
-  virtual base::PlatformFileError DeleteSingleDirectory(
+  virtual base::PlatformFileError DeleteDirectory(
       FileSystemOperationContext* context,
       const FileSystemURL& url) OVERRIDE;
   virtual base::PlatformFileError CreateSnapshotFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       base::PlatformFileInfo* file_info,
-      FilePath* platform_path,
+      base::FilePath* platform_path,
       SnapshotFilePolicy* policy) OVERRIDE;
 
  private:
   // Profile path
-  const FilePath profile_path_;
+  const base::FilePath profile_path_;
 
   DISALLOW_COPY_AND_ASSIGN(DeviceMediaFileUtil);
 };

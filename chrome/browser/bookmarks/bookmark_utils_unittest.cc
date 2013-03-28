@@ -6,6 +6,7 @@
 
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/bookmarks/bookmark_editor.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/clipboard/clipboard.h"
@@ -157,6 +158,74 @@ TEST_F(BookmarkUtilsTest, CopyPaste) {
   EXPECT_FALSE(CanPasteFromClipboard(model.bookmark_bar_node()));
 }
 #endif
+
+TEST_F(BookmarkUtilsTest, ApplyEditsWithNoFolderChange) {
+  BookmarkModel model(NULL);
+  const BookmarkNode* bookmarkbar = model.bookmark_bar_node();
+  model.AddURL(bookmarkbar, 0, ASCIIToUTF16("url0"), GURL("chrome://newtab"));
+  model.AddURL(bookmarkbar, 1, ASCIIToUTF16("url1"), GURL("chrome://newtab"));
+
+  {
+    BookmarkEditor::EditDetails detail(
+        BookmarkEditor::EditDetails::AddFolder(bookmarkbar, 1));
+    ApplyEditsWithNoFolderChange(&model, bookmarkbar, detail,
+                                 ASCIIToUTF16("folder0"), GURL(""));
+    EXPECT_EQ(ASCIIToUTF16("folder0"), bookmarkbar->GetChild(1)->GetTitle());
+  }
+  {
+    BookmarkEditor::EditDetails detail(
+        BookmarkEditor::EditDetails::AddFolder(bookmarkbar, -1));
+    ApplyEditsWithNoFolderChange(&model, bookmarkbar, detail,
+                                 ASCIIToUTF16("folder1"), GURL(""));
+    EXPECT_EQ(ASCIIToUTF16("folder1"), bookmarkbar->GetChild(3)->GetTitle());
+  }
+  {
+    BookmarkEditor::EditDetails detail(
+        BookmarkEditor::EditDetails::AddFolder(bookmarkbar, 10));
+    ApplyEditsWithNoFolderChange(&model, bookmarkbar, detail,
+                                 ASCIIToUTF16("folder2"), GURL(""));
+    EXPECT_EQ(ASCIIToUTF16("folder2"), bookmarkbar->GetChild(4)->GetTitle());
+  }
+}
+
+TEST_F(BookmarkUtilsTest, GetParentForNewNodes) {
+  BookmarkModel model(NULL);
+  // This tests the case where selection contains one item and that item is a
+  // folder.
+  std::vector<const BookmarkNode*> nodes;
+  nodes.push_back(model.bookmark_bar_node());
+  int index = -1;
+  const BookmarkNode* real_parent = GetParentForNewNodes(
+      model.bookmark_bar_node(), nodes, &index);
+  EXPECT_EQ(real_parent, model.bookmark_bar_node());
+  EXPECT_EQ(0, index);
+
+  nodes.clear();
+
+  // This tests the case where selection contains one item and that item is an
+  // url.
+  const BookmarkNode* page1 = model.AddURL(model.bookmark_bar_node(), 0,
+                                           ASCIIToUTF16("Google"),
+                                           GURL("http://google.com"));
+  nodes.push_back(page1);
+  real_parent = GetParentForNewNodes(model.bookmark_bar_node(), nodes, &index);
+  EXPECT_EQ(real_parent, model.bookmark_bar_node());
+  EXPECT_EQ(1, index);
+
+  // This tests the case where selection has more than one item.
+  const BookmarkNode* folder1 = model.AddFolder(model.bookmark_bar_node(), 1,
+                                                ASCIIToUTF16("Folder 1"));
+  nodes.push_back(folder1);
+  real_parent = GetParentForNewNodes(model.bookmark_bar_node(), nodes, &index);
+  EXPECT_EQ(real_parent, model.bookmark_bar_node());
+  EXPECT_EQ(2, index);
+
+  // This tests the case where selection doesn't contain any items.
+  nodes.clear();
+  real_parent = GetParentForNewNodes(model.bookmark_bar_node(), nodes, &index);
+  EXPECT_EQ(real_parent, model.bookmark_bar_node());
+  EXPECT_EQ(2, index);
+}
 
 }  // namespace
 }  // namespace bookmark_utils

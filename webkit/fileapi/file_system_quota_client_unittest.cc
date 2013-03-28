@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/bind.h"
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
-#include "base/scoped_temp_dir.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webkit/fileapi/external_mount_points.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_quota_client.h"
@@ -44,11 +45,12 @@ class FileSystemQuotaClientTest : public testing::Test {
         deletion_status_(quota::kQuotaStatusUnknown) {
   }
 
-  void SetUp() {
+  virtual void SetUp() {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     file_system_context_ =
         new FileSystemContext(
             FileSystemTaskRunners::CreateMockTaskRunners(),
+            ExternalMountPoints::CreateRefCounted().get(),
             NULL, NULL,
             data_dir_.path(),
             CreateDisallowFileAccessOptions());
@@ -81,7 +83,7 @@ class FileSystemQuotaClientTest : public testing::Test {
                        const std::string& origin_url,
                        quota::StorageType type) {
     GetOriginUsageAsync(quota_client, origin_url, type);
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     return usage_;
   }
 
@@ -92,7 +94,7 @@ class FileSystemQuotaClientTest : public testing::Test {
         type,
         base::Bind(&FileSystemQuotaClientTest::OnGetOrigins,
                    weak_factory_.GetWeakPtr()));
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     return origins_;
   }
 
@@ -104,7 +106,7 @@ class FileSystemQuotaClientTest : public testing::Test {
         type, host,
         base::Bind(&FileSystemQuotaClientTest::OnGetOrigins,
                    weak_factory_.GetWeakPtr()));
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     return origins_;
   }
 
@@ -127,13 +129,14 @@ class FileSystemQuotaClientTest : public testing::Test {
     return context;
   }
 
-  bool CreateFileSystemDirectory(const FilePath& file_path,
+  bool CreateFileSystemDirectory(const base::FilePath& file_path,
                                  const std::string& origin_url,
                                  quota::StorageType storage_type) {
     FileSystemType type = QuotaStorageTypeToFileSystemType(storage_type);
     FileSystemFileUtil* file_util = file_system_context_->GetFileUtil(type);
 
-    FileSystemURL url(GURL(origin_url), type, file_path);
+    FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
+        GURL(origin_url), type, file_path);
     scoped_ptr<FileSystemOperationContext> context(
         CreateFileSystemOperationContext(type));
 
@@ -144,7 +147,7 @@ class FileSystemQuotaClientTest : public testing::Test {
     return true;
   }
 
-  bool CreateFileSystemFile(const FilePath& file_path,
+  bool CreateFileSystemFile(const base::FilePath& file_path,
                             int64 file_size,
                             const std::string& origin_url,
                             quota::StorageType storage_type) {
@@ -155,7 +158,8 @@ class FileSystemQuotaClientTest : public testing::Test {
     FileSystemFileUtil* file_util = file_system_context_->
         sandbox_provider()->GetFileUtil(type);
 
-    FileSystemURL url(GURL(origin_url), type, file_path);
+    FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
+        GURL(origin_url), type, file_path);
     scoped_ptr<FileSystemOperationContext> context(
         CreateFileSystemOperationContext(type));
 
@@ -174,7 +178,7 @@ class FileSystemQuotaClientTest : public testing::Test {
                              const TestFile* files,
                              int num_files) {
     for (int i = 0; i < num_files; i++) {
-      FilePath path = FilePath().AppendASCII(files[i].name);
+      base::FilePath path = base::FilePath().AppendASCII(files[i].name);
       if (files[i].isDirectory) {
         ASSERT_TRUE(CreateFileSystemDirectory(
             path, files[i].origin_url, files[i].type));
@@ -206,7 +210,7 @@ class FileSystemQuotaClientTest : public testing::Test {
     for (int i = 0; i < num_files; i++) {
       if (files[i].type == type &&
           GURL(files[i].origin_url) == GURL(origin_url)) {
-        FilePath path = FilePath().AppendASCII(files[i].name);
+        base::FilePath path = base::FilePath().AppendASCII(files[i].name);
         if (!path.empty()) {
           file_paths_cost += ObfuscatedFileUtil::ComputeFilePathCost(path);
         }
@@ -251,7 +255,7 @@ class FileSystemQuotaClientTest : public testing::Test {
     deletion_status_ = status;
   }
 
-  ScopedTempDir data_dir_;
+  base::ScopedTempDir data_dir_;
   MessageLoop message_loop_;
   scoped_refptr<FileSystemContext> file_system_context_;
   base::WeakPtrFactory<FileSystemQuotaClientTest> weak_factory_;
@@ -437,7 +441,7 @@ TEST_F(FileSystemQuotaClientTest, GetUsage_MultipleTasks) {
   GetOriginUsageAsync(quota_client.get(), kDummyURL1, kTemporary);
   RunAdditionalOriginUsageTask(quota_client.get(), kDummyURL1, kTemporary);
   RunAdditionalOriginUsageTask(quota_client.get(), kDummyURL1, kTemporary);
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(11 + 22 + file_paths_cost, usage());
   EXPECT_EQ(2, additional_callback_count());
 
@@ -446,7 +450,7 @@ TEST_F(FileSystemQuotaClientTest, GetUsage_MultipleTasks) {
   RunAdditionalOriginUsageTask(quota_client.get(), kDummyURL1, kTemporary);
   GetOriginUsageAsync(quota_client.get(), kDummyURL1, kTemporary);
   RunAdditionalOriginUsageTask(quota_client.get(), kDummyURL1, kTemporary);
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(11 + 22 + file_paths_cost, usage());
   EXPECT_EQ(2, additional_callback_count());
 }
@@ -548,15 +552,15 @@ TEST_F(FileSystemQuotaClientTest, DeleteOriginTest) {
           "https://bar.com/", kPersistent);
 
   DeleteOriginData(quota_client.get(), "http://foo.com/", kTemporary);
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(quota::kQuotaStatusOk, status());
 
   DeleteOriginData(quota_client.get(), "http://bar.com/", kPersistent);
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(quota::kQuotaStatusOk, status());
 
   DeleteOriginData(quota_client.get(), "http://buz.com/", kTemporary);
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(quota::kQuotaStatusOk, status());
 
   EXPECT_EQ(0, GetOriginUsage(

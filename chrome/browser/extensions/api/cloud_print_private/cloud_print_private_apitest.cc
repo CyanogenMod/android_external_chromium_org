@@ -10,7 +10,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -22,14 +22,14 @@ using ::testing::_;
 // A base class for tests below.
 class ExtensionCloudPrintPrivateApiTest : public ExtensionApiTest {
  public:
-  void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionApiTest::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII(switches::kCloudPrintServiceURL,
         "http://www.cloudprintapp.com/files/extensions/api_test/"
         "cloud_print_private");
   }
 
-  void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     // Start up the test server and get us ready for calling the install
     // API functions.
     host_resolver()->AddRule("www.cloudprintapp.com", "127.0.0.1");
@@ -67,7 +67,7 @@ class CloudPrintTestsDelegateMock : public extensions::CloudPrintTestsDelegate {
                     const std::vector<std::string>& printer_blacklist));
   MOCK_METHOD0(GetHostName, std::string());
   MOCK_METHOD0(GetPrinters, std::vector<std::string>());
-
+  MOCK_METHOD0(GetClientId, std::string());
  private:
   DISALLOW_COPY_AND_ASSIGN(CloudPrintTestsDelegateMock);
 };
@@ -88,6 +88,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionCloudPrintPrivateApiTest, CloudPrintHosted) {
       .WillRepeatedly(Return("TestHostName"));
   EXPECT_CALL(cloud_print_mock, GetPrinters())
       .WillRepeatedly(Return(printers));
+
+  EXPECT_CALL(cloud_print_mock, GetClientId())
+      .WillRepeatedly(Return("TestAPIClient"));
+
   // Run this as a hosted app. Since we have overridden the cloud print service
   // URL in the command line, this URL should match the web extent for our
   // cloud print component app and it should work.

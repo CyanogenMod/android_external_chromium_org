@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -566,6 +566,13 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
         os.path.join(os.path.dirname(__file__), os.pardir, "data"))
 
   @staticmethod
+  def ChromeOSDataDir():
+    """Returns the path to the data dir chromeos/test/data."""
+    return os.path.normpath(
+        os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir,
+                     "chromeos", "test", "data"))
+
+  @staticmethod
   def GetFileURLForPath(*path):
     """Get file:// url for the given path.
 
@@ -753,26 +760,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
       os.kill(pid, signal.SIGTERM)
 
   @staticmethod
-  def ChromeFlagsForSyncTestServer(port, xmpp_port):
-    """Creates the flags list for the browser to connect to the sync server.
-
-    Use the |ExtraBrowser| class to launch a new browser with these flags.
-
-    Args:
-      port: The HTTP port number.
-      xmpp_port: The XMPP port number.
-
-    Returns:
-      A list with the flags.
-    """
-    return [
-      '--sync-url=http://127.0.0.1:%s/chromiumsync' % port,
-      '--sync-allow-insecure-xmpp-connection',
-      '--sync-notification-host=127.0.0.1:%s' % xmpp_port,
-      '--sync-notification-method=p2p',
-    ]
-
-  @staticmethod
   def GetPrivateInfo():
     """Fetch info from private_tests_info.txt in private dir.
 
@@ -854,29 +841,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
                       retval)
       time.sleep(retry_sleep)
     return retval if return_retval else False
-
-  def StartSyncServer(self):
-    """Start a local sync server.
-
-    Adds a dictionary attribute 'ports' in returned object.
-
-    Returns:
-      A handle to Sync Server, an instance of TestServer
-    """
-    sync_server = pyautolib.TestServer(pyautolib.TestServer.TYPE_SYNC,
-                                       '127.0.0.1',
-                                       pyautolib.FilePath(''))
-    assert sync_server.Start(), 'Could not start sync server'
-    sync_server.ports = dict(port=sync_server.GetPort(),
-                             xmpp_port=sync_server.GetSyncXmppPort())
-    logging.debug('Started sync server at ports %s.', sync_server.ports)
-    return sync_server
-
-  def StopSyncServer(self, sync_server):
-    """Stop the local sync server."""
-    assert sync_server, 'Sync Server not yet started'
-    assert sync_server.Stop(), 'Could not stop sync server'
-    logging.debug('Stopped sync server at ports %s.', sync_server.ports)
 
   def StartFTPServer(self, data_dir):
     """Start a local file server hosting data files over ftp://
@@ -2002,25 +1966,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     }
     self._GetResultFromJSONRequest(cmd_dict, windex=None)
 
-  def GetInstantInfo(self):
-    """Return info about the instant overlay tab.
-
-    Returns:
-      A dictionary.
-      Examples:
-        { u'enabled': True,
-          u'active': True,
-          u'current': True,
-          u'loading': True,
-          u'location': u'http://cnn.com/',
-          u'showing': False,
-          u'title': u'CNN.com - Breaking News'},
-
-        { u'enabled': False }
-    """
-    cmd_dict = {'command': 'GetInstantInfo'}
-    return self._GetResultFromJSONRequest(cmd_dict)['instant']
-
   def GetSearchEngineInfo(self, windex=0):
     """Return info about search engines.
 
@@ -2126,52 +2071,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     cmd_dict = {'command': 'PerformActionOnSearchEngine', 'keyword': keyword,
                 'action': 'default'}
     self._GetResultFromJSONRequest(cmd_dict, windex=windex)
-
-  def _EnsureProtectorCheck(self):
-    """Ensure that Protector check for changed settings has been performed in
-    the current browser session.
-
-    No-op if Protector is disabled.
-    """
-    # Ensure that check for default search engine change has been performed.
-    self._GetResultFromJSONRequest({'command': 'LoadSearchEngineInfo'})
-
-  def GetProtectorState(self, window_index=0):
-    """Returns current Protector state.
-
-    This will trigger Protector's check for changed settings if it hasn't been
-    performed yet.
-
-    Args:
-      window_index: The window index, default is 0.
-
-    Returns:
-      A dictionary.
-      Example:
-        { u'enabled': True,
-          u'showing_change': False }
-    """
-    self._EnsureProtectorCheck()
-    cmd_dict = {'command': 'GetProtectorState'}
-    return self._GetResultFromJSONRequest(cmd_dict, windex=window_index)
-
-  def ApplyProtectorChange(self):
-    """Applies the change shown by Protector and closes the bubble.
-
-    No-op if Protector is not showing any change.
-    """
-    cmd_dict = {'command': 'PerformProtectorAction',
-                'action': 'apply_change'}
-    self._GetResultFromJSONRequest(cmd_dict)
-
-  def DiscardProtectorChange(self):
-    """Discards the change shown by Protector and closes the bubble.
-
-    No-op if Protector is not showing any change.
-    """
-    cmd_dict = {'command': 'PerformProtectorAction',
-                'action': 'discard_change'}
-    self._GetResultFromJSONRequest(cmd_dict)
 
   def GetLocalStatePrefsInfo(self):
     """Return info about preferences.
@@ -2414,8 +2313,10 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
                     after downloading a dangerous download (ex. an executable).
                 'save_dangerous_download': Equivalent to 'Save' option after
                     downloading a dangerous file.
-                'toggle_pause': Toggles the paused state of the download. If the
-                    download completed before this call, it's a no-op.
+                'pause': Pause the download.  If the download completed before
+                    this call or is already paused, it's a no-op.
+                'resume': Resume the download.  If the download completed before
+                    this call or was not paused, it's a no-op.
                 'cancel': Cancel the download.
       window_index: The window index, default is 0.
 
@@ -2433,8 +2334,8 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
         u'is_temporary': False,
         u'open_when_complete': False,
         u'referrer_url': u'',
-        u'safety_state': u'SAFE',
         u'state': u'COMPLETE',
+        u'danger_type': u'DANGEROUS_FILE',
         u'url':  u'file://url/to/file.txt'
       }
     """
@@ -3731,142 +3632,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     logging.debug('Executing javascript: %s', js)
     return self.ExecuteJavascript(js, tab_index, windex)
 
-  def SignInToSync(self, username, password):
-    """Signs in to sync using the given username and password.
-
-    Args:
-      username: The account with which to sign in. Example: "user@gmail.com".
-      password: Password for the above account. Example: "pa$$w0rd".
-
-    Returns:
-      True, on success.
-
-    Raises:
-      pyauto_errors.JSONInterfaceError if the automation call returns an error.
-    """
-    cmd_dict = {
-      'command': 'SignInToSync',
-      'username': username,
-      'password': password,
-    }
-    return self._GetResultFromJSONRequest(cmd_dict)['success']
-
-  def GetSyncInfo(self):
-    """Returns info about sync.
-
-    Returns:
-      A dictionary of info about sync.
-      Example dictionaries:
-        {u'summary': u'SYNC DISABLED'}
-
-        { u'authenticated': True,
-          u'last synced': u'Just now',
-          u'summary': u'READY',
-          u'sync url': u'clients4.google.com',
-          u'updates received': 42,
-          u'synced datatypes': [ u'Bookmarks',
-                                 u'Preferences',
-                                 u'Passwords',
-                                 u'Autofill',
-                                 u'Themes',
-                                 u'Extensions',
-                                 u'Apps']}
-
-    Raises:
-      pyauto_errors.JSONInterfaceError if the automation call returns an error.
-    """
-    cmd_dict = {
-      'command': 'GetSyncInfo',
-    }
-    return self._GetResultFromJSONRequest(cmd_dict)['sync_info']
-
-  def AwaitSyncCycleCompletion(self):
-    """Waits for the ongoing sync cycle to complete. Must be signed in to sync
-       before calling this method.
-
-    Returns:
-      True, on success.
-
-    Raises:
-      pyauto_errors.JSONInterfaceError if the automation call returns an error.
-    """
-    cmd_dict = {
-      'command': 'AwaitSyncCycleCompletion',
-    }
-    return self._GetResultFromJSONRequest(cmd_dict)['success']
-
-  def AwaitSyncRestart(self):
-    """Waits for sync to reinitialize itself. Typically used when the browser
-       is restarted and a full sync cycle is not expected to occur. Must be
-       previously signed in to sync before calling this method.
-
-    Returns:
-      True, on success.
-
-    Raises:
-      pyauto_errors.JSONInterfaceError if the automation call returns an error.
-    """
-    cmd_dict = {
-      'command': 'AwaitSyncRestart',
-    }
-    return self._GetResultFromJSONRequest(cmd_dict)['success']
-
-  def EnableSyncForDatatypes(self, datatypes):
-    """Enables sync for a given list of sync datatypes. Must be signed in to
-       sync before calling this method.
-
-    Args:
-      datatypes: A list of strings indicating the datatypes for which to enable
-                 sync. Strings that can be in the list are:
-                 Bookmarks, Preferences, Passwords, Autofill, Themes,
-                 Typed URLs, Extensions, Encryption keys, Sessions, Apps, All.
-                 For an updated list of valid sync datatypes, refer to the
-                 function ModelTypeToString() in the file
-                 chrome/browser/sync/syncable/model_type.cc.
-                 Examples:
-                   ['Bookmarks', 'Preferences', 'Passwords']
-                   ['All']
-
-    Returns:
-      True, on success.
-
-    Raises:
-      pyauto_errors.JSONInterfaceError if the automation call returns an error.
-    """
-    cmd_dict = {
-      'command': 'EnableSyncForDatatypes',
-      'datatypes': datatypes,
-    }
-    return self._GetResultFromJSONRequest(cmd_dict)['success']
-
-  def DisableSyncForDatatypes(self, datatypes):
-    """Disables sync for a given list of sync datatypes. Must be signed in to
-       sync before calling this method.
-
-    Args:
-      datatypes: A list of strings indicating the datatypes for which to
-                 disable sync. Strings that can be in the list are:
-                 Bookmarks, Preferences, Passwords, Autofill, Themes,
-                 Typed URLs, Extensions, Encryption keys, Sessions, Apps, All.
-                 For an updated list of valid sync datatypes, refer to the
-                 function ModelTypeToString() in the file
-                 chrome/browser/sync/syncable/model_type.cc.
-                 Examples:
-                   ['Bookmarks', 'Preferences', 'Passwords']
-                   ['All']
-
-    Returns:
-      True, on success.
-
-    Raises:
-      pyauto_errors.JSONInterfaceError if the automation call returns an error.
-    """
-    cmd_dict = {
-      'command': 'DisableSyncForDatatypes',
-      'datatypes': datatypes,
-    }
-    return self._GetResultFromJSONRequest(cmd_dict)['success']
-
   def HeapProfilerDump(self, process_type, reason, tab_index=0, windex=0):
     """Dumps a heap profile.  It works only on Linux and ChromeOS.
 
@@ -3903,29 +3668,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
       self._GetResultFromJSONRequest(cmd_dict)
     else:
       logging.warn('Heap-profiling is not supported in this OS.')
-
-  def AppendSwitchASCIIToCommandLine(self, switch, value):
-    """Appends --switch=value to the command line.
-
-    NOTE: This doesn't change the startup commandline, i.e., flags used to
-    launch the browser. Use ExtraChromeFlags() if you want to do that. Instead,
-    use this if you want to alter flags dynamically, say to affect a feature
-    that looks at the flags everytime, instead of only at program startup.
-
-    Note that although this appends the switch, CommandLine::Get*() methods
-    generally return only the most recently added value, so this effectively
-    overrides any existing switch with the same name.
-
-    Args:
-      switch: the name of the switch to be set.
-      value: the value to be set for the switch.
-    """
-    cmd_dict = {
-      'command': 'AppendSwitchASCIIToCommandLine',
-      'switch': switch,
-      'value': value,
-    }
-    self._GetResultFromJSONRequest(cmd_dict, windex=None)
 
   def GetNTPThumbnails(self):
     """Return a list of info about the sites in the NTP most visited section.
@@ -4604,7 +4346,7 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
         'Chrome did not reopen the testing channel after login as guest.'
     self.SetUp()
 
-  def Login(self, username, password):
+  def Login(self, username, password, timeout=120 * 1000):
     """Login to chromeos.
 
     Waits until logged in and browser is ready.
@@ -4613,6 +4355,11 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     Note that in case of webui auth-extension-based login, gaia auth errors
     will not be noticed here, because the browser has no knowledge of it. In
     this case the GetNextEvent automation command will always time out.
+
+    Args:
+      username: the username to log in as.
+      password: the user's password.
+      timeout: timeout in ms; defaults to two minutes.
 
     Returns:
       An error string if an error occured.
@@ -4631,9 +4378,7 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     self._GetResultFromJSONRequest(cmd_dict, windex=None)
     self.AddDomEventObserver('loginfail', automation_id=4444)
     try:
-      # TODO(craigdh): Add login failure events once PyAuto switches to mocked
-      # GAIA authentication.
-      if self.GetNextEvent().get('name') == 'loginfail':
+      if self.GetNextEvent(timeout=timeout).get('name') == 'loginfail':
         raise JSONInterfaceError('Login denied by auth server.')
     except JSONInterfaceError as e:
       raise JSONInterfaceError('Login failed. Perhaps Chrome crashed, '
@@ -5501,48 +5246,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     }
     return self._GetResultFromJSONRequest(cmd_dict, windex=None)
 
-  def IsEnterpriseDevice(self):
-    """Check whether the device is managed by an enterprise.
-
-    Returns:
-      True if the device is managed by an enterprise, False otherwise.
-
-    Raises:
-      pyauto_errors.JSONInterfaceError if the automation call returns an error.
-    """
-    cmd_dict = {
-        'command': 'IsEnterpriseDevice',
-    }
-    result = self._GetResultFromJSONRequest(cmd_dict, windex=None)
-    return result.get('enterprise')
-
-  def GetEnterprisePolicyInfo(self):
-    """Get details about enterprise policy on chromeos.
-
-    Returns:
-      A dictionary including information about the enterprise policy.
-      Sample:
-        {u'device_token_cache_loaded': True,
-         u'device_cloud_policy_state': u'success',
-         u'device_id': u'11111-222222222-33333333-4444444',
-         u'device_mandatory_policies': {},
-         u'device_recommended_policies': {},
-         u'device_token': u'ABjmT7nqGWTHRLO',
-         u'enterprise_domain': u'example.com',
-         u'gaia_token': u'',
-         u'machine_id': u'123456789',
-         u'machine_model': u'COMPUTER',
-         u'user_cache_loaded': True,
-         u'user_cloud_policy_state': u'success',
-         u'user_mandatory_policies': {u'AuthSchemes': u'',
-                                      u'AutoFillEnabled': True,
-                                      u'ChromeOsLockOnIdleSuspend': True}
-         u'user_recommended_policies': {},
-         u'user_name': u'user@example.com'}
-    """
-    cmd_dict = { 'command': 'GetEnterprisePolicyInfo' }
-    return self._GetResultFromJSONRequest(cmd_dict, windex=None)
-
   def EnableSpokenFeedback(self, enabled):
     """Enables or disables spoken feedback accessibility mode.
 
@@ -5612,29 +5315,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
         'timezone': timezone,
     }
     self._GetResultFromJSONRequest(cmd_dict, windex=None)
-
-  def EnrollEnterpriseDevice(self, user, password):
-    """Enrolls an unenrolled device as an enterprise device.
-
-    Expects the device to be unenrolled with the TPM unlocked. This is
-    equivalent to pressing Ctrl-Alt-e to enroll the device from the login
-    screen.
-
-    Returns:
-      An error string if the enrollment fails.
-      None otherwise.
-
-    Raises:
-      pyauto_errors.JSONInterfaceError if the automation call returns an error.
-    """
-    cmd_dict = {
-        'command': 'EnrollEnterpriseDevice',
-        'user': user,
-        'password': password,
-    }
-    time.sleep(5) # TODO(craigdh): Block until Install Attributes is ready.
-    result = self._GetResultFromJSONRequest(cmd_dict, windex=None)
-    return result.get('error_string')
 
   def GetUpdateInfo(self):
     """Gets the status of the ChromeOS updater.
@@ -5794,22 +5474,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
         'domAutomationController.send("done")' % text,
         tab_index=tab_index, windex=windex)
 
-
-  def CaptureProfilePhoto(self):
-    """Captures user profile photo on ChromeOS.
-
-    This is done by driving the TakePhotoDialog. The image file is
-    saved on disk and its path is set in the local state preferences.
-
-    A user needs to be logged-in as a precondition. Note that the UI is not
-    destroyed afterwards, a browser restart is necessary if you want
-    to interact with the browser after this call in the same test case.
-
-    Raises:
-      pyauto_errors.JSONInterfaceError if the automation call returns an error.
-    """
-    cmd_dict = { 'command': 'CaptureProfilePhoto' }
-    return self._GetResultFromJSONRequest(cmd_dict)
 
   def GetMemoryStatsChromeOS(self, duration):
     """Identifies and returns different kinds of current memory usage stats.

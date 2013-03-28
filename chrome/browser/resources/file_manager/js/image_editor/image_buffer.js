@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * A stack of overlays that display itself and handle mouse events.
  * TODO(kaznacheev) Consider disbanding this class and moving
@@ -13,7 +15,10 @@ function ImageBuffer() {
   this.overlays_ = [];
 }
 
-//TODO(JSDOC)
+/**
+ * TODO(JSDOC).
+ * @param {ImageBuffer.Overlay} overlay  // TODO(JSDOC).
+ */
 ImageBuffer.prototype.addOverlay = function(overlay) {
   var zIndex = overlay.getZIndex();
   // Store the overlays in the ascending Z-order.
@@ -24,7 +29,10 @@ ImageBuffer.prototype.addOverlay = function(overlay) {
   this.overlays_.splice(i, 0, overlay);
 };
 
-//TODO(JSDOC)
+/**
+ * TODO(JSDOC).
+ * @param {ImageBuffer.Overlay} overlay  // TODO(JSDOC).
+ */
 ImageBuffer.prototype.removeOverlay = function(overlay) {
   for (var i = 0; i != this.overlays_.length; i++) {
     if (this.overlays_[i] == overlay) {
@@ -49,7 +57,7 @@ ImageBuffer.prototype.draw = function() {
  * @param {number} x X coordinate for cursor.
  * @param {number} y Y coordinate for cursor.
  * @param {boolean} mouseDown If mouse button is down.
- * @return {String} A value for style.cursor CSS property.
+ * @return {string} A value for style.cursor CSS property.
  */
 ImageBuffer.prototype.getCursorStyle = function(x, y, mouseDown) {
   for (var i = this.overlays_.length - 1; i >= 0; i--) {
@@ -63,7 +71,7 @@ ImageBuffer.prototype.getCursorStyle = function(x, y, mouseDown) {
  * Searches for a click handler in the descending Z-order.
  * @param {number} x X coordinate for click event.
  * @param {number} y Y coordinate for click event.
- * @return {Boolean} True if handled.
+ * @return {boolean} True if handled.
  */
 ImageBuffer.prototype.onClick = function(x, y) {
   for (var i = this.overlays_.length - 1; i >= 0; i--) {
@@ -119,25 +127,58 @@ ImageBuffer.DoubleTapAction = {
  * and the behavior of the ImageBuffer instance.
  * @class
  */
-//TODO(JSDOC)
 ImageBuffer.Overlay = function() {};
 
-//TODO(JSDOC)
+/**
+ * TODO(JSDOC).
+ * @return {number}  // TODO(JSDOC).
+ */
 ImageBuffer.Overlay.prototype.getZIndex = function() { return 0 };
 
-//TODO(JSDOC)
+/**
+ * TODO(JSDOC).
+ */
 ImageBuffer.Overlay.prototype.draw = function() {};
 
-//TODO(JSDOC)
-ImageBuffer.Overlay.prototype.getCursorStyle = function() { return null };
+/**
+ * TODO(JSDOC).
+ * @param {number} x X coordinate for cursor.
+ * @param {number} y Y coordinate for cursor.
+ * @param {boolean} mouseDown If mouse button is down.
+ * @return {?string} A value for style.cursor CSS property or null for
+ *     default.
+ */
+ImageBuffer.Overlay.prototype.getCursorStyle = function(x, y, mouseDown) {
+  return null;
+};
 
-//TODO(JSDOC)
-ImageBuffer.Overlay.prototype.onClick = function() { return false };
+/**
+ * TODO(JSDOC).
+ * @param {number} x  // TODO(JSDOC).
+ * @param {number} y  // TODO(JSDOC).
+ * @return {boolean}  // TODO(JSDOC).
+ */
+ImageBuffer.Overlay.prototype.onClick = function(x, y) {
+  return false;
+};
 
-//TODO(JSDOC)
-ImageBuffer.Overlay.prototype.getDragHandler = function() { return null };
+/**
+ * TODO(JSDOC).
+ * @param {number} x Event X coordinate.
+ * @param {number} y Event Y coordinate.
+ * @param {boolean} touch True if it's a touch event, false if mouse.
+ * @return {function(number,number)} A function to be called on mouse drag.
+ */
+ImageBuffer.Overlay.prototype.getDragHandler = function(x, y, touch) {
+  return null;
+};
 
-//TODO(JSDOC)
+/**
+ * TODO(JSDOC).
+ * @param {number} x  // TODO(JSDOC).
+ * @param {number} y  // TODO(JSDOC).
+ * @return {ImageBuffer.DoubleTapAction}  // TODO(JSDOC).
+ */
 ImageBuffer.Overlay.prototype.getDoubleTapAction = function(x, y) {
   return ImageBuffer.DoubleTapAction.NOTHING;
 };

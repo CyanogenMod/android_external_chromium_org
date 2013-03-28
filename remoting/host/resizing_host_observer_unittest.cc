@@ -2,19 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "remoting/host/resizing_host_observer.h"
-#include "remoting/host/desktop_resizer.h"
-
 #include <list>
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "remoting/host/desktop_resizer.h"
+#include "remoting/host/resizing_host_observer.h"
+#include "remoting/host/screen_resolution.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkSize.h"
 
 std::ostream& operator<<(std::ostream& os, const SkISize& size) {
   return os << size.width() << "x" << size.height();
 }
+
+const int kDefaultDPI = 96;
 
 namespace remoting {
 
@@ -31,7 +33,10 @@ class FakeDesktopResizer : public DesktopResizer {
     }
   }
 
-  const SkISize& initial_size() { return initial_size_; }
+  virtual ~FakeDesktopResizer() {
+    EXPECT_EQ(initial_size_, GetCurrentSize());
+  }
+
   int set_size_call_count() { return set_size_call_count_; }
 
   // remoting::DesktopResizer interface
@@ -65,16 +70,20 @@ class FakeDesktopResizer : public DesktopResizer {
 
 class ResizingHostObserverTest : public testing::Test {
  public:
-  void SetDesktopResizer(FakeDesktopResizer* desktop_resizer) {
-    CHECK(!desktop_resizer_.get()) << "Call SetDeskopResizer once per test";
-    resizing_host_observer_.reset(new ResizingHostObserver(desktop_resizer,
-                                                           NULL));
-    desktop_resizer_.reset(desktop_resizer);
-    resizing_host_observer_->OnClientAuthenticated("");
+  ResizingHostObserverTest() : desktop_resizer_(NULL) {
+  }
+
+  void SetDesktopResizer(scoped_ptr<FakeDesktopResizer> desktop_resizer) {
+    CHECK(!desktop_resizer_) << "Call SetDeskopResizer once per test";
+    desktop_resizer_ = desktop_resizer.get();
+
+    resizing_host_observer_.reset(
+        new ResizingHostObserver(desktop_resizer.PassAs<DesktopResizer>()));
   }
 
   SkISize GetBestSize(const SkISize& client_size) {
-    resizing_host_observer_->OnClientDimensionsChanged("", client_size);
+    resizing_host_observer_->SetScreenResolution(ScreenResolution(
+        client_size, SkIPoint::Make(kDefaultDPI, kDefaultDPI)));
     return desktop_resizer_->GetCurrentSize();
   }
 
@@ -87,40 +96,19 @@ class ResizingHostObserverTest : public testing::Test {
     }
   }
 
-  void Reconnect() {
-    resizing_host_observer_->OnClientDisconnected("");
-    resizing_host_observer_->OnClientAuthenticated("");
-  }
-
-  // testing::Test interface
-  virtual void TearDown() OVERRIDE {
-    resizing_host_observer_->OnClientDisconnected("");
-    EXPECT_EQ(desktop_resizer_->initial_size(),
-              desktop_resizer_->GetCurrentSize());
-  }
-
  private:
   scoped_ptr<ResizingHostObserver> resizing_host_observer_;
-  scoped_ptr<FakeDesktopResizer> desktop_resizer_;
+  FakeDesktopResizer* desktop_resizer_;
 };
-
-// Check that the host is not resized if it reports an initial size of zero
-// (even if it GetSupportedSizes does not return an empty list).
-TEST_F(ResizingHostObserverTest, ZeroGetCurrentSize) {
-  SkISize zero = { 0, 0 };
-  SetDesktopResizer(
-      new FakeDesktopResizer(zero, true, NULL, 0));
-  SkISize client_sizes[] = { { 200, 100 }, { 100, 200 } };
-  SkISize expected_sizes[] = { zero, zero };
-  VerifySizes(client_sizes, expected_sizes, arraysize(client_sizes));
-}
 
 // Check that the host is not resized if GetSupportedSizes returns an empty
 // list (even if GetCurrentSize is supported).
 TEST_F(ResizingHostObserverTest, EmptyGetSupportedSizes) {
   SkISize initial = { 640, 480 };
-  SetDesktopResizer(
+  scoped_ptr<FakeDesktopResizer> desktop_resizer(
       new FakeDesktopResizer(initial, false, NULL, 0));
+  SetDesktopResizer(desktop_resizer.Pass());
+
   SkISize client_sizes[] = { { 200, 100 }, { 100, 200 } };
   SkISize expected_sizes[] = { initial, initial };
   VerifySizes(client_sizes, expected_sizes, arraysize(client_sizes));
@@ -128,8 +116,10 @@ TEST_F(ResizingHostObserverTest, EmptyGetSupportedSizes) {
 
 // Check that if the implementation supports exact size matching, it is used.
 TEST_F(ResizingHostObserverTest, SelectExactSize) {
-  SetDesktopResizer(
+  scoped_ptr<FakeDesktopResizer> desktop_resizer(
       new FakeDesktopResizer(SkISize::Make(640, 480), true, NULL, 0));
+  SetDesktopResizer(desktop_resizer.Pass());
+
   SkISize client_sizes[] = { { 200, 100 }, { 100, 200 } , { 640, 480 },
                              { 480, 640 }, { 1280, 1024 } };
   VerifySizes(client_sizes, client_sizes, arraysize(client_sizes));
@@ -140,9 +130,11 @@ TEST_F(ResizingHostObserverTest, SelectExactSize) {
 TEST_F(ResizingHostObserverTest, SelectBestSmallerSize) {
   SkISize supported_sizes[] = {
     SkISize::Make(639, 479), SkISize::Make(640, 480) };
-  SetDesktopResizer(
+  scoped_ptr<FakeDesktopResizer> desktop_resizer(
       new FakeDesktopResizer(SkISize::Make(640, 480), false,
                              supported_sizes, arraysize(supported_sizes)));
+  SetDesktopResizer(desktop_resizer.Pass());
+
   SkISize client_sizes[] = { { 639, 479 }, { 640, 480 }, { 641, 481 },
                              { 999, 999 } };
   SkISize expected_sizes[] = { supported_sizes[0], supported_sizes[1],
@@ -154,9 +146,11 @@ TEST_F(ResizingHostObserverTest, SelectBestSmallerSize) {
 // the requested size, then the one that requires the least down-scaling.
 TEST_F(ResizingHostObserverTest, SelectBestScaleFactor) {
   SkISize supported_sizes[] = { { 100, 100 }, { 200, 100 } };
-  SetDesktopResizer(
+  scoped_ptr<FakeDesktopResizer> desktop_resizer(
       new FakeDesktopResizer(SkISize::Make(200, 100), false,
                              supported_sizes, arraysize(supported_sizes)));
+  SetDesktopResizer(desktop_resizer.Pass());
+
   SkISize client_sizes[] = { { 1, 1 }, { 99, 99 }, { 199, 99 } };
   SkISize expected_sizes[] = { supported_sizes[0], supported_sizes[0],
                                supported_sizes[1] };
@@ -167,31 +161,17 @@ TEST_F(ResizingHostObserverTest, SelectBestScaleFactor) {
 // resultant scale factor, then the widest one is selected.
 TEST_F(ResizingHostObserverTest, SelectWidest) {
   SkISize supported_sizes[] = { { 640, 480 }, { 480, 640 } };
-  SetDesktopResizer(
+  scoped_ptr<FakeDesktopResizer> desktop_resizer(
       new FakeDesktopResizer(SkISize::Make(480, 640), false,
                              supported_sizes, arraysize(supported_sizes)));
+  SetDesktopResizer(desktop_resizer.Pass());
+
   SkISize client_sizes[] = { { 100, 100 }, { 480, 480 }, { 500, 500 },
                              { 640, 640 }, { 1000, 1000 } };
   SkISize expected_sizes[] = { supported_sizes[0], supported_sizes[0],
                                supported_sizes[0], supported_sizes[0],
                                supported_sizes[0] };
   VerifySizes(client_sizes, expected_sizes, arraysize(client_sizes));
-}
-
-// Check that resize-to-client is disabled if the size is changed explicitly.
-TEST_F(ResizingHostObserverTest, ManualResize) {
-  FakeDesktopResizer* desktop_resizer =
-      new FakeDesktopResizer(SkISize::Make(640, 480), true, NULL, 0);
-  SetDesktopResizer(desktop_resizer);
-  SkISize client_sizes[] = { { 1, 1 }, { 2, 2 } , { 3, 3 } };
-  VerifySizes(client_sizes, client_sizes, arraysize(client_sizes));
-  SkISize explicit_size = SkISize::Make(640, 480);
-  desktop_resizer->SetSize(explicit_size);
-  SkISize expected_sizes[] = { explicit_size, explicit_size, explicit_size };
-  VerifySizes(client_sizes, expected_sizes, arraysize(client_sizes));
-  // Make sure this behaviour doesn't persist across reconnect.
-  Reconnect();
-  VerifySizes(client_sizes, client_sizes, arraysize(client_sizes));
 }
 
 // Check that if the best match for the client size doesn't change, then we
@@ -201,7 +181,8 @@ TEST_F(ResizingHostObserverTest, NoSetSizeForSameSize) {
   FakeDesktopResizer* desktop_resizer =
       new FakeDesktopResizer(SkISize::Make(640, 480), false,
                              supported_sizes, arraysize(supported_sizes));
-  SetDesktopResizer(desktop_resizer);
+  SetDesktopResizer(scoped_ptr<FakeDesktopResizer>(desktop_resizer));
+
   SkISize client_sizes[] = { { 640, 640 }, { 1024, 768 }, { 640, 480 } };
   SkISize expected_sizes[] = { { 640, 480 }, { 640, 480 }, { 640, 480 } };
   VerifySizes(client_sizes, expected_sizes, arraysize(client_sizes));

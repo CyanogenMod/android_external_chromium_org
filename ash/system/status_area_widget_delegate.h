@@ -6,8 +6,8 @@
 #define ASH_SYSTEM_STATUS_AREA_WIDGET_DELEGATE_H_
 
 #include "ash/ash_export.h"
+#include "ash/shelf/shelf_types.h"
 #include "ash/wm/gestures/shelf_gesture_handler.h"
-#include "ash/wm/shelf_types.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -43,7 +43,7 @@ class ASH_EXPORT StatusAreaWidgetDelegate : public views::AccessiblePaneView,
   virtual const views::Widget* GetWidget() const OVERRIDE;
 
   // Overridden from ui::EventHandler:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // views::WidgetDelegate overrides:
   virtual bool CanActivate() const OVERRIDE;

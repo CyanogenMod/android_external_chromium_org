@@ -10,17 +10,12 @@
 #include <set>
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/browser/history/visit_filter.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/common/page_transition_types.h"
 #include "sql/statement.h"
-
-// Rows, in order, of the visit table.
-#define HISTORY_VISIT_ROW_FIELDS \
-    " id,url,visit_time,from_visit,transition,segment_id,is_indexed," \
-    "visit_duration "
 
 namespace history {
 
@@ -250,6 +245,25 @@ bool VisitDatabase::GetIndexedVisitsForURL(URLID url_id, VisitVector* visits) {
   return FillVisitVector(statement, visits);
 }
 
+
+bool VisitDatabase::GetVisitsForTimes(const std::vector<base::Time>& times,
+                                      VisitVector* visits) {
+  visits->clear();
+
+  for (std::vector<base::Time>::const_iterator it = times.begin();
+       it != times.end(); ++it) {
+    sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
+        "SELECT" HISTORY_VISIT_ROW_FIELDS "FROM visits "
+        "WHERE visit_time == ?"));
+
+    statement.BindInt64(0, it->ToInternalValue());
+
+    if (!FillVisitVector(statement, visits))
+      return false;
+  }
+  return true;
+}
+
 bool VisitDatabase::GetAllVisitsInRange(base::Time begin_time,
                                         base::Time end_time,
                                         int max_results,
@@ -298,9 +312,7 @@ bool VisitDatabase::GetVisitsInRangeForTransition(
   return FillVisitVector(statement, visits);
 }
 
-void VisitDatabase::GetVisibleVisitsInRange(base::Time begin_time,
-                                            base::Time end_time,
-                                            int max_count,
+bool VisitDatabase::GetVisibleVisitsInRange(const QueryOptions& options,
                                             VisitVector* visits) {
   visits->clear();
   // The visit_time values can be duplicated in a redirect chain, so we sort
@@ -313,12 +325,8 @@ void VisitDatabase::GetVisibleVisitsInRange(base::Time begin_time,
                                                 // KEYWORD_GENERATED
       "ORDER BY visit_time DESC, id DESC"));
 
-  // Note that we use min/max values for querying unlimited ranges of time using
-  // the same statement. Since the time has an index, this will be about the
-  // same amount of work as just doing a query for everything with no qualifier.
-  int64 end = end_time.ToInternalValue();
-  statement.BindInt64(0, begin_time.ToInternalValue());
-  statement.BindInt64(1, end ? end : std::numeric_limits<int64>::max());
+  statement.BindInt64(0, options.EffectiveBeginTime());
+  statement.BindInt64(1, options.EffectiveEndTime());
   statement.BindInt(2, content::PAGE_TRANSITION_CHAIN_END);
   statement.BindInt(3, content::PAGE_TRANSITION_CORE_MASK);
   statement.BindInt(4, content::PAGE_TRANSITION_AUTO_SUBFRAME);
@@ -326,18 +334,32 @@ void VisitDatabase::GetVisibleVisitsInRange(base::Time begin_time,
   statement.BindInt(6, content::PAGE_TRANSITION_KEYWORD_GENERATED);
 
   std::set<URLID> found_urls;
+
+  // Keeps track of the day that |found_urls| is holding the URLs for, in order
+  // to handle removing per-day duplicates.
+  base::Time found_urls_midnight;
+
   while (statement.Step()) {
     VisitRow visit;
     FillVisitRow(statement, &visit);
-    // Make sure the URL this visit corresponds to is unique.
-    if (found_urls.find(visit.url_id) != found_urls.end())
-      continue;
-    found_urls.insert(visit.url_id);
-    visits->push_back(visit);
 
-    if (max_count > 0 && static_cast<int>(visits->size()) >= max_count)
-      break;
+    if (options.duplicate_policy != QueryOptions::KEEP_ALL_DUPLICATES) {
+      if (options.duplicate_policy == QueryOptions::REMOVE_DUPLICATES_PER_DAY &&
+          found_urls_midnight != visit.visit_time.LocalMidnight()) {
+        found_urls.clear();
+        found_urls_midnight = visit.visit_time.LocalMidnight();
+      }
+      // Make sure the URL this visit corresponds to is unique.
+      if (found_urls.find(visit.url_id) != found_urls.end())
+        continue;
+      found_urls.insert(visit.url_id);
+    }
+
+    if (static_cast<int>(visits->size()) >= options.EffectiveMaxCount())
+      return true;
+    visits->push_back(visit);
   }
+  return false;
 }
 
 void VisitDatabase::GetDirectVisitsDuringTimes(const VisitFilter& time_filter,

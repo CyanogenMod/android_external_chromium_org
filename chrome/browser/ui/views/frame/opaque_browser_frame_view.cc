@@ -9,9 +9,9 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/views/avatar_menu_button.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -45,7 +45,7 @@
 #include "ui/views/window/window_shape.h"
 
 #if defined(OS_WIN)
-#include "base/win/metro.h"
+#include "win8/util/win8_util.h"
 #endif  // OS_WIN
 
 using content::WebContents;
@@ -118,8 +118,8 @@ bool ConvertedContainsCheck(gfx::Rect bounds, const views::View* src,
 }
 
 bool ShouldAddDefaultCaptionButtons() {
-#if defined(OS_WIN) && !defined(USE_AURA)
-  return !base::win::IsMetroProcess();
+#if defined(OS_WIN)
+  return !win8::IsSingleWindowMetroMode();
 #endif  // OS_WIN
   return true;
 }
@@ -377,9 +377,9 @@ void OpaqueBrowserFrameView::GetWindowMask(const gfx::Size& size,
 void OpaqueBrowserFrameView::ResetWindowControls() {
   if (!ShouldAddDefaultCaptionButtons())
     return;
-  restore_button_->SetState(views::CustomButton::BS_NORMAL);
-  minimize_button_->SetState(views::CustomButton::BS_NORMAL);
-  maximize_button_->SetState(views::CustomButton::BS_NORMAL);
+  restore_button_->SetState(views::CustomButton::STATE_NORMAL);
+  minimize_button_->SetState(views::CustomButton::STATE_NORMAL);
+  maximize_button_->SetState(views::CustomButton::STATE_NORMAL);
   // The close button isn't affected by this constraint.
 }
 
@@ -519,15 +519,15 @@ views::ImageButton* OpaqueBrowserFrameView::InitWindowCaptionButton(
     int accessibility_string_id) {
   views::ImageButton* button = new views::ImageButton(this);
   ui::ThemeProvider* tp = frame()->GetThemeProvider();
-  button->SetImage(views::CustomButton::BS_NORMAL,
+  button->SetImage(views::CustomButton::STATE_NORMAL,
                    tp->GetImageSkiaNamed(normal_image_id));
-  button->SetImage(views::CustomButton::BS_HOT,
+  button->SetImage(views::CustomButton::STATE_HOVERED,
                    tp->GetImageSkiaNamed(hot_image_id));
-  button->SetImage(views::CustomButton::BS_PUSHED,
+  button->SetImage(views::CustomButton::STATE_PRESSED,
                    tp->GetImageSkiaNamed(pushed_image_id));
   if (browser_view()->IsBrowserTypeNormal()) {
     button->SetBackground(
-        tp->GetColor(ThemeService::COLOR_BUTTON_BACKGROUND),
+        tp->GetColor(ThemeProperties::COLOR_BUTTON_BACKGROUND),
         tp->GetImageSkiaNamed(IDR_THEME_WINDOW_CONTROL_BACKGROUND),
         tp->GetImageSkiaNamed(mask_image_id));
   }
@@ -714,7 +714,7 @@ void OpaqueBrowserFrameView::PaintToolbarBackground(gfx::Canvas* canvas) {
 
   // Paint the bottom rect.
   canvas->FillRect(gfx::Rect(x, bottom_y, w, bottom_edge_height),
-                   tp->GetColor(ThemeService::COLOR_TOOLBAR));
+                   tp->GetColor(ThemeProperties::COLOR_TOOLBAR));
 
   // Tile the toolbar image starting at the frame edge on the left and where the
   // horizontal tabstrip is (or would be) on the top.
@@ -786,7 +786,8 @@ void OpaqueBrowserFrameView::PaintToolbarBackground(gfx::Canvas* canvas) {
                 toolbar_bounds.bottom() - kClientEdgeThickness,
                 w - (2 * kClientEdgeThickness),
                 kClientEdgeThickness),
-      ThemeService::GetDefaultColor(ThemeService::COLOR_TOOLBAR_SEPARATOR));
+      ThemeProperties::GetDefaultColor(
+          ThemeProperties::COLOR_TOOLBAR_SEPARATOR));
 }
 
 void OpaqueBrowserFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
@@ -795,7 +796,7 @@ void OpaqueBrowserFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
   int image_top = client_area_top;
 
   gfx::Rect client_area_bounds = CalculateClientAreaBounds(width(), height());
-  SkColor toolbar_color = tp->GetColor(ThemeService::COLOR_TOOLBAR);
+  SkColor toolbar_color = tp->GetColor(ThemeProperties::COLOR_TOOLBAR);
 
   if (browser_view()->IsToolbarVisible()) {
     // The client edge images always start below the toolbar corner images.  The
@@ -877,20 +878,21 @@ SkColor OpaqueBrowserFrameView::GetFrameColor() const {
   if (browser_view()->IsBrowserTypeNormal()) {
     if (ShouldPaintAsActive()) {
       return GetThemeProvider()->GetColor(is_incognito ?
-          ThemeService::COLOR_FRAME_INCOGNITO : ThemeService::COLOR_FRAME);
+          ThemeProperties::COLOR_FRAME_INCOGNITO :
+          ThemeProperties::COLOR_FRAME);
     }
     return GetThemeProvider()->GetColor(is_incognito ?
-        ThemeService::COLOR_FRAME_INCOGNITO_INACTIVE :
-        ThemeService::COLOR_FRAME_INACTIVE);
+        ThemeProperties::COLOR_FRAME_INCOGNITO_INACTIVE :
+        ThemeProperties::COLOR_FRAME_INACTIVE);
   }
   // Never theme app and popup windows.
   if (ShouldPaintAsActive()) {
-    return ThemeService::GetDefaultColor(is_incognito ?
-        ThemeService::COLOR_FRAME_INCOGNITO : ThemeService::COLOR_FRAME);
+    return ThemeProperties::GetDefaultColor(is_incognito ?
+        ThemeProperties::COLOR_FRAME_INCOGNITO : ThemeProperties::COLOR_FRAME);
   }
-  return ThemeService::GetDefaultColor(is_incognito ?
-      ThemeService::COLOR_FRAME_INCOGNITO_INACTIVE :
-      ThemeService::COLOR_FRAME_INACTIVE);
+  return ThemeProperties::GetDefaultColor(is_incognito ?
+      ThemeProperties::COLOR_FRAME_INCOGNITO_INACTIVE :
+      ThemeProperties::COLOR_FRAME_INACTIVE);
 }
 
 gfx::ImageSkia* OpaqueBrowserFrameView::GetFrameImage() const {

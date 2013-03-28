@@ -8,9 +8,10 @@
 
 #include "base/base64.h"
 #include "base/bind.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/policy/proto/device_management_backend.pb.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
 #include "chrome/common/pref_names.h"
 
 namespace em = enterprise_management;
@@ -19,10 +20,8 @@ namespace chromeos {
 
 namespace device_settings_cache {
 
-void RegisterPrefs(PrefService* local_state) {
-  local_state->RegisterStringPref(prefs::kDeviceSettingsCache,
-                                  "invalid",
-                                  PrefService::UNSYNCABLE_PREF);
+void RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterStringPref(prefs::kDeviceSettingsCache, "invalid");
 }
 
 bool Store(const em::PolicyData& policy, PrefService* local_state) {

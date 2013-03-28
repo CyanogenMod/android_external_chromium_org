@@ -25,6 +25,7 @@ class MockDelegate : public QuicReliableClientStream::Delegate {
   MOCK_METHOD2(OnSendDataComplete, int(int, bool*));
   MOCK_METHOD2(OnDataReceived, int(const char*, int));
   MOCK_METHOD1(OnClose, void(QuicErrorCode));
+  MOCK_METHOD1(OnError, void(int));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockDelegate);
@@ -33,8 +34,8 @@ class MockDelegate : public QuicReliableClientStream::Delegate {
 class QuicReliableClientStreamTest : public ::testing::Test {
  public:
   QuicReliableClientStreamTest()
-      : session_(new MockConnection(1, IPEndPoint()), false),
-        stream_(1, &session_) {
+      : session_(new MockConnection(1, IPEndPoint(), false), false),
+        stream_(1, &session_, BoundNetLog()) {
     stream_.SetDelegate(&delegate_);
   }
 
@@ -52,6 +53,7 @@ TEST_F(QuicReliableClientStreamTest, TerminateFromPeer) {
 TEST_F(QuicReliableClientStreamTest, ProcessData) {
   const char data[] = "hello world!";
   EXPECT_CALL(delegate_, OnDataReceived(StrEq(data), arraysize(data)));
+  EXPECT_CALL(delegate_, OnClose(QUIC_NO_ERROR));
 
   EXPECT_EQ(arraysize(data), stream_.ProcessData(data, arraysize(data)));
 }
@@ -61,8 +63,17 @@ TEST_F(QuicReliableClientStreamTest, ProcessDataWithError) {
   EXPECT_CALL(delegate_,
               OnDataReceived(StrEq(data),
                              arraysize(data))).WillOnce(Return(ERR_UNEXPECTED));
+  EXPECT_CALL(delegate_, OnClose(QUIC_BAD_APPLICATION_PAYLOAD));
+
 
   EXPECT_EQ(0u, stream_.ProcessData(data, arraysize(data)));
+}
+
+TEST_F(QuicReliableClientStreamTest, OnError) {
+  EXPECT_CALL(delegate_, OnError(ERR_INTERNET_DISCONNECTED));
+
+  stream_.OnError(ERR_INTERNET_DISCONNECTED);
+  EXPECT_FALSE(stream_.GetDelegate());
 }
 
 }  // namespace

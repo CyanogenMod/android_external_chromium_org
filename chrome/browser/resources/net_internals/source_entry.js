@@ -95,6 +95,10 @@ var SourceEntry = (function() {
         case EventSourceType.MEMORY_CACHE_ENTRY:
           this.description_ = e.params.key;
           break;
+        case EventSourceType.QUIC_SESSION:
+          if (e.params.host != undefined)
+            this.description_ = e.params.host;
+          break;
         case EventSourceType.SPDY_SESSION:
           if (e.params.host)
             this.description_ = e.params.host + ' (' + e.params.proxy + ')';
@@ -104,6 +108,7 @@ var SourceEntry = (function() {
             this.description_ = e.params.host_and_port;
           break;
         case EventSourceType.SOCKET:
+        case EventSourceType.PROXY_CLIENT_SOCKET:
           // Use description of parent source, if any.
           if (e.params.source_dependency != undefined) {
             var parentId = e.params.source_dependency.id;
@@ -117,6 +122,7 @@ var SourceEntry = (function() {
             // If the parent of |this| is a HOST_RESOLVER_IMPL_JOB, use
             // '<DNS Server IP> [<host we're resolving>]'.
             if (this.entries_[0].type == EventType.SOCKET_ALIVE &&
+                this.entries_[0].params &&
                 this.entries_[0].params.source_dependency != undefined) {
               var parentId = this.entries_[0].params.source_dependency.id;
               var parent = SourceTracker.getInstance().getSourceEntry(parentId);
@@ -201,20 +207,24 @@ var SourceEntry = (function() {
           return e;
       }
       if (this.entries_.length >= 2) {
-        if (this.entries_[0].type == EventType.SOCKET_POOL_CONNECT_JOB ||
-            this.entries_[1].type == EventType.UDP_CONNECT) {
+        // Needed for compatability with log dumps prior to M26.
+        // TODO(mmenke):  Remove this.
+        if (this.entries_[0].type == EventType.SOCKET_POOL_CONNECT_JOB &&
+            this.entries_[0].params == undefined) {
           return this.entries_[1];
         }
+        if (this.entries_[1].type == EventType.UDP_CONNECT)
+          return this.entries_[1];
         if (this.entries_[0].type == EventType.REQUEST_ALIVE &&
             this.entries_[0].params == undefined) {
-          var start_index = 1;
+          var startIndex = 1;
           // Skip over URL_REQUEST_BLOCKED_ON_DELEGATE events for URL_REQUESTs.
-          while (start_index + 1 < this.entries_.length &&
-                 this.entries_[start_index].type ==
+          while (startIndex + 1 < this.entries_.length &&
+                 this.entries_[startIndex].type ==
                      EventType.URL_REQUEST_BLOCKED_ON_DELEGATE) {
-            ++start_index;
+            ++startIndex;
           }
-          return this.entries_[start_index];
+          return this.entries_[startIndex];
         }
         if (this.entries_[1].type == EventType.IPV6_PROBE_RUNNING)
           return this.entries_[1];

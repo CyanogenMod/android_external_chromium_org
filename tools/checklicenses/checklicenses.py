@@ -41,6 +41,7 @@ WHITELISTED_LICENSES = [
     'BSD (2 clause) MIT/X11 (BSD like)',
     'BSD (3 clause)',
     'BSD (3 clause) ISC',
+    'BSD (3 clause) LGPL (v2 or later)',
     'BSD (3 clause) LGPL (v2.1 or later)',
     'BSD (3 clause) MIT/X11 (BSD like)',
     'BSD (4 clause)',
@@ -69,7 +70,10 @@ WHITELISTED_LICENSES = [
     'MPL (v1.1)',
     'MPL (v1.1) BSD-like',
     'MPL (v1.1) BSD-like GPL (unversioned/unknown version)',
+    'MPL (v1.1,) BSD (3 clause) GPL (unversioned/unknown version) '
+        'LGPL (v2.1 or later)',
     'MPL (v1.1) GPL (unversioned/unknown version)',
+    'MPL (v2.0)',
 
     # TODO(phajdan.jr): Make licensecheck not print the comma after 1.1.
     'MPL (v1.1,) GPL (unversioned/unknown version) LGPL (v2 or later)',
@@ -148,23 +152,12 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
         'GPL (v2 or later)',
         'UNKNOWN',
     ],
-
-    # http://crbug.com/98107
-    'ppapi/c/documentation/check.sh': [
-        'UNKNOWN',
-    ],
-    'ppapi/cpp/documentation/check.sh': [
-        'UNKNOWN',
-    ],
-    'ppapi/lib/gl/include': [
-        'UNKNOWN',
-    ],
-    'ppapi/native_client/tests/earth/earth_image.inc': [
-        'UNKNOWN',
-    ],
-
     'third_party/WebKit': [
         'UNKNOWN',
+    ],
+    'third_party/WebKit/Websites/webkit.org/blog/wp-content/plugins/'
+        'akismet/akismet.php': [
+        'GPL (v2 or later)'
     ],
     'third_party/WebKit/Source/JavaScriptCore/tests/mozilla': [
         'GPL',
@@ -186,9 +179,13 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/bzip2': [
         'UNKNOWN',
     ],
-    'third_party/cld/encodings/compact_lang_det': [  # http://crbug.com/98120
+
+    # http://crbug.com/222828
+    # http://bugs.python.org/issue17514
+    'third_party/chromite/third_party/argparse.py': [
         'UNKNOWN',
     ],
+
     # Not used. http://crbug.com/156020
     # Using third_party/cros_dbus_cplusplus/cros_dbus_cplusplus.gyp instead.
     'third_party/cros_dbus_cplusplus/source/autogen.sh': [
@@ -211,6 +208,9 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
         'UNKNOWN',  # http://crbug.com/98123
     ],
     'third_party/findbugs/doc': [ # http://crbug.com/157206
+        'UNKNOWN',
+    ],
+    'third_party/freetype2': [ # http://crbug.com/177319
         'UNKNOWN',
     ],
     'third_party/gles2_book': [  # http://crbug.com/98130
@@ -303,6 +303,7 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/mesa/MesaLib': [
         'GPL (v2)',
         'GPL (v3 or later)',
+        'MIT/X11 (BSD like) GPL (v3 or later) with Bison parser exception',
         'UNKNOWN',  # http://crbug.com/98450
     ],
     'third_party/modp_b64': [
@@ -326,18 +327,19 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/ocmock/OCMock': [  # http://crbug.com/98454
         'UNKNOWN',
     ],
-    'third_party/opus/src': [  # http://crbug.com/156738
-        'UNKNOWN',
-    ],
     'third_party/ply/__init__.py': [
-        'UNKNOWN',
-    ],
-    'third_party/pexpect': [ # http://crbug.com/156113
         'UNKNOWN',
     ],
     'third_party/protobuf': [  # http://crbug.com/98455
         'UNKNOWN',
     ],
+
+    # http://crbug.com/222831
+    # https://bitbucket.org/eliben/pyelftools/issue/12
+    'third_party/pyelftools': [
+        'UNKNOWN',
+    ],
+
     'third_party/pylib': [
         'UNKNOWN',
     ],
@@ -455,7 +457,9 @@ def check_licenses(options, args):
                                                    'devscripts',
                                                    'licensecheck.pl'))
 
-  licensecheck = subprocess.Popen([licensecheck_path, '-r', start_dir],
+  licensecheck = subprocess.Popen([licensecheck_path,
+                                   '-l', '100',
+                                   '-r', start_dir],
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE)
   stdout, stderr = licensecheck.communicate()

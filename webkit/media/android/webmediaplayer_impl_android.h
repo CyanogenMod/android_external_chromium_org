@@ -11,10 +11,9 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebVideoFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "webkit/media/android/webmediaplayer_android.h"
 
 namespace WebKit {
@@ -69,6 +68,7 @@ class WebMediaPlayerImplAndroid : public WebMediaPlayerAndroid {
   virtual float GetCurrentTimeInternal() const OVERRIDE;
   virtual void ReleaseResourcesInternal() OVERRIDE;
   virtual void Destroy() OVERRIDE;
+  virtual void RequestExternalSurface() OVERRIDE;
 
   WebKit::WebFrame* const frame_;
 

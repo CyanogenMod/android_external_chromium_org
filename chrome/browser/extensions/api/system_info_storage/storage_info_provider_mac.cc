@@ -31,13 +31,13 @@ using api::experimental_system_info_storage::StorageUnitInfo;
 class StorageInfoProviderMac : public StorageInfoProvider {
  public:
   StorageInfoProviderMac() {}
-  virtual ~StorageInfoProviderMac() {}
 
   virtual bool QueryInfo(StorageInfo* info) OVERRIDE;
   virtual bool QueryUnitInfo(const std::string& id,
                              StorageUnitInfo* info) OVERRIDE;
 
  private:
+  virtual ~StorageInfoProviderMac() {}
   void BuildStorageTypeMap();
   std::map<std::string, std::string> dev_path_to_type_map_;
 };
@@ -80,7 +80,7 @@ bool StorageInfoProviderMac::QueryUnitInfo(const std::string& id,
         systeminfo::kStorageTypeUnknown : dev_path_to_type_map_[volume_dev];
   }
   info->type =
-      api::experimental_system_info_storage::FromStorageUnitTypeString(type);
+      api::experimental_system_info_storage::ParseStorageUnitType(type);
   // TODO(joshuagl): we're reporting different values than Disk Utility.
   // Is there an alternative API to get this information that doesn't use
   // statfs? NSFileManager's attributesOfFileSystemForPath uses statfs.

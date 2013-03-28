@@ -23,6 +23,13 @@
 #include "ui/base/win/atl_module.h"
 #endif
 
+// TODO(dmazzoni): Disabled accessibility tests on Win64. crbug.com/179717
+#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+#define MAYBE_TableSpan DISABLED_TableSpan
+#else
+#define MAYBE_TableSpan TableSpan
+#endif
+
 namespace content {
 
 class CrossPlatformAccessibilityBrowserTest : public ContentBrowserTest {
@@ -31,25 +38,25 @@ class CrossPlatformAccessibilityBrowserTest : public ContentBrowserTest {
 
   // Tell the renderer to send an accessibility tree, then wait for the
   // notification that it's been received.
-  const AccessibilityNodeData& GetAccessibilityNodeDataTree(
+  const AccessibilityNodeDataTreeNode& GetAccessibilityNodeDataTree(
       AccessibilityMode accessibility_mode = AccessibilityModeComplete) {
-    WindowedNotificationObserver tree_updated_observer(
-        NOTIFICATION_ACCESSIBILITY_LAYOUT_COMPLETE,
-        NotificationService::AllSources());
+    scoped_refptr<MessageLoopRunner> loop_runner(new MessageLoopRunner);
     RenderWidgetHostView* host_view =
         shell()->web_contents()->GetRenderWidgetHostView();
     RenderWidgetHostImpl* host =
         RenderWidgetHostImpl::From(host_view->GetRenderWidgetHost());
     RenderViewHostImpl* view_host = static_cast<RenderViewHostImpl*>(host);
+    view_host->SetAccessibilityLayoutCompleteCallbackForTesting(
+        loop_runner->QuitClosure());
     view_host->set_save_accessibility_tree_for_testing(true);
     view_host->SetAccessibilityMode(accessibility_mode);
-    tree_updated_observer.Wait();
+    loop_runner->Run();
     return view_host->accessibility_tree_for_testing();
   }
 
   // Make sure each node in the tree has an unique id.
   void RecursiveAssertUniqueIds(
-      const AccessibilityNodeData& node, base::hash_set<int>* ids) {
+      const AccessibilityNodeDataTreeNode& node, base::hash_set<int>* ids) {
     ASSERT_TRUE(ids->find(node.id) == ids->end());
     ids->insert(node.id);
     for (size_t i = 0; i < node.children.size(); i++)
@@ -141,7 +148,7 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
       "</body></html>";
   GURL url(url_str);
   NavigateToURL(shell(), url);
-  const AccessibilityNodeData& tree = GetAccessibilityNodeDataTree();
+  const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
 
   // Check properties of the root element of the tree.
   EXPECT_STREQ(url_str,
@@ -159,7 +166,7 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
 
   // Check properites of the BODY element.
   ASSERT_EQ(1U, tree.children.size());
-  const AccessibilityNodeData& body = tree.children[0];
+  const AccessibilityNodeDataTreeNode& body = tree.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_GROUP, body.role);
   EXPECT_STREQ("body",
                GetAttr(body, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
@@ -169,7 +176,7 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   // Check properties of the two children of the BODY element.
   ASSERT_EQ(2U, body.children.size());
 
-  const AccessibilityNodeData& button = body.children[0];
+  const AccessibilityNodeDataTreeNode& button = body.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_BUTTON, button.role);
   EXPECT_STREQ(
       "input", GetAttr(button, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
@@ -183,7 +190,7 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   EXPECT_STREQ("value", UTF16ToUTF8(button.html_attributes[1].first).c_str());
   EXPECT_STREQ("push", UTF16ToUTF8(button.html_attributes[1].second).c_str());
 
-  const AccessibilityNodeData& checkbox = body.children[1];
+  const AccessibilityNodeDataTreeNode& checkbox = body.children[1];
   EXPECT_EQ(AccessibilityNodeData::ROLE_CHECKBOX, checkbox.role);
   EXPECT_STREQ(
       "input", GetAttr(checkbox, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
@@ -209,11 +216,11 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   GURL url(url_str);
   NavigateToURL(shell(), url);
 
-  const AccessibilityNodeData& tree = GetAccessibilityNodeDataTree();
+  const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
   ASSERT_EQ(1U, tree.children.size());
-  const AccessibilityNodeData& body = tree.children[0];
+  const AccessibilityNodeDataTreeNode& body = tree.children[0];
   ASSERT_EQ(1U, body.children.size());
-  const AccessibilityNodeData& text = body.children[0];
+  const AccessibilityNodeDataTreeNode& text = body.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_TEXT_FIELD, text.role);
   EXPECT_STREQ(
       "input", GetAttr(text, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
@@ -238,11 +245,11 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   GURL url(url_str);
   NavigateToURL(shell(), url);
 
-  const AccessibilityNodeData& tree = GetAccessibilityNodeDataTree();
+  const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
   ASSERT_EQ(1U, tree.children.size());
-  const AccessibilityNodeData& body = tree.children[0];
+  const AccessibilityNodeDataTreeNode& body = tree.children[0];
   ASSERT_EQ(1U, body.children.size());
-  const AccessibilityNodeData& text = body.children[0];
+  const AccessibilityNodeDataTreeNode& text = body.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_TEXT_FIELD, text.role);
   EXPECT_STREQ(
       "input", GetAttr(text, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
@@ -265,22 +272,22 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   GURL url(url_str);
   NavigateToURL(shell(), url);
 
-  const AccessibilityNodeData& tree = GetAccessibilityNodeDataTree();
+  const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
   ASSERT_EQ(1U, tree.children.size());
-  const AccessibilityNodeData& table = tree.children[0];
+  const AccessibilityNodeDataTreeNode& table = tree.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_TABLE, table.role);
-  const AccessibilityNodeData& row = table.children[0];
+  const AccessibilityNodeDataTreeNode& row = table.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_ROW, row.role);
-  const AccessibilityNodeData& cell1 = row.children[0];
+  const AccessibilityNodeDataTreeNode& cell1 = row.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_CELL, cell1.role);
-  const AccessibilityNodeData& cell2 = row.children[1];
+  const AccessibilityNodeDataTreeNode& cell2 = row.children[1];
   EXPECT_EQ(AccessibilityNodeData::ROLE_CELL, cell2.role);
-  const AccessibilityNodeData& column1 = table.children[1];
+  const AccessibilityNodeDataTreeNode& column1 = table.children[1];
   EXPECT_EQ(AccessibilityNodeData::ROLE_COLUMN, column1.role);
   EXPECT_EQ(0U, column1.children.size());
   EXPECT_EQ(1U, column1.indirect_child_ids.size());
   EXPECT_EQ(cell1.id, column1.indirect_child_ids[0]);
-  const AccessibilityNodeData& column2 = table.children[2];
+  const AccessibilityNodeDataTreeNode& column2 = table.children[2];
   EXPECT_EQ(AccessibilityNodeData::ROLE_COLUMN, column2.role);
   EXPECT_EQ(0U, column2.children.size());
   EXPECT_EQ(1U, column2.indirect_child_ids.size());
@@ -304,7 +311,7 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   GURL url(url_str);
   NavigateToURL(shell(), url);
 
-  const AccessibilityNodeData& tree = GetAccessibilityNodeDataTree();
+  const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
   base::hash_set<int> ids;
   RecursiveAssertUniqueIds(tree, &ids);
 }
@@ -324,36 +331,36 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   GURL url(url_str);
   NavigateToURL(shell(), url);
 
-  const AccessibilityNodeData& tree = GetAccessibilityNodeDataTree();
+  const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
   ASSERT_EQ(1U, tree.children.size());
-  const AccessibilityNodeData& body = tree.children[0];
+  const AccessibilityNodeDataTreeNode& body = tree.children[0];
   ASSERT_EQ(3U, body.children.size());
 
-  const AccessibilityNodeData& button1 = body.children[0];
+  const AccessibilityNodeDataTreeNode& button1 = body.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_BUTTON, button1.role);
   EXPECT_STREQ("Button 1", UTF16ToUTF8(button1.name).c_str());
 
-  const AccessibilityNodeData& iframe = body.children[1];
+  const AccessibilityNodeDataTreeNode& iframe = body.children[1];
   EXPECT_STREQ("iframe",
                GetAttr(iframe, AccessibilityNodeData::ATTR_HTML_TAG).c_str());
   ASSERT_EQ(1U, iframe.children.size());
 
-  const AccessibilityNodeData& scroll_area = iframe.children[0];
+  const AccessibilityNodeDataTreeNode& scroll_area = iframe.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_SCROLLAREA, scroll_area.role);
   ASSERT_EQ(1U, scroll_area.children.size());
 
-  const AccessibilityNodeData& sub_document = scroll_area.children[0];
+  const AccessibilityNodeDataTreeNode& sub_document = scroll_area.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_WEB_AREA, sub_document.role);
   ASSERT_EQ(1U, sub_document.children.size());
 
-  const AccessibilityNodeData& sub_body = sub_document.children[0];
+  const AccessibilityNodeDataTreeNode& sub_body = sub_document.children[0];
   ASSERT_EQ(1U, sub_body.children.size());
 
-  const AccessibilityNodeData& button2 = sub_body.children[0];
+  const AccessibilityNodeDataTreeNode& button2 = sub_body.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_BUTTON, button2.role);
   EXPECT_STREQ("Button 2", UTF16ToUTF8(button2.name).c_str());
 
-  const AccessibilityNodeData& button3 = body.children[2];
+  const AccessibilityNodeDataTreeNode& button3 = body.children[2];
   EXPECT_EQ(AccessibilityNodeData::ROLE_BUTTON, button3.role);
   EXPECT_STREQ("Button 3", UTF16ToUTF8(button3.name).c_str());
 }
@@ -370,13 +377,13 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   GURL url(url_str);
   NavigateToURL(shell(), url);
 
-  const AccessibilityNodeData& tree = GetAccessibilityNodeDataTree();
+  const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
   base::hash_set<int> ids;
   RecursiveAssertUniqueIds(tree, &ids);
 }
 
 IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
-                       TableSpan) {
+                       MAYBE_TableSpan) {
   // +---+---+---+
   // |   1   | 2 |
   // +---+---+---+
@@ -397,8 +404,8 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   GURL url(url_str);
   NavigateToURL(shell(), url);
 
-  const AccessibilityNodeData& tree = GetAccessibilityNodeDataTree();
-  const AccessibilityNodeData& table = tree.children[0];
+  const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
+  const AccessibilityNodeDataTreeNode& table = tree.children[0];
   EXPECT_EQ(AccessibilityNodeData::ROLE_TABLE, table.role);
   ASSERT_GE(table.children.size(), 5U);
   EXPECT_EQ(AccessibilityNodeData::ROLE_ROW, table.children[0].role);
@@ -410,10 +417,10 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
             GetIntAttr(table, AccessibilityNodeData::ATTR_TABLE_COLUMN_COUNT));
   EXPECT_EQ(2, GetIntAttr(table, AccessibilityNodeData::ATTR_TABLE_ROW_COUNT));
 
-  const AccessibilityNodeData& cell1 = table.children[0].children[0];
-  const AccessibilityNodeData& cell2 = table.children[0].children[1];
-  const AccessibilityNodeData& cell3 = table.children[1].children[0];
-  const AccessibilityNodeData& cell4 = table.children[1].children[1];
+  const AccessibilityNodeDataTreeNode& cell1 = table.children[0].children[0];
+  const AccessibilityNodeDataTreeNode& cell2 = table.children[0].children[1];
+  const AccessibilityNodeDataTreeNode& cell3 = table.children[1].children[0];
+  const AccessibilityNodeDataTreeNode& cell4 = table.children[1].children[1];
 
   ASSERT_EQ(6U, table.cell_ids.size());
   EXPECT_EQ(cell1.id, table.cell_ids[0]);
@@ -455,10 +462,10 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
       "</div>";
   GURL url(url_str);
   NavigateToURL(shell(), url);
-  const AccessibilityNodeData& tree = GetAccessibilityNodeDataTree();
+  const AccessibilityNodeDataTreeNode& tree = GetAccessibilityNodeDataTree();
 
   ASSERT_EQ(1U, tree.children.size());
-  const AccessibilityNodeData& textbox = tree.children[0];
+  const AccessibilityNodeDataTreeNode& textbox = tree.children[0];
 
   EXPECT_EQ(
       true, GetBoolAttr(textbox, AccessibilityNodeData::ATTR_CAN_SET_VALUE));

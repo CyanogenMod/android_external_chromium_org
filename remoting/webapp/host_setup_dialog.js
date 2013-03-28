@@ -144,7 +144,7 @@ remoting.HostSetupDialog = function(hostController) {
   this.pinConfirm_.addEventListener('keypress', noDigitsInPin, false);
 
   this.usageStats_ = document.getElementById('usagestats-consent');
-  this.usageStatsCheckbox_ =
+  this.usageStatsCheckbox_ = /** @type {HTMLInputElement} */
       document.getElementById('usagestats-consent-checkbox');
 };
 
@@ -158,8 +158,8 @@ remoting.HostSetupDialog.prototype.showForStart = function() {
   // Although we don't need an access token in order to start the host,
   // using callWithToken here ensures consistent error handling in the
   // case where the refresh token is invalid.
-  remoting.oauth2.callWithToken(this.showForStartWithToken_.bind(this),
-                                remoting.showErrorMessage);
+  remoting.identity.callWithToken(this.showForStartWithToken_.bind(this),
+                                  remoting.showErrorMessage);
 };
 
 /**
@@ -183,7 +183,7 @@ remoting.HostSetupDialog.prototype.showForStartWithToken_ = function(token) {
     that.usageStatsCheckbox_.disabled = set_by_policy;
   };
   this.usageStats_.hidden = false;
-  this.usageStatsCheckbox_.checked = true;
+  this.usageStatsCheckbox_.checked = false;
   this.hostController_.getConsent(onGetConsent);
 
   var flow = [
@@ -192,8 +192,7 @@ remoting.HostSetupDialog.prototype.showForStartWithToken_ = function(token) {
       remoting.HostSetupFlow.State.HOST_STARTED];
 
   if (navigator.platform.indexOf('Mac') != -1 &&
-      this.hostController_.state() ==
-      remoting.HostController.State.NOT_INSTALLED) {
+      !this.hostController_.isInstalled()) {
     flow.unshift(remoting.HostSetupFlow.State.INSTALL_HOST);
   }
 
@@ -252,7 +251,7 @@ remoting.HostSetupDialog.prototype.startNewFlow_ = function(sequence) {
  * @private
  */
 remoting.HostSetupDialog.prototype.updateState_ = function() {
-  remoting.hostController.updateDom();
+  remoting.updateLocalHostState();
 
   /** @param {string} tag */
   function showProcessingMessage(tag) {
@@ -422,7 +421,7 @@ remoting.HostSetupDialog.prototype.onPinSubmit_ = function() {
   }
   this.flow_.pin = pin1;
   this.flow_.consent = !this.usageStats_.hidden &&
-      (this.usageStatsCheckbox_.value == "on");
+      this.usageStatsCheckbox_.checked;
   this.flow_.switchToNextStep(remoting.HostController.AsyncResult.OK);
   this.updateState_();
 };
@@ -458,8 +457,7 @@ remoting.HostSetupDialog.validPin_ = function(pin) {
  * @return {void} Nothing.
  */
 remoting.HostSetupDialog.prototype.onInstallDialogOk = function() {
-  var state = this.hostController_.state();
-  if (state == remoting.HostController.State.STOPPED) {
+  if (this.hostController_.isInstalled()) {
     this.flow_.switchToNextStep(remoting.HostController.AsyncResult.OK);
     this.updateState_();
   } else {

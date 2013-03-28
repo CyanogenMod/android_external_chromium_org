@@ -13,18 +13,17 @@
 #include "base/hash_tables.h"
 #include "base/logging.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager_factory.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/content_browser_client.h"
+#include "net/url_request/url_request_job_factory.h"
 
 class ChromeAppCacheService;
-class ChromeURLDataManager;
 class ExtensionService;
 class ExtensionSpecialStoragePolicy;
 class FaviconService;
-class GAIAInfoUpdateService;
 class HostContentSettingsMap;
 class PasswordStore;
-class PrefService;
+class PrefRegistrySyncable;
 class PromoCounter;
 class ProtocolHandlerRegistry;
 class TestingProfile;
@@ -68,7 +67,6 @@ class SSLConfigService;
 namespace policy {
 class ManagedModePolicyProvider;
 class PolicyService;
-class UserCloudPolicyManager;
 }
 
 class Profile : public content::BrowserContext {
@@ -139,7 +137,7 @@ class Profile : public content::BrowserContext {
 
   // Profile prefs are registered as soon as the prefs are loaded for the first
   // time.
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
   // Gets task runner for I/O operations associated with |profile|.
   static scoped_refptr<base::SequencedTaskRunner> GetTaskRunnerForProfile(
@@ -147,7 +145,7 @@ class Profile : public content::BrowserContext {
 
   // Create a new profile given a path. If |create_mode| is
   // CREATE_MODE_ASYNCHRONOUS then the profile is initialized asynchronously.
-  static Profile* CreateProfile(const FilePath& path,
+  static Profile* CreateProfile(const base::FilePath& path,
                                 Delegate* delegate,
                                 CreateMode create_mode);
 
@@ -206,21 +204,14 @@ class Profile : public content::BrowserContext {
   virtual ExtensionSpecialStoragePolicy*
       GetExtensionSpecialStoragePolicy() = 0;
 
-  // Accessor. The instance is created upon first access.
-  virtual GAIAInfoUpdateService* GetGAIAInfoUpdateService() = 0;
-
-  // Returns the UserCloudPolicyManager (if any) that handles this profile's
-  // connection to the cloud-based management service.
-  virtual policy::UserCloudPolicyManager* GetUserCloudPolicyManager() = 0;
-
   // Returns the ManagedModePolicyProvider for this profile, if it exists.
   virtual policy::ManagedModePolicyProvider* GetManagedModePolicyProvider() = 0;
 
   // Returns the PolicyService that provides policies for this profile.
   virtual policy::PolicyService* GetPolicyService() = 0;
 
-  // Retrieves a pointer to the PrefService that manages the preferences
-  // for this user profile.
+  // Retrieves a pointer to the PrefService that manages the
+  // preferences for this user profile.
   virtual PrefService* GetPrefs() = 0;
 
   // Retrieves a pointer to the PrefService that manages the preferences
@@ -234,11 +225,6 @@ class Profile : public content::BrowserContext {
   // Returns the request context used for extension-related requests.  This
   // is only used for a separate cookie store currently.
   virtual net::URLRequestContextGetter* GetRequestContextForExtensions() = 0;
-
-  // Returns the request context used within |partition_id|.
-  virtual net::URLRequestContextGetter* GetRequestContextForStoragePartition(
-      const FilePath& partition_path,
-      bool in_memory) = 0;
 
   // Returns the SSLConfigService for this profile.
   virtual net::SSLConfigService* GetSSLConfigService() = 0;
@@ -262,12 +248,30 @@ class Profile : public content::BrowserContext {
   // the user started chrome.
   virtual base::Time GetStartTime() const = 0;
 
-  // Start up service that gathers data from a promo resource feed.
-  virtual void InitPromoResources() = 0;
+  // Creates the main net::URLRequestContextGetter that will be returned by
+  // GetRequestContext(). Should only be called once per ContentBrowserClient
+  // object. This function is exposed because of the circular dependency where
+  // GetStoragePartition() is used to retrieve the request context, but creation
+  // still has to happen in the Profile so the StoragePartition calls
+  // ContextBrowserClient to call this function.
+  // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
+  virtual net::URLRequestContextGetter* CreateRequestContext(
+      content::ProtocolHandlerMap* protocol_handlers) = 0;
+
+  // Creates the net::URLRequestContextGetter for a StoragePartition. Should
+  // only be called once per partition_path per ContentBrowserClient object.
+  // This function is exposed because the request context is retrieved from the
+  // StoragePartition, but creation still has to happen in the Profile so the
+  // StoragePartition calls ContextBrowserClient to call this function.
+  // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
+  virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
+      const base::FilePath& partition_path,
+      bool in_memory,
+      content::ProtocolHandlerMap* protocol_handlers) = 0;
 
   // Returns the last directory that was chosen for uploading or opening a file.
-  virtual FilePath last_selected_directory() = 0;
-  virtual void set_last_selected_directory(const FilePath& path) = 0;
+  virtual base::FilePath last_selected_directory() = 0;
+  virtual void set_last_selected_directory(const base::FilePath& path) = 0;
 
 #if defined(OS_CHROMEOS)
   enum AppLocaleChangedVia {
@@ -321,7 +325,7 @@ class Profile : public content::BrowserContext {
   std::string GetDebugName();
 
   // Returns whether it is a guest session.
-  static bool IsGuestSession();
+  bool IsGuestSession() const;
 
   // Did the user restore the last session? This is set by SessionRestore.
   void set_restored_last_session(bool restored_last_session) {
@@ -375,15 +379,7 @@ class Profile : public content::BrowserContext {
  protected:
   // TODO(erg, willchan): Remove friendship once |ProfileIOData| is made into
   //     a |ProfileKeyedService|.
-  friend class ChromeURLDataManagerFactory;
   friend class OffTheRecordProfileImpl;
-
-  // Returns a callback to a method returning a |ChromeURLDataManagerBackend|.
-  // Used to create a |ChromeURLDataManager| for this |Profile|.
-  // TODO(erg, willchan): Remove this once |ProfileIOData| is made into a
-  //     |ProfileKeyedService|.
-  virtual base::Callback<ChromeURLDataManagerBackend*(void)>
-      GetChromeURLDataManagerBackendGetter() const = 0;
 
  private:
   bool restored_last_session_;

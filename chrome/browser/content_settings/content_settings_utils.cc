@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "base/values.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
 #include "chrome/browser/content_settings/content_settings_rule.h"
@@ -30,14 +30,18 @@ const char* kTypeNames[] = {
   "popups",
   "geolocation",
   "notifications",
-  "intents",
   "auto-select-certificate",
   "fullscreen",
   "mouselock",
   "mixed-script",
   "media-stream",
+  "media-stream-mic",
+  "media-stream-camera",
   "register-protocol-handler",
   "ppapi-broker",
+#if defined(OS_WIN)
+  "metro-switch-to-desktop",
+#endif
 };
 COMPILE_ASSERT(arraysize(kTypeNames) == CONTENT_SETTINGS_NUM_TYPES,
                type_names_incorrect_size);

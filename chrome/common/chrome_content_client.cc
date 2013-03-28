@@ -9,14 +9,15 @@
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_process_type.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pepper_flash.h"
@@ -25,6 +26,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/pepper_plugin_info.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/common/constants.h"
 #include "grit/common_resources.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "remoting/client/plugin/pepper_entrypoints.h"
@@ -33,6 +35,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/plugin_constants.h"
+#include "webkit/plugins/plugin_switches.h"
 #include "webkit/user_agent/user_agent_util.h"
 
 #include "flapper_version.h"  // In SHARED_INTERMEDIATE_DIR.
@@ -83,6 +86,11 @@ const uint32 kGTalkPluginPermissions = ppapi::PERMISSION_PRIVATE |
 #if defined(WIDEVINE_CDM_AVAILABLE)
 const char kWidevineCdmPluginExtension[] = "";
 const uint32 kWidevineCdmPluginPermissions = ppapi::PERMISSION_PRIVATE |
+#if defined(OS_CHROMEOS)
+// TODO(xhwang): Make permission requirements the same on all OS.
+// See http://crbug.com/222252
+                                             ppapi::PERMISSION_FLASH |
+#endif  // !defined(OS_CHROMEOS)
                                              ppapi::PERMISSION_DEV;
 #endif  // WIDEVINE_CDM_AVAILABLE
 
@@ -97,13 +105,15 @@ const char kRemotingViewerPluginDescription[] =
     "shared with you. To use this plugin you must first install the "
     "<a href=\"https://chrome.google.com/remotedesktop\">"
     "Chrome Remote Desktop</a> webapp.";
-const FilePath::CharType kRemotingViewerPluginPath[] =
+const base::FilePath::CharType kRemotingViewerPluginPath[] =
     FILE_PATH_LITERAL("internal-remoting-viewer");
 // Use a consistent MIME-type regardless of branding.
 const char kRemotingViewerPluginMimeType[] =
     "application/vnd.chromium.remoting-viewer";
 const char kRemotingViewerPluginMimeExtension[] = "";
 const char kRemotingViewerPluginMimeDescription[] = "";
+const uint32 kRemotingViewerPluginPermissions = ppapi::PERMISSION_PRIVATE |
+                                                ppapi::PERMISSION_DEV;
 #endif  // defined(ENABLE_REMOTING)
 
 const char kInterposeLibraryPath[] =
@@ -122,7 +132,7 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
   // So the first time through test if the file is available and then skip the
   // check on subsequent calls if yes.
   static bool skip_pdf_file_check = false;
-  FilePath path;
+  base::FilePath path;
   if (PathService::Get(chrome::FILE_PDF_PLUGIN, &path)) {
     if (skip_pdf_file_check || file_util::PathExists(path)) {
       content::PepperPluginInfo pdf;
@@ -230,9 +240,10 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
 #if defined(ENABLE_REMOTING)
   content::PepperPluginInfo info;
   info.is_internal = true;
+  info.is_out_of_process = true;
   info.name = kRemotingViewerPluginName;
   info.description = kRemotingViewerPluginDescription;
-  info.path = FilePath(kRemotingViewerPluginPath);
+  info.path = base::FilePath(kRemotingViewerPluginPath);
   webkit::WebPluginMimeType remoting_mime_type(
       kRemotingViewerPluginMimeType,
       kRemotingViewerPluginMimeExtension,
@@ -242,12 +253,13 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
   info.internal_entry_points.initialize_module =
       remoting::PPP_InitializeModule;
   info.internal_entry_points.shutdown_module = remoting::PPP_ShutdownModule;
+  info.permissions = kRemotingViewerPluginPermissions;
 
   plugins->push_back(info);
 #endif
 }
 
-content::PepperPluginInfo CreatePepperFlashInfo(const FilePath& path,
+content::PepperPluginInfo CreatePepperFlashInfo(const base::FilePath& path,
                                                 const std::string& version) {
   content::PepperPluginInfo plugin;
 
@@ -303,19 +315,20 @@ void AddPepperFlashFromCommandLine(
           switches::kPpapiFlashVersion);
 
   plugins->push_back(
-      CreatePepperFlashInfo(FilePath(flash_path), flash_version));
+      CreatePepperFlashInfo(base::FilePath(flash_path), flash_version));
 }
 
-bool GetBundledPepperFlash(content::PepperPluginInfo* plugin,
-                           bool* override_npapi_flash) {
+bool GetBundledPepperFlash(content::PepperPluginInfo* plugin) {
 #if defined(FLAPPER_AVAILABLE)
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+
   // Ignore bundled Pepper Flash if there is Pepper Flash specified from the
   // command-line.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kPpapiFlashPath))
+  if (command_line->HasSwitch(switches::kPpapiFlashPath))
     return false;
 
-  bool force_disable = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableBundledPpapiFlash);
+  bool force_disable =
+      command_line->HasSwitch(switches::kDisableBundledPpapiFlash);
   if (force_disable)
     return false;
 
@@ -325,15 +338,11 @@ bool GetBundledPepperFlash(content::PepperPluginInfo* plugin,
     return false;
 #endif  // ARCH_CPU_X86
 
-  FilePath flash_path;
+  base::FilePath flash_path;
   if (!PathService::Get(chrome::FILE_PEPPER_FLASH_PLUGIN, &flash_path))
     return false;
 
-  bool force_enable = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableBundledPpapiFlash);
-
   *plugin = CreatePepperFlashInfo(flash_path, FLAPPER_VERSION_STRING);
-  *override_npapi_flash = force_enable || IsPepperFlashEnabledByDefault();
   return true;
 #else
   return false;
@@ -362,14 +371,9 @@ void ChromeContentClient::AddPepperPlugins(
   ComputeBuiltInPlugins(plugins);
   AddPepperFlashFromCommandLine(plugins);
 
-  // Don't try to register Pepper Flash if there exists a Pepper Flash field
-  // trial. It will be registered separately.
-  if (!ConductingPepperFlashFieldTrial() && IsPepperFlashEnabledByDefault()) {
-    content::PepperPluginInfo plugin;
-    bool add_at_beginning = false;
-    if (GetBundledPepperFlash(&plugin, &add_at_beginning))
-      plugins->push_back(plugin);
-  }
+  content::PepperPluginInfo plugin;
+  if (GetBundledPepperFlash(&plugin))
+    plugins->push_back(plugin);
 }
 
 void ChromeContentClient::AddNPAPIPlugins(
@@ -379,19 +383,15 @@ void ChromeContentClient::AddNPAPIPlugins(
 void ChromeContentClient::AddAdditionalSchemes(
     std::vector<std::string>* standard_schemes,
     std::vector<std::string>* savable_schemes) {
-  standard_schemes->push_back(kExtensionScheme);
-  savable_schemes->push_back(kExtensionScheme);
+  standard_schemes->push_back(extensions::kExtensionScheme);
+  savable_schemes->push_back(extensions::kExtensionScheme);
   standard_schemes->push_back(kExtensionResourceScheme);
   savable_schemes->push_back(kExtensionResourceScheme);
+  standard_schemes->push_back(chrome::kChromeSearchScheme);
+  savable_schemes->push_back(chrome::kChromeSearchScheme);
 #if defined(OS_CHROMEOS)
   standard_schemes->push_back(kCrosScheme);
 #endif
-}
-
-bool ChromeContentClient::HasWebUIScheme(const GURL& url) const {
-  return url.SchemeIs(chrome::kChromeDevToolsScheme) ||
-         url.SchemeIs(chrome::kChromeInternalScheme) ||
-         url.SchemeIs(chrome::kChromeUIScheme);
 }
 
 bool ChromeContentClient::CanHandleWhileSwappedOut(
@@ -436,8 +436,27 @@ base::StringPiece ChromeContentClient::GetDataResource(
       resource_id, scale_factor);
 }
 
+base::RefCountedStaticMemory* ChromeContentClient::GetDataResourceBytes(
+    int resource_id) const {
+  return ResourceBundle::GetSharedInstance().LoadDataResourceBytes(resource_id);
+}
+
 gfx::Image& ChromeContentClient::GetNativeImageNamed(int resource_id) const {
   return ResourceBundle::GetSharedInstance().GetNativeImageNamed(resource_id);
+}
+
+std::string ChromeContentClient::GetProcessTypeNameInEnglish(int type) {
+  switch(type) {
+    case PROCESS_TYPE_PROFILE_IMPORT:
+      return "Profile Import helper";
+    case PROCESS_TYPE_NACL_LOADER:
+      return "Native Client module";
+    case PROCESS_TYPE_NACL_BROKER:
+      return "Native Client broker";
+  }
+
+  DCHECK(false) << "Unknown child process type!";
+  return "Unknown"; 
 }
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
@@ -456,13 +475,5 @@ std::string ChromeContentClient::GetCarbonInterposePath() const {
   return std::string(kInterposeLibraryPath);
 }
 #endif
-
-bool ChromeContentClient::GetBundledFieldTrialPepperFlash(
-    content::PepperPluginInfo* plugin,
-    bool* override_npapi_flash) {
-  if (!ConductingPepperFlashFieldTrial())
-    return false;
-  return GetBundledPepperFlash(plugin, override_npapi_flash);
-}
 
 }  // namespace chrome

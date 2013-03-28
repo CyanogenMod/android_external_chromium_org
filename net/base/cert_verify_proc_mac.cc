@@ -347,11 +347,17 @@ CertVerifyProcMac::CertVerifyProcMac() {}
 
 CertVerifyProcMac::~CertVerifyProcMac() {}
 
-int CertVerifyProcMac::VerifyInternal(X509Certificate* cert,
-                                      const std::string& hostname,
-                                      int flags,
-                                      CRLSet* crl_set,
-                                      CertVerifyResult* verify_result) {
+bool CertVerifyProcMac::SupportsAdditionalTrustAnchors() const {
+  return false;
+}
+
+int CertVerifyProcMac::VerifyInternal(
+    X509Certificate* cert,
+    const std::string& hostname,
+    int flags,
+    CRLSet* crl_set,
+    const CertificateList& additional_trust_anchors,
+    CertVerifyResult* verify_result) {
   ScopedCFTypeRef<CFArrayRef> trust_policies;
   OSStatus status = CreateTrustPolicies(hostname, flags, &trust_policies);
   if (status)
@@ -541,6 +547,9 @@ int CertVerifyProcMac::VerifyInternal(X509Certificate* cert,
   // compatible with WinHTTP, which doesn't report this error (bug 3004).
   verify_result->cert_status &= ~CERT_STATUS_NO_REVOCATION_MECHANISM;
 
+  AppendPublicKeyHashes(completed_chain, &verify_result->public_key_hashes);
+  verify_result->is_issued_by_known_root = IsIssuedByKnownRoot(completed_chain);
+
   if (IsCertStatusError(verify_result->cert_status))
     return MapCertStatusToNetError(verify_result->cert_status);
 
@@ -582,9 +591,6 @@ int CertVerifyProcMac::VerifyInternal(X509Certificate* cert,
       }
     }
   }
-
-  AppendPublicKeyHashes(completed_chain, &verify_result->public_key_hashes);
-  verify_result->is_issued_by_known_root = IsIssuedByKnownRoot(completed_chain);
 
   return OK;
 }

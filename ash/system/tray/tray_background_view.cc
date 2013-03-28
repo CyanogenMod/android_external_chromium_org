@@ -4,21 +4,22 @@
 
 #include "ash/system/tray/tray_background_view.h"
 
-#include "ash/launcher/background_animator.h"
 #include "ash/root_window_controller.h"
+#include "ash/screen_ash.h"
+#include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/status_area_widget_delegate.h"
 #include "ash/system/tray/tray_constants.h"
+#include "ash/system/tray/tray_event_filter.h"
 #include "ash/wm/property_util.h"
-#include "ash/wm/shelf_layout_manager.h"
 #include "ash/wm/window_animations.h"
-#include "ui/aura/event_filter.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/background.h"
@@ -26,7 +27,6 @@
 
 namespace {
 
-const SkColor kTrayBackgroundAlpha = 100;
 const SkColor kTrayBackgroundHoverAlpha = 150;
 
 // Adjust the size of TrayContainer with additional padding.
@@ -52,7 +52,8 @@ class TrayBackgroundView::TrayWidgetObserver : public views::WidgetObserver {
       : host_(host) {
   }
 
-  virtual void OnWidgetMoved(views::Widget* widget) OVERRIDE {
+  virtual void OnWidgetBoundsChanged(views::Widget* widget,
+                                     const gfx::Rect& new_bounds) OVERRIDE {
     host_->AnchorUpdated();
   }
 
@@ -69,7 +70,7 @@ class TrayBackgroundView::TrayWidgetObserver : public views::WidgetObserver {
 
 class TrayBackground : public views::Background {
  public:
-  TrayBackground() : alpha_(kTrayBackgroundAlpha) {}
+  TrayBackground() : alpha_(0) {}
   virtual ~TrayBackground() {}
 
   void set_alpha(int alpha) { alpha_ = alpha; }
@@ -130,7 +131,8 @@ void TrayBackgroundView::TrayContainer::ViewHierarchyChanged(bool is_add,
 void TrayBackgroundView::TrayContainer::UpdateLayout() {
   // Adjust the size of status tray dark background by adding additional
   // empty border.
-  if (alignment_ == SHELF_ALIGNMENT_BOTTOM) {
+  if (alignment_ == SHELF_ALIGNMENT_BOTTOM ||
+      alignment_ == SHELF_ALIGNMENT_TOP) {
     set_border(views::Border::CreateEmptyBorder(
         kTrayContainerVerticalPaddingBottomAlignment,
         kTrayContainerHorizontalPaddingBottomAlignment,
@@ -163,21 +165,19 @@ TrayBackgroundView::TrayBackgroundView(
       tray_container_(NULL),
       shelf_alignment_(SHELF_ALIGNMENT_BOTTOM),
       background_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(hide_background_animator_(
-          this, 0, kTrayBackgroundAlpha)),
       ALLOW_THIS_IN_INITIALIZER_LIST(hover_background_animator_(
-          this, 0, kTrayBackgroundHoverAlpha - kTrayBackgroundAlpha)),
+          this, 0, kTrayBackgroundHoverAlpha)),
       ALLOW_THIS_IN_INITIALIZER_LIST(widget_observer_(
           new TrayWidgetObserver(this))) {
   set_notify_enter_exit_on_child(true);
 
   // Initially we want to paint the background, but without the hover effect.
-  SetPaintsBackground(true, internal::BackgroundAnimator::CHANGE_IMMEDIATE);
   hover_background_animator_.SetPaintsBackground(false,
       internal::BackgroundAnimator::CHANGE_IMMEDIATE);
 
   tray_container_ = new TrayContainer(shelf_alignment_);
   SetContents(tray_container_);
+  tray_event_filter_.reset(new TrayEventFilter);
 }
 
 TrayBackgroundView::~TrayBackgroundView() {
@@ -230,8 +230,7 @@ bool TrayBackgroundView::PerformAction(const ui::Event& event) {
 
 void TrayBackgroundView::UpdateBackground(int alpha) {
   if (background_) {
-    background_->set_alpha(hide_background_animator_.alpha() +
-                           hover_background_animator_.alpha());
+    background_->set_alpha(hover_background_animator_.alpha());
   }
   SchedulePaint();
 }
@@ -246,15 +245,8 @@ void TrayBackgroundView::SetContentsBackground() {
   tray_container_->set_background(background_);
 }
 
-void TrayBackgroundView::SetPaintsBackground(
-      bool value,
-      internal::BackgroundAnimator::ChangeType change_type) {
-  hide_background_animator_.SetPaintsBackground(value, change_type);
-}
-
 ShelfLayoutManager* TrayBackgroundView::GetShelfLayoutManager() {
-  return
-      RootWindowController::ForLauncher(GetWidget()->GetNativeView())->shelf();
+  return ShelfLayoutManager::ForLauncher(GetWidget()->GetNativeView());
 }
 
 void TrayBackgroundView::SetShelfAlignment(ShelfAlignment alignment) {
@@ -274,6 +266,12 @@ void TrayBackgroundView::SetBorder() {
         on_edge ? kPaddingFromBottomOfScreenBottomAlignment :
                   kPaddingFromBottomOfScreenBottomAlignment - 1,
         on_edge ? kPaddingFromRightEdgeOfScreenBottomAlignment : 0));
+  } else if (shelf_alignment() == SHELF_ALIGNMENT_TOP) {
+    set_border(views::Border::CreateEmptyBorder(
+        on_edge ? kPaddingFromBottomOfScreenBottomAlignment :
+                  kPaddingFromBottomOfScreenBottomAlignment - 1,
+        0, 0,
+        on_edge ? kPaddingFromRightEdgeOfScreenBottomAlignment : 0));
   } else if (shelf_alignment() == SHELF_ALIGNMENT_LEFT) {
     set_border(views::Border::CreateEmptyBorder(
         0, kPaddingFromOuterEdgeOfLauncherVerticalAlignment,
@@ -289,13 +287,13 @@ void TrayBackgroundView::SetBorder() {
 
 void TrayBackgroundView::InitializeBubbleAnimations(
     views::Widget* bubble_widget) {
-  ash::SetWindowVisibilityAnimationType(
+  views::corewm::SetWindowVisibilityAnimationType(
       bubble_widget->GetNativeWindow(),
-      ash::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
-  ash::SetWindowVisibilityAnimationTransition(
+      views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
+  views::corewm::SetWindowVisibilityAnimationTransition(
       bubble_widget->GetNativeWindow(),
-      ash::ANIMATE_HIDE);
-  ash::SetWindowVisibilityAnimationDuration(
+      views::corewm::ANIMATE_HIDE);
+  views::corewm::SetWindowVisibilityAnimationDuration(
       bubble_widget->GetNativeWindow(),
       base::TimeDelta::FromMilliseconds(kAnimationDurationForPopupMS));
 }
@@ -318,7 +316,7 @@ gfx::Rect TrayBackgroundView::GetBubbleAnchorRect(
         bool rtl = base::i18n::IsRTL();
         rect.Inset(
             rtl ? kPaddingFromRightEdgeOfScreenBottomAlignment : 0,
-            4,
+            kTrayBubbleAnchorTopInsetBottomAnchor,
             rtl ? 0 : kPaddingFromRightEdgeOfScreenBottomAlignment,
             kPaddingFromBottomOfScreenBottomAlignment);
       } else if (anchor_alignment == TrayBubbleView::ANCHOR_ALIGNMENT_LEFT) {
@@ -342,12 +340,16 @@ gfx::Rect TrayBackgroundView::GetBubbleAnchorRect(
 
   // TODO(jennyz): May need to add left/right alignment in the following code.
   if (rect.IsEmpty()) {
-    rect = Shell::GetScreen()->GetPrimaryDisplay().bounds();
+    aura::RootWindow* target_root = anchor_widget ?
+        anchor_widget->GetNativeView()->GetRootWindow() :
+        Shell::GetPrimaryRootWindow();
+    rect = target_root->bounds();
     rect = gfx::Rect(
         base::i18n::IsRTL() ? kPaddingFromRightEdgeOfScreenBottomAlignment :
         rect.width() - kPaddingFromRightEdgeOfScreenBottomAlignment,
         rect.height() - kPaddingFromBottomOfScreenBottomAlignment,
         0, 0);
+    rect = ScreenAsh::ConvertRectToScreen(target_root, rect);
   }
   return rect;
 }
@@ -360,6 +362,8 @@ TrayBubbleView::AnchorAlignment TrayBackgroundView::GetAnchorAlignment() const {
       return TrayBubbleView::ANCHOR_ALIGNMENT_LEFT;
     case SHELF_ALIGNMENT_RIGHT:
       return TrayBubbleView::ANCHOR_ALIGNMENT_RIGHT;
+    case SHELF_ALIGNMENT_TOP:
+      return TrayBubbleView::ANCHOR_ALIGNMENT_TOP;
   }
   NOTREACHED();
   return TrayBubbleView::ANCHOR_ALIGNMENT_BOTTOM;
@@ -370,8 +374,10 @@ void TrayBackgroundView::UpdateBubbleViewArrow(
   aura::RootWindow* root_window =
       bubble_view->GetWidget()->GetNativeView()->GetRootWindow();
   ash::internal::ShelfLayoutManager* shelf =
-      ash::GetRootWindowController(root_window)->shelf();
-  bubble_view->SetPaintArrow(shelf->IsVisible());
+      ShelfLayoutManager::ForLauncher(root_window);
+  bubble_view->SetArrowPaintType(
+      shelf->IsVisible() ? views::BubbleBorder::PAINT_NORMAL :
+                           views::BubbleBorder::PAINT_TRANSPARENT);
 }
 
 }  // namespace internal

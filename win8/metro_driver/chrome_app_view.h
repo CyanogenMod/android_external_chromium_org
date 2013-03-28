@@ -45,9 +45,6 @@ class ChromeAppView
   static LRESULT CALLBACK CoreWindowProc(HWND window, UINT message, WPARAM wp,
                                          LPARAM lp);
 
-  HRESULT TileRequestCreateDone(winfoundtn::IAsyncOperation<bool>* async,
-                                AsyncStatus status);
-
   bool osk_visible_notification_received() const {
     return osk_visible_notification_received_;
   }
@@ -73,6 +70,9 @@ class ChromeAppView
 
   // Notification from chrome that a full screen operation is being performed.
   void SetFullscreen(bool fullscreen);
+
+  // Returns the current view state of the chrome window.
+  winui::ViewManagement::ApplicationViewState GetViewState();
 
  private:
   HRESULT OnActivate(winapp::Core::ICoreApplicationView* view,
@@ -139,9 +139,6 @@ class ChromeAppView
   MetroDialogBox dialog_box_;
 };
 
-// This function is exported by chrome.exe.
-typedef int (__cdecl *BreakpadExceptionHandler)(EXCEPTION_POINTERS* info);
-
 // Global information used across the metro driver.
 struct Globals {
   LPTHREAD_START_ROUTINE host_main;
@@ -164,7 +161,6 @@ struct Globals {
   // to be initiated from that thread, notably spawning file pickers.
   base::MessageLoopProxy* appview_msg_loop;
   winapp::Core::ICoreApplicationExit* app_exit;
-  BreakpadExceptionHandler breakpad_exception_handler;
   string16 metro_command_line_switches;
 };
 

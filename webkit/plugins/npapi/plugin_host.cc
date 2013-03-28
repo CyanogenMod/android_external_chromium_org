@@ -74,11 +74,6 @@ static bool SupportsCoreAnimationPlugins() {
   }
   return (implementation == gfx::kGLImplementationDesktopGL);
 }
-
-static bool UsingCompositedCoreAnimationPlugins() {
-  return !CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableCompositedCoreAnimationPlugins);
-}
 #endif
 
 PluginHost::PluginHost() {
@@ -467,14 +462,14 @@ static NPError PostURLNotify(NPP id,
       return NPERR_FILE_NOT_FOUND;
 
     std::string file_path_ascii(buf);
-    FilePath file_path;
+    base::FilePath file_path;
     static const char kFileUrlPrefix[] = "file:";
     if (StartsWithASCII(file_path_ascii, kFileUrlPrefix, false)) {
       GURL file_url(file_path_ascii);
       DCHECK(file_url.SchemeIsFile());
       net::FileURLToFilePath(file_url, &file_path);
     } else {
-      file_path = FilePath::FromWStringHack(
+      file_path = base::FilePath::FromWStringHack(
           base::SysNativeMBToWide(file_path_ascii));
     }
 
@@ -818,8 +813,7 @@ NPError NPN_GetValue(NPP id, NPNVariable variable, void* value) {
     case NPNVsupportsCompositingCoreAnimationPluginsBool: {
       NPBool* supports_compositing = reinterpret_cast<NPBool*>(value);
       *supports_compositing =
-          webkit::npapi::SupportsCoreAnimationPlugins() &&
-          webkit::npapi::UsingCompositedCoreAnimationPlugins();
+          webkit::npapi::SupportsCoreAnimationPlugins();
       rv = NPERR_NO_ERROR;
       break;
     }

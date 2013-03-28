@@ -13,7 +13,7 @@
 #include "base/id_map.h"
 #include "base/memory/scoped_vector.h"
 #include "base/safe_strerror_posix.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/certificate_viewer.h"
@@ -173,101 +173,89 @@ net::X509Certificate* CertIdMap::CallbackArgsToCert(
 
 // TODO(mattm): Move to some shared location?
 class FileAccessProvider
-    : public base::RefCountedThreadSafe<FileAccessProvider>,
-      public CancelableRequestProvider {
+    : public base::RefCountedThreadSafe<FileAccessProvider> {
  public:
-  // Reports 0 on success or errno on failure, and the data of the file upon
-  // success.
-  // TODO(mattm): don't pass std::string by value.. could use RefCountedBytes
-  // but it's a vector.  Maybe do the derive from CancelableRequest thing
-  // described in cancelable_request.h?
-  typedef base::Callback<void(int, std::string)> ReadCallback;
+  // The first parameter is 0 on success or errno on failure. The second
+  // parameter is read result.
+  typedef base::Callback<void(const int*, const std::string*)> ReadCallback;
 
-  // Reports 0 on success or errno on failure, and the number of bytes written,
-  // on success.
-  typedef base::Callback<void(int, int)> WriteCallback;
+  // The first parameter is 0 on success or errno on failure. The second
+  // parameter is the number of bytes written on success.
+  typedef base::Callback<void(const int*, const int*)> WriteCallback;
 
-  Handle StartRead(const FilePath& path,
-                   CancelableRequestConsumerBase* consumer,
-                   const ReadCallback& callback);
-  Handle StartWrite(const FilePath& path,
-                    const std::string& data,
-                    CancelableRequestConsumerBase* consumer,
-                    const WriteCallback& callback);
+  CancelableTaskTracker::TaskId StartRead(const base::FilePath& path,
+                                          const ReadCallback& callback,
+                                          CancelableTaskTracker* tracker);
+  CancelableTaskTracker::TaskId StartWrite(const base::FilePath& path,
+                                           const std::string& data,
+                                           const WriteCallback& callback,
+                                           CancelableTaskTracker* tracker);
 
  private:
   friend class base::RefCountedThreadSafe<FileAccessProvider>;
   virtual ~FileAccessProvider() {}
 
-  void DoRead(scoped_refptr<CancelableRequest<ReadCallback> > request,
-              FilePath path);
-  void DoWrite(scoped_refptr<CancelableRequest<WriteCallback> > request,
-              FilePath path,
-              std::string data);
+  // Reads file at |path|. |saved_errno| is 0 on success or errno on failure.
+  // When success, |data| has file content.
+  void DoRead(const base::FilePath& path,
+              int* saved_errno,
+              std::string* data);
+  // Writes data to file at |path|. |saved_errno| is 0 on success or errno on
+  // failure. When success, |bytes_written| has number of bytes written.
+  void DoWrite(const base::FilePath& path,
+               const std::string& data,
+               int* saved_errno,
+               int* bytes_written);
 };
 
-CancelableRequestProvider::Handle FileAccessProvider::StartRead(
-    const FilePath& path,
-    CancelableRequestConsumerBase* consumer,
-    const FileAccessProvider::ReadCallback& callback) {
-  scoped_refptr<CancelableRequest<ReadCallback> > request(
-      new CancelableRequest<ReadCallback>(callback));
-  AddRequest(request, consumer);
+CancelableTaskTracker::TaskId FileAccessProvider::StartRead(
+    const base::FilePath& path,
+    const ReadCallback& callback,
+    CancelableTaskTracker* tracker) {
+  // Owned by reply callback posted below.
+  int* saved_errno = new int(0);
+  std::string* data = new std::string();
 
-  // Send the parameters and the request to the file thread.
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&FileAccessProvider::DoRead, this, request, path));
-
-  // The handle will have been set by AddRequest.
-  return request->handle();
+  // Post task to file thread to read file.
+  return tracker->PostTaskAndReply(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
+      FROM_HERE,
+      base::Bind(&FileAccessProvider::DoRead, this, path, saved_errno, data),
+      base::Bind(callback, base::Owned(saved_errno), base::Owned(data)));
 }
 
-CancelableRequestProvider::Handle FileAccessProvider::StartWrite(
-    const FilePath& path,
+CancelableTaskTracker::TaskId FileAccessProvider::StartWrite(
+    const base::FilePath& path,
     const std::string& data,
-    CancelableRequestConsumerBase* consumer,
-    const WriteCallback& callback) {
-  scoped_refptr<CancelableRequest<WriteCallback> > request(
-      new CancelableRequest<WriteCallback>(callback));
-  AddRequest(request, consumer);
+    const WriteCallback& callback,
+    CancelableTaskTracker* tracker) {
+  // Owned by reply callback posted below.
+  int* saved_errno = new int(0);
+  int* bytes_written = new int(0);
 
-  // Send the parameters and the request to the file thWrite.
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&FileAccessProvider::DoWrite, this, request, path, data));
-
-  // The handle will have been set by AddRequest.
-  return request->handle();
+  // Post task to file thread to write file.
+  return tracker->PostTaskAndReply(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
+      FROM_HERE,
+      base::Bind(&FileAccessProvider::DoWrite, this,
+                 path, data, saved_errno, bytes_written),
+      base::Bind(callback,
+                 base::Owned(saved_errno), base::Owned(bytes_written)));
 }
 
-void FileAccessProvider::DoRead(
-    scoped_refptr<CancelableRequest<ReadCallback> > request,
-    FilePath path) {
-  if (request->canceled())
-    return;
-
-  std::string data;
-  VLOG(1) << "DoRead starting read";
-  bool success = file_util::ReadFileToString(path, &data);
-  int saved_errno = success ? 0 : errno;
-  VLOG(1) << "DoRead done read: " << success << " " << data.size();
-  request->ForwardResult(saved_errno, data);
+void FileAccessProvider::DoRead(const base::FilePath& path,
+                                int* saved_errno,
+                                std::string* data) {
+  bool success = file_util::ReadFileToString(path, data);
+  *saved_errno = success ? 0 : errno;
 }
 
-void FileAccessProvider::DoWrite(
-    scoped_refptr<CancelableRequest<WriteCallback> > request,
-    FilePath path,
-    std::string data) {
-  VLOG(1) << "DoWrite starting write";
-  int bytes_written = file_util::WriteFile(path, data.data(), data.size());
-  int saved_errno = bytes_written >= 0 ? 0 : errno;
-  VLOG(1) << "DoWrite done write " << bytes_written;
-
-  if (request->canceled())
-    return;
-
-  request->ForwardResult(saved_errno, bytes_written);
+void FileAccessProvider::DoWrite(const base::FilePath& path,
+                                 const std::string& data,
+                                 int* saved_errno,
+                                 int* bytes_written) {
+  *bytes_written = file_util::WriteFile(path, data.data(), data.size());
+  *saved_errno = bytes_written >= 0 ? 0 : errno;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -479,7 +467,8 @@ void CertificateManagerHandler::CertificatesRefreshed() {
   VLOG(1) << "populating finished";
 }
 
-void CertificateManagerHandler::FileSelected(const FilePath& path, int index,
+void CertificateManagerHandler::FileSelected(const base::FilePath& path,
+                                             int index,
                                              void* params) {
   switch (reinterpret_cast<intptr_t>(params)) {
     case EXPORT_PERSONAL_FILE_SELECTED:
@@ -586,11 +575,13 @@ void CertificateManagerHandler::ExportPersonal(const ListValue* args) {
   file_type_info.extension_description_overrides.push_back(
       l10n_util::GetStringUTF16(IDS_CERT_MANAGER_PKCS12_FILES));
   file_type_info.include_all_files = true;
+  // TODO(kinaba): http://crbug.com/140425. Turn file_type_info.support_drive
+  // on once Google Drive client on ChromeOS fully supports file writing.
   select_file_dialog_ = ui::SelectFileDialog::Create(
       this, new ChromeSelectFilePolicy(web_ui()->GetWebContents()));
   select_file_dialog_->SelectFile(
       ui::SelectFileDialog::SELECT_SAVEAS_FILE, string16(),
-      FilePath(), &file_type_info, 1, FILE_PATH_LITERAL("p12"),
+      base::FilePath(), &file_type_info, 1, FILE_PATH_LITERAL("p12"),
       GetParentWindow(),
       reinterpret_cast<void*>(EXPORT_PERSONAL_FILE_SELECTED));
 }
@@ -600,7 +591,7 @@ void CertificateManagerHandler::ExportAllPersonal(const ListValue* args) {
 }
 
 void CertificateManagerHandler::ExportPersonalFileSelected(
-    const FilePath& path) {
+    const base::FilePath& path) {
   file_path_ = path;
   web_ui()->CallJavascriptFunction(
       "CertificateManager.exportPersonalAskPassword");
@@ -645,20 +636,20 @@ void CertificateManagerHandler::ExportPersonalSlotsUnlocked() {
   file_access_provider_->StartWrite(
       file_path_,
       output,
-      &consumer_,
       base::Bind(&CertificateManagerHandler::ExportPersonalFileWritten,
-                 base::Unretained(this)));
+                 base::Unretained(this)),
+      &tracker_);
 }
 
-void CertificateManagerHandler::ExportPersonalFileWritten(int write_errno,
-                                                          int bytes_written) {
+void CertificateManagerHandler::ExportPersonalFileWritten(
+    const int* write_errno, const int* bytes_written) {
   web_ui()->CallJavascriptFunction("CertificateRestoreOverlay.dismiss");
   ImportExportCleanup();
-  if (write_errno) {
+  if (*write_errno) {
     ShowError(
         l10n_util::GetStringUTF8(IDS_CERT_MANAGER_PKCS12_EXPORT_ERROR_TITLE),
         l10n_util::GetStringFUTF8(IDS_CERT_MANAGER_WRITE_ERROR_FORMAT,
-                                  UTF8ToUTF16(safe_strerror(write_errno))));
+                                  UTF8ToUTF16(safe_strerror(*write_errno))));
   }
 }
 
@@ -676,17 +667,18 @@ void CertificateManagerHandler::StartImportPersonal(const ListValue* args) {
   file_type_info.extension_description_overrides.push_back(
       l10n_util::GetStringUTF16(IDS_CERT_MANAGER_PKCS12_FILES));
   file_type_info.include_all_files = true;
+  file_type_info.support_drive = true;
   select_file_dialog_ = ui::SelectFileDialog::Create(
       this, new ChromeSelectFilePolicy(web_ui()->GetWebContents()));
   select_file_dialog_->SelectFile(
       ui::SelectFileDialog::SELECT_OPEN_FILE, string16(),
-      FilePath(), &file_type_info, 1, FILE_PATH_LITERAL("p12"),
+      base::FilePath(), &file_type_info, 1, FILE_PATH_LITERAL("p12"),
       GetParentWindow(),
       reinterpret_cast<void*>(IMPORT_PERSONAL_FILE_SELECTED));
 }
 
 void CertificateManagerHandler::ImportPersonalFileSelected(
-    const FilePath& path) {
+    const base::FilePath& path) {
   file_path_ = path;
   web_ui()->CallJavascriptFunction(
       "CertificateManager.importPersonalAskPassword");
@@ -701,24 +693,24 @@ void CertificateManagerHandler::ImportPersonalPasswordSelected(
   }
   file_access_provider_->StartRead(
       file_path_,
-      &consumer_,
       base::Bind(&CertificateManagerHandler::ImportPersonalFileRead,
-                 base::Unretained(this)));
+                 base::Unretained(this)),
+      &tracker_);
 }
 
 void CertificateManagerHandler::ImportPersonalFileRead(
-    int read_errno, std::string data) {
-  if (read_errno) {
+    const int* read_errno, const std::string* data) {
+  if (*read_errno) {
     ImportExportCleanup();
     web_ui()->CallJavascriptFunction("CertificateRestoreOverlay.dismiss");
     ShowError(
         l10n_util::GetStringUTF8(IDS_CERT_MANAGER_PKCS12_IMPORT_ERROR_TITLE),
         l10n_util::GetStringFUTF8(IDS_CERT_MANAGER_READ_ERROR_FORMAT,
-                                  UTF8ToUTF16(safe_strerror(read_errno))));
+                                  UTF8ToUTF16(safe_strerror(*read_errno))));
     return;
   }
 
-  file_data_ = data;
+  file_data_ = *data;
 
   if (use_hardware_backed_) {
     module_ = certificate_manager_model_->cert_db()->GetPrivateModule();
@@ -799,33 +791,34 @@ void CertificateManagerHandler::ImportServer(const ListValue* args) {
   ShowCertSelectFileDialog(
       select_file_dialog_.get(),
       ui::SelectFileDialog::SELECT_OPEN_FILE,
-      FilePath(),
+      base::FilePath(),
       GetParentWindow(),
       reinterpret_cast<void*>(IMPORT_SERVER_FILE_SELECTED));
 }
 
-void CertificateManagerHandler::ImportServerFileSelected(const FilePath& path) {
+void CertificateManagerHandler::ImportServerFileSelected(
+    const base::FilePath& path) {
   file_path_ = path;
   file_access_provider_->StartRead(
       file_path_,
-      &consumer_,
       base::Bind(&CertificateManagerHandler::ImportServerFileRead,
-                 base::Unretained(this)));
+                 base::Unretained(this)),
+      &tracker_);
 }
 
-void CertificateManagerHandler::ImportServerFileRead(int read_errno,
-                                                     std::string data) {
-  if (read_errno) {
+void CertificateManagerHandler::ImportServerFileRead(const int* read_errno,
+                                                     const std::string* data) {
+  if (*read_errno) {
     ImportExportCleanup();
     ShowError(
         l10n_util::GetStringUTF8(IDS_CERT_MANAGER_SERVER_IMPORT_ERROR_TITLE),
         l10n_util::GetStringFUTF8(IDS_CERT_MANAGER_READ_ERROR_FORMAT,
-                                  UTF8ToUTF16(safe_strerror(read_errno))));
+                                  UTF8ToUTF16(safe_strerror(*read_errno))));
     return;
   }
 
   selected_cert_list_ = net::X509Certificate::CreateCertificateListFromBytes(
-          data.data(), data.size(), net::X509Certificate::FORMAT_AUTO);
+          data->data(), data->size(), net::X509Certificate::FORMAT_AUTO);
   if (selected_cert_list_.empty()) {
     ImportExportCleanup();
     ShowError(
@@ -857,33 +850,34 @@ void CertificateManagerHandler::ImportCA(const ListValue* args) {
       this, new ChromeSelectFilePolicy(web_ui()->GetWebContents()));
   ShowCertSelectFileDialog(select_file_dialog_.get(),
                            ui::SelectFileDialog::SELECT_OPEN_FILE,
-                           FilePath(),
+                           base::FilePath(),
                            GetParentWindow(),
                            reinterpret_cast<void*>(IMPORT_CA_FILE_SELECTED));
 }
 
-void CertificateManagerHandler::ImportCAFileSelected(const FilePath& path) {
+void CertificateManagerHandler::ImportCAFileSelected(
+    const base::FilePath& path) {
   file_path_ = path;
   file_access_provider_->StartRead(
       file_path_,
-      &consumer_,
       base::Bind(&CertificateManagerHandler::ImportCAFileRead,
-                 base::Unretained(this)));
+                 base::Unretained(this)),
+      &tracker_);
 }
 
-void CertificateManagerHandler::ImportCAFileRead(int read_errno,
-                                                 std::string data) {
-  if (read_errno) {
+void CertificateManagerHandler::ImportCAFileRead(const int* read_errno,
+                                                const std::string* data) {
+  if (*read_errno) {
     ImportExportCleanup();
     ShowError(
         l10n_util::GetStringUTF8(IDS_CERT_MANAGER_CA_IMPORT_ERROR_TITLE),
         l10n_util::GetStringFUTF8(IDS_CERT_MANAGER_READ_ERROR_FORMAT,
-                                  UTF8ToUTF16(safe_strerror(read_errno))));
+                                  UTF8ToUTF16(safe_strerror(*read_errno))));
     return;
   }
 
   selected_cert_list_ = net::X509Certificate::CreateCertificateListFromBytes(
-          data.data(), data.size(), net::X509Certificate::FORMAT_AUTO);
+          data->data(), data->size(), net::X509Certificate::FORMAT_AUTO);
   if (selected_cert_list_.empty()) {
     ImportExportCleanup();
     ShowError(
@@ -1023,7 +1017,7 @@ void CertificateManagerHandler::PopulateTree(const std::string& tab_name,
     std::sort(nodes->begin(), nodes->end(), comparator);
 
     ListValue args;
-    args.Append(Value::CreateStringValue(tree_name));
+    args.Append(new base::StringValue(tree_name));
     args.Append(nodes);
     web_ui()->CallJavascriptFunction("CertificateManager.onPopulateTree", args);
   }
@@ -1032,9 +1026,9 @@ void CertificateManagerHandler::PopulateTree(const std::string& tab_name,
 void CertificateManagerHandler::ShowError(const std::string& title,
                                           const std::string& error) const {
   ScopedVector<const Value> args;
-  args.push_back(Value::CreateStringValue(title));
-  args.push_back(Value::CreateStringValue(error));
-  args.push_back(Value::CreateStringValue(l10n_util::GetStringUTF8(IDS_OK)));
+  args.push_back(new base::StringValue(title));
+  args.push_back(new base::StringValue(error));
+  args.push_back(new base::StringValue(l10n_util::GetStringUTF8(IDS_OK)));
   args.push_back(Value::CreateNullValue());  // cancelTitle
   args.push_back(Value::CreateNullValue());  // okCallback
   args.push_back(Value::CreateNullValue());  // cancelCallback

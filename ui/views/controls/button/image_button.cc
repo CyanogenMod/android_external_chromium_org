@@ -32,6 +32,10 @@ ImageButton::ImageButton(ButtonListener* listener)
 ImageButton::~ImageButton() {
 }
 
+const gfx::ImageSkia& ImageButton::GetImage(ButtonState state) const {
+  return images_[state];
+}
+
 void ImageButton::SetImage(ButtonState state, const gfx::ImageSkia* image) {
   images_[state] = image ? *image : gfx::ImageSkia();
   PreferredSizeChanged();
@@ -68,8 +72,10 @@ void ImageButton::SetImageAlignment(HorizontalAlignment h_align,
 // ImageButton, View overrides:
 
 gfx::Size ImageButton::GetPreferredSize() {
-  if (!images_[BS_NORMAL].isNull())
-    return gfx::Size(images_[BS_NORMAL].width(), images_[BS_NORMAL].height());
+  if (!images_[STATE_NORMAL].isNull()) {
+    return gfx::Size(images_[STATE_NORMAL].width(),
+                     images_[STATE_NORMAL].height());
+  }
   return preferred_size_;
 }
 
@@ -98,14 +104,14 @@ void ImageButton::OnPaint(gfx::Canvas* canvas) {
 gfx::ImageSkia ImageButton::GetImageToPaint() {
   gfx::ImageSkia img;
 
-  if (!images_[BS_HOT].isNull() && hover_animation_->is_animating()) {
-    img = gfx::ImageSkiaOperations::CreateBlendedImage(images_[BS_NORMAL],
-        images_[BS_HOT], hover_animation_->GetCurrentValue());
+  if (!images_[STATE_HOVERED].isNull() && hover_animation_->is_animating()) {
+    img = gfx::ImageSkiaOperations::CreateBlendedImage(images_[STATE_NORMAL],
+        images_[STATE_HOVERED], hover_animation_->GetCurrentValue());
   } else {
     img = images_[state_];
   }
 
-  return !img.isNull() ? img : images_[BS_NORMAL];
+  return !img.isNull() ? img : images_[STATE_NORMAL];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -146,7 +152,7 @@ void ToggleImageButton::SetToggled(bool toggled) {
   if (toggled == toggled_)
     return;
 
-  for (int i = 0; i < BS_COUNT; ++i) {
+  for (int i = 0; i < STATE_COUNT; ++i) {
     gfx::ImageSkia temp = images_[i];
     images_[i] = alternate_images_[i];
     alternate_images_[i] = temp;
@@ -172,6 +178,12 @@ void ToggleImageButton::SetToggledTooltipText(const string16& tooltip) {
 
 ////////////////////////////////////////////////////////////////////////////////
 // ToggleImageButton, ImageButton overrides:
+
+const gfx::ImageSkia& ToggleImageButton::GetImage(ButtonState state) const {
+  if (toggled_)
+    return alternate_images_[state];
+  return images_[state];
+}
 
 void ToggleImageButton::SetImage(ButtonState state,
                                  const gfx::ImageSkia* image) {

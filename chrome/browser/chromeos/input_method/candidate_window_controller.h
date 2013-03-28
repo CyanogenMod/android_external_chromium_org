@@ -12,6 +12,8 @@
 namespace chromeos {
 namespace input_method {
 
+class IBusController;
+
 // CandidateWindowController is used for controlling the input method
 // candidate window. Once the initialization is done, the controller
 // starts monitoring signals sent from the the background input method
@@ -30,8 +32,14 @@ class CandidateWindowController {
 
   virtual ~CandidateWindowController() {}
 
-  // Initializes the candidate window. Returns true on success.
-  virtual bool Init() = 0;
+  // Initializes the candidate window. Returns true on success. |controller| can
+  // be NULL.
+  // TODO(nona): Refine observer chain once IBusUiController is removed.
+  virtual bool Init(IBusController* controller) = 0;
+
+  // Shutdown the candidate window controller. |controller| can be NULL.
+  // TODO(nona): Refine observer chain once IBusUiController is removed.
+  virtual void Shutdown(IBusController* controller) = 0;
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
 

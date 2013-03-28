@@ -67,7 +67,7 @@ COMPILE_ASSERT_MATCHING_ENUM(DragOperationEvery);
 @end
 
 namespace content {
-WebContentsView* CreateWebContentsView(
+WebContentsViewPort* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
     RenderViewHostDelegateView** render_view_host_delegate_view) {
@@ -79,7 +79,8 @@ WebContentsView* CreateWebContentsView(
 WebContentsViewMac::WebContentsViewMac(WebContentsImpl* web_contents,
                                        WebContentsViewDelegate* delegate)
     : web_contents_(web_contents),
-      delegate_(delegate) {
+      delegate_(delegate),
+      allow_overlapping_views_(false) {
 }
 
 WebContentsViewMac::~WebContentsViewMac() {
@@ -89,54 +90,6 @@ WebContentsViewMac::~WebContentsViewMac() {
   // WebContentsViewMac instance due to Cocoa retain count.
   [cocoa_view_ cancelDeferredClose];
   [cocoa_view_ clearWebContentsView];
-}
-
-void WebContentsViewMac::CreateView(const gfx::Size& initial_size) {
-  WebContentsViewCocoa* view =
-      [[WebContentsViewCocoa alloc] initWithWebContentsViewMac:this];
-  cocoa_view_.reset(view);
-}
-
-RenderWidgetHostView* WebContentsViewMac::CreateViewForWidget(
-    RenderWidgetHost* render_widget_host) {
-  if (render_widget_host->GetView()) {
-    // During testing, the view will already be set up in most cases to the
-    // test view, so we don't want to clobber it with a real one. To verify that
-    // this actually is happening (and somebody isn't accidentally creating the
-    // view twice), we check for the RVH Factory, which will be set when we're
-    // making special ones (which go along with the special views).
-    DCHECK(RenderViewHostFactory::has_factory());
-    return render_widget_host->GetView();
-  }
-
-  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
-      RenderWidgetHostView::CreateViewForWidget(render_widget_host));
-  if (delegate()) {
-    NSObject<RenderWidgetHostViewMacDelegate>* rw_delegate =
-        delegate()->CreateRenderWidgetHostViewDelegate(render_widget_host);
-    view->SetDelegate(rw_delegate);
-  }
-
-  // Fancy layout comes later; for now just make it our size and resize it
-  // with us. In case there are other siblings of the content area, we want
-  // to make sure the content area is on the bottom so other things draw over
-  // it.
-  NSView* view_view = view->GetNativeView();
-  [view_view setFrame:[cocoa_view_.get() bounds]];
-  [view_view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
-  // Add the new view below all other views; this also keeps it below any
-  // overlay view installed.
-  [cocoa_view_.get() addSubview:view_view
-                     positioned:NSWindowBelow
-                     relativeTo:nil];
-  // For some reason known only to Cocoa, the autorecalculation of the key view
-  // loop set on the window doesn't set the next key view when the subview is
-  // added. On 10.6 things magically work fine; on 10.5 they fail
-  // <http://crbug.com/61493>. Digging into Cocoa key view loop code yielded
-  // madness; TODO(avi,rohit): look at this again and figure out what's really
-  // going on.
-  [cocoa_view_.get() setNextKeyView:view_view];
-  return view;
 }
 
 gfx::NativeView WebContentsViewMac::GetNativeView() const {
@@ -195,17 +148,6 @@ void WebContentsViewMac::StartDragging(
                               offset:offset];
 }
 
-void WebContentsViewMac::RenderViewCreated(RenderViewHost* host) {
-  // We want updates whenever the intrinsic width of the webpage changes.
-  // Put the RenderView into that mode. The preferred width is used for example
-  // when the "zoom" button in the browser window is clicked.
-  host->EnablePreferredSizeMode();
-}
-
-void WebContentsViewMac::SetPageTitle(const string16& title) {
-  // Meaningless on the Mac; widgets don't have a "title" attribute
-}
-
 void WebContentsViewMac::OnTabCrashed(base::TerminationStatus /* status */,
                                       int /* error_code */) {
 }
@@ -224,8 +166,11 @@ void WebContentsViewMac::SizeContents(const gfx::Size& size) {
 }
 
 void WebContentsViewMac::Focus() {
-  [[cocoa_view_.get() window] makeFirstResponder:GetContentNativeView()];
-  [[cocoa_view_.get() window] makeKeyAndOrderFront:GetContentNativeView()];
+  NSWindow* window = [cocoa_view_.get() window];
+  [window makeFirstResponder:GetContentNativeView()];
+  if (![window isVisible])
+    return;
+  [window makeKeyAndOrderFront:nil];
 }
 
 void WebContentsViewMac::SetInitialFocus() {
@@ -310,6 +255,96 @@ void WebContentsViewMac::ShowPopupMenu(
                                   allow_multiple_selection);
 }
 
+gfx::Rect WebContentsViewMac::GetViewBounds() const {
+  // This method is not currently used on mac.
+  NOTIMPLEMENTED();
+  return gfx::Rect();
+}
+
+void WebContentsViewMac::SetAllowOverlappingViews(bool overlapping) {
+  if (allow_overlapping_views_ == overlapping)
+    return;
+
+  allow_overlapping_views_ = overlapping;
+  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
+      web_contents_->GetRenderWidgetHostView());
+  if (view)
+    view->SetAllowOverlappingViews(allow_overlapping_views_);
+}
+
+void WebContentsViewMac::CreateView(
+    const gfx::Size& initial_size, gfx::NativeView context) {
+  WebContentsViewCocoa* view =
+      [[WebContentsViewCocoa alloc] initWithWebContentsViewMac:this];
+  cocoa_view_.reset(view);
+}
+
+RenderWidgetHostView* WebContentsViewMac::CreateViewForWidget(
+    RenderWidgetHost* render_widget_host) {
+  if (render_widget_host->GetView()) {
+    // During testing, the view will already be set up in most cases to the
+    // test view, so we don't want to clobber it with a real one. To verify that
+    // this actually is happening (and somebody isn't accidentally creating the
+    // view twice), we check for the RVH Factory, which will be set when we're
+    // making special ones (which go along with the special views).
+    DCHECK(RenderViewHostFactory::has_factory());
+    return render_widget_host->GetView();
+  }
+
+  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
+      RenderWidgetHostView::CreateViewForWidget(render_widget_host));
+  if (delegate()) {
+    NSObject<RenderWidgetHostViewMacDelegate>* rw_delegate =
+        delegate()->CreateRenderWidgetHostViewDelegate(render_widget_host);
+    view->SetDelegate(rw_delegate);
+  }
+  view->SetAllowOverlappingViews(allow_overlapping_views_);
+
+  // Fancy layout comes later; for now just make it our size and resize it
+  // with us. In case there are other siblings of the content area, we want
+  // to make sure the content area is on the bottom so other things draw over
+  // it.
+  NSView* view_view = view->GetNativeView();
+  [view_view setFrame:[cocoa_view_.get() bounds]];
+  [view_view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+  // Add the new view below all other views; this also keeps it below any
+  // overlay view installed.
+  [cocoa_view_.get() addSubview:view_view
+                     positioned:NSWindowBelow
+                     relativeTo:nil];
+  // For some reason known only to Cocoa, the autorecalculation of the key view
+  // loop set on the window doesn't set the next key view when the subview is
+  // added. On 10.6 things magically work fine; on 10.5 they fail
+  // <http://crbug.com/61493>. Digging into Cocoa key view loop code yielded
+  // madness; TODO(avi,rohit): look at this again and figure out what's really
+  // going on.
+  [cocoa_view_.get() setNextKeyView:view_view];
+  return view;
+}
+
+RenderWidgetHostView* WebContentsViewMac::CreateViewForPopupWidget(
+    RenderWidgetHost* render_widget_host) {
+  return RenderWidgetHostViewPort::CreateViewForWidget(render_widget_host);
+}
+
+void WebContentsViewMac::SetPageTitle(const string16& title) {
+  // Meaningless on the Mac; widgets don't have a "title" attribute
+}
+
+
+void WebContentsViewMac::RenderViewCreated(RenderViewHost* host) {
+  // We want updates whenever the intrinsic width of the webpage changes.
+  // Put the RenderView into that mode. The preferred width is used for example
+  // when the "zoom" button in the browser window is clicked.
+  host->EnablePreferredSizeMode();
+}
+
+void WebContentsViewMac::RenderViewSwappedIn(RenderViewHost* host) {
+}
+
+void WebContentsViewMac::SetOverscrollControllerEnabled(bool enabled) {
+}
+
 bool WebContentsViewMac::IsEventTracking() const {
   return base::MessagePumpMac::IsHandlingSendEvent();
 }
@@ -323,12 +358,6 @@ void WebContentsViewMac::CloseTabAfterEventTracking() {
   [cocoa_view_ performSelector:@selector(closeTabAfterEvent)
                     withObject:nil
                     afterDelay:0.0];
-}
-
-gfx::Rect WebContentsViewMac::GetViewBounds() const {
-  // This method is not currently used on mac.
-  NOTIMPLEMENTED();
-  return gfx::Rect();
 }
 
 void WebContentsViewMac::CloseTab() {

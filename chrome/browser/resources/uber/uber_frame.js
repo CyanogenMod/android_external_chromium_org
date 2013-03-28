@@ -7,7 +7,7 @@
 // in an iframe. Iframes can be layered on top of each other, but not mixed in
 // with page content, so all overlapping content on uber must be framed.
 
-<include src="../shared/js/util.js"></include>
+<include src="../../../../ui/webui/resources/js/util.js"></include>
 <include src="uber_utils.js"></include>
 
 cr.define('uber_frame', function() {
@@ -80,7 +80,7 @@ cr.define('uber_frame', function() {
 
   /**
    * Sets selection on the given nav item.
-   * @param {Boolean} newSelection The item to be selected.
+   * @param {boolean} newSelection The item to be selected.
    */
   function setSelection(newSelection) {
     var lastSelectedNavItem = document.querySelector('li.selected');

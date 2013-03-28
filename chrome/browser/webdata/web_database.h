@@ -5,18 +5,17 @@
 #ifndef CHROME_BROWSER_WEBDATA_WEB_DATABASE_H_
 #define CHROME_BROWSER_WEBDATA_WEB_DATABASE_H_
 
+#include <map>
+
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/webdata/web_database_table.h"
 #include "sql/connection.h"
 #include "sql/init_status.h"
 #include "sql/meta_table.h"
 
-class AutofillTable;
+namespace base {
 class FilePath;
-class KeywordTable;
-class LoginsTable;
-class TokenServiceTable;
-class WebAppsTable;
-class WebIntentsTable;
+}
 
 namespace content {
 class NotificationService;
@@ -25,44 +24,55 @@ class NotificationService;
 // This class manages a SQLite database that stores various web page meta data.
 class WebDatabase {
  public:
+  enum State {
+    COMMIT_NOT_NEEDED,
+    COMMIT_NEEDED
+  };
   // Exposed publicly so the keyword table can access it.
   static const int kCurrentVersionNumber;
 
   WebDatabase();
   virtual ~WebDatabase();
 
+  // Adds a database table. Ownership remains with the caller, which
+  // must ensure that the lifetime of |table| exceeds this object's
+  // lifetime. Must only be called before Init.
+  void AddTable(WebDatabaseTable* table);
+
+  // Retrieves a table based on its |key|.
+  WebDatabaseTable* GetTable(WebDatabaseTable::TypeKey key);
+
   // Initialize the database given a name. The name defines where the SQLite
   // file is. If this returns an error code, no other method should be called.
-  sql::InitStatus Init(const FilePath& db_name);
+  // Requires the |app_locale| to be passed as a parameter as the locale can
+  // only safely be queried on the UI thread.
+  //
+  // Before calling this method, you must call AddTable for any
+  // WebDatabaseTable objects that are supposed to participate in
+  // managing the database.
+  sql::InitStatus Init(
+      const base::FilePath& db_name, const std::string& app_locale);
 
   // Transactions management
   void BeginTransaction();
   void CommitTransaction();
-
-  virtual AutofillTable* GetAutofillTable();
-  virtual KeywordTable* GetKeywordTable();
-  virtual LoginsTable* GetLoginsTable();
-  virtual TokenServiceTable* GetTokenServiceTable();
-  virtual WebAppsTable* GetWebAppsTable();
-  virtual WebIntentsTable* GetWebIntentsTable();
 
   // Exposed for testing only.
   sql::Connection* GetSQLConnection();
 
  private:
   // Used by |Init()| to migration database schema from older versions to
-  // current version.
-  sql::InitStatus MigrateOldVersionsAsNeeded();
+  // current version.  Requires the |app_locale| to be passed as a parameter as
+  // the locale can only safely be queried on the UI thread.
+  sql::InitStatus MigrateOldVersionsAsNeeded(const std::string& app_locale);
 
   sql::Connection db_;
   sql::MetaTable meta_table_;
 
-  scoped_ptr<AutofillTable> autofill_table_;
-  scoped_ptr<KeywordTable> keyword_table_;
-  scoped_ptr<LoginsTable> logins_table_;
-  scoped_ptr<TokenServiceTable> token_service_table_;
-  scoped_ptr<WebAppsTable> web_apps_table_;
-  scoped_ptr<WebIntentsTable> web_intents_table_;
+  // Map of all the different tables that have been added to this
+  // object. Non-owning.
+  typedef std::map<WebDatabaseTable::TypeKey, WebDatabaseTable*> TableMap;
+  TableMap tables_;
 
   scoped_ptr<content::NotificationService> notification_service_;
 

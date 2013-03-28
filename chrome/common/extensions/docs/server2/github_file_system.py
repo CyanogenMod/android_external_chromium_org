@@ -7,41 +7,56 @@ import logging
 import os
 
 import appengine_blobstore as blobstore
+from appengine_wrappers import urlfetch
 import object_store
-from file_system import FileSystem, StatInfo, FileNotFoundError
+from file_system import FileSystem, StatInfo
 from StringIO import StringIO
 from future import Future
 from zipfile import ZipFile, BadZipfile
 
 ZIP_KEY = 'zipball'
+USERNAME = None
+PASSWORD = None
 
 def _MakeKey(version):
   return ZIP_KEY + '.' + str(version)
 
 class _AsyncFetchFutureZip(object):
   def __init__(self, fetcher, blobstore, key_to_set, key_to_delete=None):
-    self._fetch = fetcher.FetchAsync(ZIP_KEY)
+    self._fetcher = fetcher
+    self._fetch = fetcher.FetchAsync(ZIP_KEY,
+                                     username=USERNAME,
+                                     password=PASSWORD)
     self._blobstore = blobstore
     self._key_to_set = key_to_set
     self._key_to_delete = key_to_delete
 
   def Get(self):
     try:
-      blob = self._fetch.Get().content
-    except FileNotFoundError as e:
+      result = self._fetch.Get()
+      # Check if Github authentication failed.
+      if result.status_code == 401:
+        logging.error('Github authentication failed for %s, falling back to '
+                      'unauthenticated.' % USERNAME)
+        blob = self._fetcher.Fetch(ZIP_KEY).content
+      else:
+        blob = result.content
+    except urlfetch.DownloadError as e:
       logging.error('Bad github zip file: %s' % e)
       return None
-    self._blobstore.Set(_MakeKey(self._key_to_set),
-                        blob,
-                        blobstore.BLOBSTORE_GITHUB)
     if self._key_to_delete is not None:
       self._blobstore.Delete(_MakeKey(self._key_to_delete),
                              blobstore.BLOBSTORE_GITHUB)
     try:
-      return ZipFile(StringIO(blob))
+      return_zip = ZipFile(StringIO(blob))
     except BadZipfile as e:
       logging.error('Bad github zip file: %s' % e)
       return None
+
+    self._blobstore.Set(_MakeKey(self._key_to_set),
+                        blob,
+                        blobstore.BLOBSTORE_GITHUB)
+    return return_zip
 
 class GithubFileSystem(FileSystem):
   """FileSystem implementation which fetches resources from github.
@@ -71,7 +86,11 @@ class GithubFileSystem(FileSystem):
     self._version = version
 
   def _ReadFile(self, path):
-    zip_file = self._zip_file.Get()
+    try:
+      zip_file = self._zip_file.Get()
+    except Exception as e:
+      logging.error('Github ReadFile error: %s' % e)
+      return ''
     if zip_file is None:
       logging.error('Bad github zip file.')
       return ''
@@ -79,7 +98,11 @@ class GithubFileSystem(FileSystem):
     return zip_file.read(prefix + path)
 
   def _ListDir(self, path):
-    zip_file = self._zip_file.Get()
+    try:
+      zip_file = self._zip_file.Get()
+    except Exception as e:
+      logging.error('Github ListDir error: %s' % e)
+      return []
     if zip_file is None:
       logging.error('Bad github zip file.')
       return []
@@ -104,20 +127,39 @@ class GithubFileSystem(FileSystem):
         result[path] = self._ReadFile(path)
     return Future(value=result)
 
+  def _DefaultStat(self, path):
+    version = 0
+    # Cache for a minute so we don't try to keep fetching bad data.
+    self._object_store.Set(path, version, object_store.GITHUB_STAT, time=60)
+    return StatInfo(version)
+
   def Stat(self, path):
     version = self._object_store.Get(path, object_store.GITHUB_STAT).Get()
     if version is not None:
       return StatInfo(version)
-    version = (json.loads(
-        self._fetcher.Fetch('commits/HEAD').content).get('commit', {})
-                                                    .get('tree', {})
-                                                    .get('sha', None))
+    try:
+      result = self._fetcher.Fetch('commits/HEAD',
+                                   username=USERNAME,
+                                   password=PASSWORD)
+    except urlfetch.DownloadError as e:
+      logging.error('GithubFileSystem Stat: %s' % e)
+      return self._DefaultStat(path)
+    # Check if Github authentication failed.
+    if result.status_code == 401:
+      logging.error('Github authentication failed for %s, falling back to '
+                    'unauthenticated.' % USERNAME)
+      try:
+        result = self._fetcher.Fetch('commits/HEAD')
+      except urlfetch.DownloadError as e:
+        logging.error('GithubFileSystem Stat: %s' % e)
+        return self._DefaultStat(path)
+    version = (json.loads(result.content).get('commit', {})
+                                         .get('tree', {})
+                                         .get('sha', None))
     # Check if the JSON was valid, and set to 0 if not.
     if version is not None:
       self._object_store.Set(path, version, object_store.GITHUB_STAT)
     else:
       logging.warning('Problem fetching commit hash from github.')
-      version = 0
-      # Cache for a minute so we don't try to keep fetching bad data.
-      self._object_store.Set(path, version, object_store.GITHUB_STAT, time=60)
+      return self._DefaultStat(path)
     return StatInfo(version)

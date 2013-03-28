@@ -10,14 +10,14 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
-#include "net/base/host_resolver.h"
-#include "net/base/ssl_config_service.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_response_info.h"
 #include "net/proxy/proxy_server.h"
-#include "net/socket/ssl_client_socket.h"
+#include "net/socket/client_socket_pool.h"
 #include "net/socket/client_socket_pool_base.h"
 #include "net/socket/client_socket_pool_histograms.h"
-#include "net/socket/client_socket_pool.h"
+#include "net/socket/ssl_client_socket.h"
+#include "net/ssl/ssl_config_service.h"
 
 namespace net {
 
@@ -153,9 +153,6 @@ class SSLConnectJob : public ConnectJob {
   scoped_ptr<ClientSocketHandle> transport_socket_handle_;
   scoped_ptr<SSLClientSocket> ssl_socket_;
 
-  // The time the DoSSLConnect() method was called.
-  base::TimeTicks ssl_connect_start_time_;
-
   HttpResponseInfo error_response_info_;
 
   DISALLOW_COPY_AND_ASSIGN(SSLConnectJob);
@@ -206,7 +203,7 @@ class NET_EXPORT_PRIVATE SSLClientSocketPool
                              StreamSocket* socket,
                              int id) OVERRIDE;
 
-  virtual void Flush() OVERRIDE;
+  virtual void FlushWithError(int error) OVERRIDE;
 
   virtual bool IsStalled() const OVERRIDE;
 

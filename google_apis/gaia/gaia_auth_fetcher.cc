@@ -11,9 +11,9 @@
 
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_split.h"
 #include "base/values.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -21,6 +21,7 @@
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
+#include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -156,6 +157,9 @@ const char GaiaAuthFetcher::kAuthHeaderFormat[] =
 // static
 const char GaiaAuthFetcher::kOAuthHeaderFormat[] = "Authorization: OAuth %s";
 // static
+const char GaiaAuthFetcher::kOAuth2BearerHeaderFormat[] =
+    "Authorization: Bearer %s";
+// static
 const char GaiaAuthFetcher::kClientLoginToOAuth2CookiePartSecure[] = "Secure";
 // static
 const char GaiaAuthFetcher::kClientLoginToOAuth2CookiePartHttpOnly[] =
@@ -222,6 +226,12 @@ net::URLFetcher* GaiaAuthFetcher::CreateGaiaFetcher(
   // services.  Where such mixing is desired (MergeSession), it will be done
   // explicitly.
   to_return->SetLoadFlags(load_flags);
+
+  // Fetchers are sometimes cancelled because a network change was detected,
+  // especially at startup and after sign-in on ChromeOS. Retrying once should
+  // be enough in those cases; let the fetcher retry up to 3 times just in case.
+  // http://crbug.com/163710
+  to_return->SetAutomaticallyRetryOnNetworkChanges(3);
 
   if (!headers.empty())
     to_return->SetExtraRequestHeaders(headers);
@@ -296,9 +306,9 @@ std::string GaiaAuthFetcher::MakeGetAuthCodeBody() {
       GaiaUrls::GetInstance()->oauth1_login_scope(), true);
   std::string encoded_client_id = net::EscapeUrlEncodedData(
       GaiaUrls::GetInstance()->oauth2_chrome_client_id(), true);
-  return StringPrintf(kClientLoginToOAuth2BodyFormat,
-                      encoded_scope.c_str(),
-                      encoded_client_id.c_str());
+  return base::StringPrintf(kClientLoginToOAuth2BodyFormat,
+                            encoded_scope.c_str(),
+                            encoded_client_id.c_str());
 }
 
 // static
@@ -311,11 +321,11 @@ std::string GaiaAuthFetcher::MakeGetTokenPairBody(
   std::string encoded_client_secret = net::EscapeUrlEncodedData(
       GaiaUrls::GetInstance()->oauth2_chrome_client_secret(), true);
   std::string encoded_auth_code = net::EscapeUrlEncodedData(auth_code, true);
-  return StringPrintf(kOAuth2CodeToTokenPairBodyFormat,
-                      encoded_scope.c_str(),
-                      encoded_client_id.c_str(),
-                      encoded_client_secret.c_str(),
-                      encoded_auth_code.c_str());
+  return base::StringPrintf(kOAuth2CodeToTokenPairBodyFormat,
+                            encoded_scope.c_str(),
+                            encoded_client_id.c_str(),
+                            encoded_client_secret.c_str(),
+                            encoded_auth_code.c_str());
 }
 
 // static
@@ -342,7 +352,7 @@ std::string GaiaAuthFetcher::MakeMergeSessionBody(
 // static
 std::string GaiaAuthFetcher::MakeGetAuthCodeHeader(
     const std::string& auth_token) {
-  return StringPrintf(kAuthHeaderFormat, auth_token.c_str());
+  return base::StringPrintf(kAuthHeaderFormat, auth_token.c_str());
 }
 
 // Helper method that extracts tokens from a successful reply.
@@ -354,7 +364,9 @@ void GaiaAuthFetcher::ParseClientLoginResponse(const std::string& data,
   using std::vector;
   using std::pair;
   using std::string;
-
+  sid->clear();
+  lsid->clear();
+  token->clear();
   vector<pair<string, string> > tokens;
   base::SplitStringIntoKeyValuePairs(data, '=', '\n', &tokens);
   for (vector<pair<string, string> >::iterator i = tokens.begin();
@@ -367,6 +379,10 @@ void GaiaAuthFetcher::ParseClientLoginResponse(const std::string& data,
       token->assign(i->second);
     }
   }
+  // If this was a request for uberauth token, then that's all we've got in
+  // data.
+  if (sid->empty() && lsid->empty() && token->empty())
+    token->assign(data);
 }
 
 // static
@@ -434,8 +450,9 @@ std::string GaiaAuthFetcher::MakeOAuthLoginBody(const std::string& service,
                                                 const std::string& source) {
   std::string encoded_service = net::EscapeUrlEncodedData(service, true);
   std::string encoded_source = net::EscapeUrlEncodedData(source, true);
-  return StringPrintf(kOAuthLoginFormat, encoded_service.c_str(),
-                      encoded_source.c_str());
+  return base::StringPrintf(kOAuthLoginFormat,
+                            encoded_service.c_str(),
+                            encoded_source.c_str());
 }
 
 // static
@@ -658,6 +675,22 @@ void GaiaAuthFetcher::StartCookieForOAuthLoginTokenExchange(
   fetcher_->Start();
 }
 
+void GaiaAuthFetcher::StartAuthCodeForOAuth2TokenExchange(
+    const std::string& auth_code) {
+  DCHECK(!fetch_pending_) << "Tried to fetch two things at once!";
+
+  DVLOG(1) << "Starting OAuth token pair fetch";
+  request_body_ = MakeGetTokenPairBody(auth_code);
+  fetcher_.reset(CreateGaiaFetcher(getter_,
+                                   request_body_,
+                                   "",
+                                   oauth2_token_gurl_,
+                                   kLoadFlagsIgnoreCookies,
+                                   this));
+  fetch_pending_ = true;
+  fetcher_->Start();
+}
+
 void GaiaAuthFetcher::StartGetUserInfo(const std::string& lsid) {
   DCHECK(!fetch_pending_) << "Tried to fetch two things at once!";
 
@@ -770,7 +803,7 @@ void GaiaAuthFetcher::StartOAuthLogin(const std::string& access_token,
 
   request_body_ = MakeOAuthLoginBody(service, source_);
   std::string authentication_header =
-      base::StringPrintf("Authorization: Bearer %s", access_token.c_str());
+      base::StringPrintf(kOAuth2BearerHeaderFormat, access_token.c_str());
   fetcher_.reset(CreateGaiaFetcher(getter_,
                                    request_body_,
                                    authentication_header,
@@ -925,25 +958,10 @@ void GaiaAuthFetcher::OnClientLoginToOAuth2Fetched(
   if (status.is_success() && response_code == net::HTTP_OK) {
     std::string auth_code;
     ParseClientLoginToOAuth2Response(cookies, &auth_code);
-    StartOAuth2TokenPairFetch(auth_code);
+    StartAuthCodeForOAuth2TokenExchange(auth_code);
   } else {
     consumer_->OnClientOAuthFailure(GenerateAuthError(data, status));
   }
-}
-
-void GaiaAuthFetcher::StartOAuth2TokenPairFetch(const std::string& auth_code) {
-  DCHECK(!fetch_pending_) << "Tried to fetch two things at once!";
-
-  DVLOG(1) << "Starting OAuth token pair fetch";
-  request_body_ = MakeGetTokenPairBody(auth_code);
-  fetcher_.reset(CreateGaiaFetcher(getter_,
-                                   request_body_,
-                                   "",
-                                   oauth2_token_gurl_,
-                                   kLoadFlagsIgnoreCookies,
-                                   this));
-  fetch_pending_ = true;
-  fetcher_->Start();
 }
 
 void GaiaAuthFetcher::OnOAuth2TokenPairFetched(
@@ -1072,8 +1090,16 @@ void GaiaAuthFetcher::OnURLFetchComplete(const net::URLFetcher* source) {
   int response_code = source->GetResponseCode();
   std::string data;
   source->GetResponseAsString(&data);
-  DVLOG(2) << "Gaia fetcher response code: " << response_code;
-  DVLOG(2) << "Gaia fetcher response data: " << data;
+#ifndef NDEBUG
+  std::string headers;
+  if (source->GetResponseHeaders())
+    source->GetResponseHeaders()->GetNormalizedHeaders(&headers);
+  DVLOG(2) << "Response " << url.spec() << ", code = " << response_code << "\n"
+           << headers << "\n";
+  DVLOG(2) << "data: " << data << "\n";
+#endif
+  // Retrieve the response headers from the request.  Must only be called after
+  // the OnURLFetchComplete callback has run.
   if (url == client_login_gurl_) {
     OnClientLoginFetched(data, status, response_code);
   } else if (url == issue_auth_token_gurl_) {

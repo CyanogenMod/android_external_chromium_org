@@ -4,11 +4,12 @@
 
 #include "printing/pdf_metafile_skia.h"
 
-#include "base/eintr_wrapper.h"
 #include "base/file_descriptor_posix.h"
 #include "base/file_util.h"
 #include "base/hash_tables.h"
 #include "base/metrics/histogram.h"
+#include "base/posix/eintr_wrapper.h"
+#include "base/safe_numerics.h"
 #include "skia/ext/vector_platform_device_skia.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
@@ -110,7 +111,7 @@ bool PdfMetafileSkia::FinishDocument() {
 }
 
 uint32 PdfMetafileSkia::GetDataSize() const {
-  return data_->pdf_stream_.getOffset();
+  return base::checked_numeric_cast<uint32>(data_->pdf_stream_.getOffset());
 }
 
 bool PdfMetafileSkia::GetData(void* dst_buffer,
@@ -123,7 +124,7 @@ bool PdfMetafileSkia::GetData(void* dst_buffer,
   return true;
 }
 
-bool PdfMetafileSkia::SaveTo(const FilePath& file_path) const {
+bool PdfMetafileSkia::SaveTo(const base::FilePath& file_path) const {
   DCHECK_GT(data_->pdf_stream_.getOffset(), 0U);
   SkAutoDataUnref data(data_->pdf_stream_.copyToData());
   if (file_util::WriteFile(file_path,
@@ -238,7 +239,8 @@ PdfMetafileSkia* PdfMetafileSkia::GetMetafileForCurrentPage() {
     return NULL;
 
   PdfMetafileSkia* metafile = new PdfMetafileSkia;
-  metafile->InitFromData(data->bytes(), data->size());
+  metafile->InitFromData(data->bytes(),
+                         base::checked_numeric_cast<uint32>(data->size()));
   return metafile;
 }
 

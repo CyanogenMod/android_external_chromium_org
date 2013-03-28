@@ -21,7 +21,7 @@
 
 #define CACHE_HISTOGRAM_CUSTOM_COUNTS(name, sample, min, max, bucket_count) \
     do { \
-      static base::Histogram* counter(NULL); \
+      static base::HistogramBase* counter(NULL); \
       if (!counter || name != counter->histogram_name()) \
         counter = base::Histogram::FactoryGet( \
             name, min, max, bucket_count, \
@@ -40,7 +40,7 @@
 
 #define CACHE_HISTOGRAM_CUSTOM_TIMES(name, sample, min, max, bucket_count) \
     do { \
-      static base::Histogram* counter(NULL); \
+      static base::HistogramBase* counter(NULL); \
       if (!counter || name != counter->histogram_name()) \
         counter = base::Histogram::FactoryTimeGet( \
             name, min, max, bucket_count, \
@@ -53,7 +53,7 @@
     base::TimeDelta::FromSeconds(10), 50)
 
 #define CACHE_HISTOGRAM_ENUMERATION(name, sample, boundary_value) do { \
-    static base::Histogram* counter(NULL); \
+    static base::HistogramBase* counter(NULL); \
     if (!counter || name != counter->histogram_name()) \
       counter = base::LinearHistogram::FactoryGet( \
                     name, 1, boundary_value, boundary_value + 1, \
@@ -110,6 +110,9 @@
         CACHE_HISTOGRAM_##type(my_name.data(), sample);\
         break;\
       case net::APP_CACHE:\
+        CACHE_HISTOGRAM_##type(my_name.data(), sample);\
+        break;\
+      case net::SHADER_CACHE:\
         CACHE_HISTOGRAM_##type(my_name.data(), sample);\
         break;\
       default:\

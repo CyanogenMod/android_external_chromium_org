@@ -9,7 +9,7 @@
 
 #include "ui/gfx/native_widget_types.h"
 
-class PrefService;
+class PrefRegistrySimple;
 
 namespace gfx {
 class Rect;
@@ -17,7 +17,7 @@ class Rect;
 
 namespace chrome {
 
-void RegisterScreenshotPrefs(PrefService* service);
+void RegisterScreenshotPrefs(PrefRegistrySimple* registry);
 
 // Grabs a snapshot of the rectangle area |snapshot_bounds| with respect to the
 // top left corner of the designated window and stores a PNG representation
@@ -25,25 +25,13 @@ void RegisterScreenshotPrefs(PrefService* service);
 // the primary monitor. This takes into account calling user context (ie. checks
 // policy settings if taking screenshots is allowed), and is intended to be used
 // by browser code. If you need to take a screenshot for debugging purposes,
-// consider using GrabWindowSnapshot.
+// consider using ui::GrabWindowSnapshot.
 // Returns true if the operation is successful (ie. permitted).
 bool GrabWindowSnapshotForUser(
     gfx::NativeWindow window,
     std::vector<unsigned char>* png_representation,
     const gfx::Rect& snapshot_bounds);
 
-namespace internal {
-
-// Like GrabWindowSnapshotForUser, but does not perform additional security
-// checks - just grabs a snapshot. This is intended to be used for debugging
-// purposes where no BrowserProcess instance is available (ie. tests).
-// DO NOT use in a result of user action.
-bool GrabWindowSnapshot(
-    gfx::NativeWindow window,
-    std::vector<unsigned char>* png_representation,
-    const gfx::Rect& snapshot_bounds);
-
-}  // namespace internal
 }  // namespace chrome
 
 #endif  // CHROME_BROWSER_UI_WINDOW_SNAPSHOT_WINDOW_SNAPSHOT_H_

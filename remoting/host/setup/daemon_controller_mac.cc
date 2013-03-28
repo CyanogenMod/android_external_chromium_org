@@ -11,8 +11,8 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
@@ -60,10 +60,12 @@ class DaemonControllerMac : public remoting::DaemonController {
   void DoGetConfig(const GetConfigCallback& callback);
   void DoGetVersion(const GetVersionCallback& callback);
   void DoSetConfigAndStart(scoped_ptr<base::DictionaryValue> config,
+                           bool consent,
                            const CompletionCallback& done);
   void DoUpdateConfig(scoped_ptr<base::DictionaryValue> config,
                       const CompletionCallback& done_callback);
   void DoStop(const CompletionCallback& done_callback);
+  void DoGetUsageStatsConsent(const GetUsageStatsConsentCallback& callback);
 
   void ShowPreferencePane(const std::string& config_data,
                           const CompletionCallback& done_callback);
@@ -130,12 +132,12 @@ void DaemonControllerMac::GetConfig(const GetConfigCallback& callback) {
 
 void DaemonControllerMac::SetConfigAndStart(
     scoped_ptr<base::DictionaryValue> config,
-    bool /* consent */,
+    bool consent,
     const CompletionCallback& done) {
   auth_thread_.message_loop_proxy()->PostTask(
       FROM_HERE, base::Bind(
           &DaemonControllerMac::DoSetConfigAndStart, base::Unretained(this),
-          base::Passed(&config), done));
+          base::Passed(&config), consent, done));
 }
 
 void DaemonControllerMac::UpdateConfig(
@@ -165,13 +167,14 @@ void DaemonControllerMac::GetVersion(const GetVersionCallback& callback) {
 
 void DaemonControllerMac::GetUsageStatsConsent(
     const GetUsageStatsConsentCallback& callback) {
-  // Crash dump collection is not implemented on Mac yet.
-  // http://crbug.com/130678.
-  callback.Run(false, false, false);
+  auth_thread_.message_loop_proxy()->PostTask(
+      FROM_HERE,
+      base::Bind(&DaemonControllerMac::DoGetUsageStatsConsent,
+                 base::Unretained(this), callback));
 }
 
 void DaemonControllerMac::DoGetConfig(const GetConfigCallback& callback) {
-  FilePath config_path(kHostConfigFilePath);
+  base::FilePath config_path(kHostConfigFilePath);
   JsonHostConfig host_config(config_path);
   scoped_ptr<base::DictionaryValue> config;
 
@@ -213,7 +216,9 @@ void DaemonControllerMac::DoGetVersion(const GetVersionCallback& callback) {
 
 void DaemonControllerMac::DoSetConfigAndStart(
     scoped_ptr<base::DictionaryValue> config,
+    bool consent,
     const CompletionCallback& done) {
+  config->SetBoolean(kUsageStatsConsentConfigPath, consent);
   std::string config_data;
   base::JSONWriter::Write(config.get(), &config_data);
   ShowPreferencePane(config_data, done);
@@ -222,7 +227,7 @@ void DaemonControllerMac::DoSetConfigAndStart(
 void DaemonControllerMac::DoUpdateConfig(
     scoped_ptr<base::DictionaryValue> config,
     const CompletionCallback& done_callback) {
-  FilePath config_file_path(kHostConfigFilePath);
+  base::FilePath config_file_path(kHostConfigFilePath);
   JsonHostConfig config_file(config_file_path);
   if (!config_file.Read()) {
     done_callback.Run(RESULT_FAILED);
@@ -238,6 +243,18 @@ void DaemonControllerMac::DoUpdateConfig(
   ShowPreferencePane(config_data, done_callback);
 }
 
+void DaemonControllerMac::DoGetUsageStatsConsent(
+    const GetUsageStatsConsentCallback& callback) {
+  bool allowed = false;
+  base::FilePath config_file_path(kHostConfigFilePath);
+  JsonHostConfig host_config(config_file_path);
+  if (host_config.Read()) {
+    host_config.GetBoolean(kUsageStatsConsentConfigPath, &allowed);
+  }
+  // set_by_policy is not yet supported.
+  callback.Run(true, allowed, false /* set_by_policy */);
+}
+
 void DaemonControllerMac::ShowPreferencePane(
     const std::string& config_data, const CompletionCallback& done_callback) {
   if (DoShowPreferencePane(config_data)) {
@@ -249,7 +266,7 @@ void DaemonControllerMac::ShowPreferencePane(
 
 bool DaemonControllerMac::DoShowPreferencePane(const std::string& config_data) {
   if (!config_data.empty()) {
-    FilePath config_path;
+    base::FilePath config_path;
     if (!file_util::GetTempDir(&config_path)) {
       LOG(ERROR) << "Failed to get filename for saving configuration data.";
       return false;
@@ -265,7 +282,7 @@ bool DaemonControllerMac::DoShowPreferencePane(const std::string& config_data) {
     }
   }
 
-  FilePath pane_path;
+  base::FilePath pane_path;
   // TODO(lambroslambrou): Use NSPreferencePanesDirectory once we start
   // building against SDK 10.6.
   if (!base::mac::GetLocalDirectory(NSLibraryDirectory, &pane_path)) {

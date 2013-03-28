@@ -35,7 +35,7 @@ class PluginPlaceholder : public content::RenderViewObserver,
 
   static PluginPlaceholder* CreateErrorPlugin(
       content::RenderView* render_view,
-      const FilePath& plugin_path);
+      const base::FilePath& plugin_path);
 
   static PluginPlaceholder* CreateBlockedPlugin(
       content::RenderView* render_view,
@@ -135,8 +135,8 @@ class PluginPlaceholder : public content::RenderViewObserver,
 
   void OnLoadBlockedPlugins(const std::string& identifier);
   void OnSetIsPrerendering(bool is_prerendering);
-  void OnDidNotFindMissingPlugin();
 #if defined(ENABLE_PLUGIN_INSTALLATION)
+  void OnDidNotFindMissingPlugin();
   void OnFoundMissingPlugin(const string16& plugin_name);
   void OnStartedDownloadingPlugin();
   void OnFinishedDownloadingPlugin();

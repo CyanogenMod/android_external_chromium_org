@@ -26,24 +26,26 @@ class WallpaperPrivateApiUnittest : public ash::test::AshTestBase {
   DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateApiUnittest);
 };
 
-class TestMinimizeFunction : public WallpaperMinimizeInactiveWindowsFunction {
+class TestMinimizeFunction
+    : public WallpaperPrivateMinimizeInactiveWindowsFunction {
  public:
   TestMinimizeFunction() {}
 
-  bool RunImpl() OVERRIDE {
-    return WallpaperMinimizeInactiveWindowsFunction::RunImpl();
+  virtual bool RunImpl() OVERRIDE {
+    return WallpaperPrivateMinimizeInactiveWindowsFunction::RunImpl();
   }
 
  protected:
   virtual ~TestMinimizeFunction() {}
 };
 
-class TestRestoreFunction : public WallpaperRestoreMinimizedWindowsFunction {
+class TestRestoreFunction
+    : public WallpaperPrivateRestoreMinimizedWindowsFunction {
  public:
   TestRestoreFunction() {}
 
-  bool RunImpl() OVERRIDE {
-    return WallpaperRestoreMinimizedWindowsFunction::RunImpl();
+  virtual bool RunImpl() OVERRIDE {
+    return WallpaperPrivateRestoreMinimizedWindowsFunction::RunImpl();
   }
  protected:
   virtual ~TestRestoreFunction() {}
@@ -52,10 +54,10 @@ class TestRestoreFunction : public WallpaperRestoreMinimizedWindowsFunction {
 }  // namespace
 
 TEST_F(WallpaperPrivateApiUnittest, HideAndRestoreWindows) {
-  scoped_ptr<aura::Window> window3(aura::test::CreateTestWindowWithId(3, NULL));
-  scoped_ptr<aura::Window> window2(aura::test::CreateTestWindowWithId(2, NULL));
-  scoped_ptr<aura::Window> window1(aura::test::CreateTestWindowWithId(1, NULL));
-  scoped_ptr<aura::Window> window0(aura::test::CreateTestWindowWithId(0, NULL));
+  scoped_ptr<aura::Window> window3(CreateTestWindowInShellWithId(3));
+  scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(2));
+  scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(1));
+  scoped_ptr<aura::Window> window0(CreateTestWindowInShellWithId(0));
 
   ash::wm::MinimizeWindow(window3.get());
   ash::wm::MaximizeWindow(window1.get());

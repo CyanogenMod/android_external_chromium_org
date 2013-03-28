@@ -7,7 +7,7 @@
 #include "chrome/browser/extensions/api/permissions/permissions_api_helpers.h"
 #include "chrome/common/extensions/api/permissions.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
-#include "chrome/common/extensions/url_pattern_set.h"
+#include "extensions/common/url_pattern_set.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -17,6 +17,7 @@ using extensions::api::permissions::Permissions;
 using extensions::APIPermission;
 using extensions::APIPermissionSet;
 using extensions::PermissionSet;
+using extensions::URLPatternSet;
 
 namespace {
 
@@ -69,7 +70,7 @@ TEST(ExtensionPermissionsAPIHelpers, Pack) {
   std::string error;
   Permissions permissions_object;
   EXPECT_TRUE(Permissions::Populate(*value, &permissions_object));
-  from_value = UnpackPermissionSet(permissions_object, &error);
+  from_value = UnpackPermissionSet(permissions_object, true, &error);
   EXPECT_TRUE(error.empty());
 
   EXPECT_EQ(*permission_set, *from_value);
@@ -92,7 +93,7 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
     Permissions permissions_object;
     value->Set("permissions", apis->DeepCopy());
     EXPECT_TRUE(Permissions::Populate(*value, &permissions_object));
-    permissions = UnpackPermissionSet(permissions_object, &error);
+    permissions = UnpackPermissionSet(permissions_object, true, &error);
     EXPECT_TRUE(permissions->HasAPIPermission(APIPermission::kTab));
     EXPECT_TRUE(permissions);
     EXPECT_TRUE(error.empty());
@@ -104,7 +105,7 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
     value->Clear();
     value->Set("origins", origins->DeepCopy());
     EXPECT_TRUE(Permissions::Populate(*value, &permissions_object));
-    permissions = UnpackPermissionSet(permissions_object, &error);
+    permissions = UnpackPermissionSet(permissions_object, true, &error);
     EXPECT_TRUE(permissions);
     EXPECT_TRUE(error.empty());
     EXPECT_TRUE(permissions->HasExplicitAccessToOrigin(GURL("http://a.com/")));
@@ -152,7 +153,7 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
     value->Set("origins", origins->DeepCopy());
     value->Set("random", Value::CreateIntegerValue(3));
     EXPECT_TRUE(Permissions::Populate(*value, &permissions_object));
-    permissions = UnpackPermissionSet(permissions_object, &error);
+    permissions = UnpackPermissionSet(permissions_object, true, &error);
     EXPECT_TRUE(permissions);
     EXPECT_TRUE(error.empty());
     EXPECT_TRUE(permissions->HasExplicitAccessToOrigin(GURL("http://a.com/")));
@@ -166,7 +167,7 @@ TEST(ExtensionPermissionsAPIHelpers, Unpack) {
     invalid_apis->Append(Value::CreateStringValue("unknown_permission"));
     value->Set("permissions", invalid_apis->DeepCopy());
     EXPECT_TRUE(Permissions::Populate(*value, &permissions_object));
-    permissions = UnpackPermissionSet(permissions_object, &error);
+    permissions = UnpackPermissionSet(permissions_object, true, &error);
     EXPECT_FALSE(permissions);
     EXPECT_FALSE(error.empty());
     EXPECT_EQ(error, "'unknown_permission' is not a recognized permission.");

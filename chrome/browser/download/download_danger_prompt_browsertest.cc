@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "chrome/browser/download/download_danger_prompt.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/mock_download_item.h"
@@ -75,7 +75,7 @@ class DownloadDangerPromptTest : public InProcessBrowserTest {
  private:
   void SetUpDownloadItemExpectations() {
     EXPECT_CALL(download_, GetFileNameToReportUser()).WillRepeatedly(Return(
-        FilePath(FILE_PATH_LITERAL("evil.exe"))));
+        base::FilePath(FILE_PATH_LITERAL("evil.exe"))));
     EXPECT_CALL(download_, AddObserver(_))
       .WillOnce(SaveArg<0>(&download_observer_));
     EXPECT_CALL(download_, RemoveObserver(Eq(ByRef(download_observer_))));
@@ -84,7 +84,8 @@ class DownloadDangerPromptTest : public InProcessBrowserTest {
   void CreatePrompt() {
     prompt_ = DownloadDangerPrompt::Create(
         &download_,
-        chrome::GetActiveTabContents(browser()),
+        browser()->tab_strip_model()->GetActiveWebContents(),
+        false,
         base::Bind(&DownloadDangerPromptTest::PromptCallback, this,
                    DownloadDangerPrompt::ACCEPT),
         base::Bind(&DownloadDangerPromptTest::PromptCallback, this,

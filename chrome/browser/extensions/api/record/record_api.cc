@@ -10,9 +10,9 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 
 #include "chrome/common/chrome_switches.h"
@@ -108,7 +108,7 @@ void RunPageCyclerFunction::RunTestBrowser() {
 
   // Create and fill a temp file to communicate the URL list to the test
   // browser.
-  FilePath url_path;
+  base::FilePath url_path;
   file_util::CreateTemporaryFile(&url_path);
   file_util::WriteFile(url_path, url_contents_.c_str(), url_contents_.size());
   line.AppendSwitchPath(switches::kVisitURLs, url_path);
@@ -116,9 +116,9 @@ void RunPageCyclerFunction::RunTestBrowser() {
   // Set up Capture- or Replay-specific commandline switches.
   AddSwitches(&line);
 
-  FilePath error_file_path = url_path.DirName().
+  base::FilePath error_file_path = url_path.DirName().
       Append(url_path.BaseName().value() +
-      FilePath::StringType(kURLErrorsSuffix));
+      base::FilePath::StringType(kURLErrorsSuffix));
 
   LOG(ERROR) << "Test browser commandline: " << line.GetCommandLineString() <<
       " will be repeated " << repeat_count_ << " times....";
@@ -152,16 +152,16 @@ const ProcessStrategy &RunPageCyclerFunction::GetProcessStrategy() {
   return *process_strategy_;
 }
 
-// CaptureURLsFunction  ------------------------------------------------
+// RecordCaptureURLsFunction  ------------------------------------------------
 
-CaptureURLsFunction::CaptureURLsFunction()
+RecordCaptureURLsFunction::RecordCaptureURLsFunction()
     : RunPageCyclerFunction(new ProductionProcessStrategy()) {}
 
-CaptureURLsFunction::CaptureURLsFunction(ProcessStrategy* strategy)
+RecordCaptureURLsFunction::RecordCaptureURLsFunction(ProcessStrategy* strategy)
     : RunPageCyclerFunction(strategy) {}
 
 // Fetch data for possible optional switch for an extension to load.
-bool CaptureURLsFunction::ParseJSParameters() {
+bool RecordCaptureURLsFunction::ParseJSParameters() {
   scoped_ptr<record::CaptureURLs::Params> params(
       record::CaptureURLs::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -169,46 +169,46 @@ bool CaptureURLsFunction::ParseJSParameters() {
   url_contents_ = JoinString(params->urls, '\n');
   // TODO(cstaley): Can't just use captureName -- gotta stick it in a temp dir.
   // TODO(cstaley): Ensure that capture name is suitable as directory name.
-  user_data_dir_ = FilePath::FromUTF8Unsafe(params->capture_name);
+  user_data_dir_ = base::FilePath::FromUTF8Unsafe(params->capture_name);
 
   return true;
 }
 
-// CaptureURLsFunction adds "record-mode" to sub-browser call, and returns
+// RecordCaptureURLsFunction adds "record-mode" to sub-browser call, and returns
 // just the (possibly empty) error list.
-void CaptureURLsFunction::AddSwitches(CommandLine* line) {
+void RecordCaptureURLsFunction::AddSwitches(CommandLine* line) {
   if (!line->HasSwitch(switches::kRecordMode))
     line->AppendSwitch(switches::kRecordMode);
 }
 
-void CaptureURLsFunction::Finish() {
+void RecordCaptureURLsFunction::Finish() {
   results_ = record::CaptureURLs::Results::Create(errors_);
   SendResponse(true);
 }
 
-// ReplayURLsFunction ------------------------------------------------
+// RecordReplayURLsFunction ------------------------------------------------
 
-ReplayURLsFunction::ReplayURLsFunction()
+RecordReplayURLsFunction::RecordReplayURLsFunction()
     : RunPageCyclerFunction(new ProductionProcessStrategy()),
     run_time_ms_(0.0) {
 }
 
-ReplayURLsFunction::ReplayURLsFunction(ProcessStrategy* strategy)
+RecordReplayURLsFunction::RecordReplayURLsFunction(ProcessStrategy* strategy)
     : RunPageCyclerFunction(strategy), run_time_ms_(0.0) {
 }
 
-ReplayURLsFunction::~ReplayURLsFunction() {}
+RecordReplayURLsFunction::~RecordReplayURLsFunction() {}
 
 // Fetch data for possible optional switches for a repeat count and an
 // extension to load.
-bool ReplayURLsFunction::ParseJSParameters() {
+bool RecordReplayURLsFunction::ParseJSParameters() {
   scoped_ptr<record::ReplayURLs::Params> params(
       record::ReplayURLs::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
 
   // TODO(cstaley): Must build full temp dir from capture_name
-  user_data_dir_ = FilePath::FromUTF8Unsafe(params->capture_name);
+  user_data_dir_ = base::FilePath::FromUTF8Unsafe(params->capture_name);
 
   // TODO(cstaley): Get this from user data dir ultimately
   url_contents_ = "http://www.google.com\nhttp://www.amazon.com";
@@ -218,7 +218,7 @@ bool ReplayURLsFunction::ParseJSParameters() {
   if (params->details.get()) {
     if (params->details->extension_path.get())
       extension_path_ =
-          FilePath::FromUTF8Unsafe(*params->details->extension_path);
+          base::FilePath::FromUTF8Unsafe(*params->details->extension_path);
   }
 
   return true;
@@ -228,7 +228,7 @@ bool ReplayURLsFunction::ParseJSParameters() {
 // plus temp file into which to place stats. (Can't do this in
 // ParseJSParameters because file creation can't go on the UI thread.)
 // Plus, initialize time to create run time statistic.
-void ReplayURLsFunction::AddSwitches(CommandLine* line) {
+void RecordReplayURLsFunction::AddSwitches(CommandLine* line) {
   file_util::CreateTemporaryFile(&stats_file_path_);
 
   if (!extension_path_.empty())
@@ -240,13 +240,13 @@ void ReplayURLsFunction::AddSwitches(CommandLine* line) {
 }
 
 // Read stats file, and get run time.
-void ReplayURLsFunction::ReadReplyFiles() {
+void RecordReplayURLsFunction::ReadReplyFiles() {
   file_util::ReadFileToString(stats_file_path_, &stats_);
 
   run_time_ms_ = (base::Time::NowFromSystemTime() - timer_).InMillisecondsF();
 }
 
-void ReplayURLsFunction::Finish() {
+void RecordReplayURLsFunction::Finish() {
   record::ReplayURLsResult result;
 
   result.run_time = run_time_ms_;

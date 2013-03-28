@@ -11,9 +11,9 @@
 #include "chrome/browser/ui/views/omnibox/omnibox_result_view_model.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/font.h"
 #include "ui/views/view.h"
-#include "webkit/glue/window_open_disposition.h"
 
 struct AutocompleteMatch;
 class OmniboxEditModel;
@@ -72,7 +72,7 @@ class OmniboxPopupContentsView : public views::View,
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
 
   // Overridden from ui::EventHandler:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
  protected:
   OmniboxPopupContentsView(const gfx::Font& font,
@@ -85,11 +85,9 @@ class OmniboxPopupContentsView : public views::View,
 
   // Calculates the height needed to show all the results in the model.
   virtual int CalculatePopupHeight();
-  virtual OmniboxResultView* CreateResultView(
-      OmniboxResultViewModel* model,
-      int model_index,
-      const gfx::Font& font,
-      const gfx::Font& bold_font);
+  virtual OmniboxResultView* CreateResultView(OmniboxResultViewModel* model,
+                                              int model_index,
+                                              const gfx::Font& font);
 
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
@@ -156,20 +154,14 @@ class OmniboxPopupContentsView : public views::View,
   // The edit view that invokes us.
   OmniboxView* omnibox_view_;
 
-  Profile* profile_;
-
   // An object that the popup positions itself against.
   views::View* location_bar_;
 
   // Our border, which can compute our desired bounds.
   const views::BubbleBorder* bubble_border_;
 
-  // The font that we should use for result rows. This is based on the font used
-  // by the edit that created us.
-  gfx::Font result_font_;
-
-  // The font used for portions that match the input.
-  gfx::Font result_bold_font_;
+  // The font used for result rows, based on the omnibox font.
+  gfx::Font font_;
 
   // If the user cancels a dragging action (i.e. by pressing ESC), we don't have
   // a convenient way to release mouse capture. Instead we use this flag to

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/file_path.h"
-#include "base/scoped_temp_dir.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "chrome/browser/extensions/api/management/management_api.h"
@@ -25,19 +25,21 @@
 namespace keys = extension_management_api_constants;
 namespace util = extension_function_test_utils;
 
+namespace extensions {
+
 class ExtensionManagementApiBrowserTest : public ExtensionBrowserTest {
  protected:
   bool CrashEnabledExtension(const std::string& extension_id) {
     content::WindowedNotificationObserver extension_crash_observer(
         chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
         content::NotificationService::AllSources());
-    extensions::ExtensionHost* background_host =
-        extensions::ExtensionSystem::Get(browser()->profile())->
+    ExtensionHost* background_host =
+        ExtensionSystem::Get(browser()->profile())->
             process_manager()->GetBackgroundHostForExtension(extension_id);
     if (!background_host)
       return false;
     background_host->host_contents()->GetController().LoadURL(
-        GURL(chrome::kChromeUICrashURL), content::Referrer(),
+        GURL(content::kChromeUICrashURL), content::Referrer(),
         content::PAGE_TRANSITION_LINK, std::string());
     extension_crash_observer.Wait();
     return true;
@@ -93,18 +95,20 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
                        UninstallWithConfirmDialog) {
-  ExtensionService* service = browser()->profile()->GetExtensionService();
+  ExtensionService* service = ExtensionSystem::Get(browser()->profile())->
+      extension_service();
 
   // Install an extension.
-  const extensions::Extension* extension = InstallExtension(
+  const Extension* extension = InstallExtension(
       test_data_dir_.AppendASCII("api_test/management/enabled_extension"), 1);
   ASSERT_TRUE(extension);
 
   const std::string id = extension->id();
 
   // Uninstall, then cancel via the confirm dialog.
-  scoped_refptr<UninstallFunction> uninstall_function(new UninstallFunction());
-  UninstallFunction::SetAutoConfirmForTest(false);
+  scoped_refptr<ManagementUninstallFunction> uninstall_function(
+      new ManagementUninstallFunction());
+  ManagementUninstallFunction::SetAutoConfirmForTest(false);
 
   EXPECT_TRUE(MatchPattern(
       util::RunFunctionAndReturnError(
@@ -118,8 +122,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
   EXPECT_TRUE(service->GetExtensionById(id, false) != NULL);
 
   // Uninstall, then accept via the confirm dialog.
-  uninstall_function = new UninstallFunction();
-  UninstallFunction::SetAutoConfirmForTest(true);
+  uninstall_function = new ManagementUninstallFunction();
+  ManagementUninstallFunction::SetAutoConfirmForTest(true);
 
   util::RunFunctionAndReturnSingleResult(
       uninstall_function,
@@ -135,14 +139,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
   // Load an extension with a background page, so that we know it has a process
   // running.
   ExtensionTestMessageListener listener("ready", false);
-  const extensions::Extension* extension = LoadExtension(
+  const Extension* extension = LoadExtension(
       test_data_dir_.AppendASCII("management/install_event"));
   ASSERT_TRUE(extension);
   ASSERT_TRUE(listener.WaitUntilSatisfied());
 
   // The management API should list this extension.
-  scoped_refptr<GetAllExtensionsFunction> function =
-      new GetAllExtensionsFunction();
+  scoped_refptr<ManagementGetAllFunction> function =
+      new ManagementGetAllFunction();
   scoped_ptr<base::Value> result(util::RunFunctionAndReturnSingleResult(
       function.get(), "[]", browser()));
   base::ListValue* list;
@@ -152,7 +156,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
   // And it should continue to do so even after it crashes.
   ASSERT_TRUE(CrashEnabledExtension(extension->id()));
 
-  function = new GetAllExtensionsFunction();
+  function = new ManagementGetAllFunction();
   result.reset(util::RunFunctionAndReturnSingleResult(
       function.get(), "[]", browser()));
   ASSERT_TRUE(result->GetAsList(&list));
@@ -167,20 +171,21 @@ class ExtensionManagementApiEscalationTest :
 
   virtual void SetUpOnMainThread() OVERRIDE {
     EXPECT_TRUE(scoped_temp_dir_.CreateUniqueTempDir());
-    FilePath pem_path = test_data_dir_.
+    base::FilePath pem_path = test_data_dir_.
         AppendASCII("permissions_increase").AppendASCII("permissions.pem");
-    FilePath path_v1 = PackExtensionWithOptions(
+    base::FilePath path_v1 = PackExtensionWithOptions(
         test_data_dir_.AppendASCII("permissions_increase").AppendASCII("v1"),
         scoped_temp_dir_.path().AppendASCII("permissions1.crx"),
         pem_path,
-        FilePath());
-    FilePath path_v2 = PackExtensionWithOptions(
+        base::FilePath());
+    base::FilePath path_v2 = PackExtensionWithOptions(
         test_data_dir_.AppendASCII("permissions_increase").AppendASCII("v2"),
         scoped_temp_dir_.path().AppendASCII("permissions2.crx"),
         pem_path,
-        FilePath());
+        base::FilePath());
 
-    ExtensionService* service = browser()->profile()->GetExtensionService();
+    ExtensionService* service = ExtensionSystem::Get(browser()->profile())->
+        extension_service();
 
     // Install low-permission version of the extension.
     ASSERT_TRUE(InstallExtension(path_v1, 1));
@@ -196,7 +201,8 @@ class ExtensionManagementApiEscalationTest :
 
   void SetEnabled(bool enabled, bool user_gesture,
                   const std::string& expected_error) {
-    scoped_refptr<SetEnabledFunction> function(new SetEnabledFunction);
+    scoped_refptr<ManagementSetEnabledFunction> function(
+        new ManagementSetEnabledFunction);
     const char* enabled_string = enabled ? "true" : "false";
     if (user_gesture)
       function->set_user_gesture(true);
@@ -215,7 +221,7 @@ class ExtensionManagementApiEscalationTest :
 
 
  private:
-  ScopedTempDir scoped_temp_dir_;
+  base::ScopedTempDir scoped_temp_dir_;
 };
 
 const char ExtensionManagementApiEscalationTest::kId[] =
@@ -223,8 +229,8 @@ const char ExtensionManagementApiEscalationTest::kId[] =
 
 IN_PROC_BROWSER_TEST_F(ExtensionManagementApiEscalationTest,
                        DisabledReason) {
-  scoped_refptr<GetExtensionByIdFunction> function =
-      new GetExtensionByIdFunction();
+  scoped_refptr<ManagementGetFunction> function =
+      new ManagementGetFunction();
   scoped_ptr<base::Value> result(util::RunFunctionAndReturnSingleResult(
       function.get(),
       base::StringPrintf("[\"%s\"]", kId),
@@ -258,7 +264,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiEscalationTest,
   ASSERT_TRUE(CrashEnabledExtension(kId));
   SetEnabled(false, true, "");
   SetEnabled(true, true, "");
-  const extensions::Extension* extension = browser()->profile()->
-      GetExtensionService()->GetExtensionById(kId, false);
+  const Extension* extension = ExtensionSystem::Get(browser()->profile())->
+      extension_service()->GetExtensionById(kId, false);
   EXPECT_TRUE(extension);
 }
+
+}  // namespace extensions

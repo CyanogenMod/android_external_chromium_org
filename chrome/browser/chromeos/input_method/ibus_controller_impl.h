@@ -5,29 +5,15 @@
 #ifndef CHROME_BROWSER_CHROMEOS_INPUT_METHOD_IBUS_CONTROLLER_IMPL_H_
 #define CHROME_BROWSER_CHROMEOS_INPUT_METHOD_IBUS_CONTROLLER_IMPL_H_
 
-#include <gio/gio.h>  // GAsyncResult and related types.
-#include <glib-object.h>
-
 #include <string>
 #include <vector>
 
 #include "base/process_util.h"
+#include "base/threading/thread_checker.h"
 #include "chrome/browser/chromeos/input_method/ibus_controller_base.h"
 #include "chrome/browser/chromeos/input_method/input_method_whitelist.h"
-#include "ui/base/glib/glib_signal.h"
-
-// Do not #include ibus.h here. That makes it impossible to compile unit tests
-// for the class.
-struct _IBusBus;
-struct _IBusConfig;
-struct _IBusPanelService;
-struct _IBusPropList;
-struct _IBusProperty;
-typedef struct _IBusBus IBusBus;
-typedef struct _IBusConfig IBusConfig;
-typedef struct _IBusPanelService IBusPanelService;
-typedef struct _IBusPropList IBusPropList;
-typedef struct _IBusProperty IBusProperty;
+#include "chromeos/dbus/ibus/ibus_panel_service.h"
+#include "chromeos/ime/ibus_daemon_controller.h"
 
 namespace ui {
 class InputMethodIBus;
@@ -41,15 +27,14 @@ struct InputMethodProperty;
 typedef std::vector<InputMethodProperty> InputMethodPropertyList;
 
 // The IBusController implementation.
-class IBusControllerImpl : public IBusControllerBase {
+class IBusControllerImpl : public IBusControllerBase,
+                           public IBusPanelPropertyHandlerInterface,
+                           public IBusDaemonController::Observer {
  public:
   IBusControllerImpl();
   virtual ~IBusControllerImpl();
 
   // IBusController overrides:
-  virtual bool Start() OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual bool Stop() OVERRIDE;
   virtual bool ChangeInputMethod(const std::string& id) OVERRIDE;
   virtual bool ActivateInputMethodProperty(const std::string& key) OVERRIDE;
 
@@ -59,112 +44,29 @@ class IBusControllerImpl : public IBusControllerBase {
       const InputMethodProperty& new_prop,
       InputMethodPropertyList* prop_list);
 
-  static void IBusDaemonInitializationDone(IBusControllerImpl* controller,
-                                           const std::string& ibus_address);
-
  private:
-  enum IBusDaemonStatus{
-    IBUS_DAEMON_INITIALIZING,
-    IBUS_DAEMON_RUNNING,
-    IBUS_DAEMON_SHUTTING_DOWN,
-    IBUS_DAEMON_STOP,
-  };
-
-  // Functions that end with Thunk are used to deal with glib callbacks.
-  CHROMEG_CALLBACK_0(IBusControllerImpl, void, BusConnected, IBusBus*);
-  CHROMEG_CALLBACK_0(IBusControllerImpl, void, BusDisconnected, IBusBus*);
-  CHROMEG_CALLBACK_3(IBusControllerImpl, void, BusNameOwnerChanged,
-                     IBusBus*, const gchar*, const gchar*, const gchar*);
-  CHROMEG_CALLBACK_1(IBusControllerImpl, void, FocusIn,
-                     IBusPanelService*, const gchar*);
-  CHROMEG_CALLBACK_1(IBusControllerImpl, void, RegisterProperties,
-                     IBusPanelService*, IBusPropList*);
-  CHROMEG_CALLBACK_1(IBusControllerImpl, void, UpdateProperty,
-                     IBusPanelService*, IBusProperty*);
+  // IBusDaemonController overrides:
+  virtual void OnConnected() OVERRIDE;
+  virtual void OnDisconnected() OVERRIDE;
 
   // IBusControllerBase overrides:
   virtual bool SetInputMethodConfigInternal(
       const ConfigKeyType& key,
       const InputMethodConfigValue& value) OVERRIDE;
 
+  // IBusPanelPropertyHandlerInterface overrides:
+  virtual void RegisterProperties(
+      const IBusPropertyList& properties) OVERRIDE;
+  virtual void UpdateProperty(const IBusProperty& property) OVERRIDE;
+
   // Checks if |ibus_| and |ibus_config_| connections are alive.
   bool IBusConnectionsAreAlive();
-
-  // Restores connections to ibus-daemon and ibus-memconf if they are not ready.
-  void MaybeRestoreConnections();
-
-  // Initializes IBusBus object if it's not yet done.
-  void MaybeInitializeIBusBus();
-
-  // Creates IBusConfig object if it's not created yet AND |ibus_| connection
-  // is ready.
-  void MaybeRestoreIBusConfig();
-
-  // Destroys IBusConfig object if |ibus_| connection is not ready. This
-  // function does nothing if |ibus_config_| is NULL or |ibus_| connection is
-  // still alive. Note that the IBusConfig object can't be used when |ibus_|
-  // connection is not ready.
-  void MaybeDestroyIBusConfig();
 
   // Just calls ibus_bus_set_global_engine_async() with the |id|.
   void SendChangeInputMethodRequest(const std::string& id);
 
-  // Calls SetInputMethodConfigInternal() for each |current_config_values_|.
-  void SendAllInputMethodConfigs();
-
-  // Starts listening to the "connected", "disconnected", and
-  // "name-owner-changed" D-Bus signals from ibus-daemon.
-  void ConnectBusSignals();
-
-  // Starts listening to the "focus-in", "register-properties", and
-  // "update-property" D-Bus signals from ibus-daemon.
-  void ConnectPanelServiceSignals();
-
-  // Adds address file watcher in FILE thread and then calls LaunchIBusDaemon.
-  bool StartIBusDaemon();
-
-  // Starts ibus-daemon.
-  void LaunchIBusDaemon(const std::string& ibus_address);
-
-  // Launches an input method procsess specified by the given command
-  // line. On success, returns true and stores the process handle in
-  // |process_handle|. Otherwise, returns false, and the contents of
-  // |process_handle| is untouched. |watch_func| will be called when the
-  // process terminates.
-  bool LaunchProcess(const std::string& command_line,
-                     base::ProcessHandle* process_handle,
-                     GChildWatchFunc watch_func);
-
-  // Returns pointer to InputMethod object.
-  ui::InputMethodIBus* GetInputMethod();
-
-  // Injects an alternative ui::InputMethod for testing.
-  // The injected object must be released by caller.
-  void set_input_method_for_testing(ui::InputMethodIBus* input_method);
-
-  // A callback function that will be called when ibus_config_set_value_async()
-  // request is finished.
-  static void SetInputMethodConfigCallback(GObject* source_object,
-                                           GAsyncResult* res,
-                                           gpointer user_data);
-
-  // Called when the input method process is shut down.
-  static void OnIBusDaemonExit(GPid pid,
-                               gint status,
-                               IBusControllerImpl* controller);
-
-  // Connection to the ibus-daemon via IBus API. These objects are used to
-  // call ibus-daemon's API (e.g. activate input methods, set config, ...)
-  IBusBus* ibus_;
-  IBusConfig* ibus_config_;
-
-  // The current ibus_daemon address. This value is assigned at the launching
-  // ibus-daemon and used in bus connection initialization.
-  std::string ibus_daemon_address_;
-
-  // The process handle of the IBus daemon. kNullProcessHandle if it's not
-  // running.
-  base::ProcessHandle process_handle_;
+  // Called when the IBusConfigClient is initialized.
+  void OnIBusConfigClientInitialized();
 
   // Current input context path.
   std::string current_input_context_path_;
@@ -176,11 +78,8 @@ class IBusControllerImpl : public IBusControllerBase {
   // An object which knows all valid input methods and layout IDs.
   InputMethodWhitelist whitelist_;
 
-  // Represents ibus-daemon's status.
-  IBusDaemonStatus ibus_daemon_status_;
-
-  // The pointer to global input method. We can inject this value for testing.
-  ui::InputMethodIBus* input_method_;
+  // IBusControllerImpl should be used only on UI thread.
+  base::ThreadChecker thread_checker_;
 
   // Used for making callbacks for PostTask.
   base::WeakPtrFactory<IBusControllerImpl> weak_ptr_factory_;

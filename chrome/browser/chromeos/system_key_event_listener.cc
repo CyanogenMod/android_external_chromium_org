@@ -11,6 +11,7 @@
 #undef Status
 
 #include "base/message_loop.h"
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/xkeyboard.h"
 #include "ui/base/x/x11_util.h"
@@ -46,9 +47,9 @@ SystemKeyEventListener::SystemKeyEventListener()
       num_lock_mask_(0),
       xkb_event_base_(0) {
   input_method::XKeyboard* xkeyboard =
-      input_method::InputMethodManager::GetInstance()->GetXKeyboard();
+      input_method::GetInputMethodManager()->GetXKeyboard();
   num_lock_mask_ = xkeyboard->GetNumLockMask();
-  xkeyboard->GetLockedModifiers(&caps_lock_is_on_, &num_lock_is_on_);
+  xkeyboard->GetLockedModifiers(&caps_lock_is_on_, NULL);
 
   Display* display = ui::GetXDisplay();
   int xkb_major_version = XkbMajorVersion;
@@ -107,39 +108,24 @@ void SystemKeyEventListener::OnCapsLock(bool enabled) {
 
 bool SystemKeyEventListener::ProcessedXEvent(XEvent* xevent) {
   input_method::InputMethodManager* input_method_manager =
-      input_method::InputMethodManager::GetInstance();
+      input_method::GetInputMethodManager();
 
   if (xevent->type == xkb_event_base_) {
     // TODO(yusukes): Move this part to aura::RootWindowHost.
     XkbEvent* xkey_event = reinterpret_cast<XkbEvent*>(xevent);
     if (xkey_event->any.xkb_type == XkbStateNotify) {
-      input_method::ModifierLockStatus new_caps_lock_state =
-          input_method::kDontChange;
-      input_method::ModifierLockStatus new_num_lock_state =
-          input_method::kDontChange;
-
       bool enabled = (xkey_event->state.locked_mods) & LockMask;
       if (caps_lock_is_on_ != enabled) {
         caps_lock_is_on_ = enabled;
-        new_caps_lock_state =
-            enabled ? input_method::kEnableLock : input_method::kDisableLock;
         OnCapsLock(caps_lock_is_on_);
       }
-
-      enabled = (xkey_event->state.locked_mods) & num_lock_mask_;
-      if (num_lock_is_on_ != enabled) {
-        num_lock_is_on_ = enabled;
-        if (num_lock_is_on_) {
-          // TODO(yusukes,adlr): Let the user know that num lock is unsupported.
-        }
-        // Force turning off Num Lock. crosbug.com/29169
-        new_num_lock_state = input_method::kDisableLock;
+      if (xkey_event->state.locked_mods & num_lock_mask_) {
+        // TODO(yusukes,adlr): Let the user know that num lock is unsupported.
+        // Force turning off Num Lock (crosbug.com/29169)
+        input_method_manager->GetXKeyboard()->SetLockedModifiers(
+            input_method::kDontChange  /* caps lock */,
+            input_method::kDisableLock  /* num lock */);
       }
-
-      // Propagate the keyboard LED change to _ALL_ keyboards
-      input_method_manager->GetXKeyboard()->SetLockedModifiers(
-          new_caps_lock_state, new_num_lock_state);
-
       return true;
     }
   }

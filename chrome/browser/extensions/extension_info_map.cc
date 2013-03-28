@@ -6,8 +6,10 @@
 
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
+#include "chrome/common/extensions/incognito_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/constants.h"
 
 using content::BrowserThread;
 using extensions::Extension;
@@ -96,7 +98,7 @@ bool ExtensionInfoMap::IsIncognitoEnabled(
 bool ExtensionInfoMap::CanCrossIncognito(const Extension* extension) const {
   // This is duplicated from ExtensionService :(.
   return IsIncognitoEnabled(extension->id()) &&
-      !extension->incognito_split_mode();
+      !extensions::IncognitoInfo::IsSplitMode(extension);
 }
 
 void ExtensionInfoMap::RegisterExtensionProcess(const std::string& extension_id,
@@ -125,7 +127,7 @@ void ExtensionInfoMap::UnregisterAllExtensionsInProcess(int process_id) {
 bool ExtensionInfoMap::SecurityOriginHasAPIPermission(
     const GURL& origin, int process_id,
     extensions::APIPermission::ID permission) const {
-  if (origin.SchemeIs(chrome::kExtensionScheme)) {
+  if (origin.SchemeIs(extensions::kExtensionScheme)) {
     const std::string& id = origin.host();
     const Extension* extension = extensions_.GetByID(id);
     CHECK(extension != NULL);

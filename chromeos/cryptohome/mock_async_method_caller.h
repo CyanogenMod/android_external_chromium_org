@@ -16,6 +16,11 @@ namespace cryptohome {
 
 class MockAsyncMethodCaller : public AsyncMethodCaller {
  public:
+  static const char kFakeAttestationEnrollRequest[];
+  static const char kFakeAttestationCertRequest[];
+  static const char kFakeAttestationCert[];
+  static const char kFakeSanitizedUsername[];
+
   MockAsyncMethodCaller();
   virtual ~MockAsyncMethodCaller();
 
@@ -30,17 +35,34 @@ class MockAsyncMethodCaller : public AsyncMethodCaller {
                                      Callback callback));
   MOCK_METHOD4(AsyncMount, void(const std::string& user_email,
                                 const std::string& passhash,
-                                const bool create_if_missing,
+                                int flags,
                                 Callback callback));
   MOCK_METHOD1(AsyncMountGuest, void(Callback callback));
   MOCK_METHOD2(AsyncRemove, void(const std::string& user_email,
                                  Callback callback));
+  MOCK_METHOD1(AsyncTpmAttestationCreateEnrollRequest,
+               void(const DataCallback& callback));
+  MOCK_METHOD2(AsyncTpmAttestationEnroll,
+               void(const std::string& pca_response, const Callback& callback));
+  MOCK_METHOD2(AsyncTpmAttestationCreateCertRequest,
+               void(bool is_cert_for_owner, const DataCallback& callback));
+  MOCK_METHOD2(AsyncTpmAttestationFinishCertRequest,
+               void(const std::string& pca_response,
+                    const DataCallback& callback));
+  MOCK_METHOD2(AsyncGetSanitizedUsername,
+               void(const std::string& user,
+                    const DataCallback& callback));
 
  private:
   bool success_;
   MountError return_code_;
 
   void DoCallback(Callback callback);
+  // Default fakes for attestation calls.
+  void FakeCreateEnrollRequest(const DataCallback& callback);
+  void FakeCreateCertRequest(const DataCallback& callback);
+  void FakeFinishCertRequest(const DataCallback& callback);
+  void FakeGetSanitizedUsername(const DataCallback& callback);
 
   DISALLOW_COPY_AND_ASSIGN(MockAsyncMethodCaller);
 };

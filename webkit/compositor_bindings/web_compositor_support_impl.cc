@@ -4,171 +4,103 @@
 
 #include "webkit/compositor_bindings/web_compositor_support_impl.h"
 
-#include "base/debug/trace_event.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop_proxy.h"
-#include "cc/settings.h"
-#include "cc/thread_impl.h"
+#include "cc/animation/transform_operations.h"
+#include "cc/base/thread_impl.h"
+#include "cc/output/output_surface.h"
+#include "cc/output/software_output_device.h"
 #include "webkit/compositor_bindings/web_animation_impl.h"
 #include "webkit/compositor_bindings/web_content_layer_impl.h"
-#include "webkit/compositor_bindings/web_delegated_renderer_layer_impl.h"
 #include "webkit/compositor_bindings/web_external_texture_layer_impl.h"
 #include "webkit/compositor_bindings/web_float_animation_curve_impl.h"
 #include "webkit/compositor_bindings/web_image_layer_impl.h"
-#include "webkit/compositor_bindings/web_io_surface_layer_impl.h"
 #include "webkit/compositor_bindings/web_layer_impl.h"
-#include "webkit/compositor_bindings/web_layer_tree_view_impl.h"
 #include "webkit/compositor_bindings/web_scrollbar_layer_impl.h"
 #include "webkit/compositor_bindings/web_solid_color_layer_impl.h"
 #include "webkit/compositor_bindings/web_transform_animation_curve_impl.h"
+#include "webkit/compositor_bindings/web_transform_operations_impl.h"
 #include "webkit/compositor_bindings/web_video_layer_impl.h"
 #include "webkit/glue/webthread_impl.h"
+#include "webkit/support/webkit_support.h"
 
 using WebKit::WebAnimation;
 using WebKit::WebAnimationCurve;
 using WebKit::WebContentLayer;
 using WebKit::WebContentLayerClient;
-using WebKit::WebDelegatedRendererLayer;
 using WebKit::WebExternalTextureLayer;
 using WebKit::WebExternalTextureLayerClient;
 using WebKit::WebFloatAnimationCurve;
-using WebKit::WebIOSurfaceLayer;
-using WebKit::WebImageLayer;
 using WebKit::WebImageLayer;
 using WebKit::WebLayer;
-using WebKit::WebLayerTreeView;
-using WebKit::WebLayerTreeViewClient;
 using WebKit::WebScrollbar;
 using WebKit::WebScrollbarLayer;
 using WebKit::WebScrollbarThemeGeometry;
 using WebKit::WebScrollbarThemePainter;
 using WebKit::WebSolidColorLayer;
 using WebKit::WebTransformAnimationCurve;
+using WebKit::WebTransformOperations;
 using WebKit::WebVideoFrameProvider;
 using WebKit::WebVideoLayer;
 
 namespace webkit {
 
-WebCompositorSupportImpl::WebCompositorSupportImpl()
-    : initialized_(false) {
-}
+WebCompositorSupportImpl::WebCompositorSupportImpl() {}
 
-WebCompositorSupportImpl::~WebCompositorSupportImpl() {
-}
-
-void WebCompositorSupportImpl::initialize(WebKit::WebThread* impl_thread) {
-  DCHECK(!initialized_);
-  initialized_ = true;
-  if (impl_thread) {
-    TRACE_EVENT_INSTANT0("test_gpu", "ThreadedCompositingInitialization");
-    impl_thread_message_loop_proxy_ =
-        static_cast<webkit_glue::WebThreadImpl*>(impl_thread)->
-            message_loop()->message_loop_proxy();
-  } else {
-    impl_thread_message_loop_proxy_ = NULL;
-  }
-}
-
-bool WebCompositorSupportImpl::isThreadingEnabled() {
-  return impl_thread_message_loop_proxy_;
-}
-
-void WebCompositorSupportImpl::shutdown() {
-  DCHECK(initialized_);
-  initialized_ = false;
-  impl_thread_message_loop_proxy_ = NULL;
-}
-
-void WebCompositorSupportImpl::setPerTilePaintingEnabled(bool enabled) {
-  cc::Settings::setPerTilePaintingEnabled(enabled);
-}
-
-void WebCompositorSupportImpl::setPartialSwapEnabled(bool enabled) {
-  cc::Settings::setPartialSwapEnabled(enabled);
-}
-
-void WebCompositorSupportImpl::setAcceleratedAnimationEnabled(bool enabled) {
-  cc::Settings::setAcceleratedAnimationEnabled(enabled);
-}
-
-void WebCompositorSupportImpl::setPageScalePinchZoomEnabled(bool enabled) {
-  cc::Settings::setPageScalePinchZoomEnabled(enabled);
-}
-
-WebLayerTreeView* WebCompositorSupportImpl::createLayerTreeView(
-    WebLayerTreeViewClient* client, const WebLayer& root,
-    const WebLayerTreeView::Settings& settings) {
-  DCHECK(initialized_);
-  scoped_ptr<WebKit::WebLayerTreeViewImpl> layerTreeViewImpl(
-      new WebKit::WebLayerTreeViewImpl(client));
-  scoped_ptr<cc::Thread> impl_thread;
-  if (impl_thread_message_loop_proxy_)
-    impl_thread = cc::ThreadImpl::createForDifferentThread(
-        impl_thread_message_loop_proxy_);
-  if (!layerTreeViewImpl->initialize(settings, impl_thread.Pass()))
-    return NULL;
-  layerTreeViewImpl->setRootLayer(root);
-  return layerTreeViewImpl.release();
-}
+WebCompositorSupportImpl::~WebCompositorSupportImpl() {}
 
 WebLayer* WebCompositorSupportImpl::createLayer() {
-  return new WebKit::WebLayerImpl();
+  return new WebLayerImpl();
 }
 
 WebContentLayer* WebCompositorSupportImpl::createContentLayer(
     WebContentLayerClient* client) {
-  return new WebKit::WebContentLayerImpl(client);
-}
-
-WebDelegatedRendererLayer*
-    WebCompositorSupportImpl::createDelegatedRendererLayer() {
-  return new WebKit::WebDelegatedRendererLayerImpl();
+  return new WebContentLayerImpl(client);
 }
 
 WebExternalTextureLayer* WebCompositorSupportImpl::createExternalTextureLayer(
     WebExternalTextureLayerClient* client) {
-  return new WebKit::WebExternalTextureLayerImpl(client);
-}
-
-WebKit::WebIOSurfaceLayer*
-    WebCompositorSupportImpl::createIOSurfaceLayer() {
-  return new WebKit::WebIOSurfaceLayerImpl();
+  return new WebExternalTextureLayerImpl(client);
 }
 
 WebKit::WebImageLayer* WebCompositorSupportImpl::createImageLayer() {
-  return new WebKit::WebImageLayerImpl();
+  return new WebImageLayerImpl();
 }
 
 WebSolidColorLayer* WebCompositorSupportImpl::createSolidColorLayer() {
-  return new WebKit::WebSolidColorLayerImpl();
+  return new WebSolidColorLayerImpl();
 }
 
 WebVideoLayer* WebCompositorSupportImpl::createVideoLayer(
     WebKit::WebVideoFrameProvider* provider) {
-  return new WebKit::WebVideoLayerImpl(provider);
+  return new WebVideoLayerImpl(provider);
 }
 
 WebScrollbarLayer* WebCompositorSupportImpl::createScrollbarLayer(
-      WebScrollbar* scrollbar,
-      WebScrollbarThemePainter painter,
-      WebScrollbarThemeGeometry* geometry) {
-  return new WebKit::WebScrollbarLayerImpl(scrollbar, painter, geometry);
+    WebScrollbar* scrollbar,
+    WebScrollbarThemePainter painter,
+    WebScrollbarThemeGeometry* geometry) {
+  return new WebScrollbarLayerImpl(scrollbar, painter, geometry);
 }
 
 WebAnimation* WebCompositorSupportImpl::createAnimation(
-      const WebKit::WebAnimationCurve& curve,
-      WebKit::WebAnimation::TargetProperty target,
-      int animationId) {
-  return new WebKit::WebAnimationImpl(curve, target, animationId);
+    const WebKit::WebAnimationCurve& curve,
+    WebKit::WebAnimation::TargetProperty target,
+    int animation_id) {
+  return new WebAnimationImpl(curve, target, animation_id, 0);
 }
 
 WebFloatAnimationCurve* WebCompositorSupportImpl::createFloatAnimationCurve() {
-  return new WebKit::WebFloatAnimationCurveImpl();
+  return new WebFloatAnimationCurveImpl();
 }
 
 WebTransformAnimationCurve*
-    WebCompositorSupportImpl::createTransformAnimationCurve() {
-  return new WebKit::WebTransformAnimationCurveImpl();
+WebCompositorSupportImpl::createTransformAnimationCurve() {
+  return new WebTransformAnimationCurveImpl();
+}
+
+WebTransformOperations* WebCompositorSupportImpl::createTransformOperations() {
+  return new WebTransformOperationsImpl();
 }
 
 }  // namespace webkit

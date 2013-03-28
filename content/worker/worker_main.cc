@@ -18,6 +18,10 @@
 #include "sandbox/win/src/sandbox.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "content/common/sandbox_mac.h"
+#endif
+
 namespace content {
 
 // Mainline routine for running as the worker process.
@@ -29,8 +33,6 @@ int WorkerMain(const MainFunctionParams& parameters) {
   base::SystemMonitor system_monitor;
   HighResolutionTimerManager hi_res_timer_manager;
 
-  ChildProcess worker_process;
-  worker_process.set_main_thread(new WorkerThread());
 #if defined(OS_WIN)
   sandbox::TargetServices* target_services =
       parameters.sandbox_info->target_services;
@@ -45,11 +47,17 @@ int WorkerMain(const MainFunctionParams& parameters) {
   ::GetUserDefaultLCID();
 
   target_services->LowerToken();
-#endif
-
-#if defined(OS_LINUX)
+#elif defined(OS_MACOSX)
+  // Sandbox should already be activated at this point.
+  CHECK(Sandbox::SandboxIsCurrentlyActive());
+#elif defined(OS_LINUX)
+  // On Linux, the sandbox must be initialized early, before any thread is
+  // created.
   InitializeSandbox();
 #endif
+
+  ChildProcess worker_process;
+  worker_process.set_main_thread(new WorkerThread());
 
   const CommandLine& parsed_command_line = parameters.command_line;
   if (parsed_command_line.HasSwitch(switches::kWaitForDebugger)) {

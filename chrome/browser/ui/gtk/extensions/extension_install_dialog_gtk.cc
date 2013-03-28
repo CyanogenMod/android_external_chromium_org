@@ -86,7 +86,7 @@ namespace chrome {
 // ExtensionInstallPrompt::Delegate instance.
 class ExtensionInstallDialog {
  public:
-  ExtensionInstallDialog(content::WebContents* parent_web_contents,
+  ExtensionInstallDialog(const ExtensionInstallPrompt::ShowParams& show_params,
                          ExtensionInstallPrompt::Delegate* delegate,
                          const ExtensionInstallPrompt::Prompt& prompt);
  private:
@@ -105,10 +105,10 @@ class ExtensionInstallDialog {
 };
 
 ExtensionInstallDialog::ExtensionInstallDialog(
-    content::WebContents* parent_web_contents,
+    const ExtensionInstallPrompt::ShowParams& show_params,
     ExtensionInstallPrompt::Delegate *delegate,
     const ExtensionInstallPrompt::Prompt& prompt)
-    : navigator_(parent_web_contents),
+    : navigator_(show_params.navigator),
       delegate_(delegate),
       dialog_(NULL) {
   bool show_permissions = prompt.GetPermissionCount() > 0;
@@ -124,9 +124,7 @@ ExtensionInstallDialog::ExtensionInstallDialog(
     extension_id_ = prompt.extension()->id();
 
   // Build the dialog.
-  gfx::NativeWindow parent = NULL;
-  if (parent_web_contents)
-    parent = parent_web_contents->GetView()->GetTopLevelNativeWindow();
+  gfx::NativeWindow parent = show_params.parent_window;
   dialog_ = gtk_dialog_new_with_buttons(
       UTF16ToUTF8(prompt.GetDialogTitle()).c_str(),
       parent,
@@ -137,10 +135,12 @@ ExtensionInstallDialog::ExtensionInstallDialog(
       prompt.HasAbortButtonLabel() ?
           UTF16ToUTF8(prompt.GetAbortButtonLabel()).c_str() : GTK_STOCK_CANCEL,
       GTK_RESPONSE_CLOSE);
-  gtk_dialog_add_button(
-      GTK_DIALOG(dialog_),
-      UTF16ToUTF8(prompt.GetAcceptButtonLabel()).c_str(),
-      GTK_RESPONSE_ACCEPT);
+  if (prompt.HasAcceptButtonLabel()) {
+    gtk_dialog_add_button(
+        GTK_DIALOG(dialog_),
+        UTF16ToUTF8(prompt.GetAcceptButtonLabel()).c_str(),
+        GTK_RESPONSE_ACCEPT);
+  }
 #if !GTK_CHECK_VERSION(2, 22, 0)
   gtk_dialog_set_has_separator(GTK_DIALOG(dialog_), FALSE);
 #endif
@@ -396,10 +396,10 @@ GtkWidget* ExtensionInstallDialog::CreateWidgetForIssueAdvice(
 namespace {
 
 void ShowExtensionInstallDialogImpl(
-    content::WebContents* parent_web_content,
+    const ExtensionInstallPrompt::ShowParams& show_params,
     ExtensionInstallPrompt::Delegate* delegate,
     const ExtensionInstallPrompt::Prompt& prompt) {
-  new chrome::ExtensionInstallDialog(parent_web_content, delegate, prompt);
+  new chrome::ExtensionInstallDialog(show_params, delegate, prompt);
 }
 
 }  // namespace

@@ -74,6 +74,8 @@ class ExtensionProcessManager : public content::NotificationObserver {
                                                Browser* browser);
 
   // Open the extension's options page.
+  // TODO(yoz): Move this function to a more appropriate location.
+  // crbug.com/157279
   void OpenOptionsPage(const extensions::Extension* extension,
                        Browser* browser);
 
@@ -91,10 +93,6 @@ class ExtensionProcessManager : public content::NotificationObserver {
   // TODO(aa): This only returns correct results for extensions and packaged
   // apps, not hosted apps.
   virtual content::SiteInstance* GetSiteInstanceForURL(const GURL& url);
-
-  // Registers a RenderViewHost as hosting a given extension.
-  void RegisterRenderViewHost(content::RenderViewHost* render_view_host,
-                              const extensions::Extension* extension);
 
   // Unregisters a RenderViewHost as hosting any extension.
   void UnregisterRenderViewHost(content::RenderViewHost* render_view_host);
@@ -124,12 +122,12 @@ class ExtensionProcessManager : public content::NotificationObserver {
   void IncrementLazyKeepaliveCountForView(
       content::RenderViewHost* render_view_host);
 
-  // Handles a response to the ShouldUnload message, used for lazy background
+  // Handles a response to the ShouldSuspend message, used for lazy background
   // pages.
-  void OnShouldUnloadAck(const std::string& extension_id, int sequence_id);
+  void OnShouldSuspendAck(const std::string& extension_id, int sequence_id);
 
-  // Same as above, for the Unload message.
-  void OnUnloadAck(const std::string& extension_id);
+  // Same as above, for the Suspend message.
+  void OnSuspendAck(const std::string& extension_id);
 
   // Tracks network requests for a given RenderViewHost, used to know
   // when network activity is idle for lazy background pages.
@@ -155,6 +153,10 @@ class ExtensionProcessManager : public content::NotificationObserver {
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // Load all background pages once the profile data is ready and the pages
+  // should be loaded.
+  void CreateBackgroundHostsForProfileStartup();
+
   // Gets the profile associated with site_instance_ and all other
   // related SiteInstances.
   Profile* GetProfile() const;
@@ -174,13 +176,8 @@ class ExtensionProcessManager : public content::NotificationObserver {
   struct BackgroundPageData;
   typedef std::string ExtensionId;
   typedef std::map<ExtensionId, BackgroundPageData> BackgroundPageDataMap;
-
-  // Contains all extension-related RenderViewHost instances for all extensions.
-  // We also keep a cache of the host's view type, because that information
-  // is not accessible at registration/deregistration time.
   typedef std::map<content::RenderViewHost*,
       chrome::ViewType> ExtensionRenderViews;
-  ExtensionRenderViews all_extension_views_;
 
   // Close the given |host| iff it's a background page.
   void CloseBackgroundHost(extensions::ExtensionHost* host);
@@ -197,23 +194,32 @@ class ExtensionProcessManager : public content::NotificationObserver {
   void CloseLazyBackgroundPageNow(const std::string& extension_id,
                                   int sequence_id);
 
-  // Updates a potentially-registered RenderViewHost once it has been
-  // associated with a WebContents. This allows us to gather information that
-  // was not available when the host was first registered.
-  void UpdateRegisteredRenderView(content::RenderViewHost* render_view_host);
+  // Potentially registers a RenderViewHost, if it is associated with an
+  // extension. Does nothing if this is not an extension renderer.
+  void RegisterRenderViewHost(content::RenderViewHost* render_view_host);
 
   // Clears background page data for this extension.
   void ClearBackgroundPageData(const std::string& extension_id);
 
+  // Returns true if loading background pages should be deferred. This is
+  // true if there are no browser windows open and the browser process was
+  // started to show the app launcher.
+  bool DeferLoadingBackgroundHosts() const;
+
+  // Contains all active extension-related RenderViewHost instances for all
+  // extensions. We also keep a cache of the host's view type, because that
+  // information is not accessible at registration/deregistration time.
+  ExtensionRenderViews all_extension_views_;
+
   BackgroundPageDataMap background_page_data_;
 
   // The time to delay between an extension becoming idle and
-  // sending a ShouldUnload message; read from command-line switch.
+  // sending a ShouldSuspend message; read from command-line switch.
   base::TimeDelta event_page_idle_time_;
 
-  // The time to delay between sending a ShouldUnload message and
-  // sending a Unload message; read from command-line switch.
-  base::TimeDelta event_page_unloading_time_;
+  // The time to delay between sending a ShouldSuspend message and
+  // sending a Suspend message; read from command-line switch.
+  base::TimeDelta event_page_suspending_time_;
 
   base::WeakPtrFactory<ExtensionProcessManager> weak_ptr_factory_;
 

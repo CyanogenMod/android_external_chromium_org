@@ -13,9 +13,14 @@
       'type': 'none',
       'dependencies': [
         'android_webview.gyp:libwebviewchromium',
-        '../chrome/chrome_resources.gyp:packed_resources',
+
         # Needed by android_webview_java
+        '../content/content.gyp:page_transition_types_java',
+        '../content/content.gyp:result_codes_java',
+        '../net/net.gyp:certificate_mime_types_java',
+        '../net/net.gyp:cert_verify_result_android_java',
         '../net/net.gyp:net_errors_java',
+        '../net/net.gyp:private_key_types_java',
       ],
     }, # target_name: All
   ],  # targets

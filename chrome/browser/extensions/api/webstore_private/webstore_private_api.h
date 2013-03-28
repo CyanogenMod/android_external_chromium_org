@@ -12,17 +12,19 @@
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/webstore_install_helper.h"
 #include "chrome/browser/extensions/webstore_installer.h"
-#include "chrome/browser/gpu_feature_checker.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 
 class ProfileSyncService;
 
 namespace content {
 class GpuDataManager;
 }
+
+class GPUFeatureChecker;
 
 namespace extensions {
 
@@ -42,7 +44,8 @@ class WebstorePrivateApi {
 class InstallBundleFunction : public AsyncExtensionFunction,
                               public extensions::BundleInstaller::Delegate {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.installBundle");
+  DECLARE_EXTENSION_FUNCTION("webstorePrivate.installBundle",
+                             WEBSTOREPRIVATE_INSTALLBUNDLE)
 
   InstallBundleFunction();
 
@@ -70,7 +73,8 @@ class BeginInstallWithManifestFunction
       public ExtensionInstallPrompt::Delegate,
       public WebstoreInstallHelper::Delegate {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.beginInstallWithManifest3");
+  DECLARE_EXTENSION_FUNCTION("webstorePrivate.beginInstallWithManifest3",
+                             WEBSTOREPRIVATE_BEGININSTALLWITHMANIFEST3)
 
   // Result codes for the return value. If you change this, make sure to
   // update the description for the beginInstallWithManifest3 callback in
@@ -132,6 +136,7 @@ class BeginInstallWithManifestFunction
   std::string icon_data_;
   std::string localized_name_;
   bool use_app_installed_bubble_;
+  bool enable_launcher_;
 
   // The results of parsing manifest_ and icon_data_ go into these two.
   scoped_ptr<base::DictionaryValue> parsed_manifest_;
@@ -149,7 +154,10 @@ class CompleteInstallFunction
     : public AsyncExtensionFunction,
       public WebstoreInstaller::Delegate {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.completeInstall");
+  DECLARE_EXTENSION_FUNCTION("webstorePrivate.completeInstall",
+                             WEBSTOREPRIVATE_COMPLETEINSTALL)
+
+  CompleteInstallFunction();
 
   // WebstoreInstaller::Delegate:
   virtual void OnExtensionInstallSuccess(const std::string& id) OVERRIDE;
@@ -157,16 +165,27 @@ class CompleteInstallFunction
       const std::string& id,
       const std::string& error,
       WebstoreInstaller::FailureReason reason) OVERRIDE;
+  virtual void OnExtensionDownloadProgress(
+      const std::string& id,
+      content::DownloadItem* item) OVERRIDE;
+
  protected:
-  virtual ~CompleteInstallFunction() {}
+  virtual ~CompleteInstallFunction();
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
+
+ private:
+  void AfterMaybeInstallAppLauncher(bool ok);
+  void OnGetAppLauncherEnabled(std::string id, bool app_launcher_enabled);
+
+  scoped_ptr<WebstoreInstaller::Approval> approval_;
 };
 
 class GetBrowserLoginFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.getBrowserLogin");
+  DECLARE_EXTENSION_FUNCTION("webstorePrivate.getBrowserLogin",
+                             WEBSTOREPRIVATE_GETBROWSERLOGIN)
 
  protected:
   virtual ~GetBrowserLoginFunction() {}
@@ -177,7 +196,8 @@ class GetBrowserLoginFunction : public SyncExtensionFunction {
 
 class GetStoreLoginFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.getStoreLogin");
+  DECLARE_EXTENSION_FUNCTION("webstorePrivate.getStoreLogin",
+                             WEBSTOREPRIVATE_GETSTORELOGIN)
 
  protected:
   virtual ~GetStoreLoginFunction() {}
@@ -188,7 +208,8 @@ class GetStoreLoginFunction : public SyncExtensionFunction {
 
 class SetStoreLoginFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.setStoreLogin");
+  DECLARE_EXTENSION_FUNCTION("webstorePrivate.setStoreLogin",
+                             WEBSTOREPRIVATE_SETSTORELOGIN)
 
  protected:
   virtual ~SetStoreLoginFunction() {}
@@ -199,7 +220,8 @@ class SetStoreLoginFunction : public SyncExtensionFunction {
 
 class GetWebGLStatusFunction : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.getWebGLStatus");
+  DECLARE_EXTENSION_FUNCTION("webstorePrivate.getWebGLStatus",
+                             WEBSTOREPRIVATE_GETWEBGLSTATUS)
 
   GetWebGLStatusFunction();
 
@@ -215,6 +237,23 @@ class GetWebGLStatusFunction : public AsyncExtensionFunction {
   void CreateResult(bool webgl_allowed);
 
   scoped_refptr<GPUFeatureChecker> feature_checker_;
+};
+
+class GetIsLauncherEnabledFunction : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("webstorePrivate.getIsLauncherEnabled",
+                             WEBSTOREPRIVATE_GETISLAUNCHERENABLED)
+
+  GetIsLauncherEnabledFunction() {}
+
+ protected:
+  virtual ~GetIsLauncherEnabledFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunImpl() OVERRIDE;
+
+ private:
+  void OnIsLauncherCheckCompleted(bool is_enabled);
 };
 
 }  // namespace extensions

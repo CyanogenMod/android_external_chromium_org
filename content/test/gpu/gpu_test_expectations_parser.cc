@@ -9,9 +9,9 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_split.h"
 #include "content/public/common/content_paths.h"
 
 namespace {
@@ -31,10 +31,12 @@ enum Token {
   kConfigWinXP = 0,
   kConfigWinVista,
   kConfigWin7,
+  kConfigWin8,
   kConfigWin,
   kConfigMacLeopard,
   kConfigMacSnowLeopard,
   kConfigMacLion,
+  kConfigMacMountainLion,
   kConfigMac,
   kConfigLinux,
   kConfigChromeOS,
@@ -74,10 +76,12 @@ const TokenInfo kTokenData[] = {
   { "xp", GPUTestConfig::kOsWinXP },
   { "vista", GPUTestConfig::kOsWinVista },
   { "win7", GPUTestConfig::kOsWin7 },
+  { "win8", GPUTestConfig::kOsWin8 },
   { "win", GPUTestConfig::kOsWin },
   { "leopard", GPUTestConfig::kOsMacLeopard },
   { "snowleopard", GPUTestConfig::kOsMacSnowLeopard },
   { "lion", GPUTestConfig::kOsMacLion },
+  { "mountainlion", GPUTestConfig::kOsMacMountainLion },
   { "mac", GPUTestConfig::kOsMac },
   { "linux", GPUTestConfig::kOsLinux },
   { "chromeos", GPUTestConfig::kOsChromeOS },
@@ -182,7 +186,8 @@ bool GPUTestExpectationsParser::LoadTestExpectations(const std::string& data) {
   return rt;
 }
 
-bool GPUTestExpectationsParser::LoadTestExpectations(const FilePath& path) {
+bool GPUTestExpectationsParser::LoadTestExpectations(
+    const base::FilePath& path) {
   entries_.clear();
   error_messages_.clear();
 
@@ -196,7 +201,7 @@ bool GPUTestExpectationsParser::LoadTestExpectations(const FilePath& path) {
 
 bool GPUTestExpectationsParser::LoadTestExpectations(
     GPUTestProfile profile) {
-  FilePath path;
+  base::FilePath path;
   if (!GetExpectationsPath(profile, &path))
     return false;
   return LoadTestExpectations(path);
@@ -230,10 +235,12 @@ bool GPUTestExpectationsParser::ParseConfig(
       case kConfigWinXP:
       case kConfigWinVista:
       case kConfigWin7:
+      case kConfigWin8:
       case kConfigWin:
       case kConfigMacLeopard:
       case kConfigMacSnowLeopard:
       case kConfigMacLion:
+      case kConfigMacMountainLion:
       case kConfigMac:
       case kConfigLinux:
       case kConfigChromeOS:
@@ -278,10 +285,12 @@ bool GPUTestExpectationsParser::ParseLine(
       case kConfigWinXP:
       case kConfigWinVista:
       case kConfigWin7:
+      case kConfigWin8:
       case kConfigWin:
       case kConfigMacLeopard:
       case kConfigMacSnowLeopard:
       case kConfigMacLion:
+      case kConfigMacMountainLion:
       case kConfigMac:
       case kConfigLinux:
       case kConfigChromeOS:
@@ -389,10 +398,12 @@ bool GPUTestExpectationsParser::UpdateTestConfig(
     case kConfigWinXP:
     case kConfigWinVista:
     case kConfigWin7:
+    case kConfigWin8:
     case kConfigWin:
     case kConfigMacLeopard:
     case kConfigMacSnowLeopard:
     case kConfigMacLion:
+    case kConfigMacMountainLion:
     case kConfigMac:
     case kConfigLinux:
     case kConfigChromeOS:
@@ -494,7 +505,7 @@ void GPUTestExpectationsParser::PushErrorMessage(
 
 // static
 bool GPUTestExpectationsParser::GetExpectationsPath(
-    GPUTestProfile profile, FilePath* path) {
+    GPUTestProfile profile, base::FilePath* path) {
   DCHECK(path);
 
   bool rt = true;

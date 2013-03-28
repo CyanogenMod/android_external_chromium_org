@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 #include "base/utf_string_conversions.h"
-#include "chrome/common/autofill_messages.h"
-#include "chrome/common/form_data.h"
-#include "chrome/common/form_field_data.h"
 #include "chrome/test/base/chrome_render_view_test.h"
+#include "components/autofill/common/autofill_messages.h"
+#include "components/autofill/common/form_data.h"
+#include "components/autofill/common/form_field_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 
 using WebKit::WebDocument;
 using WebKit::WebFrame;
@@ -139,7 +139,11 @@ TEST_F(ChromeRenderViewTest, FillFormElement) {
   // Verify that "FormsSeen" isn't sent, as there are too few fields.
   const IPC::Message* message = render_thread_->sink().GetFirstMessageMatching(
       AutofillHostMsg_FormsSeen::ID);
-  ASSERT_EQ(static_cast<IPC::Message*>(NULL), message);
+  ASSERT_NE(static_cast<IPC::Message*>(NULL), message);
+  AutofillHostMsg_FormsSeen::Param params;
+  AutofillHostMsg_FormsSeen::Read(message, &params);
+  const std::vector<FormData>& forms = params.a;
+  ASSERT_EQ(0UL, forms.size());
 
   // Verify that |didAcceptAutofillSuggestion()| sets the value of the expected
   // field.

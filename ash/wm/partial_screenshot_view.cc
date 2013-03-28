@@ -4,10 +4,14 @@
 
 #include "ash/wm/partial_screenshot_view.h"
 
+#include <algorithm>
+
+#include "ash/display/mouse_cursor_event_filter.h"
 #include "ash/screenshot_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/overlay_event_filter.h"
+#include "ui/aura/client/capture_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/events/event.h"
@@ -15,30 +19,97 @@
 #include "ui/gfx/rect.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_observer.h"
 
 namespace ash {
 
-PartialScreenshotView::PartialScreenshotView(
-    ScreenshotDelegate* screenshot_delegate)
-    : is_dragging_(false),
-      screenshot_delegate_(screenshot_delegate) {
-}
+// A self-owned object to handle the cancel and the finish of current partial
+// screenshot session.
+class PartialScreenshotView::OverlayDelegate
+    : public internal::OverlayEventFilter::Delegate,
+      public views::WidgetObserver {
+ public:
+  OverlayDelegate() {
+    Shell::GetInstance()->overlay_filter()->Activate(this);
+  }
 
-PartialScreenshotView::~PartialScreenshotView() {
-  screenshot_delegate_ = NULL;
-}
+  void RegisterWidget(views::Widget* widget) {
+    widgets_.push_back(widget);
+    widget->AddObserver(this);
+  }
+
+  // Overridden from OverlayEventFilter::Delegate:
+  virtual void Cancel() OVERRIDE {
+    // Make sure the mouse_warp_mode allows warping. It can be stopped by a
+    // partial screenshot view.
+    internal::MouseCursorEventFilter* mouse_cursor_filter =
+        Shell::GetInstance()->mouse_cursor_filter();
+    mouse_cursor_filter->set_mouse_warp_mode(
+        internal::MouseCursorEventFilter::WARP_ALWAYS);
+    for (size_t i = 0; i < widgets_.size(); ++i)
+      widgets_[i]->Close();
+  }
+
+  virtual bool IsCancelingKeyEvent(ui::KeyEvent* event) OVERRIDE {
+    return event->key_code() == ui::VKEY_ESCAPE;
+  }
+
+  virtual aura::Window* GetWindow() OVERRIDE {
+    // Just returns NULL because this class does not handle key events in
+    // OverlayEventFilter, except for cancel keys.
+    return NULL;
+  }
+
+  // Overridden from views::WidgetObserver:
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE {
+    widget->RemoveObserver(this);
+    widgets_.erase(std::remove(widgets_.begin(), widgets_.end(), widget));
+    if (widgets_.empty())
+      delete this;
+  }
+
+ private:
+  virtual ~OverlayDelegate() {
+    Shell::GetInstance()->overlay_filter()->Deactivate();
+  }
+
+  std::vector<views::Widget*> widgets_;
+
+  DISALLOW_COPY_AND_ASSIGN(OverlayDelegate);
+};
 
 // static
 void PartialScreenshotView::StartPartialScreenshot(
     ScreenshotDelegate* screenshot_delegate) {
+  OverlayDelegate* overlay_delegate = new OverlayDelegate();
+  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  for (Shell::RootWindowList::iterator it = root_windows.begin();
+       it != root_windows.end(); ++it) {
+    PartialScreenshotView* new_view = new PartialScreenshotView(
+        overlay_delegate, screenshot_delegate);
+    new_view->Init(*it);
+  }
+}
+
+PartialScreenshotView::PartialScreenshotView(
+    PartialScreenshotView::OverlayDelegate* overlay_delegate,
+    ScreenshotDelegate* screenshot_delegate)
+    : is_dragging_(false),
+      overlay_delegate_(overlay_delegate),
+      screenshot_delegate_(screenshot_delegate) {
+}
+
+PartialScreenshotView::~PartialScreenshotView() {
+  overlay_delegate_ = NULL;
+  screenshot_delegate_ = NULL;
+}
+
+void PartialScreenshotView::Init(aura::RootWindow* root_window) {
   views::Widget* widget = new views::Widget;
-  PartialScreenshotView* view = new PartialScreenshotView(
-      screenshot_delegate);
-  aura::RootWindow* root_window = Shell::GetActiveRootWindow();
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.transparent = true;
-  params.delegate = view;
+  params.delegate = this;
   // The partial screenshot rectangle has to be at the real top of
   // the screen.
   params.parent = Shell::GetContainer(
@@ -46,37 +117,33 @@ void PartialScreenshotView::StartPartialScreenshot(
       internal::kShellWindowId_OverlayContainer);
 
   widget->Init(params);
-  widget->SetContentsView(view);
-  widget->SetBounds(root_window->bounds());
+  widget->SetContentsView(this);
+  widget->SetBounds(root_window->GetBoundsInScreen());
   widget->GetNativeView()->SetName("PartialScreenshotView");
   widget->StackAtTop();
   widget->Show();
-  // Captures mouse events in case that context menu already captures the
-  // events.  This will close the context menu.
-  widget->GetNativeView()->SetCapture();
+  // Releases the mouse capture to let mouse events come to the view. This
+  // will close the context menu.
+  aura::client::CaptureClient* capture_client =
+      aura::client::GetCaptureClient(root_window);
+  if (capture_client->GetCaptureWindow())
+    capture_client->ReleaseCapture(capture_client->GetCaptureWindow());
 
-  Shell::GetInstance()->overlay_filter()->Activate(view);
+  overlay_delegate_->RegisterWidget(widget);
+}
+
+gfx::Rect PartialScreenshotView::GetScreenshotRect() const {
+  int left = std::min(start_position_.x(), current_position_.x());
+  int top = std::min(start_position_.y(), current_position_.y());
+  int width = ::abs(start_position_.x() - current_position_.x());
+  int height = ::abs(start_position_.y() - current_position_.y());
+  return gfx::Rect(left, top, width, height);
 }
 
 gfx::NativeCursor PartialScreenshotView::GetCursor(
     const ui::MouseEvent& event) {
   // Always use "crosshair" cursor.
   return ui::kCursorCross;
-}
-
-void PartialScreenshotView::Cancel() {
-  Shell::GetInstance()->overlay_filter()->Deactivate();
-  views::Widget* widget = GetWidget();
-  if (widget)
-    widget->Close();
-}
-
-bool PartialScreenshotView::IsCancelingKeyEvent(ui::KeyEvent* event) {
-  return event->key_code() == ui::VKEY_ESCAPE;
-}
-
-aura::Window* PartialScreenshotView::GetWindow() {
-  return GetWidget()->GetNativeWindow();
 }
 
 void PartialScreenshotView::OnPaint(gfx::Canvas* canvas) {
@@ -92,11 +159,14 @@ void PartialScreenshotView::OnPaint(gfx::Canvas* canvas) {
   }
 }
 
-void PartialScreenshotView::OnMouseCaptureLost() {
-  Cancel();
-}
-
 bool PartialScreenshotView::OnMousePressed(const ui::MouseEvent& event) {
+  // Prevent moving across displays during drag. Capturing a screenshot across
+  // the displays is not supported yet.
+  // TODO(mukai): remove this restriction.
+  internal::MouseCursorEventFilter* mouse_cursor_filter =
+      Shell::GetInstance()->mouse_cursor_filter();
+  mouse_cursor_filter->set_mouse_warp_mode(
+      internal::MouseCursorEventFilter::WARP_NONE);
   start_position_ = event.location();
   return true;
 }
@@ -114,25 +184,18 @@ bool PartialScreenshotView::OnMouseWheel(const ui::MouseWheelEvent& event) {
 }
 
 void PartialScreenshotView::OnMouseReleased(const ui::MouseEvent& event) {
-  Cancel();
+  overlay_delegate_->Cancel();
   if (!is_dragging_)
     return;
 
   is_dragging_ = false;
   if (screenshot_delegate_) {
-    aura::RootWindow *root_window = Shell::GetPrimaryRootWindow();
+    aura::RootWindow *root_window =
+        GetWidget()->GetNativeWindow()->GetRootWindow();
     screenshot_delegate_->HandleTakePartialScreenshot(
         root_window,
         gfx::IntersectRects(root_window->bounds(), GetScreenshotRect()));
   }
-}
-
-gfx::Rect PartialScreenshotView::GetScreenshotRect() const {
-  int left = std::min(start_position_.x(), current_position_.x());
-  int top = std::min(start_position_.y(), current_position_.y());
-  int width = ::abs(start_position_.x() - current_position_.x());
-  int height = ::abs(start_position_.y() - current_position_.y());
-  return gfx::Rect(left, top, width, height);
 }
 
 }  // namespace ash

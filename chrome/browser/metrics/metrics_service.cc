@@ -157,9 +157,12 @@
 #include "base/guid.h"
 #include "base/md5.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/metrics/statistics_recorder.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
@@ -167,8 +170,6 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/autocomplete/autocomplete_log.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/process_map.h"
@@ -180,13 +181,13 @@
 #include "chrome/browser/metrics/tracking_synchronizer.h"
 #include "chrome/browser/net/http_pipelining_compatibility_client.h"
 #include "chrome/browser/net/network_stats.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_otr_state.h"
 #include "chrome/common/child_process_logging.h"
+#include "chrome/common/chrome_process_type.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
@@ -220,7 +221,6 @@
 
 #if defined(OS_WIN)
 #include <windows.h>  // Needed for STATUS_* codes
-#include "sandbox/win/src/sandbox_types.h"  // For termination codes.
 #endif
 
 using base::Time;
@@ -317,58 +317,11 @@ int MapCrashExitCodeForHistogram(int exit_code) {
   return std::abs(exit_code);
 }
 
-// Returns a list of all the likely exit codes for crashed renderer processes.
-// The exit codes are all positive, since that is what histograms expect.
-std::vector<int> GetAllCrashExitCodes() {
-  std::vector<int> codes;
-
-  // Chrome defines its own exit codes in the range
-  // 1 to RESULT_CODE_CHROME_LAST_CODE.
-  for (int i = 1; i < chrome::RESULT_CODE_CHROME_LAST_CODE; ++i)
-    codes.push_back(i);
-
-#if defined(OS_WIN)
-  // The exit code when crashing will be one of the Windows exception codes.
-  int kExceptionCodes[] = {
-    0xe06d7363,  // C++ EH exception
-    STATUS_ACCESS_VIOLATION,
-    STATUS_ARRAY_BOUNDS_EXCEEDED,
-    STATUS_BREAKPOINT,
-    STATUS_CONTROL_C_EXIT,
-    STATUS_DATATYPE_MISALIGNMENT,
-    STATUS_FLOAT_DENORMAL_OPERAND,
-    STATUS_FLOAT_DIVIDE_BY_ZERO,
-    STATUS_FLOAT_INEXACT_RESULT,
-    STATUS_FLOAT_INVALID_OPERATION,
-    STATUS_FLOAT_OVERFLOW,
-    STATUS_FLOAT_STACK_CHECK,
-    STATUS_FLOAT_UNDERFLOW,
-    STATUS_GUARD_PAGE_VIOLATION,
-    STATUS_ILLEGAL_INSTRUCTION,
-    STATUS_INTEGER_DIVIDE_BY_ZERO,
-    STATUS_INTEGER_OVERFLOW,
-    STATUS_INVALID_DISPOSITION,
-    STATUS_INVALID_HANDLE,
-    STATUS_INVALID_PARAMETER,
-    STATUS_IN_PAGE_ERROR,
-    STATUS_NONCONTINUABLE_EXCEPTION,
-    STATUS_NO_MEMORY,
-    STATUS_PRIVILEGED_INSTRUCTION,
-    STATUS_SINGLE_STEP,
-    STATUS_STACK_OVERFLOW,
-  };
-
-  for (size_t i = 0; i < arraysize(kExceptionCodes); ++i)
-    codes.push_back(MapCrashExitCodeForHistogram(kExceptionCodes[i]));
-
-  // Add the sandbox fatal termination codes.
-  for (int i = sandbox::SBOX_FATAL_INTEGRITY;
-       i <= sandbox::SBOX_FATAL_LAST; ++i) {
-    codes.push_back(MapCrashExitCodeForHistogram(i));
-  }
-#endif
-
-  return codes;
+void MarkAppCleanShutdownAndCommit() {
+  PrefService* pref = g_browser_process->local_state();
+  pref->SetBoolean(prefs::kStabilityExitedCleanly, true);
+  // Start writing right away (write happens on a different thread).
+  pref->CommitPendingWrite();
 }
 
 }  // namespace
@@ -383,12 +336,12 @@ MetricsService::ShutdownCleanliness MetricsService::clean_shutdown_status_ =
 // reported to the UMA server on next launch.
 struct MetricsService::ChildProcessStats {
  public:
-  explicit ChildProcessStats(content::ProcessType type)
+  explicit ChildProcessStats(int process_type)
       : process_launches(0),
         process_crashes(0),
         instances(0),
         loading_errors(0),
-        process_type(type) {}
+        process_type(process_type) {}
 
   // This constructor is only used by the map to return some default value for
   // an index for which no value has been assigned.
@@ -414,7 +367,7 @@ struct MetricsService::ChildProcessStats {
   // process.
   int loading_errors;
 
-  content::ProcessType process_type;
+  int process_type;
 };
 
 // Handles asynchronous fetching of memory details.
@@ -424,72 +377,64 @@ class MetricsMemoryDetails : public MemoryDetails {
   explicit MetricsMemoryDetails(const base::Closure& callback)
       : callback_(callback) {}
 
-  virtual void OnDetailsAvailable() {
+  virtual void OnDetailsAvailable() OVERRIDE {
     MessageLoop::current()->PostTask(FROM_HERE, callback_);
   }
 
  private:
-  ~MetricsMemoryDetails() {}
+  virtual ~MetricsMemoryDetails() {}
 
   base::Closure callback_;
   DISALLOW_COPY_AND_ASSIGN(MetricsMemoryDetails);
 };
 
 // static
-void MetricsService::RegisterPrefs(PrefService* local_state) {
+void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
   DCHECK(IsSingleThreaded());
-  local_state->RegisterStringPref(prefs::kMetricsClientID, "");
-  local_state->RegisterIntegerPref(prefs::kMetricsLowEntropySource,
-                                   kLowEntropySourceNotSet);
-  local_state->RegisterInt64Pref(prefs::kMetricsClientIDTimestamp, 0);
-  local_state->RegisterInt64Pref(prefs::kStabilityLaunchTimeSec, 0);
-  local_state->RegisterInt64Pref(prefs::kStabilityLastTimestampSec, 0);
-  local_state->RegisterStringPref(prefs::kStabilityStatsVersion, "");
-  local_state->RegisterInt64Pref(prefs::kStabilityStatsBuildTime, 0);
-  local_state->RegisterBooleanPref(prefs::kStabilityExitedCleanly, true);
-  local_state->RegisterBooleanPref(prefs::kStabilitySessionEndCompleted, true);
-  local_state->RegisterIntegerPref(prefs::kMetricsSessionID, -1);
-  local_state->RegisterIntegerPref(prefs::kStabilityLaunchCount, 0);
-  local_state->RegisterIntegerPref(prefs::kStabilityCrashCount, 0);
-  local_state->RegisterIntegerPref(prefs::kStabilityIncompleteSessionEndCount,
-                                   0);
-  local_state->RegisterIntegerPref(prefs::kStabilityPageLoadCount, 0);
-  local_state->RegisterIntegerPref(prefs::kStabilityRendererCrashCount, 0);
-  local_state->RegisterIntegerPref(prefs::kStabilityExtensionRendererCrashCount,
-                                   0);
-  local_state->RegisterIntegerPref(prefs::kStabilityRendererHangCount, 0);
-  local_state->RegisterIntegerPref(prefs::kStabilityChildProcessCrashCount, 0);
-  local_state->RegisterIntegerPref(prefs::kStabilityBreakpadRegistrationFail,
-                                   0);
-  local_state->RegisterIntegerPref(prefs::kStabilityBreakpadRegistrationSuccess,
-                                   0);
-  local_state->RegisterIntegerPref(prefs::kStabilityDebuggerPresent, 0);
-  local_state->RegisterIntegerPref(prefs::kStabilityDebuggerNotPresent, 0);
+  registry->RegisterStringPref(prefs::kMetricsClientID, "");
+  registry->RegisterIntegerPref(prefs::kMetricsLowEntropySource,
+                                kLowEntropySourceNotSet);
+  registry->RegisterInt64Pref(prefs::kMetricsClientIDTimestamp, 0);
+  registry->RegisterInt64Pref(prefs::kStabilityLaunchTimeSec, 0);
+  registry->RegisterInt64Pref(prefs::kStabilityLastTimestampSec, 0);
+  registry->RegisterStringPref(prefs::kStabilityStatsVersion, "");
+  registry->RegisterInt64Pref(prefs::kStabilityStatsBuildTime, 0);
+  registry->RegisterBooleanPref(prefs::kStabilityExitedCleanly, true);
+  registry->RegisterBooleanPref(prefs::kStabilitySessionEndCompleted, true);
+  registry->RegisterIntegerPref(prefs::kMetricsSessionID, -1);
+  registry->RegisterIntegerPref(prefs::kStabilityLaunchCount, 0);
+  registry->RegisterIntegerPref(prefs::kStabilityCrashCount, 0);
+  registry->RegisterIntegerPref(prefs::kStabilityIncompleteSessionEndCount, 0);
+  registry->RegisterIntegerPref(prefs::kStabilityPageLoadCount, 0);
+  registry->RegisterIntegerPref(prefs::kStabilityRendererCrashCount, 0);
+  registry->RegisterIntegerPref(prefs::kStabilityExtensionRendererCrashCount,
+                                0);
+  registry->RegisterIntegerPref(prefs::kStabilityRendererHangCount, 0);
+  registry->RegisterIntegerPref(prefs::kStabilityChildProcessCrashCount, 0);
+  registry->RegisterIntegerPref(prefs::kStabilityBreakpadRegistrationFail, 0);
+  registry->RegisterIntegerPref(prefs::kStabilityBreakpadRegistrationSuccess,
+                                0);
+  registry->RegisterIntegerPref(prefs::kStabilityDebuggerPresent, 0);
+  registry->RegisterIntegerPref(prefs::kStabilityDebuggerNotPresent, 0);
 #if defined(OS_CHROMEOS)
-  local_state->RegisterIntegerPref(prefs::kStabilityOtherUserCrashCount, 0);
-  local_state->RegisterIntegerPref(prefs::kStabilityKernelCrashCount, 0);
-  local_state->RegisterIntegerPref(prefs::kStabilitySystemUncleanShutdownCount,
-                                   0);
+  registry->RegisterIntegerPref(prefs::kStabilityOtherUserCrashCount, 0);
+  registry->RegisterIntegerPref(prefs::kStabilityKernelCrashCount, 0);
+  registry->RegisterIntegerPref(prefs::kStabilitySystemUncleanShutdownCount, 0);
 #endif  // OS_CHROMEOS
 
-  local_state->RegisterDictionaryPref(prefs::kProfileMetrics);
-  local_state->RegisterIntegerPref(prefs::kNumBookmarksOnBookmarkBar, 0);
-  local_state->RegisterIntegerPref(prefs::kNumFoldersOnBookmarkBar, 0);
-  local_state->RegisterIntegerPref(prefs::kNumBookmarksInOtherBookmarkFolder,
-                                   0);
-  local_state->RegisterIntegerPref(prefs::kNumFoldersInOtherBookmarkFolder, 0);
-  local_state->RegisterIntegerPref(prefs::kNumKeywords, 0);
-  local_state->RegisterListPref(prefs::kMetricsInitialLogsXml);
-  local_state->RegisterListPref(prefs::kMetricsOngoingLogsXml);
-  local_state->RegisterListPref(prefs::kMetricsInitialLogsProto);
-  local_state->RegisterListPref(prefs::kMetricsOngoingLogsProto);
+  registry->RegisterDictionaryPref(prefs::kProfileMetrics);
+  registry->RegisterIntegerPref(prefs::kNumKeywords, 0);
+  registry->RegisterListPref(prefs::kMetricsInitialLogsXml);
+  registry->RegisterListPref(prefs::kMetricsOngoingLogsXml);
+  registry->RegisterListPref(prefs::kMetricsInitialLogsProto);
+  registry->RegisterListPref(prefs::kMetricsOngoingLogsProto);
 
-  local_state->RegisterInt64Pref(prefs::kUninstallMetricsPageLoadCount, 0);
-  local_state->RegisterInt64Pref(prefs::kUninstallLaunchCount, 0);
-  local_state->RegisterInt64Pref(prefs::kUninstallMetricsInstallDate, 0);
-  local_state->RegisterInt64Pref(prefs::kUninstallMetricsUptimeSec, 0);
-  local_state->RegisterInt64Pref(prefs::kUninstallLastLaunchTimeSec, 0);
-  local_state->RegisterInt64Pref(prefs::kUninstallLastObservedRunTimeSec, 0);
+  registry->RegisterInt64Pref(prefs::kInstallDate, 0);
+  registry->RegisterInt64Pref(prefs::kUninstallMetricsPageLoadCount, 0);
+  registry->RegisterInt64Pref(prefs::kUninstallLaunchCount, 0);
+  registry->RegisterInt64Pref(prefs::kUninstallMetricsUptimeSec, 0);
+  registry->RegisterInt64Pref(prefs::kUninstallLastLaunchTimeSec, 0);
+  registry->RegisterInt64Pref(prefs::kUninstallLastObservedRunTimeSec, 0);
 }
 
 // static
@@ -541,10 +486,14 @@ MetricsService::MetricsService()
   scheduler_.reset(new MetricsReportingScheduler(callback));
   log_manager_.set_log_serializer(new MetricsLogSerializer());
   log_manager_.set_max_ongoing_log_store_size(kUploadLogAvoidRetransmitSize);
+
+  BrowserChildProcessObserver::Add(this);
 }
 
 MetricsService::~MetricsService() {
   DisableRecording();
+
+  BrowserChildProcessObserver::Remove(this);
 }
 
 void MetricsService::Start() {
@@ -636,6 +585,10 @@ void MetricsService::EnableRecording() {
     OpenNewLog();
 
   SetUpNotifications(&registrar_, this);
+  content::RemoveActionCallback(action_callback_);
+  action_callback_ = base::Bind(&MetricsService::OnUserAction,
+                                base::Unretained(this));
+  content::AddActionCallback(action_callback_);
 }
 
 void MetricsService::DisableRecording() {
@@ -645,6 +598,7 @@ void MetricsService::DisableRecording() {
     return;
   recording_active_ = false;
 
+  content::RemoveActionCallback(action_callback_);
   registrar_.RemoveAll();
   PushPendingLogsToPersistentStorage();
   DCHECK(!log_manager_.has_staged_log());
@@ -668,8 +622,6 @@ void MetricsService::SetUpNotifications(
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar->Add(observer, chrome::NOTIFICATION_BROWSER_CLOSED,
                  content::NotificationService::AllSources());
-  registrar->Add(observer, content::NOTIFICATION_USER_ACTION,
-                 content::NotificationService::AllSources());
   registrar->Add(observer, chrome::NOTIFICATION_TAB_PARENTED,
                  content::NotificationService::AllSources());
   registrar->Add(observer, chrome::NOTIFICATION_TAB_CLOSING,
@@ -682,18 +634,29 @@ void MetricsService::SetUpNotifications(
                  content::NotificationService::AllSources());
   registrar->Add(observer, content::NOTIFICATION_RENDERER_PROCESS_HANG,
                  content::NotificationService::AllSources());
-  registrar->Add(observer, content::NOTIFICATION_CHILD_PROCESS_HOST_CONNECTED,
-                 content::NotificationService::AllSources());
-  registrar->Add(observer, content::NOTIFICATION_CHILD_INSTANCE_CREATED,
-                 content::NotificationService::AllSources());
-  registrar->Add(observer, content::NOTIFICATION_CHILD_PROCESS_CRASHED,
-                 content::NotificationService::AllSources());
   registrar->Add(observer, chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
                  content::NotificationService::AllSources());
   registrar->Add(observer, chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
                  content::NotificationService::AllSources());
-  registrar->Add(observer, chrome::NOTIFICATION_BOOKMARK_MODEL_LOADED,
-                 content::NotificationService::AllBrowserContextsAndSources());
+}
+
+void MetricsService::BrowserChildProcessHostConnected(
+    const content::ChildProcessData& data) {
+  GetChildProcessStats(data).process_launches++;
+}
+
+void MetricsService::BrowserChildProcessCrashed(
+    const content::ChildProcessData& data) {
+  GetChildProcessStats(data).process_crashes++;
+  // Exclude plugin crashes from the count below because we report them via
+  // a separate UMA metric.
+  if (!IsPluginProcess(data.process_type))
+    IncrementPrefValue(prefs::kStabilityChildProcessCrashCount);
+}
+
+void MetricsService::BrowserChildProcessInstanceCreated(
+    const content::ChildProcessData& data) {
+  GetChildProcessStats(data).instances++;
 }
 
 void MetricsService::Observe(int type,
@@ -702,15 +665,10 @@ void MetricsService::Observe(int type,
   DCHECK(log_manager_.current_log());
   DCHECK(IsSingleThreaded());
 
-  if (!CanLogNotification(type, source, details))
+  if (!CanLogNotification())
     return;
 
   switch (type) {
-    case content::NOTIFICATION_USER_ACTION:
-         log_manager_.current_log()->RecordUserAction(
-             *content::Details<const char*>(details).ptr());
-      break;
-
     case chrome::NOTIFICATION_BROWSER_OPENED:
     case chrome::NOTIFICATION_BROWSER_CLOSED: {
       Browser* browser = content::Source<Browser>(source).ptr();
@@ -757,12 +715,6 @@ void MetricsService::Observe(int type,
       LogRendererHang();
       break;
 
-    case content::NOTIFICATION_CHILD_PROCESS_HOST_CONNECTED:
-    case content::NOTIFICATION_CHILD_PROCESS_CRASHED:
-    case content::NOTIFICATION_CHILD_INSTANCE_CREATED:
-      LogChildProcessChange(type, source, details);
-      break;
-
     case chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED:
       LogKeywordCount(content::Source<TemplateURLService>(
           source)->GetTemplateURLs().size());
@@ -777,12 +729,6 @@ void MetricsService::Observe(int type,
       break;
     }
 
-    case chrome::NOTIFICATION_BOOKMARK_MODEL_LOADED: {
-      Profile* p = content::Source<Profile>(source).ptr();
-      if (p)
-        LogBookmarks(BookmarkModelFactory::GetForProfile(p));
-      break;
-    }
     default:
       NOTREACHED();
       break;
@@ -814,8 +760,7 @@ void MetricsService::RecordCompletedSessionEnd() {
 void MetricsService::OnAppEnterBackground() {
   scheduler_->Stop();
 
-  PrefService* pref = g_browser_process->local_state();
-  pref->SetBoolean(prefs::kStabilityExitedCleanly, true);
+  MarkAppCleanShutdownAndCommit();
 
   // At this point, there's no way of knowing when the process will be
   // killed, so this has to be treated similar to a shutdown, closing and
@@ -828,9 +773,6 @@ void MetricsService::OnAppEnterBackground() {
     // process is killed.
     OpenNewLog();
   }
-
-  // Start writing right away (write happens on a different thread).
-  pref->CommitPendingWrite();
 }
 
 void MetricsService::OnAppEnterForeground() {
@@ -839,7 +781,14 @@ void MetricsService::OnAppEnterForeground() {
 
   StartSchedulerIfNecessary();
 }
-#endif
+#else
+void MetricsService::LogNeedForCleanShutdown() {
+  PrefService* pref = g_browser_process->local_state();
+  pref->SetBoolean(prefs::kStabilityExitedCleanly, false);
+  // Redundant setting to be sure we call for a clean shutdown.
+  clean_shutdown_status_ = NEED_TO_SHUTDOWN;
+}
+#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 void MetricsService::RecordBreakpadRegistration(bool success) {
   if (!success)
@@ -986,10 +935,15 @@ void MetricsService::OnInitTaskGotHardwareClass(
   DCHECK_EQ(INIT_TASK_SCHEDULED, state_);
   hardware_class_ = hardware_class;
 
+#if defined(ENABLE_PLUGINS)
   // Start the next part of the init task: loading plugin information.
   PluginService::GetInstance()->GetPlugins(
       base::Bind(&MetricsService::OnInitTaskGotPluginInfo,
           self_ptr_factory_.GetWeakPtr()));
+#else
+  std::vector<webkit::WebPluginInfo> plugin_list_empty;
+  OnInitTaskGotPluginInfo(plugin_list_empty);
+#endif  // defined(ENABLE_PLUGINS)
 }
 
 void MetricsService::OnInitTaskGotPluginInfo(
@@ -1045,9 +999,17 @@ void MetricsService::OnInitTaskGotGoogleUpdateData(
       self_ptr_factory_.GetWeakPtr());
 }
 
+void MetricsService::OnUserAction(const std::string& action) {
+  if (!CanLogNotification())
+    return;
+
+  log_manager_.current_log()->RecordUserAction(action.c_str());
+  HandleIdleSinceLastTransmission(false);
+}
+
 void MetricsService::ReceivedProfilerData(
     const tracked_objects::ProcessDataSnapshot& process_data,
-    content::ProcessType process_type) {
+    int process_type) {
   DCHECK_EQ(INIT_TASK_SCHEDULED, state_);
 
   // Upon the first callback, create the initial log so that we can immediately
@@ -1684,15 +1646,13 @@ void MetricsService::LogRendererCrash(content::RenderProcessHost* host,
     if (was_extension_process) {
       IncrementPrefValue(prefs::kStabilityExtensionRendererCrashCount);
 
-      UMA_HISTOGRAM_CUSTOM_ENUMERATION("CrashExitCodes.Extension",
-                                       MapCrashExitCodeForHistogram(exit_code),
-                                       GetAllCrashExitCodes());
+      UMA_HISTOGRAM_SPARSE_SLOWLY("CrashExitCodes.Extension",
+                                  MapCrashExitCodeForHistogram(exit_code));
     } else {
       IncrementPrefValue(prefs::kStabilityRendererCrashCount);
 
-      UMA_HISTOGRAM_CUSTOM_ENUMERATION("CrashExitCodes.Renderer",
-                                       MapCrashExitCodeForHistogram(exit_code),
-                                       GetAllCrashExitCodes());
+      UMA_HISTOGRAM_SPARSE_SLOWLY("CrashExitCodes.Renderer",
+                                  MapCrashExitCodeForHistogram(exit_code));
     }
 
     UMA_HISTOGRAM_PERCENTAGE("BrowserRenderProcessHost.ChildCrashes",
@@ -1710,13 +1670,6 @@ void MetricsService::LogRendererHang() {
   IncrementPrefValue(prefs::kStabilityRendererHangCount);
 }
 
-void MetricsService::LogNeedForCleanShutdown() {
-  PrefService* pref = g_browser_process->local_state();
-  pref->SetBoolean(prefs::kStabilityExitedCleanly, false);
-  // Redundant setting to be sure we call for a clean shutdown.
-  clean_shutdown_status_ = NEED_TO_SHUTDOWN;
-}
-
 bool MetricsService::UmaMetricsProperlyShutdown() {
   CHECK(clean_shutdown_status_ == CLEANLY_SHUTDOWN ||
         clean_shutdown_status_ == NEED_TO_SHUTDOWN);
@@ -1725,9 +1678,8 @@ bool MetricsService::UmaMetricsProperlyShutdown() {
 
 void MetricsService::LogCleanShutdown() {
   // Redundant hack to write pref ASAP.
-  PrefService* pref = g_browser_process->local_state();
-  pref->SetBoolean(prefs::kStabilityExitedCleanly, true);
-  pref->CommitPendingWrite();
+  MarkAppCleanShutdownAndCommit();
+
   // Redundant setting to assure that we always reset this value at shutdown
   // (and that we don't use some alternate path, and not call LogCleanShutdown).
   clean_shutdown_status_ = CLEANLY_SHUTDOWN;
@@ -1751,7 +1703,7 @@ void MetricsService::LogChromeOSCrash(const std::string &crash_type) {
 }
 #endif  // OS_CHROMEOS
 
-void MetricsService::LogPluginLoadingError(const FilePath& plugin_path) {
+void MetricsService::LogPluginLoadingError(const base::FilePath& plugin_path) {
   webkit::WebPluginInfo plugin;
   bool success =
       content::PluginService::GetInstance()->GetPluginInfoByPath(plugin_path,
@@ -1769,80 +1721,14 @@ void MetricsService::LogPluginLoadingError(const FilePath& plugin_path) {
   stats.loading_errors++;
 }
 
-void MetricsService::LogChildProcessChange(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  content::Details<ChildProcessData> child_details(details);
-  const string16& child_name = child_details->name;
-
-  if (child_process_stats_buffer_.find(child_name) ==
-      child_process_stats_buffer_.end()) {
+MetricsService::ChildProcessStats& MetricsService::GetChildProcessStats(
+    const content::ChildProcessData& data) {
+  const string16& child_name = data.name;
+  if (!ContainsKey(child_process_stats_buffer_, child_name)) {
     child_process_stats_buffer_[child_name] =
-        ChildProcessStats(child_details->type);
+        ChildProcessStats(data.process_type);
   }
-
-  ChildProcessStats& stats = child_process_stats_buffer_[child_name];
-  switch (type) {
-    case content::NOTIFICATION_CHILD_PROCESS_HOST_CONNECTED:
-      stats.process_launches++;
-      break;
-
-    case content::NOTIFICATION_CHILD_INSTANCE_CREATED:
-      stats.instances++;
-      break;
-
-    case content::NOTIFICATION_CHILD_PROCESS_CRASHED:
-      stats.process_crashes++;
-      // Exclude plugin crashes from the count below because we report them via
-      // a separate UMA metric.
-      if (!IsPluginProcess(child_details->type)) {
-        IncrementPrefValue(prefs::kStabilityChildProcessCrashCount);
-      }
-      break;
-
-    default:
-      NOTREACHED() << "Unexpected notification type " << type;
-      return;
-  }
-}
-
-// Recursively counts the number of bookmarks and folders in node.
-static void CountBookmarks(const BookmarkNode* node,
-                           int* bookmarks,
-                           int* folders) {
-  if (node->is_url())
-    (*bookmarks)++;
-  else
-    (*folders)++;
-  for (int i = 0; i < node->child_count(); ++i)
-    CountBookmarks(node->GetChild(i), bookmarks, folders);
-}
-
-void MetricsService::LogBookmarks(const BookmarkNode* node,
-                                  const char* num_bookmarks_key,
-                                  const char* num_folders_key) {
-  DCHECK(node);
-  int num_bookmarks = 0;
-  int num_folders = 0;
-  CountBookmarks(node, &num_bookmarks, &num_folders);
-  num_folders--;  // Don't include the root folder in the count.
-
-  PrefService* pref = g_browser_process->local_state();
-  DCHECK(pref);
-  pref->SetInteger(num_bookmarks_key, num_bookmarks);
-  pref->SetInteger(num_folders_key, num_folders);
-}
-
-void MetricsService::LogBookmarks(BookmarkModel* model) {
-  DCHECK(model);
-  LogBookmarks(model->bookmark_bar_node(),
-               prefs::kNumBookmarksOnBookmarkBar,
-               prefs::kNumFoldersOnBookmarkBar);
-  LogBookmarks(model->other_node(),
-               prefs::kNumBookmarksInOtherBookmarkFolder,
-               prefs::kNumFoldersInOtherBookmarkFolder);
-  ScheduleNextStateSave();
+  return child_process_stats_buffer_[child_name];
 }
 
 void MetricsService::LogKeywordCount(size_t keyword_count) {
@@ -1940,10 +1826,7 @@ void MetricsService::RecordPluginChanges(PrefService* pref) {
   child_process_stats_buffer_.clear();
 }
 
-bool MetricsService::CanLogNotification(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
+bool MetricsService::CanLogNotification() {
   // We simply don't log anything to UMA if there is a single incognito
   // session visible. The problem is that we always notify using the orginal
   // profile in order to simplify notification processing.
@@ -1967,10 +1850,10 @@ void MetricsService::RecordCurrentState(PrefService* pref) {
 }
 
 // static
-bool MetricsService::IsPluginProcess(content::ProcessType type) {
-  return (type == content::PROCESS_TYPE_PLUGIN ||
-          type == content::PROCESS_TYPE_PPAPI_PLUGIN ||
-          type == content::PROCESS_TYPE_PPAPI_BROKER);
+bool MetricsService::IsPluginProcess(int process_type) {
+  return (process_type == content::PROCESS_TYPE_PLUGIN ||
+          process_type == content::PROCESS_TYPE_PPAPI_PLUGIN ||
+          process_type == content::PROCESS_TYPE_PPAPI_BROKER);
 }
 
 #if defined(OS_CHROMEOS)

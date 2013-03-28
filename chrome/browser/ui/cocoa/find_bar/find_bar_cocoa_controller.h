@@ -8,10 +8,11 @@
 #include "base/string16.h"
 #include "ui/gfx/point.h"
 
-@class BrowserWindowController;
+class Browser;
 class FindBarBridge;
 @class FindBarTextField;
 class FindNotificationDetails;
+@class FindTextFieldEditor;
 @class FocusTracker;
 
 // A controller for the find bar in the browser window.  Manages
@@ -31,8 +32,7 @@ class FindNotificationDetails;
   // Needed to call methods on FindBarController.
   FindBarBridge* findBarBridge_;  // weak
 
-  // Needed to request a layout of the FindBar view.
-  BrowserWindowController* browserWindowController_;  // weak
+  Browser* browser_;
 
   scoped_nsobject<FocusTracker> focusTracker_;
 
@@ -48,6 +48,9 @@ class FindNotificationDetails;
   // stopAnimation.
   scoped_nsobject<NSViewAnimation> moveAnimation_;
 
+  // Custom editor for NSTextField allows to customize cut/copy.
+  scoped_nsobject<FindTextFieldEditor> customTextFieldEditor_;
+
   // If YES, do nothing as a result of find pasteboard update notifications.
   BOOL suppressPboardUpdateActions_;
 
@@ -59,10 +62,9 @@ class FindNotificationDetails;
 };
 
 // Initializes a new FindBarCocoaController.
-- (id)init;
+- (id)initWithBrowser:(Browser*)browser;
 
 - (void)setFindBarBridge:(FindBarBridge*)findBar;
-- (void)setBrowserWindowController:(BrowserWindowController*)controller;
 
 - (IBAction)close:(id)sender;
 
@@ -82,7 +84,10 @@ class FindNotificationDetails;
 - (void)stopAnimation;
 - (void)setFocusAndSelection;
 - (void)restoreSavedFocus;
+- (NSString*)findText;
 - (void)setFindText:(NSString*)findText;
+- (NSString*)matchCountText;
+- (void)updateFindBarForChangedWebContents;
 
 - (void)clearResults:(const FindNotificationDetails&)results;
 - (void)updateUIForFindResult:(const FindNotificationDetails&)results
@@ -96,5 +101,8 @@ class FindNotificationDetails;
 
 // Returns the width of the FindBar.
 - (int)findBarWidth;
+
+// Returns custom editor for findText_.
+- (id)customFieldEditorForObject:(id)obj;
 
 @end

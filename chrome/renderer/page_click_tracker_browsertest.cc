@@ -4,14 +4,14 @@
 
 #include "base/basictypes.h"
 #include "chrome/common/render_messages.h"
-#include "chrome/renderer/page_click_listener.h"
-#include "chrome/renderer/page_click_tracker.h"
 #include "chrome/test/base/chrome_render_view_test.h"
+#include "components/autofill/renderer/page_click_listener.h"
+#include "components/autofill/renderer/page_click_tracker.h"
 #include "content/public/renderer/render_view.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
@@ -27,7 +27,7 @@ class TestPageClickListener : public PageClickListener {
 
   virtual bool InputElementClicked(const WebKit::WebInputElement& element,
                                    bool was_focused,
-                                   bool is_focused) {
+                                   bool is_focused) OVERRIDE {
     input_element_clicked_called_ = true;
     element_clicked_ = element;
     was_focused_ = was_focused;
@@ -35,7 +35,7 @@ class TestPageClickListener : public PageClickListener {
     return notification_response_;
   }
 
-  virtual bool InputElementLostFocus() {
+  virtual bool InputElementLostFocus() OVERRIDE {
     input_element_lost_focus_called_ = true;
     return notification_response_;
   }

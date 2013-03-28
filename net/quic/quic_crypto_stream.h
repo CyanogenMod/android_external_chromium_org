@@ -6,11 +6,14 @@
 #define NET_QUIC_QUIC_CRYPTO_STREAM_H_
 
 #include "net/quic/crypto/crypto_framer.h"
+#include "net/quic/crypto/crypto_utils.h"
+#include "net/quic/quic_protocol.h"
 #include "net/quic/reliable_quic_stream.h"
 
 namespace net {
 
 class QuicSession;
+struct CryptoHandshakeMessage;
 
 // Crypto handshake messages in QUIC take place over a reserved
 // reliable stream with the id 1.  Each endpoint (client and server)
@@ -25,7 +28,6 @@ class QuicSession;
 class NET_EXPORT_PRIVATE QuicCryptoStream
     : public ReliableQuicStream,
       public CryptoFramerVisitorInterface {
-
  public:
   explicit QuicCryptoStream(QuicSession* session);
 
@@ -37,6 +39,7 @@ class NET_EXPORT_PRIVATE QuicCryptoStream
   virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE;
 
   // Sends |message| to the peer.
+  // TODO(wtc): return a success/failure status.
   void SendHandshakeMessage(const CryptoHandshakeMessage& message);
 
   bool handshake_complete() { return handshake_complete_; }
@@ -44,16 +47,54 @@ class NET_EXPORT_PRIVATE QuicCryptoStream
  protected:
   // Closes the connection
   void CloseConnection(QuicErrorCode error);
+  void CloseConnectionWithDetails(QuicErrorCode error, const string& details);
 
-  void set_handshake_complete(bool complete) {
-    handshake_complete_ = complete;
-  }
+  void SetHandshakeComplete(QuicErrorCode error);
 
  private:
   CryptoFramer crypto_framer_;
   bool handshake_complete_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoStream);
+};
+
+// QuicNegotiatedParameters contains non-crypto parameters that are agreed upon
+// during the crypto handshake.
+class NET_EXPORT_PRIVATE QuicNegotiatedParameters {
+ public:
+  QuicNegotiatedParameters();
+
+  CryptoTag congestion_control;
+  QuicTime::Delta idle_connection_state_lifetime;
+  QuicTime::Delta keepalive_timeout;
+};
+
+// QuicConfig contains non-crypto configuration options that are negotiated in
+// the crypto handshake.
+class NET_EXPORT_PRIVATE QuicConfig {
+ public:
+  QuicConfig();
+  ~QuicConfig();
+
+  // SetDefaults sets the members to sensible, default values.
+  void SetDefaults();
+
+  // ToHandshakeMessage serializes the settings in this object as a series of
+  // tags /value pairs and adds them to |out|.
+  void ToHandshakeMessage(CryptoHandshakeMessage* out) const;
+
+  QuicErrorCode ProcessPeerHandshake(
+      const CryptoHandshakeMessage& peer_handshake,
+      CryptoUtils::Priority priority,
+      QuicNegotiatedParameters* out_params,
+      string* error_details) const;
+
+  // Congestion control feedback type.
+  CryptoTagVector congestion_control;
+  // Idle connection state lifetime
+  QuicTime::Delta idle_connection_state_lifetime;
+  // Keepalive timeout, or 0 to turn off keepalive probes
+  QuicTime::Delta keepalive_timeout;
 };
 
 }  // namespace net

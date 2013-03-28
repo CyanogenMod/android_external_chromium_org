@@ -11,6 +11,7 @@
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 @implementation AutocompleteTextField
 
@@ -78,6 +79,9 @@
 // a decoration area and get the expected selection behaviour,
 // likewise for multiple clicks in those areas.
 - (void)mouseDown:(NSEvent*)theEvent {
+  if (observer_)
+    observer_->OnMouseDown([theEvent buttonNumber]);
+
   // If the click was a Control-click, bring up the context menu.
   // |NSTextField| handles these cases inconsistently if the field is
   // not already first responder.
@@ -161,6 +165,18 @@
   [editor mouseDown:theEvent];
 }
 
+- (void)rightMouseDown:(NSEvent*)event {
+  if (observer_)
+    observer_->OnMouseDown([event buttonNumber]);
+  [super rightMouseDown:event];
+}
+
+- (void)otherMouseDown:(NSEvent *)event {
+  if (observer_)
+    observer_->OnMouseDown([event buttonNumber]);
+  [super otherMouseDown:event];
+}
+
 // Received from tracking areas. Pass it down to the cell, and add the field.
 - (void)mouseEntered:(NSEvent*)theEvent {
   [[self cell] mouseEntered:theEvent inView:self];
@@ -216,6 +232,21 @@
 - (void)addToolTip:(NSString*)tooltip forRect:(NSRect)aRect {
   [currentToolTips_ addObject:tooltip];
   [self addToolTipRect:aRect owner:tooltip userData:nil];
+}
+
+- (void)setInstantSuggestion:(NSString*)suggestText
+                   textColor:(NSColor*)suggestColor {
+  [self setNeedsDisplay:YES];
+  suggestText_.reset([suggestText retain]);
+  suggestColor_.reset([suggestColor retain]);
+}
+
+- (NSString*)suggestText {
+  return suggestText_;
+}
+
+- (NSColor*)suggestColor {
+  return suggestColor_;
 }
 
 // TODO(shess): -resetFieldEditorFrameIfNeeded is the place where
@@ -355,6 +386,16 @@
   return doResign;
 }
 
+- (void)drawRect:(NSRect)rect {
+  [super drawRect:rect];
+  autocomplete_text_field::DrawInstantSuggestion(
+      [self attributedStringValue],
+      suggestText_,
+      suggestColor_,
+      self,
+      [[self cell] drawingRectForBounds:[self bounds]]);
+}
+
 // (URLDropTarget protocol)
 - (id<URLDropTargetController>)urlDropController {
   BrowserWindowController* windowController =
@@ -393,7 +434,46 @@
 }
 
 - (ViewID)viewID {
-  return VIEW_ID_LOCATION_BAR;
+  return VIEW_ID_OMNIBOX;
 }
 
 @end
+
+namespace autocomplete_text_field {
+
+void DrawInstantSuggestion(NSAttributedString* mainText,
+                           NSString* suggestText,
+                           NSColor* suggestColor,
+                           NSView* controlView,
+                           NSRect frame) {
+  if (![suggestText length])
+    return;
+
+  scoped_nsobject<NSTextFieldCell> cell(
+      [[NSTextFieldCell alloc] initTextCell:@""]);
+  [cell setBordered:NO];
+  [cell setDrawsBackground:NO];
+  [cell setEditable:NO];
+
+  scoped_nsobject<NSMutableAttributedString> combinedText(
+      [[NSMutableAttributedString alloc] initWithAttributedString:mainText]);
+  NSRange range = NSMakeRange([combinedText length], 0);
+  [combinedText replaceCharactersInRange:range withString:suggestText];
+  [combinedText addAttribute:NSForegroundColorAttributeName
+                       value:suggestColor
+                       range:NSMakeRange(range.location, [suggestText length])];
+  [cell setAttributedStringValue:combinedText];
+
+  CGFloat mainTextWidth = [mainText size].width;
+  CGFloat suggestWidth = NSWidth(frame) - mainTextWidth;
+  NSRect suggestRect = NSMakeRect(NSMinX(frame) + mainTextWidth,
+                                  NSMinY(frame),
+                                  suggestWidth,
+                                  NSHeight(frame));
+
+  gfx::ScopedNSGraphicsContextSaveGState saveGState;
+  NSRectClip(suggestRect);
+  [cell drawInteriorWithFrame:frame inView:controlView];
+}
+
+}  // namespace autocomplete_text_field

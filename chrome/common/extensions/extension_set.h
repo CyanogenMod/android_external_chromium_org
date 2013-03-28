@@ -41,7 +41,7 @@ class ExtensionURLInfo {
 // Only one extension can be in the set with a given ID.
 class ExtensionSet {
  public:
-  typedef std::pair<FilePath, std::string> ExtensionPathAndDefaultLocale;
+  typedef std::pair<base::FilePath, std::string> ExtensionPathAndDefaultLocale;
   typedef std::map<std::string, scoped_refptr<const extensions::Extension> >
       ExtensionMap;
 
@@ -90,7 +90,8 @@ class ExtensionSet {
   bool InsertAll(const ExtensionSet& extensions);
 
   // Removes the specified extension.
-  void Remove(const std::string& id);
+  // Returns true if the set contained the specified extnesion.
+  bool Remove(const std::string& id);
 
   // Removes all extensions.
   void Clear();
@@ -114,7 +115,7 @@ class ExtensionSet {
   // Returns a hosted app that contains any URL that overlaps with the given
   // extent, if one exists.
   const extensions::Extension* GetHostedAppByOverlappingWebExtent(
-      const URLPatternSet& extent) const;
+      const extensions::URLPatternSet& extent) const;
 
   // Returns true if |new_url| is in the extent of the same extension as
   // |old_url|.  Also returns true if neither URL is in an app.
@@ -122,6 +123,9 @@ class ExtensionSet {
 
   // Look up an Extension object by id.
   const extensions::Extension* GetByID(const std::string& id) const;
+
+  // Gets the IDs of all extensions in the set.
+  std::set<std::string> GetIDs() const;
 
   // Returns true if |info| should get extension api bindings and be permitted
   // to make api calls. Note that this is independent of what extension

@@ -7,7 +7,7 @@
 #include "content/public/test/render_view_test.h"
 #include "content/renderer/render_view_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 // Tests for the external select popup menu (Mac specific).
@@ -128,7 +128,7 @@ class ExternalPopupMenuRemoveTest : public ExternalPopupMenuTest {
   ExternalPopupMenuRemoveTest() {}
 
  protected:
-  virtual bool ShouldRemoveSelectOnChange() const { return true; }
+  virtual bool ShouldRemoveSelectOnChange() const OVERRIDE { return true; }
 };
 
 // Tests that nothing bad happen when the page removes the select when it

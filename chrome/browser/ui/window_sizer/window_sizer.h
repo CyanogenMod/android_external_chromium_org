@@ -122,6 +122,12 @@ class WindowSizer {
   // opened windows.  This value may be different on each platform.
   static const int kWindowTilePixels;
 
+#if defined(USE_ASH)
+  // When the screen resolution width is smaller then this size, The algorithm
+  // will default to maximized.
+  static int GetForceMaximizedWidthLimit();
+#endif
+
  private:
   // The edge of the screen to check for out-of-bounds.
   enum Edge { TOP, LEFT, BOTTOM, RIGHT };
@@ -162,17 +168,14 @@ class WindowSizer {
       const gfx::Rect& saved_work_area,
       gfx::Rect* bounds) const;
 
-  // Determines the position and size for a window as it gets created. This
-  // will be called before DetermineWindowBounds. It will return true when the
-  // function was setting the bounds structure to the desired size. Otherwise
-  // another algorithm should get used to determine the correct bounds.
-  // |show_state| will only be changed if it was set to SHOW_STATE_DEFAULT.
-  bool GetBoundsOverride(const gfx::Rect& specified_bounds,
-                         gfx::Rect* bounds,
-                         ui::WindowShowState* show_state) const;
 #if defined(USE_ASH)
-  bool GetBoundsOverrideAsh(const gfx::Rect& specified_bounds,
-                            gfx::Rect* bounds_in_screen,
+  // Determines the position and size for an ash window as it gets created. This
+  // will be called before other standard placement logic. It will return true
+  // when the function was setting the bounds structure to the desired size.
+  // Otherwise another algorithm should get used to determine the correct
+  // bounds. |show_state| will only be changed if it was set to
+  // SHOW_STATE_DEFAULT.
+  bool GetBoundsOverrideAsh(gfx::Rect* bounds_in_screen,
                             ui::WindowShowState* show_state) const;
 #endif
 

@@ -31,24 +31,9 @@ class Decryptor;
 // DecryptingVideoDecoder for video decoding.
 class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
  public:
-  // Callback to get a message loop.
-  typedef base::Callback<
-      scoped_refptr<base::MessageLoopProxy>()> MessageLoopFactoryCB;
-  // Callback to notify decryptor creation.
-  typedef base::Callback<void(Decryptor*)> DecryptorNotificationCB;
-  // Callback to request/cancel decryptor creation notification.
-  // Calling this callback with a non-null callback registers decryptor creation
-  // notification. When the decryptor is created, notification will be sent
-  // through the provided callback.
-  // Calling this callback with a null callback cancels previously registered
-  // decryptor creation notification. Any previously provided callback will be
-  // fired immediately with NULL.
-  typedef base::Callback<void(const DecryptorNotificationCB&)>
-      RequestDecryptorNotificationCB;
-
   DecryptingVideoDecoder(
-      const MessageLoopFactoryCB& message_loop_factory_cb,
-      const RequestDecryptorNotificationCB& request_decryptor_notification_cb);
+      const scoped_refptr<base::MessageLoopProxy>& message_loop,
+      const SetDecryptorReadyCB& set_decryptor_ready_cb);
 
   // VideoDecoder implementation.
   virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
@@ -65,11 +50,12 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
   // TODO(xhwang): Add a ASCII state diagram in this file after this class
   // stabilizes.
-  enum DecoderState {
+  enum State {
     kUninitialized = 0,
     kDecryptorRequested,
     kPendingDecoderInit,
     kIdle,
+    kPendingConfigChange,
     kPendingDemuxerRead,
     kPendingDecode,
     kWaitingForKey,
@@ -77,30 +63,20 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
     kStopped
   };
 
-  // Carries out the initialization operation scheduled by Initialize().
-  void DoInitialize(const scoped_refptr<DemuxerStream>& stream,
-                    const PipelineStatusCB& status_cb,
-                    const StatisticsCB& statistics_cb);
-
   // Callback for DecryptorHost::RequestDecryptor().
   void SetDecryptor(Decryptor* decryptor);
 
-  // Callback for Decryptor::InitializeVideoDecoder().
+  // Callback for Decryptor::InitializeVideoDecoder() during initialization.
   void FinishInitialization(bool success);
 
-  // Carries out the buffer reading operation scheduled by Read().
-  void DoRead(const ReadCB& read_cb);
+  // Callback for Decryptor::InitializeVideoDecoder() during config change.
+  void FinishConfigChange(bool success);
 
   void ReadFromDemuxerStream();
 
   // Callback for DemuxerStream::Read().
   void DecryptAndDecodeBuffer(DemuxerStream::Status status,
                               const scoped_refptr<DecoderBuffer>& buffer);
-
-  // Carries out the buffer decrypting/decoding operation scheduled by
-  // DecryptAndDecodeBuffer().
-  void DoDecryptAndDecodeBuffer(DemuxerStream::Status status,
-                                const scoped_refptr<DecoderBuffer>& buffer);
 
   void DecodePendingBuffer();
 
@@ -109,13 +85,8 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
                     Decryptor::Status status,
                     const scoped_refptr<VideoFrame>& frame);
 
-  // Carries out the frame delivery operation scheduled by DeliverFrame().
-  void DoDeliverFrame(int buffer_size,
-                      Decryptor::Status status,
-                      const scoped_refptr<VideoFrame>& frame);
-
-  // Callback for the |decryptor_| to notify the DecryptingVideoDecoder that
-  // a new key has been added.
+  // Callback for the |decryptor_| to notify this object that a new key has been
+  // added.
   void OnKeyAdded();
 
   // Reset decoder and call |reset_cb_|.
@@ -124,13 +95,9 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
   // Free decoder resources and call |stop_cb_|.
   void DoStop();
 
-  // This is !is_null() iff Initialize() hasn't been called.
-  MessageLoopFactoryCB message_loop_factory_cb_;
-
   scoped_refptr<base::MessageLoopProxy> message_loop_;
 
-  // Current state of the DecryptingVideoDecoder.
-  DecoderState state_;
+  State state_;
 
   PipelineStatusCB init_cb_;
   StatisticsCB statistics_cb_;
@@ -141,7 +108,7 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
   scoped_refptr<DemuxerStream> demuxer_stream_;
 
   // Callback to request/cancel decryptor creation notification.
-  RequestDecryptorNotificationCB request_decryptor_notification_cb_;
+  SetDecryptorReadyCB set_decryptor_ready_cb_;
 
   Decryptor* decryptor_;
 
@@ -153,7 +120,7 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
   // If this variable is true and kNoKey is returned then we need to try
   // decrypting/decoding again in case the newly added key is the correct
   // decryption key.
-  bool key_added_while_pending_decode_;
+  bool key_added_while_decode_pending_;
 
   // A unique ID to trace Decryptor::DecryptAndDecodeVideo() call and the
   // matching DecryptCB call (in DoDeliverFrame()).

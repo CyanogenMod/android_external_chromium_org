@@ -8,7 +8,13 @@
 #include "base/mac/mac_util.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/notifications/notification.h"
-#include "chrome/browser/notifications/notification_ui_manager_impl.h"
+#include "chrome/browser/notifications/balloon_notification_ui_manager.h"
+
+#if defined(ENABLE_MESSAGE_CENTER)
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/notifications/message_center_notification_manager.h"
+#include "ui/message_center/message_center_util.h"
+#endif
 
 @class NSUserNotificationCenter;
 
@@ -76,31 +82,12 @@ NSString* const kNotificationIDKey = @"notification_id";
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// static
-NotificationUIManager* NotificationUIManager::Create(
-    PrefService* local_state,
-    BalloonCollection* balloons) {
-  NotificationUIManager* instance = NULL;
-  NotificationUIManagerImpl* impl = NULL;
-
-  if (base::mac::IsOSMountainLionOrLater()) {
-    NotificationUIManagerMac* mac_instance =
-        new NotificationUIManagerMac(local_state);
-    instance = mac_instance;
-    impl = mac_instance->builtin_manager();
-  } else {
-    instance = impl = new NotificationUIManagerImpl(local_state);
-  }
-
-  impl->Initialize(balloons);
-  balloons->set_space_change_listener(impl);
-
-  return instance;
-}
-
 NotificationUIManagerMac::ControllerNotification::ControllerNotification(
-    id<CrUserNotification> a_view, Notification* a_model)
-    : view(a_view),
+    Profile* a_profile,
+    id<CrUserNotification> a_view,
+    Notification* a_model)
+    : profile(a_profile),
+      view(a_view),
       model(a_model) {
 }
 
@@ -111,8 +98,28 @@ NotificationUIManagerMac::ControllerNotification::~ControllerNotification() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// static
+NotificationUIManager* NotificationUIManager::Create(PrefService* local_state) {
+#if defined(ENABLE_MESSAGE_CENTER)
+  // TODO(rsesek): Remove this function and merge it with the one in
+  // notification_ui_manager.cc.
+  if (DelegatesToMessageCenter()) {
+    return new MessageCenterNotificationManager(
+        g_browser_process->message_center());
+  }
+#endif
+
+  BalloonNotificationUIManager* balloon_manager = NULL;
+  if (base::mac::IsOSMountainLionOrLater())
+    balloon_manager = new NotificationUIManagerMac(local_state);
+  else
+    balloon_manager = new BalloonNotificationUIManager(local_state);
+  balloon_manager->SetBalloonCollection(BalloonCollection::Create());
+  return balloon_manager;
+}
+
 NotificationUIManagerMac::NotificationUIManagerMac(PrefService* local_state)
-    : builtin_manager_(new NotificationUIManagerImpl(local_state)),
+    : BalloonNotificationUIManager(local_state),
       delegate_(ALLOW_THIS_IN_INITIALIZER_LIST(
           [[NotificationCenterDelegate alloc] initWithManager:this])) {
   DCHECK(!GetNotificationCenter().delegate);
@@ -126,7 +133,7 @@ NotificationUIManagerMac::~NotificationUIManagerMac() {
 void NotificationUIManagerMac::Add(const Notification& notification,
                                    Profile* profile) {
   if (notification.is_html()) {
-    builtin_manager_->Add(notification, profile);
+    BalloonNotificationUIManager::Add(notification, profile);
   } else {
     if (!notification.replace_id().empty()) {
       id<CrUserNotification> replacee = FindNotificationWithReplacementId(
@@ -150,10 +157,11 @@ void NotificationUIManagerMac::Add(const Notification& notification,
                                     forKey:kNotificationIDKey];
     ns_notification.hasActionButton = NO;
 
-    notification_map_.insert(
-        std::make_pair(notification.notification_id(),
-            new ControllerNotification(ns_notification,
-                                       new Notification(notification))));
+    notification_map_.insert(std::make_pair(
+        notification.notification_id(),
+        new ControllerNotification(profile,
+                                   ns_notification,
+                                   new Notification(notification))));
 
     [GetNotificationCenter() deliverNotification:ns_notification];
   }
@@ -162,18 +170,36 @@ void NotificationUIManagerMac::Add(const Notification& notification,
 bool NotificationUIManagerMac::CancelById(const std::string& notification_id) {
   NotificationMap::iterator it = notification_map_.find(notification_id);
   if (it == notification_map_.end())
-    return builtin_manager_->CancelById(notification_id);
+    return BalloonNotificationUIManager::CancelById(notification_id);
 
   return RemoveNotification(it->second->view);
 }
 
 bool NotificationUIManagerMac::CancelAllBySourceOrigin(
     const GURL& source_origin) {
-  bool success = builtin_manager_->CancelAllBySourceOrigin(source_origin);
+  bool success =
+      BalloonNotificationUIManager::CancelAllBySourceOrigin(source_origin);
 
   for (NotificationMap::iterator it = notification_map_.begin();
        it != notification_map_.end();) {
     if (it->second->model->origin_url() == source_origin) {
+      // RemoveNotification will erase from the map, invalidating iterator
+      // references to the removed element.
+      success |= RemoveNotification((it++)->second->view);
+    } else {
+      ++it;
+    }
+  }
+
+  return success;
+}
+
+bool NotificationUIManagerMac::CancelAllByProfile(Profile* profile) {
+  bool success = BalloonNotificationUIManager::CancelAllByProfile(profile);
+
+  for (NotificationMap::iterator it = notification_map_.begin();
+       it != notification_map_.end();) {
+    if (it->second->profile == profile) {
       // RemoveNotification will erase from the map, invalidating iterator
       // references to the removed element.
       success |= RemoveNotification((it++)->second->view);
@@ -201,20 +227,7 @@ void NotificationUIManagerMac::CancelAll() {
   // Clean up any lingering ones in the system tray.
   [center removeAllDeliveredNotifications];
 
-  builtin_manager_->CancelAll();
-}
-
-BalloonCollection* NotificationUIManagerMac::balloon_collection() {
-  return builtin_manager_->balloon_collection();
-}
-
-NotificationPrefsManager* NotificationUIManagerMac::prefs_manager() {
-  return builtin_manager_.get();
-}
-
-void NotificationUIManagerMac::GetQueuedNotificationsForTesting(
-    std::vector<const Notification*>* notifications) {
-  return builtin_manager_->GetQueuedNotificationsForTesting(notifications);
+  BalloonNotificationUIManager::CancelAll();
 }
 
 const Notification*

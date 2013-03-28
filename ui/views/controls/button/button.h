@@ -28,15 +28,31 @@ class VIEWS_EXPORT Button : public View {
  public:
   virtual ~Button();
 
+  // Button states for various button sub-types.
+  // TODO(msw): Add toggled state for checkboxes, radio buttons, etc.
+  enum ButtonState {
+    STATE_NORMAL = 0,
+    STATE_HOVERED,
+    STATE_PRESSED,
+    STATE_DISABLED,
+    STATE_COUNT,
+  };
+
+  // Button styles with associated images and border painters.
+  // TODO(msw): Add "Blue Button", Checkbox, Radio, Menu, ComboBox, etc.
+  enum ButtonStyle {
+    STYLE_BUTTON = 0,
+    STYLE_TEXTBUTTON,
+    STYLE_NATIVE_TEXTBUTTON,
+    STYLE_COUNT,
+  };
+
   void SetTooltipText(const string16& tooltip_text);
 
   int tag() const { return tag_; }
   void set_tag(int tag) { tag_ = tag; }
 
-  int mouse_event_flags() const { return mouse_event_flags_; }
-
   void SetAccessibleName(const string16& name);
-  void SetAccessibleKeyboardShortcut(const string16& shortcut);
 
   // Overridden from View:
   virtual bool GetTooltipText(const gfx::Point& p,
@@ -61,14 +77,10 @@ class VIEWS_EXPORT Button : public View {
 
   // Accessibility data.
   string16 accessible_name_;
-  string16 accessible_shortcut_;
 
   // The id tag associated with this button. Used to disambiguate buttons in
   // the ButtonListener implementation.
   int tag_;
-
-  // Event flags present when the button was clicked.
-  int mouse_event_flags_;
 
   DISALLOW_COPY_AND_ASSIGN(Button);
 };

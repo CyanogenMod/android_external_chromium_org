@@ -9,11 +9,11 @@
 #include "base/metrics/histogram.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_log.h"
-#include "net/base/ssl_config_service.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_stream_factory.h"
 #include "net/http/http_transaction_factory.h"
+#include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
@@ -71,7 +71,7 @@ void PreconnectOnIOThread(
   // as speculative, and better detect stats (if it gets used).
   // TODO(jar): histogram to see how often we accidentally use a previously-
   // unused socket, when a previously used socket was available.
-  request_info.priority = net::HIGHEST;
+  net::RequestPriority priority = net::HIGHEST;
 
   // Translate the motivation from UrlRequest motivations to HttpRequest
   // motivations.
@@ -102,8 +102,8 @@ void PreconnectOnIOThread(
   ssl_config.verify_ev_cert = true;
 
   net::HttpStreamFactory* http_stream_factory = session->http_stream_factory();
-  http_stream_factory->PreconnectStreams(count, request_info, ssl_config,
-                                         ssl_config);
+  http_stream_factory->PreconnectStreams(count, request_info, priority,
+                                         ssl_config, ssl_config);
 }
 
 }  // namespace chrome_browser_net

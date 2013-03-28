@@ -7,33 +7,43 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
-namespace testing {
+namespace test {
 
 class QuicTimeDeltaTest : public ::testing::Test {
  protected:
 };
 
 TEST_F(QuicTimeDeltaTest, Zero) {
-  EXPECT_TRUE(QuicTime::Delta().IsZero());
+  EXPECT_TRUE(QuicTime::Delta::Zero().IsZero());
+  EXPECT_FALSE(QuicTime::Delta::Zero().IsInfinite());
   EXPECT_FALSE(QuicTime::Delta::FromMilliseconds(1).IsZero());
 }
 
 TEST_F(QuicTimeDeltaTest, Infinite) {
   EXPECT_TRUE(QuicTime::Delta::Infinite().IsInfinite());
-  EXPECT_FALSE(QuicTime::Delta().IsInfinite());
+  EXPECT_FALSE(QuicTime::Delta::Zero().IsInfinite());
   EXPECT_FALSE(QuicTime::Delta::FromMilliseconds(1).IsInfinite());
 }
 
 TEST_F(QuicTimeDeltaTest, FromTo) {
   EXPECT_EQ(QuicTime::Delta::FromMilliseconds(1),
             QuicTime::Delta::FromMicroseconds(1000));
+  EXPECT_EQ(QuicTime::Delta::FromSeconds(1),
+            QuicTime::Delta::FromMilliseconds(1000));
+  EXPECT_EQ(QuicTime::Delta::FromSeconds(1),
+            QuicTime::Delta::FromMicroseconds(1000000));
+
   EXPECT_EQ(1, QuicTime::Delta::FromMicroseconds(1000).ToMilliseconds());
+  EXPECT_EQ(2, QuicTime::Delta::FromMilliseconds(2000).ToSeconds());
   EXPECT_EQ(1000, QuicTime::Delta::FromMilliseconds(1).ToMicroseconds());
+  EXPECT_EQ(1, QuicTime::Delta::FromMicroseconds(1000).ToMilliseconds());
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(2000).ToMicroseconds(),
+            QuicTime::Delta::FromSeconds(2).ToMicroseconds());
 }
 
 TEST_F(QuicTimeDeltaTest, Add) {
   EXPECT_EQ(QuicTime::Delta::FromMicroseconds(2000),
-            QuicTime::Delta().Add(QuicTime::Delta::FromMilliseconds(2)));
+            QuicTime::Delta::Zero().Add(QuicTime::Delta::FromMilliseconds(2)));
 }
 
 TEST_F(QuicTimeDeltaTest, Subtract) {
@@ -48,7 +58,7 @@ class QuicTimeTest : public ::testing::Test {
 };
 
 TEST_F(QuicTimeTest, Initialized) {
-  EXPECT_FALSE(QuicTime().IsInitialized());
+  EXPECT_FALSE(QuicTime::Zero().IsInitialized());
   EXPECT_TRUE(QuicTime::FromMilliseconds(1).IsInitialized());
 }
 
@@ -88,13 +98,13 @@ TEST_F(QuicTimeTest, SubtractDelta) {
 TEST_F(QuicTimeTest, MockClock) {
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(1));
 
-  QuicTime now = clock_.Now();
+  QuicTime now = clock_.ApproximateNow();
   QuicTime time = QuicTime::FromMicroseconds(1000);
 
   EXPECT_EQ(now, time);
 
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(1));
-  now = clock_.Now();
+  now = clock_.ApproximateNow();
 
   EXPECT_NE(now, time);
 
@@ -102,5 +112,5 @@ TEST_F(QuicTimeTest, MockClock) {
   EXPECT_EQ(now, time);
 }
 
-}  // namespace testing
+}  // namespace test
 }  // namespace net

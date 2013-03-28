@@ -426,7 +426,7 @@ void DiskCacheEntryTest::ExternalAsyncIO() {
     expected++;
 
   EXPECT_TRUE(helper.WaitUntilCacheIoFinished(expected));
-  EXPECT_STREQ("the data", buffer1->data());
+  EXPECT_STREQ("the data", buffer2->data());
 
   base::strlcpy(buffer2->data(), "The really big data goes here", kSize2);
   ret = entry->WriteData(
@@ -456,7 +456,8 @@ void DiskCacheEntryTest::ExternalAsyncIO() {
     expected++;
 
   EXPECT_TRUE(helper.WaitUntilCacheIoFinished(expected));
-  EXPECT_EQ(0, memcmp(buffer2->data(), buffer2->data(), 10000));
+  memset(buffer3->data(), 0, kSize3);
+  EXPECT_EQ(0, memcmp(buffer2->data(), buffer3->data(), 10000));
   ret = entry->ReadData(
       1, 30000, buffer2, kSize2,
       base::Bind(&CallbackTest::Run, base::Unretained(&callback6)));
@@ -474,7 +475,7 @@ void DiskCacheEntryTest::ExternalAsyncIO() {
   if (net::ERR_IO_PENDING == ret)
     expected++;
   ret = entry->WriteData(
-      1, 20000, buffer1, kSize1,
+      1, 20000, buffer3, kSize1,
       base::Bind(&CallbackTest::Run, base::Unretained(&callback9)), false);
   EXPECT_TRUE(17000 == ret || net::ERR_IO_PENDING == ret);
   if (net::ERR_IO_PENDING == ret)
@@ -510,24 +511,6 @@ TEST_F(DiskCacheEntryTest, MemoryOnlyExternalAsyncIO) {
   ExternalAsyncIO();
 }
 
-// Makes sure that the buffer is not referenced when the callback runs.
-class ReleaseBufferCompletionCallback: public net::TestCompletionCallback {
- public:
-  explicit ReleaseBufferCompletionCallback(net::IOBuffer* buffer)
-      : buffer_(buffer) {
-  }
-
- private:
-  virtual void SetResult(int result) OVERRIDE {
-    if (!buffer_->HasOneRef())
-      result = net::ERR_FAILED;
-    TestCompletionCallback::SetResult(result);
-  }
-
-  net::IOBuffer* buffer_;
-  DISALLOW_COPY_AND_ASSIGN(ReleaseBufferCompletionCallback);
-};
-
 // Tests that IOBuffers are not referenced after IO completes.
 void DiskCacheEntryTest::ReleaseBuffer() {
   disk_cache::Entry* entry = NULL;
@@ -538,7 +521,7 @@ void DiskCacheEntryTest::ReleaseBuffer() {
   scoped_refptr<net::IOBuffer> buffer(new net::IOBuffer(kBufferSize));
   CacheTestFillBuffer(buffer->data(), kBufferSize, false);
 
-  ReleaseBufferCompletionCallback cb(buffer);
+  net::ReleaseBufferCompletionCallback cb(buffer);
   int rv = entry->WriteData(0, 0, buffer, kBufferSize, cb.callback(), false);
   EXPECT_EQ(kBufferSize, cb.GetResult(rv));
   entry->Close();
@@ -674,6 +657,9 @@ void DiskCacheEntryTest::GetTimes() {
   if (type_ == net::APP_CACHE) {
     EXPECT_TRUE(entry->GetLastUsed() < t2);
     EXPECT_TRUE(entry->GetLastModified() < t2);
+  } else if (type_ == net::SHADER_CACHE) {
+    EXPECT_TRUE(entry->GetLastUsed() < t3);
+    EXPECT_TRUE(entry->GetLastModified() < t3);
   } else {
     EXPECT_TRUE(entry->GetLastUsed() >= t3);
     EXPECT_TRUE(entry->GetLastModified() < t3);
@@ -694,6 +680,12 @@ TEST_F(DiskCacheEntryTest, MemoryOnlyGetTimes) {
 
 TEST_F(DiskCacheEntryTest, AppCacheGetTimes) {
   SetCacheType(net::APP_CACHE);
+  InitCache();
+  GetTimes();
+}
+
+TEST_F(DiskCacheEntryTest, ShaderCacheGetTimes) {
+  SetCacheType(net::SHADER_CACHE);
   InitCache();
   GetTimes();
 }
@@ -1397,7 +1389,7 @@ TEST_F(DiskCacheEntryTest, MissingData) {
   FlushQueueForTest();
 
   disk_cache::Addr address(0x80000001);
-  FilePath name = cache_impl_->GetFileName(address);
+  base::FilePath name = cache_impl_->GetFileName(address);
   EXPECT_TRUE(file_util::Delete(name, false));
 
   // Attempt to read the data.
@@ -1841,7 +1833,7 @@ void DiskCacheEntryTest::DoomSparseEntry() {
   // Make sure we do all needed work. This may fail for entry2 if between Close
   // and DoomEntry the system decides to remove all traces of the file from the
   // system cache so we don't see that there is pending IO.
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   if (memory_only_) {
     EXPECT_EQ(0, cache_->GetEntryCount());
@@ -1851,7 +1843,7 @@ void DiskCacheEntryTest::DoomSparseEntry() {
       // (it's always async on Posix so it is easy to miss). Unfortunately we
       // don't have any signal to watch for so we can only wait.
       base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(500));
-      MessageLoop::current()->RunAllPending();
+      MessageLoop::current()->RunUntilIdle();
     }
     EXPECT_EQ(0, cache_->GetEntryCount());
   }

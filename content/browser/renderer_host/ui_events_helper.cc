@@ -89,8 +89,10 @@ WebKit::WebInputEvent::Type TouchEventTypeFromEvent(
 
 namespace content {
 
-bool MakeUITouchEventsFromWebTouchEvents(const WebKit::WebTouchEvent& touch,
-                                         ScopedVector<ui::TouchEvent>* list) {
+bool MakeUITouchEventsFromWebTouchEvents(
+    const WebKit::WebTouchEvent& touch,
+    ScopedVector<ui::TouchEvent>* list,
+    TouchEventCoordinateSystem coordinate_system) {
   ui::EventType type = ui::ET_UNKNOWN;
   switch (touch.type) {
     case WebKit::WebInputEvent::TouchStart:
@@ -122,7 +124,11 @@ bool MakeUITouchEventsFromWebTouchEvents(const WebKit::WebTouchEvent& touch,
     // the touch-event is dispatched directly to the gesture-recognizer, so the
     // location needs to be in the local coordinate space.
 #if defined(USE_AURA)
-    gfx::Point location(point.screenPosition.x, point.screenPosition.y);
+    gfx::Point location;
+    if (coordinate_system == LOCAL_COORDINATES)
+      location = gfx::Point(point.position.x, point.position.y);
+    else
+      location = gfx::Point(point.screenPosition.x, point.screenPosition.y);
 #else
     gfx::Point location(point.position.x, point.position.y);
 #endif
@@ -161,9 +167,6 @@ WebKit::WebGestureEvent MakeWebGestureEventFromUIEvent(
     case ui::ET_GESTURE_TAP_CANCEL:
       gesture_event.type = WebKit::WebInputEvent::GestureTapCancel;
       break;
-    case ui::ET_GESTURE_DOUBLE_TAP:
-      gesture_event.type = WebKit::WebInputEvent::GestureDoubleTap;
-      break;
     case ui::ET_GESTURE_SCROLL_BEGIN:
       gesture_event.type = WebKit::WebInputEvent::GestureScrollBegin;
       break;
@@ -189,8 +192,6 @@ WebKit::WebGestureEvent MakeWebGestureEventFromUIEvent(
       gesture_event.type = WebKit::WebInputEvent::GestureFlingStart;
       gesture_event.data.flingStart.velocityX = event.details().velocity_x();
       gesture_event.data.flingStart.velocityY = event.details().velocity_y();
-      gesture_event.data.flingStart.sourceDevice =
-          WebKit::WebGestureEvent::Touchscreen;
       break;
     case ui::ET_SCROLL_FLING_CANCEL:
       gesture_event.type = WebKit::WebInputEvent::GestureFlingCancel;
@@ -203,7 +204,7 @@ WebKit::WebGestureEvent MakeWebGestureEventFromUIEvent(
           event.details().bounding_box().height();
       break;
     case ui::ET_GESTURE_LONG_TAP:
-      gesture_event.type = WebKit::WebInputEvent::Undefined;
+      gesture_event.type = WebKit::WebInputEvent::GestureLongTap;
       gesture_event.data.longPress.width =
           event.details().bounding_box().width();
       gesture_event.data.longPress.height =
@@ -225,6 +226,7 @@ WebKit::WebGestureEvent MakeWebGestureEventFromUIEvent(
       NOTREACHED() << "Unknown gesture type: " << event.type();
   }
 
+  gesture_event.sourceDevice = WebKit::WebGestureEvent::Touchscreen;
   gesture_event.modifiers = EventFlagsToWebEventModifiers(event.flags());
   gesture_event.timeStampSeconds = event.time_stamp().InSecondsF();
 

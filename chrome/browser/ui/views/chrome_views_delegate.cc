@@ -6,11 +6,10 @@
 
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/event_disposition.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/views/accessibility/accessibility_event_router_views.h"
@@ -24,14 +23,20 @@
 #include "chrome/browser/app_icon_win.h"
 #endif
 
+#if defined(USE_AURA)
+#include "ui/aura/root_window.h"
+#endif
+
 #if defined(USE_AURA) && !defined(OS_CHROMEOS)
+#include "chrome/browser/ui/host_desktop.h"
+#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/native_widget_aura.h"
-#include "ui/views/widget/desktop_native_widget_aura.h"
 #endif
 
 #if defined(USE_ASH)
 #include "ash/shell.h"
 #include "chrome/browser/ui/ash/ash_init.h"
+#include "chrome/browser/ui/ash/ash_util.h"
 #endif
 
 namespace {
@@ -133,10 +138,10 @@ HICON ChromeViewsDelegate::GetDefaultWindowIcon() const {
 views::NonClientFrameView* ChromeViewsDelegate::CreateDefaultNonClientFrameView(
     views::Widget* widget) {
 #if defined(USE_ASH)
-  return ash::Shell::GetInstance()->CreateDefaultNonClientFrameView(widget);
-#else
-  return NULL;
+  if (chrome::IsNativeViewInAsh(widget->GetNativeView()))
+    return ash::Shell::GetInstance()->CreateDefaultNonClientFrameView(widget);
 #endif
+  return NULL;
 }
 
 bool ChromeViewsDelegate::UseTransparentWindows() const {
@@ -162,26 +167,77 @@ void ChromeViewsDelegate::ReleaseRef() {
   g_browser_process->ReleaseModule();
 }
 
-int ChromeViewsDelegate::GetDispositionForEvent(int event_flags) {
-  return chrome::DispositionFromEventFlags(event_flags);
-}
-
 content::WebContents* ChromeViewsDelegate::CreateWebContents(
     content::BrowserContext* browser_context,
     content::SiteInstance* site_instance) {
   return NULL;
 }
 
-views::NativeWidget* ChromeViewsDelegate::CreateNativeWidget(
-    views::Widget::InitParams::Type type,
-    views::internal::NativeWidgetDelegate* delegate,
-    gfx::NativeView parent) {
-#if defined(USE_AURA) && !defined(OS_CHROMEOS)
-  if (parent && type != views::Widget::InitParams::TYPE_MENU)
-    return new views::NativeWidgetAura(delegate);
-  if (chrome::GetHostDesktopTypeForNativeView(parent) ==
-      chrome::HOST_DESKTOP_TYPE_NATIVE)
-    return new views::DesktopNativeWidgetAura(delegate);
+void ChromeViewsDelegate::OnBeforeWidgetInit(
+    views::Widget::InitParams* params,
+    views::internal::NativeWidgetDelegate* delegate) {
+  // If we already have a native_widget, we don't have to try to come
+  // up with one.
+  if (params->native_widget)
+    return;
+
+#if defined(OS_CHROMEOS)
+  // When we are doing straight chromeos builds, we still need to handle the
+  // toplevel window case.
+  // There may be a few remaining widgets in Chrome OS that are not top level,
+  // but have neither a context nor a parent. Provide a fallback context so
+  // users don't crash. Developers will hit the DCHECK and should provide a
+  // context.
+  DCHECK(params->parent || params->context || params->top_level)
+      << "Please provide a parent or context for this widget.";
+  if (!params->parent && !params->context)
+    params->context = ash::Shell::GetPrimaryRootWindow();
+#elif defined(USE_AURA)
+  // While the majority of the time, context wasn't plumbed through due to the
+  // existence of a global StackingClient, if this window is a toplevel, it's
+  // possible that there is no contextual state that we can use.
+  if (params->parent == NULL && params->context == NULL && params->top_level) {
+    // We need to make a decision about where to place this window based on the
+    // desktop type.
+    switch (chrome::GetActiveDesktop()) {
+      case chrome::HOST_DESKTOP_TYPE_NATIVE:
+        // If we're native, we should give this window its own toplevel desktop
+        // widget.
+        params->native_widget = new views::DesktopNativeWidgetAura(delegate);
+        break;
+#if defined(USE_ASH)
+      case chrome::HOST_DESKTOP_TYPE_ASH:
+        // If we're in ash, give this window the context of the main monitor.
+        params->context = ash::Shell::GetPrimaryRootWindow();
+        break;
 #endif
-  return NULL;
+      default:
+        NOTREACHED();
+    }
+#if defined(OS_WIN) && defined(USE_AURA)
+  } else if (chrome::GetActiveDesktop() != chrome::HOST_DESKTOP_TYPE_ASH &&
+             params->parent &&
+             (params->type == views::Widget::InitParams::TYPE_CONTROL ||
+              params->type == views::Widget::InitParams::TYPE_WINDOW)) {
+    // On Aura Desktop, we want most windows (popups, bubbles, regular top
+    // level windows) not to be handled in this function. They'll get a
+    // DesktopNativeWidgetAura created. For controls, and child windows (e.g.
+    // modal dialogs) we want to create a NativeWidgetAura, which will be
+    // inside the parent.
+#else
+  } else if (params->parent &&
+             params->type != views::Widget::InitParams::TYPE_MENU) {
+#endif
+    params->native_widget = new views::NativeWidgetAura(delegate);
+  } else if (params->type != views::Widget::InitParams::TYPE_TOOLTIP) {
+    // TODO(erg): Once we've threaded context to everywhere that needs it, we
+    // should remove this check here.
+    gfx::NativeView to_check =
+        params->context ? params->context : params->parent;
+    if (chrome::GetHostDesktopTypeForNativeView(to_check) ==
+        chrome::HOST_DESKTOP_TYPE_NATIVE) {
+      params->native_widget = new views::DesktopNativeWidgetAura(delegate);
+    }
+  }
+#endif
 }

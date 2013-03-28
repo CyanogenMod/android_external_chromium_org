@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
@@ -18,7 +19,7 @@
 
 class GURL;
 class TemplateURLService;
-class TemplateURLServiceTestingProfile;
+class TestingProfile;
 class TestingTemplateURLService;
 class TestingProfile;
 class WebDataService;
@@ -78,14 +79,18 @@ class TemplateURLServiceTestUtil : public TemplateURLServiceObserver {
   void SetGoogleBaseURL(const GURL& base_url) const;
 
   // Set the managed preferences for the default search provider and trigger
-  // notification.
-  void SetManagedDefaultSearchPreferences(bool enabled,
-                                          const std::string& name,
-                                          const std::string& keyword,
-                                          const std::string& search_url,
-                                          const std::string& suggest_url,
-                                          const std::string& icon_url,
-                                          const std::string& encodings);
+  // notification. If |alternate_url| is empty, uses an empty list of alternate
+  // URLs, otherwise use a list containing a single entry.
+  void SetManagedDefaultSearchPreferences(
+    bool enabled,
+    const std::string& name,
+    const std::string& keyword,
+    const std::string& search_url,
+    const std::string& suggest_url,
+    const std::string& icon_url,
+    const std::string& encodings,
+    const std::string& alternate_url,
+    const std::string& search_terms_replacement_key);
 
   // Remove all the managed preferences for the default search provider and
   // trigger notification.
@@ -108,8 +113,11 @@ class TemplateURLServiceTestUtil : public TemplateURLServiceObserver {
   // Needed to make the DeleteOnUIThread trait of WebDataService work
   // properly.
   content::TestBrowserThread ui_thread_;
-  scoped_ptr<TemplateURLServiceTestingProfile> profile_;
+  content::TestBrowserThread db_thread_;
+  content::TestBrowserThread io_thread_;
+  scoped_ptr<TestingProfile> profile_;
   int changed_count_;
+  base::ScopedTempDir temp_dir_;
 
   DISALLOW_COPY_AND_ASSIGN(TemplateURLServiceTestUtil);
 };

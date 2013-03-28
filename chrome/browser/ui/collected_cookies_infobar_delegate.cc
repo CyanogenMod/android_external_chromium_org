@@ -5,16 +5,22 @@
 #include "chrome/browser/ui/collected_cookies_infobar_delegate.h"
 
 #include "base/logging.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+// static
+void CollectedCookiesInfoBarDelegate::Create(InfoBarService* infobar_service) {
+  infobar_service->AddInfoBar(scoped_ptr<InfoBarDelegate>(
+      new CollectedCookiesInfoBarDelegate(infobar_service)));
+}
+
 CollectedCookiesInfoBarDelegate::CollectedCookiesInfoBarDelegate(
-    InfoBarTabHelper* infobar_helper)
-    : ConfirmInfoBarDelegate(infobar_helper) {
+    InfoBarService* infobar_service)
+    : ConfirmInfoBarDelegate(infobar_service) {
 }
 
 gfx::Image* CollectedCookiesInfoBarDelegate::GetIcon() const {

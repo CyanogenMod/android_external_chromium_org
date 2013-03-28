@@ -5,7 +5,13 @@
 package org.chromium.content.browser.test.util;
 
 
+import android.util.Log;
+
 import org.chromium.content.browser.ContentView;
+import org.chromium.content.browser.ContentViewCore;
+
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * This class is used to provide callback hooks for tests and related classes.
@@ -18,6 +24,12 @@ public class TestCallbackHelperContainer {
         mTestContentViewClient = new TestContentViewClient();
         contentView.getContentViewCore().setContentViewClient(mTestContentViewClient);
         mTestWebContentsObserver = new TestWebContentsObserver(contentView.getContentViewCore());
+    }
+
+    protected TestCallbackHelperContainer(
+            TestContentViewClient viewClient, TestWebContentsObserver contentsObserver) {
+        mTestContentViewClient = viewClient;
+        mTestWebContentsObserver = contentsObserver;
     }
 
     public static class OnPageFinishedHelper extends CallbackHelper {
@@ -69,20 +81,76 @@ public class TestCallbackHelperContainer {
     }
 
     public static class OnEvaluateJavaScriptResultHelper extends CallbackHelper {
-        private int mId;
         private String mJsonResult;
-        public void notifyCalled(int id, String jsonResult) {
-            mId = id;
+
+        /**
+         * Starts evaluation of a given JavaScript code on a given contentViewCore.
+         * @param contentViewCore A ContentViewCore instance to be used.
+         * @param code A JavaScript code to be evaluated.
+         */
+        public void evaluateJavaScript(ContentViewCore contentViewCore, String code) {
+            ContentViewCore.JavaScriptCallback callback =
+                new ContentViewCore.JavaScriptCallback() {
+                    @Override
+                    public void handleJavaScriptResult(String jsonResult) {
+                        notifyCalled(jsonResult);
+                    }
+                };
+            contentViewCore.evaluateJavaScript(code, callback);
+            mJsonResult = null;
+        }
+
+        /**
+         * Returns true if the evaluation started by evaluateJavaScript() has completed.
+         */
+        public boolean hasValue() {
+            return mJsonResult != null;
+        }
+
+        /**
+         * Returns the JSON result of a previously completed JavaScript evaluation and
+         * resets the helper to accept new evaluations.
+         * @return String JSON result of a previously completed JavaScript evaluation.
+         */
+        public String getJsonResultAndClear() {
+            assert hasValue();
+            String result = mJsonResult;
+            mJsonResult = null;
+            return result;
+        }
+
+
+        /**
+         * Returns a criteria that checks that the evaluation has finished.
+         */
+        public Criteria getHasValueCriteria() {
+            return new Criteria() {
+                @Override
+                public boolean isSatisfied() {
+                    return hasValue();
+                }
+            };
+        }
+
+        /**
+         * Waits till the JavaScript evaluation finishes and returns true if a value was returned,
+         * false if it timed-out.
+         */
+        public boolean waitUntilHasValue(long timeout, TimeUnit timeoutUnits)
+                throws InterruptedException, TimeoutException {
+            waitUntilCriteria(getHasValueCriteria(), timeout, timeoutUnits);
+            return hasValue();
+        }
+
+        public boolean waitUntilHasValue() throws InterruptedException, TimeoutException {
+            waitUntilCriteria(getHasValueCriteria());
+            return hasValue();
+        }
+
+        public void notifyCalled(String jsonResult) {
+            assert !hasValue();
             mJsonResult = jsonResult;
             notifyCalled();
-        }
-        public int getId() {
-            assert getCallCount() > 0;
-            return mId;
-        }
-        public String getJsonResult() {
-            assert getCallCount() > 0;
-            return mJsonResult;
         }
     }
 

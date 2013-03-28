@@ -25,10 +25,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 
-#if defined(TOOLKIT_GTK)
-#include "chrome/browser/ui/gtk/browser_window_gtk.h"
-#endif
-
 namespace {
 
 string16 AutocompleteResultAsString(const AutocompleteResult& result) {
@@ -67,7 +63,7 @@ class OmniboxApiTest : public ExtensionApiTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_Basic) {
+IN_PROC_BROWSER_TEST_F(OmniboxApiTest, Basic) {
   ASSERT_TRUE(RunExtensionTest("omnibox")) << message_;
 
   // The results depend on the TemplateURLService being loaded. Make sure it is
@@ -75,7 +71,6 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_Basic) {
   ui_test_utils::WaitForTemplateURLServiceToLoad(
       TemplateURLServiceFactory::GetForProfile(browser()->profile()));
 
-  LocationBar* location_bar = GetLocationBar(browser());
   AutocompleteController* autocomplete_controller =
       GetAutocompleteController(browser());
 
@@ -83,8 +78,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_Basic) {
   // it.
   {
     autocomplete_controller->Start(
-        ASCIIToUTF16("keywor"), string16(), true, false, true,
-        AutocompleteInput::ALL_MATCHES);
+        AutocompleteInput(ASCIIToUTF16("keywor"), string16::npos, string16(),
+                          GURL(), true, false, true,
+                          AutocompleteInput::ALL_MATCHES));
     WaitForAutocompleteDone(autocomplete_controller);
     EXPECT_TRUE(autocomplete_controller->done());
 
@@ -104,8 +100,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_Basic) {
   // Test that our extension can send suggestions back to us.
   {
     autocomplete_controller->Start(
-        ASCIIToUTF16("keyword suggestio"), string16(), true, false, true,
-        AutocompleteInput::ALL_MATCHES);
+        AutocompleteInput(ASCIIToUTF16("keyword suggestio"), string16::npos,
+                          string16(), GURL(), true, false, true,
+                          AutocompleteInput::ALL_MATCHES));
     WaitForAutocompleteDone(autocomplete_controller);
     EXPECT_TRUE(autocomplete_controller->done());
 
@@ -116,15 +113,27 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_Basic) {
     const AutocompleteResult& result = autocomplete_controller->result();
     ASSERT_EQ(5U, result.size()) << AutocompleteResultAsString(result);
 
-    ASSERT_FALSE(result.match_at(0).keyword.empty());
+    EXPECT_EQ(ASCIIToUTF16("keyword"), result.match_at(0).keyword);
     EXPECT_EQ(ASCIIToUTF16("keyword suggestio"),
               result.match_at(0).fill_into_edit);
+    EXPECT_EQ(AutocompleteMatch::SEARCH_OTHER_ENGINE, result.match_at(0).type);
+    EXPECT_EQ(AutocompleteProvider::TYPE_KEYWORD,
+              result.match_at(0).provider->type());
+    EXPECT_EQ(ASCIIToUTF16("keyword"), result.match_at(1).keyword);
     EXPECT_EQ(ASCIIToUTF16("keyword suggestion1"),
               result.match_at(1).fill_into_edit);
+    EXPECT_EQ(AutocompleteProvider::TYPE_KEYWORD,
+              result.match_at(1).provider->type());
+    EXPECT_EQ(ASCIIToUTF16("keyword"), result.match_at(2).keyword);
     EXPECT_EQ(ASCIIToUTF16("keyword suggestion2"),
               result.match_at(2).fill_into_edit);
+    EXPECT_EQ(AutocompleteProvider::TYPE_KEYWORD,
+              result.match_at(2).provider->type());
+    EXPECT_EQ(ASCIIToUTF16("keyword"), result.match_at(3).keyword);
     EXPECT_EQ(ASCIIToUTF16("keyword suggestion3"),
               result.match_at(3).fill_into_edit);
+    EXPECT_EQ(AutocompleteProvider::TYPE_KEYWORD,
+              result.match_at(3).provider->type());
 
     string16 description =
         ASCIIToUTF16("Description with style: <match>, [dim], (url till end)");
@@ -163,26 +172,32 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_Basic) {
 
     AutocompleteMatch match = result.match_at(4);
     EXPECT_EQ(AutocompleteMatch::SEARCH_WHAT_YOU_TYPED, match.type);
+    EXPECT_EQ(AutocompleteProvider::TYPE_SEARCH,
+              result.match_at(4).provider->type());
     EXPECT_FALSE(match.deletable);
   }
 
+  // Flaky, see http://crbug.com/167158
+  /*
   {
+    LocationBar* location_bar = GetLocationBar(browser());
     ResultCatcher catcher;
     OmniboxView* omnibox_view = location_bar->GetLocationEntry();
     omnibox_view->OnBeforePossibleChange();
-    omnibox_view->SetUserText( ASCIIToUTF16("keyword command"));
+    omnibox_view->SetUserText(ASCIIToUTF16("keyword command"));
     omnibox_view->OnAfterPossibleChange();
     location_bar->AcceptInput();
     // This checks that the keyword provider (via javascript)
     // gets told to navigate to the string "command".
     EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   }
+  */
 }
 
 // Tests that the autocomplete popup doesn't reopen after accepting input for
 // a given query.
 // http://crbug.com/88552
-IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_PopupStaysClosed) {
+IN_PROC_BROWSER_TEST_F(OmniboxApiTest, PopupStaysClosed) {
   ASSERT_TRUE(RunExtensionTest("omnibox")) << message_;
 
   // The results depend on the TemplateURLService being loaded. Make sure it is
@@ -213,8 +228,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_PopupStaysClosed) {
   // directly, figure out how to send it via the proper calls to
   // location_bar or location_bar->().
   autocomplete_controller->Start(
-      ASCIIToUTF16("keyword command"), string16(), true, false, true,
-      AutocompleteInput::ALL_MATCHES);
+      AutocompleteInput(ASCIIToUTF16("keyword command"), string16::npos,
+                        string16(), GURL(), true, false, true,
+                        AutocompleteInput::ALL_MATCHES));
   location_bar->AcceptInput();
   WaitForAutocompleteDone(autocomplete_controller);
   EXPECT_TRUE(autocomplete_controller->done());
@@ -252,8 +268,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_IncognitoSplitMode) {
   // Test that we get the incognito-specific suggestions.
   {
     autocomplete_controller->Start(
-        ASCIIToUTF16("keyword suggestio"), string16(), true, false, true,
-        AutocompleteInput::ALL_MATCHES);
+        AutocompleteInput(ASCIIToUTF16("keyword suggestio"), string16::npos,
+                          string16(), GURL(), true, false, true,
+                          AutocompleteInput::ALL_MATCHES));
     WaitForAutocompleteDone(autocomplete_controller);
     EXPECT_TRUE(autocomplete_controller->done());
 
@@ -273,8 +290,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_IncognitoSplitMode) {
   {
     ResultCatcher catcher;
     autocomplete_controller->Start(
-        ASCIIToUTF16("keyword command incognito"), string16(),
-        true, false, true, AutocompleteInput::ALL_MATCHES);
+        AutocompleteInput(ASCIIToUTF16("keyword command incognito"),
+                          string16::npos, string16(), GURL(), true, false, true,
+                          AutocompleteInput::ALL_MATCHES));
     location_bar->AcceptInput();
     EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   }

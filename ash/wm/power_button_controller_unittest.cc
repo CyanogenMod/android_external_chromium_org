@@ -11,13 +11,13 @@
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/test_shell_delegate.h"
-#include "ash/wm/cursor_manager.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
@@ -25,7 +25,7 @@ namespace ash {
 namespace test {
 namespace {
 bool cursor_visible() {
-  return ash::Shell::GetInstance()->cursor_manager()->cursor_visible();
+  return ash::Shell::GetInstance()->cursor_manager()->IsCursorVisible();
 }
 }
 
@@ -61,12 +61,13 @@ class PowerButtonControllerTest : public AshTestBase {
   PowerButtonControllerTest() : controller_(NULL), delegate_(NULL) {}
   virtual ~PowerButtonControllerTest() {}
 
-  void SetUp() OVERRIDE {
+  virtual void SetUp() OVERRIDE {
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        ash::switches::kAshDisableNewLockAnimations);
+
     AshTestBase::SetUp();
     delegate_ = new TestPowerButtonControllerDelegate;
     controller_ = Shell::GetInstance()->power_button_controller();
-    CHECK(!CommandLine::ForCurrentProcess()->HasSwitch(
-        ash::switches::kAshNewLockAnimationsEnabled));
     state_controller_ = static_cast<SessionStateControllerImpl*>(
         Shell::GetInstance()->session_state_controller());
     state_controller_->SetDelegate(delegate_);  // transfers ownership
@@ -74,6 +75,8 @@ class PowerButtonControllerTest : public AshTestBase {
     animator_api_.reset(
         new internal::SessionStateAnimator::TestApi(state_controller_->
             animator_.get()));
+    shell_delegate_ = reinterpret_cast<TestShellDelegate*>(
+        ash::Shell::GetInstance()->delegate());
   }
 
  protected:
@@ -85,13 +88,13 @@ class PowerButtonControllerTest : public AshTestBase {
 
   int NumShutdownRequests() {
     return delegate_->num_shutdown_requests() +
-           reinterpret_cast<TestShellDelegate*>(
-               ash::Shell::GetInstance()->delegate())->num_exit_requests();
+           shell_delegate_->num_exit_requests();
   }
 
   PowerButtonController* controller_;  // not owned
   SessionStateControllerImpl* state_controller_;  // not owned
   TestPowerButtonControllerDelegate* delegate_;  // not owned
+  TestShellDelegate* shell_delegate_;  // not owned
 
   scoped_ptr<SessionStateControllerImpl::TestApi> test_api_;
   scoped_ptr<internal::SessionStateAnimator::TestApi> animator_api_;
@@ -136,6 +139,7 @@ TEST_F(PowerButtonControllerTest, LegacyLockAndShutDown) {
 
   // Notify that the lock window is visible.  We should make it fade in.
   state_controller_->OnLockStateChanged(true);
+  shell_delegate_->LockScreen();
   EXPECT_TRUE(
       animator_api_->ContainersAreAnimated(
           internal::SessionStateAnimator::kAllLockScreenContainersMask,
@@ -177,6 +181,7 @@ TEST_F(PowerButtonControllerTest, LegacyNotLoggedIn) {
   controller_->set_has_legacy_power_button_for_test(true);
   state_controller_->OnLoginStateChanged(user::LOGGED_IN_NONE);
   state_controller_->OnLockStateChanged(false);
+  SetUserLoggedIn(false);
   controller_->OnPowerButtonEvent(true, base::TimeTicks::Now());
   EXPECT_TRUE(test_api_->real_shutdown_timer_is_running());
 }
@@ -187,6 +192,7 @@ TEST_F(PowerButtonControllerTest, LegacyGuest) {
   controller_->set_has_legacy_power_button_for_test(true);
   state_controller_->OnLoginStateChanged(user::LOGGED_IN_GUEST);
   state_controller_->OnLockStateChanged(false);
+  SetCanLockScreen(false);
   controller_->OnPowerButtonEvent(true, base::TimeTicks::Now());
   EXPECT_TRUE(test_api_->real_shutdown_timer_is_running());
 }
@@ -197,6 +203,7 @@ TEST_F(PowerButtonControllerTest, ShutdownWhenNotLoggedIn) {
   controller_->set_has_legacy_power_button_for_test(false);
   state_controller_->OnLoginStateChanged(user::LOGGED_IN_NONE);
   state_controller_->OnLockStateChanged(false);
+  SetUserLoggedIn(false);
 
   // Press the power button and check that we start the shutdown timer.
   controller_->OnPowerButtonEvent(true, base::TimeTicks::Now());
@@ -298,6 +305,7 @@ TEST_F(PowerButtonControllerTest, LockAndUnlock) {
 
   // Notify that the lock window is visible.  We should make it fade in.
   state_controller_->OnLockStateChanged(true);
+  shell_delegate_->LockScreen();
   EXPECT_TRUE(
       animator_api_->ContainersAreAnimated(
           internal::SessionStateAnimator::kAllLockScreenContainersMask,
@@ -312,6 +320,7 @@ TEST_F(PowerButtonControllerTest, LockAndUnlock) {
   // Notify that the screen has been unlocked.  We should show the
   // non-screen-locker windows.
   state_controller_->OnLockStateChanged(false);
+  shell_delegate_->UnlockScreen();
   EXPECT_TRUE(
       animator_api_->ContainersAreAnimated(
           internal::SessionStateAnimator::DESKTOP_BACKGROUND |
@@ -332,6 +341,7 @@ TEST_F(PowerButtonControllerTest, LockToShutdown) {
   test_api_->trigger_lock_timeout();
   state_controller_->OnStartingLock();
   state_controller_->OnLockStateChanged(true);
+  shell_delegate_->LockScreen();
 
   // When the lock-to-shutdown timeout fires, we should start the shutdown
   // timer.
@@ -369,6 +379,7 @@ TEST_F(PowerButtonControllerTest, CancelLockToShutdown) {
   // Power button is released while system attempts to lock.
   controller_->OnPowerButtonEvent(false, base::TimeTicks::Now());
   state_controller_->OnLockStateChanged(true);
+  shell_delegate_->LockScreen();
 
   EXPECT_FALSE(state_controller_->ShutdownRequested());
   EXPECT_FALSE(test_api_->lock_to_shutdown_timer_is_running());
@@ -378,7 +389,8 @@ TEST_F(PowerButtonControllerTest, CancelLockToShutdown) {
 // Test that we handle the case where lock requests are ignored.
 TEST_F(PowerButtonControllerTest, LockFail) {
   // We require animations to have a duration for this test.
-  ui::LayerAnimator::set_disable_animations_for_test(false);
+  ui::ScopedAnimationDurationScaleMode normal_duration_mode(
+      ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
 
   controller_->set_has_legacy_power_button_for_test(false);
   state_controller_->OnLoginStateChanged(user::LOGGED_IN_USER);
@@ -415,6 +427,7 @@ TEST_F(PowerButtonControllerTest, LockButtonBasic) {
   // The lock button shouldn't do anything if we aren't logged in.
   state_controller_->OnLoginStateChanged(user::LOGGED_IN_NONE);
   state_controller_->OnLockStateChanged(false);
+  SetUserLoggedIn(false);
   controller_->OnLockButtonEvent(true, base::TimeTicks::Now());
   EXPECT_FALSE(test_api_->lock_timer_is_running());
   controller_->OnLockButtonEvent(false, base::TimeTicks::Now());
@@ -422,6 +435,8 @@ TEST_F(PowerButtonControllerTest, LockButtonBasic) {
 
   // Ditto for when we're logged in as a guest.
   state_controller_->OnLoginStateChanged(user::LOGGED_IN_GUEST);
+  SetUserLoggedIn(true);
+  SetCanLockScreen(false);
   controller_->OnLockButtonEvent(true, base::TimeTicks::Now());
   EXPECT_FALSE(test_api_->lock_timer_is_running());
   controller_->OnLockButtonEvent(false, base::TimeTicks::Now());
@@ -430,6 +445,7 @@ TEST_F(PowerButtonControllerTest, LockButtonBasic) {
   // If we're logged in as a regular user, we should start the lock timer and
   // the pre-lock animation.
   state_controller_->OnLoginStateChanged(user::LOGGED_IN_USER);
+  SetCanLockScreen(true);
   controller_->OnLockButtonEvent(true, base::TimeTicks::Now());
   EXPECT_TRUE(test_api_->lock_timer_is_running());
   EXPECT_TRUE(
@@ -463,6 +479,7 @@ TEST_F(PowerButtonControllerTest, LockButtonBasic) {
   // Pressing the button also shouldn't do anything after the screen is locked.
   state_controller_->OnStartingLock();
   state_controller_->OnLockStateChanged(true);
+  shell_delegate_->LockScreen();
   controller_->OnLockButtonEvent(true, base::TimeTicks::Now());
   EXPECT_FALSE(test_api_->lock_timer_is_running());
   controller_->OnLockButtonEvent(false, base::TimeTicks::Now());
@@ -528,6 +545,8 @@ TEST_F(PowerButtonControllerTest, ShutdownWithoutButton) {
 // outside request to shut down (e.g. from the login or lock screen).
 TEST_F(PowerButtonControllerTest, RequestShutdownFromLoginScreen) {
   state_controller_->OnLoginStateChanged(user::LOGGED_IN_NONE);
+  state_controller_->OnLockStateChanged(false);
+  SetUserLoggedIn(false);
   state_controller_->RequestShutdown();
   EXPECT_TRUE(
       animator_api_->ContainersAreAnimated(
@@ -549,6 +568,7 @@ TEST_F(PowerButtonControllerTest, RequestShutdownFromLoginScreen) {
 TEST_F(PowerButtonControllerTest, RequestShutdownFromLockScreen) {
   state_controller_->OnLoginStateChanged(user::LOGGED_IN_USER);
   state_controller_->OnLockStateChanged(true);
+  shell_delegate_->LockScreen();
   state_controller_->RequestShutdown();
   EXPECT_TRUE(
       animator_api_->ContainersAreAnimated(
@@ -570,6 +590,7 @@ TEST_F(PowerButtonControllerTest, RequestShutdownFromLockScreen) {
 TEST_F(PowerButtonControllerTest, RequestAndCancelShutdownFromLockScreen) {
   state_controller_->OnLoginStateChanged(user::LOGGED_IN_USER);
   state_controller_->OnLockStateChanged(true);
+  shell_delegate_->LockScreen();
 
   // Press the power button and check that we start the shutdown timer.
   controller_->OnPowerButtonEvent(true, base::TimeTicks::Now());

@@ -9,9 +9,10 @@
       {
         "id": "Debuggee",
         "type": "object",
-        "description": "Debuggee identifier.",
+        "description": "Debuggee identifier. Either tabId or extensionId must be specified",
         "properties": {
-          "tabId": { "type": "integer", "description": "The id of the tab which you intend to debug." }
+          "tabId": { "type": "integer", "optional": true, "description": "The id of the tab which you intend to debug." },
+          "extensionId": { "type": "string", "optional": true, "description": "The id of the extension which you intend to debug. Attaching to an extension background page is only possible when 'enable-silent-debugging' flag is enabled on the target browser." }
         }
       }
     ],
@@ -36,7 +37,7 @@
             "name": "callback",
             "optional": true,
             "parameters": [],
-            "description": "Called once the attach operation succeeds or fails. Callback receives no arguments. If the attach fails, <a href='extension.html#property-lastError'>chrome.extension.lastError</a> will be set to the error message."
+            "description": "Called once the attach operation succeeds or fails. Callback receives no arguments. If the attach fails, $ref:runtime.lastError will be set to the error message."
           }
         ]
       },
@@ -55,7 +56,7 @@
             "name": "callback",
             "optional": true,
             "parameters": [],
-            "description": "Called once the detach operation succeeds or fails. Callback receives no arguments. If the detach fails, <a href='extension.html#property-lastError'>chrome.extension.lastError</a> will be set to the error message."
+            "description": "Called once the detach operation succeeds or fails. Callback receives no arguments. If the detach fails, $ref:runtime.lastError will be set to the error message."
           }
         ]
       },
@@ -94,7 +95,7 @@
                 "description": "JSON object with the response. Structure of the response varies depending on the method and is defined by the remote debugging protocol."
               }
             ],
-            "description": "Response body. If an error occurs while posting the message, the callback will be called with no arguments and <a href='extension.html#property-lastError'>chrome.extension.lastError</a> will be set to the error message."
+            "description": "Response body. If an error occurs while posting the message, the callback will be called with no arguments and $ref:runtime.lastError will be set to the error message."
           }
         ]
       }

@@ -10,6 +10,7 @@
 #import "chrome/browser/ui/cocoa/applescript/browsercrapplication+applescript.h"
 #import "chrome/browser/ui/cocoa/applescript/constants_applescript.h"
 #import "chrome/browser/ui/cocoa/applescript/window_applescript.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gtest_mac.h"
@@ -22,10 +23,12 @@ IN_PROC_BROWSER_TEST_F(BrowserCrApplicationAppleScriptTest, Creation) {
   // Create additional |Browser*| objects of different type.
   Profile* profile = browser()->profile();
   Browser* b1 =
-      new Browser(Browser::CreateParams(Browser::TYPE_POPUP, profile));
+      new Browser(Browser::CreateParams(Browser::TYPE_POPUP, profile,
+                                        browser()->host_desktop_type()));
   Browser* b2 = new Browser(
       Browser::CreateParams::CreateForApp(
-          Browser::TYPE_PANEL, "Test", gfx::Rect(), profile));
+          Browser::TYPE_PANEL, "Test", gfx::Rect(), profile,
+          browser()->host_desktop_type()));
 
   EXPECT_EQ(3U, [[NSApp appleScriptWindows] count]);
   for (WindowAppleScript* window in [NSApp appleScriptWindows]) {
@@ -35,8 +38,8 @@ IN_PROC_BROWSER_TEST_F(BrowserCrApplicationAppleScriptTest, Creation) {
   }
 
   // Close the additional browsers.
-  chrome::CloseAllTabs(b1);
-  chrome::CloseAllTabs(b2);
+  b1->tab_strip_model()->CloseAllTabs();
+  b2->tab_strip_model()->CloseAllTabs();
 }
 
 // Insert a new window.

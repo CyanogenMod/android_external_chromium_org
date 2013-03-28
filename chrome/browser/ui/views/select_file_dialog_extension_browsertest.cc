@@ -5,13 +5,14 @@
 #include "chrome/browser/ui/views/select_file_dialog_extension.h"
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"  // ASCIIToUTF16
 #include "build/build_config.h"
+#include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
@@ -25,10 +26,9 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_utils.h"
-#include "ui/base/dialogs/select_file_dialog.h"
-#include "ui/base/dialogs/selected_file_info.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_mount_point_provider.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/selected_file_info.h"
+#include "webkit/fileapi/external_mount_points.h"
 
 using content::BrowserContext;
 
@@ -43,11 +43,11 @@ class MockSelectFileDialogListener : public ui::SelectFileDialog::Listener {
 
   bool file_selected() const { return file_selected_; }
   bool canceled() const { return canceled_; }
-  FilePath path() const { return path_; }
+  base::FilePath path() const { return path_; }
   void* params() const { return params_; }
 
   // ui::SelectFileDialog::Listener implementation.
-  virtual void FileSelected(const FilePath& path,
+  virtual void FileSelected(const base::FilePath& path,
                             int index,
                             void* params) OVERRIDE {
     file_selected_ = true;
@@ -61,8 +61,8 @@ class MockSelectFileDialogListener : public ui::SelectFileDialog::Listener {
     FileSelected(selected_file_info.local_path, index, params);
   }
   virtual void MultiFilesSelected(
-      const std::vector<FilePath>& files, void* params) OVERRIDE {}
-  virtual void FileSelectionCanceled(void* params) {
+      const std::vector<base::FilePath>& files, void* params) OVERRIDE {}
+  virtual void FileSelectionCanceled(void* params) OVERRIDE {
     canceled_ = true;
     params_ = params;
   }
@@ -70,7 +70,7 @@ class MockSelectFileDialogListener : public ui::SelectFileDialog::Listener {
  private:
   bool file_selected_;
   bool canceled_;
-  FilePath path_;
+  base::FilePath path_;
   void* params_;
 
   DISALLOW_COPY_AND_ASSIGN(MockSelectFileDialogListener);
@@ -84,13 +84,15 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
   };
 
   virtual void SetUp() OVERRIDE {
+    extensions::ComponentLoader::EnableBackgroundExtensionsForTesting();
+
     // Create the dialog wrapper object, but don't show it yet.
     listener_.reset(new MockSelectFileDialogListener());
     dialog_ = new SelectFileDialogExtension(listener_.get(), NULL);
 
     // We have to provide at least one mount point.
     // File manager looks for "Downloads" mount point, so use this name.
-    FilePath tmp_path;
+    base::FilePath tmp_path;
     PathService::Get(base::DIR_TEMP, &tmp_path);
     ASSERT_TRUE(tmp_dir_.CreateUniqueTempDirUnderPath(tmp_path));
     downloads_dir_ = tmp_dir_.path().Append("Downloads");
@@ -112,15 +114,28 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
   }
 
   // Creates a file system mount point for a directory.
-  void AddMountPoint(const FilePath& path) {
-    fileapi::ExternalFileSystemMountPointProvider* provider =
-        BrowserContext::GetDefaultStoragePartition(browser()->profile())->
-            GetFileSystemContext()->external_provider();
-    provider->AddLocalMountPoint(path);
+  void AddMountPoint(const base::FilePath& path) {
+    std::string mount_point_name = path.BaseName().AsUTF8Unsafe();
+    fileapi::ExternalMountPoints* mount_points =
+        BrowserContext::GetMountPoints(browser()->profile());
+    // The Downloads mount point already exists so it must be removed before
+    // adding the test mount point (which will also be mapped as Downloads).
+    mount_points->RevokeFileSystem(mount_point_name);
+    EXPECT_TRUE(mount_points->RegisterFileSystem(
+        mount_point_name, fileapi::kFileSystemTypeNativeLocal, path));
+  }
+
+  void CheckJavascriptErrors() {
+    content::RenderViewHost* host = dialog_->GetRenderViewHost();
+    scoped_ptr<base::Value> value =
+        content::ExecuteScriptAndGetValue(host, "window.JSErrorCount");
+    int js_error_count = 0;
+    ASSERT_TRUE(value->GetAsInteger(&js_error_count));
+    ASSERT_EQ(0, js_error_count);
   }
 
   void OpenDialog(ui::SelectFileDialog::Type dialog_type,
-                  const FilePath& file_path,
+                  const base::FilePath& file_path,
                   const gfx::NativeWindow& owning_window,
                   const std::string& additional_message) {
     // Spawn a dialog to open a file.  The dialog will signal that it is ready
@@ -154,6 +169,8 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
 
     // Dialog should be running now.
     ASSERT_TRUE(dialog_->IsRunning(owning_window));
+
+    ASSERT_NO_FATAL_FAILURE(CheckJavascriptErrors());
   }
 
   void TryOpeningSecondDialog(const gfx::NativeWindow& owning_window) {
@@ -165,7 +182,7 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
     // some dialog type.
     second_dialog_->SelectFile(ui::SelectFileDialog::SELECT_OPEN_FILE,
                                string16() /* title */,
-                               FilePath() /* default_path */,
+                               base::FilePath() /* default_path */,
                                NULL /* file_types */,
                                0 /* file_type_index */,
                                FILE_PATH_LITERAL("") /* default_extension */,
@@ -203,8 +220,8 @@ class SelectFileDialogExtensionBrowserTest : public ExtensionBrowserTest {
   scoped_ptr<MockSelectFileDialogListener> second_listener_;
   scoped_refptr<SelectFileDialogExtension> second_dialog_;
 
-  ScopedTempDir tmp_dir_;
-  FilePath downloads_dir_;
+  base::ScopedTempDir tmp_dir_;
+  base::FilePath downloads_dir_;
 };
 
 IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, CreateAndDestroy) {
@@ -233,9 +250,9 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
 
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
 
-  // FilePath() for default path.
-  OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE, FilePath(), owning_window,
-             "");
+  // base::FilePath() for default path.
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
+                                     base::FilePath(), owning_window, ""));
 
   // Press cancel button.
   CloseDialog(DIALOG_BTN_CANCEL, owning_window);
@@ -250,7 +267,8 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
                        SelectFileAndOpen) {
   AddMountPoint(downloads_dir_);
 
-  FilePath test_file = downloads_dir_.AppendASCII("file_manager_test.html");
+  base::FilePath test_file =
+      downloads_dir_.AppendASCII("file_manager_test.html");
 
   // Create an empty file to give us something to select.
   FILE* fp = file_util::OpenFile(test_file, "w");
@@ -264,8 +282,9 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   // waiting for chrome.test.sendMessage('selection-change-complete').
   // The extension starts a Web Worker to read file metadata, so it may send
   // 'selection-change-complete' before 'worker-initialized'.  This is OK.
-  OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE, test_file, owning_window,
-             "selection-change-complete");
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
+                                     test_file, owning_window,
+                                     "selection-change-complete"));
 
   // Click open button.
   CloseDialog(DIALOG_BTN_OK, owning_window);
@@ -281,7 +300,8 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
                        SelectFileAndSave) {
   AddMountPoint(downloads_dir_);
 
-  FilePath test_file = downloads_dir_.AppendASCII("file_manager_test.html");
+  base::FilePath test_file =
+      downloads_dir_.AppendASCII("file_manager_test.html");
 
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
 
@@ -290,8 +310,9 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   // chrome.test.sendMessage().
   // The extension starts a Web Worker to read file metadata, so it may send
   // 'directory-change-complete' before 'worker-initialized'.  This is OK.
-  OpenDialog(ui::SelectFileDialog::SELECT_SAVEAS_FILE, test_file,
-             owning_window, "directory-change-complete");
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_SAVEAS_FILE,
+                                     test_file, owning_window,
+                                     "directory-change-complete"));
 
   // Click save button.
   CloseDialog(DIALOG_BTN_OK, owning_window);
@@ -309,8 +330,8 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
 
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
 
-  OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE, FilePath(), owning_window,
-             "");
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
+                                     base::FilePath(), owning_window, ""));
 
   // Open a singleton tab in background.
   chrome::NavigateParams p(browser(), GURL("www.google.com"),
@@ -334,8 +355,8 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
 
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
 
-  OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE, FilePath(), owning_window,
-             "");
+  ASSERT_NO_FATAL_FAILURE(OpenDialog(ui::SelectFileDialog::SELECT_OPEN_FILE,
+                                     base::FilePath(), owning_window, ""));
 
   TryOpeningSecondDialog(owning_window);
 

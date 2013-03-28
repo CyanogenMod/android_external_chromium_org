@@ -21,6 +21,7 @@ namespace {
 // Add paths here to be included in chrome://chrome-urls (about:about).
 // These paths will also be suggested by BuiltinProvider.
 const char* const kPaths[] = {
+  chrome::kChromeUIAccessibilityHost,
   chrome::kChromeUIAppCacheInternalsHost,
   chrome::kChromeUIBlobInternalsHost,
   chrome::kChromeUICacheHost,
@@ -28,11 +29,15 @@ const char* const kPaths[] = {
   chrome::kChromeUICrashesHost,
   chrome::kChromeUICreditsHost,
   chrome::kChromeUIDNSHost,
-  chrome::kChromeUIGpuInternalsHost,
+  chrome::kChromeUIFlagsHost,
+  chrome::kChromeUIGpuHost,
   chrome::kChromeUIHistoryHost,
   chrome::kChromeUIIPCHost,
   chrome::kChromeUIMediaInternalsHost,
   chrome::kChromeUIMemoryHost,
+#if defined(OS_ANDROID) || defined(OS_IOS)
+  chrome::kChromeUINetExportHost,
+#endif
   chrome::kChromeUINetInternalsHost,
   chrome::kChromeUINetworkViewCacheHost,
   chrome::kChromeUINewTabHost,
@@ -40,22 +45,23 @@ const char* const kPaths[] = {
   chrome::kChromeUIPredictorsHost,
   chrome::kChromeUIProfilerHost,
   chrome::kChromeUIQuotaInternalsHost,
+  chrome::kChromeUISignInInternalsHost,
   chrome::kChromeUIStatsHost,
   chrome::kChromeUISyncInternalsHost,
   chrome::kChromeUITermsHost,
+  chrome::kChromeUIUserActionsHost,
   chrome::kChromeUIVersionHost,
 #if defined(OS_ANDROID)
   chrome::kChromeUIWelcomeHost,
 #else
   chrome::kChromeUIBookmarksHost,
   chrome::kChromeUIDownloadsHost,
-  // TODO(dfalcantara): Enable after http://crbug.com/143146 is fixed.
-  chrome::kChromeUIFlagsHost,
   chrome::kChromeUIFlashHost,
   chrome::kChromeUIInspectHost,
   chrome::kChromeUIPluginsHost,
   chrome::kChromeUISettingsHost,
   chrome::kChromeUITracingHost,
+  chrome::kChromeUIWebRTCInternalsHost,
 #endif
 #if defined(OS_WIN)
   chrome::kChromeUIConflictsHost,
@@ -79,7 +85,6 @@ const char* const kPaths[] = {
   chrome::kChromeUIProxySettingsHost,
   chrome::kChromeUISystemInfoHost,
   chrome::kChromeUITaskManagerHost,
-  chrome::kChromeUIWallpaperHost,
 #endif
 #if !defined(DISABLE_NACL)
   chrome::kChromeUINaClHost,
@@ -119,9 +124,6 @@ bool WillHandleBrowserAboutURL(GURL* url,
   // Replace cache with view-http-cache.
   if (host == chrome::kChromeUICacheHost) {
     host = chrome::kChromeUINetworkViewCacheHost;
-  // Replace gpu with gpu-internals.
-  } else if (host == chrome::kChromeUIGpuHost) {
-    host = chrome::kChromeUIGpuInternalsHost;
   // Replace sync with sync-internals (for legacy reasons).
   } else if (host == chrome::kChromeUISyncHost) {
     host = chrome::kChromeUISyncInternalsHost;
@@ -137,8 +139,14 @@ bool WillHandleBrowserAboutURL(GURL* url,
     path = chrome::kChromeUIExtensionsHost;
   // Redirect chrome://history.
   } else if (host == chrome::kChromeUIHistoryHost) {
+#if defined(OS_ANDROID)
+    // On Android, redirect directly to chrome://history-frame since
+    // uber page is unsupported.
+    host = chrome::kChromeUIHistoryFrameHost;
+#else
     host = chrome::kChromeUIUberHost;
     path = chrome::kChromeUIHistoryHost + url->path();
+#endif
   // Redirect chrome://settings
   } else if (host == chrome::kChromeUISettingsHost) {
     host = chrome::kChromeUIUberHost;

@@ -7,6 +7,7 @@
 #include <windows.h>
 
 #include "base/logging.h"
+#include "ui/base/win/dpi.h"
 #include "ui/gfx/display.h"
 
 namespace {
@@ -20,8 +21,10 @@ MONITORINFO GetMonitorInfoForMonitor(HMONITOR monitor) {
 
 gfx::Display GetDisplay(MONITORINFO& monitor_info) {
   // TODO(oshima): Implement ID and Observer.
-  gfx::Display display(0, gfx::Rect(monitor_info.rcMonitor));
+  gfx::Rect bounds = gfx::Rect(monitor_info.rcMonitor);
+  gfx::Display display(0, bounds);
   display.set_work_area(gfx::Rect(monitor_info.rcWork));
+  display.SetScaleAndBounds(ui::win::GetDeviceScaleFactor(), bounds);
   return display;
 }
 
@@ -36,7 +39,11 @@ ScreenWin::~ScreenWin() {
 }
 
 bool ScreenWin::IsDIPEnabled() {
+#if defined(ENABLE_HIDPI)
+  return true;
+#else
   return false;
+#endif
 }
 
 gfx::Point ScreenWin::GetCursorScreenPoint() {
@@ -57,6 +64,13 @@ int ScreenWin::GetNumDisplays() {
 
 gfx::Display ScreenWin::GetDisplayNearestWindow(gfx::NativeView window) const {
   HWND window_hwnd = GetHWNDFromNativeView(window);
+  if (!window_hwnd) {
+    // When |window| isn't rooted to a display, we should just return the
+    // default display so we get some correct display information like the
+    // scaling factor.
+    return GetPrimaryDisplay();
+  }
+
   MONITORINFO monitor_info;
   monitor_info.cbSize = sizeof(monitor_info);
   GetMonitorInfo(MonitorFromWindow(window_hwnd, MONITOR_DEFAULTTONEAREST),
@@ -85,9 +99,21 @@ gfx::Display ScreenWin::GetPrimaryDisplay() const {
   MONITORINFO mi = GetMonitorInfoForMonitor(
       MonitorFromWindow(NULL, MONITOR_DEFAULTTOPRIMARY));
   gfx::Display display = GetDisplay(mi);
+#if !defined(ENABLE_HIDPI)
+  // TODO(kevers|girard): Test if these checks can be reintroduced for high-DIP
+  // once more of the app is DIP-aware.
   DCHECK_EQ(GetSystemMetrics(SM_CXSCREEN), display.size().width());
   DCHECK_EQ(GetSystemMetrics(SM_CYSCREEN), display.size().height());
+#endif
   return display;
+}
+
+void ScreenWin::AddObserver(DisplayObserver* observer) {
+  // TODO(oshima): crbug.com/122863.
+}
+
+void ScreenWin::RemoveObserver(DisplayObserver* observer) {
+  // TODO(oshima): crbug.com/122863.
 }
 
 HWND ScreenWin::GetHWNDFromNativeView(NativeView window) const {

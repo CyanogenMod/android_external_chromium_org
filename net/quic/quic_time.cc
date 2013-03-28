@@ -9,34 +9,39 @@
 namespace net {
 
 // Highest number of microseconds that DateTimeOffset can hold.
-const uint64 kQuicInfiniteTimeUs = GG_UINT64_C(0x7fffffffffffffff) / 10;
-
-QuicTime::Delta::Delta()
-    : delta_(base::TimeDelta::FromMicroseconds(0)) {
-}
+const int64 kQuicInfiniteTimeUs = GG_INT64_C(0x7fffffffffffffff) / 10;
 
 QuicTime::Delta::Delta(base::TimeDelta delta)
     : delta_(delta) {
 }
 
+// static
+QuicTime::Delta QuicTime::Delta::Zero() {
+  return QuicTime::Delta::FromMicroseconds(0);
+}
+
+// static
 QuicTime::Delta QuicTime::Delta::Infinite() {
   return QuicTime::Delta::FromMicroseconds(kQuicInfiniteTimeUs);
 }
 
-bool QuicTime::Delta::IsZero() const {
-  return delta_.InMicroseconds() == 0;
+// static
+QuicTime::Delta QuicTime::Delta::FromSeconds(int64 seconds) {
+  return QuicTime::Delta(base::TimeDelta::FromSeconds(seconds));
 }
 
-bool QuicTime::Delta::IsInfinite() const {
-  return static_cast<uint64>(delta_.InMicroseconds()) == kQuicInfiniteTimeUs;
-}
-
+// static
 QuicTime::Delta QuicTime::Delta::FromMilliseconds(int64 ms) {
   return QuicTime::Delta(base::TimeDelta::FromMilliseconds(ms));
 }
 
+// static
 QuicTime::Delta QuicTime::Delta::FromMicroseconds(int64 us) {
   return QuicTime::Delta(base::TimeDelta::FromMicroseconds(us));
+}
+
+int64 QuicTime::Delta::ToSeconds() const {
+  return delta_.InSeconds();
 }
 
 int64 QuicTime::Delta::ToMilliseconds() const {
@@ -57,15 +62,21 @@ QuicTime::Delta QuicTime::Delta::Subtract(const Delta& delta) const {
                                            delta.ToMicroseconds());
 }
 
-
-QuicTime::QuicTime() {
+bool QuicTime::Delta::IsZero() const {
+  return delta_.InMicroseconds() == 0;
 }
 
-QuicTime::QuicTime(base::TimeTicks ticks)
-    : ticks_(ticks) {
+bool QuicTime::Delta::IsInfinite() const {
+  return delta_.InMicroseconds() == kQuicInfiniteTimeUs;
 }
 
-QuicTime QuicTime::FromMilliseconds(uint64 time_ms) {
+// static
+QuicTime QuicTime::Zero() {
+  return QuicTime::FromMilliseconds(0);
+}
+
+// static
+QuicTime QuicTime::FromMilliseconds(int64 time_ms) {
   // DateTime use 100 ns as resolution make sure we don't pass down too high
   // values.
   DCHECK(time_ms < kQuicInfiniteTimeUs / 1000);
@@ -73,7 +84,8 @@ QuicTime QuicTime::FromMilliseconds(uint64 time_ms) {
                   base::TimeDelta::FromMilliseconds(time_ms));
 }
 
-QuicTime QuicTime::FromMicroseconds(uint64 time_us) {
+// static
+QuicTime QuicTime::FromMicroseconds(int64 time_us) {
   // DateTime use 100 ns as resolution make sure we don't pass down too high
   // values.
   DCHECK(time_us < kQuicInfiniteTimeUs);
@@ -81,11 +93,15 @@ QuicTime QuicTime::FromMicroseconds(uint64 time_us) {
                   base::TimeDelta::FromMicroseconds(time_us));
 }
 
-uint64 QuicTime::ToMilliseconds() const {
+QuicTime::QuicTime(base::TimeTicks ticks)
+    : ticks_(ticks) {
+}
+
+int64 QuicTime::ToMilliseconds() const {
   return (ticks_ - base::TimeTicks()).InMilliseconds();
 }
 
-uint64 QuicTime::ToMicroseconds() const {
+int64 QuicTime::ToMicroseconds() const {
   return (ticks_ - base::TimeTicks()).InMicroseconds();
 }
 
@@ -105,4 +121,4 @@ QuicTime::Delta QuicTime::Subtract(const QuicTime& other) const {
   return QuicTime::Delta(ticks_ - other.ticks_);
 }
 
-}  // namespace gfe_quic
+}  // namespace net

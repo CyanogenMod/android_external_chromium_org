@@ -8,8 +8,8 @@
 #include "net/base/net_errors.h"
 #include "webkit/blob/local_file_stream_reader.h"
 #include "webkit/blob/shareable_file_reference.h"
-#include "webkit/chromeos/fileapi/remote_file_system_proxy.h"
 #include "webkit/fileapi/local_file_stream_writer.h"
+#include "webkit/fileapi/remote_file_system_proxy.h"
 
 namespace fileapi {
 
@@ -56,7 +56,7 @@ void RemoteFileStreamWriter::OnFileOpened(
     int buf_len,
     const net::CompletionCallback& callback,
     base::PlatformFileError open_result,
-    const FilePath& local_path,
+    const base::FilePath& local_path,
     const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref) {
   has_pending_create_snapshot_ = false;
   if (!pending_cancel_callback_.is_null()) {

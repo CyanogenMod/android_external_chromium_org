@@ -6,9 +6,9 @@
 #define CHROME_TEST_BASE_IN_PROCESS_BROWSER_TEST_H_
 
 #include "base/compiler_specific.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/scoped_temp_dir.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_base.h"
@@ -188,15 +188,12 @@ class InProcessBrowserTest : public content::BrowserTestBase {
   // Browser created from CreateBrowser.
   Browser* browser_;
 
-  // ContentRendererClient when running in single-process mode.
-  scoped_ptr<content::ContentRendererClient> single_process_renderer_client_;
-
   // Host resolver to use during the test.
   scoped_refptr<net::RuleBasedHostResolverProc> host_resolver_;
 
   // Temporary user data directory. Used only when a user data directory is not
   // specified in the command line.
-  ScopedTempDir temp_user_data_dir_;
+  base::ScopedTempDir temp_user_data_dir_;
 
 #if defined(OS_CHROMEOS)
   chromeos::ScopedStubCrosEnabler stub_cros_enabler_;

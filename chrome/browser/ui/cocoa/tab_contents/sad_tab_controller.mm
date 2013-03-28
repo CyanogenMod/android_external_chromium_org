@@ -10,23 +10,33 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 
-using content::WebContents;
+namespace chrome {
 
-namespace sad_tab_controller_mac {
-
-SadTabController* CreateSadTabController(WebContents* web_contents) {
-  return [[SadTabController alloc] initWithWebContents:web_contents];
+SadTab* SadTab::Create(content::WebContents* web_contents, SadTabKind kind) {
+  return new SadTabCocoa(web_contents);
 }
 
-void RemoveSadTab(SadTabController* sad_tab) {
-  [[sad_tab view] removeFromSuperview];
+SadTabCocoa::SadTabCocoa(content::WebContents* web_contents)
+    : web_contents_(web_contents) {
 }
 
-}  // namespace sad_tab_controller_mac
+SadTabCocoa::~SadTabCocoa() {
+}
+
+void SadTabCocoa::Show() {
+  sad_tab_controller_.reset(
+      [[SadTabController alloc] initWithWebContents:web_contents_]);
+}
+
+void SadTabCocoa::Close() {
+  [[sad_tab_controller_ view] removeFromSuperview];
+}
+
+}  // namespace chrome
 
 @implementation SadTabController
 
-- (id)initWithWebContents:(WebContents*)webContents {
+- (id)initWithWebContents:(content::WebContents*)webContents {
   if ((self = [super initWithNibName:@"SadTab"
                               bundle:base::mac::FrameworkBundle()])) {
     webContents_ = webContents;
@@ -44,14 +54,14 @@ void RemoveSadTab(SadTabController* sad_tab) {
 }
 
 - (void)awakeFromNib {
-  // If tab_contents_ is nil, ask view to remove link.
+  // If webContents_ is nil, ask view to remove link.
   if (!webContents_) {
     SadTabView* sad_view = static_cast<SadTabView*>([self view]);
     [sad_view removeHelpText];
   }
 }
 
-- (WebContents*)webContents {
+- (content::WebContents*)webContents {
   return webContents_;
 }
 

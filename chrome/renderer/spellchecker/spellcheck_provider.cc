@@ -5,16 +5,17 @@
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
 
 #include "base/command_line.h"
+#include "base/metrics/histogram.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/common/spellcheck_result.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "content/public/renderer/render_view.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingCompletion.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingResult.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 using WebKit::WebFrame;
@@ -41,28 +42,6 @@ COMPILE_ASSERT(int(WebKit::WebTextCheckingTypeCorrection) ==
 COMPILE_ASSERT(int(WebKit::WebTextCheckingTypeShowCorrectionPanel) ==
                int(SpellCheckResult::SHOWCORRECTIONPANEL), mismatching_enums);
 
-namespace {
-
-// Converts a vector of SpellCheckResult objects (used by Chrome) to a vector of
-// WebTextCheckingResult objects (used by WebKit).
-void CreateTextCheckingResults(
-    int offset,
-    const std::vector<SpellCheckResult>& spellcheck_results,
-    WebKit::WebVector<WebKit::WebTextCheckingResult>* textcheck_results) {
-  size_t result_size = spellcheck_results.size();
-  WebKit::WebVector<WebKit::WebTextCheckingResult> list(result_size);
-  for (size_t i = 0; i < result_size; ++i) {
-    list[i] = WebTextCheckingResult(
-        static_cast<WebTextCheckingType>(spellcheck_results[i].type),
-        spellcheck_results[i].location + offset,
-        spellcheck_results[i].length,
-        spellcheck_results[i].replacement);
-  }
-  textcheck_results->swap(list);
-}
-
-}  // namespace
-
 SpellCheckProvider::SpellCheckProvider(
     content::RenderView* render_view,
     SpellCheck* spellcheck)
@@ -70,20 +49,37 @@ SpellCheckProvider::SpellCheckProvider(
       content::RenderViewObserverTracker<SpellCheckProvider>(render_view),
       spelling_panel_visible_(false),
       spellcheck_(spellcheck) {
-  if (render_view)  // NULL in unit tests.
+  DCHECK(spellcheck_);
+  if (render_view) {  // NULL in unit tests.
     render_view->GetWebView()->setSpellCheckClient(this);
+    EnableSpellcheck(spellcheck_->is_spellcheck_enabled());
+  }
 }
 
 SpellCheckProvider::~SpellCheckProvider() {
 #if defined(OS_MACOSX)
-  Send(new SpellCheckHostMsg_DocumentClosed(
-      routing_id(), routing_id()));
+  Send(new SpellCheckHostMsg_DocumentClosed(routing_id(), routing_id()));
 #endif
 }
 
 void SpellCheckProvider::RequestTextChecking(
     const WebString& text,
     WebTextCheckingCompletion* completion) {
+  // Ignore invalid requests.
+  if (text.isEmpty() || !HasWordCharacters(text, 0)) {
+    completion->didCancelCheckingText();
+    return;
+  }
+
+  // Try to satisfy check from cache.
+  if (SatisfyRequestFromCache(text, completion))
+    return;
+
+  // Send this text to a browser. A browser checks the user profile and send
+  // this text to the Spelling service only if a user enables this feature.
+  last_request_.clear();
+  last_results_.assign(WebKit::WebVector<WebKit::WebTextCheckingResult>());
+
 #if defined(OS_MACOSX)
   // Text check (unified request for grammar and spell check) is only
   // available for browser process, so we ask the system spellchecker
@@ -94,24 +90,6 @@ void SpellCheckProvider::RequestTextChecking(
       text_check_completions_.Add(completion),
       text));
 #else
-  // Ignore invalid requests.
-  // TODO(groby): Should that be applied for OSX, too?
-  if (text.isEmpty() || !HasWordCharacters(text, 0)) {
-    completion->didCancelCheckingText();
-    return;
-  }
-
-  // Try to satisfy check from cache.
-  // TODO(groby): Should that be applied to OSX results, too?
-  if (SatisfyRequestFromCache(text, completion))
-    return;
-
-  // Send this text to a browser. A browser checks the user profile and send
-  // this text to the Spelling service only if a user enables this feature.
-  last_request_.clear();
-  last_results_.assign(WebKit::WebVector<WebKit::WebTextCheckingResult>());
-
-
   Send(new SpellCheckHostMsg_CallSpellingService(
       routing_id(),
       text_check_completions_.Add(completion),
@@ -133,7 +111,6 @@ bool SpellCheckProvider::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(SpellCheckMsg_RespondTextCheck, OnRespondTextCheck)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_ToggleSpellPanel, OnToggleSpellPanel)
 #endif
-    IPC_MESSAGE_HANDLER(SpellCheckMsg_ToggleSpellCheck, OnToggleSpellCheck)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -163,19 +140,18 @@ void SpellCheckProvider::spellCheck(
     int& length,
     WebVector<WebString>* optional_suggestions) {
   string16 word(text);
-  // Will be NULL during unit tests.
-  if (spellcheck_) {
-    std::vector<string16> suggestions;
-    spellcheck_->SpellCheckWord(
-        word.c_str(), word.size(), routing_id(),
-        &offset, &length, optional_suggestions ? & suggestions : NULL);
-    if (optional_suggestions)
-      *optional_suggestions = suggestions;
-    if (!optional_suggestions) {
-      // If optional_suggestions is not requested, the API is called
-      // for marking.  So we use this for counting markable words.
-      Send(new SpellCheckHostMsg_NotifyChecked(routing_id(), word, 0 < length));
-    }
+  std::vector<string16> suggestions;
+  spellcheck_->SpellCheckWord(
+      word.c_str(), word.size(), routing_id(),
+      &offset, &length, optional_suggestions ? & suggestions : NULL);
+  if (optional_suggestions) {
+    *optional_suggestions = suggestions;
+    UMA_HISTOGRAM_COUNTS("SpellCheck.api.check.suggestions", word.size());
+  } else {
+    UMA_HISTOGRAM_COUNTS("SpellCheck.api.check", word.size());
+    // If optional_suggestions is not requested, the API is called
+    // for marking.  So we use this for counting markable words.
+    Send(new SpellCheckHostMsg_NotifyChecked(routing_id(), word, 0 < length));
   }
 }
 
@@ -192,33 +168,30 @@ void SpellCheckProvider::checkTextOfParagraph(
   if (!(mask & WebKit::WebTextCheckingTypeSpelling))
     return;
 
-  // Will be NULL during unit tets.
-  if (!spellcheck_)
-    return;
-
   spellcheck_->SpellCheckParagraph(string16(text), results);
 #endif
+  UMA_HISTOGRAM_COUNTS("SpellCheck.api.paragraph", text.length());
 }
 
 void SpellCheckProvider::requestCheckingOfText(
     const WebString& text,
     WebTextCheckingCompletion* completion) {
   RequestTextChecking(text, completion);
+  UMA_HISTOGRAM_COUNTS("SpellCheck.api.async", text.length());
 }
 
 WebString SpellCheckProvider::autoCorrectWord(const WebString& word) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kEnableSpellingAutoCorrect)) {
-    // Will be NULL during unit tests.
-    if (spellcheck_) {
-      return spellcheck_->GetAutoCorrectionWord(word, routing_id());
-    }
+    UMA_HISTOGRAM_COUNTS("SpellCheck.api.autocorrect", word.length());
+    return spellcheck_->GetAutoCorrectionWord(word, routing_id());
   }
   return string16();
 }
 
 void SpellCheckProvider::showSpellingUI(bool show) {
 #if defined(OS_MACOSX)
+  UMA_HISTOGRAM_BOOLEAN("SpellCheck.api.showUI", show);
   Send(new SpellCheckHostMsg_ShowSpellingPanel(routing_id(), show));
 #endif
 }
@@ -250,28 +223,25 @@ void SpellCheckProvider::OnRespondSpellingService(
 
   // If |succeeded| is false, we use local spellcheck as a fallback.
   if (!succeeded) {
-    // |spellcheck_| may be NULL in unit tests.
-    if (spellcheck_) {
-      spellcheck_->RequestTextChecking(line, offset, completion);
-      return;
-    }
+    spellcheck_->RequestTextChecking(line, offset, completion);
+    return;
   }
 
   // Double-check the returned spellchecking results with our spellchecker to
   // visualize the differences between ours and the on-line spellchecker.
   WebKit::WebVector<WebKit::WebTextCheckingResult> textcheck_results;
-  if (spellcheck_) {
-    spellcheck_->CreateTextCheckingResults(
-        offset, line, results, &textcheck_results);
-  } else {
-    CreateTextCheckingResults(offset, results, &textcheck_results);
-  }
+  spellcheck_->CreateTextCheckingResults(SpellCheck::USE_NATIVE_CHECKER,
+                                         offset,
+                                         line,
+                                         results,
+                                         &textcheck_results);
   completion->didFinishCheckingText(textcheck_results);
 
   // Cache the request and the converted results.
   last_request_ = line;
   last_results_.swap(textcheck_results);
 }
+#endif
 
 bool SpellCheckProvider::HasWordCharacters(
     const WebKit::WebString& text,
@@ -287,7 +257,6 @@ bool SpellCheckProvider::HasWordCharacters(
   }
   return false;
 }
-#endif
 
 #if defined(OS_MACOSX)
 void SpellCheckProvider::OnAdvanceToNextMisspelling() {
@@ -300,14 +269,24 @@ void SpellCheckProvider::OnAdvanceToNextMisspelling() {
 void SpellCheckProvider::OnRespondTextCheck(
     int identifier,
     const std::vector<SpellCheckResult>& results) {
+  // TODO(groby): Unify with SpellCheckProvider::OnRespondSpellingService
+  DCHECK(spellcheck_);
   WebTextCheckingCompletion* completion =
       text_check_completions_.Lookup(identifier);
   if (!completion)
     return;
   text_check_completions_.Remove(identifier);
   WebKit::WebVector<WebKit::WebTextCheckingResult> textcheck_results;
-  CreateTextCheckingResults(0, results, &textcheck_results);
+  spellcheck_->CreateTextCheckingResults(SpellCheck::DO_NOT_MODIFY,
+                                         0,
+                                         string16(),
+                                         results,
+                                         &textcheck_results);
   completion->didFinishCheckingText(textcheck_results);
+
+  // TODO(groby): Add request caching once OSX reports back original request.
+  // (cf. SpellCheckProvider::OnRespondSpellingService)
+  // Cache the request and the converted results.
 }
 
 void SpellCheckProvider::OnToggleSpellPanel(bool is_currently_visible) {
@@ -321,28 +300,30 @@ void SpellCheckProvider::OnToggleSpellPanel(bool is_currently_visible) {
 }
 #endif
 
-void SpellCheckProvider::OnToggleSpellCheck() {
+void SpellCheckProvider::EnableSpellcheck(bool enable) {
   if (!render_view()->GetWebView())
     return;
 
   WebFrame* frame = render_view()->GetWebView()->focusedFrame();
-  frame->enableContinuousSpellChecking(
-      !frame->isContinuousSpellCheckingEnabled());
+  frame->enableContinuousSpellChecking(enable);
 }
 
-#if !defined(OS_MACOSX)
 bool SpellCheckProvider::SatisfyRequestFromCache(
     const WebString& text,
     WebTextCheckingCompletion* completion) {
-  // Cancel this spellcheck request if the cached text is a substring of the
-  // given text and the given text is the middle of a possible word.
+  size_t last_length = last_request_.length();
+
+  // Send back the |last_results_| if the |last_request_| is a substring of
+  // |text| and |text| does not have more words to check. Provider cannot cancel
+  // the spellcheck request here, because WebKit might have discarded the
+  // previous spellcheck results and erased the spelling markers in response to
+  // the user editing the text.
   string16 request(text);
   size_t text_length = request.length();
-  size_t last_length = last_request_.length();
   if (text_length >= last_length &&
       !request.compare(0, last_length, last_request_)) {
     if (text_length == last_length || !HasWordCharacters(text, last_length)) {
-      completion->didCancelCheckingText();
+      completion->didFinishCheckingText(last_results_);
       return true;
     }
     int code = 0;
@@ -350,7 +331,7 @@ bool SpellCheckProvider::SatisfyRequestFromCache(
     U16_PREV(text.data(), 0, length, code);
     UErrorCode error = U_ZERO_ERROR;
     if (uscript_getScript(code, &error) != USCRIPT_COMMON) {
-      completion->didCancelCheckingText();
+      completion->didFinishCheckingText(last_results_);
       return true;
     }
   }
@@ -380,4 +361,3 @@ bool SpellCheckProvider::SatisfyRequestFromCache(
 
   return false;
 }
-#endif

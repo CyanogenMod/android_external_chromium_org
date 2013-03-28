@@ -42,6 +42,7 @@ class Predictor;
 }
 namespace content {
 class BrowserGpuChannelHostFactory;
+class BrowserTestBase;
 class GLHelper;
 class GpuChannelHost;
 class RenderWidgetHelper;
@@ -60,7 +61,9 @@ class AudioOutputController;
 namespace net {
 class FileStreamPosix;
 class FileStreamWin;
-class NetworkManagerApi;
+namespace internal {
+class AddressTrackerLinux;
+}
 }
 
 namespace remoting {
@@ -167,12 +170,14 @@ class BASE_EXPORT ThreadRestrictions {
  private:
   // DO NOT ADD ANY OTHER FRIEND STATEMENTS, talk to jam or brettw first.
   // BEGIN ALLOWED USAGE.
+  friend class content::BrowserTestBase;
   friend class content::RenderWidgetHelper;
   friend class ::HistogramSynchronizer;
   friend class ::ScopedAllowWaitForLegacyWebViewApi;
   friend class ::TestingAutomationProvider;
   friend class cc::CompletionEvent;
   friend class remoting::AutoThread;
+  friend class MessagePumpDefault;
   friend class SequencedWorkerPool;
   friend class SimpleThread;
   friend class Thread;
@@ -197,7 +202,7 @@ class BASE_EXPORT ThreadRestrictions {
   friend class media::AudioOutputController;      // http://crbug.com/120973
   friend class net::FileStreamPosix;              // http://crbug.com/115067
   friend class net::FileStreamWin;                // http://crbug.com/115067
-  friend class net::NetworkManagerApi;            // http://crbug.com/125097
+  friend class net::internal::AddressTrackerLinux;  // http://crbug.com/125097
   friend class ::AcceleratedPresenter;            // http://crbug.com/125391
   friend class ::BrowserProcessImpl;              // http://crbug.com/125207
   friend class ::MetricsService;                  // http://crbug.com/124954

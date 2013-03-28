@@ -11,7 +11,7 @@
 TEST_F(ExtensionManifestTest, ValidApp) {
   scoped_refptr<extensions::Extension> extension(
       LoadAndExpectSuccess("valid_app.json"));
-  URLPatternSet expected_patterns;
+  extensions::URLPatternSet expected_patterns;
   AddPattern(&expected_patterns, "http://www.google.com/mail/*");
   AddPattern(&expected_patterns, "http://www.google.com/foobar/*");
   EXPECT_EQ(expected_patterns, extension->web_extent());
@@ -21,8 +21,7 @@ TEST_F(ExtensionManifestTest, ValidApp) {
 
 TEST_F(ExtensionManifestTest, AllowUnrecognizedPermissions) {
   std::string error;
-  scoped_ptr<DictionaryValue> manifest(
-      LoadManifestFile("valid_app.json", &error));
+  scoped_ptr<DictionaryValue> manifest(LoadManifest("valid_app.json", &error));
   ListValue* permissions = NULL;
   ASSERT_TRUE(manifest->GetList("permissions", &permissions));
   permissions->Append(new StringValue("not-a-valid-permission"));

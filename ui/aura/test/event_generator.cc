@@ -4,9 +4,13 @@
 
 #include "ui/aura/test/event_generator.h"
 
+#include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop_proxy.h"
+#include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/events/event.h"
+#include "ui/base/events/event_utils.h"
 #include "ui/gfx/vector2d_conversions.h"
 
 #if defined(USE_X11)
@@ -18,7 +22,31 @@
 #include "ui/base/keycodes/keyboard_code_conversion.h"
 #endif
 
+namespace aura {
+namespace test {
 namespace {
+
+class DefaultEventGeneratorDelegate : public EventGeneratorDelegate {
+ public:
+  explicit DefaultEventGeneratorDelegate(RootWindow* root_window)
+      : root_window_(root_window) {}
+  virtual ~DefaultEventGeneratorDelegate() {}
+
+  // EventGeneratorDelegate overrides:
+  virtual RootWindow* GetRootWindowAt(const gfx::Point& point) const OVERRIDE {
+    return root_window_;
+  }
+
+  virtual client::ScreenPositionClient* GetScreenPositionClient(
+      const aura::Window* window) const OVERRIDE {
+    return NULL;
+  }
+
+ private:
+  RootWindow* root_window_;
+
+  DISALLOW_COPY_AND_ASSIGN(DefaultEventGeneratorDelegate);
+};
 
 class TestKeyEvent : public ui::KeyEvent {
  public:
@@ -33,8 +61,7 @@ class TestTouchEvent : public ui::TouchEvent {
   TestTouchEvent(ui::EventType type,
                  const gfx::Point& root_location,
                  int flags)
-      : TouchEvent(type, root_location, 0,
-                       base::Time::NowFromSystemTime() - base::Time()) {
+      : TouchEvent(type, root_location, 0, ui::EventTimeForNow()) {
     set_flags(flags);
   }
 
@@ -42,55 +69,57 @@ class TestTouchEvent : public ui::TouchEvent {
   DISALLOW_COPY_AND_ASSIGN(TestTouchEvent);
 };
 
-gfx::Point CenterOfWindowInRootWindowCoordinate(aura::RootWindow* root_window,
-                                                aura::Window* window) {
-  gfx::Point center = window->bounds().CenterPoint();
-  aura::Window::ConvertPointToTarget(window->parent(), root_window, &center);
-  return center;
-}
+const int kAllButtonMask = ui::EF_LEFT_MOUSE_BUTTON | ui::EF_RIGHT_MOUSE_BUTTON;
 
 }  // namespace
 
-namespace aura {
-namespace test {
-
 EventGenerator::EventGenerator(RootWindow* root_window)
-    : root_window_(root_window),
-      flags_(0) {
+    : delegate_(new DefaultEventGeneratorDelegate(root_window)),
+      current_root_window_(delegate_->GetRootWindowAt(current_location_)),
+      flags_(0),
+      grab_(false),
+      async_(false) {
 }
 
 EventGenerator::EventGenerator(RootWindow* root_window, const gfx::Point& point)
-    : root_window_(root_window),
+    : delegate_(new DefaultEventGeneratorDelegate(root_window)),
+      current_location_(point),
+      current_root_window_(delegate_->GetRootWindowAt(current_location_)),
       flags_(0),
-      current_location_(point) {
+      grab_(false),
+      async_(false) {
 }
 
 EventGenerator::EventGenerator(RootWindow* root_window, Window* window)
-    : root_window_(root_window),
+    : delegate_(new DefaultEventGeneratorDelegate(root_window)),
+      current_location_(CenterOfWindow(window)),
+      current_root_window_(delegate_->GetRootWindowAt(current_location_)),
       flags_(0),
-      current_location_(CenterOfWindowInRootWindowCoordinate(root_window,
-                                                             window)) {
+      grab_(false),
+      async_(false) {
+}
+
+EventGenerator::EventGenerator(EventGeneratorDelegate* delegate)
+    : delegate_(delegate),
+      current_root_window_(delegate_->GetRootWindowAt(current_location_)),
+      flags_(0),
+      grab_(false),
+      async_(false) {
 }
 
 EventGenerator::~EventGenerator() {
+  for (std::list<ui::Event*>::iterator i = pending_events_.begin();
+      i != pending_events_.end(); ++i)
+    delete *i;
+  pending_events_.clear();
 }
 
 void EventGenerator::PressLeftButton() {
-  if ((flags_ & ui::EF_LEFT_MOUSE_BUTTON) == 0) {
-    flags_ |= ui::EF_LEFT_MOUSE_BUTTON;
-    ui::MouseEvent mouseev(ui::ET_MOUSE_PRESSED, current_location_,
-                           current_location_, flags_);
-    Dispatch(mouseev);
-  }
+  PressButton(ui::EF_LEFT_MOUSE_BUTTON);
 }
 
 void EventGenerator::ReleaseLeftButton() {
-  if (flags_ & ui::EF_LEFT_MOUSE_BUTTON) {
-    ui::MouseEvent mouseev(ui::ET_MOUSE_RELEASED, current_location_,
-                           current_location_, flags_);
-    Dispatch(mouseev);
-    flags_ ^= ui::EF_LEFT_MOUSE_BUTTON;
-  }
+  ReleaseButton(ui::EF_LEFT_MOUSE_BUTTON);
 }
 
 void EventGenerator::ClickLeftButton() {
@@ -106,44 +135,38 @@ void EventGenerator::DoubleClickLeftButton() {
 }
 
 void EventGenerator::PressRightButton() {
-  if ((flags_ & ui::EF_RIGHT_MOUSE_BUTTON) == 0) {
-    flags_ |= ui::EF_RIGHT_MOUSE_BUTTON;
-    ui::MouseEvent mouseev(ui::ET_MOUSE_PRESSED, current_location_,
-                           current_location_, flags_);
-    Dispatch(mouseev);
-  }
+  PressButton(ui::EF_RIGHT_MOUSE_BUTTON);
 }
 
 void EventGenerator::ReleaseRightButton() {
-  if (flags_ & ui::EF_RIGHT_MOUSE_BUTTON) {
-    ui::MouseEvent mouseev(ui::ET_MOUSE_RELEASED, current_location_,
-                           current_location_, flags_);
-    Dispatch(mouseev);
-    flags_ ^= ui::EF_RIGHT_MOUSE_BUTTON;
-  }
+  ReleaseButton(ui::EF_RIGHT_MOUSE_BUTTON);
 }
 
 void EventGenerator::MoveMouseTo(const gfx::Point& point, int count) {
   DCHECK_GT(count, 0);
   const ui::EventType event_type = (flags_ & ui::EF_LEFT_MOUSE_BUTTON) ?
       ui::ET_MOUSE_DRAGGED : ui::ET_MOUSE_MOVED;
+
   gfx::Vector2dF diff(point - current_location_);
   for (float i = 1; i <= count; i++) {
     gfx::Vector2dF step(diff);
     step.Scale(i / count);
     gfx::Point move_point = current_location_ + gfx::ToRoundedVector2d(step);
+    if (!grab_)
+      UpdateCurrentRootWindow(move_point);
+    ConvertPointToTarget(current_root_window_, &move_point);
     ui::MouseEvent mouseev(event_type, move_point, move_point, flags_);
-    Dispatch(mouseev);
+    mouseev.set_system_location(move_point);
+    Dispatch(&mouseev);
   }
   current_location_ = point;
 }
 
 void EventGenerator::MoveMouseRelativeTo(const Window* window,
-                                         const gfx::Point& point) {
-  gfx::Point root_point(point);
-  Window::ConvertPointToTarget(window, root_window_, &root_point);
-
-  MoveMouseTo(root_point);
+                                         const gfx::Point& point_in_parent) {
+  gfx::Point point(point_in_parent);
+  ConvertPointFromTarget(window, &point);
+  MoveMouseTo(point);
 }
 
 void EventGenerator::DragMouseTo(const gfx::Point& point) {
@@ -153,24 +176,28 @@ void EventGenerator::DragMouseTo(const gfx::Point& point) {
 }
 
 void EventGenerator::MoveMouseToCenterOf(Window* window) {
-  MoveMouseTo(CenterOfWindowInRootWindowCoordinate(root_window_, window));
+  MoveMouseTo(CenterOfWindow(window));
 }
 
 void EventGenerator::PressTouch() {
-  TestTouchEvent touchev(ui::ET_TOUCH_PRESSED, current_location_, flags_);
-  Dispatch(touchev);
+  TestTouchEvent touchev(
+      ui::ET_TOUCH_PRESSED, GetLocationInCurrentRoot(), flags_);
+  Dispatch(&touchev);
 }
 
 void EventGenerator::MoveTouch(const gfx::Point& point) {
   TestTouchEvent touchev(ui::ET_TOUCH_MOVED, point, flags_);
-  Dispatch(touchev);
+  Dispatch(&touchev);
 
   current_location_ = point;
+  if (!grab_)
+    UpdateCurrentRootWindow(point);
 }
 
 void EventGenerator::ReleaseTouch() {
-  TestTouchEvent touchev(ui::ET_TOUCH_RELEASED, current_location_, flags_);
-  Dispatch(touchev);
+  TestTouchEvent touchev(
+      ui::ET_TOUCH_RELEASED, GetLocationInCurrentRoot(), flags_);
+  Dispatch(&touchev);
 }
 
 void EventGenerator::PressMoveAndReleaseTouchTo(const gfx::Point& point) {
@@ -180,33 +207,35 @@ void EventGenerator::PressMoveAndReleaseTouchTo(const gfx::Point& point) {
 }
 
 void EventGenerator::PressMoveAndReleaseTouchToCenterOf(Window* window) {
-  PressMoveAndReleaseTouchTo(CenterOfWindowInRootWindowCoordinate(root_window_,
-                                                                  window));
+  PressMoveAndReleaseTouchTo(CenterOfWindow(window));
 }
 
 void EventGenerator::GestureTapAt(const gfx::Point& location) {
   const int kTouchId = 2;
-  ui::TouchEvent press(ui::ET_TOUCH_PRESSED, location, kTouchId,
-                           base::Time::NowFromSystemTime() - base::Time());
-  Dispatch(press);
+  ui::TouchEvent press(ui::ET_TOUCH_PRESSED,
+                       location,
+                       kTouchId,
+                       ui::EventTimeForNow());
+  Dispatch(&press);
 
   ui::TouchEvent release(
       ui::ET_TOUCH_RELEASED, location, kTouchId,
       press.time_stamp() + base::TimeDelta::FromMilliseconds(50));
-  Dispatch(release);
+  Dispatch(&release);
 }
 
 void EventGenerator::GestureTapDownAndUp(const gfx::Point& location) {
   const int kTouchId = 3;
-  ui::TouchEvent press(
-      ui::ET_TOUCH_PRESSED, location, kTouchId,
-      base::Time::NowFromSystemTime() - base::Time());
-  Dispatch(press);
+  ui::TouchEvent press(ui::ET_TOUCH_PRESSED,
+                       location,
+                       kTouchId,
+                       ui::EventTimeForNow());
+  Dispatch(&press);
 
   ui::TouchEvent release(
       ui::ET_TOUCH_RELEASED, location, kTouchId,
       press.time_stamp() + base::TimeDelta::FromMilliseconds(1000));
-  Dispatch(release);
+  Dispatch(&release);
 }
 
 void EventGenerator::GestureScrollSequence(const gfx::Point& start,
@@ -214,9 +243,9 @@ void EventGenerator::GestureScrollSequence(const gfx::Point& start,
                                            const base::TimeDelta& step_delay,
                                            int steps) {
   const int kTouchId = 5;
-  base::TimeDelta timestamp = base::Time::NowFromSystemTime() - base::Time();
+  base::TimeDelta timestamp = ui::EventTimeForNow();
   ui::TouchEvent press(ui::ET_TOUCH_PRESSED, start, kTouchId, timestamp);
-  Dispatch(press);
+  Dispatch(&press);
 
   int dx = (end.x() - start.x()) / steps;
   int dy = (end.y() - start.y()) / steps;
@@ -225,11 +254,11 @@ void EventGenerator::GestureScrollSequence(const gfx::Point& start,
     location.Offset(dx, dy);
     timestamp += step_delay;
     ui::TouchEvent move(ui::ET_TOUCH_MOVED, location, kTouchId, timestamp);
-    Dispatch(move);
+    Dispatch(&move);
   }
 
   ui::TouchEvent release(ui::ET_TOUCH_RELEASED, end, kTouchId, timestamp);
-  Dispatch(release);
+  Dispatch(&release);
 }
 
 void EventGenerator::GestureMultiFingerScroll(int count,
@@ -246,11 +275,11 @@ void EventGenerator::GestureMultiFingerScroll(int count,
   int delta_x = move_x / steps;
   int delta_y = move_y / steps;
 
-  base::TimeDelta press_time = base::Time::NowFromSystemTime() - base::Time();
+  base::TimeDelta press_time = ui::EventTimeForNow();
   for (int i = 0; i < count; ++i) {
     points[i] = start[i];
     ui::TouchEvent press(ui::ET_TOUCH_PRESSED, points[i], i, press_time);
-    Dispatch(press);
+    Dispatch(&press);
   }
 
   for (int step = 0; step < steps; ++step) {
@@ -259,7 +288,7 @@ void EventGenerator::GestureMultiFingerScroll(int count,
     for (int i = 0; i < count; ++i) {
       points[i].Offset(delta_x, delta_y);
       ui::TouchEvent move(ui::ET_TOUCH_MOVED, points[i], i, move_time);
-      Dispatch(move);
+      Dispatch(&move);
     }
   }
 
@@ -268,8 +297,86 @@ void EventGenerator::GestureMultiFingerScroll(int count,
   for (int i = 0; i < count; ++i) {
     ui::TouchEvent release(
         ui::ET_TOUCH_RELEASED, points[i], i, release_time);
-    Dispatch(release);
+    Dispatch(&release);
   }
+}
+
+void EventGenerator::ScrollSequence(const gfx::Point& start,
+                                    const base::TimeDelta& step_delay,
+                                    float x_offset,
+                                    float y_offset,
+                                    int steps,
+                                    int num_fingers) {
+  base::TimeDelta timestamp = base::TimeDelta::FromInternalValue(
+      base::TimeTicks::Now().ToInternalValue());
+  ui::ScrollEvent fling_cancel(ui::ET_SCROLL_FLING_CANCEL,
+                               start,
+                               timestamp,
+                               0,
+                               0, 0,
+                               0, 0,
+                               num_fingers);
+  Dispatch(&fling_cancel);
+
+  float dx = x_offset / steps;
+  float dy = y_offset / steps;
+  for (int i = 0; i < steps; ++i) {
+    timestamp += step_delay;
+    ui::ScrollEvent move(ui::ET_SCROLL,
+                         start,
+                         timestamp,
+                         0,
+                         dx, dy,
+                         dx, dy,
+                         num_fingers);
+    Dispatch(&move);
+  }
+
+  ui::ScrollEvent fling_start(ui::ET_SCROLL_FLING_START,
+                              start,
+                              timestamp,
+                              0,
+                              x_offset, y_offset,
+                              x_offset, y_offset,
+                              num_fingers);
+  Dispatch(&fling_start);
+}
+
+void EventGenerator::ScrollSequence(const gfx::Point& start,
+                                    const base::TimeDelta& step_delay,
+                                    const std::vector<gfx::Point>& offsets,
+                                    int num_fingers) {
+  int steps = offsets.size();
+  base::TimeDelta timestamp = ui::EventTimeForNow();
+  ui::ScrollEvent fling_cancel(ui::ET_SCROLL_FLING_CANCEL,
+                               start,
+                               timestamp,
+                               0,
+                               0, 0,
+                               0, 0,
+                               num_fingers);
+  Dispatch(&fling_cancel);
+
+  for (int i = 0; i < steps; ++i) {
+    timestamp += step_delay;
+    ui::ScrollEvent scroll(ui::ET_SCROLL,
+                           start,
+                           timestamp,
+                           0,
+                           offsets[i].x(), offsets[i].y(),
+                           offsets[i].x(), offsets[i].y(),
+                           num_fingers);
+    Dispatch(&scroll);
+  }
+
+  ui::ScrollEvent fling_start(ui::ET_SCROLL_FLING_START,
+                              start,
+                              timestamp,
+                              0,
+                              offsets[steps - 1].x(), offsets[steps - 1].y(),
+                              offsets[steps - 1].x(), offsets[steps - 1].y(),
+                              num_fingers);
+  Dispatch(&fling_start);
 }
 
 void EventGenerator::PressKey(ui::KeyboardCode key_code, int flags) {
@@ -280,35 +387,8 @@ void EventGenerator::ReleaseKey(ui::KeyboardCode key_code, int flags) {
   DispatchKeyEvent(false, key_code, flags);
 }
 
-void EventGenerator::Dispatch(ui::Event& event) {
-  switch (event.type()) {
-    case ui::ET_KEY_PRESSED:
-    case ui::ET_KEY_RELEASED:
-      root_window_->AsRootWindowHostDelegate()->OnHostKeyEvent(
-          static_cast<ui::KeyEvent*>(&event));
-      break;
-    case ui::ET_MOUSE_PRESSED:
-    case ui::ET_MOUSE_DRAGGED:
-    case ui::ET_MOUSE_RELEASED:
-    case ui::ET_MOUSE_MOVED:
-    case ui::ET_MOUSE_ENTERED:
-    case ui::ET_MOUSE_EXITED:
-    case ui::ET_MOUSEWHEEL:
-      root_window_->AsRootWindowHostDelegate()->OnHostMouseEvent(
-          static_cast<ui::MouseEvent*>(&event));
-      break;
-    case ui::ET_TOUCH_RELEASED:
-    case ui::ET_TOUCH_PRESSED:
-    case ui::ET_TOUCH_MOVED:
-    case ui::ET_TOUCH_STATIONARY:
-    case ui::ET_TOUCH_CANCELLED:
-      root_window_->AsRootWindowHostDelegate()->OnHostTouchEvent(
-          static_cast<ui::TouchEvent*>(&event));
-      break;
-    default:
-      NOTIMPLEMENTED();
-      break;
-  }
+void EventGenerator::Dispatch(ui::Event* event) {
+  DoDispatchEvent(event, async_);
 }
 
 void EventGenerator::DispatchKeyEvent(bool is_press,
@@ -320,7 +400,7 @@ void EventGenerator::DispatchKeyEvent(bool is_press,
   if (is_press && character) {
     MSG native_event = { NULL, WM_KEYDOWN, key_code, 0 };
     TestKeyEvent keyev(native_event, flags, false);
-    Dispatch(keyev);
+    Dispatch(&keyev);
     // On Windows, WM_KEYDOWN event is followed by WM_CHAR with a character
     // if the key event cooresponds to a real character.
     key_press = WM_CHAR;
@@ -339,8 +419,126 @@ void EventGenerator::DispatchKeyEvent(bool is_press,
   ui::KeyEvent keyev(type, key_code, flags, false);
 #endif  // USE_X11
 #endif  // OS_WIN
-  Dispatch(keyev);
+  Dispatch(&keyev);
 }
+
+void EventGenerator::UpdateCurrentRootWindow(const gfx::Point& point) {
+  current_root_window_ = delegate_->GetRootWindowAt(point);
+}
+
+void EventGenerator::PressButton(int flag) {
+  if (!(flags_ & flag)) {
+    flags_ |= flag;
+    grab_ = flags_ & kAllButtonMask;
+    gfx::Point location = GetLocationInCurrentRoot();
+    ui::MouseEvent mouseev(ui::ET_MOUSE_PRESSED, location, location, flags_);
+    Dispatch(&mouseev);
+  }
+}
+
+void EventGenerator::ReleaseButton(int flag) {
+  if (flags_ & flag) {
+    gfx::Point location = GetLocationInCurrentRoot();
+    ui::MouseEvent mouseev(ui::ET_MOUSE_RELEASED, location,
+                           location, flags_);
+    Dispatch(&mouseev);
+    flags_ ^= flag;
+  }
+  grab_ = flags_ & kAllButtonMask;
+}
+
+void EventGenerator::ConvertPointFromTarget(const aura::Window* target,
+                                            gfx::Point* point) const {
+  DCHECK(point);
+  aura::client::ScreenPositionClient* client =
+      delegate_->GetScreenPositionClient(target);
+  if (client)
+    client->ConvertPointToScreen(target, point);
+  else
+    aura::Window::ConvertPointToTarget(target, target->GetRootWindow(), point);
+}
+
+void EventGenerator::ConvertPointToTarget(const aura::Window* target,
+                                          gfx::Point* point) const {
+  DCHECK(point);
+  aura::client::ScreenPositionClient* client =
+      delegate_->GetScreenPositionClient(target);
+  if (client)
+    client->ConvertPointFromScreen(target, point);
+  else
+    aura::Window::ConvertPointToTarget(target->GetRootWindow(), target, point);
+}
+
+gfx::Point EventGenerator::GetLocationInCurrentRoot() const {
+  gfx::Point p(current_location_);
+  ConvertPointToTarget(current_root_window_, &p);
+  return p;
+}
+
+gfx::Point EventGenerator::CenterOfWindow(const Window* window) const {
+  gfx::Point center = gfx::Rect(window->bounds().size()).CenterPoint();
+  ConvertPointFromTarget(window, &center);
+  return center;
+}
+
+void EventGenerator::DoDispatchEvent(ui::Event* event, bool async) {
+  if (async) {
+    ui::Event* pending_event;
+    if (event->IsKeyEvent()) {
+      pending_event = new ui::KeyEvent(*static_cast<ui::KeyEvent*>(event));
+    } else if (event->IsMouseEvent()) {
+      pending_event = new ui::MouseEvent(*static_cast<ui::MouseEvent*>(event));
+    } else if (event->IsTouchEvent()) {
+      pending_event = new ui::TouchEvent(*static_cast<ui::TouchEvent*>(event));
+    } else if (event->IsScrollEvent()) {
+      pending_event =
+          new ui::ScrollEvent(*static_cast<ui::ScrollEvent*>(event));
+    } else {
+      NOTREACHED() << "Invalid event type";
+      return;
+    }
+    if (pending_events_.empty()) {
+      base::MessageLoopProxy::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&EventGenerator::DispatchNextPendingEvent,
+                     base::Unretained(this)));
+    }
+    pending_events_.push_back(pending_event);
+  } else {
+    RootWindowHostDelegate* root_window_host_delegate =
+        current_root_window_->AsRootWindowHostDelegate();
+    if (event->IsKeyEvent()) {
+      root_window_host_delegate->OnHostKeyEvent(
+          static_cast<ui::KeyEvent*>(event));
+    } else if (event->IsMouseEvent()) {
+      root_window_host_delegate->OnHostMouseEvent(
+          static_cast<ui::MouseEvent*>(event));
+    } else if (event->IsTouchEvent()) {
+      root_window_host_delegate->OnHostTouchEvent(
+          static_cast<ui::TouchEvent*>(event));
+    } else if (event->IsScrollEvent()) {
+      root_window_host_delegate->OnHostScrollEvent(
+          static_cast<ui::ScrollEvent*>(event));
+    } else {
+      NOTREACHED() << "Invalid event type";
+    }
+  }
+}
+
+void EventGenerator::DispatchNextPendingEvent() {
+  DCHECK(!pending_events_.empty());
+  ui::Event* event = pending_events_.front();
+  DoDispatchEvent(event, false);
+  pending_events_.pop_front();
+  delete event;
+  if (!pending_events_.empty()) {
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&EventGenerator::DispatchNextPendingEvent,
+                   base::Unretained(this)));
+  }
+}
+
 
 }  // namespace test
 }  // namespace aura

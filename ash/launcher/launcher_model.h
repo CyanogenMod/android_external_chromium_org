@@ -47,8 +47,15 @@ class ASH_EXPORT LauncherModel {
   // Returns the index of the item by id.
   int ItemIndexByID(int id) const;
 
+  // Returns the index of the first panel or the index where the first panel
+  // would go if there are no panels.
+  int FirstPanelIndex() const;
+
   // Returns the id assigned to the next item added.
   LauncherID next_id() const { return next_id_; }
+
+  // Returns a reserved id which will not be used by the |LauncherModel|.
+  LauncherID reserve_external_id() { return next_id_++; }
 
   // Returns an iterator into items() for the item with the specified id, or
   // items().end() if there is no item with the specified id.
@@ -71,6 +78,7 @@ class ASH_EXPORT LauncherModel {
 
   // ID assigned to the next item.
   LauncherID next_id_;
+
   LauncherItems items_;
   Status status_;
   ObserverList<LauncherModelObserver> observers_;

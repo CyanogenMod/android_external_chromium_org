@@ -46,7 +46,7 @@ class PersistentTabRestoreTimeFactory : public TabRestoreService::TimeFactory {
 
   virtual ~PersistentTabRestoreTimeFactory() {}
 
-  virtual base::Time TimeNow() {
+  virtual base::Time TimeNow() OVERRIDE {
     return time_;
   }
 
@@ -65,7 +65,7 @@ class PersistentTabRestoreServiceTest : public ChromeRenderViewHostTestHarness {
         " (KHTML, like Gecko) Chrome/18.0.1025.45 Safari/535.19";
   }
 
-  ~PersistentTabRestoreServiceTest() {
+  virtual ~PersistentTabRestoreServiceTest() {
   }
 
  protected:
@@ -592,8 +592,8 @@ TEST_F(PersistentTabRestoreServiceTest, PruneEntries) {
   for (size_t i = 0; i < max_entries + 5; i++) {
     TabNavigation navigation =
         SessionTypesTestHelper::CreateNavigation(
-            StringPrintf("http://%d", static_cast<int>(i)),
-            StringPrintf("%d", static_cast<int>(i)));
+            base::StringPrintf("http://%d", static_cast<int>(i)),
+            base::StringPrintf("%d", static_cast<int>(i)));
 
     Tab* tab = new Tab();
     tab->navigations.push_back(navigation);
@@ -683,7 +683,8 @@ TEST_F(PersistentTabRestoreServiceTest, PruneIsCalled) {
 
   const size_t max_entries = kMaxEntries;
   for (size_t i = 0; i < max_entries + 5; i++) {
-    NavigateAndCommit(GURL(StringPrintf("http://%d", static_cast<int>(i))));
+    NavigateAndCommit(
+        GURL(base::StringPrintf("http://%d", static_cast<int>(i))));
     service_->CreateHistoricalTab(web_contents(), -1);
   }
 

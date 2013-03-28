@@ -11,8 +11,9 @@
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/i18n/icu_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -20,29 +21,29 @@
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/scoped_temp_dir.h"
+#include "base/run_loop.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/sys_string_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
+#include "cc/base/thread_impl.h"
 #include "googleurl/src/url_util.h"
 #include "grit/webkit_chromium_resources.h"
 #include "media/base/filter_collection.h"
 #include "media/base/media_log.h"
-#include "media/base/message_loop_factory.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageNamespace.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageNamespace.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
 #if defined(TOOLKIT_GTK)
 #include "ui/base/keycodes/keyboard_code_conversion_gtk.h"
 #endif
@@ -51,27 +52,28 @@
 #include "ui/gl/gl_surface.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/base/file_path_string_conversions.h"
+#include "webkit/compositor_bindings/web_compositor_support_impl.h"
+#include "webkit/compositor_bindings/web_layer_tree_view_impl_for_testing.h"
 #include "webkit/fileapi/isolated_context.h"
 #include "webkit/glue/webkit_constants.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
+#include "webkit/glue/webthread_impl.h"
 #include "webkit/glue/weburlrequest_extradata_impl.h"
+#include "webkit/gpu/test_context_provider_factory.h"
 #include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
-#if defined(OS_ANDROID)
-#include "webkit/media/android/media_player_bridge_manager_impl.h"
-#include "webkit/media/android/webmediaplayer_in_process_android.h"
-#include "webkit/media/android/webmediaplayer_manager_android.h"
-#endif
 #include "webkit/media/media_stream_client.h"
 #include "webkit/media/webmediaplayer_impl.h"
 #include "webkit/media/webmediaplayer_ms.h"
+#include "webkit/media/webmediaplayer_params.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/npapi/webplugin_impl.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
 #include "webkit/plugins/webplugininfo.h"
 #include "webkit/support/platform_support.h"
 #include "webkit/support/simple_database_system.h"
+#include "webkit/support/test_webidbfactory.h"
 #include "webkit/support/test_webkit_platform_support.h"
 #include "webkit/support/test_webplugin_page_delegate.h"
 #include "webkit/tools/test_shell/simple_appcache_system.h"
@@ -116,6 +118,10 @@ void InitLogging() {
     // http://blogs.msdn.com/oldnewthing/archive/2004/07/27/198410.aspx
     UINT existing_flags = SetErrorMode(new_flags);
     SetErrorMode(existing_flags | new_flags);
+
+    // Don't pop up dialog on assertion failure, log to stdout instead.
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDOUT);
   }
 #endif
 
@@ -123,7 +129,7 @@ void InitLogging() {
   // On Android we expect the log to appear in logcat.
   base::InitAndroidTestLogging();
 #else
-  FilePath log_filename;
+  base::FilePath log_filename;
   PathService::Get(base::DIR_EXE, &log_filename);
   log_filename = log_filename.AppendASCII("DumpRenderTree.log");
   logging::InitLogging(
@@ -171,14 +177,8 @@ class TestEnvironment {
         new TestWebKitPlatformSupport(unit_test_mode,
                                       shadow_platform_delegate));
 
-#if defined(OS_ANDROID)
-    // Make sure we have enough decoding resources for layout tests.
-    // The current maximum number of media elements in a layout test is 8.
-    media_bridge_manager_.reset(
-        new webkit_media::MediaPlayerBridgeManagerImpl(8));
-    media_player_manager_.reset(
-        new webkit_media::WebMediaPlayerManagerAndroid());
-#endif
+    idb_factory_.reset(new TestWebIDBFactory());
+    WebKit::setIDBFactory(idb_factory_.get());
   }
 
   ~TestEnvironment() {
@@ -205,20 +205,12 @@ class TestEnvironment {
   // in SetCurrentDirectoryForFileURL() and GetAbsoluteWebStringFromUTF8Path(),
   // as the directory might not exist on the device because we are using
   // file-over-http bridge.
-  void set_mock_current_directory(const FilePath& directory) {
+  void set_mock_current_directory(const base::FilePath& directory) {
     mock_current_directory_ = directory;
   }
 
-  FilePath mock_current_directory() const {
+  base::FilePath mock_current_directory() const {
     return mock_current_directory_;
-  }
-
-  webkit_media::WebMediaPlayerManagerAndroid* media_player_manager() {
-    return media_player_manager_.get();
-  }
-
-  webkit_media::MediaPlayerBridgeManagerImpl* media_bridge_manager() {
-    return media_bridge_manager_.get();
   }
 #endif
 
@@ -228,11 +220,10 @@ class TestEnvironment {
   scoped_ptr<base::AtExitManager> at_exit_manager_;
   scoped_ptr<MessageLoopType> main_message_loop_;
   scoped_ptr<TestWebKitPlatformSupport> webkit_platform_support_;
+  scoped_ptr<TestWebIDBFactory> idb_factory_;
 
 #if defined(OS_ANDROID)
-  FilePath mock_current_directory_;
-  scoped_ptr<webkit_media::WebMediaPlayerManagerAndroid> media_player_manager_;
-  scoped_ptr<webkit_media::MediaPlayerBridgeManagerImpl> media_bridge_manager_;
+  base::FilePath mock_current_directory_;
 #endif
 };
 
@@ -243,7 +234,7 @@ class WebPluginImplWithPageDelegate
  public:
   WebPluginImplWithPageDelegate(WebFrame* frame,
                                 const WebPluginParams& params,
-                                const FilePath& path)
+                                const base::FilePath& path)
       : webkit_support::TestWebPluginPageDelegate(),
         webkit::npapi::WebPluginImpl(frame, params, path, AsWeakPtr()) {}
   virtual ~WebPluginImplWithPageDelegate() {}
@@ -251,22 +242,23 @@ class WebPluginImplWithPageDelegate
   DISALLOW_COPY_AND_ASSIGN(WebPluginImplWithPageDelegate);
 };
 
-FilePath GetWebKitRootDirFilePath() {
-  FilePath basePath;
+base::FilePath GetWebKitRootDirFilePath() {
+  base::FilePath basePath;
   PathService::Get(base::DIR_SOURCE_ROOT, &basePath);
   if (file_util::PathExists(
           basePath.Append(FILE_PATH_LITERAL("third_party/WebKit")))) {
     // We're in a WebKit-in-chrome checkout.
-    return basePath.Append(FILE_PATH_LITERAL("third_party/WebKit"));
+    basePath = basePath.Append(FILE_PATH_LITERAL("third_party/WebKit"));
   } else if (file_util::PathExists(
           basePath.Append(FILE_PATH_LITERAL("chromium")))) {
     // We're in a WebKit-only checkout on Windows.
-    return basePath.Append(FILE_PATH_LITERAL("../.."));
+    basePath = basePath.Append(FILE_PATH_LITERAL("../.."));
   } else if (file_util::PathExists(
           basePath.Append(FILE_PATH_LITERAL("webkit/support")))) {
     // We're in a WebKit-only/xcodebuild checkout on Mac
-    return basePath.Append(FILE_PATH_LITERAL("../../.."));
+    basePath = basePath.Append(FILE_PATH_LITERAL("../../.."));
   }
+  CHECK(file_util::AbsolutePath(&basePath));
   // We're in a WebKit-only, make-build, so the DIR_SOURCE_ROOT is already the
   // WebKit root. That, or we have no idea where we are.
   return basePath;
@@ -289,10 +281,6 @@ class WebKitClientMessageLoopImpl
  private:
   MessageLoop* message_loop_;
 };
-
-webkit_support::GraphicsContext3DImplementation
-    g_graphics_context_3d_implementation =
-        webkit_support::IN_PROCESS_COMMAND_BUFFER;
 
 TestEnvironment* test_environment;
 
@@ -342,6 +330,18 @@ void SetUpTestEnvironmentImpl(bool unit_test_mode,
 
 namespace webkit_support {
 
+base::FilePath GetChromiumRootDirFilePath() {
+  base::FilePath basePath;
+  PathService::Get(base::DIR_SOURCE_ROOT, &basePath);
+  if (file_util::PathExists(
+          basePath.Append(FILE_PATH_LITERAL("third_party/WebKit")))) {
+    // We're in a WebKit-in-chrome checkout.
+    return basePath;
+  }
+  return GetWebKitRootDirFilePath()
+         .Append(FILE_PATH_LITERAL("Source/WebKit/chromium"));
+}
+
 void SetUpTestEnvironment() {
   SetUpTestEnvironment(NULL);
 }
@@ -362,7 +362,7 @@ void SetUpTestEnvironmentForUnitTests(
 void TearDownTestEnvironment() {
   // Flush any remaining messages before we kill ourselves.
   // http://code.google.com/p/chromium/issues/detail?id=9500
-  MessageLoop::current()->RunAllPending();
+  base::RunLoop().RunUntilIdle();
 
   BeforeShutdown();
   if (RunningOnValgrind())
@@ -374,7 +374,7 @@ void TearDownTestEnvironment() {
   logging::CloseLogFile();
 }
 
-WebKit::WebKitPlatformSupport* GetWebKitPlatformSupport() {
+WebKit::Platform* GetWebKitPlatformSupport() {
   DCHECK(test_environment);
   return test_environment->webkit_platform_support();
 }
@@ -401,22 +401,6 @@ WebKit::WebMediaPlayer* CreateMediaPlayer(
     const WebURL& url,
     WebMediaPlayerClient* client,
     webkit_media::MediaStreamClient* media_stream_client) {
-#if defined(OS_ANDROID)
-  return new webkit_media::WebMediaPlayerInProcessAndroid(
-      frame,
-      client,
-      GetWebKitPlatformSupport()->cookieJar(),
-      test_environment->media_player_manager(),
-      test_environment->media_bridge_manager(),
-      new webkit_support::TestStreamTextureFactory(),
-      true);
-#else
-  scoped_ptr<media::MessageLoopFactory> message_loop_factory(
-      new media::MessageLoopFactory());
-
-  scoped_ptr<media::FilterCollection> collection(
-      new media::FilterCollection());
-
   if (media_stream_client && media_stream_client->IsMediaStream(url)) {
     return new webkit_media::WebMediaPlayerMS(
         frame,
@@ -426,16 +410,16 @@ WebKit::WebMediaPlayer* CreateMediaPlayer(
         new media::MediaLog());
   }
 
+#if defined(OS_ANDROID)
+  return NULL;
+#else
+  webkit_media::WebMediaPlayerParams params(
+      NULL, NULL, new media::MediaLog());
   return new webkit_media::WebMediaPlayerImpl(
       frame,
       client,
       base::WeakPtr<webkit_media::WebMediaPlayerDelegate>(),
-      collection.release(),
-      NULL,
-      NULL,
-      message_loop_factory.release(),
-      media_stream_client,
-      new media::MediaLog());
+      params);
 #endif
 }
 
@@ -445,12 +429,6 @@ WebKit::WebMediaPlayer* CreateMediaPlayer(
     WebMediaPlayerClient* client) {
   return CreateMediaPlayer(frame, url, client, NULL);
 }
-
-#if defined(OS_ANDROID)
-void ReleaseMediaResources() {
-  test_environment->media_player_manager()->ReleaseMediaResources();
-}
-#endif
 
 WebKit::WebApplicationCacheHost* CreateApplicationCacheHost(
     WebFrame*, WebKit::WebApplicationCacheHostClient* client) {
@@ -462,7 +440,7 @@ WebKit::WebStorageNamespace* CreateSessionStorageNamespace(unsigned quota) {
 }
 
 WebKit::WebString GetWebKitRootDir() {
-  FilePath path = GetWebKitRootDirFilePath();
+  base::FilePath path = GetWebKitRootDirFilePath();
   std::string path_ascii = path.MaybeAsASCII();
   CHECK(!path_ascii.empty());
   return WebKit::WebString::fromUTF8(path_ascii.c_str());
@@ -481,31 +459,37 @@ void SetUpGLBindings(GLBindingPreferences bindingPref) {
   }
 }
 
-void SetGraphicsContext3DImplementation(GraphicsContext3DImplementation impl) {
-  g_graphics_context_3d_implementation = impl;
-}
-
-GraphicsContext3DImplementation GetGraphicsContext3DImplementation() {
-  return g_graphics_context_3d_implementation;
-}
-
 WebKit::WebGraphicsContext3D* CreateGraphicsContext3D(
     const WebKit::WebGraphicsContext3D::Attributes& attributes,
     WebKit::WebView* web_view) {
-  switch (webkit_support::GetGraphicsContext3DImplementation()) {
-    case webkit_support::IN_PROCESS:
-      return WebGraphicsContext3DInProcessImpl::CreateForWebView(
-          attributes, true /* direct */);
-    case webkit_support::IN_PROCESS_COMMAND_BUFFER: {
-      scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context(
-          new WebGraphicsContext3DInProcessCommandBufferImpl());
-      if (!context->Initialize(attributes, NULL))
-        return NULL;
-      return context.release();
-    }
-  }
-  NOTREACHED();
-  return NULL;
+  scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context(
+      new WebGraphicsContext3DInProcessCommandBufferImpl());
+  if (!context->Initialize(attributes, NULL))
+    return NULL;
+  return context.release();
+}
+
+WebKit::WebLayerTreeView* CreateLayerTreeView(
+    LayerTreeViewType type,
+    DRTLayerTreeViewClient* client,
+    WebKit::WebThread* thread) {
+  scoped_ptr<cc::Thread> compositor_thread;
+  if (thread)
+    compositor_thread = cc::ThreadImpl::CreateForDifferentThread(
+        static_cast<webkit_glue::WebThreadImpl*>(thread)->
+        message_loop()->message_loop_proxy());
+
+  scoped_ptr<webkit::WebLayerTreeViewImplForTesting> view(
+      new webkit::WebLayerTreeViewImplForTesting(type, client));
+
+  if (!view->initialize(compositor_thread.Pass()))
+    return NULL;
+  return view.release();
+}
+
+void SetThreadedCompositorEnabled(bool enabled) {
+  test_environment->webkit_platform_support()->
+      set_threaded_compositing_enabled(enabled);
 }
 
 void RegisterMockedURL(const WebKit::WebURL& url,
@@ -562,7 +546,7 @@ void QuitMessageLoopNow() {
 }
 
 void RunAllPendingMessages() {
-  MessageLoop::current()->RunAllPending();
+  base::RunLoop().RunUntilIdle();
 }
 
 bool MessageLoopNestableTasksAllowed() {
@@ -576,7 +560,7 @@ void MessageLoopSetNestableTasksAllowed(bool allowed) {
 void DispatchMessageLoop() {
   MessageLoop* current = MessageLoop::current();
   MessageLoop::ScopedNestableTaskAllower allow(current);
-  current->RunAllPending();
+  base::RunLoop().RunUntilIdle();
 }
 
 WebDevToolsAgentClient::WebKitClientMessageLoop* CreateDevToolsMessageLoop() {
@@ -601,11 +585,11 @@ void PostDelayedTask(TaskAdaptor* task, int64 delay_ms) {
 
 WebString GetAbsoluteWebStringFromUTF8Path(const std::string& utf8_path) {
 #if defined(OS_WIN)
-  FilePath path(UTF8ToWide(utf8_path));
+  base::FilePath path(UTF8ToWide(utf8_path));
   file_util::AbsolutePath(&path);
   return WebString(path.value());
 #else
-  FilePath path(base::SysWideToNativeMB(base::SysUTF8ToWide(utf8_path)));
+  base::FilePath path(base::SysWideToNativeMB(base::SysUTF8ToWide(utf8_path)));
 #if defined(OS_ANDROID)
   if (WebKit::layoutTestMode()) {
     // See comment of TestEnvironment::set_mock_current_directory().
@@ -637,9 +621,9 @@ WebURL CreateURLForPathOrURL(const std::string& path_or_url_in_nativemb) {
   if (url.is_valid() && url.has_scheme())
     return WebURL(url);
 #if defined(OS_WIN)
-  FilePath path(wide_path_or_url);
+  base::FilePath path(wide_path_or_url);
 #else
-  FilePath path(path_or_url_in_nativemb);
+  base::FilePath path(path_or_url_in_nativemb);
 #endif
   file_util::AbsolutePath(&path);
   return net::FilePathToFileURL(path);
@@ -652,7 +636,7 @@ WebURL RewriteLayoutTestsURL(const std::string& utf8_url) {
   if (utf8_url.compare(0, kPrefixLen, kPrefix, kPrefixLen))
     return WebURL(GURL(utf8_url));
 
-  FilePath replacePath =
+  base::FilePath replacePath =
       GetWebKitRootDirFilePath().Append(FILE_PATH_LITERAL("LayoutTests/"));
 
   // On Android, the file is actually accessed through file-over-http. Disable
@@ -674,14 +658,14 @@ WebURL RewriteLayoutTestsURL(const std::string& utf8_url) {
 }
 
 bool SetCurrentDirectoryForFileURL(const WebKit::WebURL& fileUrl) {
-  FilePath local_path;
+  base::FilePath local_path;
   if (!net::FileURLToFilePath(fileUrl, &local_path))
     return false;
 #if defined(OS_ANDROID)
   if (WebKit::layoutTestMode()) {
     // See comment of TestEnvironment::set_mock_current_directory().
     DCHECK(test_environment);
-    FilePath directory = local_path.DirName();
+    base::FilePath directory = local_path.DirName();
     test_environment->set_mock_current_directory(directory);
     // Still try to actually change the directory, but ignore any error.
     // For a few tests that need to access resources directly as files
@@ -694,7 +678,7 @@ bool SetCurrentDirectoryForFileURL(const WebKit::WebURL& fileUrl) {
 }
 
 WebURL LocalFileToDataURL(const WebURL& fileUrl) {
-  FilePath local_path;
+  base::FilePath local_path;
   if (!net::FileURLToFilePath(fileUrl, &local_path))
     return WebURL();
 
@@ -710,20 +694,20 @@ WebURL LocalFileToDataURL(const WebURL& fileUrl) {
   return WebURL(GURL(kDataUrlPrefix + contents_base64));
 }
 
-// A wrapper object for exporting ScopedTempDir to be used
+// A wrapper object for exporting base::ScopedTempDir to be used
 // by webkit layout tests.
 class ScopedTempDirectoryInternal : public ScopedTempDirectory {
  public:
-  virtual bool CreateUniqueTempDir() {
+  virtual bool CreateUniqueTempDir() OVERRIDE {
     return tempDirectory_.CreateUniqueTempDir();
   }
 
-  virtual std::string path() const {
+  virtual std::string path() const OVERRIDE {
     return tempDirectory_.path().MaybeAsASCII();
   }
 
  private:
-  ScopedTempDir tempDirectory_;
+  base::ScopedTempDir tempDirectory_;
 };
 
 ScopedTempDirectory* CreateScopedTempDirectory() {
@@ -731,8 +715,9 @@ ScopedTempDirectory* CreateScopedTempDirectory() {
 }
 
 int64 GetCurrentTimeInMillisecond() {
-  return base::TimeTicks::Now().ToInternalValue()
-      / base::Time::kMicrosecondsPerMillisecond;
+  return base::TimeDelta(base::Time::Now() -
+                         base::Time::UnixEpoch()).ToInternalValue() /
+         base::Time::kMicrosecondsPerMillisecond;
 }
 
 std::string EscapePath(const std::string& path) {
@@ -814,27 +799,32 @@ WebKit::WebThemeEngine* GetThemeEngine() {
 
 #endif
 
-// DevTools
+// DevTools frontend path for inspector LayoutTests.
 WebURL GetDevToolsPathAsURL() {
-  FilePath dirExe;
+  base::FilePath dirExe;
   if (!PathService::Get(base::DIR_EXE, &dirExe)) {
       DCHECK(false);
       return WebURL();
   }
-  FilePath devToolsPath = dirExe.AppendASCII(
+#if defined(OS_MACOSX)
+  dirExe = dirExe.AppendASCII("../../..");
+#endif
+  base::FilePath devToolsPath = dirExe.AppendASCII(
       "resources/inspector/devtools.html");
   return net::FilePathToFileURL(devToolsPath);
 }
 
 // FileSystem
-void OpenFileSystem(WebFrame* frame, WebFileSystem::Type type,
+void OpenFileSystem(WebFrame* frame,
+    WebKit::WebFileSystemType type,
     long long size, bool create, WebFileSystemCallbacks* callbacks) {
   SimpleFileSystem* fileSystem = static_cast<SimpleFileSystem*>(
       test_environment->webkit_platform_support()->fileSystem());
   fileSystem->OpenFileSystem(frame, type, size, create, callbacks);
 }
 
-void DeleteFileSystem(WebFrame* frame, WebFileSystem::Type type,
+void DeleteFileSystem(WebFrame* frame,
+                      WebKit::WebFileSystemType type,
                       WebFileSystemCallbacks* callbacks) {
   SimpleFileSystem* fileSystem = static_cast<SimpleFileSystem*>(
       test_environment->webkit_platform_support()->fileSystem());
@@ -845,7 +835,7 @@ WebKit::WebString RegisterIsolatedFileSystem(
     const WebKit::WebVector<WebKit::WebString>& filenames) {
   fileapi::IsolatedContext::FileInfoSet files;
   for (size_t i = 0; i < filenames.size(); ++i) {
-    FilePath path = webkit_base::WebStringToFilePath(filenames[i]);
+    base::FilePath path = webkit_base::WebStringToFilePath(filenames[i]);
     files.AddPath(path, NULL);
   }
   std::string filesystemId =

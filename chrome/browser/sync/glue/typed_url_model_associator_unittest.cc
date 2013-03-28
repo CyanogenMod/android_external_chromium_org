@@ -72,7 +72,7 @@ class TestTypedUrlModelAssociator : public TypedUrlModelAssociator {
       : TypedUrlModelAssociator(&mock_, NULL, NULL),
         startup_(startup),
         aborted_(aborted) {}
-  virtual bool IsAbortPending() {
+  virtual bool IsAbortPending() OVERRIDE {
     // Let the main thread know that we've been started up, and block until
     // they've called Abort().
     startup_->Signal();
@@ -93,7 +93,7 @@ static void CreateModelAssociator(base::WaitableEvent* startup,
   // test to finish.
   *associator = new TestTypedUrlModelAssociator(startup, aborted);
   // AssociateModels should be aborted and should return false.
-  syncer::SyncError error = (*associator)->AssociateModels();
+  syncer::SyncError error = (*associator)->AssociateModels(NULL, NULL);
 
   // TODO(lipalani): crbug.com/122690 fix this when fixing abort.
   // EXPECT_TRUE(error.IsSet());

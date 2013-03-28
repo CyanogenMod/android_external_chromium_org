@@ -34,12 +34,15 @@ HostStarter::~HostStarter() {
 }
 
 scoped_ptr<HostStarter> HostStarter::Create(
+    const std::string& oauth2_token_url,
+    const std::string& chromoting_hosts_url,
     net::URLRequestContextGetter* url_request_context_getter) {
   scoped_ptr<gaia::GaiaOAuthClient> oauth_client(
-      new gaia::GaiaOAuthClient(gaia::kGaiaOAuth2Url,
-                                url_request_context_getter));
+      new gaia::GaiaOAuthClient(
+          oauth2_token_url, url_request_context_getter));
   scoped_ptr<remoting::ServiceClient> service_client(
-      new remoting::ServiceClient(url_request_context_getter));
+      new remoting::ServiceClient(
+          chromoting_hosts_url, url_request_context_getter));
   scoped_ptr<remoting::DaemonController> daemon_controller(
       remoting::DaemonController::Create());
   return scoped_ptr<HostStarter>(
@@ -103,9 +106,9 @@ void HostStarter::OnGetUserInfoResponse(const std::string& user_email) {
   user_email_ = user_email;
   // Register the host.
   host_id_ = base::GenerateGUID();
-  key_pair_.Generate();
+  key_pair_ = RsaKeyPair::Generate();
   service_client_->RegisterHost(
-      host_id_, host_name_, key_pair_.GetPublicKey(), access_token_, this);
+      host_id_, host_name_, key_pair_->GetPublicKey(), access_token_, this);
 }
 
 void HostStarter::OnHostRegistered() {
@@ -121,7 +124,7 @@ void HostStarter::OnHostRegistered() {
   config->SetString("oauth_refresh_token", refresh_token_);
   config->SetString("host_id", host_id_);
   config->SetString("host_name", host_name_);
-  config->SetString("private_key", key_pair_.GetAsString());
+  config->SetString("private_key", key_pair_->ToString());
   config->SetString("host_secret_hash", host_secret_hash);
   daemon_controller_->SetConfigAndStart(
       config.Pass(), consent_to_data_collection_,

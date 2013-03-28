@@ -89,26 +89,30 @@ class NET_EXPORT_PRIVATE DnsResponse {
                                // leads there.
     DNS_SIZE_MISMATCH,         // Got an address but size does not match.
     DNS_CNAME_AFTER_ADDRESS,   // Found CNAME after an address record.
-    DNS_ADDRESS_TTL_MISMATCH,  // TTL of all address records are not identical.
+    DNS_ADDRESS_TTL_MISMATCH,  // OBSOLETE. No longer used.
     DNS_NO_ADDRESSES,          // OBSOLETE. No longer used.
     // Only add new values here.
     DNS_PARSE_RESULT_MAX,      // Bounding value for histograms.
   };
 
-  // Constructs an object with an IOBuffer large enough to read
-  // one byte more than largest possible response, to detect malformed
-  // responses.
+  // Constructs a response buffer large enough to store one byte more than
+  // largest possible response, to detect malformed responses.
   DnsResponse();
-  // Constructs response from |data|. Used for testing purposes only!
+
+  // Constructs a response buffer of given length. Used for TCP transactions.
+  explicit DnsResponse(size_t length);
+
+  // Constructs a response from |data|. Used for testing purposes only!
   DnsResponse(const void* data, size_t length, size_t answer_offset);
+
   ~DnsResponse();
 
   // Internal buffer accessor into which actual bytes of response will be
   // read.
   IOBufferWithSize* io_buffer() { return io_buffer_.get(); }
 
-  // Returns false if the packet is shorter than the header or does not match
-  // |query| id or question.
+  // Assuming the internal buffer holds |nbytes| bytes, returns true iff the
+  // packet matches the |query| id and question.
   bool InitParse(int nbytes, const DnsQuery& query);
 
   // Returns true if response is valid, that is, after successful InitParse.

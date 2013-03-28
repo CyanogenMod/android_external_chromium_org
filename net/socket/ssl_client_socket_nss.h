@@ -24,10 +24,10 @@
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/base/nss_memio.h"
-#include "net/base/server_bound_cert_service.h"
-#include "net/base/ssl_config_service.h"
 #include "net/base/x509_certificate.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/ssl_config_service.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -115,7 +115,6 @@ class SSLClientSocketNSS : public SSLClientSocket {
     STATE_NONE,
     STATE_HANDSHAKE,
     STATE_HANDSHAKE_COMPLETE,
-    STATE_VERIFY_DNSSEC,
     STATE_VERIFY_CERT,
     STATE_VERIFY_CERT_COMPLETE,
   };
@@ -135,7 +134,6 @@ class SSLClientSocketNSS : public SSLClientSocket {
   int DoHandshakeLoop(int last_io_result);
   int DoHandshake();
   int DoHandshakeComplete(int result);
-  int DoVerifyDNSSEC(int result);
   int DoVerifyCert(int result);
   int DoVerifyCertComplete(int result);
 

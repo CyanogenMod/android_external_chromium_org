@@ -7,7 +7,10 @@
 #   http://www.gnu.org/software/make/manual/make.html
 #
 
-__PROJECT_LIST__
+PROJECTS:= \
+[[for project in projects:]]
+  {{project}} \
+[[]]
 
 # Define the default target
 all:
@@ -24,6 +27,11 @@ TARGET_LIST+=$(1)_TARGET
 $(1)_TARGET:
 	+$(MAKE) -C $(1)
 
+VERSIONS_LIST+=$(1)_VERSIONS
+.PHONY: $(1)_VERSIONS
+$(1)_VERSIONS:
+	+$(MAKE) -C $(1) all_versions
+
 CLEAN_LIST+=$(1)_CLEAN
 .PHONY: $(1)_CLEAN
 $(1)_CLEAN:
@@ -34,15 +42,16 @@ endef
 # Define the various targets via the Macro
 $(foreach proj,$(PROJECTS),$(eval $(call TARGET,$(proj))))
 
-__DEPENDENCIES__
-
 all: $(TARGET_LIST)
-	echo "Done building targets."
+	@echo Done building targets.
+
+all_versions: $(VERSIONS_LIST)
+	@echo Done building all versions.
 
 clean: $(CLEAN_LIST)
-	echo "Done cleaning targets."
+	@echo Done cleaning targets.
 
 .PHONY: RUN
 RUN: all
-	echo "Starting up python webserver."
+	@echo Starting up python webserver.
 	python ../tools/httpd.py

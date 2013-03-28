@@ -8,12 +8,10 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/url_constants.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_navigator.h"
 #include "content/public/common/page_transition_types.h"
+#include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -21,6 +19,7 @@
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/window/dialog_delegate.h"
 
 namespace chromeos {
 
@@ -46,6 +45,7 @@ class EnrollmentDialogView : public views::DialogDelegateView {
   // views::DialogDelegateView overrides
   virtual int GetDialogButtons() const OVERRIDE;
   virtual bool Accept() OVERRIDE;
+  virtual void OnClose() OVERRIDE;
   virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
 
   // views::WidgetDelegate overrides
@@ -55,9 +55,6 @@ class EnrollmentDialogView : public views::DialogDelegateView {
   // views::View overrides
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
-  // views::Widget overrides
-  virtual views::View* GetContentsView() OVERRIDE;
-
  private:
   EnrollmentDialogView(const std::string& network_name,
                        Profile* profile,
@@ -65,6 +62,7 @@ class EnrollmentDialogView : public views::DialogDelegateView {
                        const base::Closure& connect);
   void InitDialog();
 
+  bool accepted_;
   std::string network_name_;
   Profile* profile_;
   GURL target_uri_;
@@ -79,7 +77,8 @@ EnrollmentDialogView::EnrollmentDialogView(const std::string& network_name,
                                            Profile* profile,
                                            const GURL& target_uri,
                                            const base::Closure& connect)
-    : network_name_(network_name),
+    : accepted_(false),
+      network_name_(network_name),
       profile_(profile),
       target_uri_(target_uri),
       connect_(connect),
@@ -109,21 +108,19 @@ int EnrollmentDialogView::GetDialogButtons() const {
 }
 
 bool EnrollmentDialogView::Accept() {
-  // TODO(beng): use Navigate().
-  // Navigate to the target URI in a browser tab.
-  Browser* browser = browser::FindTabbedBrowser(profile_, false,
-                                                chrome::HOST_DESKTOP_TYPE_ASH);
-  if (!browser) {
-    // Couldn't find a tabbed browser: create one.
-    browser = new Browser(
-        Browser::CreateParams(Browser::TYPE_TABBED,
-                              profile_,
-                              chrome::HOST_DESKTOP_TYPE_ASH));
-  }
-  DCHECK(browser);
-  chrome::AddSelectedTabWithURL(browser, target_uri_,
-                                content::PAGE_TRANSITION_LINK);
+  accepted_ = true;
   return true;
+}
+
+void EnrollmentDialogView::OnClose() {
+  if (!accepted_)
+    return;
+  chrome::NavigateParams params(profile_,
+                                GURL(target_uri_),
+                                content::PAGE_TRANSITION_LINK);
+  params.disposition = NEW_FOREGROUND_TAB;
+  params.window_action = chrome::NavigateParams::SHOW_WINDOW;
+  chrome::Navigate(&params);
 }
 
 string16 EnrollmentDialogView::GetDialogButtonLabel(
@@ -143,10 +140,6 @@ string16 EnrollmentDialogView::GetWindowTitle() const {
 
 gfx::Size EnrollmentDialogView::GetPreferredSize() {
   return gfx::Size(kDefaultWidth, kDefaultHeight);
-}
-
-views::View* EnrollmentDialogView::GetContentsView() {
-  return this;
 }
 
 void EnrollmentDialogView::InitDialog() {
@@ -230,7 +223,7 @@ void DialogEnrollmentDelegate::Enroll(const std::vector<std::string>& uri_list,
   for (std::vector<std::string>::const_iterator iter = uri_list.begin();
        iter != uri_list.end(); ++iter) {
     GURL uri(*iter);
-    if (uri.IsStandard() || uri.scheme() == chrome::kExtensionScheme) {
+    if (uri.IsStandard() || uri.scheme() == extensions::kExtensionScheme) {
       // If this is a "standard" scheme, like http, ftp, etc., then open that in
       // the enrollment dialog.
       EnrollmentDialogView::ShowDialog(owning_window_,

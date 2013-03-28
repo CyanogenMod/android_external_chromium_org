@@ -6,12 +6,14 @@
 
 namespace app_mode {
 
+const char kAppShimSocketName[] = "App Shim Socket";
+
 NSString* const kBrowserBundleIDKey = @"CrBundleIdentifier";
 NSString* const kCrAppModeShortcutIDKey = @"CrAppModeShortcutID";
 NSString* const kCrAppModeShortcutNameKey = @"CrAppModeShortcutName";
 NSString* const kCrAppModeShortcutURLKey = @"CrAppModeShortcutURL";
 NSString* const kCrAppModeUserDataDirKey = @"CrAppModeUserDataDir";
-NSString* const kCrAppModeExtensionPathKey = @"CrAppModeExtensionPath";
+NSString* const kCrAppModeProfileDirKey = @"CrAppModeProfileDir";
 
 NSString* const kLastRunAppBundlePathPrefsKey = @"LastRunAppBundlePath";
 

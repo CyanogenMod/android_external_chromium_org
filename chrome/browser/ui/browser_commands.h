@@ -7,16 +7,16 @@
 
 #include <string>
 
-#include "chrome/browser/debugger/devtools_toggle_action.h"
+#include "chrome/browser/devtools/devtools_toggle_action.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "content/public/common/page_zoom.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class Browser;
 class CommandObserver;
 class GURL;
 class Profile;
-class TabContents;
 
 namespace content {
 class WebContents;
@@ -40,16 +40,15 @@ void RemoveCommandObserver(Browser*, int command, CommandObserver* observer);
 int GetContentRestrictions(const Browser* browser);
 
 // Opens a new window with the default blank tab.
-void NewEmptyWindow(Profile* profile);
 void NewEmptyWindow(Profile* profile, HostDesktopType desktop_type);
 
 // Opens a new window with the default blank tab. This bypasses metrics and
 // various internal bookkeeping; NewEmptyWindow (above) is preferred.
-Browser* OpenEmptyWindow(Profile* profile);
 Browser* OpenEmptyWindow(Profile* profile, HostDesktopType desktop_type);
 
 // Opens a new window with the tabs from |profile|'s TabRestoreService.
-void OpenWindowWithRestoredTabs(Profile* profile);
+void OpenWindowWithRestoredTabs(Profile* profile,
+                                HostDesktopType host_desktop_type);
 
 // Opens the specified URL in a new browser window in an incognito session on
 // the desktop specified by |desktop_type|. If there is already an existing
@@ -77,7 +76,8 @@ void CloseWindow(Browser* browser);
 void NewTab(Browser* browser);
 void CloseTab(Browser* browser);
 void RestoreTab(Browser* browser);
-bool CanRestoreTab(const Browser* browser);
+TabStripModelDelegate::RestoreTabType GetRestoreTabType(
+    const Browser* browser);
 void SelectNextTab(Browser* browser);
 void SelectPreviousTab(Browser* browser);
 void OpenTabpose(Browser* browser);  // Mac-only
@@ -87,7 +87,7 @@ void SelectNumberedTab(Browser* browser, int index);
 void SelectLastTab(Browser* browser);
 void DuplicateTab(Browser* browser);
 bool CanDuplicateTab(const Browser* browser);
-TabContents* DuplicateTabAt(Browser* browser, int index);
+content::WebContents* DuplicateTabAt(Browser* browser, int index);
 bool CanDuplicateTabAt(Browser* browser, int index);
 void ConvertPopupToTabbedBrowser(Browser* browser);
 void Exit();
@@ -100,11 +100,11 @@ void TogglePagePinnedToStartScreen(Browser* browser);
 void SavePage(Browser* browser);
 bool CanSavePage(const Browser* browser);
 void ShowFindBar(Browser* browser);
-void ShowPageInfo(Browser* browser,
-                  content::WebContents* web_contents,
-                  const GURL& url,
-                  const content::SSLStatus& ssl,
-                  bool show_history);
+void ShowWebsiteSettings(Browser* browser,
+                         content::WebContents* web_contents,
+                         const GURL& url,
+                         const content::SSLStatus& ssl,
+                         bool show_history);
 void ShowChromeToMobileBubble(Browser* browser);
 void Print(Browser* browser);
 bool CanPrint(const Browser* browser);
@@ -144,12 +144,12 @@ void ToggleFullscreenMode(Browser* browser);
 void ClearCache(Browser* browser);
 bool IsDebuggerAttachedToCurrentTab(Browser* browser);
 
-// Opens view-source tab for given tab contents.
-void ViewSource(Browser* browser, TabContents* tab);
+// Opens a view-source tab for a given web contents.
+void ViewSource(Browser* browser, content::WebContents* tab);
 
-// Opens view-source tab for any frame within given tab contents.
+// Opens a view-source tab for any frame within a given web contents.
 void ViewSource(Browser* browser,
-                TabContents* tab,
+                content::WebContents* tab,
                 const GURL& url,
                 const std::string& content_state);
 

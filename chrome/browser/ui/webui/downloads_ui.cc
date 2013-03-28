@@ -13,14 +13,14 @@
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/downloads_dom_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -32,9 +32,9 @@ using content::WebContents;
 
 namespace {
 
-ChromeWebUIDataSource* CreateDownloadsUIHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIDownloadsHost);
+content::WebUIDataSource* CreateDownloadsUIHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIDownloadsHost);
 
   source->AddLocalizedString("title", IDS_DOWNLOAD_TITLE);
   source->AddLocalizedString("searchbutton", IDS_DOWNLOAD_SEARCH_BUTTON);
@@ -71,10 +71,11 @@ ChromeWebUIDataSource* CreateDownloadsUIHTMLSource() {
   source->AddLocalizedString("control_removefromlist",
                              IDS_DOWNLOAD_LINK_REMOVE);
 
-  source->set_json_path("strings.js");
-  source->add_resource_path("downloads.css", IDR_DOWNLOADS_CSS);
-  source->add_resource_path("downloads.js", IDR_DOWNLOADS_JS);
-  source->set_default_resource(IDR_DOWNLOADS_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("downloads.css", IDR_DOWNLOADS_CSS);
+  source->AddResourcePath("downloads.js", IDR_DOWNLOADS_JS);
+  source->SetDefaultResource(IDR_DOWNLOADS_HTML);
+  source->SetUseJsonJSFormatV2();
 
   return source;
 }
@@ -95,12 +96,11 @@ DownloadsUI::DownloadsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   web_ui->AddMessageHandler(handler);
 
   // Set up the chrome://downloads/ source.
-  ChromeWebUIDataSource* source = CreateDownloadsUIHTMLSource();
-  source->set_use_json_js_format_v2();
-  ChromeURLDataManager::AddDataSource(profile, source);
+  content::WebUIDataSource* source = CreateDownloadsUIHTMLSource();
+  content::WebUIDataSource::Add(profile, source);
 #if defined(ENABLE_THEMES)
   ThemeSource* theme = new ThemeSource(profile);
-  ChromeURLDataManager::AddDataSource(profile, theme);
+  content::URLDataSource::Add(profile, theme);
 #endif
 }
 

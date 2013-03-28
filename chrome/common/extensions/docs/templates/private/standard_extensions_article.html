@@ -5,9 +5,9 @@
     <title>{{article.title}} - Google Chrome</title>
   </head>
   <body>
-    {{+partials.header_body title:extensions_title}}
+    {{+partials.header_body title:extensions_title platform:extension}}
     <div id="gc-container">
-      {{+partials.extensions_sidenav}}
+      {{+partials.sidenav items:sidenavs.extensions}}
       <div id="gc-pagecontent">
         <h1 class="page_title">{{article.title}}</h1>
         {{?article.extensions_toc}}

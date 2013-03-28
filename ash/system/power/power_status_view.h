@@ -27,9 +27,11 @@ class PowerStatusView : public views::View {
   virtual ~PowerStatusView() {}
 
   void UpdatePowerStatus(const PowerSupplyStatus& status);
+  const string16& accessible_name() const { return accessible_name_; }
 
   // Overridden from views::View.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void Layout() OVERRIDE;
 
  private:
   void LayoutDefaultView();
@@ -40,6 +42,7 @@ class PowerStatusView : public views::View {
   void UpdateTextForDefaultView();
   void UpdateTextForNotificationView();
   int GetRoundedBatteryPercentage() const;
+  string16 GetBatteryTimeAccessibilityString(int hour, int min);
 
   // Overridden from views::View.
   virtual void ChildPreferredSizeChanged(views::View* child) OVERRIDE;
@@ -54,6 +57,7 @@ class PowerStatusView : public views::View {
 
   // Labels used only for VIEW_DEFAULT.
   views::Label* time_status_label_;
+  views::Label* percentage_label_;
 
   // Battery status indicator icon.
   views::ImageView* icon_;
@@ -64,6 +68,8 @@ class PowerStatusView : public views::View {
   ViewType view_type_;
 
   PowerSupplyStatus supply_status_;
+
+  string16 accessible_name_;
 
   DISALLOW_COPY_AND_ASSIGN(PowerStatusView);
 };

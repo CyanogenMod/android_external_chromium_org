@@ -23,12 +23,12 @@ class VIEWS_EXPORT SlideOutView : public views::View,
   virtual void OnSlideOut() = 0;
 
   // Overridden from views::View.
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
  private:
   enum SlideDirection {
     SLIDE_LEFT,
-    SLIDE_RIGHT
+    SLIDE_RIGHT,
   };
 
   // Restores the transform and opacity of the view.

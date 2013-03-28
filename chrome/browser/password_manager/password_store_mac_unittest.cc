@@ -7,8 +7,8 @@
 
 #include "base/basictypes.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -33,6 +33,8 @@ public:
   MOCK_METHOD2(OnPasswordStoreRequestDone,
                void(CancelableRequestProvider::Handle,
                     const std::vector<content::PasswordForm*>&));
+  MOCK_METHOD1(OnGetPasswordStoreResults,
+               void(const std::vector<content::PasswordForm*>&));
 };
 
 ACTION(STLDeleteElements0) {
@@ -904,7 +906,7 @@ class PasswordStoreMacTest : public testing::Test {
   virtual void SetUp() {
     login_db_ = new LoginDatabase();
     ASSERT_TRUE(db_dir_.CreateUniqueTempDir());
-    FilePath db_file = db_dir_.path().AppendASCII("login.db");
+    base::FilePath db_file = db_dir_.path().AppendASCII("login.db");
     ASSERT_TRUE(login_db_->Init(db_file));
 
     keychain_ = new MockAppleKeychain();
@@ -926,7 +928,7 @@ class PasswordStoreMacTest : public testing::Test {
   MockAppleKeychain* keychain_;  // Owned by store_.
   LoginDatabase* login_db_;  // Owned by store_.
   scoped_refptr<PasswordStoreMac> store_;
-  ScopedTempDir db_dir_;
+  base::ScopedTempDir db_dir_;
 };
 
 TEST_F(PasswordStoreMacTest, TestStoreUpdate) {
@@ -996,10 +998,10 @@ TEST_F(PasswordStoreMacTest, TestStoreUpdate) {
 
   // Do a store-level query to wait for all the operations above to be done.
   MockPasswordStoreConsumer consumer;
-  ON_CALL(consumer, OnPasswordStoreRequestDone(_, _)).WillByDefault(
+  ON_CALL(consumer, OnGetPasswordStoreResults(_)).WillByDefault(
       QuitUIMessageLoop());
-  EXPECT_CALL(consumer, OnPasswordStoreRequestDone(_, _)).WillOnce(
-      DoAll(WithArg<1>(STLDeleteElements0()), QuitUIMessageLoop()));
+  EXPECT_CALL(consumer, OnGetPasswordStoreResults(_)).WillOnce(
+      DoAll(WithArg<0>(STLDeleteElements0()), QuitUIMessageLoop()));
   store_->GetLogins(*joint_form, &consumer);
   MessageLoop::current()->Run();
 

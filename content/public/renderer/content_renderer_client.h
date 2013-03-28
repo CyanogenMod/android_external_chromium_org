@@ -12,18 +12,32 @@
 #include "ipc/ipc_message.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/page_transition_types.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationPolicy.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationType.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPageVisibilityState.h"
 #include "v8/include/v8.h"
 
-class FilePath;
 class GURL;
+class MessageLoop;
 class SkBitmap;
 
+namespace base {
+class FilePath;
+}
+
 namespace WebKit {
-class WebAudioSourceProvider;
+class WebClipboard;
 class WebFrame;
+class WebHyphenator;
 class WebMediaPlayerClient;
+class WebMediaStreamCenter;
+class WebMediaStreamCenterClient;
+class WebMimeRegistry;
 class WebPlugin;
+class WebPluginContainer;
+class WebRTCPeerConnectionHandler;
+class WebRTCPeerConnectionHandlerClient;
+class WebThemeEngine;
 class WebURLRequest;
 struct WebPluginParams;
 struct WebURLError;
@@ -36,17 +50,10 @@ class PpapiInterfaceFactoryManager;
 struct WebPluginInfo;
 }
 
-namespace media {
-class AudioRendererSink;
-class FilterCollection;
-class MediaLog;
-class MessageLoopFactory;
-}
-
 namespace webkit_media {
-class MediaStreamClient;
 class WebMediaPlayerDelegate;
 class WebMediaPlayerImpl;
+class WebMediaPlayerParams;
 }
 
 namespace content {
@@ -70,6 +77,10 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns the bitmap to show when a plugin crashed, or NULL for none.
   virtual SkBitmap* GetSadPluginBitmap();
 
+  // Returns the bitmap to show when a <webview> guest has crashed, or NULL for
+  // none.
+  virtual SkBitmap* GetSadWebViewBitmap();
+
   // Returns the default text encoding.
   virtual std::string GetDefaultEncoding();
 
@@ -86,7 +97,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // couldn't be loaded. This allows the embedder to show a custom placeholder.
   virtual WebKit::WebPlugin* CreatePluginReplacement(
       RenderView* render_view,
-      const FilePath& plugin_path);
+      const base::FilePath& plugin_path);
 
   // Returns true if the embedder has an error page to show for the given http
   // status code. If so |error_domain| should be set to according to WebURLError
@@ -116,23 +127,54 @@ class CONTENT_EXPORT ContentRendererClient {
       WebKit::WebFrame* frame,
       WebKit::WebMediaPlayerClient* client,
       base::WeakPtr<webkit_media::WebMediaPlayerDelegate> delegate,
-      media::FilterCollection* collection,
-      WebKit::WebAudioSourceProvider* audio_source_provider,
-      media::AudioRendererSink* audio_renderer_sink,
-      media::MessageLoopFactory* message_loop_factory,
-      webkit_media::MediaStreamClient* media_stream_client,
-      media::MediaLog* media_log);
+      const webkit_media::WebMediaPlayerParams& params);
+
+  // Allows the embedder to override creating a WebMediaStreamCenter. If it
+  // returns NULL the content layer will create the stream center.
+  virtual WebKit::WebMediaStreamCenter* OverrideCreateWebMediaStreamCenter(
+      WebKit::WebMediaStreamCenterClient* client);
+
+  // Allows the embedder to override creating a WebRTCPeerConnectionHandler. If
+  // it returns NULL the content layer will create the connection handler.
+  virtual WebKit::WebRTCPeerConnectionHandler*
+  OverrideCreateWebRTCPeerConnectionHandler(
+      WebKit::WebRTCPeerConnectionHandlerClient* client);
+
+  // Allows the embedder to override the WebKit::WebClipboard used. If it
+  // returns NULL the content layer will handle clipboard interactions.
+  virtual WebKit::WebClipboard* OverrideWebClipboard();
+
+  // Allows the embedder to override the WebKit::WebMimeRegistry used. If it
+  // returns NULL the content layer will provide its own mime registry.
+  virtual WebKit::WebMimeRegistry* OverrideWebMimeRegistry();
+
+  // Allows the embedder to override the WebKit::WebHyphenator used. If it
+  // returns NULL the content layer will handle hyphenation.
+  virtual WebKit::WebHyphenator* OverrideWebHyphenator();
+
+  // Allows the embedder to override the WebThemeEngine used. If it returns NULL
+  // the content layer will provide an engine.
+  virtual WebKit::WebThemeEngine* OverrideThemeEngine();
 
   // Returns true if the renderer process should schedule the idle handler when
   // all widgets are hidden.
   virtual bool RunIdleHandlerWhenWidgetsHidden();
 
-  // Returns true if the given url can create popup windows.
-  virtual bool AllowPopup(const GURL& creator);
+  // Returns true if a popup window should be allowed.
+  virtual bool AllowPopup();
+
+  // Returns true if the navigation was handled by the embedder and should be
+  // ignored by WebKit. This method is used by CEF.
+  virtual bool HandleNavigation(WebKit::WebFrame* frame,
+                                const WebKit::WebURLRequest& request,
+                                WebKit::WebNavigationType type,
+                                WebKit::WebNavigationPolicy default_policy,
+                                bool is_redirect);
 
   // Returns true if we should fork a new process for the given navigation.
   virtual bool ShouldFork(WebKit::WebFrame* frame,
                           const GURL& url,
+                          const std::string& http_method,
                           bool is_initial_navigation,
                           bool* send_referrer);
 
@@ -141,6 +183,7 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual bool WillSendRequest(WebKit::WebFrame* frame,
                                PageTransition transition_type,
                                const GURL& url,
+                               const GURL& first_party_for_cookies,
                                GURL* new_url);
 
   // Whether to pump events when sending sync cookie messages.  Needed if the
@@ -156,7 +199,7 @@ class CONTENT_EXPORT ContentRendererClient {
                                         v8::Handle<v8::Context>,
                                         int world_id) {}
 
-  // See WebKit::WebKitPlatformSupport.
+  // See WebKit::Platform.
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
                                              size_t length);
   virtual bool IsLinkVisited(unsigned long long link_hash);
@@ -181,6 +224,17 @@ class CONTENT_EXPORT ContentRendererClient {
 
   virtual void RegisterPPAPIInterfaceFactories(
       webkit::ppapi::PpapiInterfaceFactoryManager* factory_manager) {}
+
+  // Returns whether BrowserPlugin should be allowed within the |container|.
+  virtual bool AllowBrowserPlugin(WebKit::WebPluginContainer* container) const;
+
+  // Allow the embedder to specify a different renderer compositor MessageLoop.
+  // If not NULL, the returned MessageLoop must be valid for the lifetime of
+  // RenderThreadImpl. If NULL, then a new thread will be created.
+  virtual MessageLoop* OverrideCompositorMessageLoop() const;
+
+  // Allow the embedder to disable input event filtering by the compositor.
+  virtual bool ShouldCreateCompositorInputHandler() const;
 };
 
 }  // namespace content

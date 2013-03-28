@@ -63,6 +63,34 @@ cr.define('print_preview', function() {
      * @private
      */
     this.duplexCheckbox_ = null;
+
+    /**
+     * Print CSS backgrounds container element.
+     * @type {HTMLElement}
+     * @private
+     */
+    this.cssBackgroundContainer_ = null;
+
+    /**
+     * Print CSS backgrounds checkbox.
+     * @type {HTMLInputElement}
+     * @private
+     */
+    this.cssBackgroundCheckbox_ = null;
+
+    /**
+     * Print selection only container element.
+     * @type {HTMLElement}
+     * @private
+     */
+    this.selectionOnlyContainer_ = null;
+
+    /**
+     * Print selection only checkbox.
+     * @type {HTMLInputElement}
+     * @private
+     */
+    this.selectionOnlyCheckbox_ = null;
   };
 
   OtherOptionsSettings.prototype = {
@@ -73,6 +101,7 @@ cr.define('print_preview', function() {
       this.headerFooterCheckbox_.disabled = !isEnabled;
       this.fitToPageCheckbox_.disabled = !isEnabled;
       this.duplexCheckbox_.disabled = !isEnabled;
+      this.cssBackgroundCheckbox_.disabled = !isEnabled;
     },
 
     /** @override */
@@ -90,6 +119,14 @@ cr.define('print_preview', function() {
           this.duplexCheckbox_,
           'click',
           this.onDuplexCheckboxClick_.bind(this));
+      this.tracker.add(
+          this.cssBackgroundCheckbox_,
+          'click',
+          this.onCssBackgroundCheckboxClick_.bind(this));
+      this.tracker.add(
+          this.selectionOnlyCheckbox_,
+          'click',
+          this.onSelectionOnlyCheckboxClick_.bind(this));
       this.tracker.add(
           this.printTicketStore_,
           print_preview.PrintTicketStore.EventType.INITIALIZE,
@@ -117,6 +154,10 @@ cr.define('print_preview', function() {
       this.fitToPageCheckbox_ = null;
       this.duplexContainer_ = null;
       this.duplexCheckbox_ = null;
+      this.cssBackgroundContainer_ = null;
+      this.cssBackgroundCheckbox_ = null;
+      this.selectionOnlyContainer_ = null;
+      this.selectionOnlyCheckbox_ = null;
     },
 
     /** @override */
@@ -133,6 +174,14 @@ cr.define('print_preview', function() {
           '.duplex-container');
       this.duplexCheckbox_ = this.duplexContainer_.querySelector(
           '.duplex-checkbox');
+      this.cssBackgroundContainer_ = this.getElement().querySelector(
+          '.css-background-container');
+      this.cssBackgroundCheckbox_ = this.cssBackgroundContainer_.querySelector(
+          '.css-background-checkbox');
+      this.selectionOnlyContainer_ = this.getElement().querySelector(
+          '.selection-only-container');
+      this.selectionOnlyCheckbox_ = this.selectionOnlyContainer_.querySelector(
+          '.selection-only-checkbox');
     },
 
     /**
@@ -163,8 +212,28 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Called when the print CSS backgrounds checkbox is clicked. Updates the
+     * print ticket store.
+     * @private
+     */
+    onCssBackgroundCheckboxClick_: function() {
+      this.printTicketStore_.updateCssBackground(
+          this.cssBackgroundCheckbox_.checked);
+    },
+
+    /**
+     * Called when the print selection only is clicked. Updates the
+     * print ticket store.
+     * @private
+     */
+    onSelectionOnlyCheckboxClick_: function() {
+      this.printTicketStore_.updateSelectionOnly(
+          this.selectionOnlyCheckbox_.checked);
+    },
+
+    /**
      * Called when the print ticket store has changed. Hides or shows the
-     * setting.
+     * settings.
      * @private
      */
     onPrintTicketStoreChange_: function() {
@@ -182,9 +251,21 @@ cr.define('print_preview', function() {
                    this.printTicketStore_.hasDuplexCapability());
       this.duplexCheckbox_.checked = this.printTicketStore_.isDuplexEnabled();
 
+      setIsVisible(this.cssBackgroundContainer_,
+                   this.printTicketStore_.hasCssBackgroundCapability());
+      this.cssBackgroundCheckbox_.checked =
+          this.printTicketStore_.isCssBackgroundEnabled();
+
+      setIsVisible(this.selectionOnlyContainer_,
+                   this.printTicketStore_.hasSelectionOnlyCapability());
+      this.selectionOnlyCheckbox_.checked =
+          this.printTicketStore_.isSelectionOnlyEnabled();
+
       if (this.printTicketStore_.hasHeaderFooterCapability() ||
           this.printTicketStore_.hasFitToPageCapability() ||
-          this.printTicketStore_.hasDuplexCapability()) {
+          this.printTicketStore_.hasDuplexCapability() ||
+          this.printTicketStore_.hasCssBackgroundCapability() ||
+          this.printTicketStore_.hasSelectionOnlyCapability()) {
         fadeInOption(this.getElement());
       } else {
         fadeOutOption(this.getElement());

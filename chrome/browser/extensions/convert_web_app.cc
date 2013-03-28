@@ -10,21 +10,22 @@
 #include <vector>
 
 #include "base/base64.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stringprintf.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/web_apps.h"
 #include "crypto/sha2.h"
+#include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -86,15 +87,15 @@ std::string ConvertTimeToExtensionVersion(const Time& create_time) {
 scoped_refptr<Extension> ConvertWebAppToExtension(
     const WebApplicationInfo& web_app,
     const Time& create_time,
-    const FilePath& extensions_dir) {
-  FilePath install_temp_dir =
+    const base::FilePath& extensions_dir) {
+  base::FilePath install_temp_dir =
       extension_file_util::GetInstallTempDir(extensions_dir);
   if (install_temp_dir.empty()) {
     LOG(ERROR) << "Could not get path to profile temporary directory.";
     return NULL;
   }
 
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   if (!temp_dir.CreateUniqueTempDirUnderPath(install_temp_dir)) {
     LOG(ERROR) << "Could not create temporary directory.";
     return NULL;
@@ -122,9 +123,9 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
   DictionaryValue* icons = new DictionaryValue();
   root->Set(keys::kIcons, icons);
   for (size_t i = 0; i < web_app.icons.size(); ++i) {
-    std::string size = StringPrintf("%i", web_app.icons[i].width);
-    std::string icon_path = StringPrintf("%s/%s.png", kIconsDirName,
-                                         size.c_str());
+    std::string size = base::StringPrintf("%i", web_app.icons[i].width);
+    std::string icon_path = base::StringPrintf("%s/%s.png", kIconsDirName,
+                                               size.c_str());
     icons->SetString(size, icon_path);
   }
 
@@ -143,8 +144,7 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
   }
 
   // Write the manifest.
-  FilePath manifest_path = temp_dir.path().Append(
-      Extension::kManifestFilename);
+  base::FilePath manifest_path = temp_dir.path().Append(kManifestFilename);
   JSONFileValueSerializer serializer(manifest_path);
   if (!serializer.Serialize(*root)) {
     LOG(ERROR) << "Could not serialize manifest.";
@@ -152,7 +152,7 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
   }
 
   // Write the icon files.
-  FilePath icons_dir = temp_dir.path().AppendASCII(kIconsDirName);
+  base::FilePath icons_dir = temp_dir.path().AppendASCII(kIconsDirName);
   if (!file_util::CreateDirectory(icons_dir)) {
     LOG(ERROR) << "Could not create icons directory.";
     return NULL;
@@ -162,8 +162,8 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
     if (web_app.icons[i].data.config() == SkBitmap::kNo_Config)
       continue;
 
-    FilePath icon_file = icons_dir.AppendASCII(
-        StringPrintf("%i.png", web_app.icons[i].width));
+    base::FilePath icon_file = icons_dir.AppendASCII(
+        base::StringPrintf("%i.png", web_app.icons[i].width));
     std::vector<unsigned char> image_data;
     if (!gfx::PNGCodec::EncodeBGRASkBitmap(web_app.icons[i].data,
                                            false,
@@ -186,7 +186,7 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
     extension_flags |= Extension::FROM_BOOKMARK;
   scoped_refptr<Extension> extension = Extension::Create(
       temp_dir.path(),
-      Extension::INTERNAL,
+      Manifest::INTERNAL,
       *root,
       extension_flags,
       &error);

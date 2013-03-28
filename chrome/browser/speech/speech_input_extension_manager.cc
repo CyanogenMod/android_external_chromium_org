@@ -6,9 +6,11 @@
 
 #include "base/bind.h"
 #include "base/json/json_writer.h"
+#include "base/lazy_instance.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/event_router.h"
+#include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -17,6 +19,7 @@
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "chrome/browser/speech/speech_input_extension_api.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
@@ -58,82 +61,6 @@ const char kOnResultEvent[] = "experimental.speechInput.onResult";
 const char kOnSoundStartEvent[] = "experimental.speechInput.onSoundStart";
 const char kOnSoundEndEvent[] = "experimental.speechInput.onSoundEnd";
 
-// Wrap an SpeechInputExtensionManager using scoped_refptr to avoid
-// assertion failures on destruction because of not using release().
-class SpeechInputExtensionManagerWrapper : public ProfileKeyedService {
- public:
-  explicit SpeechInputExtensionManagerWrapper(
-      SpeechInputExtensionManager* manager)
-      : manager_(manager) {}
-
-  virtual ~SpeechInputExtensionManagerWrapper() {}
-
-  SpeechInputExtensionManager* manager() const { return manager_.get(); }
-
- private:
-  // Methods from ProfileKeyedService.
-  virtual void Shutdown() OVERRIDE {
-    manager()->ShutdownOnUIThread();
-  }
-
-  scoped_refptr<SpeechInputExtensionManager> manager_;
-};
-}
-
-// Factory for SpeechInputExtensionManagers as profile keyed services.
-class SpeechInputExtensionManager::Factory : public ProfileKeyedServiceFactory {
- public:
-  static void Initialize();
-  static Factory* GetInstance();
-
-  SpeechInputExtensionManagerWrapper* GetForProfile(Profile* profile);
-
- private:
-  friend struct DefaultSingletonTraits<Factory>;
-
-  Factory();
-  virtual ~Factory();
-
-  // ProfileKeyedServiceFactory methods:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE { return false; }
-  virtual bool ServiceIsNULLWhileTesting() const OVERRIDE { return true; }
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE { return true; }
-
-  DISALLOW_COPY_AND_ASSIGN(Factory);
-};
-
-void SpeechInputExtensionManager::Factory::Initialize() {
-  GetInstance();
-}
-
-SpeechInputExtensionManager::Factory*
-    SpeechInputExtensionManager::Factory::GetInstance() {
-  return Singleton<SpeechInputExtensionManager::Factory>::get();
-}
-
-SpeechInputExtensionManagerWrapper*
-    SpeechInputExtensionManager::Factory::GetForProfile(
-    Profile* profile) {
-  return static_cast<SpeechInputExtensionManagerWrapper*>(
-      GetServiceForProfile(profile, true));
-}
-
-SpeechInputExtensionManager::Factory::Factory()
-    : ProfileKeyedServiceFactory("SpeechInputExtensionManager",
-                                 ProfileDependencyManager::GetInstance()) {
-}
-
-SpeechInputExtensionManager::Factory::~Factory() {
-}
-
-ProfileKeyedService*
-    SpeechInputExtensionManager::Factory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  scoped_refptr<SpeechInputExtensionManager> manager(
-      new SpeechInputExtensionManager(profile));
-  return new SpeechInputExtensionManagerWrapper(manager);
 }
 
 SpeechInputExtensionInterface::SpeechInputExtensionInterface() {
@@ -159,15 +86,12 @@ SpeechInputExtensionManager::~SpeechInputExtensionManager() {
 
 SpeechInputExtensionManager* SpeechInputExtensionManager::GetForProfile(
     Profile* profile) {
-  SpeechInputExtensionManagerWrapper* wrapper =
-      Factory::GetInstance()->GetForProfile(profile);
-  if (!wrapper)
+  extensions::SpeechInputAPI* speech_input_api =
+      extensions::ProfileKeyedAPIFactory<extensions::SpeechInputAPI>::
+          GetForProfile(profile);
+  if (!speech_input_api)
     return NULL;
-  return wrapper->manager();
-}
-
-void SpeechInputExtensionManager::InitializeFactory() {
-  Factory::Initialize();
+  return speech_input_api->manager();
 }
 
 void SpeechInputExtensionManager::Observe(int type,
@@ -263,9 +187,9 @@ int SpeechInputExtensionManager::GetRenderProcessIDForExtension(
   return rph->GetID();
 }
 
-void SpeechInputExtensionManager::OnRecognitionResult(
+void SpeechInputExtensionManager::OnRecognitionResults(
     int session_id,
-    const content::SpeechRecognitionResult& result) {
+    const content::SpeechRecognitionResults& results) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK_EQ(session_id, speech_recognition_session_id_);
 
@@ -275,35 +199,40 @@ void SpeechInputExtensionManager::OnRecognitionResult(
   ForceStopOnIOThread();
 
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(&SpeechInputExtensionManager::SetRecognitionResultOnUIThread,
-      this, result, extension_id));
+      base::Bind(&SpeechInputExtensionManager::SetRecognitionResultsOnUIThread,
+      this, results, extension_id));
 }
 
-void SpeechInputExtensionManager::SetRecognitionResultOnUIThread(
-    const content::SpeechRecognitionResult& result,
+void SpeechInputExtensionManager::SetRecognitionResultsOnUIThread(
+    const content::SpeechRecognitionResults& results,
     const std::string& extension_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  scoped_ptr<ListValue> args(new ListValue());
-  DictionaryValue* js_event = new DictionaryValue();
-  args->Append(js_event);
+  content::SpeechRecognitionResults::const_iterator it = results.begin();
+  for (; it != results.end(); ++it) {
+    const content::SpeechRecognitionResult& result = (*it);
 
-  ListValue* js_hypothesis_array = new ListValue();
-  js_event->Set(kHypothesesKey, js_hypothesis_array);
+    scoped_ptr<ListValue> args(new ListValue());
+    DictionaryValue* js_event = new DictionaryValue();
+    args->Append(js_event);
 
-  for (size_t i = 0; i < result.hypotheses.size(); ++i) {
-    const SpeechRecognitionHypothesis& hypothesis = result.hypotheses[i];
+    ListValue* js_hypothesis_array = new ListValue();
+    js_event->Set(kHypothesesKey, js_hypothesis_array);
 
-    DictionaryValue* js_hypothesis_object = new DictionaryValue();
-    js_hypothesis_array->Append(js_hypothesis_object);
+    for (size_t i = 0; i < result.hypotheses.size(); ++i) {
+      const SpeechRecognitionHypothesis& hypothesis = result.hypotheses[i];
 
-    js_hypothesis_object->SetString(kUtteranceKey,
-        UTF16ToUTF8(hypothesis.utterance));
-    js_hypothesis_object->SetDouble(kConfidenceKey,
-        hypothesis.confidence);
+      DictionaryValue* js_hypothesis_object = new DictionaryValue();
+      js_hypothesis_array->Append(js_hypothesis_object);
+
+      js_hypothesis_object->SetString(kUtteranceKey,
+          UTF16ToUTF8(hypothesis.utterance));
+      js_hypothesis_object->SetDouble(kConfidenceKey,
+          hypothesis.confidence);
+    }
+
+    DispatchEventToExtension(extension_id, kOnResultEvent, args.Pass());
   }
-
-  DispatchEventToExtension(extension_id, kOnResultEvent, args.Pass());
 }
 
 void SpeechInputExtensionManager::OnRecognitionStart(int session_id) {
@@ -448,7 +377,7 @@ void SpeechInputExtensionManager::OnSoundEnd(int session_id) {
 }
 
 void SpeechInputExtensionManager::DispatchEventToExtension(
-    const std::string& extension_id, const std::string& event,
+    const std::string& extension_id, const std::string& event_name,
     scoped_ptr<ListValue> event_args) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -457,9 +386,11 @@ void SpeechInputExtensionManager::DispatchEventToExtension(
     return;
 
   if (profile_ && extensions::ExtensionSystem::Get(profile_)->event_router()) {
+    scoped_ptr<extensions::Event> event(new extensions::Event(
+        event_name, event_args.Pass()));
+    event->restrict_to_profile = profile_;
     extensions::ExtensionSystem::Get(profile_)->event_router()->
-        DispatchEventToExtension(extension_id, event, event_args.Pass(),
-                                 profile_, GURL());
+        DispatchEventToExtension(extension_id, event.Pass());
   }
 }
 
@@ -525,8 +456,9 @@ bool SpeechInputExtensionManager::Start(
       NOTREACHED();
   }
 
-  const extensions::Extension* extension = profile_->GetExtensionService()->
-      GetExtensionById(extension_id, true);
+  const extensions::Extension* extension =
+      extensions::ExtensionSystem::Get(profile_)->extension_service()->
+          GetExtensionById(extension_id, true);
   DCHECK(extension);
   const std::string& extension_name = extension->name();
 
@@ -757,3 +689,31 @@ void SpeechInputExtensionManager::StopSucceededOnUIThread() {
 void SpeechInputExtensionManager::OnAudioLevelsChange(int session_id,
                                                       float volume,
                                                       float noise_volume) {}
+
+namespace extensions {
+
+SpeechInputAPI::SpeechInputAPI(Profile* profile)
+    : manager_(new SpeechInputExtensionManager(profile)) {
+  ExtensionFunctionRegistry* registry =
+      ExtensionFunctionRegistry::GetInstance();
+  registry->RegisterFunction<StartSpeechInputFunction>();
+  registry->RegisterFunction<StopSpeechInputFunction>();
+  registry->RegisterFunction<IsRecordingSpeechInputFunction>();
+}
+
+SpeechInputAPI::~SpeechInputAPI() {
+}
+
+void SpeechInputAPI::Shutdown() {
+    manager_->ShutdownOnUIThread();
+}
+
+static base::LazyInstance<ProfileKeyedAPIFactory<SpeechInputAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+ProfileKeyedAPIFactory<SpeechInputAPI>* SpeechInputAPI::GetFactoryInstance() {
+  return &g_factory.Get();
+}
+
+}  // namespace extensions

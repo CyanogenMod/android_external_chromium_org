@@ -5,15 +5,15 @@
 #include "net/http/http_network_layer.h"
 
 #include "net/base/mock_cert_verifier.h"
-#include "net/base/mock_host_resolver.h"
 #include "net/base/net_log.h"
-#include "net/base/ssl_config_service_defaults.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/http_transaction_unittest.h"
 #include "net/proxy/proxy_service.h"
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/spdy_session_pool.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -55,28 +55,28 @@ class HttpNetworkLayerTest : public PlatformTest {
 
 TEST_F(HttpNetworkLayerTest, CreateAndDestroy) {
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(&trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
   EXPECT_EQ(OK, rv);
   EXPECT_TRUE(trans.get() != NULL);
 }
 
 TEST_F(HttpNetworkLayerTest, Suspend) {
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(&trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
   EXPECT_EQ(OK, rv);
 
   trans.reset();
 
   factory_->OnSuspend();
 
-  rv = factory_->CreateTransaction(&trans, NULL);
+  rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
   EXPECT_EQ(ERR_NETWORK_IO_SUSPENDED, rv);
 
   ASSERT_TRUE(trans == NULL);
 
   factory_->OnResume();
 
-  rv = factory_->CreateTransaction(&trans, NULL);
+  rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
   EXPECT_EQ(OK, rv);
 }
 
@@ -106,7 +106,7 @@ TEST_F(HttpNetworkLayerTest, GET) {
   request_info.load_flags = LOAD_NORMAL;
 
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(&trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
   EXPECT_EQ(OK, rv);
 
   rv = trans->Start(&request_info, callback.callback(), BoundNetLog());
@@ -169,7 +169,7 @@ TEST_F(HttpNetworkLayerTest, ServerFallback) {
   request_info.load_flags = LOAD_NORMAL;
 
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(&trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
   EXPECT_EQ(OK, rv);
 
   rv = trans->Start(&request_info, callback.callback(), BoundNetLog());
@@ -224,7 +224,7 @@ TEST_F(HttpNetworkLayerTest, ServerFallbackDoesntLoop) {
   request_info.load_flags = LOAD_NORMAL;
 
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(&trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
   EXPECT_EQ(OK, rv);
 
   rv = trans->Start(&request_info, callback.callback(), BoundNetLog());
@@ -272,7 +272,7 @@ TEST_F(HttpNetworkLayerTest, ProxyBypassIgnoredOnDirectConnection) {
   request_info.load_flags = LOAD_NORMAL;
 
   scoped_ptr<HttpTransaction> trans;
-  int rv = factory_->CreateTransaction(&trans, NULL);
+  int rv = factory_->CreateTransaction(DEFAULT_PRIORITY, &trans, NULL);
   EXPECT_EQ(OK, rv);
 
   rv = trans->Start(&request_info, callback.callback(), BoundNetLog());

@@ -13,6 +13,7 @@
 #include "ash/wm/workspace/workspace_layout_manager.h"
 #include "ash/wm/workspace/workspace_manager.h"
 #include "ui/aura/window.h"
+#include "ui/views/corewm/visibility_controller.h"
 
 namespace ash {
 namespace internal {
@@ -25,16 +26,15 @@ Workspace::Workspace(WorkspaceManager* manager,
       window_(new aura::Window(NULL)),
       event_handler_(new WorkspaceEventHandler(window_)),
       workspace_layout_manager_(NULL) {
-  window_->SetProperty(internal::kChildWindowVisibilityChangesAnimatedKey,
-                       true);
-  SetWindowVisibilityAnimationTransition(window_, ANIMATE_NONE);
+  views::corewm::SetChildWindowVisibilityChangesAnimated(window_);
+  SetWindowVisibilityAnimationTransition(window_, views::corewm::ANIMATE_NONE);
   window_->set_id(kShellWindowId_WorkspaceContainer);
   window_->SetName("WorkspaceContainer");
   window_->Init(ui::LAYER_NOT_DRAWN);
   // Do this so when animating out windows don't extend beyond the bounds.
   window_->layer()->SetMasksToBounds(true);
   window_->Hide();
-  window_->SetParent(parent);
+  parent->AddChild(window_);
   window_->SetProperty(internal::kUsesScreenCoordinatesKey, true);
 
   // The layout-manager cannot be created in the initializer list since it
@@ -46,6 +46,17 @@ Workspace::Workspace(WorkspaceManager* manager,
 Workspace::~Workspace() {
   // ReleaseWindow() should have been invoked before we're deleted.
   DCHECK(!window_);
+}
+
+aura::Window* Workspace::GetTopmostActivatableWindow() {
+  for (aura::Window::Windows::const_reverse_iterator i =
+           window_->children().rbegin();
+       i != window_->children().rend();
+       ++i) {
+    if (wm::CanActivateWindow(*i))
+      return (*i);
+  }
+  return NULL;
 }
 
 aura::Window* Workspace::ReleaseWindow() {
@@ -62,19 +73,23 @@ bool Workspace::ShouldMoveToPending() const {
   if (!is_maximized_)
     return false;
 
-  bool has_visible_non_maximized_window = false;
   for (size_t i = 0; i < window_->children().size(); ++i) {
     aura::Window* child(window_->children()[i]);
-    if (!GetTrackedByWorkspace(child) || !child->TargetVisibility() ||
-        wm::IsWindowMinimized(child))
+    if (!child->TargetVisibility() || wm::IsWindowMinimized(child))
       continue;
-    if (WorkspaceManager::IsMaximized(child))
-      return false;
 
-    if (GetTrackedByWorkspace(child) && !GetPersistsAcrossAllWorkspaces(child))
-      has_visible_non_maximized_window = true;
+    if (!GetTrackedByWorkspace(child)) {
+      // If we have a maximized window that isn't tracked don't move to
+      // pending. This handles the case of dragging a maximized window.
+      if (WorkspaceManager::IsMaximized(child))
+        return false;
+      continue;
+    }
+
+    if (!GetPersistsAcrossAllWorkspaces(child))
+      return false;
   }
-  return !has_visible_non_maximized_window;
+  return true;
 }
 
 int Workspace::GetNumMaximizedWindows() const {

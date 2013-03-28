@@ -14,7 +14,7 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/stringprintf.h"
-#include "base/string_tokenizer.h"
+#include "base/strings/string_tokenizer.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
@@ -357,7 +357,7 @@ class CookieMonsterTest : public CookieStoreTest<CookieMonsterTestTraits> {
   CookieMonster* CreateMonsterForGC(int num_cookies) {
     CookieMonster* cm(new CookieMonster(NULL, NULL));
     for (int i = 0; i < num_cookies; i++) {
-      SetCookie(cm, GURL(StringPrintf("http://h%05d.izzle", i)), "a=1");
+      SetCookie(cm, GURL(base::StringPrintf("http://h%05d.izzle", i)), "a=1");
     }
     return cm;
   }
@@ -377,15 +377,6 @@ class MockGetCookiesCallback
                               CookieStore::GetCookiesCallback> {
  public:
   MOCK_METHOD1(Invoke, void(const std::string& cookies));
-};
-
-class MockGetCookieInfoCallback
-  : public MockCookieCallback<MockGetCookieInfoCallback,
-                              CookieStore::GetCookieInfoCallback> {
- public:
-  MOCK_METHOD2(Invoke,
-               void(const std::string& cookies,
-                    const std::vector<CookieStore::CookieInfo>& cookie_infos));
 };
 
 class MockSetCookiesCallback
@@ -433,10 +424,6 @@ ACTION_P4(DeleteCookieAction, cookie_monster, url, name, callback) {
 }
 ACTION_P3(GetCookiesAction, cookie_monster, url, callback) {
   cookie_monster->GetCookiesWithOptionsAsync(
-      url, CookieOptions(), callback->AsCallback());
-}
-ACTION_P3(GetCookiesWithInfoAction, cookie_monster, url, callback) {
-  cookie_monster->GetCookiesWithInfoAsync(
       url, CookieOptions(), callback->AsCallback());
 }
 ACTION_P4(SetCookieAction, cookie_monster, url, cookie_line, callback) {
@@ -615,27 +602,6 @@ TEST_F(DeferredCookieTaskTest, DeferredGetCookies) {
   EXPECT_CALL(get_cookies_callback, Invoke("X=1")).WillOnce(
       GetCookiesAction(&cookie_monster(), url_google_, &get_cookies_callback));
   EXPECT_CALL(get_cookies_callback, Invoke("X=1")).WillOnce(
-      QuitCurrentMessageLoop());
-
-  CompleteLoadingAndWait();
-}
-
-TEST_F(DeferredCookieTaskTest, DeferredGetCookiesWithInfo) {
-  DeclareLoadedCookie("www.google.izzle",
-                      "X=1; path=/; expires=Mon, 18-Apr-22 22:50:14 GMT",
-                      Time::Now() + TimeDelta::FromDays(3));
-
-  MockGetCookieInfoCallback get_cookie_info_callback;
-
-  BeginWithForDomainKey("google.izzle", GetCookiesWithInfoAction(
-      &cookie_monster(), url_google_, &get_cookie_info_callback));
-
-  WaitForLoadCall();
-
-  EXPECT_CALL(get_cookie_info_callback, Invoke("X=1", testing::_)).WillOnce(
-      GetCookiesWithInfoAction(
-          &cookie_monster(), url_google_, &get_cookie_info_callback));
-  EXPECT_CALL(get_cookie_info_callback, Invoke("X=1", testing::_)).WillOnce(
       QuitCurrentMessageLoop());
 
   CompleteLoadingAndWait();
@@ -855,7 +821,7 @@ TEST_F(DeferredCookieTaskTest, DeferredTaskOrder) {
   MockGetCookiesCallback get_cookies_callback;
   MockSetCookiesCallback set_cookies_callback;
   MockClosure delete_cookie_callback;
-  MockGetCookieInfoCallback get_cookie_info_callback;
+  MockGetCookiesCallback get_cookies_callback_deferred;
 
   EXPECT_CALL(*this, Begin()).WillOnce(testing::DoAll(
       GetCookiesAction(
@@ -870,9 +836,9 @@ TEST_F(DeferredCookieTaskTest, DeferredTaskOrder) {
 
   WaitForLoadCall();
   EXPECT_CALL(get_cookies_callback, Invoke("X=1")).WillOnce(
-      GetCookiesWithInfoAction(
-          &cookie_monster(), url_google_, &get_cookie_info_callback));
-  EXPECT_CALL(get_cookie_info_callback, Invoke("X=1", testing::_)).WillOnce(
+      GetCookiesAction(
+          &cookie_monster(), url_google_, &get_cookies_callback_deferred));
+  EXPECT_CALL(get_cookies_callback_deferred, Invoke("X=1")).WillOnce(
       QuitCurrentMessageLoop());
   EXPECT_CALL(set_cookies_callback, Invoke(true));
   EXPECT_CALL(delete_cookie_callback, Invoke());
@@ -1725,11 +1691,11 @@ TEST_F(CookieMonsterTest, MAYBE_GarbageCollectionTriggers) {
   // time and size of store to make sure we only get rid of cookies when
   // we really should.
   const struct TestCase {
-    int num_cookies;
-    int num_old_cookies;
-    int expected_initial_cookies;
+    size_t num_cookies;
+    size_t num_old_cookies;
+    size_t expected_initial_cookies;
     // Indexed by ExpiryAndKeyScheme
-    int expected_cookies_after_set;
+    size_t expected_cookies_after_set;
   } test_cases[] = {
     {
       // A whole lot of recent cookies; gc shouldn't happen.
@@ -1765,13 +1731,11 @@ TEST_F(CookieMonsterTest, MAYBE_GarbageCollectionTriggers) {
         CreateMonsterFromStoreForGC(
             test_case->num_cookies, test_case->num_old_cookies,
             CookieMonster::kSafeFromGlobalPurgeDays * 2));
-    EXPECT_EQ(test_case->expected_initial_cookies,
-              static_cast<int>(GetAllCookies(cm).size()))
+    EXPECT_EQ(test_case->expected_initial_cookies, GetAllCookies(cm).size())
         << "For test case " << ci;
     // Will trigger GC
     SetCookie(cm, GURL("http://newdomain.com"), "b=2");
-    EXPECT_EQ(test_case->expected_cookies_after_set,
-              static_cast<int>((GetAllCookies(cm).size())))
+    EXPECT_EQ(test_case->expected_cookies_after_set, GetAllCookies(cm).size())
         << "For test case " << ci;
   }
 }
@@ -1812,24 +1776,25 @@ class FlushablePersistentStore : public CookieMonster::PersistentCookieStore {
  public:
   FlushablePersistentStore() : flush_count_(0) {}
 
-  void Load(const LoadedCallback& loaded_callback) {
+  virtual void Load(const LoadedCallback& loaded_callback) OVERRIDE {
     std::vector<CanonicalCookie*> out_cookies;
     MessageLoop::current()->PostTask(FROM_HERE,
       base::Bind(&net::LoadedCallbackTask::Run,
                  new net::LoadedCallbackTask(loaded_callback, out_cookies)));
   }
 
-  void LoadCookiesForKey(const std::string& key,
-      const LoadedCallback& loaded_callback) {
+  virtual void LoadCookiesForKey(
+      const std::string& key,
+      const LoadedCallback& loaded_callback) OVERRIDE {
     Load(loaded_callback);
   }
 
-  void AddCookie(const CanonicalCookie&) {}
-  void UpdateCookieAccessTime(const CanonicalCookie&) {}
-  void DeleteCookie(const CanonicalCookie&) {}
-  void SetForceKeepSessionState() {}
+  virtual void AddCookie(const CanonicalCookie&) OVERRIDE {}
+  virtual void UpdateCookieAccessTime(const CanonicalCookie&) OVERRIDE {}
+  virtual void DeleteCookie(const CanonicalCookie&) OVERRIDE {}
+  virtual void SetForceKeepSessionState() OVERRIDE {}
 
-  void Flush(const base::Closure& callback) {
+  virtual void Flush(const base::Closure& callback) OVERRIDE {
     ++flush_count_;
     if (!callback.is_null())
       callback.Run();
@@ -1878,14 +1843,14 @@ TEST_F(CookieMonsterTest, FlushStore) {
 
   // Before initialization, FlushStore() should just run the callback.
   cm->FlushStore(base::Bind(&CallbackCounter::Callback, counter.get()));
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   ASSERT_EQ(0, store->flush_count());
   ASSERT_EQ(1, counter->callback_count());
 
   // NULL callback is safe.
   cm->FlushStore(base::Closure());
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   ASSERT_EQ(0, store->flush_count());
   ASSERT_EQ(1, counter->callback_count());
@@ -1893,14 +1858,14 @@ TEST_F(CookieMonsterTest, FlushStore) {
   // After initialization, FlushStore() should delegate to the store.
   GetAllCookies(cm);  // Force init.
   cm->FlushStore(base::Bind(&CallbackCounter::Callback, counter.get()));
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   ASSERT_EQ(1, store->flush_count());
   ASSERT_EQ(2, counter->callback_count());
 
   // NULL callback is still safe.
   cm->FlushStore(base::Closure());
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   ASSERT_EQ(2, store->flush_count());
   ASSERT_EQ(2, counter->callback_count());
@@ -1909,12 +1874,12 @@ TEST_F(CookieMonsterTest, FlushStore) {
   cm = new CookieMonster(NULL, NULL);
   GetAllCookies(cm);  // Force init.
   cm->FlushStore(base::Closure());
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   ASSERT_EQ(2, counter->callback_count());
 
   cm->FlushStore(base::Bind(&CallbackCounter::Callback, counter.get()));
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   ASSERT_EQ(3, counter->callback_count());
 }
@@ -1924,7 +1889,7 @@ TEST_F(CookieMonsterTest, HistogramCheck) {
   // Should match call in InitializeHistograms, but doesn't really matter
   // since the histogram should have been initialized by the CM construction
   // above.
-  base::Histogram* expired_histogram =
+  base::HistogramBase* expired_histogram =
       base::Histogram::FactoryGet(
           "Cookie.ExpirationDurationMinutes", 1, 10 * 365 * 24 * 60, 50,
           base::Histogram::kUmaTargetedHistogramFlag);
@@ -2180,8 +2145,11 @@ TEST_F(MultiThreadedCookieMonsterTest, ThreadCheckDeleteCanonicalCookie) {
 }
 
 TEST_F(CookieMonsterTest, InvalidExpiryTime) {
-  ParsedCookie pc(std::string(kValidCookieLine) + "; expires=Blarg arg arg");
-  scoped_ptr<CanonicalCookie> cookie(CanonicalCookie::Create(url_google_, pc));
+  std::string cookie_line =
+      std::string(kValidCookieLine) + "; expires=Blarg arg arg";
+  scoped_ptr<CanonicalCookie> cookie(
+      CanonicalCookie::Create(url_google_, cookie_line, Time::Now(),
+                              CookieOptions()));
   ASSERT_FALSE(cookie->IsPersistent());
 }
 

@@ -296,7 +296,7 @@ TEST(OSExchangeDataTest, TestURLExchangeFormats) {
   OSExchangeData data;
   std::string url_spec = "http://www.google.com/";
   GURL url(url_spec);
-  std::wstring url_title = L"Google";
+  std::wstring url_title = L"www.google.com";
   data.SetURL(url, url_title);
   std::wstring output;
 
@@ -361,10 +361,10 @@ TEST(OSExchangeDataTest, TestPickledData) {
 TEST(OSExchangeDataTest, FileContents) {
   OSExchangeData data;
   std::string file_contents("data\0with\0nulls", 15);
-  data.SetFileContents(FilePath(L"filename.txt"), file_contents);
+  data.SetFileContents(base::FilePath(L"filename.txt"), file_contents);
 
   OSExchangeData copy(CloneProvider(data));
-  FilePath filename;
+  base::FilePath filename;
   std::string read_contents;
   EXPECT_TRUE(copy.GetFileContents(&filename, &read_contents));
   EXPECT_EQ(L"filename.txt", filename.value());

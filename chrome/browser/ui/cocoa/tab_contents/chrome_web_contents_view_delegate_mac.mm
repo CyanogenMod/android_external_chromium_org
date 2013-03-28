@@ -5,11 +5,12 @@
 #import "chrome/browser/ui/cocoa/tab_contents/chrome_web_contents_view_delegate_mac.h"
 
 #import "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.h"
-#include "chrome/browser/tab_contents/web_drag_bookmark_handler_mac.h"
 #include "chrome/browser/ui/cocoa/tab_contents/render_view_context_menu_mac.h"
+#include "chrome/browser/ui/cocoa/tab_contents/web_drag_bookmark_handler_mac.h"
 #include "chrome/browser/ui/tab_contents/chrome_web_contents_view_delegate.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 
 ChromeWebContentsViewDelegateMac::ChromeWebContentsViewDelegateMac(
     content::WebContents* web_contents)
@@ -47,10 +48,10 @@ void ChromeWebContentsViewDelegateMac::ShowContextMenu(
   if (widget_view && widget_view->IsShowingContextMenu())
     return;
 
-  context_menu_.reset(
-      new RenderViewContextMenuMac(web_contents_,
-                                   params,
-                                   web_contents_->GetContentNativeView()));
+  context_menu_.reset(new RenderViewContextMenuMac(
+      web_contents_,
+      params,
+      web_contents_->GetView()->GetContentNativeView()));
   context_menu_->Init();
 }
 

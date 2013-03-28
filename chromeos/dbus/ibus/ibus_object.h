@@ -5,27 +5,31 @@
 #ifndef CHROMEOS_DBUS_IBUS_IBUS_OBJECT_H_
 #define CHROMEOS_DBUS_IBUS_IBUS_OBJECT_H_
 
+#include <map>
 #include <string>
+
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/ibus/ibus_property.h"
 #include "chromeos/dbus/ibus/ibus_text.h"
 
+namespace base {
+class Value;
+}  // namespace base
+
 namespace dbus {
 class MessageReader;
 class MessageWriter;
-}  // dbus
+}  // namespace dbus
 
 namespace chromeos {
-// TODO(nona): Remove ibus namespace after complete libibus removal.
-namespace ibus {
 
 // The data structure of IBusObject is represented as variant in "(sav...)"
-// signatur. The IBusObject is constructed with two sections, header and
+// signature. The IBusObject is constructed with two sections, header and
 // contents. The header section is represent as "sav" which contains type name
 // and attachment array. The contents section is corresponding to "..." in
-// above signature, which can store arbitary type values including IBusObject.
+// above signature, which can store arbitrary type values including IBusObject.
 //
 // DATA STRUCTURE OVERVIEW:
 //
@@ -72,8 +76,14 @@ namespace ibus {
 // and type name before reading contents.
 //
 // EXAPMLE USAGE:
-//   // Craetes reader for IBusText
+//   // Creates reader for IBusText
 //   IBusObjectReader object_reader("IBusText", &reader);
+//
+//   // Initialize for reading attachment field.
+//   object_reader.Init();
+//
+//   // Get attachment field.
+//   base::Value* value = object_reader.GetAttachment("annotation");
 //
 //   std::string text;
 //   reader.PopString(&text);  // Reading 1st value as string.
@@ -92,10 +102,6 @@ class CHROMEOS_EXPORT IBusObjectReader {
   // Returns true on success. Uses InitWitAttachmentReader instead if you want
   // to read attachment field.
   bool Init();
-
-  // Reads IBusObject headers and checks if the type name is valid.
-  // Returns true and sets up reader for attachment reading on success.
-  bool InitWithAttachmentReader(dbus::MessageReader* reader);
 
   // Reads IBusOBject with |reader| and checks if the type name is valid.
   bool InitWithParentReader(dbus::MessageReader* reader);
@@ -116,7 +122,7 @@ class CHROMEOS_EXPORT IBusObjectReader {
 
   // Pops a IBusText.
   // Returns true on success.
-  bool PopIBusText(ibus::IBusText* text);
+  bool PopIBusText(IBusText* text);
 
   // Pops a IBusText and store it's text field into |text|. Use PopIBusText
   // instead in the case of using any attribute entries in IBusText.
@@ -124,10 +130,14 @@ class CHROMEOS_EXPORT IBusObjectReader {
   bool PopStringFromIBusText(std::string* text);
 
   // Pops a IBusProperty.
-  bool PopIBusProperty(ibus::IBusProperty* property);
+  bool PopIBusProperty(IBusProperty* property);
 
   // Pops a IBusPropertyList.
-  bool PopIBusPropertyList(ibus::IBusPropertyList* property_list);
+  bool PopIBusPropertyList(IBusPropertyList* property_list);
+
+  // Gets attachment entry corresponding to |key|. Do not free returned value.
+  // Returns NULL if there is no entry.
+  const base::Value* GetAttachment(const std::string& key);
 
  private:
   enum CheckResult {
@@ -136,15 +146,12 @@ class CHROMEOS_EXPORT IBusObjectReader {
     IBUS_OBJECT_NOT_CHECKED,  // Not checked yet.
   };
 
-  // Reads IBusObject headers without attachment and checks if the type name
-  // is valid.
-  bool InitWithoutAttachment();
-
   std::string type_name_;
   dbus::MessageReader* original_reader_;
   scoped_ptr<dbus::MessageReader> top_variant_reader_;
   scoped_ptr<dbus::MessageReader> contents_reader_;
   CheckResult check_result_;
+  std::map<std::string, base::Value*> attachments_;
 
   DISALLOW_COPY_AND_ASSIGN(IBusObjectReader);
 };
@@ -158,6 +165,13 @@ class CHROMEOS_EXPORT IBusObjectReader {
 //   // Creates writer for IBusText
 //   IBusObjectWriter object_writer("IBusText", "sv", &writer);
 //
+//   // Add some attachments.
+//   base::Value* value = base::Value::CreateStringValue("Noun");
+//   object_writer.AddAttachment("annotation", *value);
+//
+//   // Close header section.
+//   object_writer.CloseHeader();
+//
 //   const std::string text = "Sample Text";
 //   writer.AppendString(text);
 //
@@ -170,14 +184,27 @@ class CHROMEOS_EXPORT IBusObjectReader {
 //   object_writer.CloseAll();
 class CHROMEOS_EXPORT IBusObjectWriter {
  public:
+  enum WriterState {
+    NOT_INITIALZED,  // Created but not initialized.
+    HEADER_OPEN,  // Ready for writing attachment field.
+    INITIALIZED  // Ready for writing content values.
+  };
+
   // |writer| must be released by caller.
   IBusObjectWriter(const std::string& type_name,
                    const std::string& signature,
                    dbus::MessageWriter* writer);
   virtual ~IBusObjectWriter();
 
+  // Closes header to write content values.
+  void CloseHeader();
+
   // Appends IBusObject headers with |writer|, should be called once.
   void InitWithParentWriter(dbus::MessageWriter* writer);
+
+  // Adds an attachment, this function can be called only before CloseHeader
+  // function call.
+  bool AddAttachment(const std::string& key, const base::Value& value);
 
   // The following functions delegate dbus::MessageReader's functions.
   void AppendString(const std::string& input);
@@ -194,21 +221,18 @@ class CHROMEOS_EXPORT IBusObjectWriter {
   // Closes all opened containers.
   void CloseAll();
 
-  // Returns true if writer is initialized.
-  bool IsInitialized() const;
-
   // Appends a IBusText.
-  void AppendIBusText(const ibus::IBusText& text);
+  void AppendIBusText(const IBusText& text);
 
   // Appends a string as IBusText without any attributes. Use AppendIBusText
   // instead in the case of using any attribute entries.
   void AppendStringAsIBusText(const std::string& text);
 
   // Appends a IBusProperty.
-  void AppendIBusProperty(const ibus::IBusProperty& property);
+  void AppendIBusProperty(const IBusProperty& property);
 
   // Appends a IBusPropertyList.
-  void AppendIBusPropertyList(const ibus::IBusPropertyList& property_list);
+  void AppendIBusPropertyList(const IBusPropertyList& property_list);
 
  private:
   // Appends IBusObject headers, should be called once.
@@ -217,13 +241,14 @@ class CHROMEOS_EXPORT IBusObjectWriter {
   std::string type_name_;
   std::string signature_;
   dbus::MessageWriter* original_writer_;
+  WriterState state_;
   scoped_ptr<dbus::MessageWriter> top_variant_writer_;
   scoped_ptr<dbus::MessageWriter> contents_writer_;
+  scoped_ptr<dbus::MessageWriter> attachment_writer_;
 
   DISALLOW_COPY_AND_ASSIGN(IBusObjectWriter);
 };
 
-}  // namespace ibus
 }  // namespace chromeos
 
 #endif  // CHROMEOS_DBUS_IBUS_IBUS_OBJECT_H_

@@ -5,22 +5,31 @@
 #ifndef CHROME_BROWSER_GEOLOCATION_GEOLOCATION_CONFIRM_INFOBAR_DELEGATE_H_
 #define CHROME_BROWSER_GEOLOCATION_GEOLOCATION_CONFIRM_INFOBAR_DELEGATE_H_
 
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/geolocation/geolocation_permission_request_id.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "googleurl/src/gurl.h"
 
 #include <string>
 
 class GeolocationInfoBarQueueController;
-class InfoBarTabHelper;
+class InfoBarService;
 
 // GeolocationInfoBarDelegates are created by the
 // GeolocationInfoBarQueueController to control the display
 // and handling of geolocation permission infobars to the user.
 class GeolocationConfirmInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
+  // Creates a geolocation delegate and adds it to |infobar_service|.  Returns
+  // the delegate if it was successfully added.
+  static InfoBarDelegate* Create(InfoBarService* infobar_service,
+                                 GeolocationInfoBarQueueController* controller,
+                                 const GeolocationPermissionRequestID& id,
+                                 const GURL& requesting_frame,
+                                 const std::string& display_languages);
+
+ protected:
   GeolocationConfirmInfoBarDelegate(
-      InfoBarTabHelper* infobar_helper,
+      InfoBarService* infobar_service,
       GeolocationInfoBarQueueController* controller,
       const GeolocationPermissionRequestID& id,
       const GURL& requesting_frame,
@@ -28,10 +37,11 @@ class GeolocationConfirmInfoBarDelegate : public ConfirmInfoBarDelegate {
 
   const GeolocationPermissionRequestID& id() const { return id_; }
 
- protected:
   // ConfirmInfoBarDelegate:
   virtual gfx::Image* GetIcon() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
+  virtual bool ShouldExpireInternal(
+      const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual string16 GetMessageText() const OVERRIDE;
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
@@ -46,6 +56,7 @@ class GeolocationConfirmInfoBarDelegate : public ConfirmInfoBarDelegate {
   GeolocationInfoBarQueueController* controller_;
   const GeolocationPermissionRequestID id_;
   GURL requesting_frame_;
+  int contents_unique_id_;
   std::string display_languages_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(GeolocationConfirmInfoBarDelegate);

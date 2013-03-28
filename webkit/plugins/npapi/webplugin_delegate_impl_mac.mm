@@ -17,6 +17,7 @@
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "skia/ext/skia_utils_mac.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
@@ -24,10 +25,6 @@
 #include "webkit/plugins/npapi/plugin_web_event_converter_mac.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/npapi/webplugin_accelerated_surface_mac.h"
-
-#if defined(USE_SKIA)
-#include "skia/ext/skia_utils_mac.h"
-#endif
 
 using WebKit::WebCursorInfo;
 using WebKit::WebKeyboardEvent;
@@ -161,7 +158,6 @@ WebPluginDelegateImpl::WebPluginDelegateImpl(
       buffer_context_(NULL),
       layer_(nil),
       surface_(NULL),
-      composited_(false),
       renderer_(nil),
       containing_window_has_focus_(false),
       initial_window_focus_(false),
@@ -241,15 +237,10 @@ bool WebPluginDelegateImpl::PlatformInitialize() {
         // without any drawing; returning false would be a more confusing user
         // experience (since it triggers a missing plugin placeholder).
         if (surface_ && surface_->context()) {
-          composited_ = surface_->IsComposited();
           renderer_ = [[CARenderer rendererWithCGLContext:surface_->context()
                                                   options:NULL] retain];
           [renderer_ setLayer:layer_];
-        }
-        if (composited_) {
           plugin_->AcceleratedPluginEnabledRendering();
-        } else {
-          plugin_->BindFakePluginWindowHandle(false);
         }
       }
       break;
@@ -286,12 +277,8 @@ void WebPluginDelegateImpl::UpdateGeometryAndContext(
 
 void WebPluginDelegateImpl::Paint(WebKit::WebCanvas* canvas,
                                   const gfx::Rect& rect) {
-#if defined(USE_SKIA)
   gfx::SkiaBitLocker bit_locker(canvas);
   CGContextRef context = bit_locker.cgContext();
-#else
-  CGContextRef context = canvas;
-#endif
   CGPaint(context, rect);
 }
 
@@ -677,8 +664,7 @@ void WebPluginDelegateImpl::PluginScreenLocationChanged() {
 void WebPluginDelegateImpl::PluginVisibilityChanged() {
   if (instance()->drawing_model() == NPDrawingModelCoreAnimation) {
     bool plugin_visible = container_is_visible_ && !clip_rect_.IsEmpty();
-    if (plugin_visible && !redraw_timer_->IsRunning() &&
-        (composited_ || windowed_handle())) {
+    if (plugin_visible && !redraw_timer_->IsRunning()) {
       redraw_timer_->Start(FROM_HERE,
           base::TimeDelta::FromMilliseconds(kCoreAnimationRedrawPeriodMs),
           this, &WebPluginDelegateImpl::DrawLayerInSurface);
@@ -703,9 +689,6 @@ void WebPluginDelegateImpl::DrawLayerInSurface() {
   if (!renderer_)
     return;
 
-  if (!composited_ && !windowed_handle())
-    return;
-
   [renderer_ beginFrameAtTime:CACurrentMediaTime() timeStamp:NULL];
   if (CGRectIsEmpty([renderer_ updateBounds])) {
     // If nothing has changed, we are done.
@@ -728,9 +711,6 @@ void WebPluginDelegateImpl::UpdateAcceleratedSurface() {
   if (!surface_ || !layer_)
     return;
 
-  if (!composited_ && !windowed_handle())
-    return;
-
   [CATransaction begin];
   [CATransaction setValue:[NSNumber numberWithInt:0]
                    forKey:kCATransactionAnimationDuration];
@@ -740,18 +720,6 @@ void WebPluginDelegateImpl::UpdateAcceleratedSurface() {
 
   [renderer_ setBounds:[layer_ bounds]];
   surface_->SetSize(window_rect_.size());
-  if (composited_) {
-    // Kick off the drawing timer, if necessary.
-    PluginVisibilityChanged();
-  }
-}
-
-void WebPluginDelegateImpl::set_windowed_handle(
-    gfx::PluginWindowHandle handle) {
-  DCHECK(!composited_);
-  windowed_handle_ = handle;
-  surface_->SetWindowHandle(handle);
-  UpdateAcceleratedSurface();
   // Kick off the drawing timer, if necessary.
   PluginVisibilityChanged();
 }

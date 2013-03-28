@@ -81,6 +81,9 @@ TwoFingerDragHandler::~TwoFingerDragHandler() {
 
 bool TwoFingerDragHandler::ProcessGestureEvent(aura::Window* target,
                                                const ui::GestureEvent& event) {
+  if (!target->delegate())
+    return false;
+
   if (event.type() == ui::ET_GESTURE_BEGIN &&
       event.details().touch_points() == 1) {
     first_finger_hittest_ =
@@ -90,7 +93,7 @@ bool TwoFingerDragHandler::ProcessGestureEvent(aura::Window* target,
 
   if (event.type() == ui::ET_GESTURE_BEGIN &&
       event.details().touch_points() == 2) {
-    if (wm::IsWindowNormal(target) &&
+    if (!window_resizer_.get() && wm::IsWindowNormal(target) &&
       target->type() == aura::client::WINDOW_TYPE_NORMAL) {
       if (WindowComponentsAllowMoving(first_finger_hittest_,
           target->delegate()->GetNonClientComponent(event.location()))) {
@@ -111,6 +114,9 @@ bool TwoFingerDragHandler::ProcessGestureEvent(aura::Window* target,
            wm::IsWindowNormal(target);
   }
 
+  if (target != window_resizer_->GetTarget())
+    return false;
+
   switch (event.type()) {
     case ui::ET_GESTURE_BEGIN:
       if (event.details().touch_points() > 2)
@@ -125,25 +131,22 @@ bool TwoFingerDragHandler::ProcessGestureEvent(aura::Window* target,
     case ui::ET_GESTURE_MULTIFINGER_SWIPE: {
       // For a swipe, the window either maximizes, minimizes, or snaps. In this
       // case, cancel the drag, and do the appropriate action.
-      aura::Window* target = window_resizer_->GetTarget();
       Reset();
 
       if (event.details().swipe_up()) {
-        wm::MaximizeWindow(target);
-      } else if (event.details().swipe_down()) {
+        if (wm::CanMaximizeWindow(target))
+          wm::MaximizeWindow(target);
+      } else if (event.details().swipe_down() &&
+                 wm::CanMinimizeWindow(target)) {
         wm::MinimizeWindow(target);
-      } else {
-        internal::SnapSizer sizer(target,
-            gfx::Point(),
-            event.details().swipe_left() ? internal::SnapSizer::LEFT_EDGE :
-                                           internal::SnapSizer::RIGHT_EDGE,
-            internal::SnapSizer::OTHER_INPUT);
-
+      } else if (wm::CanSnapWindow(target)) {
         ui::ScopedLayerAnimationSettings scoped_setter(
             target->layer()->GetAnimator());
         scoped_setter.SetPreemptionStrategy(
             ui::LayerAnimator::REPLACE_QUEUED_ANIMATIONS);
-        target->SetBounds(sizer.target_bounds());
+        internal::SnapSizer::SnapWindow(target,
+            event.details().swipe_left() ? internal::SnapSizer::LEFT_EDGE :
+                                           internal::SnapSizer::RIGHT_EDGE);
       }
       return true;
     }

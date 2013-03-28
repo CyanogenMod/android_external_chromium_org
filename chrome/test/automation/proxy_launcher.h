@@ -11,9 +11,9 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
-#include "base/scoped_temp_dir.h"
 #include "base/time.h"
 
 class AutomationProxy;
@@ -44,7 +44,7 @@ class ProxyLauncher {
 
     // If set, the profiles in this path are copied
     // into the user data directory for the test.
-    FilePath template_user_data;
+    base::FilePath template_user_data;
 
     // Called just before starting the browser to allow any setup of the
     // profile for the run time environment.
@@ -110,7 +110,7 @@ class ProxyLauncher {
   AutomationProxy* automation() const;
 
   // Return the user data directory being used by the browser instance.
-  FilePath user_data_dir() const;
+  base::FilePath user_data_dir() const;
 
   // Get the handle of browser process connected to the automation. This
   // function only returns a reference to the handle so the caller does not
@@ -160,7 +160,7 @@ class ProxyLauncher {
 
   // We use a temporary directory for profile to avoid issues with being
   // unable to delete some files because they're in use, etc.
-  ScopedTempDir temp_profile_dir_;
+  base::ScopedTempDir temp_profile_dir_;
 
   // Handle to the first Chrome process.
   base::ProcessHandle process_;

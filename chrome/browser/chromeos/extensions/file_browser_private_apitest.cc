@@ -9,18 +9,15 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "chromeos/dbus/cros_disks_client.h"
 #include "chromeos/disks/mock_disk_mount_manager.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/storage_partition.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
 
 using ::testing::_;
-using ::testing::AnyNumber;
 using ::testing::ReturnRef;
-using ::testing::StrEq;
-using content::BrowserContext;
 
 using chromeos::disks::DiskMountManager;
 
@@ -47,8 +44,8 @@ struct TestDiskInfo {
 };
 
 struct TestMountPoint {
-  const char* source_path;
-  const char* mount_path;
+  std::string source_path;
+  std::string mount_path;
   chromeos::MountType mount_type;
   chromeos::disks::MountCondition mount_condition;
 
@@ -116,45 +113,12 @@ TestDiskInfo kTestDisks[] = {
   }
 };
 
-TestMountPoint kTestMountPoints[] = {
-  {
-    "device_path1",
-    "/media/removable/mount_path1",
-    chromeos::MOUNT_TYPE_DEVICE,
-    chromeos::disks::MOUNT_CONDITION_NONE,
-    0
-  },
-  {
-    "device_path2",
-    "/media/removable/mount_path2",
-    chromeos::MOUNT_TYPE_DEVICE,
-    chromeos::disks::MOUNT_CONDITION_NONE,
-    1
-  },
-  {
-    "device_path3",
-    "/media/removable/mount_path3",
-    chromeos::MOUNT_TYPE_DEVICE,
-    chromeos::disks::MOUNT_CONDITION_NONE,
-    2
-  },
-  {
-    "/media/removable/archive_path",
-    "/media/archive/archive_mount_path",
-    chromeos::MOUNT_TYPE_ARCHIVE,
-    chromeos::disks::MOUNT_CONDITION_NONE,
-    -1
-  }
-};
-
-
 }  // namespace
 
 class ExtensionFileBrowserPrivateApiTest : public ExtensionApiTest {
  public:
   ExtensionFileBrowserPrivateApiTest()
-      : disk_mount_manager_mock_(NULL),
-        test_mount_point_("/tmp") {
+      : disk_mount_manager_mock_(NULL) {
     InitMountPoints();
   }
 
@@ -186,15 +150,43 @@ class ExtensionFileBrowserPrivateApiTest : public ExtensionApiTest {
     ExtensionApiTest::TearDownInProcessBrowserTestFixture();
   }
 
-  void AddTmpMountPoint() {
-    fileapi::ExternalFileSystemMountPointProvider* provider =
-        BrowserContext::GetDefaultStoragePartition(browser()->profile())->
-            GetFileSystemContext()->external_provider();
-    provider->AddLocalMountPoint(test_mount_point_);
-  }
-
  private:
   void InitMountPoints() {
+    const TestMountPoint kTestMountPoints[] = {
+      {
+        "device_path1",
+        chromeos::CrosDisksClient::GetRemovableDiskMountPoint().AppendASCII(
+            "mount_path1").AsUTF8Unsafe(),
+        chromeos::MOUNT_TYPE_DEVICE,
+        chromeos::disks::MOUNT_CONDITION_NONE,
+        0
+      },
+      {
+        "device_path2",
+        chromeos::CrosDisksClient::GetRemovableDiskMountPoint().AppendASCII(
+            "mount_path2").AsUTF8Unsafe(),
+        chromeos::MOUNT_TYPE_DEVICE,
+        chromeos::disks::MOUNT_CONDITION_NONE,
+        1
+      },
+      {
+        "device_path3",
+        chromeos::CrosDisksClient::GetRemovableDiskMountPoint().AppendASCII(
+            "mount_path3").AsUTF8Unsafe(),
+        chromeos::MOUNT_TYPE_DEVICE,
+        chromeos::disks::MOUNT_CONDITION_NONE,
+        2
+      },
+      {
+        "archive_path",
+        chromeos::CrosDisksClient::GetArchiveMountPoint().AppendASCII(
+            "archive_mount_path").AsUTF8Unsafe(),
+        chromeos::MOUNT_TYPE_ARCHIVE,
+        chromeos::disks::MOUNT_CONDITION_NONE,
+        -1
+      }
+    };
+
     for (size_t i = 0; i < arraysize(kTestMountPoints); i++) {
       mount_points_.insert(DiskMountManager::MountPointMap::value_type(
           kTestMountPoints[i].mount_path,
@@ -233,7 +225,6 @@ class ExtensionFileBrowserPrivateApiTest : public ExtensionApiTest {
                 kTestDisks[disk_info_index].is_hidden
             )
         ));
-
       }
     }
   }
@@ -249,21 +240,18 @@ class ExtensionFileBrowserPrivateApiTest : public ExtensionApiTest {
   chromeos::disks::MockDiskMountManager* disk_mount_manager_mock_;
   DiskMountManager::DiskMap volumes_;
   DiskMountManager::MountPointMap mount_points_;
-
- private:
-  FilePath test_mount_point_;
 };
 
 IN_PROC_BROWSER_TEST_F(ExtensionFileBrowserPrivateApiTest, FileBrowserMount) {
   // We will call fileBrowserPrivate.unmountVolume once. To test that method, we
   // check that UnmountPath is really called with the same value.
-  AddTmpMountPoint();
-  EXPECT_CALL(*disk_mount_manager_mock_, UnmountPath(_, _))
+  EXPECT_CALL(*disk_mount_manager_mock_, UnmountPath(_, _,  _))
       .Times(0);
   EXPECT_CALL(*disk_mount_manager_mock_,
-              UnmountPath(StrEq("/media/archive/archive_mount_path"),
-                          chromeos::UNMOUNT_OPTIONS_NONE))
-      .Times(1);
+              UnmountPath(
+                  chromeos::CrosDisksClient::GetArchiveMountPoint().AppendASCII(
+                      "archive_mount_path").AsUTF8Unsafe(),
+                  chromeos::UNMOUNT_OPTIONS_NONE, _)).Times(1);
 
   EXPECT_CALL(*disk_mount_manager_mock_, disks())
       .WillRepeatedly(ReturnRef(volumes_));

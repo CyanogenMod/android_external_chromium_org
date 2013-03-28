@@ -6,15 +6,15 @@
 
 #include <vector>
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/api/bookmarks/bookmark_service.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_service.h"
 #include "chrome/browser/history/android/android_time.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -109,7 +109,7 @@ class AndroidProviderBackendTest : public testing::Test {
  public:
   AndroidProviderBackendTest()
       : profile_manager_(
-          static_cast<TestingBrowserProcess*>(g_browser_process)),
+          TestingBrowserProcess::GetGlobal()),
         bookmark_model_(NULL),
         ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_) {
@@ -127,13 +127,14 @@ class AndroidProviderBackendTest : public testing::Test {
     TestingProfile* testing_profile = profile_manager_.CreateTestingProfile(
         chrome::kInitialProfile);
     testing_profile->CreateBookmarkModel(true);
-    testing_profile->BlockUntilBookmarkModelLoaded();
+    bookmark_model_ = BookmarkModelFactory::GetForProfile(testing_profile);
+    ui_test_utils::WaitForBookmarkModelToLoad(bookmark_model_);
+    ASSERT_TRUE(bookmark_model_);
+
     // Get the BookmarkModel from LastUsedProfile, this is the same way that
     // how the BookmarkModelSQLHandler gets the BookmarkModel.
     Profile* profile = ProfileManager::GetLastUsedProfile();
     ASSERT_TRUE(profile);
-    bookmark_model_ = BookmarkModelFactory::GetForProfile(profile);
-    ASSERT_TRUE(bookmark_model_);
 
     // Setup the database directory and files.
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
@@ -188,10 +189,10 @@ class AndroidProviderBackendTest : public testing::Test {
   scoped_refptr<HistoryBackend> history_backend_;
   HistoryDatabase history_db_;
   ThumbnailDatabase thumbnail_db_;
-  ScopedTempDir temp_dir_;
-  FilePath android_cache_db_name_;
-  FilePath history_db_name_;
-  FilePath thumbnail_db_name_;
+  base::ScopedTempDir temp_dir_;
+  base::FilePath android_cache_db_name_;
+  base::FilePath history_db_name_;
+  base::FilePath thumbnail_db_name_;
 
   TestingProfileManager profile_manager_;
   BookmarkModel* bookmark_model_;
@@ -255,15 +256,7 @@ TEST_F(AndroidProviderBackendTest, UpdateTables) {
   std::vector<history::FaviconBitmapData> favicon_bitmap_data;
   favicon_bitmap_data.push_back(bitmap_data_element);
 
-  FaviconSizes favicon_sizes;
-  favicon_sizes.push_back(gfx::Size());
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[GURL()] = favicon_sizes;
-
-  history_backend->SetFavicons(url2,
-                               FAVICON,
-                               favicon_bitmap_data,
-                               icon_url_sizes);
+  history_backend->SetFavicons(url2, FAVICON, favicon_bitmap_data);
   history_backend->Closing();
   }
 
@@ -413,15 +406,7 @@ TEST_F(AndroidProviderBackendTest, QueryHistoryAndBookmarks) {
   std::vector<history::FaviconBitmapData> favicon_bitmap_data;
   favicon_bitmap_data.push_back(bitmap_data_element);
 
-  FaviconSizes favicon_sizes;
-  favicon_sizes.push_back(gfx::Size());
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[GURL()] = favicon_sizes;
-
-  history_backend->SetFavicons(url2,
-                               FAVICON,
-                               favicon_bitmap_data,
-                               icon_url_sizes);
+  history_backend->SetFavicons(url2, FAVICON, favicon_bitmap_data);
   history_backend->Closing();
   }
 
@@ -1835,15 +1820,7 @@ TEST_F(AndroidProviderBackendTest, QueryWithoutThumbnailDB) {
   std::vector<history::FaviconBitmapData> favicon_bitmap_data;
   favicon_bitmap_data.push_back(bitmap_data_element);
 
-  FaviconSizes favicon_sizes;
-  favicon_sizes.push_back(gfx::Size());
-  IconURLSizesMap icon_url_sizes;
-  icon_url_sizes[GURL()] = favicon_sizes;
-
-  history_backend->SetFavicons(url2,
-                               FAVICON,
-                               favicon_bitmap_data,
-                               icon_url_sizes);
+  history_backend->SetFavicons(url2, FAVICON, favicon_bitmap_data);
   history_backend->Closing();
   }
 

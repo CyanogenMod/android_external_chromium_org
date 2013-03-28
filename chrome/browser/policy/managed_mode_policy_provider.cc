@@ -19,19 +19,28 @@ namespace policy {
 const char ManagedModePolicyProvider::kPolicies[] = "policies";
 
 // static
-ManagedModePolicyProvider* ManagedModePolicyProvider::Create(
+scoped_ptr<ManagedModePolicyProvider> ManagedModePolicyProvider::Create(
     Profile* profile,
-    base::SequencedTaskRunner* sequenced_task_runner) {
-  FilePath path = profile->GetPath().Append(chrome::kManagedModePolicyFilename);
+    base::SequencedTaskRunner* sequenced_task_runner,
+    bool force_load) {
+  base::FilePath path =
+      profile->GetPath().Append(chrome::kManagedModePolicyFilename);
   JsonPrefStore* pref_store = new JsonPrefStore(path, sequenced_task_runner);
-  return new ManagedModePolicyProvider(pref_store);
+  // Load the data synchronously if needed (when creating profiles on startup).
+  if (force_load)
+    pref_store->ReadPrefs();
+  else
+    pref_store->ReadPrefsAsync(NULL);
+
+  return make_scoped_ptr(new ManagedModePolicyProvider(pref_store));
 }
 
 ManagedModePolicyProvider::ManagedModePolicyProvider(
     PersistentPrefStore* pref_store)
     : store_(pref_store) {
   store_->AddObserver(this);
-  store_->ReadPrefsAsync(NULL);
+  if (store_->IsInitializationComplete())
+    UpdatePolicyFromCache();
 }
 
 ManagedModePolicyProvider::~ManagedModePolicyProvider() {}
@@ -63,8 +72,11 @@ void ManagedModePolicyProvider::RefreshPolicies() {
   UpdatePolicyFromCache();
 }
 
-bool ManagedModePolicyProvider::IsInitializationComplete() const {
-  return store_->IsInitializationComplete();
+bool ManagedModePolicyProvider::IsInitializationComplete(
+    PolicyDomain domain) const {
+  if (domain == POLICY_DOMAIN_CHROME)
+    return store_->IsInitializationComplete();
+  return true;
 }
 
 void ManagedModePolicyProvider::OnPrefValueChanged(const std::string& key) {}
@@ -91,7 +103,7 @@ base::DictionaryValue* ManagedModePolicyProvider::GetCachedPolicy() const {
 void ManagedModePolicyProvider::UpdatePolicyFromCache() {
   scoped_ptr<PolicyBundle> policy_bundle(new PolicyBundle);
   PolicyMap* policy_map =
-      &policy_bundle->Get(POLICY_DOMAIN_CHROME, std::string());
+      &policy_bundle->Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()));
   policy_map->LoadFrom(GetCachedPolicy(),
                        POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER);
   UpdatePolicy(policy_bundle.Pass());

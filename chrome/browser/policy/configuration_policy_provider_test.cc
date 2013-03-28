@@ -49,7 +49,7 @@ PolicyTestBase::PolicyTestBase()
 PolicyTestBase::~PolicyTestBase() {}
 
 void PolicyTestBase::TearDown() {
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 }
 
 PolicyProviderTestHarness::PolicyProviderTestHarness(PolicyLevel level,
@@ -86,7 +86,7 @@ void ConfigurationPolicyProviderTest::SetUp() {
   provider_->Init();
   // Some providers do a reload on init. Make sure any notifications generated
   // are fired now.
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 
   const PolicyBundle kEmptyBundle;
   EXPECT_TRUE(provider_->policies().Equals(kEmptyBundle));
@@ -107,9 +107,9 @@ void ConfigurationPolicyProviderTest::CheckValue(
   // Install the value, reload policy and check the provider for the value.
   install_value.Run();
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   PolicyBundle expected_bundle;
-  expected_bundle.Get(POLICY_DOMAIN_CHROME, "")
+  expected_bundle.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
       .Set(policy_name,
            test_harness_->policy_level(),
            test_harness_->policy_scope(),
@@ -121,7 +121,7 @@ void ConfigurationPolicyProviderTest::CheckValue(
 
 TEST_P(ConfigurationPolicyProviderTest, Empty) {
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   const PolicyBundle kEmptyBundle;
   EXPECT_TRUE(provider_->policies().Equals(kEmptyBundle));
 }
@@ -211,7 +211,7 @@ TEST_P(ConfigurationPolicyProviderTest, RefreshPolicies) {
   provider_->AddObserver(&observer);
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(1);
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(&observer);
 
   EXPECT_TRUE(provider_->policies().Equals(bundle));
@@ -221,10 +221,10 @@ TEST_P(ConfigurationPolicyProviderTest, RefreshPolicies) {
                                      "value");
   EXPECT_CALL(observer, OnUpdatePolicy(provider_.get())).Times(1);
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
   Mock::VerifyAndClearExpectations(&observer);
 
-  bundle.Get(POLICY_DOMAIN_CHROME, "")
+  bundle.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
       .Set(test_policy_definitions::kKeyString,
            test_harness_->policy_level(),
            test_harness_->policy_scope(),
@@ -258,8 +258,10 @@ TEST(ConfigurationPolicyProviderTest, FixDeprecatedPolicies) {
   PolicyBundle expected_bundle;
   base::DictionaryValue* expected_value = new base::DictionaryValue();
   expected_value->SetInteger(key::kProxyServerMode, 3);
-  expected_bundle.Get(POLICY_DOMAIN_CHROME, "")
-      .Set(key::kProxySettings, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+  expected_bundle.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
+      .Set(key::kProxySettings,
+           POLICY_LEVEL_MANDATORY,
+           POLICY_SCOPE_USER,
            expected_value);
   EXPECT_TRUE(provider.policies().Equals(expected_bundle));
   provider.Shutdown();
@@ -305,7 +307,7 @@ TEST_P(Configuration3rdPartyPolicyProviderTest, Load3rdParty) {
   test_harness_->Install3rdPartyPolicy(&policy_3rdparty);
 
   provider_->RefreshPolicies();
-  loop_.RunAllPending();
+  loop_.RunUntilIdle();
 
   PolicyMap expected_policy;
   expected_policy.Set(test_policy_definitions::kKeyDictionary,
@@ -313,17 +315,18 @@ TEST_P(Configuration3rdPartyPolicyProviderTest, Load3rdParty) {
                       test_harness_->policy_scope(),
                       policy_dict.DeepCopy());
   PolicyBundle expected_bundle;
-  expected_bundle.Get(POLICY_DOMAIN_CHROME, "").CopyFrom(expected_policy);
+  expected_bundle.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
+      .CopyFrom(expected_policy);
   expected_policy.Clear();
   expected_policy.LoadFrom(&policy_dict,
                            test_harness_->policy_level(),
                            test_harness_->policy_scope());
-  expected_bundle.Get(POLICY_DOMAIN_EXTENSIONS,
-                      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-                          .CopyFrom(expected_policy);
-  expected_bundle.Get(POLICY_DOMAIN_EXTENSIONS,
-                      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-                          .CopyFrom(expected_policy);
+  expected_bundle.Get(PolicyNamespace(POLICY_DOMAIN_EXTENSIONS,
+                                      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+      .CopyFrom(expected_policy);
+  expected_bundle.Get(PolicyNamespace(POLICY_DOMAIN_EXTENSIONS,
+                                      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
+      .CopyFrom(expected_policy);
   EXPECT_TRUE(provider_->policies().Equals(expected_bundle));
 }
 

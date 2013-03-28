@@ -8,7 +8,9 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/platform_file.h"
 #include "content/public/browser/content_browser_client.h"
 
 namespace content {
@@ -25,8 +27,15 @@ class ShellContentBrowserClient : public ContentBrowserClient {
   // ContentBrowserClient overrides.
   virtual BrowserMainParts* CreateBrowserMainParts(
       const MainFunctionParams& parameters) OVERRIDE;
-  virtual void RenderViewHostCreated(
-      RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderProcessHostCreated(RenderProcessHost* host) OVERRIDE;
+  virtual net::URLRequestContextGetter* CreateRequestContext(
+      BrowserContext* browser_context,
+      ProtocolHandlerMap* protocol_handlers) OVERRIDE;
+  virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
+      BrowserContext* browser_context,
+      const base::FilePath& partition_path,
+      bool in_memory,
+      ProtocolHandlerMap* protocol_handlers) OVERRIDE;
   virtual void AppendExtraCommandLineSwitches(CommandLine* command_line,
                                               int child_process_id) OVERRIDE;
   virtual void OverrideWebkitPrefs(RenderViewHost* render_view_host,
@@ -35,8 +44,11 @@ class ShellContentBrowserClient : public ContentBrowserClient {
   virtual void ResourceDispatcherHostCreated() OVERRIDE;
   virtual AccessTokenStore* CreateAccessTokenStore() OVERRIDE;
   virtual std::string GetDefaultDownloadName() OVERRIDE;
+  virtual bool SupportsBrowserPlugin(content::BrowserContext* browser_context,
+                                     const GURL& url) OVERRIDE;
   virtual WebContentsViewDelegate* GetWebContentsViewDelegate(
       WebContents* web_contents) OVERRIDE;
+  virtual QuotaPermissionContext* CreateQuotaPermissionContext() OVERRIDE;
 
 #if defined(OS_ANDROID)
   virtual void GetAdditionalMappedFilesForChildProcess(
@@ -55,8 +67,15 @@ class ShellContentBrowserClient : public ContentBrowserClient {
   }
 
  private:
+  ShellBrowserContext* ShellBrowserContextForBrowserContext(
+      BrowserContext* content_browser_context);
+
   scoped_ptr<ShellResourceDispatcherHostDelegate>
       resource_dispatcher_host_delegate_;
+
+  base::FilePath webkit_source_dir_;
+
+  base::PlatformFile hyphen_dictionary_file_;
 
   ShellBrowserMainParts* shell_browser_main_parts_;
 };

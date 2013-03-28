@@ -17,7 +17,7 @@
 
 class GURL;
 class PageUsageData;
-class PrefService;
+class PrefRegistrySyncable;
 
 namespace base {
 class ListValue;
@@ -67,7 +67,7 @@ class MostVisitedHandler : public content::WebUIMessageHandler,
     return most_visited_urls_;
   }
 
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
  private:
   struct MostVisitedPage;

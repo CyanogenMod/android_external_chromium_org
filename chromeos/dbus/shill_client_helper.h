@@ -9,10 +9,10 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/values.h"
-#include "chromeos/dbus/blocking_method_caller.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
 
@@ -38,6 +38,8 @@ class Signal;
 
 namespace chromeos {
 
+class BlockingMethodCaller;
+
 // A class to help implement Shill clients.
 class ShillClientHelper {
  public:
@@ -62,6 +64,13 @@ class ShillClientHelper {
   typedef base::Callback<void(const std::string& error_name,
                               const std::string& error_message)> ErrorCallback;
 
+  // A callback that handles responses for methods with string results.
+  typedef base::Callback<void(const std::string& result)> StringCallback;
+
+  // A callback that handles responses for methods with boolean results.
+  typedef base::Callback<void(bool result)> BooleanCallback;
+
+
   ShillClientHelper(dbus::Bus* bus, dbus::ObjectProxy* proxy);
 
   virtual ~ShillClientHelper();
@@ -72,7 +81,9 @@ class ShillClientHelper {
   // Removes an |observer| of the PropertyChanged signal.
   void RemovePropertyChangedObserver(ShillPropertyChangedObserver* observer);
 
-  // Starts monitoring PropertyChanged signal.
+  // Starts monitoring PropertyChanged signal. If there aren't observers for the
+  // PropertyChanged signal, the actual monitoring will be delayed until the
+  // first observer is added.
   void MonitorPropertyChanged(const std::string& interface_name);
 
   // Calls a method without results.
@@ -98,6 +109,18 @@ class ShillClientHelper {
                                        const base::Closure& callback,
                                        const ErrorCallback& error_callback);
 
+  // Calls a method with a boolean result with error callback.
+  void CallBooleanMethodWithErrorCallback(
+      dbus::MethodCall* method_call,
+      const BooleanCallback& callback,
+      const ErrorCallback& error_callback);
+
+  // Calls a method with a string result with error callback.
+  void CallStringMethodWithErrorCallback(dbus::MethodCall* method_call,
+                                         const StringCallback& callback,
+                                         const ErrorCallback& error_callback);
+
+
   // Calls a method with a dictionary value result with error callback.
   void CallDictionaryValueMethodWithErrorCallback(
       dbus::MethodCall* method_call,
@@ -113,9 +136,6 @@ class ShillClientHelper {
   // DEPRECATED DO NOT USE: Calls a method without results.
   bool CallVoidMethodAndBlock(dbus::MethodCall* method_call);
 
-  // DEPRECATED DO NOT USE: Calls a method with an object path result.
-  dbus::ObjectPath CallObjectPathMethodAndBlock(dbus::MethodCall* method_call);
-
   // DEPRECATED DO NOT USE: Calls a method with a dictionary value result.
   // The caller is responsible to delete the result.
   // This method returns NULL when method call fails.
@@ -128,6 +148,9 @@ class ShillClientHelper {
                                        const base::Value& value);
 
  private:
+  // Starts monitoring PropertyChanged signal.
+  void MonitorPropertyChangedInternal(const std::string& interface_name);
+
   // Handles the result of signal connection setup.
   void OnSignalConnected(const std::string& interface,
                          const std::string& signal,
@@ -136,52 +159,13 @@ class ShillClientHelper {
   // Handles PropertyChanged signal.
   void OnPropertyChanged(dbus::Signal* signal);
 
-  // Handles responses for methods without results.
-  void OnVoidMethod(const VoidDBusMethodCallback& callback,
-                    dbus::Response* response);
-
-  // Handles responses for methods with ObjectPath results.
-  void OnObjectPathMethod(const ObjectPathDBusMethodCallback& callback,
-                          dbus::Response* response);
-
-  // Handles responses for methods with ObjectPath results.
-  void OnObjectPathMethodWithoutStatus(
-      const ObjectPathCallback& callback,
-      const ErrorCallback& error_callback,
-      dbus::Response* response);
-
-  // Handles responses for methods with DictionaryValue results.
-  void OnDictionaryValueMethod(const DictionaryValueCallback& callback,
-                               dbus::Response* response);
-
-  // Handles responses for methods without results.
-  // Used by CallVoidMethodWithErrorCallback().
-  void OnVoidMethodWithErrorCallback(const base::Closure& callback,
-                                     dbus::Response* response);
-
-  // Handles responses for methods with DictionaryValue results.
-  // Used by CallDictionaryValueMethodWithErrorCallback().
-  void OnDictionaryValueMethodWithErrorCallback(
-      const DictionaryValueCallbackWithoutStatus& callback,
-      const ErrorCallback& error_callback,
-      dbus::Response* response);
-
-  // Handles responses for methods with Boolean array results.
-  // Used by CallBooleanArrayMethodWithErrorCallback().
-  void OnListValueMethodWithErrorCallback(
-      const ListValueCallback& callback,
-      const ErrorCallback& error_callback,
-      dbus::Response* response);
-
-  // Handles errors for method calls.
-  void OnError(const ErrorCallback& error_callback,
-               dbus::ErrorResponse* response);
-
   // TODO(hashimoto): Remove this when we no longer need to make blocking calls.
-  BlockingMethodCaller blocking_method_caller_;
+  scoped_ptr<BlockingMethodCaller> blocking_method_caller_;
   dbus::ObjectProxy* proxy_;
   PropertyChangedHandler property_changed_handler_;
-  ObserverList<ShillPropertyChangedObserver> observer_list_;
+  ObserverList<ShillPropertyChangedObserver, true /* check_empty */>
+      observer_list_;
+  std::vector<std::string> interfaces_to_be_monitored_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

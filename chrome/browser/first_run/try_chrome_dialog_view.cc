@@ -11,6 +11,7 @@
 #include "base/string16.h"
 #include "chrome/browser/process_singleton.h"
 #include "chrome/installer/util/browser_distribution.h"
+#include "chrome/installer/util/user_experiment.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -24,9 +25,15 @@
 #include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/link.h"
+#include "ui/views/controls/separator.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
+
+#if defined(USE_AURA)
+#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
+#endif
 
 namespace {
 
@@ -79,16 +86,15 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
   icon->SetImage(rb.GetNativeImageNamed(IDR_PRODUCT_LOGO_32).ToImageSkia());
   gfx::Size icon_size = icon->GetPreferredSize();
 
-  // An approximate window size. After Layout() we'll get better bounds.
   popup_ = new views::Widget;
   if (!popup_) {
     NOTREACHED();
     return DIALOG_ERROR;
   }
-
+  // An approximate window size. After Layout() we'll get better bounds.
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.can_activate = true;
-  params.bounds = gfx::Rect(310, 160);
+  params.bounds = gfx::Rect(310, 200);
   popup_->Init(params);
 
   views::View* root_view = popup_->GetRootView();
@@ -104,7 +110,7 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
   root_view->SetLayoutManager(layout);
   views::ColumnSet* columns;
 
-  // First row: [icon][pad][text][button].
+  // First row: [icon][pad][text][pad][button].
   columns = layout->AddColumnSet(0);
   columns->AddColumn(views::GridLayout::LEADING, views::GridLayout::LEADING, 0,
                      views::GridLayout::FIXED, icon_size.width(),
@@ -112,6 +118,7 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
   columns->AddPaddingColumn(0, views::kRelatedControlHorizontalSpacing);
   columns->AddColumn(views::GridLayout::FILL, views::GridLayout::FILL, 1,
                      views::GridLayout::USE_PREF, 0, 0);
+  columns->AddPaddingColumn(0, views::kUnrelatedControlHorizontalSpacing);
   columns->AddColumn(views::GridLayout::TRAILING, views::GridLayout::FILL, 1,
                      views::GridLayout::USE_PREF, 0, 0);
 
@@ -150,43 +157,45 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
   columns->AddColumn(views::GridLayout::CENTER, views::GridLayout::FILL, 1,
                      views::GridLayout::USE_PREF, 0, 0);
 
-  // Optional fourth row: [pad][pad][checkbox].
+  // Optional fourth row: [divider]
   columns = layout->AddColumnSet(6);
-  columns->AddPaddingColumn(0, icon_size.width());
-  columns->AddPaddingColumn(0,
-      views::kRelatedControlHorizontalSpacing + views::kPanelHorizIndentation);
-  columns->AddColumn(views::GridLayout::LEADING, views::GridLayout::FILL, 1,
+  columns->AddColumn(views::GridLayout::CENTER, views::GridLayout::FILL, 1,
                      views::GridLayout::USE_PREF, 0, 0);
+
+  // Optional fifth row [checkbox][pad][button]
+  columns = layout->AddColumnSet(7);
+  columns->AddColumn(views::GridLayout::LEADING, views::GridLayout::FILL, 0,
+                     views::GridLayout::USE_PREF, 0, 0);
+  columns->AddPaddingColumn(0, views::kUnrelatedControlHorizontalSpacing);
+  columns->AddColumn(views::GridLayout::TRAILING, views::GridLayout::FILL, 1,
+                     views::GridLayout::USE_PREF, 0, 0);
+
   // First row.
   layout->StartRow(0, 0);
   layout->AddView(icon);
 
   // Find out what experiment we are conducting.
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  if (!dist) {
-    NOTREACHED() << "Cannot determine browser distribution";
-    return DIALOG_ERROR;
-  }
-  BrowserDistribution::UserExperiment experiment;
-  if (!dist->GetExperimentDetails(&experiment, flavor_) ||
+  installer::ExperimentDetails experiment;
+  if (!BrowserDistribution::GetDistribution()->HasUserExperiments() ||
+      !installer::CreateExperimentDetails(flavor_, &experiment) ||
       !experiment.heading) {
     NOTREACHED() << "Cannot determine which headline to show.";
     return DIALOG_ERROR;
   }
   views::Label* label = new views::Label(
       l10n_util::GetStringUTF16(experiment.heading));
-  label->SetFont(rb.GetFont(ui::ResourceBundle::MediumBoldFont));
+  label->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
   label->SetMultiLine(true);
   label->SizeToFit(200);
   label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   layout->AddView(label);
   // The close button is custom.
   views::ImageButton* close_button = new views::ImageButton(this);
-  close_button->SetImage(views::CustomButton::BS_NORMAL,
+  close_button->SetImage(views::CustomButton::STATE_NORMAL,
                          rb.GetNativeImageNamed(IDR_CLOSE_BAR).ToImageSkia());
-  close_button->SetImage(views::CustomButton::BS_HOT,
+  close_button->SetImage(views::CustomButton::STATE_HOVERED,
                          rb.GetNativeImageNamed(IDR_CLOSE_BAR_H).ToImageSkia());
-  close_button->SetImage(views::CustomButton::BS_PUSHED,
+  close_button->SetImage(views::CustomButton::STATE_PRESSED,
                          rb.GetNativeImageNamed(IDR_CLOSE_BAR_P).ToImageSkia());
   close_button->set_tag(BT_CLOSE_BUTTON);
   layout->AddView(close_button);
@@ -202,7 +211,7 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
 
   // Decide if the don't bug me is a button or a radio button.
   bool dont_bug_me_button =
-      ((experiment.flags & BrowserDistribution::kDontBugMeAsButton) != 0);
+      !!(experiment.flags & installer::kToastUiDontBugMeAsButton);
 
   // Optional third and fourth row.
   if (!dont_bug_me_button) {
@@ -213,38 +222,49 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
     dont_try_chrome_->set_listener(this);
     layout->AddView(dont_try_chrome_);
   }
-  if (experiment.flags & BrowserDistribution::kUninstall) {
+  if (experiment.flags & installer::kToastUiUninstall) {
     layout->StartRow(0, 2);
     kill_chrome_ = new views::RadioButton(
         l10n_util::GetStringUTF16(IDS_UNINSTALL_CHROME), kRadioGroupID);
     layout->AddView(kill_chrome_);
   }
-  if (experiment.flags & BrowserDistribution::kMakeDefault) {
-    layout->StartRow(0, 6);
-    make_default_ = new views::Checkbox(
-        l10n_util::GetStringUTF16(IDS_TRY_TOAST_SET_DEFAULT));
-    make_default_->SetFont(
-        make_default_->font().DeriveFont(0, gfx::Font::ITALIC));
-    make_default_->SetChecked(true);
-    layout->AddView(make_default_);
-  }
 
-  // Button row, the last or next to last depending on the 'why?' link.
   views::Button* accept_button = new views::NativeTextButton(
       this, l10n_util::GetStringUTF16(IDS_OK));
   accept_button->set_tag(BT_OK_BUTTON);
 
-  layout->StartRowWithPadding(0, dont_bug_me_button ? 3 : 5, 0, 10);
-  layout->AddView(accept_button);
-  if (dont_bug_me_button) {
-    // The bubble needs a "Don't bug me" as a button or as a radio button, this
-    // this the button case.
-    views::Button* cancel_button = new views::NativeTextButton(
-        this, l10n_util::GetStringUTF16(IDS_TRY_TOAST_CANCEL));
-    cancel_button->set_tag(BT_CLOSE_BUTTON);
-    layout->AddView(cancel_button);
+  views::Separator* separator = NULL;
+  if (experiment.flags & installer::kToastUiMakeDefault) {
+    // In this flavor we have some veritical space, then a separator line
+    // and the 'make default' checkbox and the OK button on the same row.
+    layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
+    layout->StartRow(0, 6);
+    separator = new views::Separator;
+    layout->AddView(separator);
+    layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
+
+    layout->StartRow(0, 7);
+    make_default_ = new views::Checkbox(
+        l10n_util::GetStringUTF16(IDS_TRY_TOAST_SET_DEFAULT));
+    make_default_->SetChecked(true);
+    layout->AddView(make_default_);
+    layout->AddView(accept_button);
+  } else {
+    // On this other flavor there is no checkbox, the OK button and possibly
+    // the cancel button are in the same row.
+    layout->StartRowWithPadding(0, dont_bug_me_button ? 3 : 5, 0, 10);
+    layout->AddView(accept_button);
+    if (dont_bug_me_button) {
+      // The dialog needs a "Don't bug me" as a button or as a radio button,
+      // this the button case.
+      views::Button* cancel_button = new views::NativeTextButton(
+          this, l10n_util::GetStringUTF16(IDS_TRY_TOAST_CANCEL));
+      cancel_button->set_tag(BT_CLOSE_BUTTON);
+      layout->AddView(cancel_button);
+    }
   }
-  if (experiment.flags & BrowserDistribution::kWhyLink) {
+
+  if (experiment.flags & installer::kToastUiWhyLink) {
     layout->StartRowWithPadding(0, 4, 0, 10);
     views::Link* link = new views::Link(
         l10n_util::GetStringUTF16(IDS_TRY_TOAST_WHY));
@@ -256,13 +276,24 @@ TryChromeDialogView::Result TryChromeDialogView::ShowModal(
   // account the differences between XP and Vista fonts and buttons.
   layout->Layout(root_view);
   gfx::Size preferred = layout->GetPreferredSize(root_view);
+  if (separator) {
+    int separator_height = separator->GetPreferredSize().height();
+    separator->SetSize(gfx::Size(preferred.width(), separator_height));
+  }
+
   gfx::Rect pos = ComputeWindowPosition(preferred.width(), preferred.height(),
                                         base::i18n::IsRTL());
   popup_->SetBounds(pos);
 
   // Carve the toast shape into the window.
-  SetToastRegion(popup_->GetNativeView(),
-                 preferred.width(), preferred.height());
+  HWND toast_window;
+#if defined(USE_AURA)
+  toast_window =
+      popup_->GetNativeView()->GetRootWindow()->GetAcceleratedWidget();
+#else
+  toast_window = popup_->GetNativeView();
+#endif
+  SetToastRegion(toast_window, preferred.width(), preferred.height());
 
   // Time to show the window in a modal loop. The ProcessSingleton should
   // already be locked and it will not process WM_COPYDATA requests. Change the
@@ -309,13 +340,13 @@ void TryChromeDialogView::ButtonPressed(views::Button* sender,
   if (sender->tag() == BT_DONT_BUG_RADIO) {
     if (make_default_) {
       make_default_->SetChecked(false);
-      make_default_->SetState(views::CustomButton::BS_DISABLED);
+      make_default_->SetVisible(false);
     }
     return;
   } else if (sender->tag() == BT_TRY_IT_RADIO) {
     if (make_default_) {
+      make_default_->SetVisible(true);
       make_default_->SetChecked(true);
-      make_default_->SetState(views::CustomButton::BS_NORMAL);
     }
     return;
   } else if (sender->tag() == BT_CLOSE_BUTTON) {

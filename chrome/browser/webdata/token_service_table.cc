@@ -8,10 +8,31 @@
 #include <string>
 
 #include "base/logging.h"
-#include "chrome/browser/password_manager/encryptor.h"
+#include "chrome/browser/webdata/web_database.h"
+#include "components/webdata/encryptor/encryptor.h"
 #include "sql/statement.h"
 
-bool TokenServiceTable::Init() {
+namespace {
+
+int table_key = 0;
+
+WebDatabaseTable::TypeKey GetKey() {
+  return reinterpret_cast<void*>(&table_key);
+}
+
+}  // namespace
+
+TokenServiceTable* TokenServiceTable::FromWebDatabase(WebDatabase* db) {
+  return static_cast<TokenServiceTable*>(db->GetTable(GetKey()));
+
+}
+
+WebDatabaseTable::TypeKey TokenServiceTable::GetTypeKey() const {
+  return GetKey();
+}
+
+bool TokenServiceTable::Init(sql::Connection* db, sql::MetaTable* meta_table) {
+  WebDatabaseTable::Init(db, meta_table);
   if (!db_->DoesTableExist("token_service")) {
     if (!db_->Execute("CREATE TABLE token_service ("
                       "service VARCHAR PRIMARY KEY NOT NULL,"
@@ -24,6 +45,12 @@ bool TokenServiceTable::Init() {
 }
 
 bool TokenServiceTable::IsSyncable() {
+  return true;
+}
+
+bool TokenServiceTable::MigrateToVersion(int version,
+                                         const std::string& app_locale,
+                                         bool* update_compatible_version) {
   return true;
 }
 

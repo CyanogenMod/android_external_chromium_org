@@ -14,7 +14,6 @@
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_options_menu_model.h"
 #include "chrome/browser/profiles/profile.h"
-#import "chrome/browser/ui/cocoa/hover_image_button.h"
 #import "chrome/browser/ui/cocoa/menu_controller.h"
 #import "chrome/browser/ui/cocoa/notifications/balloon_view.h"
 #include "chrome/browser/ui/cocoa/notifications/balloon_view_host_mac.h"
@@ -22,9 +21,9 @@
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#import "ui/base/cocoa/hover_image_button.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/mac/nsimage_cache.h"
 
 namespace {
 
@@ -61,12 +60,15 @@ const int kRightMargin = 2;
   DCHECK([self window]);
   DCHECK_EQ(self, [[self window] delegate]);
 
-  NSImage* image = gfx::GetCachedImageWithName(@"balloon_wrench.pdf");
-  [optionsButton_ setDefaultImage:image];
-  [optionsButton_ setDefaultOpacity:0.6];
-  [optionsButton_ setHoverImage:image];
-  [optionsButton_ setHoverOpacity:0.9];
-  [optionsButton_ setPressedImage:image];
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  [optionsButton_ setDefaultImage:
+      rb.GetNativeImageNamed(IDR_BALLOON_WRENCH).ToNSImage()];
+  [optionsButton_ setDefaultOpacity:1.0];
+  [optionsButton_ setHoverImage:
+      rb.GetNativeImageNamed(IDR_BALLOON_WRENCH_H).ToNSImage()];
+  [optionsButton_ setHoverOpacity:1.0];
+  [optionsButton_ setPressedImage:
+      rb.GetNativeImageNamed(IDR_BALLOON_WRENCH_P).ToNSImage()];
   [optionsButton_ setPressedOpacity:1.0];
   [[optionsButton_ cell] setHighlightsBy:NSNoCellMask];
 

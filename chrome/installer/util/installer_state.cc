@@ -119,23 +119,21 @@ void InstallerState::Initialize(const CommandLine& command_line,
   const bool is_uninstall = command_line.HasSwitch(switches::kUninstall);
 
   if (prefs.install_chrome()) {
-    Product* p =
-        AddProductFromPreferences(BrowserDistribution::CHROME_BROWSER, prefs,
-                                  machine_state);
+    Product* p = AddProductFromPreferences(
+        BrowserDistribution::CHROME_BROWSER, prefs, machine_state);
     VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
             << " distribution: " << p->distribution()->GetAppShortCutName();
   }
   if (prefs.install_chrome_frame()) {
-    Product* p =
-        AddProductFromPreferences(BrowserDistribution::CHROME_FRAME, prefs,
-                                  machine_state);
+    Product* p = AddProductFromPreferences(
+        BrowserDistribution::CHROME_FRAME, prefs, machine_state);
     VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
             << " distribution: " << p->distribution()->GetAppShortCutName();
   }
-  if (prefs.install_chrome_app_host()) {
-    Product* p =
-        AddProductFromPreferences(BrowserDistribution::CHROME_APP_HOST, prefs,
-                                  machine_state);
+
+  if (prefs.install_chrome_app_launcher()) {
+    Product* p = AddProductFromPreferences(
+        BrowserDistribution::CHROME_APP_HOST, prefs, machine_state);
     VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
             << " distribution: " << p->distribution()->GetAppShortCutName();
   }
@@ -167,10 +165,8 @@ void InstallerState::Initialize(const CommandLine& command_line,
 
     if (need_binaries && !FindProduct(BrowserDistribution::CHROME_BINARIES)) {
       // Force binaries to be installed/updated.
-      Product* p =
-          AddProductFromPreferences(BrowserDistribution::CHROME_BINARIES,
-                                    prefs,
-                                    machine_state);
+      Product* p = AddProductFromPreferences(
+          BrowserDistribution::CHROME_BINARIES, prefs, machine_state);
       VLOG(1) << "Install distribution: "
               << p->distribution()->GetAppShortCutName();
     }
@@ -178,19 +174,41 @@ void InstallerState::Initialize(const CommandLine& command_line,
 
   if (is_uninstall && prefs.is_multi_install()) {
     if (FindProduct(BrowserDistribution::CHROME_BROWSER)) {
-      const ProductState* chrome_frame_state = machine_state.GetProductState(
-          system_install(), BrowserDistribution::CHROME_FRAME);
+      // Uninstall each product of type |type| listed below based on the
+      // presence or absence of |switch_name| in that product's uninstall
+      // command.
+      const struct {
+        BrowserDistribution::Type type;
+        const char* switch_name;
+        bool switch_expected;
+      } conditional_additions[] = {
+        // If Chrome Frame is installed in Ready Mode, remove it with Chrome.
+        { BrowserDistribution::CHROME_FRAME,
+          switches::kChromeFrameReadyMode,
+          true },
+        // If the App Host is installed, but not the App Launcher, remove it
+        // with Chrome. Note however that for system-level Chrome uninstalls,
+        // any installed user-level App Host will remain even if there is no
+        // App Launcher present (the orphaned app_host.exe will prompt the user
+        // for further action when executed).
+        { BrowserDistribution::CHROME_APP_HOST,
+          switches::kChromeAppLauncher,
+          false },
+      };
 
-      if (chrome_frame_state != NULL &&
-          chrome_frame_state->uninstall_command().HasSwitch(
-              switches::kChromeFrameReadyMode) &&
-          !FindProduct(BrowserDistribution::CHROME_FRAME)) {
-        // Chrome Frame is installed in Ready Mode. Remove it along with Chrome.
-        Product* p = AddProductFromPreferences(
-            BrowserDistribution::CHROME_FRAME, prefs, machine_state);
-
-        VLOG(1) << "Uninstall distribution: "
-                << p->distribution()->GetAppShortCutName();
+      for (size_t i = 0; i < arraysize(conditional_additions); ++i) {
+        const ProductState* product_state = machine_state.GetProductState(
+            system_install(), conditional_additions[i].type);
+        if (product_state != NULL &&
+            product_state->uninstall_command().HasSwitch(
+                conditional_additions[i].switch_name) ==
+                    conditional_additions[i].switch_expected &&
+            !FindProduct(conditional_additions[i].type)) {
+          Product* p = AddProductFromPreferences(
+              conditional_additions[i].type, prefs, machine_state);
+          VLOG(1) << "Uninstall distribution: "
+                  << p->distribution()->GetAppShortCutName();
+        }
       }
     }
 
@@ -235,10 +253,11 @@ void InstallerState::Initialize(const CommandLine& command_line,
 
       // The product is being uninstalled.
     }
-    if (!keep_binaries) {
-      Product* p =
-          AddProductFromPreferences(BrowserDistribution::CHROME_BINARIES, prefs,
-                                    machine_state);
+    if (!keep_binaries &&
+        machine_state.GetProductState(system_install(),
+                                      BrowserDistribution::CHROME_BINARIES)) {
+      Product* p = AddProductFromPreferences(
+          BrowserDistribution::CHROME_BINARIES, prefs, machine_state);
       VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
               << " distribution: " << p->distribution()->GetAppShortCutName();
     }
@@ -271,7 +290,7 @@ void InstallerState::Initialize(const CommandLine& command_line,
       operand_distribution_type = BrowserDistribution::CHROME_BROWSER;
     else if (prefs.install_chrome_frame())
       operand_distribution_type = BrowserDistribution::CHROME_FRAME;
-    else if (prefs.install_chrome_app_host())
+    else if (prefs.install_chrome_app_launcher())
       operand_distribution_type = BrowserDistribution::CHROME_APP_HOST;
 
     operand = BrowserDistribution::GetSpecificDistribution(
@@ -325,7 +344,7 @@ void InstallerState::set_package_type(PackageType type) {
 
 // Returns the Chrome binaries directory for multi-install or |dist|'s directory
 // otherwise.
-FilePath InstallerState::GetDefaultProductInstallPath(
+base::FilePath InstallerState::GetDefaultProductInstallPath(
     BrowserDistribution* dist) const {
   DCHECK(dist);
   DCHECK(package_type_ != UNKNOWN_PACKAGE_TYPE);
@@ -343,7 +362,7 @@ FilePath InstallerState::GetDefaultProductInstallPath(
 // We never expect these checks to fail, hence they all terminate the process in
 // debug builds.  See the log messages for details.
 bool InstallerState::CanAddProduct(const Product& product,
-                                   const FilePath* product_dir) const {
+                                   const base::FilePath* product_dir) const {
   switch (package_type_) {
     case SINGLE_PACKAGE:
       if (!products_.empty()) {
@@ -362,10 +381,10 @@ bool InstallerState::CanAddProduct(const Product& product,
         return false;
       }
       if (!target_path_.empty()) {
-        FilePath default_dir;
+        base::FilePath default_dir;
         if (product_dir == NULL)
           default_dir = GetDefaultProductInstallPath(product.distribution());
-        if (!FilePath::CompareEqualIgnoreCase(
+        if (!base::FilePath::CompareEqualIgnoreCase(
                 (product_dir == NULL ? default_dir : *product_dir).value(),
                 target_path_.value())) {
           LOG(DFATAL) << "Cannot process products in different directories.";
@@ -384,8 +403,9 @@ bool InstallerState::CanAddProduct(const Product& product,
 // |product_dir| is NULL, the product's default install location is used.
 // Returns NULL if |product| is incompatible with this object.  Otherwise,
 // returns a pointer to the product (ownership is held by this object).
-Product* InstallerState::AddProductInDirectory(const FilePath* product_dir,
-                                               scoped_ptr<Product>* product) {
+Product* InstallerState::AddProductInDirectory(
+    const base::FilePath* product_dir,
+    scoped_ptr<Product>* product) {
   DCHECK(product != NULL);
   DCHECK(product->get() != NULL);
   const Product& the_product = *product->get();
@@ -450,7 +470,8 @@ Product* InstallerState::AddProductFromState(
   product_ptr->InitializeFromUninstallCommand(state.uninstall_command());
 
   // Strip off <version>/Installer/setup.exe; see GetInstallerDirectory().
-  FilePath product_dir = state.GetSetupPath().DirName().DirName().DirName();
+  base::FilePath product_dir =
+      state.GetSetupPath().DirName().DirName().DirName();
 
   Product* product = AddProductInDirectory(&product_dir, &product_ptr);
 
@@ -565,28 +586,29 @@ bool InstallerState::IsChromeFrameRunning(
   bool in_use = false;
   scoped_ptr<Version> current_version(GetCurrentVersion(machine_state));
   if (current_version != NULL) {
-    FilePath cf_install_path(
+    base::FilePath cf_install_path(
         target_path().AppendASCII(current_version->GetString())
                      .Append(kChromeFrameDll));
-    in_use = IsFileInUse(cf_install_path);
+    in_use = file_util::PathExists(cf_install_path) &&
+        IsFileInUse(cf_install_path);
   }
   return in_use;
 }
 
-FilePath InstallerState::GetInstallerDirectory(const Version& version) const {
+base::FilePath InstallerState::GetInstallerDirectory(
+    const Version& version) const {
   return target_path().Append(ASCIIToWide(version.GetString()))
       .Append(kInstallerDir);
 }
 
 // static
-bool InstallerState::IsFileInUse(const FilePath& file) {
+bool InstallerState::IsFileInUse(const base::FilePath& file) {
   // Call CreateFile with a share mode of 0 which should cause this to fail
   // with ERROR_SHARING_VIOLATION if the file exists and is in-use.
   return !base::win::ScopedHandle(CreateFile(file.value().c_str(),
                                              GENERIC_WRITE, 0, NULL,
                                              OPEN_EXISTING, 0, 0)).IsValid();
 }
-
 
 void InstallerState::GetExistingExeVersions(
     std::set<std::string>* existing_versions) const {
@@ -598,7 +620,7 @@ void InstallerState::GetExistingExeVersions(
   };
 
   for (int i = 0; i < arraysize(kChromeFilenames); ++i) {
-    FilePath chrome_exe(target_path().Append(kChromeFilenames[i]));
+    base::FilePath chrome_exe(target_path().Append(kChromeFilenames[i]));
     scoped_ptr<FileVersionInfo> file_version_info(
         FileVersionInfo::CreateFileVersionInfo(chrome_exe));
     if (file_version_info) {
@@ -612,9 +634,9 @@ void InstallerState::GetExistingExeVersions(
 void InstallerState::RemoveOldVersionDirectories(
     const Version& new_version,
     Version* existing_version,
-    const FilePath& temp_path) const {
+    const base::FilePath& temp_path) const {
   Version version;
-  std::vector<FilePath> key_files;
+  std::vector<base::FilePath> key_files;
   scoped_ptr<WorkItem> item;
 
   std::set<std::string> existing_version_strings;
@@ -629,9 +651,9 @@ void InstallerState::RemoveOldVersionDirectories(
   // Try to delete all directories that are not in the set we care to keep.
   file_util::FileEnumerator version_enum(target_path(), false,
       file_util::FileEnumerator::DIRECTORIES);
-  for (FilePath next_version = version_enum.Next(); !next_version.empty();
+  for (base::FilePath next_version = version_enum.Next(); !next_version.empty();
        next_version = version_enum.Next()) {
-    FilePath dir_name(next_version.BaseName());
+    base::FilePath dir_name(next_version.BaseName());
     version = Version(WideToASCII(dir_name.value()));
     // Delete the version folder if it is less than the new version and not
     // equal to the old version (if we have an old version).
@@ -652,7 +674,8 @@ void InstallerState::RemoveOldVersionDirectories(
   }
 }
 
-void InstallerState::AddComDllList(std::vector<FilePath>* com_dll_list) const {
+void InstallerState::AddComDllList(
+    std::vector<base::FilePath>* com_dll_list) const {
   std::for_each(products_.begin(), products_.end(),
                 std::bind2nd(std::mem_fun(&Product::AddComDllList),
                              com_dll_list));
@@ -767,6 +790,10 @@ void InstallerState::WriteInstallerResult(
   }
   if (!install_list->Do())
     LOG(ERROR) << "Failed to record installer error information in registry.";
+}
+
+bool InstallerState::RequiresActiveSetup() const {
+  return system_install() && FindProduct(BrowserDistribution::CHROME_BROWSER);
 }
 
 }  // namespace installer

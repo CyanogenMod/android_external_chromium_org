@@ -10,6 +10,7 @@
 #include "ppapi/shared_impl/callback_tracker.h"
 #include "ppapi/shared_impl/id_assignment.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/resource.h"
 
 namespace ppapi {
@@ -24,6 +25,7 @@ ResourceTracker::~ResourceTracker() {
 
 Resource* ResourceTracker::GetResource(PP_Resource res) const {
   CHECK(thread_checker_.CalledOnValidThread());
+  ProxyLock::AssertAcquired();
   ResourceMap::const_iterator i = live_resources_.find(res);
   if (i == live_resources_.end())
     return NULL;
@@ -78,9 +80,9 @@ void ResourceTracker::ReleaseResource(PP_Resource res) {
 void ResourceTracker::ReleaseResourceSoon(PP_Resource res) {
   MessageLoop::current()->PostNonNestableTask(
       FROM_HERE,
-      base::Bind(&ResourceTracker::ReleaseResource,
-             weak_ptr_factory_.GetWeakPtr(),
-             res));
+      RunWhileLocked(base::Bind(&ResourceTracker::ReleaseResource,
+                                weak_ptr_factory_.GetWeakPtr(),
+                                res)));
 }
 
 void ResourceTracker::DidCreateInstance(PP_Instance instance) {

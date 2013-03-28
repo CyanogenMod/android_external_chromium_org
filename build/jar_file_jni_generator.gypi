@@ -10,9 +10,8 @@
 #   'target_name': 'android_jar_jni_headers',
 #   'type': 'none',
 #   'variables': {
-#     'jni_gen_dir': 'chrome',
+#     'jni_gen_package': 'chrome',
 #     'input_java_class': 'java/io/InputStream.class',
-#     'input_jar_file': '<(android_sdk)/android.jar',
 #   },
 #   'includes': [ '../build/jar_file_jni_generator.gypi' ],
 # },
@@ -26,24 +25,26 @@
       'action_name': 'generate_jni_headers_from_jar_file',
       'inputs': [
         '<(jni_generator)',
-        '<(input_jar_file)',
+        '<(android_sdk_jar)',
       ],
       'variables': {
         'java_class_name': '<!(basename <(input_java_class)|sed "s/\.class//")'
       },
       'outputs': [
-        '<(SHARED_INTERMEDIATE_DIR)/<(jni_gen_dir)/jni/<(java_class_name)_jni.h',
+        '<(SHARED_INTERMEDIATE_DIR)/<(jni_gen_package)/jni/<(java_class_name)_jni.h',
       ],
       'action': [
         '<(jni_generator)',
         '-j',
-        '<(input_jar_file)',
+        '<(android_sdk_jar)',
         '--input_file',
         '<(input_java_class)',
         '--output_dir',
-        '<(SHARED_INTERMEDIATE_DIR)/<(jni_gen_dir)/jni',
+        '<(SHARED_INTERMEDIATE_DIR)/<(jni_gen_package)/jni',
+        '--optimize_generation',
+        '<(optimize_jni_generation)',
       ],
-      'message': 'Generating JNI bindings from  <(input_jar_file)/<(input_java_class)',
+      'message': 'Generating JNI bindings from  <(android_sdk_jar)/<(input_java_class)',
       'process_outputs_as_sources': 1,
     },
   ],

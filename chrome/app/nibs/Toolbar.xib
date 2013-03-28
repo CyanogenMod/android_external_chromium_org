@@ -63,7 +63,7 @@
 						<object class="NSTextFieldCell" key="NSCell" id="464583340">
 							<int key="NSCellFlags">-1804599231</int>
 							<int key="NSCellFlags2">66560</int>
-							<string key="NSContents">chromium.org</string>
+							<string key="NSContents"></string>
 							<object class="NSFont" key="NSSupport">
 								<string key="NSName">LucidaGrande</string>
 								<double key="NSSize">13</double>
@@ -569,7 +569,7 @@
 						<object class="IBToolTipAttribute" key="NS.object.0">
 							<string key="name">ToolTip</string>
 							<reference key="object" ref="602421009"/>
-							<string key="toolTip">^IDS_APPMENU_TOOLTIP$IDS_PRODUCT_NAME</string>
+							<string key="toolTip">^IDS_APPMENU_TOOLTIP</string>
 						</object>
 					</object>
 					<string>com.apple.InterfaceBuilder.CocoaPlugin</string>

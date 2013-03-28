@@ -4,17 +4,18 @@
 
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_delegate.h"
 
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/event_disposition.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/bookmarks/bookmark_drag_drop.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+#include "chrome/browser/ui/views/bookmarks/bookmark_drag_drop_views.h"
 #include "chrome/browser/ui/views/event_utils.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/page_navigator.h"
@@ -25,6 +26,7 @@
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
@@ -131,8 +133,15 @@ void BookmarkMenuDelegate::ExecuteCommand(int id, int mouse_event_flags) {
   selection.push_back(node);
 
   chrome::OpenAll(parent_->GetNativeWindow(), page_navigator_, selection,
-      chrome::DispositionFromEventFlags(mouse_event_flags));
+                  ui::DispositionFromEventFlags(mouse_event_flags),
+                  profile_);
   bookmark_utils::RecordBookmarkLaunch(location_);
+}
+
+bool BookmarkMenuDelegate::ShouldExecuteCommandWithoutClosingMenu(
+    int id, const ui::Event& event) {
+  return (event.flags() & ui::EF_LEFT_MOUSE_BUTTON) &&
+         ui::DispositionFromEventFlags(event.flags()) == NEW_BACKGROUND_TAB;
 }
 
 bool BookmarkMenuDelegate::GetDropFormats(
@@ -209,7 +218,6 @@ int BookmarkMenuDelegate::GetDropOperation(
         // Dropping before this node makes no sense.
         *position = views::MenuDelegate::DROP_NONE;
       }
-      index_to_drop_at++;
       break;
 
     case views::MenuDelegate::DROP_ON:
@@ -221,8 +229,8 @@ int BookmarkMenuDelegate::GetDropOperation(
       break;
   }
   DCHECK(drop_parent);
-  return bookmark_utils::BookmarkDropOperation(
-      profile_, event, drop_data_, drop_parent, index_to_drop_at);
+  return chrome::GetBookmarkDropOperation(profile_, event, drop_data_,
+                                          drop_parent, index_to_drop_at);
 }
 
 int BookmarkMenuDelegate::OnPerformDrop(
@@ -260,9 +268,8 @@ int BookmarkMenuDelegate::OnPerformDrop(
       break;
   }
 
-  int result = bookmark_utils::PerformBookmarkDrop(
-      profile_, drop_data_, drop_parent, index_to_drop_at);
-  return result;
+  return chrome::DropBookmarks(profile_, drop_data_,
+                               drop_parent, index_to_drop_at);
 }
 
 bool BookmarkMenuDelegate::ShowContextMenu(MenuItemView* source,
@@ -309,7 +316,7 @@ void BookmarkMenuDelegate::WriteDragData(MenuItemView* sender,
 }
 
 int BookmarkMenuDelegate::GetDragOperations(MenuItemView* sender) {
-  return bookmark_utils::BookmarkDragOperation(
+  return chrome::GetBookmarkDragOperation(
       profile_, menu_id_to_node_map_[sender->GetCommand()]);
 }
 

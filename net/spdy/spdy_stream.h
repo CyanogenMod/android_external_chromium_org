@@ -12,19 +12,20 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/bandwidth_metrics.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/base/request_priority.h"
-#include "net/base/server_bound_cert_service.h"
-#include "net/base/ssl_client_cert_type.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session.h"
+#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/ssl_client_cert_type.h"
 
 namespace net {
 
@@ -83,7 +84,9 @@ class NET_EXPORT_PRIVATE SpdyStream
     // Called when data is sent.
     virtual void OnDataSent(int length) = 0;
 
-    // Called when SpdyStream is closed.
+    // Called when SpdyStream is closed. No other delegate functions
+    // will be called after this is called, and the delegate must not
+    // access the stream after this is called.
     virtual void OnClose(int status) = 0;
 
    protected:
@@ -104,12 +107,16 @@ class NET_EXPORT_PRIVATE SpdyStream
     FrameType type;
     union {
       SpdyHeaderBlock* header_block;
-      SpdyDataFrame* data_frame;
+      SpdyFrame* data_frame;
     };
   } PendingFrame;
 
   // SpdyStream constructor
   SpdyStream(SpdySession* session,
+             const std::string& path,
+             RequestPriority priority,
+             int32 initial_send_window_size,
+             int32 initial_recv_window_size,
              bool pushed,
              const BoundNetLog& net_log);
 
@@ -134,42 +141,59 @@ class NET_EXPORT_PRIVATE SpdyStream
 
   // For pushed streams, we track a path to identify them.
   const std::string& path() const { return path_; }
-  void set_path(const std::string& path) { path_ = path; }
 
   RequestPriority priority() const { return priority_; }
-  void set_priority(RequestPriority priority) { priority_ = priority; }
 
   int32 send_window_size() const { return send_window_size_; }
-  void set_send_window_size(int32 window_size) {
-    send_window_size_ = window_size;
-  }
 
   int32 recv_window_size() const { return recv_window_size_; }
-  void set_recv_window_size(int32 window_size) {
-    recv_window_size_ = window_size;
+
+  bool send_stalled_by_flow_control() { return send_stalled_by_flow_control_; }
+
+  void set_send_stalled_by_flow_control(bool stalled) {
+    send_stalled_by_flow_control_ = stalled;
   }
 
-  // Set session_'s initial_recv_window_size. Used by unittests.
-  void set_initial_recv_window_size(int32 window_size);
-
-  bool stalled_by_flow_control() { return stalled_by_flow_control_; }
-
-  void set_stalled_by_flow_control(bool stalled) {
-    stalled_by_flow_control_ = stalled;
-  }
-
-  // Adjusts the |send_window_size_| by |delta_window_size|. |delta_window_size|
-  // is the difference between the SETTINGS_INITIAL_WINDOW_SIZE in SETTINGS
-  // frame and the previous initial_send_window_size.
+  // If stream flow control is turned on, called by the session to
+  // adjust this stream's send window size by |delta_window_size|,
+  // which is the difference between the SETTINGS_INITIAL_WINDOW_SIZE
+  // in the most recent SETTINGS frame and the previous initial send
+  // window size, possibly unstalling this stream. Although
+  // |delta_window_size| may cause this stream's send window size to
+  // go negative, it must not cause it to wrap around in either
+  // direction. Does nothing if the stream is already closed.
+  //
+  // If stream flow control is turned off, this must not be called.
   void AdjustSendWindowSize(int32 delta_window_size);
 
-  // Increases |send_window_size_| with delta extracted from a WINDOW_UPDATE
-  // frame; sends a RST_STREAM if delta overflows |send_window_size_| and
-  // removes the stream from the session.
+  // If stream flow control is turned on, called by the session to
+  // increase this stream's send window size by |delta_window_size|
+  // from a WINDOW_UPDATE frome, which must be at least 1, possibly
+  // unstalling this stream. If |delta_window_size| would cause this
+  // stream's send window size to overflow, calls into the session to
+  // reset this stream. Does nothing if the stream is already closed.
+  //
+  // If stream flow control is turned off, this must not be called.
   void IncreaseSendWindowSize(int32 delta_window_size);
 
-  // Decreases |send_window_size_| by the given number of bytes.
+  // If stream flow control is turned on, called by the session to
+  // decrease this stream's send window size by |delta_window_size|,
+  // which must be at least 0 and at most kMaxSpdyFrameChunkSize.
+  // |delta_window_size| must not cause this stream's send window size
+  // to go negative. Does nothing if the stream is already closed.
+  //
+  // If stream flow control is turned off, this must not be called.
   void DecreaseSendWindowSize(int32 delta_window_size);
+
+  // Called by the delegate to increase this stream's receive window
+  // size by |delta_window_size|, which must be at least 1 and must
+  // not cause this stream's receive window size to overflow, possibly
+  // also sending a WINDOW_UPDATE frame.
+  //
+  // Unlike the functions above, this may be called even when stream
+  // flow control is turned off, although this does nothing in that
+  // case (and also if the stream is inactive).
+  void IncreaseRecvWindowSize(int32 delta_window_size);
 
   int GetPeerAddress(IPEndPoint* address) const;
   int GetLocalAddress(IPEndPoint* address) const;
@@ -177,16 +201,6 @@ class NET_EXPORT_PRIVATE SpdyStream
   // Returns true if the underlying transport socket ever had any reads or
   // writes.
   bool WasEverUsed() const;
-
-  // Increases |recv_window_size_| by the given number of bytes, also sends
-  // a WINDOW_UPDATE frame.
-  void IncreaseRecvWindowSize(int32 delta_window_size);
-
-  // Decreases |recv_window_size_| by the given number of bytes, called
-  // whenever data is read.  May also send a RST_STREAM and remove the
-  // stream from the session if the resultant |recv_window_size_| is
-  // negative, since that would be a flow control violation.
-  void DecreaseRecvWindowSize(int32 delta_window_size);
 
   const BoundNetLog& net_log() const { return net_log_; }
 
@@ -206,11 +220,14 @@ class NET_EXPORT_PRIVATE SpdyStream
   // Called by the SpdySession when response data has been received for this
   // stream.  This callback may be called multiple times as data arrives
   // from the network, and will never be called prior to OnResponseReceived.
-  // |buffer| contains the data received.  The stream must copy any data
-  //          from this buffer before returning from this callback.
-  // |length| is the number of bytes received or an error.
-  //         A zero-length count does not indicate end-of-stream.
-  void OnDataReceived(const char* buffer, int bytes);
+  //
+  // |buffer| contains the data received, or NULL if the stream is
+  //          being closed.  The stream must copy any data from this
+  //          buffer before returning from this callback.
+  //
+  // |length| is the number of bytes received (at most 2^24 - 1) or 0 if
+  //          the stream is being closed.
+  void OnDataReceived(const char* buffer, size_t length);
 
   // Called by the SpdySession when a write has completed.  This callback
   // will be called multiple times for each write which completes.  Writes
@@ -242,13 +259,13 @@ class NET_EXPORT_PRIVATE SpdyStream
   // For non push stream, it will send SYN_STREAM frame.
   int SendRequest(bool has_upload_data);
 
-  // Sends a HEADERS frame. SpdyStream owns |headers| and will release it after
-  // the HEADERS frame is actually sent.
-  int WriteHeaders(SpdyHeaderBlock* headers);
+  // Queues a HEADERS frame to be sent.
+  void QueueHeaders(scoped_ptr<SpdyHeaderBlock> headers);
 
-  // Sends DATA frame.
-  int WriteStreamData(IOBuffer* data, int length,
-                      SpdyDataFlags flags);
+  // Queues a DATA frame to be sent. May not queue all the data that
+  // is given (or even any of it) depending on flow control.
+  void QueueStreamData(IOBuffer* data, int length,
+                       SpdyDataFlags flags);
 
   // Fills SSL info in |ssl_info| and returns true when SSL is in use.
   bool GetSSLInfo(SSLInfo* ssl_info,
@@ -258,6 +275,13 @@ class NET_EXPORT_PRIVATE SpdyStream
   // Fills SSL Certificate Request info |cert_request_info| and returns
   // true when SSL is in use.
   bool GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info);
+
+  // If the stream is stalled on sending data, but the session is not
+  // stalled on sending data and |send_window_size_| is positive, then
+  // set |send_stalled_by_flow_control_| to false and unstall the data
+  // sending. Called by the session or by the stream itself. Must be
+  // called only when the stream is still open.
+  void PossiblyResumeIfSendStalled();
 
   bool is_idle() const {
     return io_state_ == STATE_OPEN || io_state_ == STATE_DONE;
@@ -296,10 +320,6 @@ class NET_EXPORT_PRIVATE SpdyStream
 
   virtual ~SpdyStream();
 
-  // If the stream is stalled and if |send_window_size_| is positive, then set
-  // |stalled_by_flow_control_| to false and unstall the stream.
-  void PossiblyResumeIfStalled();
-
   void OnGetDomainBoundCertComplete(int result);
 
   // Try to make progress sending/receiving the request/response.
@@ -332,7 +352,16 @@ class NET_EXPORT_PRIVATE SpdyStream
   // Returns a newly created SPDY frame owned by the called that contains
   // the next frame to be sent by this frame.  May return NULL if this
   // stream has become stalled on flow control.
-  SpdyFrame* ProduceNextFrame();
+  scoped_ptr<SpdyFrame> ProduceNextFrame();
+
+  // If the stream is active and stream flow control is turned on,
+  // called by OnDataReceived (which is in turn called by the session)
+  // to decrease this stream's receive window size by
+  // |delta_window_size|, which must be at least 1 and must not cause
+  // this stream's receive window size to go negative.
+  void DecreaseRecvWindowSize(int32 delta_window_size);
+
+  base::WeakPtrFactory<SpdyStream> weak_ptr_factory_;
 
   // There is a small period of time between when a server pushed stream is
   // first created, and the pushed data is replayed. Any data received during
@@ -340,12 +369,12 @@ class NET_EXPORT_PRIVATE SpdyStream
   bool continue_buffering_data_;
 
   SpdyStreamId stream_id_;
-  std::string path_;
-  RequestPriority priority_;
+  const std::string path_;
+  const RequestPriority priority_;
   size_t slot_;
 
   // Flow control variables.
-  bool stalled_by_flow_control_;
+  bool send_stalled_by_flow_control_;
   int32 send_window_size_;
   int32 recv_window_size_;
   int32 unacked_recv_window_bytes_;

@@ -7,34 +7,33 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "webkit/media/crypto/ppapi/content_decryption_module.h"
+#include "webkit/media/crypto/ppapi/cdm/content_decryption_module.h"
+#include "webkit/media/crypto/ppapi/cdm_video_decoder.h"
 
 struct AVCodecContext;
 struct AVFrame;
 
 namespace webkit_media {
 
-class FFmpegCdmVideoDecoder {
+class FFmpegCdmVideoDecoder : public CdmVideoDecoder {
  public:
-  explicit FFmpegCdmVideoDecoder(cdm::Allocator* allocator);
-  ~FFmpegCdmVideoDecoder();
-  bool Initialize(const cdm::VideoDecoderConfig& config);
-  void Deinitialize();
-  void Reset();
+  explicit FFmpegCdmVideoDecoder(cdm::Host* host);
+  virtual ~FFmpegCdmVideoDecoder();
+
+  // CdmVideoDecoder implementation.
+  virtual bool Initialize(const cdm::VideoDecoderConfig& config) OVERRIDE;
+  virtual void Deinitialize() OVERRIDE;
+  virtual void Reset() OVERRIDE;
+  virtual cdm::Status DecodeFrame(const uint8_t* compressed_frame,
+                                  int32_t compressed_frame_size,
+                                  int64_t timestamp,
+                                  cdm::VideoFrame* decoded_frame) OVERRIDE;
+  virtual bool is_initialized() const OVERRIDE { return is_initialized_; }
 
   // Returns true when |format| and |data_size| specify a supported video
   // output configuration.
   static bool IsValidOutputConfig(cdm::VideoFormat format,
                                   const cdm::Size& data_size);
-
-  // Decodes |compressed_frame|. Stores output frame in |decoded_frame| and
-  // returns |cdm::kSuccess| when an output frame is available. Returns
-  // |cdm::kNeedMoreData| when |compressed_frame| does not produce an output
-  // frame. Returns |cdm::kDecodeError| when decoding fails.
-  cdm::Status DecodeFrame(const uint8_t* compressed_frame,
-                          int32_t compressed_frame_size,
-                          int64_t timestamp,
-                          cdm::VideoFrame* decoded_frame);
 
  private:
   // Allocates storage, then copies video frame stored in |av_frame_| to
@@ -49,7 +48,7 @@ class FFmpegCdmVideoDecoder {
 
   bool is_initialized_;
 
-  cdm::Allocator* const allocator_;
+  cdm::Host* const host_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegCdmVideoDecoder);
 };

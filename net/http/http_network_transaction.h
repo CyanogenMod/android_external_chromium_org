@@ -14,13 +14,13 @@
 #include "base/time.h"
 #include "net/base/net_log.h"
 #include "net/base/request_priority.h"
-#include "net/base/ssl_config_service.h"
 #include "net/http/http_auth.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_stream_factory.h"
 #include "net/http/http_transaction.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/ssl_config_service.h"
 
 namespace net {
 
@@ -29,14 +29,14 @@ class HttpNetworkSession;
 class HttpStreamBase;
 class HttpStreamRequest;
 class IOBuffer;
-class UploadDataStream;
 struct HttpRequestInfo;
 
 class NET_EXPORT_PRIVATE HttpNetworkTransaction
     : public HttpTransaction,
       public HttpStreamRequest::Delegate {
  public:
-  explicit HttpNetworkTransaction(HttpNetworkSession* session);
+  HttpNetworkTransaction(RequestPriority priority,
+                         HttpNetworkSession* session);
 
   virtual ~HttpNetworkTransaction();
 
@@ -61,6 +61,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
   virtual LoadState GetLoadState() const OVERRIDE;
   virtual UploadProgress GetUploadProgress() const OVERRIDE;
+  virtual bool GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE;
+  virtual void SetPriority(RequestPriority priority) OVERRIDE;
 
   // HttpStreamRequest::Delegate methods:
   virtual void OnStreamReady(const SSLConfig& used_ssl_config,
@@ -252,12 +255,12 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   CompletionCallback io_callback_;
   CompletionCallback callback_;
-  scoped_ptr<UploadDataStream> request_body_;
 
   scoped_refptr<HttpNetworkSession> session_;
 
   BoundNetLog net_log_;
   const HttpRequestInfo* request_;
+  RequestPriority priority_;
   HttpResponseInfo response_;
 
   // |proxy_info_| is the ProxyInfo used by the HttpStreamRequest.
@@ -290,6 +293,14 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   // The time the Start method was called.
   base::Time start_time_;
+
+  // When the transaction started / finished sending the request, including
+  // the body, if present.
+  base::TimeTicks send_start_time_;
+  base::TimeTicks send_end_time_;
+
+  // When the transaction finished reading the request headers.
+  base::TimeTicks receive_headers_end_;
 
   // The next state in the state machine.
   State next_state_;

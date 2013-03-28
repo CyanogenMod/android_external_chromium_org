@@ -11,11 +11,16 @@
 #include "ash/ash_export.h"
 #include "ash/system/power/power_supply_status.h"
 #include "ash/system/user/login_status.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/i18n/time_formatting.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "ui/gfx/image/image_skia.h"
+
+namespace base {
+class TimeDelta;
+class TimeTicks;
+}
 
 namespace ash {
 
@@ -23,12 +28,16 @@ struct ASH_EXPORT NetworkIconInfo {
   NetworkIconInfo();
   ~NetworkIconInfo();
 
-  bool highlight;
+  bool highlight() const { return connected || connecting; }
+
+  bool connecting;
+  bool connected;
   bool tray_icon_visible;
   gfx::ImageSkia image;
   string16 name;
   string16 description;
   std::string service_path;
+  bool is_cellular;
 };
 
 struct ASH_EXPORT BluetoothDeviceInfo {
@@ -38,6 +47,8 @@ struct ASH_EXPORT BluetoothDeviceInfo {
   std::string address;
   string16 display_name;
   bool connected;
+  bool paired;
+  bool visible;
 };
 
 typedef std::vector<BluetoothDeviceInfo> BluetoothDeviceList;
@@ -63,7 +74,7 @@ struct ASH_EXPORT DriveOperationStatus {
   ~DriveOperationStatus();
 
   // File path.
-  FilePath file_path;
+  base::FilePath file_path;
   // Current operation completion progress [0.0 - 1.0].
   double progress;
   OperationType type;
@@ -115,6 +126,16 @@ class SystemTrayDelegate {
   virtual const std::string GetUserEmail() const = 0;
   virtual const gfx::ImageSkia& GetUserImage() const = 0;
   virtual user::LoginStatus GetUserLoginStatus() const = 0;
+  virtual bool IsOobeCompleted() const = 0;
+
+  // Shows UI for changing user's profile picture.
+  virtual void ChangeProfilePicture() = 0;
+
+  // Returns the domain that manages the device, if it is enterprise-enrolled.
+  virtual const std::string GetEnterpriseDomain() const = 0;
+
+  // Returns notification for enterprise enrolled devices.
+  virtual const string16 GetEnterpriseMessage() const = 0;
 
   // Returns whether a system upgrade is available.
   virtual bool SystemShouldUpgrade() const = 0;
@@ -152,6 +173,15 @@ class SystemTrayDelegate {
   // Shows help.
   virtual void ShowHelp() = 0;
 
+  // Show accessilibity help.
+  virtual void ShowAccessibilityHelp() = 0;
+
+  // Shows more information about public account mode.
+  virtual void ShowPublicAccountInfo() = 0;
+
+  // Shows information about enterprise enrolled devices.
+  virtual void ShowEnterpriseInfo() = 0;
+
   // Attempts to shut down the system.
   virtual void ShutDown() = 0;
 
@@ -166,6 +196,12 @@ class SystemTrayDelegate {
 
   // Returns a list of available bluetooth devices.
   virtual void GetAvailableBluetoothDevices(BluetoothDeviceList* devices) = 0;
+
+  // Requests bluetooth start discovering devices.
+  virtual void BluetoothStartDiscovering() = 0;
+
+  // Requests bluetooth stop discovering devices.
+  virtual void BluetoothStopDiscovering() = 0;
 
   // Toggles connection to a specific bluetooth device.
   virtual void ToggleBluetoothConnection(const std::string& address) = 0;
@@ -189,7 +225,7 @@ class SystemTrayDelegate {
   virtual void ActivateIMEProperty(const std::string& key) = 0;
 
   // Cancels ongoing drive operation.
-  virtual void CancelDriveOperation(const FilePath& file_path) = 0;
+  virtual void CancelDriveOperation(const base::FilePath& file_path) = 0;
 
   // Returns information about the ongoing drive operations.
   virtual void GetDriveOperationStatusList(
@@ -276,6 +312,12 @@ class SystemTrayDelegate {
                                       std::string* topup_url,
                                       std::string* setup_url) = 0;
 
+  // Returns whether the network manager is scanning for wifi networks.
+  virtual bool GetWifiScanning() = 0;
+
+  // Returns whether the network manager is initializing the cellular modem.
+  virtual bool GetCellularInitializing() = 0;
+
   // Opens the cellular network specific URL.
   virtual void ShowCellularURL(const std::string& url) = 0;
 
@@ -288,6 +330,23 @@ class SystemTrayDelegate {
   // Sets VolumeControlDelegate.
   virtual void SetVolumeControlDelegate(
       scoped_ptr<VolumeControlDelegate> delegate) = 0;
+
+  // Retrieves the session start time. Returns |false| if the time is not set.
+  virtual bool GetSessionStartTime(base::TimeTicks* session_start_time) = 0;
+
+  // Retrieves the session length limit. Returns |false| if no limit is set.
+  virtual bool GetSessionLengthLimit(base::TimeDelta* session_length_limit) = 0;
+
+  // Get the system tray menu size in pixels (dependent on the language).
+  virtual int GetSystemTrayMenuWidth() = 0;
+
+  // Returns the duration formatted as a localized string.
+  // TODO(stevenjb): Move TimeFormat from src/chrome to src/ui so that it can be
+  // accessed without going through the delegate. crbug.com/222697
+  virtual string16 FormatTimeDuration(const base::TimeDelta& delta) const = 0;
+
+  // Speaks the given text if spoken feedback is enabled.
+  virtual void MaybeSpeak(const std::string& utterance) const = 0;
 
   // Creates a dummy delegate for testing.
   static SystemTrayDelegate* CreateDummyDelegate();

@@ -8,13 +8,12 @@
 #include "base/file_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/version_handler.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/content_client.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
@@ -38,9 +37,9 @@
 
 namespace {
 
-ChromeWebUIDataSource* CreateVersionUIDataSource(Profile* profile) {
-  ChromeWebUIDataSource* html_source =
-      new ChromeWebUIDataSource(chrome::kChromeUIVersionHost);
+content::WebUIDataSource* CreateVersionUIDataSource(Profile* profile) {
+  content::WebUIDataSource* html_source =
+      content::WebUIDataSource::Create(chrome::kChromeUIVersionHost);
 
   // Localized and data strings.
   html_source->AddLocalizedString("title", IDS_ABOUT_VERSION_TITLE);
@@ -65,6 +64,9 @@ ChromeWebUIDataSource* CreateVersionUIDataSource(Profile* profile) {
                          android_build_info->package_label());
   html_source->AddString("application_version",
                          android_build_info->package_version_name());
+  html_source->AddLocalizedString("build_id_name",
+                                  IDS_ABOUT_VERSION_BUILD_ID);
+  html_source->AddString("build_id", CHROME_BUILD_ID);
 #else
   html_source->AddLocalizedString("application_label", IDS_PRODUCT_NAME);
   html_source->AddString("os_version", std::string());
@@ -114,10 +116,11 @@ ChromeWebUIDataSource* CreateVersionUIDataSource(Profile* profile) {
   html_source->AddLocalizedString("variations_name",
                                   IDS_ABOUT_VERSION_VARIATIONS);
 
-  html_source->set_use_json_js_format_v2();
-  html_source->set_json_path("strings.js");
-  html_source->add_resource_path("version.js", IDR_ABOUT_VERSION_JS);
-  html_source->set_default_resource(IDR_ABOUT_VERSION_HTML);
+  html_source->SetUseJsonJSFormatV2();
+  html_source->SetJsonPath("strings.js");
+  html_source->AddResourcePath("version.js", IDR_ABOUT_VERSION_JS);
+  html_source->AddResourcePath("about_version.css", IDR_ABOUT_VERSION_CSS);
+  html_source->SetDefaultResource(IDR_ABOUT_VERSION_HTML);
   return html_source;
 }
 
@@ -136,11 +139,10 @@ VersionUI::VersionUI(content::WebUI* web_ui)
 #if defined(ENABLE_THEMES)
   // Set up the chrome://theme/ source.
   ThemeSource* theme = new ThemeSource(profile);
-  ChromeURLDataManager::AddDataSource(profile, theme);
+  content::URLDataSource::Add(profile, theme);
 #endif
 
-  ChromeURLDataManager::AddDataSource(profile,
-                                      CreateVersionUIDataSource(profile));
+  content::WebUIDataSource::Add(profile, CreateVersionUIDataSource(profile));
 }
 
 VersionUI::~VersionUI() {

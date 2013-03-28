@@ -10,6 +10,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <limits>
+
 #include "base/logging.h"
 
 namespace base {
@@ -64,7 +66,7 @@ void SharedMemory::CloseHandle(const SharedMemoryHandle& handle) {
     DPLOG(ERROR) << "close";
 }
 
-bool SharedMemory::CreateAndMapAnonymous(uint32 size) {
+bool SharedMemory::CreateAndMapAnonymous(size_t size) {
   // Untrusted code can't create descriptors or handles.
   return false;
 }
@@ -82,12 +84,15 @@ bool SharedMemory::Open(const std::string& name, bool read_only) {
   return false;
 }
 
-bool SharedMemory::Map(uint32 bytes) {
+bool SharedMemory::MapAt(off_t offset, size_t bytes) {
   if (mapped_file_ == -1)
     return false;
 
+  if (bytes > static_cast<size_t>(std::numeric_limits<int>::max()))
+    return false;
+
   memory_ = mmap(NULL, bytes, PROT_READ | (read_only_ ? 0 : PROT_WRITE),
-                 MAP_SHARED, mapped_file_, 0);
+                 MAP_SHARED, mapped_file_, offset);
 
   bool mmap_succeeded = memory_ != MAP_FAILED && memory_ != NULL;
   if (mmap_succeeded) {
@@ -118,7 +123,6 @@ SharedMemoryHandle SharedMemory::handle() const {
 
 void SharedMemory::Close() {
   Unmap();
-
   if (mapped_file_ > 0) {
     if (close(mapped_file_) < 0)
       DPLOG(ERROR) << "close";
@@ -137,7 +141,18 @@ void SharedMemory::Unlock() {
 bool SharedMemory::ShareToProcessCommon(ProcessHandle process,
                                         SharedMemoryHandle *new_handle,
                                         bool close_self) {
-  return false;
+  const int new_fd = dup(mapped_file_);
+  if (new_fd < 0) {
+    DPLOG(ERROR) << "dup() failed.";
+    return false;
+  }
+
+  new_handle->fd = new_fd;
+  new_handle->auto_close = true;
+
+  if (close_self)
+    Close();
+  return true;
 }
 
 }  // namespace base

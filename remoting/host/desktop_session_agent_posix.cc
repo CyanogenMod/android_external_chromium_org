@@ -9,7 +9,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "base/eintr_wrapper.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/single_thread_task_runner.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
@@ -22,12 +22,16 @@ namespace remoting {
 class DesktopSessionAgentPosix : public DesktopSessionAgent {
  public:
   DesktopSessionAgentPosix(
+      scoped_refptr<AutoThreadTaskRunner> audio_capture_task_runner,
       scoped_refptr<AutoThreadTaskRunner> caller_task_runner,
-      scoped_refptr<AutoThreadTaskRunner> io_task_runner);
-  virtual ~DesktopSessionAgentPosix();
+      scoped_refptr<AutoThreadTaskRunner> input_task_runner,
+      scoped_refptr<AutoThreadTaskRunner> io_task_runner,
+      scoped_refptr<AutoThreadTaskRunner> video_capture_task_runner);
 
  protected:
-  virtual bool DoCreateNetworkChannel(
+  virtual ~DesktopSessionAgentPosix();
+
+  virtual bool CreateChannelForNetworkProcess(
       IPC::PlatformFileForTransit* client_out,
       scoped_ptr<IPC::ChannelProxy>* server_out) OVERRIDE;
 
@@ -36,15 +40,20 @@ class DesktopSessionAgentPosix : public DesktopSessionAgent {
 };
 
 DesktopSessionAgentPosix::DesktopSessionAgentPosix(
+    scoped_refptr<AutoThreadTaskRunner> audio_capture_task_runner,
     scoped_refptr<AutoThreadTaskRunner> caller_task_runner,
-    scoped_refptr<AutoThreadTaskRunner> io_task_runner)
-    : DesktopSessionAgent(caller_task_runner, io_task_runner) {
+    scoped_refptr<AutoThreadTaskRunner> input_task_runner,
+    scoped_refptr<AutoThreadTaskRunner> io_task_runner,
+    scoped_refptr<AutoThreadTaskRunner> video_capture_task_runner)
+    : DesktopSessionAgent(audio_capture_task_runner, caller_task_runner,
+                          input_task_runner, io_task_runner,
+                          video_capture_task_runner) {
 }
 
 DesktopSessionAgentPosix::~DesktopSessionAgentPosix() {
 }
 
-bool DesktopSessionAgentPosix::DoCreateNetworkChannel(
+bool DesktopSessionAgentPosix::CreateChannelForNetworkProcess(
     IPC::PlatformFileForTransit* client_out,
     scoped_ptr<IPC::ChannelProxy>* server_out) {
   // Create a socket pair.
@@ -83,11 +92,16 @@ bool DesktopSessionAgentPosix::DoCreateNetworkChannel(
 }
 
 // static
-scoped_ptr<DesktopSessionAgent> DesktopSessionAgent::Create(
+scoped_refptr<DesktopSessionAgent> DesktopSessionAgent::Create(
+    scoped_refptr<AutoThreadTaskRunner> audio_capture_task_runner,
     scoped_refptr<AutoThreadTaskRunner> caller_task_runner,
-    scoped_refptr<AutoThreadTaskRunner> io_task_runner) {
-  return scoped_ptr<DesktopSessionAgent>(new DesktopSessionAgentPosix(
-      caller_task_runner, io_task_runner));
+    scoped_refptr<AutoThreadTaskRunner> input_task_runner,
+    scoped_refptr<AutoThreadTaskRunner> io_task_runner,
+    scoped_refptr<AutoThreadTaskRunner> video_capture_task_runner) {
+  return scoped_refptr<DesktopSessionAgent>(
+      new DesktopSessionAgentPosix(audio_capture_task_runner,
+                                   caller_task_runner, input_task_runner,
+                                   io_task_runner, video_capture_task_runner));
 }
 
 }  // namespace remoting

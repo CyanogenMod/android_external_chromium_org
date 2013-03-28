@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * The album.
+ *
  * @param {PhotoSource} source The parent source.
  * @param {string} name The album name.
- * @param {Array.<FileEntry>} entries The entries list.
+ * @constructor
  */
 function Album(source, name) {
   this.source_ = source;

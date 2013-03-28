@@ -7,10 +7,11 @@
 #include <mstcpip.h>
 
 #include "base/callback.h"
-#include "base/eintr_wrapper.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/rand_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
@@ -190,7 +191,10 @@ void UDPSocketWin::Close() {
   recv_from_address_ = NULL;
   write_callback_.Reset();
 
+  base::TimeTicks start_time = base::TimeTicks::Now();
   closesocket(socket_);
+  UMA_HISTOGRAM_TIMES("Net.UDPSocketWinClose",
+                      base::TimeTicks::Now() - start_time);
   socket_ = INVALID_SOCKET;
 
   core_->Detach();
@@ -303,6 +307,8 @@ int UDPSocketWin::Connect(const IPEndPoint& address) {
   net_log_.BeginEvent(NetLog::TYPE_UDP_CONNECT,
                       CreateNetLogUDPConnectCallback(&address));
   int rv = InternalConnect(address);
+  if (rv != OK)
+    Close();
   net_log_.EndEventWithNetErrorCode(NetLog::TYPE_UDP_CONNECT, rv);
   return rv;
 }
@@ -349,8 +355,8 @@ int UDPSocketWin::Bind(const IPEndPoint& address) {
 }
 
 int UDPSocketWin::CreateSocket(const IPEndPoint& address) {
-  socket_ = WSASocket(address.GetFamily(), SOCK_DGRAM, IPPROTO_UDP, NULL, 0,
-                      WSA_FLAG_OVERLAPPED);
+  socket_ = WSASocket(address.GetSockAddrFamily(), SOCK_DGRAM, IPPROTO_UDP,
+                      NULL, 0, WSA_FLAG_OVERLAPPED);
   if (socket_ == INVALID_SOCKET)
     return MapSystemError(WSAGetLastError());
   core_ = new Core(this);

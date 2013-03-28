@@ -11,12 +11,14 @@ import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Proxy;
+import android.test.FlakyTest;
 import android.test.mock.MockContext;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.UrlUtils;
 import org.chromium.base.ThreadUtils;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.ContentViewStatics;
@@ -29,7 +31,7 @@ import java.util.concurrent.Callable;
 /**
  *  Tests for ContentView methods that don't fall into any other category.
  */
-public class ContentViewMiscTest extends AndroidWebViewTestBase {
+public class ContentViewMiscTest extends AwTestBase {
 
     private TestAwContentsClient mContentsClient;
     private AwContents mAwContents;
@@ -43,42 +45,6 @@ public class ContentViewMiscTest extends AndroidWebViewTestBase {
                 createAwTestContainerViewOnMainSync(mContentsClient);
         mAwContents = testContainerView.getAwContents();
         mContentViewCore = testContainerView.getContentViewCore();
-    }
-
-    /**
-     * @SmallTest
-     * @Feature({"AndroidWebView"})
-     * crbug.com/147721
-     */
-    @DisabledTest
-    public void testFlingScroll() throws Throwable {
-        StringBuffer testPage = new StringBuffer().append("data:text/html;utf-8,")
-                .append("<html><head><style>body { width: 5000px; height: 5000px; }</head><body>")
-                .append("</body></html>");
-
-        // Test flinging in the y axis
-        loadUrlSync(mAwContents , mContentsClient.getOnPageFinishedHelper(),
-                testPage.toString());
-        assertEquals(0, mContentViewCore.getNativeScrollYForTest());
-        ThreadUtils.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                mContentViewCore.flingScroll(0, 2000);
-            }
-        });
-        Thread.sleep(1000);
-        assertNotSame(0, mContentViewCore.getNativeScrollYForTest());
-
-        // Test flinging in the x axis
-        assertEquals(0, mContentViewCore.getNativeScrollXForTest());
-        ThreadUtils.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                mContentViewCore.flingScroll(2000, 0);
-            }
-        });
-        Thread.sleep(1000);
-        assertNotSame(0, mContentViewCore.getNativeScrollXForTest());
     }
 
     @SmallTest

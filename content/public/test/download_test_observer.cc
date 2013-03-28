@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_url_parameters.h"
 #include "content/public/test/test_utils.h"
@@ -157,7 +158,7 @@ void DownloadTestObserver::OnDownloadDestroyed(DownloadItem* download) {
 
 void DownloadTestObserver::OnDownloadUpdated(DownloadItem* download) {
   // Real UI code gets the user's response after returning from the observer.
-  if (download->GetSafetyState() == DownloadItem::DANGEROUS &&
+  if (download->IsDangerous() &&
       !ContainsKey(dangerous_downloads_seen_, download->GetId())) {
     dangerous_downloads_seen_.insert(download->GetId());
 
@@ -185,6 +186,9 @@ void DownloadTestObserver::OnDownloadUpdated(DownloadItem* download) {
 
       case ON_DANGEROUS_DOWNLOAD_FAIL:
         ADD_FAILURE() << "Unexpected dangerous download item.";
+        break;
+
+      case ON_DANGEROUS_DOWNLOAD_IGNORE:
         break;
 
       default:
@@ -286,6 +290,7 @@ void DownloadTestFlushObserver::WaitForFlush() {
   download_manager_->AddObserver(this);
   // The wait condition may have been met before WaitForFlush() was called.
   CheckDownloadsInProgress(true);
+  BrowserThread::GetBlockingPool()->FlushForTesting();
   RunMessageLoop();
 }
 

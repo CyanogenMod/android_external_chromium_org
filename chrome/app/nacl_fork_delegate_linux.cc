@@ -13,11 +13,11 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/eintr_wrapper.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/file_path.h"
 #include "base/path_service.h"
-#include "base/posix/unix_domain_socket.h"
+#include "base/posix/eintr_wrapper.h"
+#include "base/posix/unix_domain_socket_linux.h"
 #include "base/process_util.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "chrome/common/chrome_paths.h"
@@ -26,27 +26,20 @@
 
 NaClForkDelegate::NaClForkDelegate()
     : status_(kNaClHelperUnused),
-      sandboxed_(false),
       fd_(-1) {}
 
-/*
- * Note these need to match up with their counterparts in nacl_helper_linux.c
- * and nacl_helper_bootstrap_linux.c.
- */
+// Note these need to match up with their counterparts in nacl_helper_linux.c
+// and nacl_helper_bootstrap_linux.c.
 const char kNaClHelperReservedAtZero[] =
     "--reserved_at_zero=0xXXXXXXXXXXXXXXXX";
 const char kNaClHelperRDebug[] = "--r_debug=0xXXXXXXXXXXXXXXXX";
 
-void NaClForkDelegate::Init(const bool sandboxed,
-                            const int browserdesc,
-                            const int sandboxdesc) {
+void NaClForkDelegate::Init(const int sandboxdesc) {
   VLOG(1) << "NaClForkDelegate::Init()";
   int fds[2];
 
-  sandboxed_ = sandboxed;
-  // Confirm a couple hard-wired assumptions.
-  // The NaCl constants are from chrome/nacl/nacl_linux_helper.h
-  DCHECK(kNaClBrowserDescriptor == browserdesc);
+  // Confirm a hard-wired assumption.
+  // The NaCl constant is from chrome/nacl/nacl_linux_helper.h
   DCHECK(kNaClSandboxDescriptor == sandboxdesc);
 
   CHECK(socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
@@ -55,8 +48,8 @@ void NaClForkDelegate::Init(const bool sandboxed,
   fds_to_map.push_back(std::make_pair(sandboxdesc, kNaClSandboxDescriptor));
 
   status_ = kNaClHelperUnused;
-  FilePath helper_exe;
-  FilePath helper_bootstrap_exe;
+  base::FilePath helper_exe;
+  base::FilePath helper_bootstrap_exe;
   if (!PathService::Get(chrome::FILE_NACL_HELPER, &helper_exe)) {
     status_ = kNaClHelperMissing;
   } else if (!PathService::Get(chrome::FILE_NACL_HELPER_BOOTSTRAP,

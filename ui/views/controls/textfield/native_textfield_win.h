@@ -11,7 +11,6 @@
 #include <atlctrls.h>
 #include <atlmisc.h>
 #include <oleacc.h>
-#include <peninputpanel.h>
 #include <tom.h>  // For ITextDocument, a COM interface to CRichEditCtrl
 #include <vsstyle.h>
 
@@ -23,10 +22,6 @@
 #include "ui/gfx/insets.h"
 #include "ui/base/win/extra_sdk_defines.h"
 #include "ui/views/controls/textfield/native_textfield_wrapper.h"
-
-namespace gfx {
-class SelectionModel;
-}
 
 namespace views {
 
@@ -57,12 +52,6 @@ class NativeTextfieldWin
                                          const POINT& current,
                                          DWORD elapsed_time);
 
-  // Returns true if the virtual key code is a digit coming from the numeric
-  // keypad (with or without NumLock on).  |extended_key| should be set to the
-  // extended key flag specified in the WM_KEYDOWN/UP where the |key_code|
-  // originated.
-  VIEWS_EXPORT static bool IsNumPadDigit(int key_code, bool extended_key);
-
   // See the code in textfield.cc that calls this for why this is here.
   void AttachHack();
 
@@ -70,14 +59,15 @@ class NativeTextfieldWin
   virtual string16 GetText() const OVERRIDE;
   virtual void UpdateText() OVERRIDE;
   virtual void AppendText(const string16& text) OVERRIDE;
+  virtual void ReplaceSelection(const string16& text) OVERRIDE;
   virtual base::i18n::TextDirection GetTextDirection() const OVERRIDE;
   virtual string16 GetSelectedText() const OVERRIDE;
   virtual void SelectAll(bool reversed) OVERRIDE;
   virtual void ClearSelection() OVERRIDE;
   virtual void UpdateBorder() OVERRIDE;
+  virtual void UpdateBorderColor() OVERRIDE;
   virtual void UpdateTextColor() OVERRIDE;
   virtual void UpdateBackgroundColor() OVERRIDE;
-  virtual void UpdateCursorColor() OVERRIDE;
   virtual void UpdateReadOnly() OVERRIDE;
   virtual void UpdateFont() OVERRIDE;
   virtual void UpdateIsObscured() OVERRIDE;
@@ -89,20 +79,28 @@ class NativeTextfieldWin
   virtual View* GetView() OVERRIDE;
   virtual gfx::NativeView GetTestingHandle() const OVERRIDE;
   virtual bool IsIMEComposing() const OVERRIDE;
-  virtual void GetSelectedRange(ui::Range* range) const OVERRIDE;
+  virtual ui::Range GetSelectedRange() const OVERRIDE;
   virtual void SelectRange(const ui::Range& range) OVERRIDE;
-  virtual void GetSelectionModel(gfx::SelectionModel* sel) const OVERRIDE;
+  virtual gfx::SelectionModel GetSelectionModel() const OVERRIDE;
   virtual void SelectSelectionModel(const gfx::SelectionModel& sel) OVERRIDE;
   virtual size_t GetCursorPosition() const OVERRIDE;
+  virtual bool GetCursorEnabled() const OVERRIDE;
+  virtual void SetCursorEnabled(bool enabled) OVERRIDE;
   virtual bool HandleKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool HandleKeyReleased(const ui::KeyEvent& event) OVERRIDE;
   virtual void HandleFocus() OVERRIDE;
   virtual void HandleBlur() OVERRIDE;
   virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
-  virtual void ApplyStyleRange(const gfx::StyleRange& style) OVERRIDE;
-  virtual void ApplyDefaultStyle() OVERRIDE;
+  virtual void SetColor(SkColor value) OVERRIDE;
+  virtual void ApplyColor(SkColor value, const ui::Range& range) OVERRIDE;
+  virtual void SetStyle(gfx::TextStyle style, bool value) OVERRIDE;
+  virtual void ApplyStyle(gfx::TextStyle style,
+                          bool value,
+                          const ui::Range& range) OVERRIDE;
   virtual void ClearEditHistory() OVERRIDE;
   virtual int GetFontHeight() OVERRIDE;
+  virtual int GetTextfieldBaseline() const OVERRIDE;
+  virtual void ExecuteTextCommand(int command_id) OVERRIDE;
 
   // ui::SimpleMenuModel::Delegate:
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
@@ -110,7 +108,7 @@ class NativeTextfieldWin
   virtual bool GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
   // ui::TSFEventRouterObserver:
   virtual void OnTextUpdated(const ui::Range& composition_range) OVERRIDE;
@@ -135,7 +133,6 @@ class NativeTextfieldWin
     MESSAGE_HANDLER_EX(WM_IME_COMPOSITION, OnImeComposition)
     MESSAGE_HANDLER_EX(WM_IME_ENDCOMPOSITION, OnImeEndComposition)
     MESSAGE_HANDLER_EX(WM_POINTERDOWN, OnPointerDown)
-    MESSAGE_HANDLER_EX(WM_POINTERUP, OnPointerUp)
     MSG_WM_KEYDOWN(OnKeyDown)
     MSG_WM_LBUTTONDBLCLK(OnLButtonDblClk)
     MSG_WM_LBUTTONDOWN(OnLButtonDown)
@@ -201,7 +198,6 @@ class NativeTextfieldWin
   LRESULT OnImeComposition(UINT message, WPARAM wparam, LPARAM lparam);
   LRESULT OnImeEndComposition(UINT message, WPARAM wparam, LPARAM lparam);
   LRESULT OnPointerDown(UINT message, WPARAM wparam, LPARAM lparam);
-  LRESULT OnPointerUp(UINT message, WPARAM wparam, LPARAM lparam);
   void OnKeyDown(TCHAR key, UINT repeat_count, UINT flags);
   void OnLButtonDblClk(UINT keys, const CPoint& point);
   void OnLButtonDown(UINT keys, const CPoint& point);
@@ -216,6 +212,9 @@ class NativeTextfieldWin
   void OnSetFocus(HWND hwnd);
   void OnKillFocus(HWND hwnd);
   void OnSysChar(TCHAR ch, UINT repeat_count, UINT flags);
+
+  // CWindowImpl overrides:
+  virtual void OnFinalMessage(HWND hwnd) OVERRIDE;
 
   // Helper function for OnChar() and OnKeyDown() that handles keystrokes that
   // could change the text in the edit.
@@ -266,6 +265,10 @@ class NativeTextfieldWin
   // Generates the contents of the context menu.
   void BuildContextMenu();
 
+  // Returns true if normal processing of the current mouse press event should
+  // occur.
+  bool ShouldProcessMouseEvent();
+
   static HMODULE loaded_libarary_module_;
 
   // The Textfield this object is bound to.
@@ -296,9 +299,6 @@ class NativeTextfieldWin
 
   // This interface is useful for accessing the CRichEditCtrl at a low level.
   mutable base::win::ScopedComPtr<ITextDocument> text_object_model_;
-
-  // To support the Windows virtual keyboard when used with a touch screen.
-  base::win::ScopedComPtr<ITextInputPanel> keyboard_;
 
   // The position and the length of the ongoing composition string.
   // These values are used for removing a composition string from a search

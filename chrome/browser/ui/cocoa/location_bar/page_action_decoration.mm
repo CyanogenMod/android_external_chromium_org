@@ -21,14 +21,14 @@
 #include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension_resource.h"
+#include "chrome/common/extensions/api/icons/icons_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "ui/gfx/canvas_skia_paint.h"
+#include "ui/gfx/image/image.h"
 
 using content::WebContents;
 using extensions::Extension;
@@ -55,14 +55,14 @@ PageActionDecoration::PageActionDecoration(
       preview_enabled_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(scoped_icon_animation_observer_(
           page_action->GetIconAnimation(
-              SessionID::IdForTab(owner->GetTabContents()->web_contents())),
+              SessionID::IdForTab(owner->GetWebContents())),
           this)) {
   const Extension* extension = browser->profile()->GetExtensionService()->
       GetExtensionById(page_action->extension_id(), false);
   DCHECK(extension);
 
-  icon_factory_.reset(
-      new ExtensionActionIconFactory(extension, page_action, this));
+  icon_factory_.reset(new ExtensionActionIconFactory(
+      browser_->profile(), extension, page_action, this));
 
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
       content::Source<Profile>(browser_->profile()));
@@ -80,8 +80,9 @@ PageActionDecoration::~PageActionDecoration() {}
 
 // Always |kPageActionIconMaxSize| wide.  |ImageDecoration| draws the
 // image centered.
-CGFloat PageActionDecoration::GetWidthForSpace(CGFloat width) {
-  return Extension::kPageActionIconMaxSize;
+CGFloat PageActionDecoration::GetWidthForSpace(CGFloat width,
+                                               CGFloat text_width) {
+  return extensions::IconsInfo::kPageActionIconMaxSize;
 }
 
 void PageActionDecoration::DrawWithBackgroundInFrame(NSRect background_frame,
@@ -115,15 +116,15 @@ bool PageActionDecoration::OnMousePressed(NSRect frame) {
 }
 
 bool PageActionDecoration::ActivatePageAction(NSRect frame) {
-  TabContents* tab_contents = owner_->GetTabContents();
-  if (!tab_contents) {
+  WebContents* web_contents = owner_->GetWebContents();
+  if (!web_contents) {
     // We don't want other code to try and handle this click. Returning true
     // prevents this by indicating that we handled it.
     return true;
   }
 
   LocationBarController* controller =
-      extensions::TabHelper::FromWebContents(tab_contents->web_contents())->
+      extensions::TabHelper::FromWebContents(web_contents)->
           location_bar_controller();
 
   // 1 is left click.
@@ -153,9 +154,9 @@ bool PageActionDecoration::ActivatePageAction(NSRect frame) {
 
 void PageActionDecoration::OnIconUpdated() {
   // If we have no owner, that means this class is still being constructed.
-  TabContents* tab_contents = owner_ ? owner_->GetTabContents() : NULL;
-  if (tab_contents) {
-    UpdateVisibility(tab_contents->web_contents(), current_url_);
+  WebContents* web_contents = owner_ ? owner_->GetWebContents() : NULL;
+  if (web_contents) {
+    UpdateVisibility(web_contents, current_url_);
     owner_->RedrawDecoration(this);
   }
 }
@@ -177,8 +178,9 @@ void PageActionDecoration::UpdateVisibility(WebContents* contents,
     if (!icon.IsEmpty()) {
       SetImage(icon.ToNSImage());
     } else if (!GetImage()) {
-      const NSSize default_size = NSMakeSize(Extension::kPageActionIconMaxSize,
-                                             Extension::kPageActionIconMaxSize);
+      const NSSize default_size = NSMakeSize(
+          extensions::IconsInfo::kPageActionIconMaxSize,
+          extensions::IconsInfo::kPageActionIconMaxSize);
       SetImage([[[NSImage alloc] initWithSize:default_size] autorelease]);
     }
   }
@@ -212,7 +214,7 @@ NSPoint PageActionDecoration::GetBubblePointInFrame(NSRect frame) {
   // easier (the middle of the centered image is the middle of the
   // frame).
   const CGFloat delta_height =
-      NSHeight(frame) - Extension::kPageActionIconMaxSize;
+      NSHeight(frame) - extensions::IconsInfo::kPageActionIconMaxSize;
   const CGFloat bottom_inset = std::ceil(delta_height / 2.0);
 
   // Return a point just below the bottom of the maximal drawing area.

@@ -4,9 +4,9 @@
 
 #include "net/quic/crypto/crypto_framer.h"
 
+#include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/quic_data_reader.h"
 #include "net/quic/quic_data_writer.h"
-#include "net/quic/quic_protocol.h"
 
 using base::StringPiece;
 
@@ -17,6 +17,32 @@ namespace {
 const size_t kCryptoTagSize = sizeof(uint32);
 const size_t kNumEntriesSize = sizeof(uint16);
 const size_t kValueLenSize = sizeof(uint16);
+
+// OneShotVisitor is a framer visitor that records a single handshake message.
+class OneShotVisitor : public CryptoFramerVisitorInterface {
+ public:
+  explicit OneShotVisitor(CryptoHandshakeMessage* out)
+      : out_(out),
+        error_(false) {
+  }
+
+  virtual void OnError(CryptoFramer* framer) OVERRIDE {
+    error_ = true;
+  }
+
+  virtual void OnHandshakeMessage(
+      const CryptoHandshakeMessage& message) OVERRIDE {
+    *out_ = message;
+  }
+
+  bool error() const {
+    return error_;
+  }
+
+ private:
+  CryptoHandshakeMessage* const out_;
+  bool error_;
+};
 
 }  // namespace
 
@@ -29,6 +55,22 @@ CryptoFramer::CryptoFramer()
 }
 
 CryptoFramer::~CryptoFramer() {}
+
+// static
+CryptoHandshakeMessage* CryptoFramer::ParseMessage(StringPiece in) {
+  scoped_ptr<CryptoHandshakeMessage> msg(new CryptoHandshakeMessage);
+  OneShotVisitor visitor(msg.get());
+  CryptoFramer framer;
+
+  framer.set_visitor(&visitor);
+  if (!framer.ProcessInput(in) ||
+      visitor.error() ||
+      framer.InputBytesRemaining()) {
+    return NULL;
+  }
+
+  return msg.release();
+}
 
 bool CryptoFramer::ProcessInput(StringPiece input) {
   DCHECK_EQ(QUIC_NO_ERROR, error_);
@@ -70,8 +112,13 @@ bool CryptoFramer::ProcessInput(StringPiece input) {
         tags_.push_back(tag);
       }
       state_ = STATE_READING_LENGTHS;
-    case STATE_READING_LENGTHS:
-      if (reader.BytesRemaining() < num_entries_ * kValueLenSize) {
+    case STATE_READING_LENGTHS: {
+      size_t expected_bytes = num_entries_ * kValueLenSize;
+      bool has_padding = (num_entries_ % 2 == 1);
+      if (has_padding) {
+        expected_bytes += kValueLenSize;
+      }
+      if (reader.BytesRemaining() < expected_bytes) {
         break;
       }
       values_len_ = 0;
@@ -80,12 +127,18 @@ bool CryptoFramer::ProcessInput(StringPiece input) {
         reader.ReadUInt16(&len);
         tag_length_map_[tags_[i]] = len;
         values_len_ += len;
-        if (len == 0 && i != num_entries_ - 1) {
+      }
+      // Possible padding
+      if (has_padding) {
+        uint16 len;
+        reader.ReadUInt16(&len);
+        if (len != 0) {
           error_ = QUIC_CRYPTO_INVALID_VALUE_LENGTH;
           return false;
         }
       }
       state_ = STATE_READING_VALUES;
+    }
     case STATE_READING_VALUES:
       if (reader.BytesRemaining() < values_len_) {
         break;
@@ -93,7 +146,7 @@ bool CryptoFramer::ProcessInput(StringPiece input) {
       for (int i = 0; i < num_entries_; ++i) {
         StringPiece value;
         reader.ReadStringPiece(&value, tag_length_map_[tags_[i]]);
-        tag_value_map_[tags_[i]] = value;
+        tag_value_map_[tags_[i]] = value.as_string();
       }
       CryptoHandshakeMessage message;
       message.tag = message_tag_;
@@ -108,6 +161,7 @@ bool CryptoFramer::ProcessInput(StringPiece input) {
   return true;
 }
 
+// static
 QuicData* CryptoFramer::ConstructHandshakeMessage(
     const CryptoHandshakeMessage& message) {
   if (message.tag_value_map.size() > kMaxEntries) {
@@ -120,9 +174,6 @@ QuicData* CryptoFramer::ConstructHandshakeMessage(
     len += sizeof(uint32);  // tag
     len += sizeof(uint16);  // value len
     len += it->second.length(); // value
-    if (it->second.length() == 0) {
-      return NULL;
-    }
     ++it;
   }
   if (message.tag_value_map.size() % 2 == 1) {
@@ -156,7 +207,7 @@ QuicData* CryptoFramer::ConstructHandshakeMessage(
   }
   // Possible padding
   if (message.tag_value_map.size() % 2 == 1) {
-    if (!writer.WriteUInt16(0xABAB)) {
+    if (!writer.WriteUInt16(0)) {
       DCHECK(false) << "Failed to write padding.";
       return NULL;
     }

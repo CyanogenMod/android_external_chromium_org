@@ -11,18 +11,17 @@
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/timer.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/print_error_dialog.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/print_job_manager.h"
-#include "chrome/browser/printing/print_preview_tab_controller.h"
+#include "chrome/browser/printing/print_preview_dialog_controller.h"
 #include "chrome/browser/printing/print_view_manager_observer.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
@@ -44,8 +43,9 @@
 
 using base::TimeDelta;
 using content::BrowserThread;
+using content::WebContents;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(printing::PrintViewManager)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(printing::PrintViewManager);
 
 namespace {
 
@@ -80,9 +80,11 @@ PrintViewManager::PrintViewManager(content::WebContents* web_contents)
                  content::Source<content::WebContents>(web_contents));
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  printing_enabled_.Init(prefs::kPrintingEnabled,
-                         profile->GetPrefs(),
-                         this);
+  printing_enabled_.Init(
+      prefs::kPrintingEnabled,
+      profile->GetPrefs(),
+      base::Bind(&PrintViewManager::UpdateScriptedPrintingBlocked,
+                 base::Unretained(this)));
 }
 
 PrintViewManager::~PrintViewManager() {
@@ -100,18 +102,17 @@ bool PrintViewManager::PrintForSystemDialogNow() {
 }
 
 bool PrintViewManager::AdvancedPrintNow() {
-  PrintPreviewTabController* tab_controller =
-      PrintPreviewTabController::GetInstance();
-  if (!tab_controller)
+  PrintPreviewDialogController* dialog_controller =
+      PrintPreviewDialogController::GetInstance();
+  if (!dialog_controller)
     return false;
-  TabContents* print_preview_tab = tab_controller->GetPrintPreviewForTab(
-      TabContents::FromWebContents(web_contents()));
-  if (print_preview_tab) {
-    // Preview tab exist for current tab or current tab is preview tab.
-    if (!print_preview_tab->web_contents()->GetWebUI())
+  WebContents* print_preview_dialog =
+      dialog_controller->GetPrintPreviewForContents(web_contents());
+  if (print_preview_dialog) {
+    if (!print_preview_dialog->GetWebUI())
       return false;
     PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(
-        print_preview_tab->web_contents()->GetWebUI()->GetController());
+        print_preview_dialog->GetWebUI()->GetController());
     print_preview_ui->OnShowSystemDialog();
     return true;
   } else {
@@ -129,15 +130,17 @@ bool PrintViewManager::PrintToDestination() {
   return PrintNowInternal(new PrintMsg_PrintPages(routing_id()));
 }
 
-bool PrintViewManager::PrintPreviewNow() {
+bool PrintViewManager::PrintPreviewNow(bool selection_only) {
   // Users can send print commands all they want and it is beyond
   // PrintViewManager's control. Just ignore the extra commands.
   // See http://crbug.com/136842 for example.
   if (print_preview_state_ != NOT_PREVIEWING)
     return false;
 
-  if (!PrintNowInternal(new PrintMsg_InitiatePrintPreview(routing_id())))
+  if (!PrintNowInternal(new PrintMsg_InitiatePrintPreview(routing_id(),
+                                                          selection_only))) {
     return false;
+  }
 
   print_preview_state_ = USER_INITIATED_PREVIEW;
   return true;
@@ -274,14 +277,7 @@ void PrintViewManager::OnDidPrintPage(
       web_contents()->Stop();
       return;
     }
-  } else if (!print_job_->settings().supports_alpha_blend() &&
-             metafile->IsAlphaBlendUsed()) {
-    scoped_ptr<NativeMetafile> raster_metafile(
-        metafile->RasterizeAlphaBlend());
-    if (raster_metafile.get())
-      metafile.swap(raster_metafile);
   }
-
 #endif
 
   // Update the rendered document. It will send notifications to the listener.
@@ -332,9 +328,9 @@ void PrintViewManager::OnScriptedPrintPreview(bool source_is_modifiable,
     return;
   }
 
-  PrintPreviewTabController* tab_controller =
-      PrintPreviewTabController::GetInstance();
-  if (!tab_controller) {
+  PrintPreviewDialogController* dialog_controller =
+      PrintPreviewDialogController::GetInstance();
+  if (!dialog_controller) {
     Send(reply_msg);
     return;
   }
@@ -347,11 +343,11 @@ void PrintViewManager::OnScriptedPrintPreview(bool source_is_modifiable,
   map[rph] = callback;
   scripted_print_preview_rph_ = rph;
 
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents());
-  tab_controller->PrintPreview(tab_contents);
-  PrintPreviewUI::SetSourceIsModifiable(
-      tab_controller->GetPrintPreviewForTab(tab_contents),
-      source_is_modifiable);
+  dialog_controller->PrintPreview(web_contents());
+  PrintHostMsg_RequestPrintPreview_Params params;
+  params.is_modifiable = source_is_modifiable;
+  PrintPreviewUI::SetInitialParams(
+      dialog_controller->GetPrintPreviewForContents(web_contents()), params);
 }
 
 void PrintViewManager::OnScriptedPrintPreviewReply(IPC::Message* reply_msg) {
@@ -399,11 +395,6 @@ void PrintViewManager::Observe(int type,
       break;
     }
   }
-}
-
-void PrintViewManager::OnPreferenceChanged(PrefServiceBase* service,
-                                           const std::string& pref_name) {
-  UpdateScriptedPrintingBlocked();
 }
 
 void PrintViewManager::OnNotifyPrintJobEvent(

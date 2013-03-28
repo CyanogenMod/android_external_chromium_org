@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/common/constants.h"
 
 namespace extensions {
 
@@ -13,6 +14,7 @@ namespace {
 
 // URL schemes for which we'll send events.
 const char* kValidSchemes[] = {
+  chrome::kChromeUIScheme,
   chrome::kHttpScheme,
   chrome::kHttpsScheme,
   chrome::kFileScheme,
@@ -36,10 +38,6 @@ FrameNavigationState::FrameID::FrameID(
       render_view_host(render_view_host) {
 }
 
-bool FrameNavigationState::FrameID::IsValid() const {
-  return frame_num >= 0 && render_view_host;
-}
-
 bool FrameNavigationState::FrameID::operator<(
     const FrameNavigationState::FrameID& other) const {
   return frame_num < other.frame_num ||
@@ -57,6 +55,8 @@ bool FrameNavigationState::FrameID::operator!=(
     const FrameNavigationState::FrameID& other) const {
   return !(*this == other);
 }
+
+FrameNavigationState::FrameState::FrameState() {}
 
 // static
 bool FrameNavigationState::allow_extension_scheme_ = false;
@@ -80,10 +80,12 @@ bool FrameNavigationState::IsValidUrl(const GURL& url) const {
     if (url.scheme() == kValidSchemes[i])
       return true;
   }
-  // Allow about:blank.
-  if (url.spec() == chrome::kAboutBlankURL)
+  // Allow about:blank and about:srcdoc.
+  if (url.spec() == chrome::kAboutBlankURL ||
+      url.spec() == chrome::kAboutSrcDocURL) {
     return true;
-  if (allow_extension_scheme_ && url.scheme() == chrome::kExtensionScheme)
+  }
+  if (allow_extension_scheme_ && url.scheme() == extensions::kExtensionScheme)
     return true;
   return false;
 }
@@ -92,11 +94,14 @@ void FrameNavigationState::TrackFrame(FrameID frame_id,
                                       FrameID parent_frame_id,
                                       const GURL& url,
                                       bool is_main_frame,
-                                      bool is_error_page) {
+                                      bool is_error_page,
+                                      bool is_iframe_srcdoc) {
   FrameState& frame_state = frame_state_map_[frame_id];
   frame_state.error_occurred = is_error_page;
   frame_state.url = url;
   frame_state.is_main_frame = is_main_frame;
+  frame_state.is_iframe_srcdoc = is_iframe_srcdoc;
+  DCHECK(!is_iframe_srcdoc || url == GURL(chrome::kAboutBlankURL));
   frame_state.is_navigating = true;
   frame_state.is_committed = false;
   frame_state.is_server_redirected = false;
@@ -107,6 +112,29 @@ void FrameNavigationState::TrackFrame(FrameID frame_id,
     frame_state.parent_frame_num = -1;
   }
   frame_ids_.insert(frame_id);
+}
+
+void FrameNavigationState::FrameDetached(FrameID frame_id) {
+  FrameIdToStateMap::const_iterator frame_state =
+      frame_state_map_.find(frame_id);
+  if (frame_state == frame_state_map_.end())
+    return;
+  if (frame_id == main_frame_id_)
+    main_frame_id_ = FrameID();
+  frame_state_map_.erase(frame_id);
+  frame_ids_.erase(frame_id);
+#ifndef NDEBUG
+  // Check that the deleted frame was not the parent of any other frame. WebKit
+  // should always detach frames starting with the children.
+  for (FrameIdToStateMap::const_iterator frame = frame_state_map_.begin();
+       frame != frame_state_map_.end(); ++frame) {
+    if (frame->first.render_view_host != frame_id.render_view_host)
+      continue;
+    if (frame->second.parent_frame_num != frame_id.frame_num)
+      continue;
+    NOTREACHED();
+  }
+#endif
 }
 
 void FrameNavigationState::StopTrackingFramesInRVH(
@@ -149,6 +177,8 @@ GURL FrameNavigationState::GetUrl(FrameID frame_id) const {
     NOTREACHED();
     return GURL();
   }
+  if (frame_state->second.is_iframe_srcdoc)
+    return GURL(chrome::kAboutSrcDocURL);
   return frame_state->second.url;
 }
 

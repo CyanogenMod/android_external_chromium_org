@@ -15,13 +15,14 @@ cr.define('options', function() {
   var ControlledSettingIndicator = cr.ui.define('span');
 
   ControlledSettingIndicator.prototype = {
-    __proto__: HTMLSpanElement.prototype,
+    __proto__: cr.ui.BubbleButton.prototype,
 
     /**
      * Decorates the base element to show the proper icon.
      */
     decorate: function() {
-      var self = this;
+      cr.ui.BubbleButton.prototype.decorate.call(this);
+      this.classList.add('controlled-setting-indicator');
 
       // If there is a pref, track its controlledBy and recommendedValue
       // properties in order to be able to bring up the correct bubble.
@@ -30,13 +31,6 @@ cr.define('options', function() {
             this.pref, this.handlePrefChange.bind(this));
         this.resetHandler = this.clearAssociatedPref_;
       }
-
-      this.className = 'controlled-setting-indicator';
-      this.tabIndex = 0;
-      this.setAttribute('role', 'button');
-      this.addEventListener('click', this);
-      this.addEventListener('keydown', this);
-      this.addEventListener('mousedown', this);
     },
 
     /**
@@ -47,21 +41,6 @@ cr.define('options', function() {
      */
     set resetHandler(handler) {
       this.resetHandler_ = handler;
-    },
-
-    /**
-     * Whether the indicator is currently showing a bubble.
-     * @type {boolean}
-     */
-    get showingBubble() {
-      return !!this.showingBubble_;
-    },
-    set showingBubble(showing) {
-      if (showing)
-        this.classList.add('showing-bubble');
-      else
-        this.classList.remove('showing-bubble');
-      this.showingBubble_ = showing;
     },
 
     /**
@@ -89,42 +68,6 @@ cr.define('options', function() {
       } else {
         this.controlledBy = null;
       }
-    },
-
-    /**
-     * Handle mouse and keyboard events, allowing the user to open and close a
-     * bubble with further information.
-     * @param {Event} event Mouse or keyboard event.
-     */
-    handleEvent: function(event) {
-      switch (event.type) {
-        // Toggle the bubble on left click. Let any other clicks propagate.
-        case 'click':
-          if (event.button != 0)
-            return;
-          break;
-        // Toggle the bubble when <Return> or <Space> is pressed. Let any other
-        // key presses propagate.
-        case 'keydown':
-          switch (event.keyCode) {
-            case 13:  // Return.
-            case 32:  // Space.
-              break;
-            default:
-              return;
-          }
-          break;
-        // Blur focus when a mouse button is pressed, matching the behavior of
-        // other Web UI elements.
-        case 'mousedown':
-          if (document.activeElement)
-            document.activeElement.blur();
-          event.preventDefault();
-          return;
-      }
-      this.toggleBubble_();
-      event.preventDefault();
-      event.stopPropagation();
     },
 
     /**
@@ -185,7 +128,7 @@ cr.define('options', function() {
           content.appendChild(container);
         }
 
-        OptionsPage.showBubble(content, this);
+        OptionsPage.showBubble(content, this.image, this, this.location);
       }
     },
   };

@@ -4,7 +4,7 @@
 
 #include "content/public/browser/content_browser_client.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/image/image_skia.h"
 
@@ -15,7 +15,7 @@ BrowserMainParts* ContentBrowserClient::CreateBrowserMainParts(
   return NULL;
 }
 
-WebContentsView* ContentBrowserClient::OverrideCreateWebContentsView(
+WebContentsViewPort* ContentBrowserClient::OverrideCreateWebContentsView(
     WebContents* web_contents,
     RenderViewHostDelegateView** render_view_host_delegate_view) {
   return NULL;
@@ -23,10 +23,6 @@ WebContentsView* ContentBrowserClient::OverrideCreateWebContentsView(
 
 WebContentsViewDelegate* ContentBrowserClient::GetWebContentsViewDelegate(
     WebContents* web_contents) {
-  return NULL;
-}
-
-WebUIControllerFactory* ContentBrowserClient::GetWebUIControllerFactory() {
   return NULL;
 }
 
@@ -38,6 +34,25 @@ GURL ContentBrowserClient::GetEffectiveURL(BrowserContext* browser_context,
 bool ContentBrowserClient::ShouldUseProcessPerSite(
     BrowserContext* browser_context, const GURL& effective_url) {
   return false;
+}
+
+std::vector<std::string> ContentBrowserClient::GetAdditionalWebUISchemes() {
+  return std::vector<std::string>();
+}
+
+net::URLRequestContextGetter* ContentBrowserClient::CreateRequestContext(
+    BrowserContext* browser_context,
+    ProtocolHandlerMap* protocol_handlers) {
+  return NULL;
+}
+
+net::URLRequestContextGetter*
+ContentBrowserClient::CreateRequestContextForStoragePartition(
+    BrowserContext* browser_context,
+    const base::FilePath& partition_path,
+    bool in_memory,
+    ProtocolHandlerMap* protocol_handlers) {
+  return NULL;
 }
 
 bool ContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -55,6 +70,7 @@ bool ContentBrowserClient::ShouldTryToUseExistingProcessHost(
 }
 
 bool ContentBrowserClient::ShouldSwapProcessesForNavigation(
+    SiteInstance* site_instance,
     const GURL& current_url,
     const GURL& new_url) {
   return false;
@@ -107,19 +123,6 @@ bool ContentBrowserClient::AllowSetCookie(const GURL& url,
                                           int render_view_id,
                                           net::CookieOptions* options) {
   return true;
-}
-
-bool ContentBrowserClient::AllowPluginLocalDataAccess(
-    const GURL& document_url,
-    const GURL& plugin_url,
-    content::ResourceContext* context) {
-  return true;
-}
-
-bool ContentBrowserClient::AllowPluginLocalDataSessionOnly(
-    const GURL& url,
-    content::ResourceContext* context) {
-  return false;
 }
 
 bool ContentBrowserClient::AllowSaveLocalState(ResourceContext* context) {
@@ -177,6 +180,7 @@ bool ContentBrowserClient::IsValidStoragePartitionId(
 void ContentBrowserClient::GetStoragePartitionConfigForSite(
     BrowserContext* browser_context,
     const GURL& site,
+    bool can_be_default,
     std::string* partition_domain,
     std::string* partition_name,
     bool* in_memory) {
@@ -229,8 +233,8 @@ bool ContentBrowserClient::IsFastShutdownPossible() {
   return true;
 }
 
-FilePath ContentBrowserClient::GetDefaultDownloadDirectory() {
-  return FilePath();
+base::FilePath ContentBrowserClient::GetDefaultDownloadDirectory() {
+  return base::FilePath();
 }
 
 std::string ContentBrowserClient::GetDefaultDownloadName() {
@@ -242,6 +246,11 @@ BrowserPpapiHost*
   return NULL;
 }
 
+bool ContentBrowserClient::SupportsBrowserPlugin(
+    BrowserContext* browser_context, const GURL& site_url) {
+  return false;
+}
+
 bool ContentBrowserClient::AllowPepperSocketAPI(
     BrowserContext* browser_context,
     const GURL& url,
@@ -249,12 +258,13 @@ bool ContentBrowserClient::AllowPepperSocketAPI(
   return false;
 }
 
-bool ContentBrowserClient::AllowPepperPrivateFileAPI() {
-  return false;
+base::FilePath ContentBrowserClient::GetHyphenDictionaryDirectory() {
+  return base::FilePath();
 }
 
-FilePath ContentBrowserClient::GetHyphenDictionaryDirectory() {
-  return FilePath();
+ui::SelectFilePolicy* ContentBrowserClient::CreateSelectFilePolicy(
+    WebContents* web_contents) {
+  return NULL;
 }
 
 #if defined(OS_WIN)

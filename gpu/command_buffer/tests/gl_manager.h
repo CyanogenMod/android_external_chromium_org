@@ -36,13 +36,25 @@ class ShareGroup;
 
 class GLManager {
  public:
+  struct Options {
+    Options();
+    // The size of the backbuffer.
+    gfx::Size size;
+    // If not null will share resources with this context.
+    GLManager* share_group_manager;
+    // If not null will share a mailbox manager with this context.
+    GLManager* share_mailbox_manager;
+    // If not null will create a virtual manager based on this context.
+    GLManager* virtual_manager;
+    // Whether or not glBindXXX generates a resource.
+    bool bind_generates_resource;
+    // Whether or not it's ok to lose the context.
+    bool context_lost_allowed;
+  };
   GLManager();
   ~GLManager();
 
-  void Initialize(const gfx::Size& size);
-  void InitializeVirtual(const gfx::Size& size, GLManager* real_gl_manager);
-  void InitializeShared(const gfx::Size& size, GLManager* gl_manager);
-  void InitializeSharedMailbox(const gfx::Size& size, GLManager* gl_manager);
+  void Initialize(const Options& options);
   void Destroy();
 
   void MakeCurrent();
@@ -64,15 +76,9 @@ class GLManager {
   }
 
  private:
-  void Setup(
-      const gfx::Size& size,
-      gles2::MailboxManager* mailbox_manager,
-      gfx::GLShareGroup* share_group,
-      gles2::ContextGroup* context_group,
-      gles2::ShareGroup* client_share_group,
-      gfx::GLContext* real_gl_context);
   void PumpCommands();
   bool GetBufferChanged(int32 transfer_buffer_id);
+  void SetupBaseContext();
 
   scoped_refptr<gles2::MailboxManager> mailbox_manager_;
   scoped_refptr<gfx::GLShareGroup> share_group_;
@@ -84,6 +90,13 @@ class GLManager {
   scoped_ptr<gles2::GLES2CmdHelper> gles2_helper_;
   scoped_ptr<TransferBuffer> transfer_buffer_;
   scoped_ptr<gles2::GLES2Implementation> gles2_implementation_;
+  bool context_lost_allowed_;
+
+  // Used on Android to virtualize GL for all contexts.
+  static int use_count_;
+  static scoped_refptr<gfx::GLShareGroup>* base_share_group_;
+  static scoped_refptr<gfx::GLSurface>* base_surface_;
+  static scoped_refptr<gfx::GLContext>* base_context_;
 };
 
 }  // namespace gpu

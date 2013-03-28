@@ -7,64 +7,64 @@
 #include <Audioclient.h>
 
 #include "base/logging.h"
+#include "base/system_monitor/system_monitor.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/windows_version.h"
 #include "media/audio/audio_util.h"
+#include "media/audio/win/core_audio_util_win.h"
 
 using base::win::ScopedCoMem;
 
 namespace media {
 
-// TODO(henrika): Move to CoreAudioUtil class.
-static ScopedComPtr<IMMDeviceEnumerator> CreateDeviceEnumerator() {
-  ScopedComPtr<IMMDeviceEnumerator> device_enumerator;
-  HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator),
-                                NULL,
-                                CLSCTX_INPROC_SERVER,
-                                __uuidof(IMMDeviceEnumerator),
-                                device_enumerator.ReceiveVoid());
-  DLOG_IF(ERROR, FAILED(hr)) << "CoCreateInstance(IMMDeviceEnumerator): "
-                             << std::hex << hr;
-  return device_enumerator;
+static std::string FlowToString(EDataFlow flow) {
+  return (flow == eRender) ? "eRender" : "eConsole";
+}
+
+static std::string RoleToString(ERole role) {
+  switch (role) {
+    case eConsole: return "eConsole";
+    case eMultimedia: return "eMultimedia";
+    case eCommunications: return "eCommunications";
+    default: return "undefined";
+  }
 }
 
 AudioDeviceListenerWin::AudioDeviceListenerWin(const base::Closure& listener_cb)
     : listener_cb_(listener_cb) {
-  CHECK(media::IsWASAPISupported());
+  CHECK(CoreAudioUtil::IsSupported());
 
-  device_enumerator_ = CreateDeviceEnumerator();
-  if (!device_enumerator_)
-  return;
+  ScopedComPtr<IMMDeviceEnumerator> device_enumerator(
+      CoreAudioUtil::CreateDeviceEnumerator());
+  if (!device_enumerator)
+    return;
 
-  HRESULT hr = device_enumerator_->RegisterEndpointNotificationCallback(this);
+  HRESULT hr = device_enumerator->RegisterEndpointNotificationCallback(this);
   if (FAILED(hr)) {
-    DLOG(ERROR)  << "RegisterEndpointNotificationCallback failed: "
-                 << std::hex << hr;
-    device_enumerator_ = NULL;
+    LOG(ERROR)  << "RegisterEndpointNotificationCallback failed: "
+                << std::hex << hr;
     return;
   }
 
-  ScopedComPtr<IMMDevice> endpoint_render_device;
-  hr = device_enumerator_->GetDefaultAudioEndpoint(
-      eRender, eConsole, endpoint_render_device.Receive());
-  // This will fail if there are no audio devices currently plugged in, so we
-  // still want to keep our endpoint registered.
-  if (FAILED(hr)) {
-    DVLOG(1) << "GetDefaultAudioEndpoint() failed.  No devices?  Error: "
-             << std::hex << hr;
+  device_enumerator_ = device_enumerator;
+
+  ScopedComPtr<IMMDevice> device =
+      CoreAudioUtil::CreateDefaultDevice(eRender, eConsole);
+  if (!device) {
+    // Most probable reason for ending up here is that all audio devices are
+    // disabled or unplugged.
+    VLOG(1)  << "CoreAudioUtil::CreateDefaultDevice failed. No device?";
     return;
   }
 
-  ScopedCoMem<WCHAR> render_device_id;
-  hr = endpoint_render_device->GetId(&render_device_id);
+  AudioDeviceName device_name;
+  hr = CoreAudioUtil::GetDeviceName(device, &device_name);
   if (FAILED(hr)) {
-    DLOG(ERROR) << "GetId() failed: " << std::hex << hr;
+    VLOG(1)  << "Failed to retrieve the device id: " << std::hex << hr;
     return;
   }
-
-  default_render_device_id_ = WideToUTF8(static_cast<WCHAR*>(render_device_id));
-  DVLOG(1) << "Default render device: " << default_render_device_id_;
+  default_render_device_id_ = device_name.unique_id;
 }
 
 AudioDeviceListenerWin::~AudioDeviceListenerWin() {
@@ -72,8 +72,8 @@ AudioDeviceListenerWin::~AudioDeviceListenerWin() {
   if (device_enumerator_) {
     HRESULT hr =
         device_enumerator_->UnregisterEndpointNotificationCallback(this);
-    DLOG_IF(ERROR, FAILED(hr)) << "UnregisterEndpointNotificationCallback() "
-                               << "failed: " << std::hex << hr;
+    LOG_IF(ERROR, FAILED(hr)) << "UnregisterEndpointNotificationCallback() "
+                              << "failed: " << std::hex << hr;
   }
 }
 
@@ -115,6 +115,13 @@ STDMETHODIMP AudioDeviceListenerWin::OnDeviceRemoved(LPCWSTR device_id) {
 
 STDMETHODIMP AudioDeviceListenerWin::OnDeviceStateChanged(LPCWSTR device_id,
                                                           DWORD new_state) {
+  if (new_state != DEVICE_STATE_ACTIVE && new_state != DEVICE_STATE_NOTPRESENT)
+    return S_OK;
+
+  base::SystemMonitor* monitor = base::SystemMonitor::Get();
+  if (monitor)
+    monitor->ProcessDevicesChanged(base::SystemMonitor::DEVTYPE_AUDIO_CAPTURE);
+
   return S_OK;
 }
 
@@ -125,9 +132,16 @@ STDMETHODIMP AudioDeviceListenerWin::OnDefaultDeviceChanged(
     return S_OK;
 
   // If no device is now available, |new_default_device_id| will be NULL.
-  std::string new_device_id = "";
+  std::string new_device_id;
   if (new_default_device_id)
     new_device_id = WideToUTF8(new_default_device_id);
+
+  VLOG(1) << "OnDefaultDeviceChanged() "
+          << "new_default_device: "
+          << (new_default_device_id ?
+              CoreAudioUtil::GetFriendlyName(new_device_id) : "No device")
+          << ", flow: " << FlowToString(flow)
+          << ", role: " << RoleToString(role);
 
   // Only fire a state change event if the device has actually changed.
   // TODO(dalecurtis): This still seems to fire an extra event on my machine for

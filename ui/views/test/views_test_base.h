@@ -35,6 +35,10 @@ class ViewsTestBase : public testing::Test {
 
   void RunPendingMessages();
 
+  // Creates a widget of |type| with any platform specific data for use in
+  // cross-platform tests.
+  Widget::InitParams CreateParams(Widget::InitParams::Type type);
+
  protected:
   TestViewsDelegate& views_delegate() const { return *views_delegate_.get(); }
 
@@ -43,6 +47,10 @@ class ViewsTestBase : public testing::Test {
   }
 
   MessageLoop* message_loop() { return &message_loop_; }
+
+  // Returns a context view. In aura builds, this will be the
+  // RootWindow. Everywhere else, NULL.
+  gfx::NativeView GetContext();
 
  private:
   MessageLoopForUI message_loop_;

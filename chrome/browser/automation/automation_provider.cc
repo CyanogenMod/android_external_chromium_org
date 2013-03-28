@@ -10,17 +10,18 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/json/json_writer.h"
 #include "base/json/string_escape.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "base/process_util.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
@@ -32,15 +33,12 @@
 #include "chrome/browser/automation/automation_resource_message_filter.h"
 #include "chrome/browser/automation/automation_tab_tracker.h"
 #include "chrome/browser/automation/automation_window_tracker.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_storage.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/character_encoding.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/net/url_request_mock_util.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ssl/ssl_blocking_page.h"
@@ -67,6 +65,7 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
+#include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/trace_controller.h"
 #include "content/public/browser/web_contents.h"
@@ -294,23 +293,70 @@ void AutomationProvider::DisableInitialLoadObservers() {
 int AutomationProvider::GetIndexForNavigationController(
     const NavigationController* controller, const Browser* parent) const {
   DCHECK(parent);
-  return chrome::GetIndexOfTab(parent, controller->GetWebContents());
+  return parent->tab_strip_model()->GetIndexOfWebContents(
+      controller->GetWebContents());
 }
 
 // TODO(phajdan.jr): move to TestingAutomationProvider.
 DictionaryValue* AutomationProvider::GetDictionaryFromDownloadItem(
     const DownloadItem* download, bool incognito) {
-  std::map<DownloadItem::DownloadState, std::string> state_to_string;
-  state_to_string[DownloadItem::IN_PROGRESS] = std::string("IN_PROGRESS");
-  state_to_string[DownloadItem::CANCELLED] = std::string("CANCELLED");
-  state_to_string[DownloadItem::INTERRUPTED] = std::string("INTERRUPTED");
-  state_to_string[DownloadItem::COMPLETE] = std::string("COMPLETE");
+  const char *download_state_string = NULL;
+  switch (download->GetState()) {
+    case DownloadItem::IN_PROGRESS:
+      download_state_string = "IN_PROGRESS";
+      break;
+    case DownloadItem::CANCELLED:
+      download_state_string = "CANCELLED";
+      break;
+    case DownloadItem::INTERRUPTED:
+      download_state_string = "INTERRUPTED";
+      break;
+    case DownloadItem::COMPLETE:
+      download_state_string = "COMPLETE";
+      break;
+    case DownloadItem::MAX_DOWNLOAD_STATE:
+      NOTREACHED();
+      download_state_string = "UNKNOWN";
+      break;
+  }
+  DCHECK(download_state_string);
+  if (!download_state_string)
+    download_state_string = "UNKNOWN";
 
-  std::map<DownloadItem::SafetyState, std::string> safety_state_to_string;
-  safety_state_to_string[DownloadItem::SAFE] = std::string("SAFE");
-  safety_state_to_string[DownloadItem::DANGEROUS] = std::string("DANGEROUS");
-  safety_state_to_string[DownloadItem::DANGEROUS_BUT_VALIDATED] =
-      std::string("DANGEROUS_BUT_VALIDATED");
+  const char* download_danger_type_string = NULL;
+  switch (download->GetDangerType()) {
+    case content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS:
+      download_danger_type_string = "NOT_DANGEROUS";
+      break;
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE:
+      download_danger_type_string = "DANGEROUS_FILE";
+      break;
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+      download_danger_type_string = "DANGEROUS_URL";
+      break;
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+      download_danger_type_string = "DANGEROUS_CONTENT";
+      break;
+    case content::DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT:
+      download_danger_type_string = "MAYBE_DANGEROUS_CONTENT";
+      break;
+    case content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT:
+      download_danger_type_string = "UNCOMMON_CONTENT";
+      break;
+    case content::DOWNLOAD_DANGER_TYPE_USER_VALIDATED:
+      download_danger_type_string = "USER_VALIDATED";
+      break;
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+      download_danger_type_string = "DANGEROUS_HOST";
+      break;
+    case content::DOWNLOAD_DANGER_TYPE_MAX:
+      NOTREACHED();
+      download_danger_type_string = "UNKNOWN";
+      break;
+  }
+  DCHECK(download_danger_type_string);
+  if (!download_danger_type_string)
+    download_danger_type_string = "UNKNOWN";
 
   DictionaryValue* dl_item_value = new DictionaryValue;
   dl_item_value->SetInteger("id", static_cast<int>(download->GetId()));
@@ -325,9 +371,8 @@ DictionaryValue* AutomationProvider::GetDictionaryFromDownloadItem(
                             download->GetOpenWhenComplete());
   dl_item_value->SetBoolean("is_temporary", download->IsTemporary());
   dl_item_value->SetBoolean("is_otr", incognito);
-  dl_item_value->SetString("state", state_to_string[download->GetState()]);
-  dl_item_value->SetString("safety_state",
-                           safety_state_to_string[download->GetSafetyState()]);
+  dl_item_value->SetString("state", download_state_string);
+  dl_item_value->SetString("danger_type", download_danger_type_string);
   dl_item_value->SetInteger("PercentComplete", download->PercentComplete());
 
   return dl_item_value;
@@ -361,10 +406,6 @@ bool AutomationProvider::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   bool deserialize_success = true;
   IPC_BEGIN_MESSAGE_MAP_EX(AutomationProvider, message, deserialize_success)
-#if !defined(OS_MACOSX)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(AutomationMsg_WindowDrag,
-                                    WindowSimulateDrag)
-#endif  // !defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(AutomationMsg_HandleUnused, HandleUnused)
     IPC_MESSAGE_HANDLER(AutomationMsg_SetProxyConfig, SetProxyConfig)
     IPC_MESSAGE_HANDLER(AutomationMsg_PrintAsync, PrintAsync)
@@ -374,6 +415,7 @@ bool AutomationProvider::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(AutomationMsg_Cut, Cut)
     IPC_MESSAGE_HANDLER(AutomationMsg_Copy, Copy)
     IPC_MESSAGE_HANDLER(AutomationMsg_Paste, Paste)
+    IPC_MESSAGE_HANDLER(AutomationMsg_KeyPress, KeyPress)
     IPC_MESSAGE_HANDLER(AutomationMsg_ReloadAsync, ReloadAsync)
     IPC_MESSAGE_HANDLER(AutomationMsg_StopAsync, StopAsync)
     IPC_MESSAGE_HANDLER(AutomationMsg_SetPageFontSize, OnSetPageFontSize)
@@ -384,7 +426,7 @@ bool AutomationProvider::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(AutomationMsg_BeginTracing, BeginTracing)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(AutomationMsg_EndTracing, EndTracing)
     IPC_MESSAGE_HANDLER(AutomationMsg_GetTracingOutput, GetTracingOutput)
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
     // These are for use with external tabs.
     IPC_MESSAGE_HANDLER(AutomationMsg_CreateExternalTab, CreateExternalTab)
     IPC_MESSAGE_HANDLER(AutomationMsg_ProcessUnhandledAccelerator,
@@ -470,7 +512,7 @@ Browser* AutomationProvider::FindAndActivateTab(
   content::WebContentsDelegate* d = controller->GetWebContents()->GetDelegate();
   if (d)
     d->ActivateContents(controller->GetWebContents());
-  return browser::FindBrowserWithWebContents(controller->GetWebContents());
+  return chrome::FindBrowserWithWebContents(controller->GetWebContents());
 }
 
 void AutomationProvider::HandleFindRequest(
@@ -622,6 +664,38 @@ void AutomationProvider::Paste(int tab_handle) {
   view->Paste();
 }
 
+
+
+void AutomationProvider::KeyPress(int tab_handle, int key) {
+  RenderViewHost* view = GetViewForTab(tab_handle);
+  if (!view) {
+    NOTREACHED();
+    return;
+  }
+
+  content::NativeWebKeyboardEvent event;
+  event.nativeKeyCode = 0;
+  event.windowsKeyCode = key;
+  event.setKeyIdentifierFromWindowsKeyCode();
+  event.modifiers = 0;
+  event.isSystemKey = false;
+  event.timeStampSeconds = base::Time::Now().ToDoubleT();
+  event.skip_in_browser = true;
+
+  event.text[0] = key;
+  event.unmodifiedText[0] = key;
+  event.type = WebKit::WebInputEvent::RawKeyDown;
+  view->ForwardKeyboardEvent(event);
+
+  event.type = WebKit::WebInputEvent::Char;
+  view->ForwardKeyboardEvent(event);
+
+  event.type = WebKit::WebInputEvent::KeyUp;
+  event.text[0] = 0;
+  event.unmodifiedText[0] = 0;
+  view->ForwardKeyboardEvent(event);
+}
+
 void AutomationProvider::ReloadAsync(int tab_handle) {
   if (tab_tracker_->ContainsHandle(tab_handle)) {
     NavigationController* tab = tab_tracker_->GetResource(tab_handle);
@@ -694,7 +768,10 @@ void AutomationProvider::JavaScriptStressTestControl(int tab_handle,
 void AutomationProvider::BeginTracing(const std::string& categories,
                                       bool* success) {
   tracing_data_.trace_output.clear();
-  *success = TraceController::GetInstance()->BeginTracing(this, categories);
+  *success = TraceController::GetInstance()->BeginTracing(
+      this,
+      categories,
+      base::debug::TraceLog::RECORD_UNTIL_FULL);
 }
 
 void AutomationProvider::EndTracing(IPC::Message* reply_message) {

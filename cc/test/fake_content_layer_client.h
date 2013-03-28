@@ -5,23 +5,35 @@
 #ifndef CC_TEST_FAKE_CONTENT_LAYER_CLIENT_H_
 #define CC_TEST_FAKE_CONTENT_LAYER_CLIENT_H_
 
-#include "base/compiler_specific.h"
-#include "cc/content_layer_client.h"
+#include <vector>
 
-namespace WebKitTests {
+#include "base/compiler_specific.h"
+#include "cc/layers/content_layer_client.h"
+#include "ui/gfx/rect.h"
+
+namespace cc {
 
 class FakeContentLayerClient : public cc::ContentLayerClient {
-public:
-    FakeContentLayerClient();
+ public:
+  FakeContentLayerClient();
+  virtual ~FakeContentLayerClient();
 
-    virtual void paintContents(SkCanvas*, const gfx::Rect& rect, gfx::RectF& opaqueRect) OVERRIDE;
+  virtual void PaintContents(SkCanvas* canvas,
+                             gfx::Rect rect,
+                             gfx::RectF* opaque_rect) OVERRIDE;
+  virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
 
-    void setPaintAllOpaque(bool opaque) { m_paintAllOpaque = opaque; }
+  void set_paint_all_opaque(bool opaque) { paint_all_opaque_ = opaque; }
 
-private:
-    bool m_paintAllOpaque;
+  void add_draw_rect(const gfx::Rect& rect) { draw_rects_.push_back(rect); }
+
+ private:
+  typedef std::vector<gfx::Rect> RectVector;
+
+  bool paint_all_opaque_;
+  RectVector draw_rects_;
 };
 
-}  // namespace WebKitTests
+}  // namespace cc
 
 #endif  // CC_TEST_FAKE_CONTENT_LAYER_CLIENT_H_

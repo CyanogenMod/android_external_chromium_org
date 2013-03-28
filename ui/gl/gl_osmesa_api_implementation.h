@@ -18,11 +18,33 @@ void InitializeGLExtensionBindingsOSMESA(GLContext* context);
 void InitializeDebugGLBindingsOSMESA();
 void ClearGLBindingsOSMESA();
 
-class GL_EXPORT RealOSMESAApi : public OSMESAApi {
+class GL_EXPORT OSMESAApiBase : public OSMESAApi {
+ public:
+  // Include the auto-generated part of this class. We split this because
+  // it means we can easily edit the non-auto generated parts right here in
+  // this file instead of having to edit some template or the code generator.
+  #include "gl_bindings_api_autogen_osmesa.h"
+
+ protected:
+  OSMESAApiBase();
+  virtual ~OSMESAApiBase();
+  void InitializeBase(DriverOSMESA* driver);
+
+  DriverOSMESA* driver_;
+};
+
+class GL_EXPORT RealOSMESAApi : public OSMESAApiBase {
  public:
   RealOSMESAApi();
   virtual ~RealOSMESAApi();
   void Initialize(DriverOSMESA* driver);
+};
+
+// Inserts a TRACE for every OSMESA call.
+class GL_EXPORT TraceOSMESAApi : public OSMESAApi {
+ public:
+  TraceOSMESAApi(OSMESAApi* osmesa_api) : osmesa_api_(osmesa_api) { }
+  virtual ~TraceOSMESAApi();
 
   // Include the auto-generated part of this class. We split this because
   // it means we can easily edit the non-auto generated parts right here in
@@ -30,7 +52,7 @@ class GL_EXPORT RealOSMESAApi : public OSMESAApi {
   #include "gl_bindings_api_autogen_osmesa.h"
 
  private:
-  DriverOSMESA* driver_;
+  OSMESAApi* osmesa_api_;
 };
 
 }  // namespace gfx

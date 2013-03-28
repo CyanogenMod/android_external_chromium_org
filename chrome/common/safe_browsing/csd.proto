@@ -11,6 +11,8 @@
 
 syntax = "proto2";
 
+option optimize_for = LITE_RUNTIME;
+
 package safe_browsing;
 
 message ClientPhishingRequest {
@@ -83,6 +85,41 @@ message ClientPhishingResponse {
   // Marked OBSOLETE because the URL is sent for all users, so the server
   // can do whitelist matching.
   repeated string OBSOLETE_whitelist_expression = 2;
+}
+
+message ClientMalwareRequest {
+  // URL that the client visited.  The CGI parameters are stripped by the
+  // client.
+  required string url = 1;
+
+  message Feature {
+    // Feature name.  E.g., 'BadIpFetch='.
+    required string name = 1;
+
+    // Feature value is always in the range [0.0, 1.0].  Boolean features
+    // have value 1.0.
+    required double value = 2;
+
+    // Optional meta information about this feature
+    repeated string metainfo = 3;
+  }
+
+  // List of features that were extracted.
+  repeated Feature feature_map = 2;
+
+  // Field 3 is only used on the server.
+
+  // The referrer URL.  This field might not be set, for example, in the case
+  // where the referrer uses HTTPS.
+  optional string referrer_url = 4;
+}
+
+message ClientMalwareResponse {
+    required bool blacklist = 1;
+    // The confirmed blacklisted bad IP, which will be shown in malware warning.
+    // This IP string could be either in IPv4 or IPv6 format, which is the same
+    // as the ones client sent to server.
+    optional string bad_ip = 2;
 }
 
 message ClientDownloadRequest {
@@ -193,6 +230,8 @@ message ClientDownloadResponse {
     UNCOMMON = 2;
     // The download is potentially unwanted.
     POTENTIALLY_UNWANTED = 3;
+    // The download is from a dangerous host.
+    DANGEROUS_HOST = 4;
   }
   required Verdict verdict = 1;
 
@@ -239,4 +278,21 @@ message ClientDownloadReport {
 
   // The original download response sent from the verdict server.
   optional ClientDownloadResponse download_response = 5;
+}
+
+// This is used to send back upload status to the client after upload completion
+message ClientUploadResponse {
+  enum UploadStatus {
+    // The upload was successful and a complete response can be expected
+    SUCCESS = 0;
+
+    // The upload was unsuccessful and the response is incomplete.
+    UPLOAD_FAILURE = 1;
+  }
+
+  // Holds the upload status
+  optional UploadStatus status = 1;
+
+  // Holds the permalink where the results of scanning the binary are available
+  optional string permalink = 2;
 }

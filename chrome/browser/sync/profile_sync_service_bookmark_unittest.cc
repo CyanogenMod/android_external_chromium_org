@@ -12,14 +12,14 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/string16.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
@@ -31,6 +31,7 @@
 #include "chrome/browser/sync/glue/data_type_error_handler_mock.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/test_browser_thread.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/change_record.h"
@@ -58,82 +59,6 @@ static const bool kExpectMobileBookmarks = true;
 static const bool kExpectMobileBookmarks = false;
 #endif  // defined(OS_ANDROID)
 
-class TestBookmarkModelAssociator : public BookmarkModelAssociator {
- public:
-  TestBookmarkModelAssociator(
-      BookmarkModel* bookmark_model,
-      syncer::UserShare* user_share,
-      DataTypeErrorHandler* error_handler)
-      : BookmarkModelAssociator(bookmark_model, user_share,
-                                error_handler,
-                                kExpectMobileBookmarks),
-        user_share_(user_share) {}
-
-  // TODO(akalin): This logic lazily creates any tagged node that is
-  // requested.  A better way would be to have utility functions to
-  // create sync nodes from some bookmark structure and to use that.
-  virtual bool GetSyncIdForTaggedNode(const std::string& tag, int64* sync_id) {
-    std::string tag_str = std::string(tag.c_str(), tag.length());
-    bool root_exists = false;
-    syncer::ModelType type = model_type();
-    {
-      syncer::WriteTransaction trans(FROM_HERE, user_share_);
-      syncer::ReadNode uber_root(&trans);
-      uber_root.InitByRootLookup();
-
-      syncer::ReadNode root(&trans);
-      root_exists = (root.InitByTagLookup(syncer::ModelTypeToRootTag(type)) ==
-                     BaseNode::INIT_OK);
-    }
-
-    if (!root_exists) {
-      if (!syncer::TestUserShare::CreateRoot(type, user_share_))
-        return false;
-    }
-
-    syncer::WriteTransaction trans(FROM_HERE, user_share_);
-    syncer::ReadNode root(&trans);
-    EXPECT_EQ(BaseNode::INIT_OK, root.InitByTagLookup(
-        syncer::ModelTypeToRootTag(type)));
-
-    // First, try to find a node with the title among the root's children.
-    // This will be the case if we are testing model persistence, and
-    // are reloading a sync repository created earlier in the test.
-    int64 last_child_id = syncer::kInvalidId;
-    for (int64 id = root.GetFirstChildId(); id != syncer::kInvalidId; /***/) {
-      syncer::ReadNode child(&trans);
-      EXPECT_EQ(BaseNode::INIT_OK, child.InitByIdLookup(id));
-      last_child_id = id;
-      if (tag_str == child.GetTitle()) {
-        *sync_id = id;
-        return true;
-      }
-      id = child.GetSuccessorId();
-    }
-
-    syncer::ReadNode predecessor_node(&trans);
-    syncer::ReadNode* predecessor = NULL;
-    if (last_child_id != syncer::kInvalidId) {
-      EXPECT_EQ(BaseNode::INIT_OK,
-                predecessor_node.InitByIdLookup(last_child_id));
-      predecessor = &predecessor_node;
-    }
-    syncer::WriteNode node(&trans);
-    // Create new fake tagged nodes at the end of the ordering.
-    node.InitByCreation(type, root, predecessor);
-    node.SetIsFolder(true);
-    node.GetMutableEntryForTest()->Put(
-        syncer::syncable::UNIQUE_SERVER_TAG, tag);
-    node.SetTitle(UTF8ToWide(tag_str));
-    node.SetExternalId(0);
-    *sync_id = node.GetId();
-    return true;
-  }
-
- private:
-  syncer::UserShare* user_share_;
-};
-
 namespace {
 
 // FakeServerChange constructs a list of syncer::ChangeRecords while modifying
@@ -157,20 +82,22 @@ class FakeServerChange {
     EXPECT_EQ(BaseNode::INIT_OK, parent.InitByIdLookup(parent_id));
     syncer::WriteNode node(trans_);
     if (predecessor_id == 0) {
-      EXPECT_TRUE(node.InitByCreation(syncer::BOOKMARKS, parent, NULL));
+      EXPECT_TRUE(node.InitBookmarkByCreation(parent, NULL));
     } else {
       syncer::ReadNode predecessor(trans_);
       EXPECT_EQ(BaseNode::INIT_OK, predecessor.InitByIdLookup(predecessor_id));
       EXPECT_EQ(predecessor.GetParentId(), parent.GetId());
-      EXPECT_TRUE(node.InitByCreation(syncer::BOOKMARKS, parent,
-                                      &predecessor));
+      EXPECT_TRUE(node.InitBookmarkByCreation(parent, &predecessor));
     }
     EXPECT_EQ(node.GetPredecessorId(), predecessor_id);
     EXPECT_EQ(node.GetParentId(), parent_id);
     node.SetIsFolder(is_folder);
     node.SetTitle(title);
-    if (!is_folder)
-      node.SetURL(GURL(url));
+    if (!is_folder) {
+      sync_pb::BookmarkSpecifics specifics(node.GetBookmarkSpecifics());
+      specifics.set_url(url);
+      node.SetBookmarkSpecifics(specifics);
+    }
     syncer::ChangeRecord record;
     record.action = syncer::ChangeRecord::ACTION_ADD;
     record.id = node.GetId();
@@ -200,7 +127,9 @@ class FakeServerChange {
       syncer::WriteNode node(trans_);
       EXPECT_EQ(BaseNode::INIT_OK, node.InitByIdLookup(id));
       EXPECT_FALSE(node.GetFirstChildId());
-      node.Remove();
+      node.GetMutableEntryForTest()->Put(syncer::syncable::SERVER_IS_DEL,
+                                         true);
+      node.Tombstone();
     }
     {
       // Verify the deletion.
@@ -308,7 +237,7 @@ class ExtensiveChangesBookmarkModelObserver : public BaseBookmarkModelObserver {
     ++completed_count_;
   }
 
-  void BookmarkModelChanged() {}
+  virtual void BookmarkModelChanged() OVERRIDE {}
 
   int get_started() const {
     return started_count_;
@@ -337,9 +266,11 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
   enum SaveOption { SAVE_TO_STORAGE, DONT_SAVE_TO_STORAGE };
 
   ProfileSyncServiceBookmarkTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_),
+      : model_(NULL),
+        ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_),
-        model_(NULL) {
+        local_merge_result_(syncer::BOOKMARKS),
+        syncer_merge_result_(syncer::BOOKMARKS) {
   }
 
   virtual ~ProfileSyncServiceBookmarkTest() {
@@ -362,23 +293,128 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
     bool delete_bookmarks = load == DELETE_EXISTING_STORAGE;
     profile_.CreateBookmarkModel(delete_bookmarks);
     model_ = BookmarkModelFactory::GetForProfile(&profile_);
-    // Wait for the bookmarks model to load.
-    profile_.BlockUntilBookmarkModelLoaded();
+    ui_test_utils::WaitForBookmarkModelToLoad(model_);
     // This noticeably speeds up the unit tests that request it.
     if (save == DONT_SAVE_TO_STORAGE)
       model_->ClearStore();
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
+  }
+
+  int GetSyncBookmarkCount() {
+    syncer::ReadTransaction trans(FROM_HERE, test_user_share_.user_share());
+    syncer::ReadNode node(&trans);
+    if (node.InitByTagLookup(syncer::ModelTypeToRootTag(syncer::BOOKMARKS)) !=
+        syncer::BaseNode::INIT_OK)
+      return 0;
+    return node.GetTotalNodeCount();
+  }
+
+  // Creates the bookmark root node and the permanent nodes if they don't
+  // already exist.
+  bool CreatePermanentBookmarkNodes() {
+    bool root_exists = false;
+    syncer::ModelType type = syncer::BOOKMARKS;
+    {
+      syncer::WriteTransaction trans(FROM_HERE,
+                                     test_user_share_.user_share());
+      syncer::ReadNode uber_root(&trans);
+      uber_root.InitByRootLookup();
+
+      syncer::ReadNode root(&trans);
+      root_exists = (root.InitByTagLookup(syncer::ModelTypeToRootTag(type)) ==
+                     BaseNode::INIT_OK);
+    }
+
+    if (!root_exists) {
+      if (!syncer::TestUserShare::CreateRoot(type,
+                                             test_user_share_.user_share()))
+        return false;
+    }
+
+    const int kNumPermanentNodes = 3;
+    const std::string permanent_tags[kNumPermanentNodes] = {
+      "bookmark_bar", "other_bookmarks", "synced_bookmarks"
+    };
+    syncer::WriteTransaction trans(FROM_HERE, test_user_share_.user_share());
+    syncer::ReadNode root(&trans);
+    EXPECT_EQ(BaseNode::INIT_OK, root.InitByTagLookup(
+        syncer::ModelTypeToRootTag(type)));
+
+    // Loop through creating permanent nodes as necessary.
+    int64 last_child_id = syncer::kInvalidId;
+    for (int i = 0; i < kNumPermanentNodes; ++i) {
+      // First check if the node already exists. This is for tests that involve
+      // persistence and set up sync more than once.
+      syncer::ReadNode lookup(&trans);
+      if (lookup.InitByTagLookup(permanent_tags[i]) ==
+          syncer::ReadNode::INIT_OK) {
+        last_child_id = lookup.GetId();
+        continue;
+      }
+
+      // If it doesn't exist, create the permanent node at the end of the
+      // ordering.
+      syncer::ReadNode predecessor_node(&trans);
+      syncer::ReadNode* predecessor = NULL;
+      if (last_child_id != syncer::kInvalidId) {
+        EXPECT_EQ(BaseNode::INIT_OK,
+                  predecessor_node.InitByIdLookup(last_child_id));
+        predecessor = &predecessor_node;
+      }
+      syncer::WriteNode node(&trans);
+      if (!node.InitBookmarkByCreation(root, predecessor))
+        return false;
+      node.SetIsFolder(true);
+      node.GetMutableEntryForTest()->Put(
+          syncer::syncable::UNIQUE_SERVER_TAG, permanent_tags[i]);
+      node.SetTitle(UTF8ToWide(permanent_tags[i]));
+      node.SetExternalId(0);
+      last_child_id = node.GetId();
+    }
+    return true;
   }
 
   void StartSync() {
+    test_user_share_.Reload();
+
+    ASSERT_TRUE(CreatePermanentBookmarkNodes());
+
     // Set up model associator.
-    model_associator_.reset(new TestBookmarkModelAssociator(
+    model_associator_.reset(new BookmarkModelAssociator(
         BookmarkModelFactory::GetForProfile(&profile_),
         test_user_share_.user_share(),
-        &mock_error_handler_));
-    syncer::SyncError error = model_associator_->AssociateModels();
+        &mock_error_handler_,
+        kExpectMobileBookmarks));
+
+    local_merge_result_ = syncer::SyncMergeResult(syncer::BOOKMARKS);
+    syncer_merge_result_ = syncer::SyncMergeResult(syncer::BOOKMARKS);
+    int local_count_before = model_->root_node()->GetTotalNodeCount();
+    int syncer_count_before = GetSyncBookmarkCount();
+
+    syncer::SyncError error = model_associator_->AssociateModels(
+        &local_merge_result_,
+        &syncer_merge_result_);
     EXPECT_FALSE(error.IsSet());
-    MessageLoop::current()->RunAllPending();
+
+    // Verify the merge results were calculated properly.
+    EXPECT_EQ(local_count_before,
+              local_merge_result_.num_items_before_association());
+    EXPECT_EQ(syncer_count_before,
+              syncer_merge_result_.num_items_before_association());
+    EXPECT_EQ(local_merge_result_.num_items_after_association(),
+              local_merge_result_.num_items_before_association() +
+                  local_merge_result_.num_items_added() -
+                  local_merge_result_.num_items_deleted());
+    EXPECT_EQ(syncer_merge_result_.num_items_after_association(),
+              syncer_merge_result_.num_items_before_association() +
+                  syncer_merge_result_.num_items_added() -
+                  syncer_merge_result_.num_items_deleted());
+    EXPECT_EQ(model_->root_node()->GetTotalNodeCount(),
+              local_merge_result_.num_items_after_association());
+    EXPECT_EQ(GetSyncBookmarkCount(),
+              syncer_merge_result_.num_items_after_association());
+
+    MessageLoop::current()->RunUntilIdle();
 
     // Set up change processor.
     change_processor_.reset(
@@ -389,11 +425,13 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
 
   void StopSync() {
     change_processor_.reset();
-    syncer::SyncError error = model_associator_->DisassociateModels();
-    EXPECT_FALSE(error.IsSet());
+    if (model_associator_.get()) {
+      syncer::SyncError error = model_associator_->DisassociateModels();
+      EXPECT_FALSE(error.IsSet());
+    }
     model_associator_.reset();
 
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
 
     // TODO(akalin): Actually close the database and flush it to disk
     // (and make StartSync reload from disk).  This would require
@@ -403,7 +441,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
   void UnloadBookmarkModel() {
     profile_.CreateBookmarkModel(false /* delete_bookmarks */);
     model_ = NULL;
-    message_loop_.RunAllPending();
+    message_loop_.RunUntilIdle();
   }
 
   bool InitSyncNodeFromChromeNode(const BookmarkNode* bnode,
@@ -425,7 +463,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
     }
     EXPECT_EQ(bnode->is_folder(), gnode.GetIsFolder());
     if (bnode->is_url())
-      EXPECT_EQ(bnode->url(), gnode.GetURL());
+      EXPECT_EQ(bnode->url(), GURL(gnode.GetBookmarkSpecifics().url()));
 
     // Check for position matches.
     int browser_index = bnode->parent()->GetIndexOf(bnode);
@@ -553,6 +591,13 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
         model_->bookmark_bar_node()->id());
   }
 
+ protected:
+  BookmarkModel* model_;
+  syncer::TestUserShare test_user_share_;
+  scoped_ptr<BookmarkChangeProcessor> change_processor_;
+  StrictMock<DataTypeErrorHandlerMock> mock_error_handler_;
+  scoped_ptr<BookmarkModelAssociator> model_associator_;
+
  private:
   // Used by both |ui_thread_| and |file_thread_|.
   MessageLoop message_loop_;
@@ -560,14 +605,10 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
   // Needed by |model_|.
   content::TestBrowserThread file_thread_;
 
-  TestingProfile profile_;
+  syncer::SyncMergeResult local_merge_result_;
+  syncer::SyncMergeResult syncer_merge_result_;
 
- protected:
-  BookmarkModel* model_;
-  syncer::TestUserShare test_user_share_;
-  scoped_ptr<BookmarkChangeProcessor> change_processor_;
-  scoped_ptr<TestBookmarkModelAssociator> model_associator_;
-  StrictMock<DataTypeErrorHandlerMock> mock_error_handler_;
+  TestingProfile profile_;
 };
 
 TEST_F(ProfileSyncServiceBookmarkTest, InitialState) {
@@ -940,7 +981,7 @@ TEST_F(ProfileSyncServiceBookmarkTest, UnrecoverableErrorSuspendsService) {
     syncer::WriteTransaction trans(FROM_HERE, test_user_share_.user_share());
     syncer::WriteNode sync_node(&trans);
     ASSERT_TRUE(InitSyncNodeFromChromeNode(node, &sync_node));
-    sync_node.Remove();
+    sync_node.Tombstone();
   }
   // The models don't match at this point, but the ProfileSyncService
   // doesn't know it yet.
@@ -971,6 +1012,87 @@ TEST_F(ProfileSyncServiceBookmarkTest, MergeDuplicates) {
 
   EXPECT_EQ(2, model_->other_node()->child_count());
   ExpectModelMatch();
+}
+
+TEST_F(ProfileSyncServiceBookmarkTest, ApplySyncDeletesFromJournal) {
+  // Initialize sync model and bookmark model as:
+  // URL 0
+  // Folder 1
+  //   |-- URL 1
+  //   +-- Folder 2
+  //         +-- URL 2
+  LoadBookmarkModel(DELETE_EXISTING_STORAGE, SAVE_TO_STORAGE);
+  int64 u0 = 0;
+  int64 f1 = 0;
+  int64 u1 = 0;
+  int64 f2 = 0;
+  int64 u2 = 0;
+  StartSync();
+  int fixed_sync_bk_count = GetSyncBookmarkCount();
+  {
+    syncer::WriteTransaction trans(FROM_HERE, test_user_share_.user_share());
+    FakeServerChange adds(&trans);
+    u0 = adds.AddURL(L"URL 0", "http://plus.google.com/", bookmark_bar_id(), 0);
+    f1 = adds.AddFolder(L"Folder 1", bookmark_bar_id(), u0);
+    u1 = adds.AddURL(L"URL 1", "http://www.google.com/", f1, 0);
+    f2 = adds.AddFolder(L"Folder 2", f1, u1);
+    u2 = adds.AddURL(L"URL 2", "http://mail.google.com/", f2, 0);
+    adds.ApplyPendingChanges(change_processor_.get());
+  }
+  StopSync();
+
+  // Reload bookmark model and disable model saving to make sync changes not
+  // persisted.
+  LoadBookmarkModel(LOAD_FROM_STORAGE, DONT_SAVE_TO_STORAGE);
+  EXPECT_EQ(6, model_->bookmark_bar_node()->GetTotalNodeCount());
+  EXPECT_EQ(fixed_sync_bk_count + 5, GetSyncBookmarkCount());
+  StartSync();
+  {
+    // Remove all folders/bookmarks except u3 added above.
+    syncer::WriteTransaction trans(FROM_HERE, test_user_share_.user_share());
+    FakeServerChange dels(&trans);
+    dels.Delete(u2);
+    dels.Delete(f2);
+    dels.Delete(u1);
+    dels.Delete(f1);
+    dels.ApplyPendingChanges(change_processor_.get());
+  }
+  StopSync();
+  // Bookmark bar itself and u0 remain.
+  EXPECT_EQ(2, model_->bookmark_bar_node()->GetTotalNodeCount());
+
+  // Reload bookmarks including ones deleted in sync model from storage.
+  LoadBookmarkModel(LOAD_FROM_STORAGE, DONT_SAVE_TO_STORAGE);
+  EXPECT_EQ(6, model_->bookmark_bar_node()->GetTotalNodeCount());
+  // Add a bookmark under f1 when sync is off so that f1 will not be
+  // deleted even when f1 matches delete journal because it's not empty.
+  model_->AddURL(model_->bookmark_bar_node()->GetChild(1),
+                 0, UTF8ToUTF16("local"), GURL("http://www.youtube.com"));
+  // Sync model has fixed bookmarks nodes and u3.
+  EXPECT_EQ(fixed_sync_bk_count + 1, GetSyncBookmarkCount());
+  StartSync();
+  // Expect 4 bookmarks after model association because u2, f2, u1 are removed
+  // by delete journal, f1 is not removed by delete journal because it's
+  // not empty due to www.youtube.com added above.
+  EXPECT_EQ(4, model_->bookmark_bar_node()->GetTotalNodeCount());
+  EXPECT_EQ(UTF8ToUTF16("URL 0"),
+            model_->bookmark_bar_node()->GetChild(0)->GetTitle());
+  EXPECT_EQ(UTF8ToUTF16("Folder 1"),
+            model_->bookmark_bar_node()->GetChild(1)->GetTitle());
+  EXPECT_EQ(UTF8ToUTF16("local"),
+            model_->bookmark_bar_node()->GetChild(1)->GetChild(0)->GetTitle());
+  StopSync();
+
+  // Verify purging of delete journals.
+  // Delete journals for u2, f2, u1 remains because they are used in last
+  // association.
+  EXPECT_EQ(3u, test_user_share_.GetDeleteJournalSize());
+  StartSync();
+  StopSync();
+  // Reload again and all delete journals should be gone because none is used
+  // in last association.
+  ASSERT_TRUE(test_user_share_.Reload());
+  EXPECT_EQ(0u, test_user_share_.GetDeleteJournalSize());
 }
 
 struct TestData {
@@ -1637,7 +1759,7 @@ void ProfileSyncServiceBookmarkTestWithData::ExpectTransactionVersionMatch(
   BookmarkNodeVersionMap bnodes_versions;
   GetTransactionVersions(node, &bnodes_versions);
   for (BookmarkNodeVersionMap::const_iterator it = bnodes_versions.begin();
-      it != bnodes_versions.end(); ++it) {
+       it != bnodes_versions.end(); ++it) {
     syncer::ReadNode sync_node(&trans);
     ASSERT_TRUE(model_associator_->InitSyncNodeFromChromeId(it->first,
                                                             &sync_node));
@@ -1691,8 +1813,8 @@ TEST_F(ProfileSyncServiceBookmarkTestWithData, UpdateTransactionVersion) {
   //                siblings will not get updated and the hack below can be
   //                removed.
   model_->SetNodeMetaInfo(bookmark_bar->GetChild(0),
-                          kBookmarkTransactionVersionKey, "43");
-  initial_versions[bookmark_bar->GetChild(0)->id()] = 43;
+                          kBookmarkTransactionVersionKey, "41");
+  initial_versions[bookmark_bar->GetChild(0)->id()] = 41;
   ExpectTransactionVersionMatch(model_->bookmark_bar_node(), initial_versions);
   ExpectTransactionVersionMatch(model_->other_node(), initial_versions);
   ExpectTransactionVersionMatch(model_->mobile_node(), initial_versions);

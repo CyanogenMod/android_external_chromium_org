@@ -26,10 +26,9 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "net/base/ssl_cert_request_info.h"
-#include "net/base/ssl_connection_status_flags.h"
 #include "net/base/upload_data_stream.h"
 #include "net/http/http_auth.h"
 #include "net/http/http_auth_handler.h"
@@ -57,6 +56,8 @@
 #include "net/spdy/spdy_http_stream.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
+#include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 
 using base::Time;
 
@@ -111,13 +112,15 @@ Value* NetLogSSLVersionFallbackCallback(const GURL* url,
 
 //-----------------------------------------------------------------------------
 
-HttpNetworkTransaction::HttpNetworkTransaction(HttpNetworkSession* session)
+HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
+                                               HttpNetworkSession* session)
     : pending_auth_target_(HttpAuth::AUTH_NONE),
       ALLOW_THIS_IN_INITIALIZER_LIST(io_callback_(
           base::Bind(&HttpNetworkTransaction::OnIOComplete,
                      base::Unretained(this)))),
       session_(session),
       request_(NULL),
+      priority_(priority),
       headers_valid_(false),
       logged_response_time_(false),
       request_headers_(),
@@ -384,6 +387,26 @@ UploadProgress HttpNetworkTransaction::GetUploadProgress() const {
   return static_cast<HttpStream*>(stream_.get())->GetUploadProgress();
 }
 
+bool HttpNetworkTransaction::GetLoadTimingInfo(
+    LoadTimingInfo* load_timing_info) const {
+  if (!stream_ || !stream_->GetLoadTimingInfo(load_timing_info))
+    return false;
+
+  load_timing_info->proxy_resolve_start =
+      proxy_info_.proxy_resolve_start_time();
+  load_timing_info->proxy_resolve_end = proxy_info_.proxy_resolve_end_time();
+  load_timing_info->send_start = send_start_time_;
+  load_timing_info->send_end = send_end_time_;
+  load_timing_info->receive_headers_end = receive_headers_end_;
+  return true;
+}
+
+void HttpNetworkTransaction::SetPriority(RequestPriority priority) {
+  priority_ = priority;
+  // TODO(akalin): Plumb this through to |stream_request_| and
+  // |stream_|.
+}
+
 void HttpNetworkTransaction::OnStreamReady(const SSLConfig& used_ssl_config,
                                            const ProxyInfo& used_proxy_info,
                                            HttpStreamBase* stream) {
@@ -608,6 +631,7 @@ int HttpNetworkTransaction::DoCreateStream() {
   stream_request_.reset(
       session_->http_stream_factory()->RequestStream(
           *request_,
+          priority_,
           server_ssl_config_,
           proxy_ssl_config_,
           this,
@@ -640,7 +664,7 @@ int HttpNetworkTransaction::DoCreateStreamComplete(int result) {
 int HttpNetworkTransaction::DoInitStream() {
   DCHECK(stream_.get());
   next_state_ = STATE_INIT_STREAM_COMPLETE;
-  return stream_->InitializeStream(request_, net_log_, io_callback_);
+  return stream_->InitializeStream(request_, priority_, net_log_, io_callback_);
 }
 
 int HttpNetworkTransaction::DoInitStreamComplete(int result) {
@@ -716,14 +740,14 @@ void HttpNetworkTransaction::BuildRequestHeaders(bool using_proxy) {
   }
 
   // Add a content length header?
-  if (request_body_.get()) {
-    if (request_body_->is_chunked()) {
+  if (request_->upload_data_stream) {
+    if (request_->upload_data_stream->is_chunked()) {
       request_headers_.SetHeader(
           HttpRequestHeaders::kTransferEncoding, "chunked");
     } else {
       request_headers_.SetHeader(
           HttpRequestHeaders::kContentLength,
-          base::Uint64ToString(request_body_->size()));
+          base::Uint64ToString(request_->upload_data_stream->size()));
     }
   } else if (request_->method == "POST" || request_->method == "PUT" ||
              request_->method == "HEAD") {
@@ -754,20 +778,15 @@ void HttpNetworkTransaction::BuildRequestHeaders(bool using_proxy) {
 
 int HttpNetworkTransaction::DoInitRequestBody() {
   next_state_ = STATE_INIT_REQUEST_BODY_COMPLETE;
-  request_body_.reset(NULL);
   int rv = OK;
-  if (request_->upload_data) {
-    request_body_.reset(new UploadDataStream(request_->upload_data));
-    rv = request_body_->Init(io_callback_);
-  }
+  if (request_->upload_data_stream)
+    rv = request_->upload_data_stream->Init(io_callback_);
   return rv;
 }
 
 int HttpNetworkTransaction::DoInitRequestBodyComplete(int result) {
   if (result == OK)
     next_state_ = STATE_BUILD_REQUEST;
-  else
-    request_body_.reset(NULL);
   return result;
 }
 
@@ -793,13 +812,14 @@ int HttpNetworkTransaction::DoBuildRequestComplete(int result) {
 }
 
 int HttpNetworkTransaction::DoSendRequest() {
+  send_start_time_ = base::TimeTicks::Now();
   next_state_ = STATE_SEND_REQUEST_COMPLETE;
 
-  return stream_->SendRequest(
-      request_headers_, request_body_.get(), &response_, io_callback_);
+  return stream_->SendRequest(request_headers_, &response_, io_callback_);
 }
 
 int HttpNetworkTransaction::DoSendRequestComplete(int result) {
+  send_end_time_ = base::TimeTicks::Now();
   if (result < 0)
     return HandleIOError(result);
   next_state_ = STATE_READ_HEADERS;
@@ -822,6 +842,8 @@ int HttpNetworkTransaction::HandleConnectionClosedBeforeEndOfHeaders() {
 }
 
 int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
+  receive_headers_end_ = base::TimeTicks::Now();
+
   // We can get a certificate error or ERR_SSL_CLIENT_AUTH_CERT_NEEDED here
   // due to SSL renegotiation.
   if (IsCertificateError(result)) {
@@ -1065,7 +1087,7 @@ void HttpNetworkTransaction::LogTransactionConnectedMetrics() {
   // Currently, non-HIGHEST priority requests are frame or sub-frame resource
   // types.  This will change when we also prioritize certain subresources like
   // css, js, etc.
-  if (request_->priority != HIGHEST) {
+  if (priority_ != HIGHEST) {
     UMA_HISTOGRAM_CUSTOM_TIMES(
         "Net.Priority_High_Latency_b",
         total_duration,
@@ -1161,16 +1183,11 @@ int HttpNetworkTransaction::HandleCertificateRequest(int error) {
   // is likely to accept, based on the criteria supplied in the
   // CertificateRequest message.
   if (client_cert) {
-    const std::vector<scoped_refptr<X509Certificate> >& client_certs =
-        response_.cert_request_info->client_certs;
-    bool cert_still_valid = false;
-    for (size_t i = 0; i < client_certs.size(); ++i) {
-      if (client_cert->Equals(client_certs[i])) {
-        cert_still_valid = true;
-        break;
-      }
-    }
+    const std::vector<std::string>& cert_authorities =
+        response_.cert_request_info->cert_authorities;
 
+    bool cert_still_valid = cert_authorities.empty() ||
+        client_cert->IsIssuedByEncoded(cert_authorities);
     if (!cert_still_valid)
       return error;
   }
@@ -1312,6 +1329,10 @@ void HttpNetworkTransaction::ResetStateForRestart() {
 }
 
 void HttpNetworkTransaction::ResetStateForAuthRestart() {
+  send_start_time_ = base::TimeTicks();
+  send_end_time_ = base::TimeTicks();
+  receive_headers_end_ = base::TimeTicks();
+
   pending_auth_target_ = HttpAuth::AUTH_NONE;
   read_buf_ = NULL;
   read_buf_len_ = 0;

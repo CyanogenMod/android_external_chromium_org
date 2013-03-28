@@ -9,20 +9,22 @@
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/i18n/icu_util.h"
+#include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/thumbnail_score.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/public/browser/browser_thread.h"
@@ -32,6 +34,10 @@
 #include "ui/base/ui_base_paths.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 
+#if defined(TOOLKIT_GTK)
+#include <gtk/gtk.h>
+#endif
+
 using base::Time;
 using content::BrowserThread;
 
@@ -40,6 +46,21 @@ using content::BrowserThread;
 enum Types {
   TOP_SITES = 1 << 0,
   FULL_TEXT = 1 << 1
+};
+
+// RAII for initializing and shutting down the TestBrowserProcess
+class InitBrowserProcess {
+ public:
+  InitBrowserProcess() {
+    DCHECK(!g_browser_process);
+    g_browser_process = new TestingBrowserProcess;
+  }
+
+  ~InitBrowserProcess() {
+    DCHECK(g_browser_process);
+    delete g_browser_process;
+    g_browser_process = NULL;
+  }
 };
 
 // Probabilities of different word lengths, as measured from Darin's profile.
@@ -60,20 +81,20 @@ int RandomInt(int min, int max) {
 }
 
 // Return a string of |count| lowercase random characters.
-std::wstring RandomChars(int count) {
-  std::wstring str;
+string16 RandomChars(int count) {
+  string16 str;
   for (int i = 0; i < count; ++i)
     str += L'a' + rand() % 26;
   return str;
 }
 
-std::wstring RandomWord() {
+string16 RandomWord() {
   // TODO(evanm): should we instead use the markov chain based
   // version of this that I already wrote?
 
   // Sample a word length from kWordLengthProbabilities.
   float sample = RandomFloat();
-  int i;
+  size_t i;
   for (i = 0; i < arraysize(kWordLengthProbabilities); ++i) {
     sample -= kWordLengthProbabilities[i];
     if (sample < 0) break;
@@ -83,8 +104,8 @@ std::wstring RandomWord() {
 }
 
 // Return a string of |count| random words.
-std::wstring RandomWords(int count) {
-  std::wstring str;
+string16 RandomWords(int count) {
+  string16 str;
   for (int i = 0; i < count; ++i) {
     if (!str.empty())
       str += L' ';
@@ -95,17 +116,17 @@ std::wstring RandomWords(int count) {
 
 // Return a random URL-looking string.
 GURL ConstructRandomURL() {
-  return GURL(std::wstring(L"http://") + RandomChars(3) + L".com/" +
+  return GURL(ASCIIToUTF16("http://") + RandomChars(3) + ASCIIToUTF16(".com/") +
       RandomChars(RandomInt(5, 20)));
 }
 
 // Return a random page title-looking string.
-std::wstring ConstructRandomTitle() {
+string16 ConstructRandomTitle() {
   return RandomWords(RandomInt(3, 15));
 }
 
 // Return a random string that could function as page contents.
-std::wstring ConstructRandomPage() {
+string16 ConstructRandomPage() {
   return RandomWords(RandomInt(10, 4000));
 }
 
@@ -184,7 +205,7 @@ void InsertURLBatch(Profile* profile,
     if (types & TOP_SITES && top_sites) {
       const SkBitmap& bitmap = (RandomInt(0, 2) == 0) ? *google_bitmap :
                                                         *weewar_bitmap;
-      gfx::Image image(bitmap);
+      gfx::Image image = gfx::Image::CreateFrom1xBitmap(bitmap);
       top_sites->SetPageThumbnail(url, image, score);
     }
 
@@ -195,7 +216,7 @@ void InsertURLBatch(Profile* profile,
   }
 }
 
-int main(int argc, const char* argv[]) {
+int main(int argc, char* argv[]) {
   CommandLine::Init(argc, argv);
   base::EnableTerminationOnHeapCorruption();
   base::AtExitManager exit_manager;
@@ -218,29 +239,30 @@ int main(int argc, const char* argv[]) {
   }
 
   int url_count = 0;
-  base::StringToInt(WideToUTF8(args[0]), &url_count);
-  FilePath dst_dir(args[1]);
+  base::StringToInt(args[0], &url_count);
+  base::FilePath dst_dir(args[1]);
   if (!dst_dir.IsAbsolute()) {
-    FilePath current_dir;
+    base::FilePath current_dir;
     file_util::GetCurrentDirectory(&current_dir);
     dst_dir = current_dir.Append(dst_dir);
   }
   if (!file_util::CreateDirectory(dst_dir)) {
-    printf("Unable to create directory %ls: %d\n",
-           dst_dir.value().c_str(),
-           ::GetLastError());
+    PLOG(ERROR) << "Unable to create directory " << dst_dir.value().c_str();
   }
 
   icu_util::Initialize();
+  // Copied from base/test/test_suite.cc.
+#if defined(TOOLKIT_GTK)
+  gtk_init_check(&argc, &argv);
+#endif
 
+  InitBrowserProcess initialize_browser_process;
   chrome::RegisterPathProvider();
   ui::RegisterPathProvider();
-  ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
-  scoped_ptr<content::NotificationService> notification_service(
-      content::NotificationService::Create());
   MessageLoopForUI message_loop;
   content::BrowserThreadImpl ui_thread(BrowserThread::UI, &message_loop);
   content::BrowserThreadImpl db_thread(BrowserThread::DB, &message_loop);
+  ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
   TestingProfile profile;
   profile.CreateHistoryService(false, false);
   if (types & TOP_SITES) {
@@ -257,7 +279,7 @@ int main(int argc, const char* argv[]) {
     const int batch_size = std::min(kBatchSize, url_count - page_id);
     InsertURLBatch(&profile, page_id, batch_size, types);
     // Run all pending messages to give TopSites a chance to catch up.
-    message_loop.RunAllPending();
+    message_loop.RunUntilIdle();
     page_id += batch_size;
   }
 
@@ -266,18 +288,19 @@ int main(int argc, const char* argv[]) {
   profile.DestroyTopSites();
   profile.DestroyHistoryService();
 
-  message_loop.RunAllPending();
+  message_loop.RunUntilIdle();
 
   file_util::FileEnumerator file_iterator(profile.GetPath(), false,
       file_util::FileEnumerator::FILES);
-  FilePath path = file_iterator.Next();
+  base::FilePath path = file_iterator.Next();
   while (!path.empty()) {
-    FilePath dst_file = dst_dir.Append(path.BaseName());
+    base::FilePath dst_file = dst_dir.Append(path.BaseName());
     file_util::Delete(dst_file, false);
-    printf("Copying file %ls to %ls\n", path.value().c_str(),
+    printf("Copying file %" PRFilePath " to "
+           "%" PRFilePath "\n", path.value().c_str(),
            dst_file.value().c_str());
     if (!file_util::CopyFile(path, dst_file)) {
-      printf("Copying file failed: %d\n", ::GetLastError());
+      PLOG(ERROR) << "Copying file failed";
       return -1;
     }
     path = file_iterator.Next();

@@ -5,44 +5,56 @@
 #ifndef REMOTING_HOST_DESKTOP_ENVIRONMENT_H_
 #define REMOTING_HOST_DESKTOP_ENVIRONMENT_H_
 
+#include <string>
+
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}  // namespace base
+
+namespace media {
+class ScreenCapturer;
+}  // namespace media
 
 namespace remoting {
 
 class AudioCapturer;
-class EventExecutor;
-class VideoFrameCapturer;
+class ClientSessionControl;
+class InputInjector;
+class ScreenControls;
 
-namespace protocol {
-class ClipboardStub;
-}
-
+// Provides factory methods for creation of audio/video capturers and event
+// executor for a given desktop environment.
 class DesktopEnvironment {
  public:
-  DesktopEnvironment(scoped_ptr<AudioCapturer> audio_capturer,
-                     scoped_ptr<EventExecutor> event_executor,
-                     scoped_ptr<VideoFrameCapturer> video_capturer);
-  virtual ~DesktopEnvironment();
+  virtual ~DesktopEnvironment() {}
 
-  AudioCapturer* audio_capturer() const { return audio_capturer_.get(); }
-  EventExecutor* event_executor() const { return event_executor_.get(); }
-  VideoFrameCapturer* video_capturer() const { return video_capturer_.get(); }
+  // Factory methods used to create audio/video capturers, event executor, and
+  // screen controls object for a particular desktop environment.
+  virtual scoped_ptr<AudioCapturer> CreateAudioCapturer() = 0;
+  virtual scoped_ptr<InputInjector> CreateInputInjector() = 0;
+  virtual scoped_ptr<ScreenControls> CreateScreenControls() = 0;
+  virtual scoped_ptr<media::ScreenCapturer> CreateVideoCapturer() = 0;
+};
 
-  virtual void Start(
-      scoped_ptr<protocol::ClipboardStub> client_clipboard);
+// Used to create |DesktopEnvironment| instances.
+class DesktopEnvironmentFactory {
+ public:
+  virtual ~DesktopEnvironmentFactory() {}
 
- private:
-  // Used to capture audio to deliver to clients.
-  scoped_ptr<AudioCapturer> audio_capturer_;
+  // Creates an instance of |DesktopEnvironment|. |client_session_control| must
+  // outlive |this|.
+  virtual scoped_ptr<DesktopEnvironment> Create(
+      base::WeakPtr<ClientSessionControl> client_session_control) = 0;
 
-  // Executes input and clipboard events received from the client.
-  scoped_ptr<EventExecutor> event_executor_;
-
-  // Used to capture video to deliver to clients.
-  scoped_ptr<VideoFrameCapturer> video_capturer_;
-
-  DISALLOW_COPY_AND_ASSIGN(DesktopEnvironment);
+  // Returns |true| if created |DesktopEnvironment| instances support audio
+  // capture.
+  virtual bool SupportsAudioCapture() const = 0;
 };
 
 }  // namespace remoting

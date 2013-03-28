@@ -8,17 +8,16 @@
 #include <cmath>
 #include <set>
 
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/search/search.h"
-#include "chrome/browser/ui/search/search_model.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_delegate.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/host_zoom_map.h"
@@ -40,10 +39,11 @@
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/gfx/text_utils.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/menu_button.h"
-#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_item_view.h"
@@ -53,7 +53,7 @@
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
-#include "ui/base/native_theme/native_theme_aura.h"
+#include "ui/native_theme/native_theme_aura.h"
 #endif
 
 using content::HostZoomMap;
@@ -63,23 +63,17 @@ using ui::MenuModel;
 using views::CustomButton;
 using views::ImageButton;
 using views::Label;
+using views::LabelButton;
 using views::MenuConfig;
 using views::MenuItemView;
-using views::TextButton;
 using views::View;
 
 namespace {
 
 // Colors used for buttons.
-const SkColor kHotBorderColor = SkColorSetARGB(72, 0, 0, 0);
-const SkColor kBorderColor = SkColorSetARGB(36, 0, 0, 0);
-const SkColor kPushedBorderColor = SkColorSetARGB(72, 0, 0, 0);
-const SkColor kHotBackgroundColor = SkColorSetARGB(204, 255, 255, 255);
-const SkColor kBackgroundColor = SkColorSetARGB(102, 255, 255, 255);
-const SkColor kPushedBackgroundColor = SkColorSetARGB(13, 0, 0, 0);
-const SkColor kTouchBackgroundColor = SkColorSetARGB(247, 255, 255, 255);
-const SkColor kHotTouchBackgroundColor = SkColorSetARGB(247, 242, 242, 242);
-const SkColor kPushedTouchBackgroundColor = SkColorSetARGB(247, 235, 235, 235);
+const SkColor kEnabledTouchBackgroundColor = SkColorSetARGB(247, 255, 255, 255);
+const SkColor kHoverTouchBackgroundColor = SkColorSetARGB(247, 242, 242, 242);
+const SkColor kFocusedTouchBackgroundColor = SkColorSetARGB(247, 235, 235, 235);
 
 const SkColor kTouchButtonText = 0xff5a5a5a;
 
@@ -100,10 +94,10 @@ class FullscreenButton : public ImageButton {
   // Overridden from ImageButton.
   virtual gfx::Size GetPreferredSize() OVERRIDE {
     gfx::Size pref = ImageButton::GetPreferredSize();
-    gfx::Insets insets;
-    if (border())
-      border()->GetInsets(&insets);
-    pref.Enlarge(insets.width(), insets.height());
+    if (border()) {
+      gfx::Insets insets = border()->GetInsets();
+      pref.Enlarge(insets.width(), insets.height());
+    }
     return pref;
   }
 
@@ -127,8 +121,8 @@ class MenuButtonBorder : public views::Border {
     // Painting of border is done in MenuButtonBackground.
   }
 
-  virtual void GetInsets(gfx::Insets* insets) const OVERRIDE {
-    *insets = insets_;
+  virtual gfx::Insets GetInsets() const OVERRIDE {
+    return insets_;
   }
 
  private:
@@ -174,7 +168,7 @@ class MenuButtonBackground : public views::Background {
   virtual void Paint(gfx::Canvas* canvas, View* view) const OVERRIDE {
     CustomButton::ButtonState state =
         (view->GetClassName() == views::Label::kViewClassName) ?
-        CustomButton::BS_NORMAL : static_cast<CustomButton*>(view)->state();
+        CustomButton::STATE_NORMAL : static_cast<CustomButton*>(view)->state();
     int w = view->width();
     int h = view->height();
 #if defined(USE_AURA)
@@ -187,58 +181,58 @@ class MenuButtonBackground : public views::Background {
       if (type_ != RIGHT_BUTTON) {
         border = 1;
         canvas->FillRect(gfx::Rect(0, 0, border, h),
-                         border_color(CustomButton::BS_NORMAL));
+                         BorderColor(view, CustomButton::STATE_NORMAL));
       }
       canvas->FillRect(gfx::Rect(border, 0, w - border, h),
                        touch_background_color(state));
       return;
     }
 #endif
+    const SkColor background = BackgroundColor(view, state);
+    const SkColor border = BorderColor(view, state);
     switch (TypeAdjustedForRTL()) {
       case LEFT_BUTTON:
-        canvas->FillRect(gfx::Rect(1, 1, w, h - 2), background_color(state));
-        canvas->FillRect(gfx::Rect(2, 0, w, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(1, 1, 1, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(0, 2, 1, h - 4), border_color(state));
-        canvas->FillRect(gfx::Rect(1, h - 2, 1, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(2, h - 1, w, 1), border_color(state));
+        canvas->FillRect(gfx::Rect(1, 1, w, h - 2), background);
+        canvas->FillRect(gfx::Rect(2, 0, w, 1), border);
+        canvas->FillRect(gfx::Rect(1, 1, 1, 1), border);
+        canvas->FillRect(gfx::Rect(0, 2, 1, h - 4), border);
+        canvas->FillRect(gfx::Rect(1, h - 2, 1, 1), border);
+        canvas->FillRect(gfx::Rect(2, h - 1, w, 1), border);
         break;
 
       case CENTER_BUTTON: {
-        canvas->FillRect(gfx::Rect(1, 1, w - 2, h - 2),
-                         background_color(state));
-        SkColor left_color = state != CustomButton::BS_NORMAL ?
-            border_color(state) : border_color(left_button_->state());
+        canvas->FillRect(gfx::Rect(1, 1, w - 2, h - 2), background);
+        SkColor left_color = state != CustomButton::STATE_NORMAL ?
+            border : BorderColor(view, left_button_->state());
         canvas->FillRect(gfx::Rect(0, 0, 1, h), left_color);
-        canvas->FillRect(gfx::Rect(1, 0, w - 2, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(1, h - 1, w - 2, 1), border_color(state));
-        SkColor right_color = state != CustomButton::BS_NORMAL ?
-            border_color(state) : border_color(right_button_->state());
+        canvas->FillRect(gfx::Rect(1, 0, w - 2, 1), border);
+        canvas->FillRect(gfx::Rect(1, h - 1, w - 2, 1),
+                         border);
+        SkColor right_color = state != CustomButton::STATE_NORMAL ?
+            border : BorderColor(view, right_button_->state());
         canvas->FillRect(gfx::Rect(w - 1, 0, 1, h), right_color);
         break;
       }
 
       case RIGHT_BUTTON:
-        canvas->FillRect(gfx::Rect(0, 1, w - 1, h - 2),
-                         background_color(state));
-        canvas->FillRect(gfx::Rect(0, 0, w - 2, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(w - 2, 1, 1, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(w - 1, 2, 1, h - 4), border_color(state));
-        canvas->FillRect(gfx::Rect(w - 2, h - 2, 1, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(0, h - 1, w - 2, 1), border_color(state));
+        canvas->FillRect(gfx::Rect(0, 1, w - 1, h - 2), background);
+        canvas->FillRect(gfx::Rect(0, 0, w - 2, 1), border);
+        canvas->FillRect(gfx::Rect(w - 2, 1, 1, 1), border);
+        canvas->FillRect(gfx::Rect(w - 1, 2, 1, h - 4), border);
+        canvas->FillRect(gfx::Rect(w - 2, h - 2, 1, 1), border);
+        canvas->FillRect(gfx::Rect(0, h - 1, w - 2, 1), border);
         break;
 
       case SINGLE_BUTTON:
-        canvas->FillRect(gfx::Rect(1, 1, w - 2, h - 2),
-                         background_color(state));
-        canvas->FillRect(gfx::Rect(2, 0, w - 4, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(1, 1, 1, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(0, 2, 1, h - 4), border_color(state));
-        canvas->FillRect(gfx::Rect(1, h - 2, 1, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(2, h - 1, w - 4, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(w - 2, 1, 1, 1), border_color(state));
-        canvas->FillRect(gfx::Rect(w - 1, 2, 1, h - 4), border_color(state));
-        canvas->FillRect(gfx::Rect(w - 2, h - 2, 1, 1), border_color(state));
+        canvas->FillRect(gfx::Rect(1, 1, w - 2, h - 2), background);
+        canvas->FillRect(gfx::Rect(2, 0, w - 4, 1), border);
+        canvas->FillRect(gfx::Rect(1, 1, 1, 1), border);
+        canvas->FillRect(gfx::Rect(0, 2, 1, h - 4), border);
+        canvas->FillRect(gfx::Rect(1, h - 2, 1, 1), border);
+        canvas->FillRect(gfx::Rect(2, h - 1, w - 4, 1), border);
+        canvas->FillRect(gfx::Rect(w - 2, 1, 1, 1), border);
+        canvas->FillRect(gfx::Rect(w - 1, 2, 1, h - 4), border);
+        canvas->FillRect(gfx::Rect(w - 2, h - 2, 1, 1), border);
         break;
 
       default:
@@ -248,27 +242,41 @@ class MenuButtonBackground : public views::Background {
   }
 
  private:
-  static SkColor border_color(CustomButton::ButtonState state) {
+  static SkColor BorderColor(View* view, CustomButton::ButtonState state) {
+    ui::NativeTheme* theme = view->GetNativeTheme();
     switch (state) {
-      case CustomButton::BS_HOT:    return kHotBorderColor;
-      case CustomButton::BS_PUSHED: return kPushedBorderColor;
-      default:                      return kBorderColor;
+      case CustomButton::STATE_HOVERED:
+        return theme->GetSystemColor(
+            ui::NativeTheme::kColorId_HoverMenuButtonBorderColor);
+      case CustomButton::STATE_PRESSED:
+        return theme->GetSystemColor(
+            ui::NativeTheme::kColorId_FocusedMenuButtonBorderColor);
+      default:
+        return theme->GetSystemColor(
+            ui::NativeTheme::kColorId_EnabledMenuButtonBorderColor);
     }
   }
 
-  static SkColor background_color(CustomButton::ButtonState state) {
+  static SkColor BackgroundColor(View* view, CustomButton::ButtonState state) {
+    ui::NativeTheme* theme = view->GetNativeTheme();
     switch (state) {
-      case CustomButton::BS_HOT:    return kHotBackgroundColor;
-      case CustomButton::BS_PUSHED: return kPushedBackgroundColor;
-      default:                      return kBackgroundColor;
+      case CustomButton::STATE_HOVERED:
+        return theme->GetSystemColor(
+            ui::NativeTheme::kColorId_HoverMenuItemBackgroundColor);
+      case CustomButton::STATE_PRESSED:
+        return theme->GetSystemColor(
+            ui::NativeTheme::kColorId_FocusedMenuItemBackgroundColor);
+      default:
+        return theme->GetSystemColor(
+            ui::NativeTheme::kColorId_MenuBackgroundColor);
     }
   }
 
   static SkColor touch_background_color(CustomButton::ButtonState state) {
     switch (state) {
-      case CustomButton::BS_HOT:    return kHotTouchBackgroundColor;
-      case CustomButton::BS_PUSHED: return kPushedTouchBackgroundColor;
-      default:                      return kTouchBackgroundColor;
+      case CustomButton::STATE_HOVERED: return kHoverTouchBackgroundColor;
+      case CustomButton::STATE_PRESSED: return kFocusedTouchBackgroundColor;
+      default:                          return kEnabledTouchBackgroundColor;
     }
   }
 
@@ -294,24 +302,6 @@ class MenuButtonBackground : public views::Background {
   DISALLOW_COPY_AND_ASSIGN(MenuButtonBackground);
 };
 
-// A View subclass that forces SchedulePaint to paint all. Normally when the
-// mouse enters/exits a button the buttons invokes SchedulePaint. As part of the
-// button border (MenuButtonBackground) is rendered by the button to the
-// left/right of it SchedulePaint on the the button may not be enough, so this
-// forces a paint all.
-class ScheduleAllView : public views::View {
- public:
-  ScheduleAllView() {}
-
-  // Overridden from views::View.
-  virtual void SchedulePaintInRect(const gfx::Rect& r) OVERRIDE {
-    View::SchedulePaintInRect(gfx::Rect(0, 0, width(), height()));
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ScheduleAllView);
-};
-
 string16 GetAccessibleNameForWrenchMenuItem(
       MenuModel* model, int item_index, int accessible_string_id) {
   string16 accessible_name = l10n_util::GetStringUTF16(accessible_string_id);
@@ -328,14 +318,24 @@ string16 GetAccessibleNameForWrenchMenuItem(
       accessible_name, accelerator_text);
 }
 
-// WrenchMenuView is a view that can contain text buttons.
-class WrenchMenuView : public ScheduleAllView, public views::ButtonListener {
+// WrenchMenuView is a view that can contain label buttons.
+class WrenchMenuView : public views::View,
+                       public views::ButtonListener {
  public:
   WrenchMenuView(WrenchMenu* menu, MenuModel* menu_model)
       : menu_(menu),
         menu_model_(menu_model) {}
 
-  TextButton* CreateAndConfigureButton(int string_id,
+  // Overridden from views::View.
+  virtual void SchedulePaintInRect(const gfx::Rect& r) OVERRIDE {
+    // Normally when the mouse enters/exits a button the buttons invokes
+    // SchedulePaint. As part of the button border (MenuButtonBackground) is
+    // rendered by the button to the left/right of it SchedulePaint on the the
+    // button may not be enough, so this forces a paint all.
+    View::SchedulePaintInRect(gfx::Rect(size()));
+  }
+
+  LabelButton* CreateAndConfigureButton(int string_id,
                                        MenuButtonBackground::ButtonType type,
                                        int index,
                                        MenuButtonBackground** background) {
@@ -343,32 +343,30 @@ class WrenchMenuView : public ScheduleAllView, public views::ButtonListener {
       string_id, type, index, background, string_id);
   }
 
-  TextButton* CreateButtonWithAccName(int string_id,
-                                      MenuButtonBackground::ButtonType type,
-                                      int index,
-                                      MenuButtonBackground** background,
-                                      int acc_string_id) {
-    TextButton* button = new TextButton(this,
-                                        l10n_util::GetStringUTF16(string_id));
+  LabelButton* CreateButtonWithAccName(int string_id,
+                                       MenuButtonBackground::ButtonType type,
+                                       int index,
+                                       MenuButtonBackground** background,
+                                       int acc_string_id) {
+    LabelButton* button = new LabelButton(this, gfx::RemoveAcceleratorChar(
+        l10n_util::GetStringUTF16(string_id), '&', NULL, NULL));
     button->SetAccessibleName(
         GetAccessibleNameForWrenchMenuItem(menu_model_, index, acc_string_id));
     button->set_focusable(true);
     button->set_request_focus_on_press(false);
     button->set_tag(index);
     button->SetEnabled(menu_model_->IsEnabledAt(index));
-    button->set_prefix_type(TextButton::PREFIX_HIDE);
     MenuButtonBackground* bg =
         new MenuButtonBackground(type, menu_->use_new_menu());
     button->set_background(bg);
     const MenuConfig& menu_config = menu_->GetMenuConfig();
-    button->SetEnabledColor(menu_config.text_color);
+    button->SetTextColor(views::Button::STATE_NORMAL, menu_config.text_color);
     if (background)
       *background = bg;
     button->set_border(
         new MenuButtonBorder(menu_config, menu_->use_new_menu()));
-    button->set_alignment(TextButton::ALIGN_CENTER);
+    button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     button->SetFont(menu_config.font);
-    button->ClearMaxTextSize();
     AddChildView(button);
     return button;
   }
@@ -420,19 +418,20 @@ class WrenchMenu::CutCopyPasteView : public WrenchMenuView {
  public:
   CutCopyPasteView(WrenchMenu* menu,
                    MenuModel* menu_model,
+                   const ui::NativeTheme* native_theme,
                    int cut_index,
                    int copy_index,
                    int paste_index)
       : WrenchMenuView(menu, menu_model) {
-    TextButton* cut = CreateAndConfigureButton(
+    LabelButton* cut = CreateAndConfigureButton(
         IDS_CUT, MenuButtonBackground::LEFT_BUTTON, cut_index, NULL);
 
     MenuButtonBackground* copy_background = NULL;
-    TextButton* copy = CreateAndConfigureButton(
+    LabelButton* copy = CreateAndConfigureButton(
         IDS_COPY, MenuButtonBackground::CENTER_BUTTON, copy_index,
         &copy_background);
 
-    TextButton* paste = CreateAndConfigureButton(
+    LabelButton* paste = CreateAndConfigureButton(
         IDS_PASTE,
         menu_->use_new_menu() && menu_->supports_new_separators_ ?
             MenuButtonBackground::CENTER_BUTTON :
@@ -440,9 +439,15 @@ class WrenchMenu::CutCopyPasteView : public WrenchMenuView {
         paste_index,
         NULL);
     if (menu_->use_new_menu()) {
-      cut->SetEnabledColor(kTouchButtonText);
-      copy->SetEnabledColor(kTouchButtonText);
-      paste->SetEnabledColor(kTouchButtonText);
+      cut->SetTextColor(views::Button::STATE_NORMAL, kTouchButtonText);
+      copy->SetTextColor(views::Button::STATE_NORMAL, kTouchButtonText);
+      paste->SetTextColor(views::Button::STATE_NORMAL, kTouchButtonText);
+    } else {
+      SkColor text_color = native_theme->GetSystemColor(
+          ui::NativeTheme::kColorId_EnabledMenuItemForegroundColor);
+      cut->SetTextColor(views::Button::STATE_NORMAL, text_color);
+      copy->SetTextColor(views::Button::STATE_NORMAL, text_color);
+      paste->SetTextColor(views::Button::STATE_NORMAL, text_color);
     }
     copy_background->SetOtherButtons(cut, paste);
   }
@@ -488,21 +493,27 @@ static const int kTouchZoomPadding = 14;
 // ZoomView contains the various zoom controls: two buttons to increase/decrease
 // the zoom, a label showing the current zoom percent, and a button to go
 // full-screen.
-class WrenchMenu::ZoomView : public WrenchMenuView,
-                             public content::NotificationObserver {
+class WrenchMenu::ZoomView : public WrenchMenuView {
  public:
   ZoomView(WrenchMenu* menu,
            MenuModel* menu_model,
+           const ui::NativeTheme* native_theme,
            int decrement_index,
            int increment_index,
            int fullscreen_index)
       : WrenchMenuView(menu, menu_model),
         fullscreen_index_(fullscreen_index),
+        zoom_callback_(base::Bind(&WrenchMenu::ZoomView::OnZoomLevelChanged,
+                                  base::Unretained(this))),
         increment_button_(NULL),
         zoom_label_(NULL),
         decrement_button_(NULL),
         fullscreen_button_(NULL),
         zoom_label_width_(0) {
+    HostZoomMap::GetForBrowserContext(
+        menu_->browser_->profile())->AddZoomLevelChangedCallback(
+            zoom_callback_);
+
     decrement_button_ = CreateButtonWithAccName(
         IDS_ZOOM_MINUS2, MenuButtonBackground::LEFT_BUTTON, decrement_index,
         NULL, IDS_ACCNAME_ZOOM_MINUS2);
@@ -536,13 +547,27 @@ class WrenchMenu::ZoomView : public WrenchMenuView,
     gfx::ImageSkia* full_screen_image =
         ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
             IDR_FULLSCREEN_MENU_BUTTON);
-    fullscreen_button_->SetImage(ImageButton::BS_NORMAL, full_screen_image);
+    fullscreen_button_->SetImage(ImageButton::STATE_NORMAL, full_screen_image);
     if (menu_->use_new_menu()) {
       zoom_label_->SetEnabledColor(kTouchButtonText);
-      decrement_button_->SetEnabledColor(kTouchButtonText);
-      increment_button_->SetEnabledColor(kTouchButtonText);
+      decrement_button_->SetTextColor(views::Button::STATE_NORMAL,
+                                      kTouchButtonText);
+      increment_button_->SetTextColor(views::Button::STATE_NORMAL,
+                                      kTouchButtonText);
     } else {
-      zoom_label_->SetEnabledColor(menu_config.text_color);
+      SkColor enabled_text_color = native_theme->GetSystemColor(
+          ui::NativeTheme::kColorId_EnabledMenuItemForegroundColor);
+      zoom_label_->SetEnabledColor(enabled_text_color);
+      decrement_button_->SetTextColor(views::Button::STATE_NORMAL,
+                                      enabled_text_color);
+      increment_button_->SetTextColor(views::Button::STATE_NORMAL,
+                                      enabled_text_color);
+      SkColor disabled_text_color = native_theme->GetSystemColor(
+          ui::NativeTheme::kColorId_DisabledMenuItemForegroundColor);
+      decrement_button_->SetTextColor(views::Button::STATE_DISABLED,
+                                      disabled_text_color);
+      increment_button_->SetTextColor(views::Button::STATE_DISABLED,
+                                      disabled_text_color);
     }
 
     fullscreen_button_->set_focusable(true);
@@ -563,11 +588,12 @@ class WrenchMenu::ZoomView : public WrenchMenuView,
     AddChildView(fullscreen_button_);
 
     UpdateZoomControls();
+  }
 
-    registrar_.Add(
-        this, content::NOTIFICATION_ZOOM_LEVEL_CHANGED,
-        content::Source<HostZoomMap>(
-            HostZoomMap::GetForBrowserContext(menu->browser_->profile())));
+  virtual ~ZoomView() {
+    HostZoomMap::GetForBrowserContext(
+        menu_->browser_->profile())->RemoveZoomLevelChangedCallback(
+            zoom_callback_);
   }
 
   // Overridden from View.
@@ -621,35 +647,21 @@ class WrenchMenu::ZoomView : public WrenchMenuView,
     }
   }
 
-  // Overridden from content::NotificationObserver.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-    DCHECK_EQ(content::NOTIFICATION_ZOOM_LEVEL_CHANGED, type);
+ private:
+  void OnZoomLevelChanged(const HostZoomMap::ZoomLevelChange& change) {
     UpdateZoomControls();
   }
 
- private:
   void UpdateZoomControls() {
+    bool enable_increment = false;
+    bool enable_decrement = false;
+    WebContents* selected_tab =
+        menu_->browser_->tab_strip_model()->GetActiveWebContents();
     int zoom = 100;
-    // Don't override initial states of increment and decrement buttons when
-    // instant extended API is enabled and mode is NTP; they are properly
-    // updated in ToolbarView::ModeChanged() via CommandUpdater, and queried
-    // via WrenchMenuModel::IsCommandIdEnabled() when the buttons were created
-    // in CreateButtonWithAccName().
-    if (!(chrome::search::IsInstantExtendedAPIEnabled(
-              menu_->browser_->profile()) &&
-          menu_->browser_->search_model()->mode().is_ntp())) {
-      bool enable_increment = false;
-      bool enable_decrement = false;
-      WebContents* selected_tab = chrome::GetActiveWebContents(menu_->browser_);
-      if (selected_tab) {
-        zoom = selected_tab->GetZoomPercent(&enable_increment,
-                                            &enable_decrement);
-      }
-      increment_button_->SetEnabled(enable_increment);
-      decrement_button_->SetEnabled(enable_decrement);
-    }
+    if (selected_tab)
+      zoom = selected_tab->GetZoomPercent(&enable_increment, &enable_decrement);
+    increment_button_->SetEnabled(enable_increment);
+    decrement_button_->SetEnabled(enable_decrement);
     zoom_label_->SetText(
         l10n_util::GetStringFUTF16Int(IDS_ZOOM_PERCENT, zoom));
 
@@ -659,13 +671,13 @@ class WrenchMenu::ZoomView : public WrenchMenuView,
   // Calculates the max width the zoom string can be.
   int MaxWidthForZoomLabel() {
     gfx::Font font = zoom_label_->font();
-    gfx::Insets insets;
-    if (zoom_label_->border())
-      zoom_label_->border()->GetInsets(&insets);
+    int border_width =
+        zoom_label_->border() ? zoom_label_->border()->GetInsets().width() : 0;
 
     int max_w = 0;
 
-    WebContents* selected_tab = chrome::GetActiveWebContents(menu_->browser_);
+    WebContents* selected_tab =
+        menu_->browser_->tab_strip_model()->GetActiveWebContents();
     if (selected_tab) {
       int min_percent = selected_tab->GetMinimumZoomPercent();
       int max_percent = selected_tab->GetMaximumZoomPercent();
@@ -681,22 +693,23 @@ class WrenchMenu::ZoomView : public WrenchMenuView,
           l10n_util::GetStringFUTF16Int(IDS_ZOOM_PERCENT, 100));
     }
 
-    return max_w + insets.width();
+    return max_w + border_width;
   }
 
   // Index of the fullscreen menu item in the model.
   const int fullscreen_index_;
 
+  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
   content::NotificationRegistrar registrar_;
 
   // Button for incrementing the zoom.
-  TextButton* increment_button_;
+  LabelButton* increment_button_;
 
   // Label showing zoom as a percent.
   Label* zoom_label_;
 
   // Button for decrementing the zoom.
-  TextButton* decrement_button_;
+  LabelButton* decrement_button_;
 
   ImageButton* fullscreen_button_;
 
@@ -704,6 +717,56 @@ class WrenchMenu::ZoomView : public WrenchMenuView,
   int zoom_label_width_;
 
   DISALLOW_COPY_AND_ASSIGN(ZoomView);
+};
+
+// RecentTabsMenuModelDelegate -------------------------------------------------
+
+// Provides the ui::MenuModelDelegate implementation for RecentTabsSubMenuModel
+// items.
+class WrenchMenu::RecentTabsMenuModelDelegate : public ui::MenuModelDelegate {
+ public:
+  RecentTabsMenuModelDelegate(ui::MenuModel* model,
+                              views::MenuItemView* menu_item)
+      : model_(model),
+        menu_item_(menu_item) {
+    model_->SetMenuModelDelegate(this);
+  }
+
+  virtual ~RecentTabsMenuModelDelegate() {
+    model_->SetMenuModelDelegate(NULL);
+  }
+
+  // ui::MenuModelDelegate implementation:
+  virtual void OnIconChanged(int index) OVERRIDE {
+    // |index| specifies position in children items of |menu_item_| starting at
+    // 0, its corresponding command id as used in the children menu item views
+    // follows that of the parent menu item view |menu_item_|.
+    int command_id = menu_item_->GetCommand() + 1 + index;
+    views::MenuItemView* item = menu_item_->GetMenuItemByID(command_id);
+    DCHECK(item);
+    gfx::Image icon;
+    if (model_->GetIconAt(index, &icon))
+      item->SetIcon(*icon.ToImageSkia());
+  }
+
+  // Return the specific menu width of recent tab menu item if |command_id|
+  // refers to one of recent tabs menu items, else return -1.
+  int GetMaxWidthForMenu(MenuItemView* menu) {
+    views::SubmenuView* submenu = menu_item_->GetSubmenu();
+    if (!submenu)
+      return -1;
+    const int kMaxMenuItemWidth = 320;
+    return menu->GetCommand() >= menu_item_->GetCommand() &&
+        menu->GetCommand() <=
+            menu_item_->GetCommand() + submenu->GetMenuItemCount() ?
+        kMaxMenuItemWidth : -1;
+  }
+
+ private:
+  ui::MenuModel* model_;
+  views::MenuItemView* menu_item_;
+
+  DISALLOW_COPY_AND_ASSIGN(RecentTabsMenuModelDelegate);
 };
 
 // WrenchMenu ------------------------------------------------------------------
@@ -767,11 +830,15 @@ bool WrenchMenu::IsShowing() {
   return menu_runner_.get() && menu_runner_->IsRunning();
 }
 
-const views::MenuConfig& WrenchMenu::GetMenuConfig() const {
+const ui::NativeTheme* WrenchMenu::GetNativeTheme() const {
   views::Widget* browser_widget = views::Widget::GetWidgetForNativeView(
       browser_->window()->GetNativeWindow());
   DCHECK(browser_widget);
-  return MenuConfig::instance(browser_widget->GetNativeTheme());
+  return browser_widget->GetNativeTheme();
+}
+
+const views::MenuConfig& WrenchMenu::GetMenuConfig() const {
+  return MenuConfig::instance(GetNativeTheme());
 }
 
 string16 WrenchMenu::GetTooltipText(int id,
@@ -856,9 +923,17 @@ int WrenchMenu::GetDragOperations(MenuItemView* sender) {
 }
 
 int WrenchMenu::GetMaxWidthForMenu(MenuItemView* menu) {
-  return is_bookmark_command(menu->GetCommand()) ?
-      bookmark_menu_delegate_->GetMaxWidthForMenu(menu) :
-      MenuDelegate::GetMaxWidthForMenu(menu);
+  if (is_bookmark_command(menu->GetCommand()))
+    return bookmark_menu_delegate_->GetMaxWidthForMenu(menu);
+  int max_width = -1;
+  // If recent tabs menu is available, it will decide if |menu| is one of recent
+  // tabs; if yes, it would return the menu width for recent tabs.
+  // otherwise, it would return -1.
+  if (recent_tabs_menu_model_delegate_.get())
+    max_width = recent_tabs_menu_model_delegate_->GetMaxWidthForMenu(menu);
+  if (max_width == -1)
+    max_width = MenuDelegate::GetMaxWidthForMenu(menu);
+  return max_width;
 }
 
 bool WrenchMenu::IsItemChecked(int id) const {
@@ -878,9 +953,11 @@ bool WrenchMenu::IsCommandEnabled(int id) const {
 
   const Entry& entry = id_to_entry_.find(id)->second;
   int command_id = entry.first->GetCommandIdAt(entry.second);
-  // The items representing the cut menu (cut/copy/paste) are always enabled.
-  // The child views of these items enabled state updates appropriately.
-  return command_id == IDC_CUT || entry.first->IsEnabledAt(entry.second);
+  // The items representing the cut menu (cut/copy/paste) and zoom menu
+  // (increment/decrement/reset) are always enabled. The child views of these
+  // items enabled state updates appropriately.
+  return command_id == IDC_CUT || command_id == IDC_ZOOM_MINUS ||
+      entry.first->IsEnabledAt(entry.second);
 }
 
 void WrenchMenu::ExecuteCommand(int id, int mouse_event_flags) {
@@ -900,7 +977,7 @@ void WrenchMenu::ExecuteCommand(int id, int mouse_event_flags) {
     return;
   }
 
-  return entry.first->ActivatedAt(entry.second);
+  return entry.first->ActivatedAt(entry.second, mouse_event_flags);
 }
 
 bool WrenchMenu::GetAccelerator(int id, ui::Accelerator* accelerator) {
@@ -953,7 +1030,6 @@ void WrenchMenu::BookmarkModelChanged() {
     root_->Cancel();
 }
 
-
 void WrenchMenu::Observe(int type,
                          const content::NotificationSource& source,
                          const content::NotificationDetails& details) {
@@ -971,44 +1047,42 @@ void WrenchMenu::Observe(int type,
 void WrenchMenu::PopulateMenu(MenuItemView* parent,
                               MenuModel* model,
                               int* next_id) {
-  int index_offset = model->GetFirstItemIndex(NULL);
   for (int i = 0, max = model->GetItemCount(); i < max; ++i) {
-    int index = i + index_offset;
-
     // The button container menu items have a special height which we have to
     // use instead of the normal height.
     int height = 0;
     if (use_new_menu_ &&
-        (model->GetCommandIdAt(index) == IDC_CUT ||
-         model->GetCommandIdAt(index) == IDC_ZOOM_MINUS))
+        (model->GetCommandIdAt(i) == IDC_CUT ||
+         model->GetCommandIdAt(i) == IDC_ZOOM_MINUS))
       height = kMenuItemContainingButtonsHeight;
 
     MenuItemView* item = AppendMenuItem(
-        parent, model, index, model->GetTypeAt(index), next_id, height);
+        parent, model, i, model->GetTypeAt(i), next_id, height);
 
-    if (model->GetTypeAt(index) == MenuModel::TYPE_SUBMENU)
-      PopulateMenu(item, model->GetSubmenuModelAt(index), next_id);
+    if (model->GetTypeAt(i) == MenuModel::TYPE_SUBMENU)
+      PopulateMenu(item, model->GetSubmenuModelAt(i), next_id);
 
-    switch (model->GetCommandIdAt(index)) {
+    const ui::NativeTheme* native_theme = GetNativeTheme();
+
+    switch (model->GetCommandIdAt(i)) {
       case IDC_CUT:
-        DCHECK_EQ(MenuModel::TYPE_COMMAND, model->GetTypeAt(index));
+        DCHECK_EQ(MenuModel::TYPE_COMMAND, model->GetTypeAt(i));
         DCHECK_LT(i + 2, max);
-        DCHECK_EQ(IDC_COPY, model->GetCommandIdAt(index + 1));
-        DCHECK_EQ(IDC_PASTE, model->GetCommandIdAt(index + 2));
+        DCHECK_EQ(IDC_COPY, model->GetCommandIdAt(i + 1));
+        DCHECK_EQ(IDC_PASTE, model->GetCommandIdAt(i + 2));
         item->SetTitle(l10n_util::GetStringUTF16(IDS_EDIT2));
-        item->AddChildView(
-            new CutCopyPasteView(
-                this, model, index, index + 1, index + 2));
+        item->AddChildView(new CutCopyPasteView(this, model, native_theme,
+                                                i, i + 1, i + 2));
         i += 2;
         break;
 
       case IDC_ZOOM_MINUS:
-        DCHECK_EQ(MenuModel::TYPE_COMMAND, model->GetTypeAt(index));
-        DCHECK_EQ(IDC_ZOOM_PLUS, model->GetCommandIdAt(index + 1));
-        DCHECK_EQ(IDC_FULLSCREEN, model->GetCommandIdAt(index + 2));
+        DCHECK_EQ(MenuModel::TYPE_COMMAND, model->GetTypeAt(i));
+        DCHECK_EQ(IDC_ZOOM_PLUS, model->GetCommandIdAt(i + 1));
+        DCHECK_EQ(IDC_FULLSCREEN, model->GetCommandIdAt(i + 2));
         item->SetTitle(l10n_util::GetStringUTF16(IDS_ZOOM_MENU2));
-        item->AddChildView(
-            new ZoomView(this, model, index, index + 1, index + 2));
+        item->AddChildView(new ZoomView(this, model, native_theme,
+                                        i, i + 1, i + 2));
         i += 2;
         break;
 
@@ -1020,6 +1094,13 @@ void WrenchMenu::PopulateMenu(MenuItemView* parent,
       case IDC_FEEDBACK:
         DCHECK(!feedback_menu_item_);
         feedback_menu_item_ = item;
+        break;
+
+      case IDC_RECENT_TABS_MENU:
+        DCHECK(!recent_tabs_menu_model_delegate_.get());
+        recent_tabs_menu_model_delegate_.reset(
+            new RecentTabsMenuModelDelegate(model->GetSubmenuModelAt(i),
+                                            item));
         break;
 
       default:

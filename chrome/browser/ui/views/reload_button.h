@@ -68,7 +68,6 @@ class ReloadButton : public views::ButtonDropDown,
   virtual bool GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
  private:
@@ -106,7 +105,7 @@ class ReloadButton : public views::ButtonDropDown,
   // The parent class's images_ member is used for the current images,
   // and this array is used to hold the alternative images.
   // We swap between the two when changing mode.
-  gfx::ImageSkia alternate_images_[BS_COUNT];
+  gfx::ImageSkia alternate_images_[STATE_COUNT];
 
   // TESTING ONLY
   // True if we should pretend the button is hovered.

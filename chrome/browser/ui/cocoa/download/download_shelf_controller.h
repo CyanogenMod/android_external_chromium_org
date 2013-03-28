@@ -9,7 +9,6 @@
 #import "chrome/browser/ui/cocoa/view_resizer.h"
 
 @class AnimatableView;
-class BaseDownloadItemModel;
 class Browser;
 @class BrowserWindowController;
 @class DownloadItemController;
@@ -19,6 +18,7 @@ class DownloadShelf;
 @class HoverButton;
 
 namespace content {
+class DownloadItem;
 class PageNavigator;
 }
 
@@ -90,7 +90,7 @@ class PageNavigator;
 // Run when the user clicks the close button on the right side of the shelf.
 - (IBAction)hide:(id)sender;
 
-- (void)addDownloadItem:(BaseDownloadItemModel*)model;
+- (void)addDownloadItem:(content::DownloadItem*)downloadItem;
 
 // Remove a download, possibly via clearing browser data.
 - (void)remove:(DownloadItemController*)download;

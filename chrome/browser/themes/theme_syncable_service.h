@@ -33,7 +33,7 @@ class ThemeSyncableService : public syncer::SyncableService {
   void OnThemeChange();
 
   // syncer::SyncableService implementation.
-  virtual syncer::SyncError MergeDataAndStartSyncing(
+  virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
       syncer::ModelType type,
       const syncer::SyncDataList& initial_sync_data,
       scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
@@ -63,7 +63,10 @@ class ThemeSyncableService : public syncer::SyncableService {
   void SetCurrentThemeFromThemeSpecifics(
       const sync_pb::ThemeSpecifics& theme_specifics);
 
-  void GetThemeSpecificsFromCurrentTheme(
+  // If the current theme is syncable, fills in the passed |theme_specifics|
+  // structure based on the currently applied theme and returns |true|.
+  // Otherwise returns |false|.
+  bool GetThemeSpecificsFromCurrentTheme(
       sync_pb::ThemeSpecifics* theme_specifics) const;
 
   // Updates theme specifics in sync to |theme_specifics|.

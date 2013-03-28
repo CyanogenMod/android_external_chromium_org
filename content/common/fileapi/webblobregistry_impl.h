@@ -5,7 +5,8 @@
 #ifndef CONTENT_COMMON_FILEAPI_WEBBLOBREGISTRY_IMPL_H_
 #define CONTENT_COMMON_FILEAPI_WEBBLOBREGISTRY_IMPL_H_
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebBlobRegistry.h"
+#include "base/memory/ref_counted.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebBlobRegistry.h"
 
 namespace WebKit {
 class WebBlobData;
@@ -13,14 +14,13 @@ class WebURL;
 }
 
 namespace content {
-class ChildThread;
+class ThreadSafeSender;
 
 class WebBlobRegistryImpl : public WebKit::WebBlobRegistry {
  public:
-  explicit WebBlobRegistryImpl(ChildThread* child_thread);
+  explicit WebBlobRegistryImpl(ThreadSafeSender* sender);
   virtual ~WebBlobRegistryImpl();
 
-  // See WebBlobRegistry.h for documentation on these functions.
   virtual void registerBlobURL(const WebKit::WebURL& url,
                                WebKit::WebBlobData& data);
   virtual void registerBlobURL(const WebKit::WebURL& url,
@@ -28,7 +28,7 @@ class WebBlobRegistryImpl : public WebKit::WebBlobRegistry {
   virtual void unregisterBlobURL(const WebKit::WebURL& url);
 
  private:
-  ChildThread* child_thread_;
+  scoped_refptr<ThreadSafeSender> sender_;
 };
 
 }  // namespace content

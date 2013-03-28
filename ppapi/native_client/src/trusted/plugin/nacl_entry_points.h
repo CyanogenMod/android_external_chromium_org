@@ -12,15 +12,16 @@
 #include <map>
 #include <string>
 
-#include "native_client/src/shared/imc/nacl_imc.h"
+#include "native_client/src/shared/imc/nacl_imc_c.h"
 #include "ppapi/c/pp_instance.h"
+#include "ppapi/c/private/ppb_nacl_private.h"
 
-
-typedef bool (*LaunchNaClProcessFunc)(PP_Instance instance,
-                                      const char* url,
-                                      bool enable_ppapi_dev,
-                                      int socket_count,
-                                      nacl::Handle* result_sockets);
+typedef PP_NaClResult (*LaunchNaClProcessFunc)(PP_Instance instance,
+                                               const char* alleged_url,
+                                               PP_Bool uses_irt,
+                                               PP_Bool uses_ppapi,
+                                               PP_Bool enable_ppapi_dev,
+                                               NaClHandle* result_socket);
 
 
 extern LaunchNaClProcessFunc launch_nacl_process;

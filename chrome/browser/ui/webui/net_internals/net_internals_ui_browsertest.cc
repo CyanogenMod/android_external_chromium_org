@@ -7,16 +7,14 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
-#include "chrome/browser/ui/webui/web_ui_browsertest.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/render_view_host.h"
@@ -25,9 +23,9 @@
 #include "googleurl/src/gurl.h"
 #include "net/base/address_list.h"
 #include "net/base/host_cache.h"
-#include "net/base/host_resolver.h"
-#include "net/base/host_resolver_proc.h"
 #include "net/base/net_errors.h"
+#include "net/dns/host_resolver.h"
+#include "net/dns/host_resolver_proc.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_pipelined_host_capability.h"
 #include "net/http/http_transaction_factory.h"
@@ -267,7 +265,7 @@ void NetInternalsTest::MessageHandler::PrerenderPage(
 void NetInternalsTest::MessageHandler::NavigateToPrerender(
     const ListValue* list_value) {
   content::RenderViewHost* host =
-      chrome::GetWebContentsAt(browser(), 1)->GetRenderViewHost();
+      browser()->tab_strip_model()->GetWebContentsAt(1)->GetRenderViewHost();
   host->ExecuteJavascriptInWebFrame(string16(), ASCIIToUTF16("Click()"));
 }
 
@@ -284,7 +282,7 @@ void NetInternalsTest::MessageHandler::CreateIncognitoBrowser(
 void NetInternalsTest::MessageHandler::CloseIncognitoBrowser(
     const ListValue* list_value) {
   ASSERT_TRUE(incognito_browser_);
-  chrome::CloseAllTabs(incognito_browser_);
+  incognito_browser_->tab_strip_model()->CloseAllTabs();
   // Closing all a Browser's tabs will ultimately result in its destruction,
   // thought it may not have been destroyed yet.
   incognito_browser_ = NULL;
@@ -346,6 +344,7 @@ void NetInternalsTest::SetUpCommandLine(CommandLine* command_line) {
 }
 
 void NetInternalsTest::SetUpOnMainThread() {
+  WebUIBrowserTest::SetUpOnMainThread();
   // Increase the memory allowed in a prerendered page above normal settings,
   // as debug builds use more memory and often go over the usual limit.
   Profile* profile = browser()->profile();

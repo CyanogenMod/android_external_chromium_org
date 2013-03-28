@@ -9,6 +9,7 @@
 #include "base/message_loop.h"
 #include "content/common/fileapi/file_system_dispatcher.h"
 #include "content/common/fileapi/webfilesystem_callback_dispatcher.h"
+#include "content/common/quota_dispatcher.h"
 #include "content/common/webmessageportchannel_impl.h"
 #include "content/common/worker_messages.h"
 #include "content/public/common/content_switches.h"
@@ -17,12 +18,12 @@
 #include "content/worker/worker_thread.h"
 #include "content/worker/worker_webapplicationcachehost_impl.h"
 #include "ipc/ipc_logging.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 
 using WebKit::WebApplicationCacheHost;
 using WebKit::WebFrame;
@@ -161,7 +162,7 @@ bool WebSharedWorkerClientProxy::allowFileSystem() {
 }
 
 void WebSharedWorkerClientProxy::openFileSystem(
-    WebKit::WebFileSystem::Type type,
+    WebKit::WebFileSystemType type,
     long long size,
     bool create,
     WebKit::WebFileSystemCallbacks* callbacks) {
@@ -175,6 +176,14 @@ bool WebSharedWorkerClientProxy::allowIndexedDB(const WebKit::WebString& name) {
   Send(new WorkerProcessHostMsg_AllowIndexedDB(
       route_id_, stub_->url().GetOrigin(), name, &result));
   return result;
+}
+
+void WebSharedWorkerClientProxy::queryUsageAndQuota(
+    WebKit::WebStorageQuotaType type,
+    WebKit::WebStorageQuotaCallbacks* callbacks) {
+  ChildThread::current()->quota_dispatcher()->QueryStorageUsageAndQuota(
+      stub_->url().GetOrigin(), static_cast<quota::StorageType>(type),
+      QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
 }
 
 void WebSharedWorkerClientProxy::dispatchDevToolsMessage(

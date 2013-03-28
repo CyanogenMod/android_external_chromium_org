@@ -6,9 +6,9 @@
 #define NET_DISK_CACHE_DISK_CACHE_TEST_BASE_H_
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/scoped_temp_dir.h"
 #include "base/threading/thread.h"
 #include "net/base/cache_type.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -46,10 +46,10 @@ class DiskCacheTest : public PlatformTest {
 
   virtual void TearDown() OVERRIDE;
 
-  FilePath cache_path_;
+  base::FilePath cache_path_;
 
  private:
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   scoped_ptr<MessageLoop> message_loop_;
 };
 

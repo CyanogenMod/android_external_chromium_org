@@ -346,6 +346,7 @@ void ParamTraits<ppapi::proxy::SerializedHandle>::Write(Message* m,
       break;
     case ppapi::proxy::SerializedHandle::SOCKET:
     case ppapi::proxy::SerializedHandle::CHANNEL_HANDLE:
+    case ppapi::proxy::SerializedHandle::FILE:
       ParamTraits<IPC::PlatformFileForTransit>::Write(m, p.descriptor());
       break;
     case ppapi::proxy::SerializedHandle::INVALID:
@@ -382,6 +383,14 @@ bool ParamTraits<ppapi::proxy::SerializedHandle>::Read(const Message* m,
       IPC::PlatformFileForTransit desc;
       if (ParamTraits<IPC::PlatformFileForTransit>::Read(m, iter, &desc)) {
         r->set_channel_handle(desc);
+        return true;
+      }
+      break;
+    }
+    case ppapi::proxy::SerializedHandle::FILE: {
+      IPC::PlatformFileForTransit desc;
+      if (ParamTraits<IPC::PlatformFileForTransit>::Read(m, iter, &desc)) {
+        r->set_file_handle(desc);
         return true;
       }
       break;
@@ -550,6 +559,78 @@ bool ParamTraits<ppapi::proxy::SerializedFontDescription>::Read(
 void ParamTraits<ppapi::proxy::SerializedFontDescription>::Log(
     const param_type& p,
     std::string* l) {
+}
+#endif  // !defined(OS_NACL) && !defined(NACL_WIN64)
+
+// ppapi::proxy::SerializedTrueTypeFontDesc ------------------------------------
+
+// static
+void ParamTraits<ppapi::proxy::SerializedTrueTypeFontDesc>::Write(
+    Message* m,
+    const param_type& p) {
+  ParamTraits<std::string>::Write(m, p.family);
+  ParamTraits<PP_TrueTypeFontFamily_Dev>::Write(m, p.generic_family);
+  ParamTraits<PP_TrueTypeFontStyle_Dev>::Write(m, p.style);
+  ParamTraits<PP_TrueTypeFontWeight_Dev>::Write(m, p.weight);
+  ParamTraits<PP_TrueTypeFontWidth_Dev>::Write(m, p.width);
+  ParamTraits<PP_TrueTypeFontCharset_Dev>::Write(m, p.charset);
+}
+
+// static
+bool ParamTraits<ppapi::proxy::SerializedTrueTypeFontDesc>::Read(
+    const Message* m,
+    PickleIterator* iter,
+    param_type* r) {
+  return
+      ParamTraits<std::string>::Read(m, iter, &r->family) &&
+      ParamTraits<PP_TrueTypeFontFamily_Dev>::Read(m, iter,
+                                                   &r->generic_family) &&
+      ParamTraits<PP_TrueTypeFontStyle_Dev>::Read(m, iter, &r->style) &&
+      ParamTraits<PP_TrueTypeFontWeight_Dev>::Read(m, iter, &r->weight) &&
+      ParamTraits<PP_TrueTypeFontWidth_Dev>::Read(m, iter, &r->width) &&
+      ParamTraits<PP_TrueTypeFontCharset_Dev>::Read(m, iter, &r->charset);
+}
+
+// static
+void ParamTraits<ppapi::proxy::SerializedTrueTypeFontDesc>::Log(
+    const param_type& p,
+    std::string* l) {
+}
+
+#if !defined(OS_NACL) && !defined(NACL_WIN64)
+// ppapi::PepperFilePath -------------------------------------------------------
+
+// static
+void ParamTraits<ppapi::PepperFilePath>::Write(Message* m,
+                                               const param_type& p) {
+  WriteParam(m, static_cast<unsigned>(p.domain()));
+  WriteParam(m, p.path());
+}
+
+// static
+bool ParamTraits<ppapi::PepperFilePath>::Read(const Message* m,
+                                              PickleIterator* iter,
+                                              param_type* p) {
+  unsigned domain;
+  base::FilePath path;
+  if (!ReadParam(m, iter, &domain) || !ReadParam(m, iter, &path))
+    return false;
+  if (domain > ppapi::PepperFilePath::DOMAIN_MAX_VALID)
+    return false;
+
+  *p = ppapi::PepperFilePath(
+      static_cast<ppapi::PepperFilePath::Domain>(domain), path);
+  return true;
+}
+
+// static
+void ParamTraits<ppapi::PepperFilePath>::Log(const param_type& p,
+                                             std::string* l) {
+  l->append("(");
+  LogParam(static_cast<unsigned>(p.domain()), l);
+  l->append(", ");
+  LogParam(p.path(), l);
+  l->append(")");
 }
 
 // SerializedFlashMenu ---------------------------------------------------------

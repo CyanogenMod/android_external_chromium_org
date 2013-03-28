@@ -4,6 +4,7 @@
 
 #include "content/public/test/render_view_test.h"
 
+#include "base/run_loop.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/common/renderer_preferences.h"
@@ -12,6 +13,7 @@
 #include "content/renderer/renderer_main_platform_delegate.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
 #include "content/test/mock_render_process.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
@@ -19,7 +21,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptController.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/dom_storage/dom_storage_types.h"
@@ -44,8 +45,8 @@ const int32 kSurfaceId = 42;
 
 namespace content {
 
-class RendererWebKitPlatformSupportImplNoSandboxImpl :
-    public RendererWebKitPlatformSupportImpl {
+class RendererWebKitPlatformSupportImplNoSandboxImpl
+    : public RendererWebKitPlatformSupportImpl {
  public:
   virtual WebKit::WebSandboxSupport* sandboxSupport() {
     return NULL;
@@ -62,7 +63,7 @@ RenderViewTest::RendererWebKitPlatformSupportImplNoSandbox::
     ~RendererWebKitPlatformSupportImplNoSandbox() {
 }
 
-WebKit::WebKitPlatformSupport*
+WebKit::Platform*
     RenderViewTest::RendererWebKitPlatformSupportImplNoSandbox::Get() {
   return webkit_platform_support_.get();
 }
@@ -90,6 +91,7 @@ void RenderViewTest::ExecuteJavaScript(const char* js) {
 bool RenderViewTest::ExecuteJavaScriptAndReturnIntValue(
     const string16& script,
     int* int_result) {
+  v8::HandleScope handle_scope;
   v8::Handle<v8::Value> result =
       GetMainFrame()->executeScriptAndReturnValue(WebScriptSource(script));
   if (result.IsEmpty() || !result->IsInt32())
@@ -172,7 +174,8 @@ void RenderViewTest::SetUp() {
       false,
       1,
       WebKit::WebScreenInfo(),
-      AccessibilityModeOff);
+      AccessibilityModeOff,
+      true);
   view->AddRef();
   view_ = view;
 }
@@ -192,7 +195,7 @@ void RenderViewTest::TearDown() {
   // After telling the view to close and resetting mock_process_ we may get
   // some new tasks which need to be processed before shutting down WebKit
   // (http://crbug.com/21508).
-  msg_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   WebKit::shutdown();
 
@@ -209,20 +212,14 @@ void RenderViewTest::SendNativeKeyEvent(
 
 void RenderViewTest::SendWebKeyboardEvent(
     const WebKit::WebKeyboardEvent& key_event) {
-  scoped_ptr<IPC::Message> input_message(new ViewMsg_HandleInputEvent(0));
-  input_message->WriteData(reinterpret_cast<const char*>(&key_event),
-                           sizeof(WebKit::WebKeyboardEvent));
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(view_);
-  impl->OnMessageReceived(*input_message);
+  impl->OnMessageReceived(ViewMsg_HandleInputEvent(0, &key_event, false));
 }
 
 void RenderViewTest::SendWebMouseEvent(
     const WebKit::WebMouseEvent& mouse_event) {
-  scoped_ptr<IPC::Message> input_message(new ViewMsg_HandleInputEvent(0));
-  input_message->WriteData(reinterpret_cast<const char*>(&mouse_event),
-                           sizeof(WebKit::WebMouseEvent));
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(view_);
-  impl->OnMessageReceived(*input_message);
+  impl->OnMessageReceived(ViewMsg_HandleInputEvent(0, &mouse_event, false));
 }
 
 const char* const kGetCoordinatesScript =
@@ -280,10 +277,8 @@ bool RenderViewTest::SimulateElementClick(const std::string& element_id) {
   mouse_event.x = bounds.CenterPoint().x();
   mouse_event.y = bounds.CenterPoint().y();
   mouse_event.clickCount = 1;
-  ViewMsg_HandleInputEvent input_event(0);
-  scoped_ptr<IPC::Message> input_message(new ViewMsg_HandleInputEvent(0));
-  input_message->WriteData(reinterpret_cast<const char*>(&mouse_event),
-                           sizeof(WebMouseEvent));
+  scoped_ptr<IPC::Message> input_message(
+      new ViewMsg_HandleInputEvent(0, &mouse_event, false));
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(view_);
   impl->OnMessageReceived(*input_message);
   return true;
@@ -318,7 +313,7 @@ void RenderViewTest::Resize(gfx::Size new_size,
                             gfx::Rect resizer_rect,
                             bool is_fullscreen) {
   scoped_ptr<IPC::Message> resize_message(new ViewMsg_Resize(
-      0, new_size, resizer_rect, is_fullscreen));
+      0, new_size, new_size, 0.f, resizer_rect, is_fullscreen));
   OnMessageReceived(*resize_message);
 }
 

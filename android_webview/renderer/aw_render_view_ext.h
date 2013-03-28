@@ -41,10 +41,20 @@ class AwRenderViewExt : public content::RenderViewObserver,
 
   void OnDoHitTest(int view_x, int view_y);
 
+  void OnSetEnableFixedLayoutMode(bool enabled);
+
+  void OnSetTextZoomLevel(double zoom_level);
+
+  void OnResetScrollAndScaleState();
+
+  void OnSetInitialPageScale(double page_scale_factor);
+
   // WebKit::WebPermissionClient implementation.
   virtual bool allowImage(WebKit::WebFrame* frame,
                           bool enabledPerSettings,
                           const WebKit::WebURL& imageURL) OVERRIDE;
+
+  bool capture_picture_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(AwRenderViewExt);
 };

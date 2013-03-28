@@ -9,19 +9,21 @@
 #include "base/bind.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/onc_constants.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
-#include "chrome/browser/policy/proto/chrome_device_policy.pb.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "chrome/browser/prefs/proxy_prefs.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/network/onc/onc_constants.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -103,7 +105,7 @@ bool IsNetworkProxySettingsEditable(const Network* network) {
   proxy_settings_ui_data.ParseOncProperty(
       network->ui_data(),
       onc,
-      onc::kProxySettings);
+      onc::network_config::kProxySettings);
   return proxy_settings_ui_data.editable();
 }
 
@@ -200,29 +202,29 @@ bool ProxyConfigServiceImpl::ProxyConfig::FromNetProxyConfig(
       }
       return true;
     case net::ProxyConfig::ProxyRules::TYPE_SINGLE_PROXY:
-      if (!rules.single_proxy.is_valid())
+      if (rules.single_proxies.IsEmpty())
         return false;
       mode = MODE_SINGLE_PROXY;
-      single_proxy.server = rules.single_proxy;
+      single_proxy.server = rules.single_proxies.Get();
       bypass_rules = rules.bypass_rules;
       return true;
     case net::ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME:
       // Make sure we have valid server for at least one of the protocols.
-      if (!rules.proxy_for_http.is_valid() &&
-          !rules.proxy_for_https.is_valid() &&
-          !rules.proxy_for_ftp.is_valid() &&
-          !rules.fallback_proxy.is_valid()) {
+      if (rules.proxies_for_http.IsEmpty() &&
+          rules.proxies_for_https.IsEmpty() &&
+          rules.proxies_for_ftp.IsEmpty() &&
+          rules.fallback_proxies.IsEmpty()) {
         return false;
       }
       mode = MODE_PROXY_PER_SCHEME;
-      if (rules.proxy_for_http.is_valid())
-        http_proxy.server = rules.proxy_for_http;
-      if (rules.proxy_for_https.is_valid())
-        https_proxy.server = rules.proxy_for_https;
-      if (rules.proxy_for_ftp.is_valid())
-        ftp_proxy.server = rules.proxy_for_ftp;
-      if (rules.fallback_proxy.is_valid())
-        socks_proxy.server = rules.fallback_proxy;
+      if (!rules.proxies_for_http.IsEmpty())
+        http_proxy.server = rules.proxies_for_http.Get();
+      if (!rules.proxies_for_https.IsEmpty())
+        https_proxy.server = rules.proxies_for_https.Get();
+      if (!rules.proxies_for_ftp.IsEmpty())
+        ftp_proxy.server = rules.proxies_for_ftp.Get();
+      if (!rules.fallback_proxies.IsEmpty())
+        socks_proxy.server = rules.fallback_proxies.Get();
       bypass_rules = rules.bypass_rules;
       return true;
     default:
@@ -304,28 +306,28 @@ bool ProxyConfigServiceImpl::ProxyConfig::DeserializeForDevice(
       case net::ProxyConfig::ProxyRules::TYPE_NO_RULES:
         return false;
       case net::ProxyConfig::ProxyRules::TYPE_SINGLE_PROXY:
-        if (!rules.single_proxy.is_valid())
+        if (rules.single_proxies.IsEmpty())
           return false;
         mode = MODE_SINGLE_PROXY;
-        single_proxy.server = rules.single_proxy;
-        break;
+        single_proxy.server = rules.single_proxies.Get();
+        return true;
       case net::ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME:
         // Make sure we have valid server for at least one of the protocols.
-        if (!rules.proxy_for_http.is_valid() &&
-            !rules.proxy_for_https.is_valid() &&
-            !rules.proxy_for_ftp.is_valid() &&
-            !rules.fallback_proxy.is_valid()) {
+        if (rules.proxies_for_http.IsEmpty() &&
+            rules.proxies_for_https.IsEmpty() &&
+            rules.proxies_for_ftp.IsEmpty() &&
+            rules.fallback_proxies.IsEmpty()) {
           return false;
         }
         mode = MODE_PROXY_PER_SCHEME;
-        if (rules.proxy_for_http.is_valid())
-          http_proxy.server = rules.proxy_for_http;
-        if (rules.proxy_for_https.is_valid())
-          https_proxy.server = rules.proxy_for_https;
-        if (rules.proxy_for_ftp.is_valid())
-          ftp_proxy.server = rules.proxy_for_ftp;
-        if (rules.fallback_proxy.is_valid())
-          socks_proxy.server = rules.fallback_proxy;
+        if (!rules.proxies_for_http.IsEmpty())
+          http_proxy.server = rules.proxies_for_http.Get();
+        if (!rules.proxies_for_https.IsEmpty())
+          https_proxy.server = rules.proxies_for_https.Get();
+        if (!rules.proxies_for_ftp.IsEmpty())
+          ftp_proxy.server = rules.proxies_for_ftp.Get();
+        if (!rules.fallback_proxies.IsEmpty())
+          socks_proxy.server = rules.fallback_proxies.Get();
         break;
     }
   } else {
@@ -363,7 +365,7 @@ bool ProxyConfigServiceImpl::ProxyConfig::SerializeForNetwork(
 
 // static
 void ProxyConfigServiceImpl::ProxyConfig::EncodeAndAppendProxyServer(
-    const std::string& scheme,
+    const std::string& url_scheme,
     const net::ProxyServer& server,
     std::string* spec) {
   if (!server.is_valid())
@@ -372,8 +374,8 @@ void ProxyConfigServiceImpl::ProxyConfig::EncodeAndAppendProxyServer(
   if (!spec->empty())
     *spec += ';';
 
-  if (!scheme.empty()) {
-    *spec += scheme;
+  if (!url_scheme.empty()) {
+    *spec += url_scheme;
     *spec += "=";
   }
   *spec += server.ToURI();
@@ -387,8 +389,12 @@ ProxyConfigServiceImpl::ProxyConfigServiceImpl(PrefService* pref_service)
       pointer_factory_(this) {
 
   // Register for notifications of UseSharedProxies user preference.
-  if (pref_service->FindPreference(prefs::kUseSharedProxies))
-    use_shared_proxies_.Init(prefs::kUseSharedProxies, pref_service, this);
+  if (pref_service->FindPreference(prefs::kUseSharedProxies)) {
+    use_shared_proxies_.Init(
+        prefs::kUseSharedProxies, pref_service,
+        base::Bind(&ProxyConfigServiceImpl::OnUseSharedProxiesChanged,
+                   base::Unretained(this)));
+  }
 
   FetchProxyPolicy();
 
@@ -576,36 +582,34 @@ bool ProxyConfigServiceImpl::ParseProxyConfig(const Network* network,
 }
 
 // static
-void ProxyConfigServiceImpl::RegisterPrefs(PrefService* pref_service) {
+void ProxyConfigServiceImpl::RegisterPrefs(PrefRegistrySimple* registry) {
   // Use shared proxies default to off.  GetUseSharedProxies will return the
   // correct value based on pre-login and login.
-  pref_service->RegisterBooleanPref(prefs::kUseSharedProxies,
-                                    true,
-                                    PrefService::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kUseSharedProxies, true);
+}
+
+// static
+void ProxyConfigServiceImpl::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(prefs::kUseSharedProxies,
+                                true,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 //------------------ ProxyConfigServiceImpl: private methods -------------------
 
-void ProxyConfigServiceImpl::OnPreferenceChanged(PrefServiceBase* service,
-                                                 const std::string& pref_name) {
-  DCHECK(service == prefs());
+void ProxyConfigServiceImpl::OnUseSharedProxiesChanged() {
   VLOG(1) << "New use-shared-proxies = " << GetUseSharedProxies();
 
-  if (pref_name == prefs::kUseSharedProxies) {
-    // Determine new proxy config which may have changed because of new
-    // use-shared-proxies. If necessary, activate it.
-    Network* network = NULL;
-    if (!active_network_.empty()) {
-      network = CrosLibrary::Get()->GetNetworkLibrary()->FindNetworkByPath(
-          active_network_);
-      if (!network)
-        LOG(WARNING) << "Can't find requested network " << active_network_;
-    }
-    DetermineEffectiveConfig(network, true);
-    return;
+  // Determine new proxy config which may have changed because of new
+  // use-shared-proxies. If necessary, activate it.
+  Network* network = NULL;
+  if (!active_network_.empty()) {
+    network = CrosLibrary::Get()->GetNetworkLibrary()->FindNetworkByPath(
+        active_network_);
+    if (!network)
+      LOG(WARNING) << "Can't find requested network " << active_network_;
   }
-
-  PrefProxyConfigTrackerImpl::OnPreferenceChanged(service, pref_name);
+  DetermineEffectiveConfig(network, true);
 }
 
 void ProxyConfigServiceImpl::OnUISetProxyConfig() {

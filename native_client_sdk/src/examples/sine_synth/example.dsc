@@ -8,7 +8,9 @@
       'LIBS': ['ppapi_cpp', 'ppapi', 'pthread']
     }
   ],
-  'DATA': ['example.js'],
+  'DATA': [
+    'example.js',
+  ],
   'DEST': 'examples',
   'NAME': 'sine_synth',
   'TITLE': 'Sine Wave Synthesizer',
@@ -16,6 +18,7 @@
 The Sine Wave Synthesizer example demonstrates playing sound (a sine
 wave).  Enter the desired frequency and hit play to start, stop to end. The
 frequency box will display "Loading, please wait." while the module loads.""",
-  'INFO': 'Audio.'
+  'FOCUS': 'Audio.',
+  'GROUP': 'API',
 }
 

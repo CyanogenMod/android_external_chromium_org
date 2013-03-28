@@ -90,7 +90,7 @@ public class TestShellToolbar extends LinearLayout {
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
                 if ((actionId != EditorInfo.IME_ACTION_GO) && (event == null ||
                         event.getKeyCode() != KeyEvent.KEYCODE_ENTER ||
-                        event.getKeyCode() != KeyEvent.ACTION_UP)) {
+                        event.getKeyCode() != KeyEvent.ACTION_DOWN)) {
                     return false;
                 }
 
@@ -151,6 +151,10 @@ public class TestShellToolbar extends LinearLayout {
         @Override
         public void onUpdateUrl(TabBase tab, String url) {
             if (tab == mTab) TestShellToolbar.this.onUpdateUrl(url);
+        }
+
+        @Override
+        public void onCloseTab(TabBase tab) {
         }
     }
 }

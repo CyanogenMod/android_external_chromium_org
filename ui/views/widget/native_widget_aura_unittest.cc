@@ -9,7 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/aura/aura_switches.h"
+#include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/root_window.h"
@@ -172,6 +172,7 @@ TEST_F(NativeWidgetAuraTest, ShowMaximizedDoesntBounceAround) {
   Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.parent = NULL;
+  params.context = root_window();
   params.show_state = ui::SHOW_STATE_MAXIMIZED;
   params.bounds = gfx::Rect(10, 10, 100, 200);
   widget->Init(params);
@@ -183,6 +184,7 @@ TEST_F(NativeWidgetAuraTest, GetClientAreaScreenBounds) {
   // Create a widget.
   Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.context = root_window();
   params.bounds.SetRect(10, 20, 300, 400);
   scoped_ptr<Widget> widget(new Widget());
   widget->Init(params);
@@ -216,9 +218,10 @@ class GestureTrackingView : public views::View {
   }
 
   // View overrides:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
     got_gesture_event_ = true;
-    return consume_gesture_event_ ? ui::ER_CONSUMED : ui::ER_UNHANDLED;
+    if (consume_gesture_event_)
+      event->StopPropagation();
   }
 
  private:
@@ -244,8 +247,9 @@ TEST_F(NativeWidgetAuraTest, DontCaptureOnGesture) {
   view->SetLayoutManager(new FillLayout);
   view->AddChildView(child);
   scoped_ptr<TestWidget> widget(new TestWidget());
-  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.context = root_window();
   params.bounds = gfx::Rect(0, 0, 100, 200);
   widget->Init(params);
   widget->SetContentsView(view);
@@ -279,8 +283,9 @@ TEST_F(NativeWidgetAuraTest, DontCaptureOnGesture) {
 TEST_F(NativeWidgetAuraTest, ReleaseCaptureOnTouchRelease) {
   GestureTrackingView* view = new GestureTrackingView();
   scoped_ptr<TestWidget> widget(new TestWidget());
-  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.context = root_window();
   params.bounds = gfx::Rect(0, 0, 100, 200);
   widget->Init(params);
   widget->SetContentsView(view);
@@ -317,6 +322,7 @@ TEST_F(NativeWidgetAuraTest, PreferViewLayersToChildWindows) {
   Widget::InitParams parent_params(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   parent_params.ownership =
       views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  parent_params.context = root_window();
   parent->Init(parent_params);
   parent->SetContentsView(parent_root);
   parent->SetBounds(gfx::Rect(0, 0, 400, 400));
@@ -368,6 +374,38 @@ TEST_F(NativeWidgetAuraTest, PreferViewLayersToChildWindows) {
   // Work around for bug in NativeWidgetAura.
   // TODO: fix bug and remove this.
   parent->Close();
+}
+
+// Verifies that widget->FlashFrame() sets aura::client::kDrawAttentionKey,
+// and activating the window clears it.
+TEST_F(NativeWidgetAuraTest, FlashFrame) {
+  scoped_ptr<Widget> widget(new Widget());
+  Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
+  params.context = root_window();
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget->Init(params);
+  aura::Window* window = widget->GetNativeWindow();
+  EXPECT_FALSE(window->GetProperty(aura::client::kDrawAttentionKey));
+  widget->FlashFrame(true);
+  EXPECT_TRUE(window->GetProperty(aura::client::kDrawAttentionKey));
+  widget->FlashFrame(false);
+  EXPECT_FALSE(window->GetProperty(aura::client::kDrawAttentionKey));
+  widget->FlashFrame(true);
+  EXPECT_TRUE(window->GetProperty(aura::client::kDrawAttentionKey));
+  widget->Activate();
+  EXPECT_FALSE(window->GetProperty(aura::client::kDrawAttentionKey));
+}
+
+TEST_F(NativeWidgetAuraTest, NoCrashOnThemeAfterClose) {
+  scoped_ptr<aura::Window> parent(new aura::Window(NULL));
+  parent->Init(ui::LAYER_NOT_DRAWN);
+  parent->SetBounds(gfx::Rect(0, 0, 480, 320));
+  scoped_ptr<Widget> widget(new Widget());
+  NativeWidgetAura* window = Init(parent.get(), widget.get());
+  window->Show();
+  window->Close();
+  MessageLoop::current()->RunUntilIdle();
+  widget->GetNativeTheme();  // Shouldn't crash.
 }
 
 }  // namespace

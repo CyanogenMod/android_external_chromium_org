@@ -12,6 +12,8 @@ import android.util.Log;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.CalledByNativeUnchecked;
+import org.chromium.net.CertVerifyResultAndroid;
+import org.chromium.net.CertificateMimeType;
 
 import java.net.Inet6Address;
 import java.net.InetAddress;
@@ -61,6 +63,47 @@ class AndroidNetworkLibrary {
     }
 
     /**
+      * Adds a cryptographic file (User certificate, a CA certificate or
+      * PKCS#12 keychain) through the system's CertInstaller activity.
+      *
+      * @param context: current application context.
+      * @param cert_type: cryptographic file type. E.g. CertificateMimeType.X509_USER_CERT
+      * @param data: certificate/keychain data bytes.
+      * @return true on success, false on failure.
+      *
+      * Note that failure only indicates that the function couldn't launch the
+      * CertInstaller activity, not that the certificate/keychain was properly
+      * installed to the keystore.
+      */
+    @CalledByNative
+    static public boolean storeCertificate(Context context, int cert_type, byte[] data) {
+        try {
+            Intent intent = KeyChain.createInstallIntent();
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            switch (cert_type) {
+              case CertificateMimeType.X509_USER_CERT:
+              case CertificateMimeType.X509_CA_CERT:
+                intent.putExtra(KeyChain.EXTRA_CERTIFICATE, data);
+                break;
+
+              case CertificateMimeType.PKCS12_ARCHIVE:
+                intent.putExtra(KeyChain.EXTRA_PKCS12, data);
+                break;
+
+              default:
+                Log.w(TAG, "invalid certificate type: " + cert_type);
+                return false;
+            }
+            context.startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            Log.w(TAG, "could not store crypto file: " + e);
+        }
+        return false;
+    }
+
+    /**
      * @return the mime type (if any) that is associated with the file
      *         extension. Returns null if no corresponding mime type exists.
      */
@@ -80,7 +123,7 @@ class AndroidNetworkLibrary {
         try {
             list = NetworkInterface.getNetworkInterfaces();
             if (list == null) return false;
-        } catch (SocketException e) {
+        } catch (Exception e) {
             Log.w(TAG, "could not get network interfaces: " + e);
             return false;
         }
@@ -154,15 +197,36 @@ class AndroidNetworkLibrary {
      *
      * @param certChain The ASN.1 DER encoded bytes for certificates.
      * @param authType The key exchange algorithm name (e.g. RSA)
-     * @return true if the server is trusted
-     * @throws CertificateException,KeyStoreException,NoSuchAlgorithmException
-     *             on error initializing the TrustManager or reading the
-     *             certChain
+     * @return Android certificate verification result code.
      */
-    @CalledByNativeUnchecked
-    public static boolean verifyServerCertificates(byte[][] certChain, String authType)
-            throws CertificateException, KeyStoreException, NoSuchAlgorithmException {
-        return X509Util.verifyServerCertificates(certChain, authType);
+    @CalledByNative
+    public static int verifyServerCertificates(byte[][] certChain, String authType) {
+        try {
+            return X509Util.verifyServerCertificates(certChain, authType);
+        } catch (KeyStoreException e) {
+            return CertVerifyResultAndroid.VERIFY_FAILED;
+        } catch (NoSuchAlgorithmException e) {
+            return CertVerifyResultAndroid.VERIFY_FAILED;
+        }
     }
 
+    /**
+     * Adds a test root certificate to the local trust store.
+     * @param rootCert DER encoded bytes of the certificate.
+     */
+    @CalledByNativeUnchecked
+    public static void addTestRootCertificate(byte[] rootCert) throws CertificateException,
+            KeyStoreException, NoSuchAlgorithmException {
+        X509Util.addTestRootCertificate(rootCert);
+    }
+
+    /**
+     * Removes all test root certificates added by |addTestRootCertificate| calls from the local
+     * trust store.
+     */
+    @CalledByNativeUnchecked
+    public static void clearTestRootCertificates() throws NoSuchAlgorithmException,
+            CertificateException, KeyStoreException {
+        X509Util.clearTestRootCertificates();
+    }
 }

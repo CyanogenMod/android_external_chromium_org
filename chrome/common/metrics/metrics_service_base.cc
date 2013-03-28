@@ -36,21 +36,22 @@ void MetricsServiceBase::RecordCurrentHistograms() {
 }
 
 void MetricsServiceBase::RecordDelta(
-    const base::Histogram& histogram,
+    const base::HistogramBase& histogram,
     const base::HistogramSamples& snapshot) {
-  log_manager_.current_log()->RecordHistogramDelta(histogram, snapshot);
+  log_manager_.current_log()->RecordHistogramDelta(histogram.histogram_name(),
+                                                   snapshot);
 }
 
 void MetricsServiceBase::InconsistencyDetected(
-    Histogram::Inconsistencies problem) {
+    base::HistogramBase::Inconsistency problem) {
   UMA_HISTOGRAM_ENUMERATION("Histogram.InconsistenciesBrowser",
-                            problem, Histogram::NEVER_EXCEEDED_VALUE);
+                            problem, base::HistogramBase::NEVER_EXCEEDED_VALUE);
 }
 
 void MetricsServiceBase::UniqueInconsistencyDetected(
-    Histogram::Inconsistencies problem) {
+    base::HistogramBase::Inconsistency problem) {
   UMA_HISTOGRAM_ENUMERATION("Histogram.InconsistenciesBrowserUnique",
-                            problem, Histogram::NEVER_EXCEEDED_VALUE);
+                            problem, base::HistogramBase::NEVER_EXCEEDED_VALUE);
 }
 
 void MetricsServiceBase::InconsistencyDetectedInLoggedCount(int amount) {

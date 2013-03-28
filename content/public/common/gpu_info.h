@@ -13,6 +13,7 @@
 
 #include "base/basictypes.h"
 #include "base/time.h"
+#include "base/version.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "content/public/common/dx_diag_node.h"
@@ -54,6 +55,13 @@ struct CONTENT_EXPORT GPUInfo {
 
   // Computer has AMD Dynamic Switchable Graphics
   bool amd_switchable;
+
+  // Lenovo dCute is installed. http://crbug.com/181665.
+  bool lenovo_dcute;
+
+  // Version of DisplayLink driver installed. Zero if not installed.
+  // http://crbug.com/177611.
+  Version display_link_version;
 
   // Primary GPU, for exmaple, the discrete GPU in a dual GPU machine.
   GPUDevice gpu;

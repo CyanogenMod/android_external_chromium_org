@@ -9,11 +9,10 @@
 #include <vector>
 
 #include "base/json/json_reader.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/values.h"
 #include "chrome/browser/net/gaia/gaia_oauth_consumer.h"
-#include "chrome/common/net/url_util.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
@@ -63,6 +62,11 @@ net::URLFetcher* GaiaOAuthFetcher::CreateGaiaFetcher(
       empty_body ? net::URLFetcher::GET : net::URLFetcher::POST,
       delegate);
   result->SetRequestContext(getter);
+  // Fetchers are sometimes cancelled because a network change was detected,
+  // especially at startup and after sign-in on ChromeOS. Retrying once should
+  // be enough in those cases; let the fetcher retry up to 3 times just in case.
+  // http://crbug.com/163710
+  result->SetAutomaticallyRetryOnNetworkChanges(3);
 
   // The Gaia/OAuth token exchange requests do not require any cookie-based
   // identification as part of requests.  We suppress sending any cookies to
@@ -242,8 +246,7 @@ void GaiaOAuthFetcher::ParseUserInfoResponse(const std::string& data,
     DictionaryValue* dict = static_cast<DictionaryValue*>(value.get());
     if (dict->Get("email", &email_value)) {
       if (email_value->GetType() == base::Value::TYPE_STRING) {
-        StringValue* email = static_cast<StringValue*>(email_value);
-        email->GetAsString(email_result);
+        email_value->GetAsString(email_result);
       }
     }
   }

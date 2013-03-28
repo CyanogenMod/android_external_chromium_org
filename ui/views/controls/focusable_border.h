@@ -30,13 +30,25 @@ class FocusableBorder : public Border {
     has_focus_ = has_focus;
   }
 
+  // Sets the color of this border.
+  void SetColor(SkColor color);
+  // Reverts the color of this border to the system default.
+  void UseDefaultColor();
+
   // Overridden from Border:
   virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE;
-  virtual void GetInsets(gfx::Insets* insets) const OVERRIDE;
+  virtual gfx::Insets GetInsets() const OVERRIDE;
 
  private:
   bool has_focus_;
   gfx::Insets insets_;
+
+  // The color to paint the border when |use_default_color_| is false.
+  SkColor override_color_;
+
+  // Whether the system border color should be used. True unless SetColor has
+  // been called.
+  bool use_default_color_;
 
   DISALLOW_COPY_AND_ASSIGN(FocusableBorder);
 };

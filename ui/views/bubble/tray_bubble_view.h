@@ -5,6 +5,7 @@
 #ifndef UI_VIEWS_BUBBLE_TRAY_BUBBLE_VIEW_H_
 #define UI_VIEWS_BUBBLE_TRAY_BUBBLE_VIEW_H_
 
+#include "base/memory/scoped_ptr.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/views_export.h"
 
@@ -26,20 +27,26 @@ namespace views {
 
 namespace internal {
 class TrayBubbleBorder;
-class TrayBubbleBackground;
+class TrayBubbleContentMask;
 }
 
 class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView {
  public:
+  // AnchorType differentiates between bubbles that are anchored on a tray
+  // element (ANCHOR_TYPE_TRAY) and display an arrow, or that are floating on
+  // the screen away from the tray (ANCHOR_TYPE_BUBBLE).
   enum AnchorType {
     ANCHOR_TYPE_TRAY,
-    ANCHOR_TYPE_BUBBLE
+    ANCHOR_TYPE_BUBBLE,
   };
 
+  // AnchorAlignment determines to which side of the anchor the bubble will
+  // align itself.
   enum AnchorAlignment {
     ANCHOR_ALIGNMENT_BOTTOM,
     ANCHOR_ALIGNMENT_LEFT,
-    ANCHOR_ALIGNMENT_RIGHT
+    ANCHOR_ALIGNMENT_RIGHT,
+    ANCHOR_ALIGNMENT_TOP
   };
 
   class VIEWS_EXPORT Delegate {
@@ -81,18 +88,21 @@ class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView {
 
     InitParams(AnchorType anchor_type,
                AnchorAlignment anchor_alignment,
-               int bubble_width);
+               int min_width,
+               int max_width);
     AnchorType anchor_type;
     AnchorAlignment anchor_alignment;
-    int bubble_width;
+    int min_width;
+    int max_width;
     int max_height;
     bool can_activate;
     bool close_on_deactivate;
-    SkColor top_color;
     SkColor arrow_color;
     views::BubbleBorder::ArrowLocation arrow_location;
     int arrow_offset;
+    views::BubbleBorder::ArrowPaintType arrow_paint_type;
     views::BubbleBorder::Shadow shadow;
+    views::BubbleBorder::BubbleAlignment arrow_alignment;
   };
 
   // Constructs and returns a TrayBubbleView. init_params may be modified.
@@ -113,11 +123,14 @@ class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView {
   // Sets the maximum bubble height and resizes the bubble.
   void SetMaxHeight(int height);
 
+  // Sets the bubble width.
+  void SetWidth(int width);
+
   // Sets whether or not to paint the bubble border arrow.
-  void SetPaintArrow(bool paint_arrow);
+  void SetArrowPaintType(views::BubbleBorder::ArrowPaintType arrow_paint_type);
 
   // Returns the border insets. Called by TrayEventFilter.
-  void GetBorderInsets(gfx::Insets* insets) const;
+  gfx::Insets GetBorderInsets() const;
 
   // Called when the delegate is destroyed.
   void reset_delegate() { delegate_ = NULL; }
@@ -139,6 +152,7 @@ class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView {
 
   // Overridden from views::View.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetMaximumSize() OVERRIDE;
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
@@ -161,8 +175,9 @@ class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView {
  private:
   InitParams params_;
   Delegate* delegate_;
+  int preferred_width_;
   internal::TrayBubbleBorder* bubble_border_;
-  internal::TrayBubbleBackground* bubble_background_;
+  scoped_ptr<internal::TrayBubbleContentMask> bubble_content_mask_;
   bool is_gesture_dragging_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayBubbleView);

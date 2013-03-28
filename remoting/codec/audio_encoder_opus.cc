@@ -9,7 +9,7 @@
 #include "base/time.h"
 #include "media/base/audio_bus.h"
 #include "media/base/multi_channel_resampler.h"
-#include "third_party/opus/opus.h"
+#include "third_party/opus/src/include/opus.h"
 
 namespace remoting {
 
@@ -124,7 +124,8 @@ bool AudioEncoderOpus::ResetForPacket(AudioPacket* packet) {
   return encoder_ != NULL;
 }
 
-void AudioEncoderOpus::FetchBytesToResample(media::AudioBus* audio_bus) {
+void AudioEncoderOpus::FetchBytesToResample(int resampler_frame_delay,
+                                            media::AudioBus* audio_bus) {
   DCHECK(resampling_data_);
   int samples_left = (resampling_data_size_ - resampling_data_pos_) /
       kBytesPerSample / channels_;

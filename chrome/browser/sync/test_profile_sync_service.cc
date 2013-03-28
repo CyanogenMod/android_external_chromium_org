@@ -5,6 +5,7 @@
 #include "chrome/browser/sync/test_profile_sync_service.h"
 
 #include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
@@ -25,9 +26,10 @@ using syncer::sessions::SyncSessionSnapshot;
 using syncer::sessions::SyncSourceInfo;
 using syncer::UserShare;
 using syncer::syncable::Directory;
-using syncer::NIGORI;
 using syncer::DEVICE_INFO;
 using syncer::EXPERIMENTS;
+using syncer::NIGORI;
+using syncer::PRIORITY_PREFERENCES;
 
 namespace browser_sync {
 
@@ -43,11 +45,12 @@ SyncBackendHostForProfileSyncTest::SyncBackendHostForProfileSyncTest(
     syncer::StorageOption storage_option)
     : browser_sync::SyncBackendHost(
         profile->GetDebugName(), profile, sync_prefs, invalidator_storage),
+      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
       id_factory_(id_factory),
       callback_(callback),
+      fail_initial_download_(fail_initial_download),
       set_initial_sync_ended_on_init_(set_initial_sync_ended_on_init),
       synchronous_init_(synchronous_init),
-      fail_initial_download_(fail_initial_download),
       storage_option_(storage_option) {}
 
 SyncBackendHostForProfileSyncTest::~SyncBackendHostForProfileSyncTest() {}
@@ -89,9 +92,19 @@ void SyncBackendHostForProfileSyncTest::InitCore(
   }
 }
 
+void SyncBackendHostForProfileSyncTest::UpdateCredentials(
+      const syncer::SyncCredentials& credentials) {
+  // If we had failed the initial download, complete initialization now.
+  if (!initial_download_closure_.is_null()) {
+    initial_download_closure_.Run();
+    initial_download_closure_.Reset();
+  }
+}
+
 void SyncBackendHostForProfileSyncTest::RequestConfigureSyncer(
     syncer::ConfigureReason reason,
     syncer::ModelTypeSet types_to_config,
+    syncer::ModelTypeSet failed_types,
     const syncer::ModelSafeRoutingInfo& routing_info,
     const base::Callback<void(syncer::ModelTypeSet)>& ready_task,
     const base::Closure& retry_callback) {
@@ -104,54 +117,59 @@ void SyncBackendHostForProfileSyncTest::RequestConfigureSyncer(
 }
 
 void SyncBackendHostForProfileSyncTest
-        ::HandleSyncManagerInitializationOnFrontendLoop(
+    ::HandleSyncManagerInitializationOnFrontendLoop(
     const syncer::WeakHandle<syncer::JsBackend>& js_backend,
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
         debug_info_listener,
-    bool success,
     syncer::ModelTypeSet restored_types) {
   // Here's our opportunity to pretend to do things that the SyncManager would
   // normally do during initialization, but can't because this is a test.
-  if (success) {
-    // Set up any nodes the test wants around before model association.
-    if (!callback_.is_null()) {
-      callback_.Run();
-    }
-
-    // Pretend we downloaded initial updates and set initial sync ended bits
-    // if we were asked to.
-    if (set_initial_sync_ended_on_init_) {
-      UserShare* user_share = GetUserShare();
-      Directory* directory = user_share->directory.get();
-
-      if (!directory->initial_sync_ended_for_type(NIGORI)) {
-        syncer::TestUserShare::CreateRoot(NIGORI, user_share);
-
-        // A side effect of adding the NIGORI mode (normally done by the
-        // syncer) is a decryption attempt, which will fail the first time.
-      }
-
-      if (!directory->initial_sync_ended_for_type(EXPERIMENTS)) {
-        syncer::TestUserShare::CreateRoot(EXPERIMENTS, user_share);
-      }
-
-      SetInitialSyncEndedForAllTypes();
-      restored_types = syncer::ModelTypeSet::All();
-    }
+  // Set up any nodes the test wants around before model association.
+  if (!callback_.is_null()) {
+    callback_.Run();
   }
 
-  SyncBackendHost::HandleSyncManagerInitializationOnFrontendLoop(
-      js_backend, debug_info_listener, success, restored_types);
-}
+  // Pretend we downloaded initial updates and set initial sync ended bits
+  // if we were asked to.
+  if (set_initial_sync_ended_on_init_) {
+    UserShare* user_share = GetUserShare();
+    Directory* directory = user_share->directory.get();
 
-void SyncBackendHostForProfileSyncTest::SetInitialSyncEndedForAllTypes() {
-  UserShare* user_share = GetUserShare();
-  Directory* directory = user_share->directory.get();
+    if (!directory->InitialSyncEndedForType(NIGORI)) {
+      syncer::TestUserShare::CreateRoot(NIGORI, user_share);
 
-  for (int i = syncer::FIRST_REAL_MODEL_TYPE;
-       i < syncer::MODEL_TYPE_COUNT; ++i) {
-    directory->set_initial_sync_ended_for_type(
-        syncer::ModelTypeFromInt(i), true);
+      // A side effect of adding the NIGORI node (normally done by the
+      // syncer) is a decryption attempt, which will fail the first time.
+    }
+
+    if (!directory->InitialSyncEndedForType(DEVICE_INFO)) {
+      syncer::TestUserShare::CreateRoot(DEVICE_INFO, user_share);
+    }
+
+    if (!directory->InitialSyncEndedForType(EXPERIMENTS)) {
+      syncer::TestUserShare::CreateRoot(EXPERIMENTS, user_share);
+    }
+
+    if (!directory->InitialSyncEndedForType(PRIORITY_PREFERENCES)) {
+      syncer::TestUserShare::CreateRoot(PRIORITY_PREFERENCES, user_share);
+    }
+
+    restored_types = syncer::ModelTypeSet::All();
+  }
+
+  initial_download_closure_ = base::Bind(
+      &SyncBackendHostForProfileSyncTest::ContinueInitialization,
+      weak_ptr_factory_.GetWeakPtr(),
+      js_backend,
+      debug_info_listener,
+      restored_types);
+  if (fail_initial_download_) {
+    frontend()->OnSyncConfigureRetry();
+    if (synchronous_init_)
+      MessageLoop::current()->Quit();
+  } else {
+    initial_download_closure_.Run();
+    initial_download_closure_.Reset();
   }
 }
 
@@ -161,9 +179,17 @@ void SyncBackendHostForProfileSyncTest::EmitOnInvalidatorStateChange(
 }
 
 void SyncBackendHostForProfileSyncTest::EmitOnIncomingInvalidation(
-    const syncer::ObjectIdInvalidationMap& invalidation_map,
-    const syncer::IncomingInvalidationSource source) {
-  frontend()->OnIncomingInvalidation(invalidation_map, source);
+    const syncer::ObjectIdInvalidationMap& invalidation_map) {
+  frontend()->OnIncomingInvalidation(invalidation_map);
+}
+
+void SyncBackendHostForProfileSyncTest::ContinueInitialization(
+    const syncer::WeakHandle<syncer::JsBackend>& js_backend,
+    const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
+        debug_info_listener,
+    syncer::ModelTypeSet restored_types) {
+  SyncBackendHost::HandleSyncManagerInitializationOnFrontendLoop(
+      js_backend, debug_info_listener, restored_types);
 }
 
 }  // namespace browser_sync
@@ -183,23 +209,37 @@ TestProfileSyncService::TestProfileSyncService(
     Profile* profile,
     SigninManager* signin,
     ProfileSyncService::StartBehavior behavior,
-    bool synchronous_backend_initialization,
-    const base::Closure& callback)
-    : ProfileSyncService(factory,
-                         profile,
-                         signin,
-                         behavior),
-      synchronous_backend_initialization_(
-          synchronous_backend_initialization),
-      synchronous_sync_configuration_(false),
-      callback_(callback),
-      set_initial_sync_ended_on_init_(true),
-      fail_initial_download_(false),
-      storage_option_(syncer::STORAGE_IN_MEMORY) {
+    bool synchronous_backend_initialization)
+        : ProfileSyncService(factory,
+                             profile,
+                             signin,
+                             behavior),
+    synchronous_backend_initialization_(
+        synchronous_backend_initialization),
+    synchronous_sync_configuration_(false),
+    set_initial_sync_ended_on_init_(true),
+    fail_initial_download_(false),
+    storage_option_(syncer::STORAGE_IN_MEMORY) {
   SetSyncSetupCompleted();
 }
 
 TestProfileSyncService::~TestProfileSyncService() {
+}
+
+// static
+ProfileKeyedService* TestProfileSyncService::BuildAutoStartAsyncInit(
+    Profile* profile) {
+  SigninManager* signin = SigninManagerFactory::GetForProfile(profile);
+  ProfileSyncComponentsFactoryMock* factory =
+      new ProfileSyncComponentsFactoryMock();
+  return new TestProfileSyncService(
+      factory, profile, signin, ProfileSyncService::AUTO_START, false);
+}
+
+ProfileSyncComponentsFactoryMock*
+TestProfileSyncService::components_factory_mock() {
+  // We always create a mock factory, see Build* routines.
+  return static_cast<ProfileSyncComponentsFactoryMock*>(factory());
 }
 
 void TestProfileSyncService::OnBackendInitialized(

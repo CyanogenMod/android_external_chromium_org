@@ -63,32 +63,6 @@ typedef std::vector<metrics::OmniboxEventProto_ProviderInfo> ProvidersInfo;
 // Search Secondary Provider (navigational suggestion)                 |  150++
 // Search Secondary Provider (suggestion)                              |  100++
 //
-// REQUESTED_URL input type:
-// --------------------------------------------------------------------|-----
-// Keyword (non-substituting or in keyword UI mode, exact match)       | 1500
-// Extension App (exact match)                                         | 1425
-// HistoryURL (good exact or inline autocomplete matches, some inexact)| 1410++
-// HistoryURL (intranet url never visited match, some inexact matches) | 1400++
-// Search Primary Provider (past query in history within 2 days)       | 1399**
-// HistoryURL (what you typed, some inexact matches)                   | 1200++
-// Extension App (inexact match)                                       | 1175*~
-// Search Primary Provider (what you typed)                            | 1150
-// Keyword (substituting, exact match)                                 | 1100
-// Search Primary Provider (past query in history older than 2 days)   | 1050--
-// HistoryContents (any match in title of starred page)                | 1000++
-// HistoryURL (some inexact matches)                                   |  900++
-// Search Primary Provider (navigational suggestion)                   |  800++
-// HistoryContents (any match in title of nonstarred page)             |  700++
-// Search Primary Provider (suggestion)                                |  600++
-// Built-in                                                            |  575++
-// HistoryContents (any match in body of starred page)                 |  550++
-// HistoryContents (any match in body of nonstarred page)              |  500++
-// Keyword (inexact match)                                             |  450
-// Search Secondary Provider (what you typed)                          |  250
-// Search Secondary Provider (past query in history)                   |  200--
-// Search Secondary Provider (navigational suggestion)                 |  150++
-// Search Secondary Provider (suggestion)                              |  100++
-//
 // URL input type:
 // --------------------------------------------------------------------|-----
 // Keyword (non-substituting or in keyword UI mode, exact match)       | 1500
@@ -223,18 +197,6 @@ class AutocompleteProvider
   // on the value of |clear_cached_results|.
   virtual void Stop(bool clear_cached_results);
 
-  // Returns the set of matches for the current query.
-  const ACMatches& matches() const { return matches_; }
-
-  // Returns whether the provider is done processing the query.
-  bool done() const { return done_; }
-
-  // Returns this provider's type.
-  Type type() const { return type_; }
-
-  // Returns a string describing this provider's type.
-  const char* GetName() const;
-
   // Returns the enum equivalent to the name of this provider.
   // TODO(derat): Make metrics use AutocompleteProvider::Type directly, or at
   // least move this method to the metrics directory.
@@ -253,12 +215,29 @@ class AutocompleteProvider
   // information it wants to |provider_info|.
   virtual void AddProviderInfo(ProvidersInfo* provider_info) const;
 
+  // Called when a new omnibox session starts or the current session ends.
+  // This gives the opportunity to reset the internal state, if any, associated
+  // with the previous session.
+  virtual void ResetSession();
+
   // A convenience function to call net::FormatUrl() with the current set of
   // "Accept Languages" when check_accept_lang is true.  Otherwise, it's called
   // with an empty list.
   string16 StringForURLDisplay(const GURL& url,
                                bool check_accept_lang,
                                bool trim_http) const;
+
+  // Returns the set of matches for the current query.
+  const ACMatches& matches() const { return matches_; }
+
+  // Returns whether the provider is done processing the query.
+  bool done() const { return done_; }
+
+  // Returns this provider's type.
+  Type type() const { return type_; }
+
+  // Returns a string describing this provider's type.
+  const char* GetName() const;
 
 #ifdef UNIT_TEST
   void set_listener(AutocompleteProviderListener* listener) {

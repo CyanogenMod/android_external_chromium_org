@@ -7,22 +7,22 @@
 #include <fcntl.h>
 #include <fontconfig/fontconfig.h>
 #include <stdint.h>
-#include <unistd.h>
-#include <sys/uio.h>
-#include <sys/stat.h>
-#include <sys/socket.h>
 #include <sys/poll.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/uio.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/eintr_wrapper.h"
 #include "base/linux_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/pickle.h"
-#include "base/posix/unix_domain_socket.h"
+#include "base/posix/eintr_wrapper.h"
+#include "base/posix/unix_domain_socket_linux.h"
 #include "base/process_util.h"
 #include "base/shared_memory.h"
 #include "base/string_number_conversions.h"
@@ -30,10 +30,11 @@
 #include "content/common/font_config_ipc_linux.h"
 #include "content/common/sandbox_linux.h"
 #include "content/common/webkitplatformsupport_impl.h"
-#include "skia/ext/SkFontHost_fontconfig_direct.h"
-#include "third_party/npapi/bindings/npapi_extensions.h"
+#include "skia/ext/skia_utils_base.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/linux/WebFontInfo.h"
+#include "third_party/npapi/bindings/npapi_extensions.h"
+#include "third_party/skia/include/ports/SkFontConfigInterface.h"
 #include "ui/gfx/font_render_params_linux.h"
 
 using WebKit::WebCString;
@@ -59,8 +60,7 @@ class SandboxIPCProcess  {
   SandboxIPCProcess(int lifeline_fd, int browser_socket,
                     std::string sandbox_cmd)
       : lifeline_fd_(lifeline_fd),
-        browser_socket_(browser_socket),
-        font_config_(new FontConfigDirect()) {
+        browser_socket_(browser_socket) {
     if (!sandbox_cmd.empty()) {
       sandbox_cmd_.push_back(sandbox_cmd);
       sandbox_cmd_.push_back(base::kFindInodeSwitch);
@@ -69,17 +69,7 @@ class SandboxIPCProcess  {
     // FontConfig doesn't provide a standard property to control subpixel
     // positioning, so we pass the current setting through to WebKit.
     WebFontInfo::setSubpixelPositioning(
-#if defined(TOOLKIT_GTK)
-        // The GTK implementation of GetDefaultFontRenderParams() uses
-        // GtkSettings, which requires a connection to the X server (as it uses
-        // XSETTINGS).  When running tests, X may not be ready at this point,
-        // though.  GTK doesn't currently provide a way to enable subpixel
-        // positioning, so just pass false here to avoid the issue.
-        false
-#else
-        gfx::GetDefaultWebKitFontRenderParams().subpixel_positioning
-#endif
-        );
+        gfx::GetDefaultWebkitSubpixelPositioning());
   }
 
   ~SandboxIPCProcess();
@@ -129,7 +119,7 @@ class SandboxIPCProcess  {
     // bytes long (this is the largest message type).
     // 128 bytes padding are necessary so recvmsg() does not return MSG_TRUNC
     // error for a maximum length message.
-    char buf[FontConfigInterface::kMaxFontFamilyLength + 128];
+    char buf[FontConfigIPC::kMaxFontFamilyLength + 128];
 
     const ssize_t len = UnixDomainSocket::RecvMsg(fd, buf, sizeof(buf), &fds);
     if (len == -1) {
@@ -173,64 +163,58 @@ class SandboxIPCProcess  {
     }
   }
 
+  int FindOrAddPath(const SkString& path) {
+    int count = paths_.count();
+    for (int i = 0; i < count; ++i) {
+      if (path == *paths_[i])
+        return i;
+    }
+    *paths_.append() = new SkString(path);
+    return count;
+  }
+
   void HandleFontMatchRequest(int fd, const Pickle& pickle, PickleIterator iter,
                               std::vector<int>& fds) {
-    bool filefaceid_valid;
-    uint32_t filefaceid = 0;
-
-    if (!pickle.ReadBool(&iter, &filefaceid_valid))
-      return;
-    if (filefaceid_valid) {
-      if (!pickle.ReadUInt32(&iter, &filefaceid))
-        return;
-    }
-    bool is_bold, is_italic;
-    if (!pickle.ReadBool(&iter, &is_bold) ||
-        !pickle.ReadBool(&iter, &is_italic)) {
-      return;
-    }
-
-    uint32_t characters_bytes;
-    if (!pickle.ReadUInt32(&iter, &characters_bytes))
-      return;
-    const char* characters = NULL;
-    if (characters_bytes > 0) {
-      const uint32_t kMaxCharactersBytes = 1 << 10;
-      if (characters_bytes % 2 != 0 ||  // We expect UTF-16.
-          characters_bytes > kMaxCharactersBytes ||
-          !pickle.ReadBytes(&iter, &characters, characters_bytes))
-        return;
-    }
-
+    uint32_t requested_style;
     std::string family;
-    if (!pickle.ReadString(&iter, &family))
+    if (!pickle.ReadString(&iter, &family) ||
+        !pickle.ReadUInt32(&iter, &requested_style))
       return;
 
-    std::string result_family;
-    unsigned result_filefaceid;
-    const bool r = font_config_->Match(
-        &result_family, &result_filefaceid, filefaceid_valid, filefaceid,
-        family, characters, characters_bytes, &is_bold, &is_italic);
+    SkFontConfigInterface::FontIdentity result_identity;
+    SkString result_family;
+    SkTypeface::Style result_style;
+    SkFontConfigInterface* fc =
+        SkFontConfigInterface::GetSingletonDirectInterface();
+    const bool r = fc->matchFamilyName(
+        family.c_str(), static_cast<SkTypeface::Style>(requested_style),
+        &result_identity, &result_family, &result_style);
 
     Pickle reply;
     if (!r) {
       reply.WriteBool(false);
     } else {
+      // Stash away the returned path, so we can give it an ID (index)
+      // which will later be given to us in a request to open the file.
+      int index = FindOrAddPath(result_identity.fString);
+      result_identity.fID = static_cast<uint32_t>(index);
+
       reply.WriteBool(true);
-      reply.WriteUInt32(result_filefaceid);
-      reply.WriteString(result_family);
-      reply.WriteBool(is_bold);
-      reply.WriteBool(is_italic);
+      skia::WriteSkString(&reply, result_family);
+      skia::WriteSkFontIdentity(&reply, result_identity);
+      reply.WriteUInt32(result_style);
     }
     SendRendererReply(fds, reply, -1);
   }
 
   void HandleFontOpenRequest(int fd, const Pickle& pickle, PickleIterator iter,
                              std::vector<int>& fds) {
-    uint32_t filefaceid;
-    if (!pickle.ReadUInt32(&iter, &filefaceid))
+    uint32_t index;
+    if (!pickle.ReadUInt32(&iter, &index))
       return;
-    const int result_fd = font_config_->Open(filefaceid);
+    if (index >= static_cast<uint32_t>(paths_.count()))
+      return;
+    const int result_fd = open(paths_[index]->c_str(), O_RDONLY);
 
     Pickle reply;
     if (result_fd == -1) {
@@ -239,10 +223,14 @@ class SandboxIPCProcess  {
       reply.WriteBool(true);
     }
 
+    // The receiver will have its own access to the file, so we will close it
+    // after this send.
     SendRendererReply(fds, reply, result_fd);
 
-    if (result_fd >= 0)
-      close(result_fd);
+    if (result_fd >= 0) {
+      int err = HANDLE_EINTR(close(result_fd));
+      DCHECK(!err);
+    }
   }
 
   void HandleGetFontFamilyForChars(int fd, const Pickle& pickle,
@@ -391,8 +379,10 @@ class SandboxIPCProcess  {
                                      PickleIterator iter,
                                      std::vector<int>& fds) {
     base::SharedMemoryCreateOptions options;
-    if (!pickle.ReadUInt32(&iter, &options.size))
+    uint32_t size;
+    if (!pickle.ReadUInt32(&iter, &size))
       return;
+    options.size = size;
     if (!pickle.ReadBool(&iter, &options.executable))
       return;
     int shm_fd = -1;
@@ -667,12 +657,13 @@ class SandboxIPCProcess  {
 
   const int lifeline_fd_;
   const int browser_socket_;
-  scoped_ptr<FontConfigDirect> font_config_;
   std::vector<std::string> sandbox_cmd_;
   scoped_ptr<WebKitPlatformSupportImpl> webkit_platform_support_;
+  SkTDArray<SkString*> paths_;
 };
 
 SandboxIPCProcess::~SandboxIPCProcess() {
+  paths_.deleteAll();
   if (webkit_platform_support_.get())
     WebKit::shutdown();
 }

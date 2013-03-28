@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "net/base/net_errors.h"
+#include "remoting/base/rsa_key_pair.h"
 #include "remoting/protocol/authenticator_test_base.h"
 #include "remoting/protocol/channel_authenticator.h"
 #include "remoting/protocol/connection_tester.h"
@@ -41,7 +42,8 @@ class V2AuthenticatorTest : public AuthenticatorTestBase {
   void InitAuthenticators(const std::string& client_secret,
                           const std::string& host_secret) {
     host_ = V2Authenticator::CreateForHost(
-        host_cert_, *private_key_, host_secret, Authenticator::WAITING_MESSAGE);
+        host_cert_, key_pair_, host_secret,
+        Authenticator::WAITING_MESSAGE);
     client_ = V2Authenticator::CreateForClient(
         client_secret, Authenticator::MESSAGE_READY);
   }
@@ -85,7 +87,8 @@ TEST_F(V2AuthenticatorTest, InvalidSecret) {
   ASSERT_TRUE(message.get());
 
   ASSERT_EQ(Authenticator::WAITING_MESSAGE, client_->state());
-  host_->ProcessMessage(message.get());
+  host_->ProcessMessage(message.get(), base::Bind(&base::DoNothing));
+  // This assumes that V2Authenticator::ProcessMessage runs synchronously.
   ASSERT_EQ(Authenticator::REJECTED, host_->state());
 }
 

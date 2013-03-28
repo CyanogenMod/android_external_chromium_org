@@ -82,6 +82,8 @@ class VIEWS_EXPORT MenuRunner {
   // MENU_DELETED the method is returning because the MenuRunner was deleted.
   // Typically callers should NOT do any processing if this returns
   // MENU_DELETED.
+  // If |anchor| uses a |BUBBLE_..| type, the bounds will get determined by
+  // using |bounds| as the thing to point at in screen coordinates.
   RunResult RunMenuAt(Widget* parent,
                       MenuButton* button,
                       const gfx::Rect& bounds,
@@ -93,6 +95,9 @@ class VIEWS_EXPORT MenuRunner {
 
   // Hides and cancels the menu. This does nothing if the menu is not open.
   void Cancel();
+
+  // Returns the time from the event which closed the menu - or 0.
+  base::TimeDelta closing_event_time() const;
 
  private:
   internal::MenuRunnerImpl* holder_;

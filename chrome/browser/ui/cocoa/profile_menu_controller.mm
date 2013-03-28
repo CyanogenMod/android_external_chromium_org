@@ -35,21 +35,21 @@ class Observer : public chrome::BrowserListObserver,
     BrowserList::AddObserver(this);
   }
 
-  ~Observer() {
+  virtual ~Observer() {
     BrowserList::RemoveObserver(this);
   }
 
   // chrome::BrowserListObserver:
-  virtual void OnBrowserAdded(Browser* browser) {}
-  virtual void OnBrowserRemoved(Browser* browser) {
+  virtual void OnBrowserAdded(Browser* browser) OVERRIDE {}
+  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE {
     [controller_ activeBrowserChangedTo:chrome::GetLastActiveBrowser()];
   }
-  virtual void OnBrowserSetLastActive(Browser* browser) {
+  virtual void OnBrowserSetLastActive(Browser* browser) OVERRIDE {
     [controller_ activeBrowserChangedTo:browser];
   }
 
   // AvatarMenuModelObserver:
-  virtual void OnAvatarMenuModelChanged(AvatarMenuModel* model) {
+  virtual void OnAvatarMenuModelChanged(AvatarMenuModel* model) OVERRIDE {
     [controller_ rebuildMenu];
   }
 
@@ -99,14 +99,13 @@ class Observer : public chrome::BrowserListObserver,
 }
 
 - (IBAction)newProfile:(id)sender {
-  model_->AddNewProfile();
-  ProfileMetrics::LogProfileAddNewUser(ProfileMetrics::ADD_NEW_USER_MENU);
+  model_->AddNewProfile(ProfileMetrics::ADD_NEW_USER_MENU);
 }
 
 - (BOOL)insertItemsIntoMenu:(NSMenu*)menu
                    atOffset:(NSInteger)offset
                    fromDock:(BOOL)dock {
-  if (!model_->ShouldShowAvatarMenu())
+  if (!model_ || !model_->ShouldShowAvatarMenu())
     return NO;
 
   if (dock) {
@@ -175,6 +174,19 @@ class Observer : public chrome::BrowserListObserver,
 - (void)activeBrowserChangedTo:(Browser*)browser {
   // Tell the model that the browser has changed.
   model_->set_browser(browser);
+
+  // If |browser| is NULL, it may be because the current profile was deleted
+  // and there are no other loaded profiles. In this case, calling
+  // |model_->GetActiveProfileIndex()| may result in a profile being loaded,
+  // which is inappropriate to do on the UI thread.
+  //
+  // An early return provides the desired behavior:
+  //   a) If the profile was deleted, the menu would have been rebuilt and no
+  //      profile will have a check mark.
+  //   b) If the profile was not deleted, but there is no active browser, then
+  //      the previous profile will remain checked.
+  if (!browser)
+    return;
 
   size_t active_profile_index = model_->GetActiveProfileIndex();
 

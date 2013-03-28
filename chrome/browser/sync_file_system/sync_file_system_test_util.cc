@@ -31,8 +31,8 @@ AssignAndQuitCallback(base::RunLoop* run_loop, R* result) {
 }
 
 // Instantiate versions we know callers will need.
-template base::Callback<void(fileapi::SyncStatusCode)>
-AssignAndQuitCallback(base::RunLoop*, fileapi::SyncStatusCode*);
+template base::Callback<void(SyncStatusCode)>
+AssignAndQuitCallback(base::RunLoop*, SyncStatusCode*);
 
 MultiThreadTestHelper::MultiThreadTestHelper()
     : file_thread_(new base::Thread("File_Thread")),
@@ -64,8 +64,15 @@ void MultiThreadTestHelper::SetUp() {
 }
 
 void MultiThreadTestHelper::TearDown() {
-  file_thread_->Stop();
+  // Make sure we give some more time to finish tasks on the FILE thread
+  // before stopping IO/FILE threads.
+  base::RunLoop run_loop;
+  file_task_runner_->PostTaskAndReply(
+      FROM_HERE, base::Bind(&base::DoNothing), run_loop.QuitClosure());
+  run_loop.Run();
+
   io_thread_->Stop();
+  file_thread_->Stop();
 }
 
 }  // namespace sync_file_system

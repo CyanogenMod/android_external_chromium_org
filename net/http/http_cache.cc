@@ -28,6 +28,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/base/upload_data_stream.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/http/http_cache_transaction.h"
 #include "net/http/http_network_layer.h"
@@ -40,7 +41,7 @@
 namespace net {
 
 HttpCache::DefaultBackend::DefaultBackend(CacheType type,
-                                          const FilePath& path,
+                                          const base::FilePath& path,
                                           int max_bytes,
                                           base::MessageLoopProxy* thread)
     : type_(type),
@@ -53,7 +54,7 @@ HttpCache::DefaultBackend::~DefaultBackend() {}
 
 // static
 HttpCache::BackendFactory* HttpCache::DefaultBackend::InMemory(int max_bytes) {
-  return new DefaultBackend(MEMORY_CACHE, FilePath(), max_bytes, NULL);
+  return new DefaultBackend(MEMORY_CACHE, base::FilePath(), max_bytes, NULL);
 }
 
 int HttpCache::DefaultBackend::CreateBackend(
@@ -341,7 +342,9 @@ bool HttpCache::ParseResponseInfo(const char* data, int len,
 }
 
 void HttpCache::WriteMetadata(const GURL& url,
-                              base::Time expected_response_time, IOBuffer* buf,
+                              RequestPriority priority,
+                              base::Time expected_response_time,
+                              IOBuffer* buf,
                               int buf_len) {
   if (!buf_len)
     return;
@@ -352,7 +355,8 @@ void HttpCache::WriteMetadata(const GURL& url,
     CreateBackend(NULL, net::CompletionCallback());
   }
 
-  HttpCache::Transaction* trans = new HttpCache::Transaction(this, NULL, NULL);
+  HttpCache::Transaction* trans =
+      new HttpCache::Transaction(priority, this, NULL, NULL);
   MetadataWriter* writer = new MetadataWriter(trans);
 
   // The writer will self destruct when done.
@@ -387,14 +391,15 @@ void HttpCache::OnExternalCacheHit(const GURL& url,
   disk_cache_->OnExternalCacheHit(key);
 }
 
-void HttpCache::InitializeInfiniteCache(const FilePath& path) {
+void HttpCache::InitializeInfiniteCache(const base::FilePath& path) {
   if (base::FieldTrialList::FindFullName("InfiniteCache") != "Yes")
     return;
   // To be enabled after everything is fully wired.
   infinite_cache_.Init(path);
 }
 
-int HttpCache::CreateTransaction(scoped_ptr<HttpTransaction>* trans,
+int HttpCache::CreateTransaction(RequestPriority priority,
+                                 scoped_ptr<HttpTransaction>* trans,
                                  HttpTransactionDelegate* delegate) {
   // Do lazy initialization of disk cache if needed.
   if (!disk_cache_.get()) {
@@ -404,7 +409,7 @@ int HttpCache::CreateTransaction(scoped_ptr<HttpTransaction>* trans,
 
   InfiniteCacheTransaction* infinite_cache_transaction =
       infinite_cache_.CreateInfiniteCacheTransaction();
-  trans->reset(new HttpCache::Transaction(this, delegate,
+  trans->reset(new HttpCache::Transaction(priority, this, delegate,
                                           infinite_cache_transaction));
   return OK;
 }
@@ -480,9 +485,10 @@ std::string HttpCache::GenerateCacheKey(const HttpRequestInfo* request) {
   if (mode_ == NORMAL) {
     // No valid URL can begin with numerals, so we should not have to worry
     // about collisions with normal URLs.
-    if (request->upload_data && request->upload_data->identifier()) {
-      url.insert(0, base::StringPrintf("%" PRId64 "/",
-                                       request->upload_data->identifier()));
+    if (request->upload_data_stream &&
+        request->upload_data_stream->identifier()) {
+      url.insert(0, base::StringPrintf(
+          "%" PRId64 "/", request->upload_data_stream->identifier()));
     }
     return url;
   }
@@ -528,6 +534,7 @@ int HttpCache::DoomEntry(const std::string& key, Transaction* trans) {
   // all consumers are finished with the entry).
   ActiveEntriesMap::iterator it = active_entries_.find(key);
   if (it == active_entries_.end()) {
+    DCHECK(trans);
     return AsyncDoomEntry(key, trans);
   }
 
@@ -546,7 +553,6 @@ int HttpCache::DoomEntry(const std::string& key, Transaction* trans) {
 }
 
 int HttpCache::AsyncDoomEntry(const std::string& key, Transaction* trans) {
-  DCHECK(trans);
   WorkItem* item = new WorkItem(WI_DOOM_ENTRY, trans, NULL);
   PendingOp* pending_op = GetPendingOp(key);
   if (pending_op->writer) {
@@ -567,6 +573,20 @@ int HttpCache::AsyncDoomEntry(const std::string& key, Transaction* trans) {
   }
 
   return rv;
+}
+
+void HttpCache::DoomMainEntryForUrl(const GURL& url) {
+  HttpRequestInfo temp_info;
+  temp_info.url = url;
+  temp_info.method = "GET";
+  std::string key = GenerateCacheKey(&temp_info);
+
+  // Defer to DoomEntry if there is an active entry, otherwise call
+  // AsyncDoomEntry without triggering a callback.
+  if (active_entries_.count(key))
+    DoomEntry(key, NULL);
+  else
+    AsyncDoomEntry(key, NULL);
 }
 
 void HttpCache::FinalizeDoomedEntry(ActiveEntry* entry) {

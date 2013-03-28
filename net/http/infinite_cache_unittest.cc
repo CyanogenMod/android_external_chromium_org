@@ -5,7 +5,8 @@
 #include "net/http/infinite_cache.h"
 
 #include "base/file_util.h"
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
+#include "base/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "net/base/net_errors.h"
@@ -70,7 +71,7 @@ void ProcessRequestWithTime(const MockTransaction& http_transaction,
 
 TEST(InfiniteCache, Basics) {
   InfiniteCache cache;
-  cache.Init(FilePath());
+  cache.Init(base::FilePath());
 
   scoped_ptr<InfiniteCacheTransaction> transaction
       (cache.CreateInfiniteCacheTransaction());
@@ -113,9 +114,9 @@ TEST(InfiniteCache, Basics) {
 }
 
 TEST(InfiniteCache, Save_Restore) {
-  ScopedTempDir dir;
+  base::ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
-  FilePath path = dir.path().Append(FILE_PATH_LITERAL("infinite"));
+  base::FilePath path = dir.path().Append(FILE_PATH_LITERAL("infinite"));
 
   scoped_ptr<InfiniteCache> cache(new InfiniteCache);
   cache->Init(path);
@@ -140,7 +141,7 @@ TEST(InfiniteCache, Save_Restore) {
 
 TEST(InfiniteCache, DoomMethod) {
   InfiniteCache cache;
-  cache.Init(FilePath());
+  cache.Init(base::FilePath());
 
   ProcessRequest(kTypicalGET_Transaction, &cache);
   ProcessRequest(kSimpleGET_Transaction, &cache);
@@ -165,9 +166,9 @@ TEST(InfiniteCache, DoomMethod) {
 }
 
 TEST(InfiniteCache, Delete) {
-  ScopedTempDir dir;
+  base::ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
-  FilePath path = dir.path().Append(FILE_PATH_LITERAL("infinite"));
+  base::FilePath path = dir.path().Append(FILE_PATH_LITERAL("infinite"));
 
   scoped_ptr<InfiniteCache> cache(new InfiniteCache);
   cache->Init(path);
@@ -191,9 +192,9 @@ TEST(InfiniteCache, Delete) {
 
 TEST(InfiniteCache, DeleteBetween) {
 #if !defined(OS_ANDROID)
-  ScopedTempDir dir;
+  base::ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
-  FilePath path = dir.path().Append(FILE_PATH_LITERAL("infinite"));
+  base::FilePath path = dir.path().Append(FILE_PATH_LITERAL("infinite"));
 
   scoped_ptr<InfiniteCache> cache(new InfiniteCache);
   cache->Init(path);
@@ -245,3 +246,31 @@ TEST(InfiniteCache, DeleteBetween) {
   EXPECT_EQ(1, cb.GetResult(cache->QueryItemsForTest(cb.callback())));
 #endif  // OS_ANDROID
 }
+
+#if 0
+// This test is too slow for the bots.
+TEST(InfiniteCache, FillUp) {
+  base::ScopedTempDir dir;
+  ASSERT_TRUE(dir.CreateUniqueTempDir());
+  base::FilePath path = dir.path().Append(FILE_PATH_LITERAL("infinite"));
+
+  scoped_ptr<InfiniteCache> cache(new InfiniteCache);
+  cache->Init(path);
+  net::TestCompletionCallback cb;
+
+  const int kNumEntries = 25000;
+  for (int i = 0; i < kNumEntries; i++) {
+    std::string url = StringPrintf("http://foo.com/%d/foo.html", i);
+    MockTransaction transaction = kTypicalGET_Transaction;
+    transaction.url = url.c_str();
+    ProcessRequest(transaction, cache.get());
+  }
+
+  EXPECT_EQ(kNumEntries, cb.GetResult(cache->QueryItemsForTest(cb.callback())));
+  EXPECT_EQ(net::OK, cb.GetResult(cache->FlushDataForTest(cb.callback())));
+
+  cache.reset(new InfiniteCache);
+  cache->Init(path);
+  EXPECT_EQ(kNumEntries, cb.GetResult(cache->QueryItemsForTest(cb.callback())));
+}
+#endif

@@ -11,16 +11,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/prefs/public/pref_observer.h"
 #include "base/timer.h"
-#include "chrome/browser/chromeos/drive/drive_cache.h"
-#include "chrome/browser/chromeos/drive/drive_feed_loader_observer.h"
+#include "chrome/browser/chromeos/drive/change_list_loader.h"
+#include "chrome/browser/chromeos/drive/change_list_loader_observer.h"
 #include "chrome/browser/chromeos/drive/drive_file_system_interface.h"
+#include "chrome/browser/chromeos/drive/drive_file_system_util.h"
 #include "chrome/browser/chromeos/drive/file_system/drive_operations.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 
 class PrefChangeRegistrar;
+class Profile;
 
 namespace base {
 struct PlatformFileInfo;
@@ -28,20 +29,22 @@ class SequencedTaskRunner;
 }
 
 namespace google_apis {
-class DocumentFeed;
+class AboutResource;
 class DriveServiceInterface;
 class DriveUploaderInterface;
+class ResourceEntry;
+class ResourceList;
 }
 
 namespace drive {
 
+class DriveCacheEntry;
 class DriveFileSystemObserver;
 class DriveFunctionRemove;
 class DriveResourceMetadata;
 class DriveScheduler;
-class DriveWebAppsRegistryInterface;
-class DriveFeedLoader;
-struct LoadFeedParams;
+class DriveWebAppsRegistry;
+class ChangeListLoader;
 
 namespace file_system {
 class CopyOperation;
@@ -51,15 +54,15 @@ class RemoveOperation;
 
 // The production implementation of DriveFileSystemInterface.
 class DriveFileSystem : public DriveFileSystemInterface,
-                        public DriveFeedLoaderObserver,
-                        public file_system::OperationObserver,
-                        public PrefObserver {
+                        public ChangeListLoaderObserver,
+                        public file_system::OperationObserver {
  public:
   DriveFileSystem(Profile* profile,
                   DriveCache* cache,
                   google_apis::DriveServiceInterface* drive_service,
                   google_apis::DriveUploaderInterface* uploader,
-                  DriveWebAppsRegistryInterface* webapps_registry,
+                  DriveWebAppsRegistry* webapps_registry,
+                  DriveResourceMetadata* resource_metadata,
                   base::SequencedTaskRunner* blocking_task_runner);
   virtual ~DriveFileSystem();
 
@@ -78,152 +81,85 @@ class DriveFileSystem : public DriveFileSystemInterface,
       const std::string& resource_id,
       const GetEntryInfoWithFilePathCallback& callback) OVERRIDE;
   virtual void Search(const std::string& search_query,
+                      bool shared_with_me,
                       const GURL& next_feed,
                       const SearchCallback& callback) OVERRIDE;
   virtual void TransferFileFromRemoteToLocal(
-      const FilePath& remote_src_file_path,
-      const FilePath& local_dest_file_path,
+      const base::FilePath& remote_src_file_path,
+      const base::FilePath& local_dest_file_path,
       const FileOperationCallback& callback) OVERRIDE;
   virtual void TransferFileFromLocalToRemote(
-      const FilePath& local_src_file_path,
-      const FilePath& remote_dest_file_path,
+      const base::FilePath& local_src_file_path,
+      const base::FilePath& remote_dest_file_path,
       const FileOperationCallback& callback) OVERRIDE;
-  virtual void OpenFile(const FilePath& file_path,
+  virtual void OpenFile(const base::FilePath& file_path,
                         const OpenFileCallback& callback) OVERRIDE;
-  virtual void CloseFile(const FilePath& file_path,
+  virtual void CloseFile(const base::FilePath& file_path,
                          const FileOperationCallback& callback) OVERRIDE;
-  virtual void Copy(const FilePath& src_file_path,
-                    const FilePath& dest_file_path,
+  virtual void Copy(const base::FilePath& src_file_path,
+                    const base::FilePath& dest_file_path,
                     const FileOperationCallback& callback) OVERRIDE;
-  virtual void Move(const FilePath& src_file_path,
-                    const FilePath& dest_file_path,
+  virtual void Move(const base::FilePath& src_file_path,
+                    const base::FilePath& dest_file_path,
                     const FileOperationCallback& callback) OVERRIDE;
-  virtual void Remove(const FilePath& file_path,
+  virtual void Remove(const base::FilePath& file_path,
                       bool is_recursive,
                       const FileOperationCallback& callback) OVERRIDE;
-  virtual void CreateDirectory(const FilePath& directory_path,
+  virtual void CreateDirectory(const base::FilePath& directory_path,
                                bool is_exclusive,
                                bool is_recursive,
                                const FileOperationCallback& callback) OVERRIDE;
-  virtual void CreateFile(const FilePath& file_path,
+  virtual void CreateFile(const base::FilePath& file_path,
                           bool is_exclusive,
                           const FileOperationCallback& callback) OVERRIDE;
-  virtual void GetFileByPath(
-      const FilePath& file_path,
-      const GetFileCallback& get_file_callback,
-      const google_apis::GetContentCallback& get_content_callback) OVERRIDE;
+  virtual void GetFileByPath(const base::FilePath& file_path,
+                             const GetFileCallback& callback) OVERRIDE;
   virtual void GetFileByResourceId(
       const std::string& resource_id,
+      const DriveClientContext& context,
       const GetFileCallback& get_file_callback,
       const google_apis::GetContentCallback& get_content_callback) OVERRIDE;
+  virtual void CancelGetFile(const base::FilePath& drive_file_path) OVERRIDE;
   virtual void UpdateFileByResourceId(
       const std::string& resource_id,
+      const DriveClientContext& context,
       const FileOperationCallback& callback) OVERRIDE;
   virtual void GetEntryInfoByPath(
-      const FilePath& file_path,
+      const base::FilePath& file_path,
       const GetEntryInfoCallback& callback) OVERRIDE;
   virtual void ReadDirectoryByPath(
-      const FilePath& directory_path,
+      const base::FilePath& directory_path,
       const ReadDirectoryWithSettingCallback& callback) OVERRIDE;
-  virtual void RequestDirectoryRefresh(
-      const FilePath& directory_path) OVERRIDE;
+  virtual void RefreshDirectory(
+      const base::FilePath& directory_path,
+      const FileOperationCallback& callback) OVERRIDE;
   virtual void GetAvailableSpace(
       const GetAvailableSpaceCallback& callback) OVERRIDE;
-  virtual void AddUploadedFile(const FilePath& directory_path,
-                               scoped_ptr<google_apis::DocumentEntry> doc_entry,
-                               const FilePath& file_content_path,
-                               DriveCache::FileOperationType cache_operation,
+  virtual void AddUploadedFile(scoped_ptr<google_apis::ResourceEntry> doc_entry,
+                               const base::FilePath& file_content_path,
                                const FileOperationCallback& callback) OVERRIDE;
-  virtual void UpdateEntryData(scoped_ptr<google_apis::DocumentEntry> entry,
-                               const FilePath& file_content_path,
-                               const FileOperationCallback& callback) OVERRIDE;
-  virtual DriveFileSystemMetadata GetMetadata() const OVERRIDE;
+  virtual void GetMetadata(
+      const GetFilesystemMetadataCallback& callback) OVERRIDE;
   virtual void Reload() OVERRIDE;
-
-  // PrefObserver implementation.
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
 
   // file_system::OperationObserver overrides.
   virtual void OnDirectoryChangedByOperation(
-      const FilePath& directory_path) OVERRIDE;
+      const base::FilePath& directory_path) OVERRIDE;
 
-  // DriveFeedLoader::Observer overrides.
-  // Used to propagate events from DriveFeedLoader.
-  virtual void OnDirectoryChanged(const FilePath& directory_path) OVERRIDE;
-  virtual void OnDocumentFeedFetched(int num_accumulated_entries) OVERRIDE;
+  // ChangeListLoader::Observer overrides.
+  // Used to propagate events from ChangeListLoader.
+  virtual void OnDirectoryChanged(
+      const base::FilePath& directory_path) OVERRIDE;
+  virtual void OnResourceListFetched(int num_accumulated_entries) OVERRIDE;
   virtual void OnFeedFromServerLoaded() OVERRIDE;
-
-  // Used in tests to load the root feed from the cache.
-  void LoadRootFeedFromCacheForTesting(const FileOperationCallback& callback);
+  virtual void OnInitialFeedLoaded() OVERRIDE;
 
   // Used in tests to update the file system from |feed_list|.
-  // See also the comment at DriveFeedLoader::UpdateFromFeed().
-  DriveFeedLoader* feed_loader() { return feed_loader_.get(); }
+  // See also the comment at ChangeListLoader::UpdateFromFeed().
+  ChangeListLoader* change_list_loader() { return change_list_loader_.get(); }
 
  private:
   friend class DriveFileSystemTest;
-  FRIEND_TEST_ALL_PREFIXES(DriveFileSystemTest,
-                           FindFirstMissingParentDirectory);
-  // Defines possible search results of FindFirstMissingParentDirectory().
-  enum FindFirstMissingParentDirectoryError {
-    // Target directory found, it's not a directory.
-    FIND_FIRST_FOUND_INVALID,
-    // Found missing directory segment while searching for given directory.
-    FIND_FIRST_FOUND_MISSING,
-    // Found target directory, it already exists.
-    FIND_FIRST_DIRECTORY_ALREADY_PRESENT,
-  };
-
-  // The result struct for FindFirstMissingParentDirectory().
-  struct FindFirstMissingParentDirectoryResult {
-    FindFirstMissingParentDirectoryResult();
-    ~FindFirstMissingParentDirectoryResult();
-
-    // Initializes the struct.
-    void Init(FindFirstMissingParentDirectoryError error,
-              FilePath first_missing_parent_path,
-              GURL last_dir_content_url);
-
-    FindFirstMissingParentDirectoryError error;
-    // The following two fields are provided when |error| is set to
-    // FIND_FIRST_FOUND_MISSING. Otherwise, the two fields are undefined.
-
-    // Suppose "drive/foo/bar/baz/qux" is being checked, and only
-    // "drive/foo/bar" is present, "drive/foo/bar/baz" is the first missing
-    // parent path.
-    FilePath first_missing_parent_path;
-
-    // The content URL of the last found directory. In the above example, the
-    // content URL of "drive/foo/bar". Note that this value is empty if the
-    // last found directory is the root of Drive.
-    GURL last_dir_content_url;
-  };
-
-  // Callback for FindFirstMissingParentDirectory().
-  typedef base::Callback<void(
-      const FindFirstMissingParentDirectoryResult& result)>
-      FindFirstMissingParentDirectoryCallback;
-
-  // Params for FindFirstMissingParentDirectory().
-  struct FindFirstMissingParentDirectoryParams;
-
-  // Defines set of parameters passes to intermediate callbacks during
-  // execution of CreateDirectory() method.
-  struct CreateDirectoryParams {
-    CreateDirectoryParams(const FilePath& created_directory_path,
-                          const FilePath& target_directory_path,
-                          bool is_exclusive,
-                          bool is_recursive,
-                          const FileOperationCallback& callback);
-    ~CreateDirectoryParams();
-
-    const FilePath created_directory_path;
-    const FilePath target_directory_path;
-    const bool is_exclusive;
-    const bool is_recursive;
-    FileOperationCallback callback;
-  };
 
   // Defines set of parameters passed to an intermediate callback
   // OnGetFileCompleteForOpen, during execution of OpenFile() method.
@@ -236,58 +172,61 @@ class DriveFileSystem : public DriveFileSystemInterface,
   // Struct used for AddUploadedFile.
   struct AddUploadedFileParams;
 
-  // Initializes DriveResourceMetadata and related instances (DriveFeedLoader
-  // and DriveOperations). This is a part of the initialization.
-  void ResetResourceMetadata();
+  // Used to implement Reload().
+  void ReloadAfterReset();
 
-  // Callback passed to |LoadFeedFromServer| from |Search| method.
-  // |callback| is that should be run with data received from
-  // |LoadFeedFromServer|. |callback| must not be null.
-  // |params| params used for getting document feed for content search.
-  // |error| error code returned by |LoadFeedFromServer|.
-  void OnSearch(const SearchCallback& callback,
-                scoped_ptr<LoadFeedParams> params,
+  // Sets up ChangeListLoader.
+  void SetupChangeListLoader();
+
+  // Called on preference change.
+  void OnDisableDriveHostedFilesChanged();
+
+  // Callback passed to ChangeListLoader from |Search| method.
+  // |callback| is that should be run with data received. It must not be null.
+  // |feed_list| is the document feed for content search.
+  // |error| is the error code returned by ChangeListLoader.
+  void OnSearch(bool shared_with_me,
+                const SearchCallback& callback,
+                const ScopedVector<google_apis::ResourceList>& feed_list,
                 DriveFileError error);
 
-  // Callback for DriveResourceMetadata::RefreshFile, from OnSearch.
+  // Callback for DriveResourceMetadata::RefreshEntry, from OnSearch.
   // Adds |drive_file_path| to |results|. When |entry_proto| is not present in
   // the local file system snapshot, it is not added to |results|. Instead,
-  // CheckForUpdates is called. Runs |callback| with |results|.
-  // |callback| may be null.
-  void AddToSearchResults(
-      std::vector<SearchResultInfo>* results,
-      const base::Closure& callback,
-      DriveFileError error,
-      const FilePath& drive_file_path,
-      scoped_ptr<DriveEntryProto> entry_proto);
+  // CheckForUpdates is called. Runs |callback| with |results| if
+  // |should_run_callback| is true.
+  void AddToSearchResults(std::vector<SearchResultInfo>* results,
+                          bool should_run_callback,
+                          const base::Closure& callback,
+                          DriveFileError error,
+                          const base::FilePath& drive_file_path,
+                          scoped_ptr<DriveEntryProto> entry_proto);
 
   // Invoked during the process of CreateFile.
-  // First, FindEntryByPathAsyncOnUIThread is called and the result is returned
+  // First, FindEntryByPathAsync is called and the result is returned
   // to OnGetEntryInfoForCreateFile. By using the information, CreateFile deals
   // with the cases when an entry already existed at the path. If there was no
   // entry, a new empty file is uploaded, and when it finishes
   // DidUploadForCreateBrandNewFile does the final clean up.
   // |callback| must not be null.
-  void OnGetEntryInfoForCreateFile(const FilePath& file_path,
+  void OnGetEntryInfoForCreateFile(const base::FilePath& file_path,
                                    bool is_exclusive,
                                    const FileOperationCallback& callback,
                                    DriveFileError result,
                                    scoped_ptr<DriveEntryProto> entry_proto);
-  void DoUploadForCreateBrandNewFile(const FilePath& remote_path,
-                                     FilePath* local_path,
+  void DoUploadForCreateBrandNewFile(const base::FilePath& remote_path,
+                                     base::FilePath* local_path,
                                      const FileOperationCallback& callback);
-  void DidUploadForCreateBrandNewFile(const FilePath& local_path,
+  void DidUploadForCreateBrandNewFile(const base::FilePath& local_path,
                                       const FileOperationCallback& callback,
                                       DriveFileError result);
 
   // Invoked upon completion of GetEntryInfoByPath initiated by
   // GetFileByPath. It then continues to invoke GetResolvedFileByPath.
-  // |get_file_callback| must not be null.
-  // |get_content_callback| may be null.
+  // |callback| must not be null.
   void OnGetEntryInfoCompleteForGetFileByPath(
-      const FilePath& file_path,
-      const GetFileCallback& get_file_callback,
-      const google_apis::GetContentCallback& get_content_callback,
+      const base::FilePath& file_path,
+      const GetFileCallback& callback,
       DriveFileError error,
       scoped_ptr<DriveEntryProto> file_info);
 
@@ -295,7 +234,7 @@ class DriveFileSystem : public DriveFileSystemInterface,
   // It then continues to invoke GetResolvedFileByPath and proceeds to
   // OnGetFileCompleteForOpenFile.
   void OnGetEntryInfoCompleteForOpenFile(
-      const FilePath& file_path,
+      const base::FilePath& file_path,
       const OpenFileCallback& callback,
       DriveFileError error,
       scoped_ptr<DriveEntryProto> file_info);
@@ -303,10 +242,10 @@ class DriveFileSystem : public DriveFileSystemInterface,
   // Invoked at the last step of OpenFile. It removes |file_path| from the
   // current set of opened files if |result| is an error, and then invokes the
   // |callback| function.
-  void OnOpenFileFinished(const FilePath& file_path,
+  void OnOpenFileFinished(const base::FilePath& file_path,
                           const OpenFileCallback& callback,
                           DriveFileError result,
-                          const FilePath& cache_file_path);
+                          const base::FilePath& cache_file_path);
 
   // Invoked during the process of CloseFile. What is done here is as follows:
   // 1) Gets resource_id and md5 of the entry at |file_path|.
@@ -314,71 +253,39 @@ class DriveFileSystem : public DriveFileSystemInterface,
   // 3) Removes the |file_path| from the remembered set of opened files.
   // 4) Invokes the user-supplied |callback|.
   // |callback| must not be null.
-  void CloseFileOnUIThreadAfterGetEntryInfo(
-      const FilePath& file_path,
-      const FileOperationCallback& callback,
-      DriveFileError error,
-      scoped_ptr<DriveEntryProto> entry_proto);
-  void CloseFileOnUIThreadAfterCommitDirtyInCache(
-      const FileOperationCallback& callback,
-      DriveFileError error,
-      const std::string& resource_id,
-      const std::string& md5);
-  void CloseFileOnUIThreadFinalize(const FilePath& file_path,
-                                   const FileOperationCallback& callback,
-                                   DriveFileError result);
+  void CloseFileAfterGetEntryInfo(const base::FilePath& file_path,
+                                  const FileOperationCallback& callback,
+                                  DriveFileError error,
+                                  scoped_ptr<DriveEntryProto> entry_proto);
+  void CloseFileFinalize(const base::FilePath& file_path,
+                         const FileOperationCallback& callback,
+                         DriveFileError result);
 
   // Invoked upon completion of GetFileByPath initiated by OpenFile. If
   // GetFileByPath is successful, calls MarkDirtyInCache to mark the cache
   // file as dirty for the file identified by |file_info.resource_id| and
   // |file_info.md5|.
-  //
-  // Can be called from UI thread. |callback| is run on the calling thread.
-  void OnGetFileCompleteForOpenFile(
-      const OpenFileCallback& callback,
-      const GetFileCompleteForOpenParams& file_info,
-      DriveFileError error,
-      const FilePath& file_path,
-      const std::string& mime_type,
-      DriveFileType file_type);
+  void OnGetFileCompleteForOpenFile(const GetFileCompleteForOpenParams& params,
+                                    DriveFileError error,
+                                    const base::FilePath& file_path,
+                                    const std::string& mime_type,
+                                    DriveFileType file_type);
 
-  // Invoked upon completion of MarkDirtyInCache initiated by OpenFile. Invokes
-  // |callback| with |cache_file_path|, which is the path of the cache file
-  // ready for modification.
-  //
-  // Must be called on UI thread.
-  void OnMarkDirtyInCacheCompleteForOpenFile(const OpenFileCallback& callback,
-                                             DriveFileError error,
-                                             const FilePath& cache_file_path);
+  // Invoked upon completion of MarkDirtyInCache initiated by OpenFile.
+  void OnMarkDirtyInCacheCompleteForOpenFile(
+      const GetFileCompleteForOpenParams& params,
+      DriveFileError error);
 
-  // Callback for handling account metadata fetch.
-  void OnGetAvailableSpace(const GetAvailableSpaceCallback& callback,
-                           google_apis::GDataErrorCode status,
-                           scoped_ptr<base::Value> data);
-
-  // Callback for handling Drive V2 about resource fetch.
-  void OnGetAboutResource(const GetAvailableSpaceCallback& callback,
-                          google_apis::GDataErrorCode status,
-                          scoped_ptr<base::Value> data);
-
-  // Callback for handling directory create requests. Adds the directory
-  // represented by |created_entry| to the local filesystem.
-  void AddNewDirectory(const CreateDirectoryParams& params,
-                       google_apis::GDataErrorCode status,
-                       scoped_ptr<base::Value> created_entry);
-
-  // Callback for DriveResourceMetadata::AddEntryToDirectory. Continues the
-  // recursive creation of a directory path by calling CreateDirectory again.
-  void ContinueCreateDirectory(
-      const CreateDirectoryParams& params,
-      DriveFileError error,
-      const FilePath& moved_directory_path);
+  // Callback for handling about resource fetch.
+  void OnGetAboutResource(
+      const GetAvailableSpaceCallback& callback,
+      google_apis::GDataErrorCode status,
+      scoped_ptr<google_apis::AboutResource> about_resource);
 
   // Callback for handling file downloading requests.
   void OnFileDownloaded(const GetFileFromCacheParams& params,
                         google_apis::GDataErrorCode status,
-                        const GURL& content_url,
-                        const FilePath& downloaded_file_path);
+                        const base::FilePath& downloaded_file_path);
 
   // Unpins file if cache entry is pinned.
   void UnpinIfPinned(const std::string& resource_id,
@@ -388,97 +295,52 @@ class DriveFileSystem : public DriveFileSystemInterface,
 
   // Similar to OnFileDownloaded() but takes |has_enough_space| so we report
   // an error in case we don't have enough disk space.
-  void OnFileDownloadedAndSpaceChecked(const GetFileFromCacheParams& params,
-                                       google_apis::GDataErrorCode status,
-                                       const GURL& content_url,
-                                       const FilePath& downloaded_file_path,
-                                       bool has_enough_space);
-
-  // Callback for handling internal StoreToCache() calls after downloading
-  // file content.
-  void OnDownloadStoredToCache(DriveFileError error,
-                               const std::string& resource_id,
-                               const std::string& md5);
-
-  // FileMoveCallback for directory changes. Notifies of directory changes,
-  // and runs |callback| with |error|. |callback| may be null.
-  void OnDirectoryChangeFileMoveCallback(
-      const FileOperationCallback& callback,
-      DriveFileError error,
-      const FilePath& directory_path);
+  void OnFileDownloadedAndSpaceChecked(
+      const GetFileFromCacheParams& params,
+      google_apis::GDataErrorCode status,
+      const base::FilePath& downloaded_file_path,
+      bool has_enough_space);
 
   // Adds the uploaded file to the cache.
   void AddUploadedFileToCache(const AddUploadedFileParams& params,
                               DriveFileError error,
-                              const FilePath& file_path);
-
-  // Finds the first missing parent directory of |directory_path|.
-  // |callback| must not be null.
-  void FindFirstMissingParentDirectory(
-      const FilePath& directory_path,
-      const FindFirstMissingParentDirectoryCallback& callback);
-
-  // Helper function for FindFirstMissingParentDirectory, for recursive search
-  // for first missing parent.
-  void FindFirstMissingParentDirectoryInternal(
-      scoped_ptr<FindFirstMissingParentDirectoryParams> params);
-
-  // Callback for ResourceMetadata::GetEntryInfoByPath from
-  // FindFirstMissingParentDirectory.
-  void ContinueFindFirstMissingParentDirectory(
-      scoped_ptr<FindFirstMissingParentDirectoryParams> params,
-      DriveFileError error,
-      scoped_ptr<DriveEntryProto> entry_proto);
+                              const base::FilePath& file_path);
 
   // Callback for handling results of ReloadFeedFromServerIfNeeded() initiated
   // from CheckForUpdates().
   void OnUpdateChecked(DriveFileError error);
-
-  // Called when the initial cache load is finished. It triggers feed loading
-  // from the server. If the cache loading was successful, runs |callback| for
-  // notifying it to the callers. Otherwise, defer till the server feed arrival.
-  // |callback| must not be null.
-  void OnFeedCacheLoaded(const FileOperationCallback& callback,
-                         DriveFileError error);
-
-  // Notifies that the initial feed load is finished and runs |callback|.
-  // |callback| must not be null.
-  void NotifyInitialLoadFinishedAndRun(const FileOperationCallback& callback,
-                                       DriveFileError error);
-
-  // Cache intermediate callbacks, that run on calling thread, for above cache
-  // tasks that were run on blocking pool.
 
   // Helper function for internally handling responses from
   // GetFileFromCacheByResourceIdAndMd5() calls during processing of
   // GetFileByPath() request.
   void OnGetFileFromCache(const GetFileFromCacheParams& params,
                           DriveFileError error,
-                          const FilePath& cache_file_path);
+                          const base::FilePath& cache_file_path);
 
-  // Callback for |drive_service_->GetDocumentEntry|.
-  // It is called before file download. If GetDocumentEntry was successful,
+  // Callback for |drive_service_->GetResourceEntry|.
+  // It is called before file download. If GetResourceEntry was successful,
   // file download procedure is started for the file. The file is downloaded
   // from the content url extracted from the fetched metadata.
-  void OnGetDocumentEntry(const GetFileFromCacheParams& params,
+  void OnGetResourceEntry(const GetFileFromCacheParams& params,
                           google_apis::GDataErrorCode status,
-                          scoped_ptr<base::Value> data);
+                          scoped_ptr<google_apis::ResourceEntry> entry);
 
   // Check available space using file size from the fetched metadata. Called
-  // from OnGetDocumentEntry after RefreshFile is complete.
+  // from OnGetResourceEntry after RefreshEntry is complete.
   void CheckForSpaceBeforeDownload(
       const GetFileFromCacheParams& params,
       int64 file_size,
-      const GURL& content_url,
+      const GURL& download_url,
       DriveFileError error,
-      const FilePath& drive_file_path,
+      const base::FilePath& drive_file_path,
       scoped_ptr<DriveEntryProto> entry_proto);
 
   // Starts downloading a file if we have enough disk space indicated by
   // |has_enough_space|.
   void StartDownloadFileIfEnoughSpace(const GetFileFromCacheParams& params,
-                                      const GURL& content_url,
-                                      const FilePath& cache_file_path,
+                                      const GURL& download_url,
+                                      const DriveClientContext& context,
+                                      const base::FilePath& cache_file_path,
                                       bool has_enough_space);
 
   // Changes state of hosted documents visibility, triggers directory refresh.
@@ -487,36 +349,49 @@ class DriveFileSystem : public DriveFileSystemInterface,
   // Initializes preference change observer.
   void InitializePreferenceObserver();
 
-  // Part of GetEntryInfoByPathOnUIThread()
-  // 1) Called when the feed is loaded.
-  // 2) Called when an entry is found.
-  // |callback| must not be null.
-  void GetEntryInfoByPathOnUIThreadAfterLoad(
-      const FilePath& file_path,
+  // Part of GetEntryInfoByPath()
+  // 1) Called when DriveResourceMetadata::GetEntryInfoByPath() is complete.
+  //    If succeeded, GetEntryInfoByPath() returns immediately here.
+  //    Otherwise, starts loading the file system.
+  // 2) Called when LoadIfNeeded() is complete.
+  // 3) Called when DriveResourceMetadata::GetEntryInfoByPath() is complete.
+  void GetEntryInfoByPathAfterGetEntry1(
+      const base::FilePath& file_path,
       const GetEntryInfoCallback& callback,
-      DriveFileError error);
-  void GetEntryInfoByPathOnUIThreadAfterGetEntry(
+      DriveFileError error,
+      scoped_ptr<DriveEntryProto> entry_proto);
+  void GetEntryInfoByPathAfterLoad(const base::FilePath& file_path,
+                                   const GetEntryInfoCallback& callback,
+                                   DriveFileError error);
+  void GetEntryInfoByPathAfterGetEntry2(
       const GetEntryInfoCallback& callback,
       DriveFileError error,
       scoped_ptr<DriveEntryProto> entry_proto);
 
-  // Part of ReadDirectoryByPathOnUIThread()
-  // 1) Called when the feed is loaded.
-  // 2) Called when an entry is found.
+  // Part of ReadDirectoryByPath()
+  // 1) Called when DriveResourceMetadata::GetEntryInfoByPath() is complete.
+  // 2) Called when LoadIfNeeded() is complete.
+  // 3) Called when DriveResourceMetadata::ReadDirectoryByPath() is complete.
   // |callback| must not be null.
-  void ReadDirectoryByPathOnUIThreadAfterLoad(
-      const FilePath& directory_path,
+  void ReadDirectoryByPathAfterGetEntry(
+      const base::FilePath& directory_path,
+      const ReadDirectoryWithSettingCallback& callback,
+      DriveFileError error,
+      scoped_ptr<DriveEntryProto> entry_proto);
+  void ReadDirectoryByPathAfterLoad(
+      const base::FilePath& directory_path,
       const ReadDirectoryWithSettingCallback& callback,
       DriveFileError error);
-  void ReadDirectoryByPathOnUIThreadAfterRead(
+  void ReadDirectoryByPathAfterRead(
       const ReadDirectoryWithSettingCallback& callback,
       DriveFileError error,
       scoped_ptr<DriveEntryProtoVector> entries);
 
-  // Loads the feed from the cache or the server if not yet loaded. Runs
-  // |callback| upon the completion with the error code.
-  // |callback| must not be null.
-  void LoadFeedIfNeeded(const FileOperationCallback& callback);
+  // Loads the file system from the cache or the server via change lists if
+  // the file system is not yet loaded. Runs |callback| upon the completion
+  // with the error code.  |callback| must not be null.
+  void LoadIfNeeded(const DirectoryFetchInfo& directory_fetch_info,
+                    const FileOperationCallback& callback);
 
   // Gets the file at |file_path| from the cache (if found in the cache),
   // or the server (if not found in the cache) after the file info is
@@ -524,116 +399,11 @@ class DriveFileSystem : public DriveFileSystemInterface,
   // |get_file_callback| must not be null.
   // |get_content_callback| may be null.
   void GetResolvedFileByPath(
-      const FilePath& file_path,
+      const base::FilePath& file_path,
+      const DriveClientContext& context,
       const GetFileCallback& get_file_callback,
       const google_apis::GetContentCallback& get_content_callback,
       scoped_ptr<DriveEntryProto> entry_proto);
-
-  // Part of UpdateFileByResourceId(). Called when
-  // DriveDirectory::GetEntryInfoByResourceId() is complete.
-  // |callback| must not be null.
-  void UpdateFileByEntryInfo(
-      const FileOperationCallback& callback,
-      DriveFileError error,
-      const FilePath& drive_file_path,
-      scoped_ptr<DriveEntryProto> entry_proto);
-
-  // Part of UpdateFileByResourceId().
-  // Called when DriveCache::GetFileOnUIThread() is completed for
-  // UpdateFileByResourceId().
-  // |callback| must not be null.
-  void OnGetFileCompleteForUpdateFile(const FileOperationCallback& callback,
-                                      const FilePath& drive_file_path,
-                                      scoped_ptr<DriveEntryProto> entry_proto,
-                                      DriveFileError error,
-                                      const FilePath& cache_file_path);
-
-  // Part of UpdateFileByResourceId().
-  // Callback for getting the size of the cache file in the blocking pool.
-  // |callback| must not be null.
-  void OnGetFileSizeCompleteForUpdateFile(
-      const FileOperationCallback& callback,
-      const FilePath& drive_file_path,
-      scoped_ptr<DriveEntryProto> entry_proto,
-      const FilePath& cache_file_path,
-      int64* file_size,
-      bool get_file_size_result);
-
-  // Part of UpdateFileByResourceId().
-  // Called when DriveUploader::UploadUpdatedFile() is completed for
-  // UpdateFileByResourceId().
-  // |callback| must not be null.
-  void OnUpdatedFileUploaded(
-      const FileOperationCallback& callback,
-      google_apis::DriveUploadError error,
-      const FilePath& gdata_path,
-      const FilePath& file_path,
-      scoped_ptr<google_apis::DocumentEntry> document_entry);
-
-  // Part of UpdateFileByResourceId().
-  void OnUpdatedFileRefreshed(const FileOperationCallback& callback,
-                              DriveFileError error,
-                              const FilePath& drive_file_path,
-                              scoped_ptr<DriveEntryProto> entry_proto);
-
-  // The following functions are used to forward calls to asynchronous public
-  // member functions to UI thread.
-  void SearchAsyncOnUIThread(const std::string& search_query,
-                             const GURL& next_feed,
-                             const SearchCallback& callback);
-  void OpenFileOnUIThread(const FilePath& file_path,
-                          const OpenFileCallback& callback);
-  void CloseFileOnUIThread(const FilePath& file_path,
-                           const FileOperationCallback& callback);
-  void CopyOnUIThread(const FilePath& src_file_path,
-                      const FilePath& dest_file_path,
-                      const FileOperationCallback& callback);
-  void MoveOnUIThread(const FilePath& src_file_path,
-                      const FilePath& dest_file_path,
-                      const FileOperationCallback& callback);
-  void RemoveOnUIThread(const FilePath& file_path,
-                        bool is_recursive,
-                        const FileOperationCallback& callback);
-  void CreateDirectoryOnUIThread(const FilePath& directory_path,
-                                 bool is_exclusive,
-                                 bool is_recursive,
-                                 const FileOperationCallback& callback);
-  void CreateFileOnUIThread(const FilePath& file_path,
-                            bool is_exclusive,
-                            const FileOperationCallback& callback);
-  void GetFileByPathOnUIThread(
-      const FilePath& file_path,
-      const GetFileCallback& get_file_callback,
-      const google_apis::GetContentCallback& get_content_callback);
-  void GetFileByResourceIdOnUIThread(
-      const std::string& resource_id,
-      const GetFileCallback& get_file_callback,
-      const google_apis::GetContentCallback& get_content_callback);
-  void UpdateFileByResourceIdOnUIThread(const std::string& resource_id,
-                                        const FileOperationCallback& callback);
-  void GetEntryInfoByPathOnUIThread(const FilePath& file_path,
-                                    const GetEntryInfoCallback& callback);
-  void GetEntryInfoByResourceIdOnUIThread(
-      const std::string& resource_id,
-      const GetEntryInfoWithFilePathCallback& callback);
-  void ReadDirectoryByPathOnUIThread(
-      const FilePath& file_path,
-      const ReadDirectoryWithSettingCallback& callback);
-  void RequestDirectoryRefreshOnUIThread(const FilePath& file_path);
-  void OnRequestDirectoryRefresh(const FilePath& directory_path,
-                                 scoped_ptr<LoadFeedParams> params,
-                                 DriveFileError error);
-  void GetAvailableSpaceOnUIThread(const GetAvailableSpaceCallback& callback);
-
-  // Part of CreateDirectory(). Called after
-  // FindFirstMissingParentDirectory() is complete.
-  // |callback| must not be null.
-  void CreateDirectoryAfterFindFirstMissingPath(
-      const FilePath& directory_path,
-      bool is_exclusive,
-      bool is_recursive,
-      const FileOperationCallback& callback,
-      const FindFirstMissingParentDirectoryResult& result);
 
   // Part of GetEntryInfoByResourceId(). Called after
   // DriveResourceMetadata::GetEntryInfoByResourceId() is complete.
@@ -641,33 +411,28 @@ class DriveFileSystem : public DriveFileSystemInterface,
   void GetEntryInfoByResourceIdAfterGetEntry(
       const GetEntryInfoWithFilePathCallback& callback,
       DriveFileError error,
-      const FilePath& file_path,
+      const base::FilePath& file_path,
       scoped_ptr<DriveEntryProto> entry_proto);
 
-  // Part of GetFileByResourceIdOnUIThread(). Called after
+  // Part of GetFileByResourceId(). Called after
   // DriveResourceMetadata::GetEntryInfoByResourceId() is complete.
   // |get_file_callback| must not be null.
   // |get_content_callback| may be null.
   void GetFileByResourceIdAfterGetEntry(
+      const DriveClientContext& context,
       const GetFileCallback& get_file_callback,
       const google_apis::GetContentCallback& get_content_callback,
       DriveFileError error,
-      const FilePath& file_path,
+      const base::FilePath& file_path,
       scoped_ptr<DriveEntryProto> entry_proto);
 
-  // Part of RequestDirectoryRefreshOnUIThread(). Called after
+  // Part of RefreshDirectory(). Called after
   // GetEntryInfoByPath() is complete.
-  void RequestDirectoryRefreshOnUIThreadAfterGetEntryInfo(
-      const FilePath& file_path,
+  void RefreshDirectoryAfterGetEntryInfo(
+      const base::FilePath& directory_path,
+      const FileOperationCallback& callback,
       DriveFileError error,
       scoped_ptr<DriveEntryProto> entry_proto);
-
-  // Part of UpdateEntryData(). Called after RefreshFile is complete.
-  void UpdateCacheEntry(const FilePath& file_content_path,
-                        const FileOperationCallback& callback,
-                        DriveFileError error,
-                        const FilePath& drive_file_path,
-                        scoped_ptr<DriveEntryProto> entry_proto);
 
   // Part of GetEntryByResourceId and GetEntryByPath. Checks whether there is a
   // local dirty cache for the entry, and if there is, replace the
@@ -684,16 +449,12 @@ class DriveFileSystem : public DriveFileSystemInterface,
       scoped_ptr<DriveEntryProto> entry_proto,
       const GetEntryInfoCallback& callback,
       DriveFileError error,
-      const FilePath& local_cache_path);
+      const base::FilePath& local_cache_path);
   void CheckLocalModificationAndRunAfterGetFileInfo(
       scoped_ptr<DriveEntryProto> entry_proto,
       const GetEntryInfoCallback& callback,
       base::PlatformFileInfo* file_info,
       bool get_file_info_result);
-
-  // All members should be accessed only on UI thread. Do not post tasks to
-  // other threads with base::Unretained(this).
-  scoped_ptr<DriveResourceMetadata> resource_metadata_;
 
   // The profile hosts the DriveFileSystem via DriveSystemService.
   Profile* profile_;
@@ -708,7 +469,9 @@ class DriveFileSystem : public DriveFileSystemInterface,
   google_apis::DriveServiceInterface* drive_service_;
 
   // The webapps registry owned by DriveSystemService.
-  DriveWebAppsRegistryInterface* webapps_registry_;
+  DriveWebAppsRegistry* webapps_registry_;
+
+  DriveResourceMetadata* resource_metadata_;
 
   // Periodic timer for checking updates.
   base::Timer update_timer_;
@@ -723,12 +486,12 @@ class DriveFileSystem : public DriveFileSystemInterface,
   bool hide_hosted_docs_;
 
   // The set of paths opened by OpenFile but not yet closed by CloseFile.
-  std::set<FilePath> open_files_;
+  std::set<base::FilePath> open_files_;
 
   scoped_ptr<PrefChangeRegistrar> pref_registrar_;
 
-  // The loader is used to load the feeds.
-  scoped_ptr<DriveFeedLoader> feed_loader_;
+  // The loader is used to load the change lists.
+  scoped_ptr<ChangeListLoader> change_list_loader_;
 
   ObserverList<DriveFileSystemObserver> observers_;
 
@@ -744,13 +507,11 @@ class DriveFileSystem : public DriveFileSystemInterface,
   // True if push notification is enabled.
   bool push_notification_enabled_;
 
-  // WeakPtrFactory and WeakPtr bound to the UI thread.
   // Note: These should remain the last member so they'll be destroyed and
   // invalidate the weak pointers before any other members are destroyed.
-  base::WeakPtrFactory<DriveFileSystem> ui_weak_ptr_factory_;
-  // Unlike other classes, we need this as we need this to redirect a task
-  // from IO thread to UI thread.
-  base::WeakPtr<DriveFileSystem> ui_weak_ptr_;
+  base::WeakPtrFactory<DriveFileSystem> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(DriveFileSystem);
 };
 
 }  // namespace drive

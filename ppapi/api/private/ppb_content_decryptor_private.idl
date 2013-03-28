@@ -8,6 +8,9 @@
  * interface. Note: This is a special interface, only to be used for Content
  * Decryption Modules, not normal plugins.
  */
+
+[generate_thunk]
+
 label Chrome {
   M24 = 0.6
 };
@@ -40,7 +43,7 @@ interface PPB_ContentDecryptor_Private {
    * <code>PP_VARTYPE_STRING</code> containing the session ID.
    *
    * @param[in] init_data A <code>PP_Var</code> of type
-   * <code>PP_VARTYPE_ARRAYBUFFER</code> containing container-specific
+   * <code>PP_VARTYPE_ARRAY_BUFFER</code> containing container-specific
    * initialization data.
    */
   void NeedKey(
@@ -93,8 +96,8 @@ interface PPB_ContentDecryptor_Private {
    * @param[in] session_id A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the session ID.
    *
-   * @param[in] resource A <code>PP_Resource</code> corresponding to a
-   * <code>PPB_Buffer_Dev</code> resource that contains the message.
+   * @param[in] message A <code>PP_Var</code> of type
+   * <code>PP_VARTYPE_ARRAY_BUFFER</code> that contains the message.
    *
    * @param[in] default_url A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the default URL for the message.
@@ -103,7 +106,7 @@ interface PPB_ContentDecryptor_Private {
       [in] PP_Instance instance,
       [in] PP_Var key_system,
       [in] PP_Var session_id,
-      [in] PP_Resource message,
+      [in] PP_Var message,
       [in] PP_Var default_url);
 
   /**
@@ -131,6 +134,10 @@ interface PPB_ContentDecryptor_Private {
    * Called after the <code>Decrypt()</code> method on the
    * <code>PPP_ContentDecryptor_Private</code> interface completes to
    * deliver decrypted_block to the browser for decoding and rendering.
+   *
+   * The plugin must not hold a reference to the encrypted buffer resource
+   * provided to <code>Decrypt()</code> when it calls this method. The browser
+   * will reuse the buffer in a subsequent <code>Decrypt()</code> call.
    *
    * @param[in] decrypted_block A <code>PP_Resource</code> corresponding to a
    * <code>PPB_Buffer_Dev</code> resource that contains a decrypted data
@@ -206,6 +213,11 @@ interface PPB_ContentDecryptor_Private {
    * <code>PPP_ContentDecryptor_Private</code> interface completes to deliver
    * a decrypted and decoded video frame to the browser for rendering.
    *
+   * The plugin must not hold a reference to the encrypted buffer resource
+   * provided to <code>DecryptAndDecode()</code> when it calls this method. The
+   * browser will reuse the buffer in a subsequent
+   * <code>DecryptAndDecode()</code> call.
+   *
    * @param[in] decrypted_frame A <code>PP_Resource</code> corresponding to a
    * <code>PPB_Buffer_Dev</code> resource that contains a video frame.
    *
@@ -220,9 +232,14 @@ interface PPB_ContentDecryptor_Private {
 
   /**
    * Called after the <code>DecryptAndDecode()</code> method on the
-   * <code>PPP_ContentDecryptor_Private</code> interface completes to
-   * deliver a buffer of decrypted and decoded audio samples to the browser for
+   * <code>PPP_ContentDecryptor_Private</code> interface completes to deliver
+   * a buffer of decrypted and decoded audio samples to the browser for
    * rendering.
+   *
+   * The plugin must not hold a reference to the encrypted buffer resource
+   * provided to <code>DecryptAndDecode()</code> when it calls this method. The
+   * browser will reuse the buffer in a subsequent
+   * <code>DecryptAndDecode()</code> call.
    *
    * <code>audio_frames</code> can contain multiple audio output buffers. Each
    * buffer is serialized in this format:

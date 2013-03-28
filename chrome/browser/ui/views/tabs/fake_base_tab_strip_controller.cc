@@ -7,7 +7,9 @@
 #include "chrome/browser/ui/views/tabs/tab_renderer_data.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 
-FakeBaseTabStripController::FakeBaseTabStripController() : num_tabs_(0) {
+FakeBaseTabStripController::FakeBaseTabStripController()
+    : tab_strip_(NULL),
+      num_tabs_(0) {
 }
 
 FakeBaseTabStripController::~FakeBaseTabStripController() {
@@ -23,7 +25,7 @@ void FakeBaseTabStripController::RemoveTab(int index) {
   tab_strip_->RemoveTabAt(index);
 }
 
-const TabStripSelectionModel& FakeBaseTabStripController::GetSelectionModel() {
+const ui::ListSelectionModel& FakeBaseTabStripController::GetSelectionModel() {
   return selection_model_;
 }
 
@@ -70,7 +72,7 @@ void FakeBaseTabStripController::AddSelectionFromAnchorTo(int index) {
 void FakeBaseTabStripController::CloseTab(int index, CloseTabSource source) {
 }
 
-void FakeBaseTabStripController::ShowContextMenuForTab(BaseTab* tab,
+void FakeBaseTabStripController::ShowContextMenuForTab(Tab* tab,
                                                        const gfx::Point& p) {
 }
 

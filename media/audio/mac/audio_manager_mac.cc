@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <CoreAudio/AudioHardware.h>
+#include "media/audio/mac/audio_manager_mac.h"
 
+#include <CoreAudio/AudioHardware.h>
 #include <string>
 
 #include "base/bind.h"
@@ -11,14 +12,15 @@
 #include "base/mac/mac_logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/sys_string_conversions.h"
+#include "media/audio/audio_parameters.h"
+#include "media/audio/audio_util.h"
 #include "media/audio/mac/audio_input_mac.h"
 #include "media/audio/mac/audio_low_latency_input_mac.h"
 #include "media/audio/mac/audio_low_latency_output_mac.h"
-#include "media/audio/mac/audio_manager_mac.h"
-#include "media/audio/mac/audio_output_mac.h"
 #include "media/audio/mac/audio_synchronized_mac.h"
 #include "media/audio/mac/audio_unified_mac.h"
 #include "media/base/bind_to_loop.h"
+#include "media/base/channel_layout.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
 
@@ -26,6 +28,26 @@ namespace media {
 
 // Maximum number of output streams that can be open simultaneously.
 static const int kMaxOutputStreams = 50;
+
+// Default buffer size in samples for low-latency input and output streams.
+static const int kDefaultLowLatencyBufferSize = 128;
+
+static int ChooseBufferSize(int output_sample_rate) {
+  int buffer_size = kDefaultLowLatencyBufferSize;
+  const int user_buffer_size = GetUserBufferSize();
+  if (user_buffer_size) {
+    buffer_size = user_buffer_size;
+  } else if (output_sample_rate > 48000) {
+    // The default buffer size is too small for higher sample rates and may lead
+    // to glitching.  Adjust upwards by multiples of the default size.
+    if (output_sample_rate <= 96000)
+      buffer_size = 2 * kDefaultLowLatencyBufferSize;
+    else if (output_sample_rate <= 192000)
+      buffer_size = 4 * kDefaultLowLatencyBufferSize;
+  }
+
+  return buffer_size;
+}
 
 static bool HasAudioHardware(AudioObjectPropertySelector selector) {
   AudioDeviceID output_device_id = kAudioObjectUnknown;
@@ -232,66 +254,20 @@ static AudioDeviceID GetAudioDeviceIdByUId(bool is_input,
   return audio_device_id;
 }
 
-// Property address to monitor for device changes.
-static const AudioObjectPropertyAddress kDeviceChangePropertyAddress = {
-  kAudioHardwarePropertyDefaultOutputDevice,
-  kAudioObjectPropertyScopeGlobal,
-  kAudioObjectPropertyElementMaster
-};
-
-// Callback from the system when the default device changes.  This can be called
-// either on the main thread or on an audio thread managed by the system
-// depending on what kAudioHardwarePropertyRunLoop is set to.
-static OSStatus OnDefaultDeviceChangedCallback(
-    AudioObjectID object,
-    UInt32 num_addresses,
-    const AudioObjectPropertyAddress addresses[],
-    void* context) {
-  if (object != kAudioObjectSystemObject)
-    return noErr;
-
-  for (UInt32 i = 0; i < num_addresses; ++i) {
-    if (addresses[i].mSelector == kDeviceChangePropertyAddress.mSelector &&
-        addresses[i].mScope == kDeviceChangePropertyAddress.mScope &&
-        addresses[i].mElement == kDeviceChangePropertyAddress.mElement &&
-        context) {
-      static_cast<base::Closure*>(context)->Run();
-    }
-  }
-
-  return noErr;
-}
-
 AudioManagerMac::AudioManagerMac() {
   SetMaxOutputStreamsAllowed(kMaxOutputStreams);
 
-  // Register a callback for device changes.
-  listener_cb_ = BindToLoop(GetMessageLoop(), base::Bind(
-      &AudioManagerMac::NotifyAllOutputDeviceChangeListeners,
-      base::Unretained(this)));
-
-  OSStatus result = AudioObjectAddPropertyListener(
-      kAudioObjectSystemObject,
-      &kDeviceChangePropertyAddress,
-      &OnDefaultDeviceChangedCallback,
-      &listener_cb_);
-
-  if (result != noErr) {
-    OSSTATUS_DLOG(ERROR, result) << "AudioObjectAddPropertyListener() failed!";
-    listener_cb_.Reset();
-  }
+  // Task must be posted last to avoid races from handing out "this" to the
+  // audio thread.
+  GetMessageLoop()->PostTask(FROM_HERE, base::Bind(
+      &AudioManagerMac::CreateDeviceListener, base::Unretained(this)));
 }
 
 AudioManagerMac::~AudioManagerMac() {
-  if (!listener_cb_.is_null()) {
-    OSStatus result = AudioObjectRemovePropertyListener(
-        kAudioObjectSystemObject,
-        &kDeviceChangePropertyAddress,
-        &OnDefaultDeviceChangedCallback,
-        &listener_cb_);
-    OSSTATUS_DLOG_IF(ERROR, result != noErr, result)
-        << "AudioObjectRemovePropertyListener() failed!";
-  }
+  // It's safe to post a task here since Shutdown() will wait for all tasks to
+  // complete before returning.
+  GetMessageLoop()->PostTask(FROM_HERE, base::Bind(
+      &AudioManagerMac::DestroyDeviceListener, base::Unretained(this)));
 
   Shutdown();
 }
@@ -302,6 +278,97 @@ bool AudioManagerMac::HasAudioOutputDevices() {
 
 bool AudioManagerMac::HasAudioInputDevices() {
   return HasAudioHardware(kAudioHardwarePropertyDefaultInputDevice);
+}
+
+// TODO(crogers): There are several places on the OSX specific code which
+// could benefit from this helper function.
+bool AudioManagerMac::GetDefaultOutputDevice(
+    AudioDeviceID* device) {
+  CHECK(device);
+
+  // Obtain the current output device selected by the user.
+  static const AudioObjectPropertyAddress kAddress = {
+      kAudioHardwarePropertyDefaultOutputDevice,
+      kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMaster
+  };
+
+  UInt32 size = sizeof(*device);
+
+  OSStatus result = AudioObjectGetPropertyData(
+      kAudioObjectSystemObject,
+      &kAddress,
+      0,
+      0,
+      &size,
+      device);
+
+  if ((result != kAudioHardwareNoError) || (*device == kAudioDeviceUnknown)) {
+    DLOG(ERROR) << "Error getting default output AudioDevice.";
+    return false;
+  }
+
+  return true;
+}
+
+bool AudioManagerMac::GetDefaultOutputChannels(
+    int* channels, int* channels_per_frame) {
+  AudioDeviceID device;
+  if (!GetDefaultOutputDevice(&device))
+    return false;
+
+  return GetDeviceChannels(device,
+                           kAudioDevicePropertyScopeOutput,
+                           channels,
+                           channels_per_frame);
+}
+
+bool AudioManagerMac::GetDeviceChannels(
+    AudioDeviceID device,
+    AudioObjectPropertyScope scope,
+    int* channels,
+    int* channels_per_frame) {
+  CHECK(channels);
+  CHECK(channels_per_frame);
+
+  // Get stream configuration.
+  AudioObjectPropertyAddress pa;
+  pa.mSelector = kAudioDevicePropertyStreamConfiguration;
+  pa.mScope = scope;
+  pa.mElement = kAudioObjectPropertyElementMaster;
+
+  UInt32 size;
+  OSStatus result = AudioObjectGetPropertyDataSize(device, &pa, 0, 0, &size);
+  if (result != noErr || !size)
+    return false;
+
+  // Allocate storage.
+  scoped_array<uint8> list_storage(new uint8[size]);
+  AudioBufferList& buffer_list =
+      *reinterpret_cast<AudioBufferList*>(list_storage.get());
+
+  result = AudioObjectGetPropertyData(
+      device,
+      &pa,
+      0,
+      0,
+      &size,
+      &buffer_list);
+  if (result != noErr)
+    return false;
+
+  // Determine number of input channels.
+  *channels_per_frame = buffer_list.mNumberBuffers > 0 ?
+      buffer_list.mBuffers[0].mNumberChannels : 0;
+  if (*channels_per_frame == 1 && buffer_list.mNumberBuffers > 1) {
+    // Non-interleaved.
+    *channels = buffer_list.mNumberBuffers;
+  } else {
+    // Interleaved.
+    *channels = *channels_per_frame;
+  }
+
+  return true;
 }
 
 void AudioManagerMac::GetAudioInputDeviceNames(
@@ -318,19 +385,30 @@ void AudioManagerMac::GetAudioInputDeviceNames(
   }
 }
 
+AudioParameters AudioManagerMac::GetInputStreamParameters(
+    const std::string& device_id) {
+  // Due to the sharing of the input and output buffer sizes, we need to choose
+  // the input buffer size based on the output sample rate.  See
+  // http://crbug.com/154352.
+  const int buffer_size = ChooseBufferSize(
+      AUAudioOutputStream::HardwareSampleRate());
+
+  // TODO(xians): query the native channel layout for the specific device.
+  return AudioParameters(
+      AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_STEREO,
+      AUAudioInputStream::HardwareSampleRate(), 16,
+      buffer_size);
+}
+
 AudioOutputStream* AudioManagerMac::MakeLinearOutputStream(
     const AudioParameters& params) {
-  DCHECK_EQ(AudioParameters::AUDIO_PCM_LINEAR, params.format());
-  return new PCMQueueOutAudioOutputStream(this, params);
+  return MakeLowLatencyOutputStream(params);
 }
 
 AudioOutputStream* AudioManagerMac::MakeLowLatencyOutputStream(
     const AudioParameters& params) {
-  DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
-
-  // TODO(crogers): remove once we properly handle input device selection.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableWebAudioInput)) {
+  // TODO(crogers): support more than stereo input.
+  if (params.input_channels() == 2) {
     if (HasUnifiedDefaultIO())
       return new AudioHardwareUnifiedStream(this, params);
 
@@ -361,6 +439,68 @@ AudioInputStream* AudioManagerMac::MakeLowLatencyInputStream(
     stream = new AUAudioInputStream(this, params, audio_device_id);
 
   return stream;
+}
+
+AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
+    const AudioParameters& input_params) {
+  int hardware_channels = 2;
+  int hardware_channels_per_frame = 1;
+  if (!GetDefaultOutputChannels(&hardware_channels,
+                                &hardware_channels_per_frame)) {
+    // Fallback to stereo.
+    hardware_channels = 2;
+  }
+
+  ChannelLayout channel_layout = GuessChannelLayout(hardware_channels);
+
+  const int hardware_sample_rate = AUAudioOutputStream::HardwareSampleRate();
+  const int buffer_size = ChooseBufferSize(hardware_sample_rate);
+
+  int input_channels = 0;
+  if (input_params.IsValid()) {
+    input_channels = input_params.input_channels();
+
+    if (input_channels > 0) {
+      // TODO(crogers): given the limitations of the AudioOutputStream
+      // back-ends used with synchronized I/O, we hard-code to stereo.
+      // Specifically, this is a limitation of AudioSynchronizedStream which
+      // can be removed as part of the work to consolidate these back-ends.
+      channel_layout = CHANNEL_LAYOUT_STEREO;
+    }
+  }
+
+  AudioParameters params(
+      AudioParameters::AUDIO_PCM_LOW_LATENCY,
+      channel_layout,
+      input_channels,
+      hardware_sample_rate,
+      16,
+      buffer_size);
+
+  if (channel_layout == CHANNEL_LAYOUT_UNSUPPORTED)
+    params.SetDiscreteChannels(hardware_channels);
+
+  return params;
+}
+
+void AudioManagerMac::CreateDeviceListener() {
+  DCHECK(GetMessageLoop()->BelongsToCurrentThread());
+  output_device_listener_.reset(new AudioDeviceListenerMac(base::Bind(
+      &AudioManagerMac::DelayedDeviceChange, base::Unretained(this))));
+}
+
+void AudioManagerMac::DestroyDeviceListener() {
+  DCHECK(GetMessageLoop()->BelongsToCurrentThread());
+  output_device_listener_.reset();
+}
+
+void AudioManagerMac::DelayedDeviceChange() {
+  // TODO(dalecurtis): This is ridiculous, but we need to delay device changes
+  // to workaround threading issues with OSX property listener callbacks.  See
+  // http://crbug.com/158170
+  GetMessageLoop()->PostDelayedTask(FROM_HERE, base::Bind(
+      &AudioManagerMac::NotifyAllOutputDeviceChangeListeners,
+      base::Unretained(this)), base::TimeDelta::FromSeconds(2));
 }
 
 AudioManager* CreateAudioManager() {

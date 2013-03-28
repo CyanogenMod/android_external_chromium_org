@@ -9,6 +9,7 @@
 #define GL_GLEXT_PROTOTYPES 1
 #endif
 #include <GLES2/gl2ext.h>
+#include <GLES2/gl2extchromium.h>
 
 #include <algorithm>
 #include <set>
@@ -23,7 +24,6 @@
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/string_tokenizer.h"
 #include "base/synchronization/lock.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
@@ -33,13 +33,10 @@
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_share_group.h"
 #include "ui/gl/gl_surface.h"
-#include "webkit/glue/gl_bindings_skia_cmd_buffer.h"
+#include "webkit/gpu/gl_bindings_skia_cmd_buffer.h"
 
 using gpu::Buffer;
 using gpu::CommandBuffer;
@@ -172,6 +169,7 @@ class GLInProcessContext : public base::SupportsWeakPtr<GLInProcessContext> {
   scoped_ptr<TransferBuffer> transfer_buffer_;
   scoped_ptr<GLES2Implementation> gles2_implementation_;
   Error last_error_;
+  bool context_lost_;
 
   DISALLOW_COPY_AND_ASSIGN(GLInProcessContext);
 };
@@ -245,11 +243,15 @@ static base::LazyInstance<base::Lock> g_decoder_lock =
     LAZY_INSTANCE_INITIALIZER;
 
 void GLInProcessContext::PumpCommands() {
-  base::AutoLock lock(g_decoder_lock.Get());
-  decoder_->MakeCurrent();
-  gpu_scheduler_->PutChanged();
-  ::gpu::CommandBuffer::State state = command_buffer_->GetState();
-  CHECK(state.error == ::gpu::error::kNoError);
+  if (!context_lost_) {
+    base::AutoLock lock(g_decoder_lock.Get());
+    decoder_->MakeCurrent();
+    gpu_scheduler_->PutChanged();
+    ::gpu::CommandBuffer::State state = command_buffer_->GetState();
+    if (::gpu::error::IsError(state.error)) {
+      context_lost_ = true;
+    }
+  }
 }
 
 bool GLInProcessContext::GetBufferChanged(int32 transfer_buffer_id) {
@@ -307,6 +309,7 @@ bool GLInProcessContext::SwapBuffers() {
 GLInProcessContext::Error GLInProcessContext::GetError() {
   CommandBuffer::State state = command_buffer_->GetState();
   if (state.error == ::gpu::error::kNoError) {
+    // TODO(gman): Figure out and document what this logic is for.
     Error old_error = last_error_;
     last_error_ = SUCCESS;
     return old_error;
@@ -318,11 +321,11 @@ GLInProcessContext::Error GLInProcessContext::GetError() {
 }
 
 bool GLInProcessContext::IsCommandBufferContextLost() {
-  if (!command_buffer_.get()) {
+  if (context_lost_ || !command_buffer_.get()) {
     return true;
   }
   CommandBuffer::State state = command_buffer_->GetState();
-  return state.error == ::gpu::error::kLostContext;
+  return ::gpu::error::IsError(state.error);
 }
 
 CommandBufferService* GLInProcessContext::GetCommandBufferService() {
@@ -342,7 +345,8 @@ GLInProcessContext::GLInProcessContext(GLInProcessContext* parent)
     : parent_(parent ?
           parent->AsWeakPtr() : base::WeakPtr<GLInProcessContext>()),
       parent_texture_id_(0),
-      last_error_(SUCCESS) {
+      last_error_(SUCCESS),
+      context_lost_(false) {
 }
 
 bool GLInProcessContext::Initialize(const gfx::Size& size,
@@ -474,6 +478,8 @@ bool GLInProcessContext::Initialize(const gfx::Size& size,
   command_buffer_->SetGetBufferChangeCallback(
       base::Bind(
           &GLInProcessContext::GetBufferChanged, base::Unretained(this)));
+  command_buffer_->SetParseErrorCallback(
+      base::Bind(&GLInProcessContext::OnContextLost, base::Unretained(this)));
 
   // Create the GLES2 helper, which writes the command buffer protocol.
   gles2_helper_.reset(new GLES2CmdHelper(command_buffer_.get()));
@@ -628,9 +634,9 @@ bool WebGraphicsContext3DInProcessCommandBufferImpl::Initialize(
     GLint stencil_bits = 0;
     getIntegerv(GL_STENCIL_BITS, &stencil_bits);
     attributes_.stencil = stencil_bits > 0;
-    GLint samples = 0;
-    getIntegerv(GL_SAMPLES, &samples);
-    attributes_.antialias = samples > 0;
+    GLint sample_buffers = 0;
+    getIntegerv(GL_SAMPLE_BUFFERS, &sample_buffers);
+    attributes_.antialias = sample_buffers > 0;
   }
   makeContextCurrent();
 
@@ -700,10 +706,6 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::reshape(
   // ClearContext();
 
   gl_->ResizeCHROMIUM(width, height);
-
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
-  scanline_.reset(new uint8[width * 4]);
-#endif  // FLIP_FRAMEBUFFER_VERTICALLY
 }
 
 WebGLId WebGraphicsContext3DInProcessCommandBufferImpl::createCompositorTexture(
@@ -720,14 +722,14 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::deleteCompositorTexture(
   context_->DeleteParentTexture(parent_texture);
 }
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
 void WebGraphicsContext3DInProcessCommandBufferImpl::FlipVertically(
     uint8* framebuffer,
     unsigned int width,
     unsigned int height) {
-  uint8* scanline = scanline_.get();
-  if (!scanline)
+  if (width == 0)
     return;
+  scanline_.resize(width * 4);
+  uint8* scanline = &scanline_[0];
   unsigned int row_bytes = width * 4;
   unsigned int count = height / 2;
   for (unsigned int i = 0; i < count; i++) {
@@ -742,7 +744,6 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::FlipVertically(
     memcpy(row_a, scanline, row_bytes);
   }
 }
-#endif
 
 bool WebGraphicsContext3DInProcessCommandBufferImpl::readBackFramebuffer(
     unsigned char* pixels,
@@ -779,11 +780,9 @@ bool WebGraphicsContext3DInProcessCommandBufferImpl::readBackFramebuffer(
     gl_->BindFramebuffer(GL_FRAMEBUFFER, bound_fbo_);
   }
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
   if (pixels) {
     FlipVertically(pixels, width, height);
   }
-#endif
 
   return true;
 }
@@ -849,10 +848,15 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::discardFramebufferEXT(
     WGC3Denum target, WGC3Dsizei numAttachments, const WGC3Denum* attachments) {
+  gl_->DiscardFramebufferEXT(target, numAttachments, attachments);
 }
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::
-    ensureFramebufferCHROMIUM() {
+    discardBackbufferCHROMIUM() {
+}
+
+void WebGraphicsContext3DInProcessCommandBufferImpl::
+    ensureBackbufferCHROMIUM() {
 }
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::
@@ -1643,9 +1647,21 @@ DELEGATE_TO_GL_2(bindTexImage2DCHROMIUM, BindTexImage2DCHROMIUM,
 DELEGATE_TO_GL_2(releaseTexImage2DCHROMIUM, ReleaseTexImage2DCHROMIUM,
                  WGC3Denum, WGC3Dint)
 
+void* WebGraphicsContext3DInProcessCommandBufferImpl::mapBufferCHROMIUM(
+    WGC3Denum target, WGC3Denum access) {
+  ClearContext();
+  return gl_->MapBufferCHROMIUM(target, access);
+}
+
+WGC3Dboolean WebGraphicsContext3DInProcessCommandBufferImpl::
+    unmapBufferCHROMIUM(WGC3Denum target) {
+  ClearContext();
+  return gl_->UnmapBufferCHROMIUM(target);
+}
+
 GrGLInterface* WebGraphicsContext3DInProcessCommandBufferImpl::
     onCreateGrGLInterface() {
-  return webkit_glue::CreateCommandBufferSkiaGLBinding();
+  return CreateCommandBufferSkiaGLBinding();
 }
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::OnContextLost() {
@@ -1666,6 +1682,20 @@ DELEGATE_TO_GL_2(produceTextureCHROMIUM, ProduceTextureCHROMIUM,
                  WGC3Denum, const WGC3Dbyte*)
 DELEGATE_TO_GL_2(consumeTextureCHROMIUM, ConsumeTextureCHROMIUM,
                  WGC3Denum, const WGC3Dbyte*)
+
+DELEGATE_TO_GL_2(drawBuffersEXT, DrawBuffersEXT,
+                 WGC3Dsizei, const WGC3Denum*)
+
+DELEGATE_TO_GL_9(asyncTexImage2DCHROMIUM, AsyncTexImage2DCHROMIUM,
+    WGC3Denum, WGC3Dint, WGC3Denum, WGC3Dsizei, WGC3Dsizei, WGC3Dint,
+    WGC3Denum, WGC3Denum, const void*)
+
+DELEGATE_TO_GL_9(asyncTexSubImage2DCHROMIUM, AsyncTexSubImage2DCHROMIUM,
+    WGC3Denum, WGC3Dint, WGC3Dint, WGC3Dint, WGC3Dsizei, WGC3Dsizei,
+    WGC3Denum, WGC3Denum, const void*)
+
+DELEGATE_TO_GL_1(waitAsyncTexImage2DCHROMIUM, WaitAsyncTexImage2DCHROMIUM,
+    WGC3Denum)
 
 }  // namespace gpu
 }  // namespace webkit

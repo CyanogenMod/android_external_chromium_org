@@ -8,8 +8,8 @@
 
 #include "base/command_line.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
@@ -67,10 +67,10 @@ bool WriteGoogleUpdateStrKey(const wchar_t* const name,
   return WriteGoogleUpdateStrKeyInternal(dist, name, value);
 }
 
-bool WriteGoogleUpdateStrKeyMultiInstall(const wchar_t* const name,
+bool WriteGoogleUpdateStrKeyMultiInstall(BrowserDistribution* dist,
+                                         const wchar_t* const name,
                                          const std::wstring& value,
                                          bool system_level) {
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   bool result = WriteGoogleUpdateStrKeyInternal(dist, name, value);
   if (!InstallUtil::IsMultiInstall(dist, system_level))
     return result;
@@ -159,7 +159,7 @@ bool GetUpdatePolicyFromDword(
 
 bool GoogleUpdateSettings::IsSystemInstall() {
   bool system_install = false;
-  FilePath module_dir;
+  base::FilePath module_dir;
   if (!PathService::Get(base::DIR_MODULE, &module_dir)) {
     LOG(WARNING)
         << "Failed to get directory of module; assuming per-user install.";
@@ -352,7 +352,16 @@ bool GoogleUpdateSettings::ClearReferral() {
 
 bool GoogleUpdateSettings::UpdateDidRunState(bool did_run,
                                              bool system_level) {
-  return WriteGoogleUpdateStrKeyMultiInstall(google_update::kRegDidRunField,
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+  return UpdateDidRunStateForDistribution(dist, did_run, system_level);
+}
+
+bool GoogleUpdateSettings::UpdateDidRunStateForDistribution(
+    BrowserDistribution* dist,
+    bool did_run,
+    bool system_level) {
+  return WriteGoogleUpdateStrKeyMultiInstall(dist,
+                                             google_update::kRegDidRunField,
                                              did_run ? L"1" : L"0",
                                              system_level);
 }
@@ -641,4 +650,61 @@ bool GoogleUpdateSettings::GetUpdateDetail(bool system_install,
   return GetUpdateDetailForApp(system_install,
                                dist->GetAppGuid().c_str(),
                                data);
+}
+
+bool GoogleUpdateSettings::SetExperimentLabels(
+    bool system_install,
+    const string16& experiment_labels) {
+  HKEY reg_root = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
+
+  // Use the browser distribution and install level to write to the correct
+  // client state/app guid key.
+  bool success = false;
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+  if (dist->ShouldSetExperimentLabels()) {
+    string16 client_state_path(
+        system_install ? dist->GetStateMediumKey() : dist->GetStateKey());
+    RegKey client_state(
+        reg_root, client_state_path.c_str(), KEY_SET_VALUE);
+    if (experiment_labels.empty()) {
+      success = client_state.DeleteValue(google_update::kExperimentLabels)
+          == ERROR_SUCCESS;
+    } else {
+      success = client_state.WriteValue(google_update::kExperimentLabels,
+          experiment_labels.c_str()) == ERROR_SUCCESS;
+    }
+  }
+
+  return success;
+}
+
+bool GoogleUpdateSettings::ReadExperimentLabels(
+    bool system_install,
+    string16* experiment_labels) {
+  HKEY reg_root = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
+
+  // If this distribution does not set the experiment labels, don't bother
+  // reading.
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+  if (!dist->ShouldSetExperimentLabels())
+    return false;
+
+  string16 client_state_path(
+      system_install ? dist->GetStateMediumKey() : dist->GetStateKey());
+
+  RegKey client_state;
+  LONG result =
+      client_state.Open(reg_root, client_state_path.c_str(), KEY_QUERY_VALUE);
+  if (result == ERROR_SUCCESS) {
+    result = client_state.ReadValue(google_update::kExperimentLabels,
+                                    experiment_labels);
+  }
+
+  // If the key or value was not present, return the empty string.
+  if (result == ERROR_FILE_NOT_FOUND || result == ERROR_PATH_NOT_FOUND) {
+    experiment_labels->clear();
+    return true;
+  }
+
+  return result == ERROR_SUCCESS;
 }

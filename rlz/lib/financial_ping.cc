@@ -182,11 +182,6 @@ net::URLRequestContextGetter* g_context;
 
 bool FinancialPing::SetURLRequestContext(
     net::URLRequestContextGetter* context) {
-  ScopedRlzValueStoreLock lock;
-  RlzValueStore* store = lock.GetStore();
-  if (!store)
-    return false;
-
   g_context = context;
   return true;
 }
@@ -198,7 +193,7 @@ class FinancialPingUrlFetcherDelegate : public net::URLFetcherDelegate {
   FinancialPingUrlFetcherDelegate(const base::Closure& callback)
       : callback_(callback) {
   }
-  virtual void OnURLFetchComplete(const net::URLFetcher* source);
+  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
  private:
   base::Closure callback_;
@@ -297,10 +292,11 @@ bool FinancialPing::PingServer(const char* request, std::string* response) {
   fetcher->SetRequestContext(g_context);
 
   const base::TimeDelta kTimeout = base::TimeDelta::FromMinutes(5);
+  MessageLoop::ScopedNestableTaskAllower allow_nested(MessageLoop::current());
   MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&net::URLFetcher::Start, base::Unretained(fetcher.get())));
-  MessageLoop::current()->PostNonNestableDelayedTask(
+  MessageLoop::current()->PostDelayedTask(
       FROM_HERE, loop.QuitClosure(), kTimeout);
 
   loop.Run();

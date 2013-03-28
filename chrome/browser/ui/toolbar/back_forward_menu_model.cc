@@ -8,16 +8,14 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/string_number_conversions.h"
-#include "chrome/browser/event_disposition.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/singleton_tabs.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/favicon_status.h"
@@ -31,6 +29,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/text_elider.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/favicon_size.h"
 
 using content::NavigationController;
@@ -200,7 +199,7 @@ void BackForwardMenuModel::ActivatedAt(int index, int event_flags) {
 
   int controller_index = MenuIndexToNavEntryIndex(index);
   WindowOpenDisposition disposition =
-      chrome::DispositionFromEventFlags(event_flags);
+      ui::DispositionFromEventFlags(event_flags);
   if (!chrome::NavigateToIndexWithDisposition(browser_,
                                               controller_index,
                                               disposition)) {
@@ -211,7 +210,7 @@ void BackForwardMenuModel::ActivatedAt(int index, int event_flags) {
 void BackForwardMenuModel::MenuWillShow() {
   content::RecordComputedAction(BuildActionName("Popup", -1));
   requested_favicons_.clear();
-  load_consumer_.CancelAllRequests();
+  cancelable_task_tracker_.TryCancelAll();
 }
 
 bool BackForwardMenuModel::IsSeparator(int index) const {
@@ -238,6 +237,10 @@ void BackForwardMenuModel::SetMenuModelDelegate(
   menu_model_delegate_ = menu_model_delegate;
 }
 
+ui::MenuModelDelegate* BackForwardMenuModel::GetMenuModelDelegate() const {
+  return menu_model_delegate_;
+}
+
 void BackForwardMenuModel::FetchFavicon(NavigationEntry* entry) {
   // If the favicon has already been requested for this menu, don't do
   // anything.
@@ -250,26 +253,29 @@ void BackForwardMenuModel::FetchFavicon(NavigationEntry* entry) {
       browser_->profile(), Profile::EXPLICIT_ACCESS);
   if (!favicon_service)
     return;
-  FaviconService::Handle handle = favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(browser_->profile(), entry->GetURL(),
-          history::FAVICON, gfx::kFaviconSize, &load_consumer_),
+
+  favicon_service->GetFaviconImageForURL(
+      FaviconService::FaviconForURLParams(browser_->profile(),
+                                          entry->GetURL(),
+                                          history::FAVICON,
+                                          gfx::kFaviconSize),
       base::Bind(&BackForwardMenuModel::OnFavIconDataAvailable,
-                 base::Unretained(this)));
-  load_consumer_.SetClientData(favicon_service, handle, entry->GetUniqueID());
+                 base::Unretained(this),
+                 entry->GetUniqueID()),
+      &cancelable_task_tracker_);
 }
 
 void BackForwardMenuModel::OnFavIconDataAvailable(
-    FaviconService::Handle handle,
+    int navigation_entry_unique_id,
     const history::FaviconImageResult& image_result) {
   if (!image_result.image.IsEmpty()) {
-    int unique_id = load_consumer_.GetClientDataForCurrentRequest();
-    // Find the current model_index for the unique_id.
+    // Find the current model_index for the unique id.
     NavigationEntry* entry = NULL;
     int model_index = -1;
     for (int i = 0; i < GetItemCount() - 1; i++) {
       if (IsSeparator(i))
         continue;
-      if (GetNavigationEntry(i)->GetUniqueID() == unique_id) {
+      if (GetNavigationEntry(i)->GetUniqueID() == navigation_entry_unique_id) {
         model_index = i;
         entry = GetNavigationEntry(i);
         break;
@@ -416,7 +422,7 @@ WebContents* BackForwardMenuModel::GetWebContents() const {
   // We use the test web contents if the unit test has specified it.
   return test_web_contents_ ?
       test_web_contents_ :
-      chrome::GetActiveWebContents(browser_);
+      browser_->tab_strip_model()->GetActiveWebContents();
 }
 
 int BackForwardMenuModel::MenuIndexToNavEntryIndex(int index) const {

@@ -52,9 +52,6 @@ int MockRenderProcessHost::GetNextRoutingID() {
   return ++prev_routing_id;
 }
 
-void MockRenderProcessHost::CancelResourceRequests(int render_widget_id) {
-}
-
 void MockRenderProcessHost::SimulateSwapOutACK(
     const ViewMsg_SwapOut_Params& params) {
 }
@@ -105,7 +102,7 @@ bool MockRenderProcessHost::FastShutdownStarted() const {
 void MockRenderProcessHost::DumpHandles() {
 }
 
-base::ProcessHandle MockRenderProcessHost::GetHandle() {
+base::ProcessHandle MockRenderProcessHost::GetHandle() const {
   // Return the current-process handle for the IPC::GetFileHandleForProcess
   // function.
   return base::Process::Current().handle();

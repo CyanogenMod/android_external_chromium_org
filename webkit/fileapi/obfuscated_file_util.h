@@ -7,10 +7,9 @@
 
 #include <map>
 #include <string>
-#include <vector>
 
-#include "base/file_path.h"
-#include "base/file_util_proxy.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util_proxy.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "base/timer.h"
@@ -23,7 +22,6 @@
 #include "webkit/storage/webkit_storage_export.h"
 
 namespace base {
-struct PlatformFileInfo;
 class Time;
 }
 
@@ -57,7 +55,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
     virtual bool HasFileSystemType(FileSystemType type) const = 0;
   };
 
-  explicit ObfuscatedFileUtil(const FilePath& file_system_directory);
+  explicit ObfuscatedFileUtil(const base::FilePath& file_system_directory);
   virtual ~ObfuscatedFileUtil();
 
   // FileSystemFileUtil overrides.
@@ -67,9 +65,9 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
       int file_flags,
       base::PlatformFile* file_handle,
       bool* created) OVERRIDE;
-  virtual PlatformFileError Close(
+  virtual base::PlatformFileError Close(
       FileSystemOperationContext* context,
-      PlatformFile file) OVERRIDE;
+      base::PlatformFile file) OVERRIDE;
   virtual base::PlatformFileError EnsureFileExists(
       FileSystemOperationContext* context,
       const FileSystemURL& url, bool* created) OVERRIDE;
@@ -82,7 +80,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       base::PlatformFileInfo* file_info,
-      FilePath* platform_file) OVERRIDE;
+      base::FilePath* platform_file) OVERRIDE;
   virtual scoped_ptr<AbstractFileEnumerator> CreateFileEnumerator(
       FileSystemOperationContext* context,
       const FileSystemURL& root_url,
@@ -90,7 +88,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   virtual base::PlatformFileError GetLocalFilePath(
       FileSystemOperationContext* context,
       const FileSystemURL& file_system_url,
-      FilePath* local_path) OVERRIDE;
+      base::FilePath* local_path) OVERRIDE;
   virtual base::PlatformFileError Touch(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
@@ -100,30 +98,32 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       int64 length) OVERRIDE;
-  virtual bool IsDirectoryEmpty(
-      FileSystemOperationContext* context,
-      const FileSystemURL& url) OVERRIDE;
   virtual base::PlatformFileError CopyOrMoveFile(
       FileSystemOperationContext* context,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
       bool copy) OVERRIDE;
-  virtual PlatformFileError CopyInForeignFile(
+  virtual base::PlatformFileError CopyInForeignFile(
         FileSystemOperationContext* context,
-        const FilePath& src_file_path,
+        const base::FilePath& src_file_path,
         const FileSystemURL& dest_url) OVERRIDE;
   virtual base::PlatformFileError DeleteFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url) OVERRIDE;
-  virtual base::PlatformFileError DeleteSingleDirectory(
+  virtual base::PlatformFileError DeleteDirectory(
       FileSystemOperationContext* context,
       const FileSystemURL& url) OVERRIDE;
   virtual base::PlatformFileError CreateSnapshotFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       base::PlatformFileInfo* file_info,
-      FilePath* platform_path,
+      base::FilePath* platform_path,
       SnapshotFilePolicy* policy) OVERRIDE;
+
+  // Returns true if the directory |url| is empty.
+  bool IsDirectoryEmpty(
+      FileSystemOperationContext* context,
+      const FileSystemURL& url);
 
   // Gets the topmost directory specific to this origin and type.  This will
   // contain both the directory database's files and all the backing file
@@ -133,7 +133,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   // there is a file system error (e.g. the directory doesn't exist on disk and
   // |create| is false). Callers should always check |error_code| to make sure
   // the returned path is usable.
-  FilePath GetDirectoryForOriginAndType(
+  base::FilePath GetDirectoryForOriginAndType(
       const GURL& origin,
       FileSystemType type,
       bool create,
@@ -143,23 +143,10 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   // delete its directory database.
   bool DeleteDirectoryForOriginAndType(const GURL& origin, FileSystemType type);
 
-  // This will migrate a filesystem from the old passthrough sandbox into the
-  // new obfuscated one.  It won't obfuscate the old filenames [it will maintain
-  // the old structure, but move it to a new root], but any new files created
-  // will go into the new standard locations.  This will be completely
-  // transparent to the user.  This migration is atomic in that it won't alter
-  // the source data until it's done, and that will be with a single directory
-  // move [the directory with the unguessable name will move into the new
-  // filesystem storage directory].  However, if this fails partway through, it
-  // might leave a seemingly-valid database for this origin.  When it starts up,
-  // it will clear any such database, just in case.
-  bool MigrateFromOldSandbox(
-      const GURL& origin, FileSystemType type, const FilePath& root);
-
   // TODO(ericu): This doesn't really feel like it belongs in this class.
   // The previous version lives in FileSystemPathManager, but perhaps
   // SandboxMountPointProvider would be better?
-  static FilePath::StringType GetDirectoryNameForType(FileSystemType type);
+  static base::FilePath::StringType GetDirectoryNameForType(FileSystemType type);
 
   // This method and all methods of its returned class must be called only on
   // the FILE thread.  The caller is responsible for deleting the returned
@@ -175,7 +162,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   // this ignores all but the BaseName of the supplied path.  In order to
   // compute the cost of adding a multi-segment directory recursively, call this
   // on each path segment and add the results.
-  static int64 ComputeFilePathCost(const FilePath& path);
+  static int64 ComputeFilePathCost(const base::FilePath& path);
 
  private:
   typedef FileSystemDirectoryDatabase::FileId FileId;
@@ -191,7 +178,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
       FileId file_id,
       FileInfo* local_info,
       base::PlatformFileInfo* file_info,
-      FilePath* platform_file_path);
+      base::FilePath* platform_file_path);
 
   // Creates a new file, both the underlying backing file and the entry in the
   // database.  |dest_file_info| is an in-out parameter.  Supply the name and
@@ -206,7 +193,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   // DCHECK and handle will hold base::kInvalidPlatformFileValue.
   base::PlatformFileError CreateFile(
       FileSystemOperationContext* context,
-      const FilePath& source_file_path,
+      const base::FilePath& source_file_path,
       const GURL& dest_origin,
       FileSystemType dest_type,
       FileInfo* dest_file_info,
@@ -216,10 +203,10 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   // This converts from a relative path [as is stored in the FileInfo.data_path
   // field] to an absolute platform path that can be given to the native
   // filesystem.
-  FilePath DataPathToLocalPath(
+  base::FilePath DataPathToLocalPath(
       const GURL& origin,
       FileSystemType type,
-      const FilePath& data_file_path);
+      const base::FilePath& data_file_path);
 
   // This returns NULL if |create| flag is false and a filesystem does not
   // exist for the given |origin_url| and |type|.
@@ -229,7 +216,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
 
   // Gets the topmost directory specific to this origin.  This will
   // contain both the filesystem type subdirectories.
-  FilePath GetDirectoryForOrigin(const GURL& origin,
+  base::FilePath GetDirectoryForOrigin(const GURL& origin,
                                  bool create,
                                  base::PlatformFileError* error_code);
 
@@ -246,12 +233,12 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
       FileSystemOperationContext* context,
       const GURL& origin,
       FileSystemType type,
-      FilePath* local_path);
+      base::FilePath* local_path);
 
   typedef std::map<std::string, FileSystemDirectoryDatabase*> DirectoryMap;
   DirectoryMap directories_;
   scoped_ptr<FileSystemOriginDatabase> origin_database_;
-  FilePath file_system_directory_;
+  base::FilePath file_system_directory_;
   base::OneShotTimer<ObfuscatedFileUtil> timer_;
 
   DISALLOW_COPY_AND_ASSIGN(ObfuscatedFileUtil);

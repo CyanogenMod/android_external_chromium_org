@@ -7,9 +7,11 @@
 
 syntax = "proto2";
 
+option optimize_for = LITE_RUNTIME;
+
 package metrics;
 
-// Next tag: 13
+// Next tag: 14
 message SystemProfileProto {
   // The time when the client was compiled/linked, in seconds since the epoch.
   optional int64 build_timestamp = 1;
@@ -37,6 +39,11 @@ message SystemProfileProto {
   // associated with the request; and including the postfix, may be more
   // specific.
   optional string app_version = 2;
+
+  // The brand code or distribution tag assigned to a partner, if available.
+  // Brand codes are only available on Windows.  Not every Windows install
+  // though will have a brand code.
+  optional string brand_code = 12;
 
   // The possible channels for an installation, from least to most stable.
   enum Channel {
@@ -71,6 +78,7 @@ message SystemProfileProto {
   }
   optional OS os = 5;
 
+  // Next tag for Hardware: 13
   // Information on the user's hardware.
   message Hardware {
     // The CPU architecture (x86, PowerPC, x86_64, ...)
@@ -104,6 +112,10 @@ message SystemProfileProto {
     // The device scale factor of the primary screen.
     optional float primary_screen_scale_factor = 12;
 
+    // Max DPI for any attached screen. (Windows only)
+    optional float max_dpi_x = 9;
+    optional float max_dpi_y = 10;
+
     // Information on the GPU
     message Graphics {
       // The GPU manufacturer's vendor id.
@@ -127,10 +139,53 @@ message SystemProfileProto {
         optional float overall_score = 3;
       }
       optional PerformanceStatistics performance_statistics = 5;
+      
+      // The GL_VENDOR string. An example of a gl_vendor string is 
+      // "Imagination Technologies". "" if we are not using OpenGL.
+      optional string gl_vendor = 6;
+      
+      // The GL_RENDERER string. An example of a gl_renderer string is 
+      // "PowerVR SGX 540". "" if we are not using OpenGL.
+      optional string gl_renderer = 7;
     }
     optional Graphics gpu = 8;
   }
   optional Hardware hardware = 6;
+
+  // Information about the network connection.
+  message Network {
+    // Set to true if connection_type changed during the lifetime of the log.
+    optional bool connection_type_is_ambiguous = 1;
+
+    // See net::NetworkChangeNotifier::ConnectionType.
+    enum ConnectionType {
+      CONNECTION_UNKNOWN = 0;
+      CONNECTION_ETHERNET = 1;
+      CONNECTION_WIFI = 2;
+      CONNECTION_2G = 3;
+      CONNECTION_3G = 4;
+      CONNECTION_4G = 5;
+    }
+    // The connection type according to NetworkChangeNotifier.
+    optional ConnectionType connection_type = 2;
+
+    // Set to true if wifi_phy_layer_protocol changed during the lifetime of the log.
+    optional bool wifi_phy_layer_protocol_is_ambiguous = 3;
+
+    // See net::WifiPHYLayerProtocol.
+    enum WifiPHYLayerProtocol {
+      WIFI_PHY_LAYER_PROTOCOL_NONE = 0;
+      WIFI_PHY_LAYER_PROTOCOL_ANCIENT = 1;
+      WIFI_PHY_LAYER_PROTOCOL_A = 2;
+      WIFI_PHY_LAYER_PROTOCOL_B = 3;
+      WIFI_PHY_LAYER_PROTOCOL_G = 4;
+      WIFI_PHY_LAYER_PROTOCOL_N = 5;
+      WIFI_PHY_LAYER_PROTOCOL_UNKNOWN = 6;
+    }
+    // The physical layer mode of the associated wifi access point, if any.
+    optional WifiPHYLayerProtocol wifi_phy_layer_protocol = 4;
+  }
+  optional Network network = 13;
 
   // Information on the Google Update install that is managing this client.
   message GoogleUpdate {

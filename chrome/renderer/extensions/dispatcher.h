@@ -12,13 +12,13 @@
 #include "base/shared_memory.h"
 #include "base/timer.h"
 #include "content/public/renderer/render_process_observer.h"
-#include "chrome/common/extensions/event_filter.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/features/feature.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
 #include "chrome/renderer/extensions/chrome_v8_context_set.h"
 #include "chrome/renderer/extensions/v8_schema_registry.h"
 #include "chrome/renderer/resource_bundle_source_map.h"
+#include "extensions/common/event_filter.h"
 #include "v8/include/v8.h"
 
 class GURL;
@@ -39,6 +39,7 @@ class RenderThread;
 }
 
 namespace extensions {
+class ContentWatcher;
 class Extension;
 class FilteredEventRouter;
 class RequestSender;
@@ -65,6 +66,9 @@ class Dispatcher : public content::RenderProcessObserver {
   }
   V8SchemaRegistry* v8_schema_registry() {
     return &v8_schema_registry_;
+  }
+  ContentWatcher* content_watcher() {
+    return content_watcher_.get();
   }
 
   bool IsExtensionActive(const std::string& extension_id) const;
@@ -116,8 +120,8 @@ class Dispatcher : public content::RenderProcessObserver {
   // Checks that the current context contains an extension that has permission
   // to execute the specified function. If it does not, a v8 exception is thrown
   // and the method returns false. Otherwise returns true.
-  bool CheckCurrentContextAccessToExtensionAPI(
-      const std::string& function_name) const;
+  bool CheckContextAccessToExtensionAPI(
+      const std::string& function_name, ChromeV8Context* context) const;
 
  private:
   friend class RenderViewTest;
@@ -142,7 +146,7 @@ class Dispatcher : public content::RenderProcessObserver {
                            const std::string& source_extension_id,
                            const std::string& target_extension_id);
   void OnDeliverMessage(int target_port_id, const std::string& message);
-  void OnDispatchOnDisconnect(int port_id, bool connection_error);
+  void OnDispatchOnDisconnect(int port_id, const std::string& error_message);
   void OnSetFunctionNames(const std::vector<std::string>& names);
   void OnLoaded(
       const std::vector<ExtensionMsg_Loaded_Params>& loaded_extensions);
@@ -169,9 +173,9 @@ class Dispatcher : public content::RenderProcessObserver {
       bool adblock,
       bool adblock_plus,
       bool other_webrequest);
-  void OnShouldUnload(const std::string& extension_id, int sequence_id);
-  void OnUnload(const std::string& extension_id);
-  void OnCancelUnload(const std::string& extension_id);
+  void OnShouldSuspend(const std::string& extension_id, int sequence_id);
+  void OnSuspend(const std::string& extension_id);
+  void OnCancelSuspend(const std::string& extension_id);
 
   // Update the list of active extensions that will be reported when we crash.
   void UpdateActiveExtensions();
@@ -185,6 +189,9 @@ class Dispatcher : public content::RenderProcessObserver {
 
   void RegisterNativeHandlers(ModuleSystem* module_system,
                               ChromeV8Context* context);
+  void RegisterSchemaGeneratedBindings(ModuleSystem* module_system,
+                                       ChromeV8Context* context,
+                                       v8::Handle<v8::Context> v8_context);
 
   // Inserts static source code into |source_map_|.
   void PopulateSourceMap();
@@ -207,6 +214,11 @@ class Dispatcher : public content::RenderProcessObserver {
                                              int extension_group,
                                              const ExtensionURLInfo& url_info);
 
+  // Gets |field| from |object| or creates it as an empty object if it doesn't
+  // exist.
+  v8::Handle<v8::Object> GetOrCreateObject(v8::Handle<v8::Object> object,
+                                           const std::string& field);
+
   // True if this renderer is running extensions.
   bool is_extension_process_;
 
@@ -220,6 +232,8 @@ class Dispatcher : public content::RenderProcessObserver {
   ChromeV8ContextSet v8_context_set_;
 
   scoped_ptr<UserScriptSlave> user_script_slave_;
+
+  scoped_ptr<ContentWatcher> content_watcher_;
 
   // Same as above, but on a longer timer and will run even if the process is
   // not idle, to ensure that IdleHandle gets called eventually.

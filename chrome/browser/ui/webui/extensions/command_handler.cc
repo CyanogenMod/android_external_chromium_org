@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/api/commands/command_service_factory.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
@@ -16,6 +15,7 @@
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -27,19 +27,18 @@ CommandHandler::CommandHandler(Profile* profile) : profile_(profile) {
 CommandHandler::~CommandHandler() {
 }
 
-void CommandHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
-  DCHECK(localized_strings);
-  localized_strings->SetString("extensionCommandsOverlay",
+void CommandHandler::GetLocalizedValues(content::WebUIDataSource* source) {
+  source->AddString("extensionCommandsOverlay",
       l10n_util::GetStringUTF16(IDS_EXTENSION_COMMANDS_DIALOG_TITLE));
-  localized_strings->SetString("extensionCommandsEmpty",
+  source->AddString("extensionCommandsEmpty",
       l10n_util::GetStringUTF16(IDS_EXTENSION_COMMANDS_EMPTY));
-  localized_strings->SetString("extensionCommandsInactive",
+  source->AddString("extensionCommandsInactive",
       l10n_util::GetStringUTF16(IDS_EXTENSION_COMMANDS_INACTIVE));
-  localized_strings->SetString("extensionCommandsStartTyping",
+  source->AddString("extensionCommandsStartTyping",
       l10n_util::GetStringUTF16(IDS_EXTENSION_TYPE_SHORTCUT));
-  localized_strings->SetString("extensionCommandsDelete",
+  source->AddString("extensionCommandsDelete",
       l10n_util::GetStringUTF16(IDS_EXTENSION_DELETE_SHORTCUT));
-  localized_strings->SetString("ok", l10n_util::GetStringUTF16(IDS_OK));
+  source->AddString("ok", l10n_util::GetStringUTF16(IDS_OK));
 }
 
 void CommandHandler::RegisterMessages() {
@@ -92,8 +91,7 @@ void CommandHandler::HandleSetExtensionCommandShortcut(
   }
 
   Profile* profile = Profile::FromWebUI(web_ui());
-  CommandService* command_service =
-      CommandServiceFactory::GetForProfile(profile);
+  CommandService* command_service = CommandService::Get(profile);
   command_service->UpdateKeybindingPrefs(extension_id, command_name, keystroke);
 
   UpdateCommandDataOnPage();
@@ -109,8 +107,7 @@ void CommandHandler::GetAllCommands(base::DictionaryValue* commands) {
   ListValue* results = new ListValue;
 
   Profile* profile = Profile::FromWebUI(web_ui());
-  CommandService* command_service =
-      CommandServiceFactory::GetForProfile(profile);
+  CommandService* command_service = CommandService::Get(profile);
 
   const ExtensionSet* extensions = extensions::ExtensionSystem::Get(profile)->
       extension_service()->extensions();

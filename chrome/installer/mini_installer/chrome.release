@@ -6,13 +6,12 @@
 app_host.exe: %(ChromeDir)s\
 chrome.exe: %(ChromeDir)s\
 wow_helper.exe: %(ChromeDir)s\
+asan_rtl.dll: %(VersionDir)s\
 chrome.dll: %(VersionDir)s\
 nacl64.exe: %(VersionDir)s\
 ppGoogleNaClPluginChrome.dll: %(VersionDir)s\
 nacl_irt_x86_32.nexe: %(VersionDir)s\
 nacl_irt_x86_64.nexe: %(VersionDir)s\
-nacl_ipc_irt_x86_32.nexe: %(VersionDir)s\
-nacl_ipc_irt_x86_64.nexe: %(VersionDir)s\
 icudt.dll: %(VersionDir)s\
 resources.pak: %(VersionDir)s\
 chrome_100_percent.pak: %(VersionDir)s\
@@ -25,8 +24,8 @@ chrome_frame_helper.dll: %(VersionDir)s\
 Extensions\*.*: %(VersionDir)s\Extensions\
 ffmpegsumo.dll: %(VersionDir)s\
 pdf.dll: %(VersionDir)s\
-d3dx9_43.dll: %(VersionDir)s\
 D3DCompiler_43.dll: %(VersionDir)s\
+d3dcompiler_46.dll: %(VersionDir)s\
 libEGL.dll: %(VersionDir)s\
 libGLESv2.dll: %(VersionDir)s\
 xinput1_3.dll: %(VersionDir)s\

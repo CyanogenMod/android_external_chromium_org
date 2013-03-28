@@ -10,10 +10,10 @@
 #include <sys/socket.h>
 
 #include "base/callback.h"
-#include "base/eintr_wrapper.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/metrics/stats_counters.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/rand_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
@@ -215,6 +215,8 @@ int UDPSocketLibevent::Connect(const IPEndPoint& address) {
   net_log_.BeginEvent(NetLog::TYPE_UDP_CONNECT,
                       CreateNetLogUDPConnectCallback(&address));
   int rv = InternalConnect(address);
+  if (rv != OK)
+    Close();
   net_log_.EndEventWithNetErrorCode(NetLog::TYPE_UDP_CONNECT, rv);
   return rv;
 }
@@ -361,7 +363,7 @@ void UDPSocketLibevent::LogRead(int result,
 }
 
 int UDPSocketLibevent::CreateSocket(const IPEndPoint& address) {
-  socket_ = socket(address.GetFamily(), SOCK_DGRAM, 0);
+  socket_ = socket(address.GetSockAddrFamily(), SOCK_DGRAM, 0);
   if (socket_ == kInvalidSocket)
     return MapSystemError(errno);
   if (SetNonBlocking(socket_)) {

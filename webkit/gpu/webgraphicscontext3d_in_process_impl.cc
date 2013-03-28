@@ -13,11 +13,11 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "base/synchronization/lock.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_bindings_skia_in_process.h"
 #include "ui/gl/gl_context.h"
@@ -68,9 +68,7 @@ WebGraphicsContext3DInProcessImpl::WebGraphicsContext3DInProcessImpl(
       multisample_color_buffer_(0),
       bound_fbo_(0),
       bound_texture_(0),
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
       scanline_(0),
-#endif
       gl_context_(context),
       gl_surface_(surface),
       fragment_compiler_(0),
@@ -103,10 +101,8 @@ WebGraphicsContext3DInProcessImpl::~WebGraphicsContext3DInProcessImpl() {
       glDeleteRenderbuffersEXT(1, &depth_stencil_buffer_);
   }
   glDeleteTextures(1, &texture_);
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
   if (scanline_)
     delete[] scanline_;
-#endif
   glDeleteFramebuffersEXT(1, &fbo_);
 
   gl_context_->ReleaseCurrent(gl_surface_.get());
@@ -228,8 +224,12 @@ bool WebGraphicsContext3DInProcessImpl::Initialize(
       strstr(extensions, "GL_EXT_framebuffer_object") != NULL;
   have_ext_framebuffer_multisample_ =
       strstr(extensions, "GL_EXT_framebuffer_multisample") != NULL;
+#if !defined(OS_ANDROID)
+  // Some Android Qualcomm drivers falsely report this ANGLE extension string.
+  // See http://crbug.com/165736
   have_angle_framebuffer_multisample_ =
       strstr(extensions, "GL_ANGLE_framebuffer_multisample") != NULL;
+#endif
   have_ext_oes_standard_derivatives_ =
       strstr(extensions, "GL_OES_standard_derivatives") != NULL;
   have_ext_oes_egl_image_external_ =
@@ -386,13 +386,11 @@ void WebGraphicsContext3DInProcessImpl::reshape(int width, int height) {
   if (must_restore_fbo)
     glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, bound_fbo_);
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
   if (scanline_) {
     delete[] scanline_;
     scanline_ = 0;
   }
   scanline_ = new unsigned char[width * 4];
-#endif  // FLIP_FRAMEBUFFER_VERTICALLY
 }
 
 bool WebGraphicsContext3DInProcessImpl::AllocateOffscreenFrameBuffer(
@@ -619,7 +617,6 @@ void WebGraphicsContext3DInProcessImpl::ClearRenderTarget() {
     glDisable(GL_DITHER);
 }
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
 void WebGraphicsContext3DInProcessImpl::FlipVertically(
     unsigned char* framebuffer, unsigned int width, unsigned int height) {
   unsigned char* scanline = scanline_;
@@ -639,7 +636,6 @@ void WebGraphicsContext3DInProcessImpl::FlipVertically(
     memcpy(row_a, scanline, row_bytes);
   }
 }
-#endif
 
 bool WebGraphicsContext3DInProcessImpl::readBackFramebuffer(
     unsigned char* pixels, size_t bufferSize, WebGLId framebuffer,
@@ -692,10 +688,8 @@ bool WebGraphicsContext3DInProcessImpl::readBackFramebuffer(
 
   glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, bound_fbo_);
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
   if (pixels)
     FlipVertically(pixels, width, height);
-#endif
 
   return true;
 }
@@ -745,7 +739,10 @@ void WebGraphicsContext3DInProcessImpl::discardFramebufferEXT(
     WGC3Denum target, WGC3Dsizei numAttachments, const WGC3Denum* attachments) {
 }
 
-void WebGraphicsContext3DInProcessImpl::ensureFramebufferCHROMIUM() {
+void WebGraphicsContext3DInProcessImpl::discardBackbufferCHROMIUM() {
+}
+
+void WebGraphicsContext3DInProcessImpl::ensureBackbufferCHROMIUM() {
 }
 
 void WebGraphicsContext3DInProcessImpl::copyTextureToParentTextureCHROMIUM(
@@ -1714,6 +1711,21 @@ void WebGraphicsContext3DInProcessImpl::releaseTexImage2DCHROMIUM(
   NOTIMPLEMENTED();
 }
 
+void* WebGraphicsContext3DInProcessImpl::mapBufferCHROMIUM(
+    WGC3Denum target, WGC3Denum access) {
+  return 0;
+}
+
+WGC3Dboolean WebGraphicsContext3DInProcessImpl::unmapBufferCHROMIUM(
+    WGC3Denum target) {
+  return false;
+}
+
+void WebGraphicsContext3DInProcessImpl::drawBuffersEXT(
+    WGC3Dsizei n, const WGC3Denum* bufs) {
+  NOTIMPLEMENTED();
+}
+
 GrGLInterface* WebGraphicsContext3DInProcessImpl::onCreateGrGLInterface() {
   return gfx::CreateInProcessSkiaGLBinding();
 }
@@ -1780,7 +1792,11 @@ bool WebGraphicsContext3DInProcessImpl::AngleValidateShaderSource(
 
   char* source = entry->source.get();
   if (!ShCompile(compiler, &source, 1, SH_OBJECT_CODE)) {
+#if !defined(ANGLE_SH_VERSION) || ANGLE_SH_VERSION < 108
     int logSize = 0;
+#else
+    size_t logSize = 0;
+#endif
     ShGetInfo(compiler, SH_INFO_LOG_LENGTH, &logSize);
     if (logSize > 1) {
       entry->log.reset(new char[logSize]);
@@ -1789,7 +1805,11 @@ bool WebGraphicsContext3DInProcessImpl::AngleValidateShaderSource(
     return false;
   }
 
+#if !defined(ANGLE_SH_VERSION) || ANGLE_SH_VERSION < 108
   int length = 0;
+#else
+  size_t length = 0;
+#endif
   ShGetInfo(compiler, SH_OBJECT_CODE_LENGTH, &length);
   if (length > 1) {
     entry->translated_source.reset(new char[length]);

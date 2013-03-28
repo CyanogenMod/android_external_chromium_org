@@ -20,17 +20,19 @@ class Bus;
 
 namespace chromeos {
 
-namespace ibus {
 class IBusComponent;
-}  // namespace ibus
-
 class IBusInputContextClient;
 
 // A class to make the actual DBus calls for IBusConfig service.
 class CHROMEOS_EXPORT IBusConfigClient {
  public:
   typedef base::Callback<void()> ErrorCallback;
+  typedef base::Callback<void()> OnIBusConfigReady;
   virtual ~IBusConfigClient();
+
+  // Initializes IBusConfig asynchronously. |on_ready| will be called if it is
+  // ready.
+  virtual void InitializeAsync(const OnIBusConfigReady& on_ready) = 0;
 
   // Requests the IBusConfig to set a string value.
   virtual void SetStringValue(const std::string& section,
@@ -72,4 +74,4 @@ class CHROMEOS_EXPORT IBusConfigClient {
 
 }  // namespace chromeos
 
-#endif  // CHROMEOS_DBUS_IBUS_IBUS_CLIENT_H_
+#endif  // CHROMEOS_DBUS_IBUS_IBUS_CONFIG_CLIENT_H_

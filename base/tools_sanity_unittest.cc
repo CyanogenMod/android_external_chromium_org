@@ -84,19 +84,29 @@ TEST(ToolsSanityTest, MemoryLeak) {
   leak[4] = 1;  // Make sure the allocated memory is used.
 }
 
-#if defined(ADDRESS_SANITIZER) && defined(OS_IOS)
+#if defined(ADDRESS_SANITIZER) && (defined(OS_IOS) || defined(OS_WIN))
 // Because iOS doesn't support death tests, each of the following tests will
-// crash the whole program under ASan.
+// crash the whole program under Asan. On Windows Asan is based on SyzyAsan, the
+// error report mecanism is different than with Asan so those test will fail.
 #define MAYBE_AccessesToNewMemory DISABLED_AccessesToNewMemory
 #define MAYBE_AccessesToMallocMemory DISABLED_AccessesToMallocMemory
-#define MAYBE_ArrayDeletedWithoutBraces DISABLED_ArrayDeletedWithoutBraces
-#define MAYBE_SingleElementDeletedWithBraces \
-    DISABLED_SingleElementDeletedWithBraces
 #else
 #define MAYBE_AccessesToNewMemory AccessesToNewMemory
 #define MAYBE_AccessesToMallocMemory AccessesToMallocMemory
 #define MAYBE_ArrayDeletedWithoutBraces ArrayDeletedWithoutBraces
 #define MAYBE_SingleElementDeletedWithBraces SingleElementDeletedWithBraces
+#endif
+
+// The following tests pass with Clang r170392, but not r172454, which
+// makes AddressSanitizer detect errors in them. We disable these tests under
+// AddressSanitizer until we fully switch to Clang r172454. After that the
+// tests should be put back under the (defined(OS_IOS) || defined(OS_WIN))
+// clause above.
+// See also http://crbug.com/172614.
+#if defined(ADDRESS_SANITIZER)
+#define MAYBE_SingleElementDeletedWithBraces \
+    DISABLED_SingleElementDeletedWithBraces
+#define MAYBE_ArrayDeletedWithoutBraces DISABLED_ArrayDeletedWithoutBraces
 #endif
 TEST(ToolsSanityTest, MAYBE_AccessesToNewMemory) {
   char *foo = new char[10];
@@ -237,10 +247,11 @@ void RunInParallel(PlatformThread::Delegate *d1, PlatformThread::Delegate *d2) {
 
 // A data race detector should report an error in this test.
 TEST(ToolsSanityTest, DataRace) {
-  bool shared = false;
-  TOOLS_SANITY_TEST_CONCURRENT_THREAD thread1(&shared), thread2(&shared);
+  bool *shared = new bool(false);
+  TOOLS_SANITY_TEST_CONCURRENT_THREAD thread1(shared), thread2(shared);
   RunInParallel(&thread1, &thread2);
-  EXPECT_TRUE(shared);
+  EXPECT_TRUE(*shared);
+  delete shared;
 }
 
 TEST(ToolsSanityTest, AnnotateBenignRace) {

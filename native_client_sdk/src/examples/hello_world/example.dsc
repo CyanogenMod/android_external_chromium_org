@@ -8,6 +8,9 @@
       'LIBS': ['ppapi', 'pthread']
     }
   ],
+  'DATA': [
+    'example.js',
+  ],
   'DEST': 'examples',
   'NAME': 'hello_world',
   'TITLE': 'Hello World.',
@@ -17,6 +20,6 @@ Native Client applications. This example loads a Native Client module.  The
 page tracks the status of the module as it load.  On a successful load, the
 module will post a message containing the string "Hello World" back to
 JavaScript which will display it as an alert.""",
-  'INFO': 'Basic HTML, JavaScript, and module architecture.'
+  'FOCUS': 'Basic HTML, JavaScript, and module architecture.',
+  'GROUP': 'Tools'
 }
-

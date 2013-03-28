@@ -6,6 +6,8 @@
 #define CHROME_BROWSER_EXTENSIONS_API_RUNTIME_RUNTIME_API_H_
 
 #include "chrome/browser/extensions/extension_function.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class Profile;
 class Version;
@@ -31,11 +33,15 @@ class RuntimeEventRouter {
       Profile* profile,
       const std::string& extension_id,
       const base::DictionaryValue* manifest);
+
+  // Dispatches the onBrowserUpdateAvailable event to all extensions.
+  static void DispatchOnBrowserUpdateAvailableEvent(Profile* profile);
 };
 
 class RuntimeGetBackgroundPageFunction : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("runtime.getBackgroundPage");
+  DECLARE_EXTENSION_FUNCTION("runtime.getBackgroundPage",
+                             RUNTIME_GETBACKGROUNDPAGE)
 
  protected:
   virtual ~RuntimeGetBackgroundPageFunction() {}
@@ -47,11 +53,34 @@ class RuntimeGetBackgroundPageFunction : public AsyncExtensionFunction {
 
 class RuntimeReloadFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("runtime.reload");
+  DECLARE_EXTENSION_FUNCTION("runtime.reload", RUNTIME_RELOAD)
 
  protected:
   virtual ~RuntimeReloadFunction() {}
   virtual bool RunImpl() OVERRIDE;
+};
+
+class RuntimeRequestUpdateCheckFunction : public AsyncExtensionFunction,
+                                          public content::NotificationObserver {
+ public:
+  DECLARE_EXTENSION_FUNCTION("runtime.requestUpdateCheck",
+                             RUNTIME_REQUESTUPDATECHECK)
+
+  RuntimeRequestUpdateCheckFunction();
+ protected:
+  virtual ~RuntimeRequestUpdateCheckFunction() {}
+  virtual bool RunImpl() OVERRIDE;
+
+  // Implements content::NotificationObserver interface.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+ private:
+  void CheckComplete();
+  void ReplyUpdateFound(const std::string& version);
+
+  content::NotificationRegistrar registrar_;
+  bool did_reply_;
 };
 
 }  // namespace extensions

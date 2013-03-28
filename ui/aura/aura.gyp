@@ -23,14 +23,14 @@
         'AURA_IMPLEMENTATION',
       ],
       'sources': [
-        'aura_switches.cc',
-        'aura_switches.h',
         'client/activation_change_observer.h',
         'client/activation_change_observer.cc',
         'client/activation_client.cc',
         'client/activation_client.h',
         'client/activation_delegate.cc',
         'client/activation_delegate.h',
+        'client/animation_host.cc',
+        'client/animation_host.h',
         'client/aura_constants.cc',
         'client/aura_constants.h',
         'client/capture_client.cc',
@@ -48,6 +48,10 @@
         'client/drag_drop_delegate.h',
         'client/event_client.cc',
         'client/event_client.h',
+        'client/focus_change_observer.cc',
+        'client/focus_change_observer.h',
+        'client/focus_client.cc',
+        'client/focus_client.h',
         'client/screen_position_client.cc',
         'client/screen_position_client.h',
         'client/stacking_client.cc',
@@ -64,22 +68,13 @@
         'device_list_updater_aurax11.cc',
         'device_list_updater_aurax11.h',
         'dispatcher_win.cc',
-        'display_observer.cc',
-        'display_observer.h',
         'env.cc',
         'env.h',
         'env_observer.h',
-        'event_filter.cc',
-        'event_filter.h',
-        'focus_change_observer.h',
         'focus_manager.cc',
         'focus_manager.h',
         'layout_manager.cc',
         'layout_manager.h',
-        'display_change_observer_x11.cc',
-        'display_change_observer_x11.h',
-        'display_manager.cc',
-        'display_manager.h',
         'remote_root_window_host_win.cc',
         'remote_root_window_host_win.h',
         'root_window_host.h',
@@ -96,14 +91,11 @@
         'root_window_view_mac.mm',
         'root_window.cc',
         'root_window.h',
-        'single_display_manager.cc',
-        'single_display_manager.h',
-        'ui_controls_win.cc',
-        'ui_controls_x11.cc',
         'window.cc',
         'window.h',
-        'window_delegate.cc',
         'window_delegate.h',
+        'window_destruction_observer.cc',
+        'window_destruction_observer.h',
         'window_observer.h',
         'window_tracker.cc',
         'window_tracker.h',
@@ -115,7 +107,7 @@
             ['exclude', 'client/dispatcher_client.h'],
           ],
         }],
-        ['OS=="linux"', {
+        ['use_x11==1', {
           'link_settings': {
             'libraries': [
               '-lX11',
@@ -125,10 +117,16 @@
             ],
           },
         }],
+        ['OS=="win"', {
+          'dependencies': [
+            '../metro_viewer/metro_viewer.gyp:metro_viewer',
+            '../../ipc/ipc.gyp:ipc',         
+          ],
+        }],
       ],
     },
     {
-      'target_name': 'test_support_aura',
+      'target_name': 'aura_test_support',
       'type': 'static_library',
       'dependencies': [
         '../../skia/skia.gyp:skia',
@@ -136,7 +134,7 @@
         '../ui.gyp:ui',
         '../ui.gyp:ui_test_support',
         'aura',
-        'test_support_aura_pak',
+        'aura_test_support_pak',
       ],
       'include_dirs': [
         '..',
@@ -152,8 +150,8 @@
         'test/test_activation_client.h',
         'test/test_aura_initializer.cc',
         'test/test_aura_initializer.h',
-        'test/test_event_filter.cc',
-        'test/test_event_filter.h',
+        'test/test_event_handler.cc',
+        'test/test_event_handler.h',
         'test/test_screen.cc',
         'test/test_screen.h',
         'test/test_stacking_client.cc',
@@ -162,11 +160,15 @@
         'test/test_windows.h',
         'test/test_window_delegate.cc',
         'test/test_window_delegate.h',
+        'test/window_test_api.cc',
+        'test/window_test_api.h',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
-      # We build a minimal set of resources required for test_support_aura.
-      'target_name': 'test_support_aura_pak',
+      # We build a minimal set of resources required for aura_test_support.
+      'target_name': 'aura_test_support_pak',
       'type': 'none',
       'dependencies': [
         '<(DEPTH)/ui/ui.gyp:ui_resources',
@@ -176,7 +178,7 @@
       },
       'actions': [
         {
-          'action_name': 'repack_test_support_aura_pack',
+          'action_name': 'repack_aura_test_support_pack',
           'variables': {
             'pak_inputs': [
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
@@ -187,7 +189,7 @@
             '<@(pak_inputs)',
           ],
           'outputs': [
-            '<(PRODUCT_DIR)/test_support_aura_resources.pak',
+            '<(PRODUCT_DIR)/aura_test_support_resources.pak',
           ],
           'action': ['python', '<(repack_path)', '<@(_outputs)',
                      '<@(pak_inputs)'],
@@ -209,6 +211,7 @@
         '../ui.gyp:ui_resources',
         '../../ipc/ipc.gyp:ipc',
         'aura',
+        'aura_test_support',
       ],
       'include_dirs': [
         '..',
@@ -231,6 +234,7 @@
         '../ui.gyp:ui',
         '../ui.gyp:ui_resources',
         'aura',
+        'aura_test_support',
       ],
       'include_dirs': [
         '..',
@@ -253,7 +257,7 @@
         '../ui.gyp:ui',
         '../ui.gyp:ui_resources',
         '../ui.gyp:ui_test_support',
-        'test_support_aura',
+        'aura_test_support',
         'aura',
       ],
       'include_dirs': [
@@ -265,7 +269,6 @@
         'test/test_suite.cc',
         'test/test_suite.h',
         'root_window_unittest.cc',
-        'event_filter_unittest.cc',
         'window_unittest.cc',
       ],
       'conditions': [

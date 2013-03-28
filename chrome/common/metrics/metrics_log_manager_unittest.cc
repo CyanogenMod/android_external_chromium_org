@@ -21,12 +21,12 @@ class MetricsLogManagerTest : public testing::Test {
 class DummyLogSerializer : public MetricsLogManager::LogSerializer {
  public:
   virtual void SerializeLogs(const std::vector<SerializedLog>& logs,
-                             MetricsLogManager::LogType log_type) {
+                             MetricsLogManager::LogType log_type) OVERRIDE {
     persisted_logs_[log_type] = logs;
   }
 
   virtual void DeserializeLogs(MetricsLogManager::LogType log_type,
-                               std::vector<SerializedLog>* logs) {
+                               std::vector<SerializedLog>* logs) OVERRIDE {
     ASSERT_NE(static_cast<void*>(NULL), logs);
     *logs = persisted_logs_[log_type];
   }
@@ -351,70 +351,4 @@ TEST(MetricsLogManagerTest, ProvisionalStoreNoop) {
     log_manager.PersistUnsentLogs();
     EXPECT_EQ(1U, serializer->TypeCount(MetricsLogManager::ONGOING_LOG));
   }
-}
-
-// Test that discarding just the XML log, then the protobuf log, works.
-TEST(MetricsLogManagerTest, DiscardXmlLogFirst) {
-  MetricsLogManager log_manager;
-  EXPECT_FALSE(log_manager.has_staged_log());
-  EXPECT_FALSE(log_manager.has_staged_log_xml());
-  EXPECT_FALSE(log_manager.has_staged_log_proto());
-
-  MetricsLogBase* initial_log = new MetricsLogBase("id", 0, "version");
-  log_manager.BeginLoggingWithLog(initial_log, MetricsLogManager::INITIAL_LOG);
-  log_manager.FinishCurrentLog();
-  EXPECT_FALSE(log_manager.has_staged_log());
-  EXPECT_FALSE(log_manager.has_staged_log_xml());
-  EXPECT_FALSE(log_manager.has_staged_log_proto());
-
-  log_manager.StageNextLogForUpload();
-  EXPECT_TRUE(log_manager.has_staged_log());
-  EXPECT_TRUE(log_manager.has_staged_log_xml());
-  EXPECT_TRUE(log_manager.has_staged_log_proto());
-  EXPECT_FALSE(log_manager.staged_log_text().empty());
-
-  log_manager.DiscardStagedLogXml();
-  EXPECT_TRUE(log_manager.has_staged_log());
-  EXPECT_FALSE(log_manager.has_staged_log_xml());
-  EXPECT_TRUE(log_manager.has_staged_log_proto());
-  EXPECT_FALSE(log_manager.staged_log_text().empty());
-
-  log_manager.DiscardStagedLogProto();
-  EXPECT_FALSE(log_manager.has_staged_log());
-  EXPECT_FALSE(log_manager.has_staged_log_xml());
-  EXPECT_FALSE(log_manager.has_staged_log_proto());
-  EXPECT_TRUE(log_manager.staged_log_text().empty());
-}
-
-// Test that discarding just the protobuf log, then the XML log, works.
-TEST(MetricsLogManagerTest, DiscardProtoLogFirst) {
-  MetricsLogManager log_manager;
-  EXPECT_FALSE(log_manager.has_staged_log());
-  EXPECT_FALSE(log_manager.has_staged_log_xml());
-  EXPECT_FALSE(log_manager.has_staged_log_proto());
-
-  MetricsLogBase* initial_log = new MetricsLogBase("id", 0, "version");
-  log_manager.BeginLoggingWithLog(initial_log, MetricsLogManager::INITIAL_LOG);
-  log_manager.FinishCurrentLog();
-  EXPECT_FALSE(log_manager.has_staged_log());
-  EXPECT_FALSE(log_manager.has_staged_log_xml());
-  EXPECT_FALSE(log_manager.has_staged_log_proto());
-
-  log_manager.StageNextLogForUpload();
-  EXPECT_TRUE(log_manager.has_staged_log());
-  EXPECT_TRUE(log_manager.has_staged_log_xml());
-  EXPECT_TRUE(log_manager.has_staged_log_proto());
-  EXPECT_FALSE(log_manager.staged_log_text().empty());
-
-  log_manager.DiscardStagedLogProto();
-  EXPECT_TRUE(log_manager.has_staged_log());
-  EXPECT_TRUE(log_manager.has_staged_log_xml());
-  EXPECT_FALSE(log_manager.has_staged_log_proto());
-  EXPECT_FALSE(log_manager.staged_log_text().empty());
-
-  log_manager.DiscardStagedLogXml();
-  EXPECT_FALSE(log_manager.has_staged_log());
-  EXPECT_FALSE(log_manager.has_staged_log_xml());
-  EXPECT_FALSE(log_manager.has_staged_log_proto());
-  EXPECT_TRUE(log_manager.staged_log_text().empty());
 }

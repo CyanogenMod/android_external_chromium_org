@@ -39,10 +39,6 @@ MultiProcessLockTest.RecursiveLock
 # http://crbug.com/117679
 WebsiteSettingsModelTest.*
 
-# fails with gmock errors
-# http://crbug.com/117796
-SyncNewNonFrontendDataTypeControllerTest.StartAfterSyncShutdown
-
 # fails to create thread
 # http://crbug.com/144087
 DesktopNotificationServiceTest.SettingsForSchemes
@@ -53,3 +49,18 @@ TemplateURLFetcherTest.*
 GAIAInfoUpdateServiceTest.*
 ProfileManagerTest.*
 ProfileInfoCacheTest.*
+
+# Failing on the bot. http://crbug.com/167014
+BrowserCommandControllerTest.AvatarMenuDisabledWhenOnlyOneProfile
+
+# Failing on the bot. http://crbug.com/168882
+UserCloudPolicyStoreTest.LoadWithInvalidFile
+UserCloudPolicyStoreTest.LoadWithNoFile
+UserCloudPolicyStoreTest.Store
+UserCloudPolicyStoreTest.StoreThenClear
+UserCloudPolicyStoreTest.StoreThenLoad
+UserCloudPolicyStoreTest.StoreTwoTimes
+UserCloudPolicyStoreTest.StoreValidationError
+
+# Crashes on the bot. http://crbug.com/179391
+BrowserCommandControllerTest.IncognitoModeOnSigninAllowedPrefChange

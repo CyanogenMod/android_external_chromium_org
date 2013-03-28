@@ -198,7 +198,7 @@ struct ParamTraits<net::UploadElement> {
       }
       default: {
         DCHECK(type == net::UploadElement::TYPE_FILE);
-        FilePath file_path;
+        base::FilePath file_path;
         uint64 offset, length;
         base::Time expected_modification_time;
         if (!ReadParam(m, iter, &file_path))
@@ -225,7 +225,7 @@ void ParamTraits<scoped_refptr<net::UploadData> >::Write(Message* m,
                                                          const param_type& p) {
   WriteParam(m, p.get() != NULL);
   if (p) {
-    WriteParam(m, *p->elements());
+    WriteParam(m, p->elements());
     WriteParam(m, p->identifier());
     WriteParam(m, p->is_chunked());
     WriteParam(m, p->last_chunk_appended());
@@ -240,7 +240,7 @@ bool ParamTraits<scoped_refptr<net::UploadData> >::Read(const Message* m,
     return false;
   if (!has_object)
     return true;
-  std::vector<net::UploadElement> elements;
+  ScopedVector<net::UploadElement> elements;
   if (!ReadParam(m, iter, &elements))
     return false;
   int64 identifier;

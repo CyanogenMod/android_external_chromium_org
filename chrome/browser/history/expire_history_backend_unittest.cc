@@ -8,11 +8,11 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stl_util.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
@@ -40,10 +40,11 @@ using base::TimeTicks;
 using content::BrowserThread;
 
 // Filename constants.
-static const FilePath::CharType kHistoryFile[] = FILE_PATH_LITERAL("History");
-static const FilePath::CharType kArchivedHistoryFile[] =
+static const base::FilePath::CharType kHistoryFile[] =
+    FILE_PATH_LITERAL("History");
+static const base::FilePath::CharType kArchivedHistoryFile[] =
     FILE_PATH_LITERAL("Archived History");
-static const FilePath::CharType kThumbnailFile[] =
+static const base::FilePath::CharType kThumbnailFile[] =
     FILE_PATH_LITERAL("Thumbnails");
 
 // The test must be in the history namespace for the gtest forward declarations
@@ -93,13 +94,13 @@ class ExpireHistoryTest : public testing::Test,
         bookmark_model_.bookmark_bar_node(), 0, string16(), url);
   }
 
-  static bool IsStringInFile(const FilePath& filename, const char* str);
+  static bool IsStringInFile(const base::FilePath& filename, const char* str);
 
   // Returns the path the db files are created in.
-  const FilePath& path() const { return tmp_dir_.path(); }
+  const base::FilePath& path() const { return tmp_dir_.path(); }
 
   // This must be destroyed last.
-  ScopedTempDir tmp_dir_;
+  base::ScopedTempDir tmp_dir_;
 
   BookmarkModel bookmark_model_;
 
@@ -127,20 +128,20 @@ class ExpireHistoryTest : public testing::Test,
   NotificationList notifications_;
 
  private:
-  void SetUp() {
+  virtual void SetUp() {
     ASSERT_TRUE(tmp_dir_.CreateUniqueTempDir());
 
-    FilePath history_name = path().Append(kHistoryFile);
+    base::FilePath history_name = path().Append(kHistoryFile);
     main_db_.reset(new HistoryDatabase);
     if (main_db_->Init(history_name, NULL) != sql::INIT_OK)
       main_db_.reset();
 
-    FilePath archived_name = path().Append(kArchivedHistoryFile);
+    base::FilePath archived_name = path().Append(kArchivedHistoryFile);
     archived_db_.reset(new ArchivedDatabase);
     if (!archived_db_->Init(archived_name))
       archived_db_.reset();
 
-    FilePath thumb_name = path().Append(kThumbnailFile);
+    base::FilePath thumb_name = path().Append(kThumbnailFile);
     thumb_db_.reset(new ThumbnailDatabase);
     if (thumb_db_->Init(thumb_name, NULL, main_db_.get()) != sql::INIT_OK)
       thumb_db_.reset();
@@ -157,7 +158,7 @@ class ExpireHistoryTest : public testing::Test,
     top_sites_ = profile_.GetTopSites();
   }
 
-  void TearDown() {
+  virtual void TearDown() {
     top_sites_ = NULL;
 
     ClearLastNotifications();
@@ -171,8 +172,9 @@ class ExpireHistoryTest : public testing::Test,
   }
 
   // BroadcastNotificationDelegate implementation.
-  void BroadcastNotifications(int type,
-                              HistoryDetails* details_deleted) {
+  virtual void BroadcastNotifications(
+      int type,
+      HistoryDetails* details_deleted) OVERRIDE {
     // This gets called when there are notifications to broadcast. Instead, we
     // store them so we can tell that the correct notifications were sent.
     notifications_.push_back(std::make_pair(type, details_deleted));
@@ -231,7 +233,7 @@ void ExpireHistoryTest::AddExampleData(URLID url_ids[3], Time visit_times[4]) {
   // Thumbnails for each URL. |thumbnail| takes ownership of decoded SkBitmap.
   scoped_ptr<SkBitmap> thumbnail_bitmap(
       gfx::JPEGCodec::Decode(kGoogleThumbnail, sizeof(kGoogleThumbnail)));
-  gfx::Image thumbnail(*thumbnail_bitmap);
+  gfx::Image thumbnail = gfx::Image::CreateFrom1xBitmap(*thumbnail_bitmap);
   ThumbnailScore score(0.25, true, true, Time::Now());
 
   Time time;
@@ -409,9 +411,12 @@ TEST_F(ExpireHistoryTest, DeleteFaviconsIfPossible) {
 
   // The favicon should be deletable with no users.
   std::set<FaviconID> favicon_set;
+  std::set<GURL> expired_favicons;
   favicon_set.insert(icon_id);
-  expirer_.DeleteFaviconsIfPossible(favicon_set);
+  expirer_.DeleteFaviconsIfPossible(favicon_set, &expired_favicons);
   EXPECT_FALSE(HasFavicon(icon_id));
+  EXPECT_EQ(1U, expired_favicons.size());
+  EXPECT_EQ(1U, expired_favicons.count(favicon_url));
 
   // Add back the favicon.
   icon_id = thumb_db_->AddFavicon(favicon_url, TOUCH_ICON,
@@ -428,12 +433,14 @@ TEST_F(ExpireHistoryTest, DeleteFaviconsIfPossible) {
   // Favicon should not be deletable.
   favicon_set.clear();
   favicon_set.insert(icon_id);
-  expirer_.DeleteFaviconsIfPossible(favicon_set);
+  expired_favicons.clear();
+  expirer_.DeleteFaviconsIfPossible(favicon_set, &expired_favicons);
   EXPECT_TRUE(HasFavicon(icon_id));
+  EXPECT_TRUE(expired_favicons.empty());
 }
 
 // static
-bool ExpireHistoryTest::IsStringInFile(const FilePath& filename,
+bool ExpireHistoryTest::IsStringInFile(const base::FilePath& filename,
                                        const char* str) {
   std::string contents;
   EXPECT_TRUE(file_util::ReadFileToString(filename, &contents));
@@ -467,7 +474,7 @@ TEST_F(ExpireHistoryTest, DISABLED_DeleteURLAndFavicon) {
                        visits[0].visit_time);
 
   // Compute the text DB filename.
-  FilePath fts_filename = path().Append(
+  base::FilePath fts_filename = path().Append(
       TextDatabase::IDToFileName(text_db_->TimeToID(visit_times[3])));
 
   // When checking the file, the database must be closed. We then re-initialize
@@ -636,6 +643,64 @@ TEST_F(ExpireHistoryTest, FlushRecentURLsUnstarred) {
   // This should delete the last two visits.
   std::set<GURL> restrict_urls;
   expirer_.ExpireHistoryBetween(restrict_urls, visit_times[2], Time());
+
+  // Run the text database expirer. This will flush any pending entries so we
+  // can check that nothing was committed. We use a time far in the future so
+  // that anything added recently will get flushed.
+  TimeTicks expiration_time = TimeTicks::Now() + TimeDelta::FromDays(1);
+  text_db_->FlushOldChangesForTime(expiration_time);
+
+  // Verify that the middle URL had its last visit deleted only.
+  visits.clear();
+  main_db_->GetVisitsForURL(url_ids[1], &visits);
+  EXPECT_EQ(1U, visits.size());
+  EXPECT_EQ(0, CountTextMatchesForURL(url_row1.url()));
+
+  // Verify that the middle URL visit time and visit counts were updated.
+  URLRow temp_row;
+  ASSERT_TRUE(main_db_->GetURLRow(url_ids[1], &temp_row));
+  EXPECT_TRUE(visit_times[2] == url_row1.last_visit());  // Previous value.
+  EXPECT_TRUE(visit_times[1] == temp_row.last_visit());  // New value.
+  EXPECT_EQ(2, url_row1.visit_count());
+  EXPECT_EQ(1, temp_row.visit_count());
+  EXPECT_EQ(1, url_row1.typed_count());
+  EXPECT_EQ(0, temp_row.typed_count());
+
+  // Verify that the middle URL's favicon and thumbnail is still there.
+  FaviconID favicon_id = GetFavicon(url_row1.url(), FAVICON);
+  EXPECT_TRUE(HasFavicon(favicon_id));
+  // TODO(sky): fix this, see comment in HasThumbnail.
+  // EXPECT_TRUE(HasThumbnail(url_row1.id()));
+
+  // Verify that the last URL was deleted.
+  FaviconID favicon_id2 = GetFavicon(url_row2.url(), FAVICON);
+  EnsureURLInfoGone(url_row2);
+  EXPECT_FALSE(HasFavicon(favicon_id2));
+}
+
+// Expires all URLs with times in a given set.
+TEST_F(ExpireHistoryTest, FlushURLsForTimes) {
+  URLID url_ids[3];
+  Time visit_times[4];
+  AddExampleData(url_ids, visit_times);
+
+  URLRow url_row1, url_row2;
+  ASSERT_TRUE(main_db_->GetURLRow(url_ids[1], &url_row1));
+  ASSERT_TRUE(main_db_->GetURLRow(url_ids[2], &url_row2));
+
+  // In this test we also make sure that any pending entries in the text
+  // database manager are removed.
+  VisitVector visits;
+  main_db_->GetVisitsForURL(url_ids[2], &visits);
+  ASSERT_EQ(1U, visits.size());
+  text_db_->AddPageURL(url_row2.url(), url_row2.id(), visits[0].visit_id,
+                       visits[0].visit_time);
+
+  // This should delete the last two visits.
+  std::vector<base::Time> times;
+  times.push_back(visit_times[3]);
+  times.push_back(visit_times[2]);
+  expirer_.ExpireHistoryForTimes(times);
 
   // Run the text database expirer. This will flush any pending entries so we
   // can check that nothing was committed. We use a time far in the future so

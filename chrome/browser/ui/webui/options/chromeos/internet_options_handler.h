@@ -31,8 +31,7 @@ namespace options {
 class InternetOptionsHandler
   : public OptionsPageUIHandler,
     public chromeos::NetworkLibrary::NetworkManagerObserver,
-    public chromeos::NetworkLibrary::NetworkObserver,
-    public chromeos::NetworkLibrary::CellularDataPlanObserver {
+    public chromeos::NetworkLibrary::NetworkObserver {
  public:
   InternetOptionsHandler();
   virtual ~InternetOptionsHandler();
@@ -51,9 +50,6 @@ class InternetOptionsHandler
   // NetworkLibrary::NetworkObserver implementation.
   virtual void OnNetworkChanged(chromeos::NetworkLibrary* network_lib,
                                 const chromeos::Network* network) OVERRIDE;
-  // NetworkLibrary::CellularDataPlanObserver implementation.
-  virtual void OnCellularDataPlanChanged(
-      chromeos::NetworkLibrary* network_lib) OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -84,12 +80,9 @@ class InternetOptionsHandler
   // be NULL.
   void DoConnect(chromeos::Network* network);
 
-  // Initiates cellular plan data refresh. The results from libcros will be
-  // passed through CellularDataPlanChanged() callback method.
-  // |args| will be [ service_path ]
-  void RefreshCellularPlanCallback(const base::ListValue* args);
-  void SetActivationButtonVisibility(
+  void SetCellularButtonsVisibility(
       const chromeos::CellularNetwork* cellular,
+      const chromeos::NetworkDevice* device,
       base::DictionaryValue* dictionary,
       const std::string& carrier_id);
 
@@ -121,25 +114,24 @@ class InternetOptionsHandler
   void ToggleAirplaneModeCallback(const ListValue* args);
 
   // Populates the ui with the details of the given device path. This forces
-  // an overlay to be displayed in the UI.
-  void PopulateDictionaryDetails(const chromeos::Network* network);
-  // This is the second half of PopulateDictionaryDetails after the asynchronous
+  // an overlay to be displayed in the UI. Called after the asynchronous
   // request for Shill's service properties.
   void PopulateDictionaryDetailsCallback(
-      const chromeos::Network* network,
       const std::string& service_path,
       const base::DictionaryValue* shill_properties);
+  void PopulateIPConfigsCallback(
+      const std::string& service_path,
+      base::DictionaryValue* shill_properties,
+      const chromeos::NetworkIPConfigVector& ipconfigs,
+      const std::string& hardware_address);
+  void PopulateConnectionDetails(const chromeos::Network* network,
+                                 base::DictionaryValue* dictionary);
   void PopulateWifiDetails(const chromeos::WifiNetwork* wifi,
                            base::DictionaryValue* dictionary);
   void PopulateWimaxDetails(const chromeos::WimaxNetwork* wimax,
                             base::DictionaryValue* dictionary);
   void PopulateCellularDetails(const chromeos::CellularNetwork* cellular,
                                base::DictionaryValue* dictionary);
-
-  // Converts CellularDataPlan structure into dictionary for JS. Formats plan
-  // settings into human readable texts.
-  base::DictionaryValue* CellularDataPlanToDictionary(
-      const chromeos::CellularDataPlan* plan);
 
   // Converts CellularApn stuct into dictionary for JS.
   base::DictionaryValue* CreateDictionaryFromCellularApn(
@@ -157,8 +149,11 @@ class InternetOptionsHandler
   void FillNetworkInfo(base::DictionaryValue* dictionary);
   // Refreshes the display of network information.
   void RefreshNetworkData();
+  // Updates the display of network connection information for the details page
+  // if it's up.
+  void UpdateConnectionData(const chromeos::Network* network);
   // Updates the carrier change status.
-  void UpdateCarrier(bool success);
+  void UpdateCarrier();
   // Adds observers for wireless networks, if any, so that we can dynamically
   // display the correct icon for that network's signal strength and, in the
   // case of cellular networks, network technology and roaming status.
@@ -170,6 +165,8 @@ class InternetOptionsHandler
       chromeos::NetworkMethodErrorType error,
       const std::string& error_message);
 
+  // Retrieves a data url for a resource.
+  std::string GetIconDataUrl(int resource_id) const;
 
   // Convenience pointer to netwrok library (will not change).
   chromeos::NetworkLibrary* cros_;

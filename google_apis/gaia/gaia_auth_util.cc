@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "googleurl/src/gurl.h"
 
@@ -47,6 +47,11 @@ std::string SanitizeEmail(const std::string& email_address) {
   }
 
   return sanitized;
+}
+
+bool AreEmailsSame(const std::string& email1, const std::string& email2) {
+  return gaia::CanonicalizeEmail(gaia::SanitizeEmail(email1)) ==
+      gaia::CanonicalizeEmail(gaia::SanitizeEmail(email2));
 }
 
 std::string ExtractDomainName(const std::string& email_address) {

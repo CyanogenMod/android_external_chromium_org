@@ -16,13 +16,26 @@
 
 namespace chromeos {
 
-// Fake username for the demo user.
-extern const char kDemoUser[];
+// The guest user has a magic, empty e-mail address.
+extern const char kGuestUserEMail[];
 
-// Username for incognito login.
-extern const char kGuestUser[];
+// The retail mode user has a magic, domainless e-mail address.
+extern const char kRetailModeUserEMail[];
 
 extern const int kDefaultImagesCount;
+
+// User credentials data that is being exchanged between part of ChromeOS
+// authentication mechanism.
+struct UserCredentials {
+  UserCredentials();
+  UserCredentials(const std::string& username,
+                  const std::string& password,
+                  const std::string& auth_code);
+  bool operator==(const UserCredentials& cred) const;
+  std::string username;
+  std::string password;
+  std::string auth_code;
+};
 
 // A class representing information about a previously logged in user.
 // Each user has a canonical email (username), returned by |email()| and
@@ -32,11 +45,31 @@ extern const int kDefaultImagesCount;
 // to by |email()|.
 class User {
  public:
-  // User OAuth token status according to the last check.
+  // The user type.
   typedef enum {
-    OAUTH_TOKEN_STATUS_UNKNOWN = 0,
-    OAUTH_TOKEN_STATUS_INVALID = 1,
-    OAUTH_TOKEN_STATUS_VALID   = 2,
+    // Regular user, has a user name and password.
+    USER_TYPE_REGULAR = 0,
+    // Guest user, logs in without authentication.
+    USER_TYPE_GUEST,
+    // Retail mode user, logs in without authentication. This is a special user
+    // type used in retail mode only.
+    USER_TYPE_RETAIL_MODE,
+    // Public account user, logs in without authentication. Available only if
+    // enabled through policy.
+    USER_TYPE_PUBLIC_ACCOUNT,
+    // Locally managed user, logs in only with local authentication.
+    USER_TYPE_LOCALLY_MANAGED,
+    // Kiosk app robot, logs in without authentication.
+    USER_TYPE_KIOSK_APP
+  } UserType;
+
+  // User OAuth token status according to the last check.
+  // Please note that enum values 1 and 2 were used for OAuth1 status and are
+  // deprecated now.
+  typedef enum {
+     OAUTH_TOKEN_STATUS_UNKNOWN  = 0,
+     OAUTH2_TOKEN_STATUS_INVALID = 3,
+     OAUTH2_TOKEN_STATUS_VALID   = 4,
   } OAuthTokenStatus;
 
   // Returned as |image_index| when user-selected file or photo is used as
@@ -54,6 +87,9 @@ class User {
     ONLINE = 4,
     WALLPAPER_TYPE_COUNT = 5
   };
+
+  // Returns the user type.
+  virtual UserType GetType() const = 0;
 
   // The email the user used to log in.
   const std::string& email() const { return email_; }
@@ -104,21 +140,28 @@ class User {
   string16 display_name() const { return display_name_; }
 
   // The displayed (non-canonical) user email.
-  std::string display_email() const { return display_email_; }
+  virtual std::string display_email() const;
 
-  bool is_demo_user() const { return email_ == kDemoUser; }
-  bool is_guest() const { return email_ == kGuestUser; }
+  // True if the user's session can be locked (i.e. the user has a password with
+  // which to unlock the session).
+  virtual bool can_lock() const;
 
- private:
+ protected:
   friend class UserManagerImpl;
   friend class UserImageManagerImpl;
   // For testing:
   friend class MockUserManager;
-  friend class UserManagerTest;
 
   // Do not allow anyone else to create new User instances.
-  explicit User(const std::string& email_guest);
-  ~User();
+  static User* CreateRegularUser(const std::string& email);
+  static User* CreateGuestUser();
+  static User* CreateKioskAppUser(const std::string& kiosk_app_username);
+  static User* CreateLocallyManagedUser(const std::string& username);
+  static User* CreateRetailModeUser();
+  static User* CreatePublicAccountUser(const std::string& email);
+
+  explicit User(const std::string& email);
+  virtual ~User();
 
   // Setters are private so only UserManager can call them.
   void SetImage(const UserImage& user_image, int image_index);
@@ -129,9 +172,6 @@ class User {
   // one of |kExternalImageIndex| or |kProfileImageIndex|.
   // If |is_loading| is |true|, that means user image is being loaded from file.
   void SetStubImage(int image_index, bool is_loading);
-
-  // Set thumbnail of user custom wallpaper.
-  void SetWallpaperThumbnail(const SkBitmap& wallpaper_thumbnail);
 
   void set_oauth_token_status(OAuthTokenStatus status) {
     oauth_token_status_ = status;
@@ -145,8 +185,9 @@ class User {
     display_email_ = display_email;
   }
 
-  UserImage& user_image() { return user_image_; }
+  const UserImage& user_image() const { return user_image_; }
 
+ private:
   std::string email_;
   string16 display_name_;
   // The displayed user email, defaults to |email_|.

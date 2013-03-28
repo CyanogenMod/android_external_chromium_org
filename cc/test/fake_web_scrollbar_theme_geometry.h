@@ -5,43 +5,52 @@
 #ifndef CC_TEST_FAKE_WEB_SCROLLBAR_THEME_GEOMETRY_H_
 #define CC_TEST_FAKE_WEB_SCROLLBAR_THEME_GEOMETRY_H_
 
-#include <public/WebScrollbarThemeGeometry.h>
+#include "base/memory/scoped_ptr.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebScrollbarThemeGeometry.h"
 
-namespace WebKit {
+namespace cc {
 
 class FakeWebScrollbarThemeGeometry : public WebKit::WebScrollbarThemeGeometry {
-public:
-    static scoped_ptr<WebKit::WebScrollbarThemeGeometry> create() { return scoped_ptr<WebKit::WebScrollbarThemeGeometry>(new WebKit::FakeWebScrollbarThemeGeometry()); }
+ public:
+  static scoped_ptr<WebKit::WebScrollbarThemeGeometry> Create(bool has_thumb) {
+    return scoped_ptr<WebKit::WebScrollbarThemeGeometry>(
+        new FakeWebScrollbarThemeGeometry(has_thumb));
+  }
 
-    virtual WebKit::WebScrollbarThemeGeometry* clone() const OVERRIDE
-    {
-        return new FakeWebScrollbarThemeGeometry();
-    }
+  // WebScrollbarThemeGeometry implementation.
+  virtual WebKit::WebScrollbarThemeGeometry* clone() const OVERRIDE;
+  virtual int thumbPosition(WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual int thumbLength(WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual int trackPosition(WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual int trackLength(WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual bool hasButtons(WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual bool hasThumb(WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual WebKit::WebRect trackRect(WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual WebKit::WebRect thumbRect(WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual int minimumThumbLength(WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual int scrollbarThickness(WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual WebKit::WebRect backButtonStartRect(WebKit::WebScrollbar* scrollbar)
+      OVERRIDE;
+  virtual WebKit::WebRect backButtonEndRect(WebKit::WebScrollbar* scrollbar)
+      OVERRIDE;
+  virtual WebKit::WebRect forwardButtonStartRect(
+      WebKit::WebScrollbar* scrollbar) OVERRIDE;
+  virtual WebKit::WebRect forwardButtonEndRect(WebKit::WebScrollbar* scrollbar)
+      OVERRIDE;
+  virtual WebKit::WebRect constrainTrackRectToTrackPieces(
+      WebKit::WebScrollbar* scrollbar,
+      const WebKit::WebRect& rect) OVERRIDE;
+  virtual void splitTrack(WebKit::WebScrollbar* scrollbar,
+                          const WebKit::WebRect& track,
+                          WebKit::WebRect& start_track,
+                          WebKit::WebRect& thumb,
+                          WebKit::WebRect& end_track) OVERRIDE;
 
-    virtual int thumbPosition(WebScrollbar*) OVERRIDE { return 0; }
-    virtual int thumbLength(WebScrollbar*) OVERRIDE { return 0; }
-    virtual int trackPosition(WebScrollbar*) OVERRIDE { return 0; }
-    virtual int trackLength(WebScrollbar*) OVERRIDE { return 0; }
-    virtual bool hasButtons(WebScrollbar*) OVERRIDE { return false; }
-    virtual bool hasThumb(WebScrollbar*) OVERRIDE { return false; }
-    virtual WebRect trackRect(WebScrollbar*) OVERRIDE { return WebRect(); }
-    virtual WebRect thumbRect(WebScrollbar*) OVERRIDE { return WebRect(); }
-    virtual int minimumThumbLength(WebScrollbar*) OVERRIDE { return 0; }
-    virtual int scrollbarThickness(WebScrollbar*) OVERRIDE { return 0; }
-    virtual WebRect backButtonStartRect(WebScrollbar*) OVERRIDE { return WebRect(); }
-    virtual WebRect backButtonEndRect(WebScrollbar*) OVERRIDE { return WebRect(); }
-    virtual WebRect forwardButtonStartRect(WebScrollbar*) OVERRIDE { return WebRect(); }
-    virtual WebRect forwardButtonEndRect(WebScrollbar*) OVERRIDE { return WebRect(); }
-    virtual WebRect constrainTrackRectToTrackPieces(WebScrollbar*, const WebRect&) OVERRIDE { return WebRect(); }
-
-    virtual void splitTrack(WebScrollbar*, const WebRect& track, WebRect& startTrack, WebRect& thumb, WebRect& endTrack) OVERRIDE
-    {
-        startTrack = WebRect();
-        thumb = WebRect();
-        endTrack = WebRect();
-    }
+ protected:
+  FakeWebScrollbarThemeGeometry(bool has_thumb) : has_thumb_(has_thumb) {}
+  bool has_thumb_;
 };
 
-} // namespace WebKit
+}  // namespace cc
 
 #endif  // CC_TEST_FAKE_WEB_SCROLLBAR_THEME_GEOMETRY_H_

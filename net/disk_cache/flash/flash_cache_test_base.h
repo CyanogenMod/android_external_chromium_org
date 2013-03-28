@@ -7,12 +7,13 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace disk_cache {
 
+class LogStore;
 class Storage;
 
 }  // namespace disk_cache
@@ -25,8 +26,9 @@ class FlashCacheTest : public testing::Test {
   virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
 
+  scoped_ptr<disk_cache::LogStore> log_store_;
   scoped_ptr<disk_cache::Storage> storage_;
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   int32 num_segments_in_storage_;
 
  private:

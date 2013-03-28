@@ -4,8 +4,8 @@
 
 #include "sync/internal_api/public/base_node.h"
 
-#include "base/base64.h"
-#include "base/sha1.h"
+#include <stack>
+
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -62,21 +62,6 @@ static void ServerNameToSyncAPIName(const std::string& server_name,
 BaseNode::BaseNode() : password_data_(new sync_pb::PasswordSpecificsData) {}
 
 BaseNode::~BaseNode() {}
-
-std::string BaseNode::GenerateSyncableHash(
-    ModelType model_type, const std::string& client_tag) {
-  // Blank PB with just the field in it has termination symbol,
-  // handy for delimiter.
-  sync_pb::EntitySpecifics serialized_type;
-  AddDefaultFieldValue(model_type, &serialized_type);
-  std::string hash_input;
-  serialized_type.AppendToString(&hash_input);
-  hash_input.append(client_tag);
-
-  std::string encode_output;
-  CHECK(base::Base64Encode(base::SHA1HashString(hash_input), &encode_output));
-  return encode_output;
-}
 
 bool BaseNode::DecryptIfNecessary() {
   if (!GetEntry()->Get(syncable::UNIQUE_SERVER_TAG).empty())
@@ -203,10 +188,6 @@ std::string BaseNode::GetTitle() const {
   return result;
 }
 
-GURL BaseNode::GetURL() const {
-  return GURL(GetBookmarkSpecifics().url());
-}
-
 bool BaseNode::HasChildren() const {
   syncable::Directory* dir = GetTransaction()->GetDirectory();
   syncable::BaseTransaction* trans = GetTransaction()->GetWrappedTrans();
@@ -214,14 +195,14 @@ bool BaseNode::HasChildren() const {
 }
 
 int64 BaseNode::GetPredecessorId() const {
-  syncable::Id id_string = GetEntry()->Get(syncable::PREV_ID);
+  syncable::Id id_string = GetEntry()->GetPredecessorId();
   if (id_string.IsRoot())
     return kInvalidId;
   return IdToMetahandle(GetTransaction()->GetWrappedTrans(), id_string);
 }
 
 int64 BaseNode::GetSuccessorId() const {
-  syncable::Id id_string = GetEntry()->Get(syncable::NEXT_ID);
+  syncable::Id id_string = GetEntry()->GetSuccessorId();
   if (id_string.IsRoot())
     return kInvalidId;
   return IdToMetahandle(GetTransaction()->GetWrappedTrans(), id_string);
@@ -238,6 +219,34 @@ int64 BaseNode::GetFirstChildId() const {
   if (id_string.IsRoot())
     return kInvalidId;
   return IdToMetahandle(GetTransaction()->GetWrappedTrans(), id_string);
+}
+
+int BaseNode::GetTotalNodeCount() const {
+  syncable::Directory* dir = GetTransaction()->GetDirectory();
+  syncable::BaseTransaction* trans = GetTransaction()->GetWrappedTrans();
+
+  int count = 1;  // Start with one to include the node itself.
+
+  std::stack<int64> stack;
+  stack.push(GetFirstChildId());
+  while (!stack.empty()) {
+    int64 handle = stack.top();
+    stack.pop();
+    if (handle == kInvalidId)
+      continue;
+    count++;
+    syncable::Entry entry(trans, syncable::GET_BY_HANDLE, handle);
+    if (!entry.good())
+      continue;
+    syncable::Id id = entry.Get(syncable::ID);
+    syncable::Id child_id;
+    if (dir->GetFirstChildId(trans, id, &child_id) && !child_id.IsRoot())
+      stack.push(IdToMetahandle(trans, child_id));
+    syncable::Id successor_id = entry.GetSuccessorId();
+    if (!successor_id.IsRoot())
+      stack.push(IdToMetahandle(trans, successor_id));
+  }
+  return count;
 }
 
 DictionaryValue* BaseNode::GetSummaryAsValue() const {
@@ -265,17 +274,9 @@ DictionaryValue* BaseNode::GetDetailsAsValue() const {
                        base::Int64ToString(GetSuccessorId()));
   node_info->SetString("firstChildId",
                        base::Int64ToString(GetFirstChildId()));
-  node_info->Set("entry", GetEntry()->ToValue());
+  node_info->Set("entry",
+                 GetEntry()->ToValue(GetTransaction()->GetCryptographer()));
   return node_info;
-}
-
-void BaseNode::GetFaviconBytes(std::vector<unsigned char>* output) const {
-  if (!output)
-    return;
-  const std::string& favicon = GetBookmarkSpecifics().favicon();
-  output->assign(reinterpret_cast<const unsigned char*>(favicon.data()),
-      reinterpret_cast<const unsigned char*>(favicon.data() +
-                                             favicon.length()));
 }
 
 int64 BaseNode::GetExternalId() const {
@@ -340,6 +341,12 @@ const sync_pb::DeviceInfoSpecifics& BaseNode::GetDeviceInfoSpecifics() const {
 const sync_pb::ExperimentsSpecifics& BaseNode::GetExperimentsSpecifics() const {
   DCHECK_EQ(GetModelType(), EXPERIMENTS);
   return GetEntitySpecifics().experiments();
+}
+
+const sync_pb::PriorityPreferenceSpecifics&
+    BaseNode::GetPriorityPreferenceSpecifics() const {
+  DCHECK_EQ(GetModelType(), PRIORITY_PREFERENCES);
+  return GetEntitySpecifics().priority_preference();
 }
 
 const sync_pb::EntitySpecifics& BaseNode::GetEntitySpecifics() const {

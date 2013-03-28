@@ -6,8 +6,7 @@
 #define CHROME_BROWSER_NET_NET_PREF_OBSERVER_H_
 
 #include "base/basictypes.h"
-#include "base/prefs/public/pref_observer.h"
-#include "chrome/browser/api/prefs/pref_member.h"
+#include "base/prefs/pref_member.h"
 
 namespace chrome_browser_net {
 class Predictor;
@@ -18,11 +17,12 @@ class PrerenderManager;
 }
 
 class PrefService;
+class PrefRegistrySyncable;
 
 // Monitors network-related preferences for changes and applies them.
 // The supplied PrefService must outlive this NetPrefObserver.
 // Must be used only on the UI thread.
-class NetPrefObserver : public PrefObserver {
+class NetPrefObserver {
  public:
   // |prefs| must be non-NULL and |*prefs| must outlive this.
   // |prerender_manager| may be NULL. If not, |*prerender_manager| must
@@ -32,11 +32,7 @@ class NetPrefObserver : public PrefObserver {
                   chrome_browser_net::Predictor* predictor);
   virtual ~NetPrefObserver();
 
-  // PrefObserver
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
-
-  static void RegisterPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
  private:
   void ApplySettings();

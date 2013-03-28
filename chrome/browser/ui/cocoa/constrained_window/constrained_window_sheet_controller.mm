@@ -7,7 +7,7 @@
 #include <map>
 
 #include "base/logging.h"
-#include "chrome/browser/ui/cocoa/constrained_window/constrained_window_animation.h"
+#import "chrome/browser/ui/cocoa/constrained_window/constrained_window_sheet.h"
 #include "chrome/browser/ui/cocoa/constrained_window/constrained_window_sheet_info.h"
 
 namespace {
@@ -32,7 +32,8 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
 @interface ConstrainedWindowSheetController ()
 - (id)initWithParentWindow:(NSWindow*)parentWindow;
 - (ConstrainedWindowSheetInfo*)findSheetInfoForParentView:(NSView*)parentView;
-- (ConstrainedWindowSheetInfo*)findSheetInfoForSheet:(NSWindow*)sheet;
+- (ConstrainedWindowSheetInfo*)
+    findSheetInfoForSheet:(id<ConstrainedWindowSheet>)sheet;
 - (void)onParentWindowWillClose:(NSNotification*)note;
 - (void)onParentViewFrameDidChange:(NSNotification*)note;
 - (void)updateSheetPosition:(NSView*)parentView;
@@ -40,7 +41,8 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
 - (NSPoint)originForSheetSize:(NSSize)sheetSize
               inContainerRect:(NSRect)containerRect;
 - (void)onOverlayWindowMouseDown:(CWSheetOverlayWindow*)overlayWindow;
-- (void)closeSheetWithoutAnimation:(ConstrainedWindowSheetInfo*)info;
+- (void)closeSheet:(ConstrainedWindowSheetInfo*)info
+     withAnimation:(BOOL)withAnimation;
 @end
 
 @implementation CWSheetOverlayWindow
@@ -86,11 +88,23 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
   return new_controller;
 }
 
-+ (ConstrainedWindowSheetController*)controllerForSheet:(NSWindow*)sheet {
++ (ConstrainedWindowSheetController*)
+    controllerForSheet:(id<ConstrainedWindowSheet>)sheet {
   for (ConstrainedWindowSheetController* controller in
        [g_sheetControllers objectEnumerator]) {
     if ([controller findSheetInfoForSheet:sheet])
       return controller;
+  }
+  return nil;
+}
+
++ (id<ConstrainedWindowSheet>)sheetForOverlayWindow:(NSWindow*)overlayWindow {
+  for (ConstrainedWindowSheetController* controller in
+          [g_sheetControllers objectEnumerator]) {
+    for (ConstrainedWindowSheetInfo* info in controller->sheets_.get()) {
+      if ([overlayWindow isEqual:[info overlayWindow]])
+        return [info sheet];
+    }
   }
   return nil;
 }
@@ -109,41 +123,14 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
   return self;
 }
 
-- (void)showSheet:(NSWindow*)sheet
+- (void)showSheet:(id<ConstrainedWindowSheet>)sheet
     forParentView:(NSView*)parentView {
   DCHECK(sheet);
   DCHECK(parentView);
   if (!activeView_.get())
     activeView_.reset([parentView retain]);
 
-  NSRect rect = [self overlayWindowFrameForParentView:parentView];
-  scoped_nsobject<NSWindow> overlayWindow(
-      [[CWSheetOverlayWindow alloc] initWithContentRect:rect
-                                             controller:self]);
-  [sheet setFrameOrigin:[self originForSheetSize:[sheet frame].size
-                                 inContainerRect:rect]];
-
-  scoped_nsobject<ConstrainedWindowSheetInfo> info(
-      [[ConstrainedWindowSheetInfo alloc] initWithSheet:sheet
-                                             parentView:parentView
-                                          overlayWindow:overlayWindow]);
-  [sheets_ addObject:info];
-  BOOL showSheet = [activeView_ isEqual:parentView];
-  scoped_nsobject<NSAnimation> animation;
-  if (!showSheet) {
-    [info hideSheet];
-  } else {
-    animation.reset(
-        [[ConstrainedWindowAnimationShow alloc] initWithWindow:sheet]);
-  }
-
-  [parentWindow_ addChildWindow:overlayWindow
-                        ordered:NSWindowAbove];
-  [overlayWindow addChildWindow:sheet
-                        ordered:NSWindowAbove];
-  if (showSheet && [parentWindow_ isKeyWindow])
-    [sheet makeKeyAndOrderFront:nil];
-
+  // Observer the parent view's frame.
   [parentView setPostsFrameChangedNotifications:YES];
   [[NSNotificationCenter defaultCenter]
       addObserver:self
@@ -151,10 +138,29 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
              name:NSViewFrameDidChangeNotification
            object:parentView];
 
-  [animation startAnimation];
+  // Create an invisible overlay window.
+  NSRect rect = [self overlayWindowFrameForParentView:parentView];
+  scoped_nsobject<NSWindow> overlayWindow(
+      [[CWSheetOverlayWindow alloc] initWithContentRect:rect
+                                             controller:self]);
+  [parentWindow_ addChildWindow:overlayWindow
+                        ordered:NSWindowAbove];
+
+  // Add an entry for the sheet.
+  scoped_nsobject<ConstrainedWindowSheetInfo> info(
+      [[ConstrainedWindowSheetInfo alloc] initWithSheet:sheet
+                                             parentView:parentView
+                                          overlayWindow:overlayWindow]);
+  [sheets_ addObject:info];
+
+  // Show or hide the sheet.
+  if ([activeView_ isEqual:parentView])
+    [info showSheet];
+  else
+    [info hideSheet];
 }
 
-- (NSPoint)originForSheet:(NSWindow*)sheet
+- (NSPoint)originForSheet:(id<ConstrainedWindowSheet>)sheet
            withWindowSize:(NSSize)size {
   ConstrainedWindowSheetInfo* info = [self findSheetInfoForSheet:sheet];
   DCHECK(info);
@@ -163,34 +169,24 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
   return [self originForSheetSize:size inContainerRect:containerRect];
 }
 
-- (void)closeSheet:(NSWindow*)sheet {
+- (void)closeSheet:(id<ConstrainedWindowSheet>)sheet {
   ConstrainedWindowSheetInfo* info = [self findSheetInfoForSheet:sheet];
   DCHECK(info);
-
-  if ([activeView_ isEqual:[info parentView]]) {
-    scoped_nsobject<NSAnimation> animation(
-        [[ConstrainedWindowAnimationHide alloc] initWithWindow:sheet]);
-    [animation startAnimation];
-  }
-
-  [self closeSheetWithoutAnimation:info];
+  [self closeSheet:info withAnimation:YES];
 }
 
 - (void)parentViewDidBecomeActive:(NSView*)parentView {
   [[self findSheetInfoForParentView:activeView_] hideSheet];
   activeView_.reset([parentView retain]);
+  [self updateSheetPosition:parentView];
   [[self findSheetInfoForParentView:activeView_] showSheet];
 }
 
-- (void)pulseSheet:(NSWindow*)sheet {
+- (void)pulseSheet:(id<ConstrainedWindowSheet>)sheet {
   ConstrainedWindowSheetInfo* info = [self findSheetInfoForSheet:sheet];
   DCHECK(info);
-  if (![activeView_ isEqual:[info parentView]])
-    return;
-
-  scoped_nsobject<NSAnimation> animation(
-      [[ConstrainedWindowAnimationPulse alloc] initWithWindow:[info sheet]]);
-  [animation startAnimation];
+  if ([activeView_ isEqual:[info parentView]])
+    [[info sheet] pulseSheet];
 }
 
 - (int)sheetCount {
@@ -205,7 +201,8 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
   return NULL;
 }
 
-- (ConstrainedWindowSheetInfo*)findSheetInfoForSheet:(NSWindow*)sheet {
+- (ConstrainedWindowSheetInfo*)
+    findSheetInfoForSheet:(id<ConstrainedWindowSheet>)sheet {
   for (ConstrainedWindowSheetInfo* info in sheets_.get()) {
     if ([sheet isEqual:[info sheet]])
       return info;
@@ -222,7 +219,7 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
   // Close all sheets.
   NSArray* sheets = [NSArray arrayWithArray:sheets_];
   for (ConstrainedWindowSheetInfo* info in sheets)
-    [self closeSheetWithoutAnimation:info];
+    [self closeSheet:info withAnimation:NO];
 
   // Delete this instance.
   [g_sheetControllers removeObjectForKey:GetKeyForParentWindow(parentWindow_)];
@@ -233,20 +230,21 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
 }
 
 - (void)onParentViewFrameDidChange:(NSNotification*)note {
-  [self updateSheetPosition:[note object]];
+  NSView* parentView = [note object];
+  if (![activeView_ isEqual:parentView])
+    return;
+  [self updateSheetPosition:parentView];
 }
 
 - (void)updateSheetPosition:(NSView*)parentView {
-  if (![activeView_ isEqual:parentView])
-    return;
   ConstrainedWindowSheetInfo* info =
       [self findSheetInfoForParentView:parentView];
-  DCHECK(info);
+  if (!info)
+    return;
+
   NSRect rect = [self overlayWindowFrameForParentView:parentView];
   [[info overlayWindow] setFrame:rect display:YES];
-  NSPoint origin = [self originForSheetSize:[[info sheet] frame].size
-                            inContainerRect:rect];
-  [[info sheet] setFrameOrigin:origin];
+  [[info sheet] updateSheetPosition];
 }
 
 - (NSRect)overlayWindowFrameForParentView:(NSView*)parentView {
@@ -268,13 +266,14 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
   for (ConstrainedWindowSheetInfo* curInfo in sheets_.get()) {
     if ([overlayWindow isEqual:[curInfo overlayWindow]]) {
       [self pulseSheet:[curInfo sheet]];
-      [[curInfo sheet] makeKeyAndOrderFront:nil];
+      [[curInfo sheet] makeSheetKeyAndOrderFront];
       break;
     }
   }
 }
 
-- (void)closeSheetWithoutAnimation:(ConstrainedWindowSheetInfo*)info {
+- (void)closeSheet:(ConstrainedWindowSheetInfo*)info
+     withAnimation:(BOOL)withAnimation {
   if (![sheets_ containsObject:info])
     return;
 
@@ -284,8 +283,7 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
               object:[info parentView]];
 
   [parentWindow_ removeChildWindow:[info overlayWindow]];
-  [[info overlayWindow] removeChildWindow:[info sheet]];
-  [[info sheet] close];
+  [[info sheet] closeSheetWithAnimation:withAnimation];
   [[info overlayWindow] close];
   [sheets_ removeObject:info];
 }

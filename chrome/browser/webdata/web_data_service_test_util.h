@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/message_loop.h"
 #include "chrome/browser/webdata/web_data_service.h"
+#include "chrome/browser/webdata/web_data_service_factory.h"
 #include "content/public/browser/browser_thread.h"
 
 template <class T>
@@ -35,6 +36,41 @@ class AutofillWebDataServiceConsumer: public WebDataServiceConsumer {
   WebDataService::Handle handle_;
   T result_;
   DISALLOW_COPY_AND_ASSIGN(AutofillWebDataServiceConsumer);
+};
+
+// Base class for mocks of WebDataService, that does nothing in
+// Shutdown().
+class MockWebDataServiceWrapperBase : public WebDataServiceWrapper {
+ public:
+  MockWebDataServiceWrapperBase();
+  virtual ~MockWebDataServiceWrapperBase();
+
+  virtual void Shutdown() OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockWebDataServiceWrapperBase);
+};
+
+// Pass your fake WebDataService in the constructor and this will
+// serve it up via GetWebData().
+class MockWebDataServiceWrapper : public MockWebDataServiceWrapperBase {
+ public:
+  MockWebDataServiceWrapper(
+      scoped_refptr<WebDataService> fake_service,
+      scoped_refptr<AutofillWebDataService> fake_autofill);
+
+  virtual ~MockWebDataServiceWrapper();
+
+  virtual scoped_refptr<AutofillWebDataService> GetAutofillWebData() OVERRIDE;
+
+  virtual scoped_refptr<WebDataService> GetWebData() OVERRIDE;
+
+ protected:
+  scoped_refptr<AutofillWebDataService> fake_autofill_web_data_;
+  scoped_refptr<WebDataService> fake_web_data_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockWebDataServiceWrapper);
 };
 
 #endif  // CHROME_BROWSER_WEBDATA_WEB_DATA_SERVICE_TEST_UTIL_H__

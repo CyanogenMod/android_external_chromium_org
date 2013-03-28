@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/stl_util.h"
 #include "chrome/browser/download/download_request_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
@@ -34,7 +34,7 @@ DownloadRequestLimiter::TabDownloadState::TabDownloadState(
       host_(host),
       status_(DownloadRequestLimiter::ALLOW_ONE_DOWNLOAD),
       download_count_(0),
-      infobar_(NULL) {
+      factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
   content::Source<NavigationController> notification_source(
       &contents->GetController());
   content::Source<content::WebContents> web_contents_source(contents);
@@ -54,8 +54,8 @@ DownloadRequestLimiter::TabDownloadState::~TabDownloadState() {
   // We should only be destroyed after the callbacks have been notified.
   DCHECK(callbacks_.empty());
 
-  // And we should have closed the infobar.
-  DCHECK(!infobar_);
+  // And we should have invalidated the back pointer.
+  DCHECK(!factory_.HasWeakPtrs());
 }
 
 void DownloadRequestLimiter::TabDownloadState::DidGetUserGesture() {
@@ -64,18 +64,44 @@ void DownloadRequestLimiter::TabDownloadState::DidGetUserGesture() {
     return;
   }
 
-  InfoBarTabHelper* infobar_helper =
-      InfoBarTabHelper::FromWebContents(web_contents());
-  // See PromptUserForDownload(): if there's no InfoBarTabHelper, then
+  InfoBarService* infobar_service =
+      InfoBarService::FromWebContents(web_contents());
+  // See PromptUserForDownload(): if there's no InfoBarService, then
   // DOWNLOADS_NOT_ALLOWED is functionally equivalent to PROMPT_BEFORE_DOWNLOAD.
-  if ((infobar_helper &&
+  if ((infobar_service &&
        status_ != DownloadRequestLimiter::ALLOW_ALL_DOWNLOADS &&
        status_ != DownloadRequestLimiter::DOWNLOADS_NOT_ALLOWED) ||
-      (!infobar_helper &&
+      (!infobar_service &&
        status_ != DownloadRequestLimiter::ALLOW_ALL_DOWNLOADS)) {
     // Revert to default status.
     host_->Remove(this);
     // WARNING: We've been deleted.
+  }
+}
+
+void DownloadRequestLimiter::TabDownloadState::AboutToNavigateRenderView(
+    content::RenderViewHost* render_view_host) {
+  switch (status_) {
+    case ALLOW_ONE_DOWNLOAD:
+    case PROMPT_BEFORE_DOWNLOAD:
+      // When the user reloads the page without responding to the infobar, they
+      // are expecting DownloadRequestLimiter to behave as if they had just
+      // initially navigated to this page. See http://crbug.com/171372
+      NotifyCallbacks(false);
+      host_->Remove(this);
+      // WARNING: We've been deleted.
+      break;
+    case DOWNLOADS_NOT_ALLOWED:
+    case ALLOW_ALL_DOWNLOADS:
+      // Don't drop this information. The user has explicitly said that they
+      // do/don't want downloads from this host.  If they accidentally Accepted
+      // or Canceled, tough luck, they don't get another chance. They can copy
+      // the URL into a new tab, which will make a new DownloadRequestLimiter.
+      // See also the initial_page_host_ logic in Observe() for
+      // NOTIFICATION_NAV_ENTRY_PENDING.
+      break;
+    default:
+      NOTREACHED();
   }
 }
 
@@ -87,27 +113,8 @@ void DownloadRequestLimiter::TabDownloadState::PromptUserForDownload(
   if (is_showing_prompt())
     return;  // Already showing prompt.
 
-  if (DownloadRequestLimiter::delegate_) {
-    NotifyCallbacks(DownloadRequestLimiter::delegate_->ShouldAllowDownload());
-    return;
-  }
-
-  InfoBarTabHelper* infobar_helper =
-      InfoBarTabHelper::FromWebContents(web_contents);
-  if (!infobar_helper) {
-    // |web_contents| may not have a InfoBarTabHelper if it's actually a
-    // WebContents like those used for extension popups/bubbles and hosted apps
-    // etc.
-    // TODO(benjhayden): If this is an automatic download from an extension,
-    // it would be convenient for the extension author if we send a message to
-    // the extension's DevTools console (as we do for CSP) about how
-    // extensions should use chrome.downloads.download() (requires the
-    // "downloads" permission) to automatically download >1 files.
-    Cancel();
-    return;
-  }
-  infobar_ = new DownloadRequestInfoBarDelegate(infobar_helper, this);
-  infobar_helper->AddInfoBar(infobar_);
+  DownloadRequestInfoBarDelegate::Create(
+      InfoBarService::FromWebContents(web_contents), factory_.GetWeakPtr());
 }
 
 void DownloadRequestLimiter::TabDownloadState::Cancel() {
@@ -122,7 +129,7 @@ DownloadRequestLimiter::TabDownloadState::TabDownloadState()
     : host_(NULL),
       status_(DownloadRequestLimiter::ALLOW_ONE_DOWNLOAD),
       download_count_(0),
-      infobar_(NULL) {
+      factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
 }
 
 void DownloadRequestLimiter::TabDownloadState::Observe(
@@ -180,11 +187,8 @@ void DownloadRequestLimiter::TabDownloadState::NotifyCallbacks(bool allow) {
   // don't close it. If allow is false, we send all the notifications to cancel
   // all remaining downloads and close the infobar.
   if (!allow || (callbacks_.size() < kMaxDownloadsAtOnce)) {
-    if (infobar_) {
-      // Reset the delegate so we don't get notified again.
-      infobar_->set_host(NULL);
-      infobar_ = NULL;
-    }
+    // Null the generated weak pointer so we don't get notified again.
+    factory_.InvalidateWeakPtrs();
     callbacks.swap(callbacks_);
   } else {
     std::vector<DownloadRequestLimiter::Callback>::iterator start, end;
@@ -233,11 +237,6 @@ void DownloadRequestLimiter::CanDownloadOnIOThread(
       base::Bind(&DownloadRequestLimiter::CanDownload, this,
                  render_process_host_id, render_view_id, request_id,
                  request_method, callback));
-}
-
-// static
-void DownloadRequestLimiter::SetTestingDelegate(TestingDelegate* delegate) {
-  delegate_ = delegate;
 }
 
 DownloadRequestLimiter::TabDownloadState*
@@ -351,7 +350,3 @@ void DownloadRequestLimiter::Remove(TabDownloadState* state) {
   state_map_.erase(state->web_contents());
   delete state;
 }
-
-// static
-DownloadRequestLimiter::TestingDelegate* DownloadRequestLimiter::delegate_ =
-    NULL;

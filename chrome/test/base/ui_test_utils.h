@@ -14,8 +14,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
-#include "chrome/browser/history/history.h"
-#include "chrome/browser/ui/view_ids.h"
+#include "chrome/browser/history/history_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -24,22 +23,20 @@
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/ui_controls/ui_controls.h"
-#include "webkit/glue/window_open_disposition.h"
-
-#if defined(TOOLKIT_VIEWS)
-#include "ui/views/view.h"
-#endif
 
 class AppModalDialog;
 class BookmarkModel;
 class Browser;
-class FilePath;
 class LocationBar;
 class Profile;
 class SkBitmap;
 class TemplateURLService;
+
+namespace base {
+class FilePath;
+}
 
 namespace chrome {
 struct NavigateParams;
@@ -53,7 +50,6 @@ class WebContents;
 }
 
 namespace gfx {
-class Point;
 class Rect;
 class Size;
 }
@@ -80,10 +76,6 @@ enum BrowserTestWaitFlags {
 
 // Puts the current tab title in |title|. Returns true on success.
 bool GetCurrentTabTitle(const Browser* browser, string16* title);
-
-// Waits for a new tab to be added to |browser|. TODO(gbillock): remove this
-// race hazard. Use WindowedNotificationObserver instead.
-void WaitForNewTab(Browser* browser);
 
 // Opens |url| in an incognito browser window with the incognito profile of
 // |profile|, blocking until the navigation finishes. This will create a new
@@ -118,17 +110,18 @@ void NavigateToURLBlockUntilNavigationsComplete(Browser* browser,
 // Generate the file path for testing a particular test.
 // The file for the tests is all located in
 // test_root_directory/dir/<file>
-// The returned path is FilePath format.
-FilePath GetTestFilePath(const FilePath& dir, const FilePath& file);
+// The returned path is base::FilePath format.
+base::FilePath GetTestFilePath(const base::FilePath& dir,
+                               const base::FilePath& file);
 
 // Generate the URL for testing a particular test.
 // HTML for the tests is all located in
 // test_root_directory/dir/<file>
 // The returned path is GURL format.
-GURL GetTestUrl(const FilePath& dir, const FilePath& file);
+GURL GetTestUrl(const base::FilePath& dir, const base::FilePath& file);
 
 // Generate the path of the build directory, relative to the source root.
-bool GetRelativeBuildDirectory(FilePath* build_dir);
+bool GetRelativeBuildDirectory(base::FilePath* build_dir);
 
 // Blocks until an application modal dialog is showns and returns it.
 AppModalDialog* WaitForAppModalDialog();
@@ -144,12 +137,6 @@ int FindInPage(content::WebContents* tab,
                int* ordinal,
                gfx::Rect* selection_rect);
 
-// Returns true if the View is focused.
-bool IsViewFocused(const Browser* browser, ViewID vid);
-
-// Simulates a mouse click on a View in the browser.
-void ClickOnView(const Browser* browser, ViewID vid);
-
 // Register |observer| for the given |type| and |source| and run
 // the message loop until the observer posts a quit task.
 void RegisterAndWait(content::NotificationObserver* observer,
@@ -158,6 +145,7 @@ void RegisterAndWait(content::NotificationObserver* observer,
 
 // Blocks until |model| finishes loading.
 void WaitForBookmarkModelToLoad(BookmarkModel* model);
+void WaitForBookmarkModelToLoad(Profile* profile);
 
 // Blocks until |service| finishes loading.
 void WaitForTemplateURLServiceToLoad(TemplateURLService* service);
@@ -172,43 +160,8 @@ void DownloadURL(Browser* browser, const GURL& download_url);
 void SendToOmniboxAndSubmit(LocationBar* location_bar,
                             const std::string& input);
 
-// Brings the native window for |browser| to the foreground. Returns true on
-// success.
-bool BringBrowserWindowToFront(const Browser* browser) WARN_UNUSED_RESULT;
-
 // Gets the first browser that is not in the specified set.
 Browser* GetBrowserNotInSet(std::set<Browser*> excluded_browsers);
-
-// Sends a key press, blocking until the key press is received or the test times
-// out. This uses ui_controls::SendKeyPress, see it for details. Returns true
-// if the event was successfully sent and received.
-bool SendKeyPressSync(const Browser* browser,
-                      ui::KeyboardCode key,
-                      bool control,
-                      bool shift,
-                      bool alt,
-                      bool command) WARN_UNUSED_RESULT;
-
-// Sends a key press, blocking until both the key press and a notification from
-// |source| of type |type| are received, or until the test times out. This uses
-// ui_controls::SendKeyPress, see it for details. Returns true if the event was
-// successfully sent and both the event and notification were received.
-bool SendKeyPressAndWait(const Browser* browser,
-                         ui::KeyboardCode key,
-                         bool control,
-                         bool shift,
-                         bool alt,
-                         bool command,
-                         int type,
-                         const content::NotificationSource& source)
-                             WARN_UNUSED_RESULT;
-
-// Sends a move event blocking until received. Returns true if the event was
-// successfully received. This uses ui_controls::SendMouse***NotifyWhenDone,
-// see it for details.
-bool SendMouseMoveSync(const gfx::Point& location) WARN_UNUSED_RESULT;
-bool SendMouseEventsSync(ui_controls::MouseButton type,
-                         int state) WARN_UNUSED_RESULT;
 
 // A WindowedNotificationObserver hard-wired to observe
 // chrome::NOTIFICATION_TAB_ADDED.
@@ -311,51 +264,6 @@ class BrowserAddedObserver {
   DISALLOW_COPY_AND_ASSIGN(BrowserAddedObserver);
 };
 
-// See SendKeyPressAndWait.  This function additionally performs a check on the
-// NotificationDetails using the provided Details<U>.
-template <class U>
-bool SendKeyPressAndWaitWithDetails(
-    const Browser* browser,
-    ui::KeyboardCode key,
-    bool control,
-    bool shift,
-    bool alt,
-    bool command,
-    int type,
-    const content::NotificationSource& source,
-    const content::Details<U>& details) WARN_UNUSED_RESULT;
-
-template <class U>
-bool SendKeyPressAndWaitWithDetails(
-    const Browser* browser,
-    ui::KeyboardCode key,
-    bool control,
-    bool shift,
-    bool alt,
-    bool command,
-    int type,
-    const content::NotificationSource& source,
-    const content::Details<U>& details) {
-  WindowedNotificationObserverWithDetails<U> observer(type, source);
-
-  if (!SendKeyPressSync(browser, key, control, shift, alt, command))
-    return false;
-
-  observer.Wait();
-
-  U my_details;
-  if (!observer.GetDetailsFor(source.map_key(), &my_details))
-    return false;
-
-  return *details.ptr() == my_details && !testing::Test::HasFatalFailure();
-}
-
-// Hide a native window.
-void HideNativeWindow(gfx::NativeWindow window);
-
-// Show and focus a native window. Returns true on success.
-bool ShowAndFocusNativeWindow(gfx::NativeWindow window) WARN_UNUSED_RESULT;
-
 // Takes a snapshot of the given render widget, rendered at |page_size|. The
 // snapshot is set to |bitmap|. Returns true on success.
 bool TakeRenderWidgetSnapshot(content::RenderWidgetHost* rwh,
@@ -368,46 +276,20 @@ bool TakeRenderWidgetSnapshot(content::RenderWidgetHost* rwh,
 bool TakeEntirePageSnapshot(content::RenderViewHost* rvh,
                             SkBitmap* bitmap) WARN_UNUSED_RESULT;
 
-// A combination of SendMouseMove to the middle of the view followed by
-// SendMouseEvents.
-void MoveMouseToCenterAndPress(
-#if defined(TOOLKIT_VIEWS)
-    views::View* view,
-#elif defined(TOOLKIT_GTK)
-    GtkWidget* widget,
-#elif defined(OS_IOS)
-    UIView* view,
-#elif defined(OS_MACOSX)
-    NSView* view,
-#endif
-    ui_controls::MouseButton button,
-    int state,
-    const base::Closure& task);
-
 #if defined(OS_WIN)
 // Saves a snapshot of the entire screen to a file named
 // ChromiumSnapshotYYYYMMDDHHMMSS.png to |directory|, returning true on success.
 // The path to the file produced is returned in |screenshot_path| if non-NULL.
-bool SaveScreenSnapshotToDirectory(const FilePath& directory,
-                                   FilePath* screenshot_path);
+bool SaveScreenSnapshotToDirectory(const base::FilePath& directory,
+                                   base::FilePath* screenshot_path);
 
 // Saves a snapshot of the entire screen as above to the current user's desktop.
 // The Chrome path provider must be registered prior to calling this function.
-bool SaveScreenSnapshotToDesktop(FilePath* screenshot_path);
+bool SaveScreenSnapshotToDesktop(base::FilePath* screenshot_path);
 #endif
 
 // Configures the geolocation provider to always return the given position.
 void OverrideGeolocation(double latitude, double longitude);
-
-namespace internal {
-
-// A utility function to send a mouse click event in a closure. It's shared by
-// ui_controls_linux.cc and ui_controls_mac.cc
-void ClickTask(ui_controls::MouseButton button,
-               int state,
-               const base::Closure& followup);
-
-}  // namespace internal
 
 // Enumerates all history contents on the backend thread. Returns them in
 // descending order by time.

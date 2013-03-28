@@ -10,6 +10,7 @@
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/browser/task_manager/task_manager_browsertest_util.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -92,18 +93,3 @@ void TaskManagerBrowserTestUtil::WaitForWebResourceChange(int target_count) {
   content::RunMessageLoop();
   model->RemoveObserver(&observer);
 }
-
-// static
-void TaskManagerBrowserTestUtil::ShowTaskManagerAndWaitForReady(
-    Browser* browser) {
-#if defined(USE_AURA)
-  content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_TASK_MANAGER_WINDOW_READY,
-      content::Source<TaskManagerModel>(TaskManager::GetInstance()->model()));
-  browser->window()->ShowTaskManager();
-  observer.Wait();
-#else
-  browser->window()->ShowTaskManager();
-#endif  // defined(USE_AURA)
-}
-

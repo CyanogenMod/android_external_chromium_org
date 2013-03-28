@@ -4,13 +4,16 @@
 
 #include "chrome/browser/chromeos/input_method/input_method_engine_ibus.h"
 
+#define XK_MISCELLANY
+#include <X11/keysymdef.h>
 #include <map>
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
-#include "chrome/browser/chromeos/input_method/ibus_keymap.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/utf_string_conversions.h"
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -21,6 +24,7 @@
 #include "chromeos/dbus/ibus/ibus_lookup_table.h"
 #include "chromeos/dbus/ibus/ibus_property.h"
 #include "chromeos/dbus/ibus/ibus_text.h"
+#include "chromeos/ime/ibus_keymap.h"
 #include "dbus/object_path.h"
 
 namespace chromeos {
@@ -44,21 +48,21 @@ InputMethodEngineIBus::InputMethodEngineIBus()
       context_id_(0),
       next_context_id_(1),
       current_object_path_(0),
-      aux_text_(new ibus::IBusText()),
+      aux_text_(new IBusText()),
       aux_text_visible_(false),
       observer_(NULL),
-      preedit_text_(new ibus::IBusText()),
+      preedit_text_(new IBusText()),
       preedit_cursor_(0),
-      component_(new ibus::IBusComponent()),
-      table_(new ibus::IBusLookupTable()),
-      table_visible_(false),
+      component_(new IBusComponent()),
+      table_(new IBusLookupTable()),
+      window_visible_(false),
       weak_ptr_factory_(this) {
 }
 
 InputMethodEngineIBus::~InputMethodEngineIBus() {
-  GetCurrentService()->UnsetEngine();
-  input_method::InputMethodManager::GetInstance()->
-      RemoveInputMethodExtension(ibus_id_);
+  if (object_path_.IsValid())
+    GetCurrentService()->UnsetEngine();
+  input_method::GetInputMethodManager()->RemoveInputMethodExtension(ibus_id_);
 }
 
 void InputMethodEngineIBus::Initialize(
@@ -79,13 +83,11 @@ void InputMethodEngineIBus::Initialize(
   ibus_id_ += engine_id;
 
   input_method::InputMethodManager* manager =
-      input_method::InputMethodManager::GetInstance();
+      input_method::GetInputMethodManager();
   std::string layout;
   if (!layouts.empty()) {
     layout = JoinString(layouts, ',');
   } else {
-    input_method::InputMethodManager* manager =
-        input_method::InputMethodManager::GetInstance();
     const std::string fallback_id =
         manager->GetInputMethodUtil()->GetHardwareInputMethodId();
     const input_method::InputMethodDescriptor* fallback_desc =
@@ -94,12 +96,12 @@ void InputMethodEngineIBus::Initialize(
     layout = fallback_desc->keyboard_layout();
   }
 
-  component_.reset(new ibus::IBusComponent());
+  component_.reset(new IBusComponent());
   component_->set_name(std::string(kEngineBusPrefix) + std::string(engine_id));
   component_->set_description(description);
   component_->set_author(engine_name);
 
-  chromeos::ibus::IBusComponent::EngineDescription engine_desc;
+  chromeos::IBusComponent::EngineDescription engine_desc;
   engine_desc.engine_id = ibus_id_;
   engine_desc.display_name = description;
   engine_desc.description = description;
@@ -134,20 +136,20 @@ bool InputMethodEngineIBus::SetComposition(
   }
 
   preedit_cursor_ = cursor;
-  preedit_text_.reset(new ibus::IBusText());
+  preedit_text_.reset(new IBusText());
   preedit_text_->set_text(text);
 
   // TODO: Add support for displaying selected text in the composition string.
   for (std::vector<SegmentInfo>::const_iterator segment = segments.begin();
        segment != segments.end(); ++segment) {
-    ibus::IBusText::UnderlineAttribute underline;
+    IBusText::UnderlineAttribute underline;
 
     switch (segment->style) {
       case SEGMENT_STYLE_UNDERLINE:
-        underline.type = ibus::IBusText::IBUS_TEXT_UNDERLINE_SINGLE;
+        underline.type = IBusText::IBUS_TEXT_UNDERLINE_SINGLE;
         break;
       case SEGMENT_STYLE_DOUBLE_UNDERLINE:
-        underline.type = ibus::IBusText::IBUS_TEXT_UNDERLINE_DOUBLE;
+        underline.type = IBusText::IBUS_TEXT_UNDERLINE_DOUBLE;
         break;
       default:
         continue;
@@ -179,7 +181,7 @@ bool InputMethodEngineIBus::ClearComposition(int context_id,
   }
 
   preedit_cursor_ = 0;
-  preedit_text_.reset(new ibus::IBusText());
+  preedit_text_.reset(new IBusText());
   GetCurrentService()->UpdatePreedit(
       *preedit_text_.get(),
       0,
@@ -211,46 +213,48 @@ bool InputMethodEngineIBus::SetCandidateWindowVisible(bool visible,
     return false;
   }
 
-  table_visible_ = visible;
-  GetCurrentService()->UpdateLookupTable(*table_.get(), table_visible_);
+  window_visible_ = visible;
+  GetCurrentService()->UpdateLookupTable(*table_.get(), window_visible_);
   return true;
 }
 
 void InputMethodEngineIBus::SetCandidateWindowCursorVisible(bool visible) {
-  if (!active_)
-    return;
   table_->set_is_cursor_visible(visible);
-  GetCurrentService()->UpdateLookupTable(*table_.get(), table_visible_);
+  if (active_)
+    GetCurrentService()->UpdateLookupTable(*table_.get(), window_visible_);
 }
 
 void InputMethodEngineIBus::SetCandidateWindowVertical(bool vertical) {
-  if (!active_)
-    return;
-  table_->set_orientation(
-      vertical ? ibus::IBusLookupTable::IBUS_LOOKUP_TABLE_ORIENTATION_VERTICAL :
-      ibus::IBusLookupTable::IBUS_LOOKUP_TABLE_ORIENTATION_HORIZONTAL);
-  GetCurrentService()->UpdateLookupTable(*table_.get(), table_visible_);
+  table_->set_orientation(vertical ? IBusLookupTable::VERTICAL :
+                          IBusLookupTable::HORIZONTAL);
+  if (active_)
+    GetCurrentService()->UpdateLookupTable(*table_.get(), window_visible_);
 }
 
 void InputMethodEngineIBus::SetCandidateWindowPageSize(int size) {
-  if (!active_)
-    return;
   table_->set_page_size(size);
-  GetCurrentService()->UpdateLookupTable(*table_.get(), table_visible_);
+  if (active_)
+    GetCurrentService()->UpdateLookupTable(*table_.get(), window_visible_);
 }
 
 void InputMethodEngineIBus::SetCandidateWindowAuxText(const char* text) {
-  if (!active_)
-    return;
   aux_text_->set_text(text);
-  GetCurrentService()->UpdateAuxiliaryText(*aux_text_.get(), aux_text_visible_);
+  if (active_) {
+    // Should not show auxiliary text if the whole window visibility is false.
+    GetCurrentService()->UpdateAuxiliaryText(
+        *aux_text_.get(),
+        window_visible_ && aux_text_visible_);
+  }
 }
 
 void InputMethodEngineIBus::SetCandidateWindowAuxTextVisible(bool visible) {
-  if (!active_)
-    return;
   aux_text_visible_ = visible;
-  GetCurrentService()->UpdateAuxiliaryText(*aux_text_.get(), aux_text_visible_);
+  if (active_) {
+    // Should not show auxiliary text if the whole window visibility is false.
+    GetCurrentService()->UpdateAuxiliaryText(
+        *aux_text_.get(),
+        window_visible_ && aux_text_visible_);
+  }
 }
 
 bool InputMethodEngineIBus::SetCandidates(
@@ -272,10 +276,12 @@ bool InputMethodEngineIBus::SetCandidates(
   table_->mutable_candidates()->clear();
   for (std::vector<Candidate>::const_iterator ix = candidates.begin();
        ix != candidates.end(); ++ix) {
-    ibus::IBusLookupTable::Entry entry;
-    // TODO(nona): support annotation(crbug.com/140186).
-    entry.value = ix->value + " " + ix->annotation;
+    IBusLookupTable::Entry entry;
+    entry.value = ix->value;
     entry.label = ix->label;
+    entry.annotation = ix->annotation;
+    entry.description_title = ix->usage.title;
+    entry.description_body = ix->usage.body;
 
     // Store a mapping from the user defined ID to the candidate index.
     candidate_indexes_[ix->id] = candidate_ids_.size();
@@ -283,7 +289,7 @@ bool InputMethodEngineIBus::SetCandidates(
 
     table_->mutable_candidates()->push_back(entry);
   }
-  GetCurrentService()->UpdateLookupTable(*table_.get(), table_visible_);
+  GetCurrentService()->UpdateLookupTable(*table_.get(), window_visible_);
   return true;
 }
 
@@ -306,7 +312,7 @@ bool InputMethodEngineIBus::SetCursorPosition(int context_id, int candidate_id,
   }
 
   table_->set_cursor_position(position->second);
-  GetCurrentService()->UpdateLookupTable(*table_.get(), table_visible_);
+  GetCurrentService()->UpdateLookupTable(*table_.get(), window_visible_);
   return true;
 }
 
@@ -314,10 +320,10 @@ bool InputMethodEngineIBus::SetMenuItems(const std::vector<MenuItem>& items) {
   if (!active_)
     return false;
 
-  ibus::IBusPropertyList properties;
+  IBusPropertyList properties;
   for (std::vector<MenuItem>::const_iterator item = items.begin();
        item != items.end(); ++item) {
-    ibus::IBusProperty* property = new ibus::IBusProperty();
+    IBusProperty* property = new IBusProperty();
     if (!MenuItemToProperty(*item, property)) {
       delete property;
       DVLOG(1) << "Bad menu item";
@@ -334,10 +340,10 @@ bool InputMethodEngineIBus::UpdateMenuItems(
   if (!active_)
     return false;
 
-  ibus::IBusPropertyList properties;
+  IBusPropertyList properties;
   for (std::vector<MenuItem>::const_iterator item = items.begin();
        item != items.end(); ++item) {
-    ibus::IBusProperty* property = new ibus::IBusProperty();
+    IBusProperty* property = new IBusProperty();
     if (!MenuItemToProperty(*item, property)) {
       delete property;
       DVLOG(1) << "Bad menu item";
@@ -359,6 +365,29 @@ void InputMethodEngineIBus::KeyEventDone(input_method::KeyEventHandle* key_data,
       reinterpret_cast<KeyEventDoneCallback*>(key_data);
   callback->Run(handled);
   delete callback;
+}
+
+bool InputMethodEngineIBus::DeleteSurroundingText(int context_id,
+                                                  int offset,
+                                                  size_t number_of_chars,
+                                                  std::string* error) {
+  const uint32 kBackSpaceKeyCode = 14;
+
+  if (!active_) {
+    *error = kErrorNotActive;
+    return false;
+  }
+  if (context_id != context_id_ || context_id_ == -1) {
+    *error = kErrorWrongContext;
+    return false;
+  }
+  if (offset < 0 && static_cast<size_t>(-1 * offset) != size_t(number_of_chars))
+    return false;  // Currently we can only support preceding text.
+
+  // TODO(nona): Return false if there is ongoing composition.
+  for (size_t i = 0; i < number_of_chars; ++i)
+    GetCurrentService()->ForwardKeyEvent(XK_BackSpace, kBackSpaceKeyCode, 0U);
+  return true;
 }
 
 void InputMethodEngineIBus::FocusIn() {
@@ -389,6 +418,10 @@ void InputMethodEngineIBus::Enable() {
   active_ = true;
   observer_->OnActivate(engine_id_);
   FocusIn();
+
+  // Calls RequireSurroundingText once here to notify ibus-daemon to send
+  // surrounding text to this engine.
+  GetCurrentService()->RequireSurroundingText();
 }
 
 void InputMethodEngineIBus::Disable() {
@@ -398,7 +431,7 @@ void InputMethodEngineIBus::Disable() {
 
 void InputMethodEngineIBus::PropertyActivate(
     const std::string& property_name,
-    IBusPropertyState property_state) {
+    ibus::IBusPropertyState property_state) {
   observer_->OnMenuItemActivated(engine_id_, property_name);
 }
 
@@ -429,6 +462,7 @@ void InputMethodEngineIBus::ProcessKeyEvent(
   KeyboardEvent event;
   event.type = !(state & kIBusKeyReleaseMask) ? "keydown" : "keyup";
   event.key = input_method::GetIBusKey(keysym);
+  event.code = input_method::GetIBusKeyCode(keycode);
   event.alt_key = state & kIBusAltKeyMask;
   event.ctrl_key = state & kIBusCtrlKeyMask;
   event.shift_key = state & kIBusShiftKeyMask;
@@ -438,10 +472,9 @@ void InputMethodEngineIBus::ProcessKeyEvent(
       reinterpret_cast<input_method::KeyEventHandle*>(handler));
 }
 
-void InputMethodEngineIBus::CandidateClicked(
-    uint32 index,
-    ibus::IBusMouseButton button,
-    uint32 state) {
+void InputMethodEngineIBus::CandidateClicked(uint32 index,
+                                             ibus::IBusMouseButton button,
+                                             uint32 state) {
   if (index > candidate_ids_.size()) {
     return;
   }
@@ -467,10 +500,13 @@ void InputMethodEngineIBus::CandidateClicked(
       engine_id_, candidate_ids_.at(index), pressed_button);
 }
 
-void InputMethodEngineIBus::SetSurroundingText(
-    const std::string& text,
-    uint32 cursor_pos,
-    uint32 anchor_pos) {
+void InputMethodEngineIBus::SetSurroundingText(const std::string& text,
+                                               uint32 cursor_pos,
+                                               uint32 anchor_pos) {
+  observer_->OnSurroundingTextChanged(engine_id_,
+                                      text,
+                                      static_cast<int>(cursor_pos),
+                                      static_cast<int>(anchor_pos));
 }
 
 IBusEngineService* InputMethodEngineIBus::GetCurrentService() {
@@ -479,7 +515,7 @@ IBusEngineService* InputMethodEngineIBus::GetCurrentService() {
 
 bool InputMethodEngineIBus::MenuItemToProperty(
     const MenuItem& item,
-    ibus::IBusProperty* property) {
+    IBusProperty* property) {
   property->set_key(item.id);
 
   if (item.modified & MENU_ITEM_MODIFIED_LABEL) {
@@ -495,23 +531,23 @@ bool InputMethodEngineIBus::MenuItemToProperty(
     // TODO(nona): implement sensitive entry(crbug.com/140192).
   }
   if (item.modified & MENU_ITEM_MODIFIED_STYLE) {
-    ibus::IBusProperty::IBusPropertyType type =
-        ibus::IBusProperty::IBUS_PROPERTY_TYPE_NORMAL;
+    IBusProperty::IBusPropertyType type =
+        IBusProperty::IBUS_PROPERTY_TYPE_NORMAL;
     if (!item.children.empty()) {
-      type = ibus::IBusProperty::IBUS_PROPERTY_TYPE_MENU;
+      type = IBusProperty::IBUS_PROPERTY_TYPE_MENU;
     } else {
       switch (item.style) {
         case MENU_ITEM_STYLE_NONE:
-          type = ibus::IBusProperty::IBUS_PROPERTY_TYPE_NORMAL;
+          type = IBusProperty::IBUS_PROPERTY_TYPE_NORMAL;
           break;
         case MENU_ITEM_STYLE_CHECK:
-          type = ibus::IBusProperty::IBUS_PROPERTY_TYPE_TOGGLE;
+          type = IBusProperty::IBUS_PROPERTY_TYPE_TOGGLE;
           break;
         case MENU_ITEM_STYLE_RADIO:
-          type = ibus::IBusProperty::IBUS_PROPERTY_TYPE_RADIO;
+          type = IBusProperty::IBUS_PROPERTY_TYPE_RADIO;
           break;
         case MENU_ITEM_STYLE_SEPARATOR:
-          type = ibus::IBusProperty::IBUS_PROPERTY_TYPE_SEPARATOR;
+          type = IBusProperty::IBUS_PROPERTY_TYPE_SEPARATOR;
           break;
       }
     }
@@ -520,7 +556,7 @@ bool InputMethodEngineIBus::MenuItemToProperty(
 
   for (std::vector<MenuItem>::const_iterator child = item.children.begin();
        child != item.children.end(); ++child) {
-    ibus::IBusProperty* new_property = new ibus::IBusProperty();
+    IBusProperty* new_property = new IBusProperty();
     if (!MenuItemToProperty(*child, new_property)) {
       delete new_property;
       DVLOG(1) << "Bad menu item child";

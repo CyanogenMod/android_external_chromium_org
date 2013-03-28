@@ -22,8 +22,6 @@ class AutocompleteInput {
   enum Type {
     INVALID,        // Empty input
     UNKNOWN,        // Valid input whose type cannot be determined
-    REQUESTED_URL,  // Input autodetected as UNKNOWN, which the user wants to
-                    // treat as an URL by specifying a desired_tld
     URL,            // Input autodetected as a URL
     QUERY,          // Input autodetected as a query
     FORCED_QUERY,   // Input forced to be a query by an initial '?'
@@ -47,8 +45,44 @@ class AutocompleteInput {
   };
 
   AutocompleteInput();
+  // |text| and |cursor_position| represent the input query and location of
+  // the cursor with the query respectively.  |cursor_position| may be set to
+  // string16::npos if the input |text| doesn't come directly from the user's
+  // typing.
+  //
+  // |desired_tld| is the user's desired TLD, if one is not already present in
+  // the text to autocomplete.  When this is non-empty, it also implies that
+  // "www." should be prepended to the domain where possible. The |desired_tld|
+  // should not contain a leading '.' (use "com" instead of ".com").
+  //
+  // If |current_url| is set to a valid search result page URL, providers can
+  // use it to perform query refinement. For example, if it is set to an image
+  // search result page, the search provider may generate an image search URL.
+  // Query refinement is only used by mobile ports, so only these set
+  // |current_url| to a non-empty string.
+  //
+  // |prevent_inline_autocomplete| is true if the generated result set should
+  // not require inline autocomplete for the default match.  This is difficult
+  // to explain in the abstract; the practical use case is that after the user
+  // deletes text in the edit, the HistoryURLProvider should make sure not to
+  // promote a match requiring inline autocomplete too highly.
+  //
+  // |prefer_keyword| should be true when the keyword UI is onscreen; this will
+  // bias the autocomplete result set toward the keyword provider when the input
+  // string is a bare keyword.
+  //
+  // |allow_exact_keyword_match| should be false when triggering keyword mode on
+  // the input string would be surprising or wrong, e.g. when highlighting text
+  // in a page and telling the browser to search for it or navigate to it. This
+  // parameter only applies to substituting keywords.
+
+  // If |matches_requested| is BEST_MATCH or SYNCHRONOUS_MATCHES the controller
+  // asks the providers to only return matches which are synchronously
+  // available, which should mean that all providers will be done immediately.
   AutocompleteInput(const string16& text,
+                    size_t cursor_position,
                     const string16& desired_tld,
+                    const GURL& current_url,
                     bool prevent_inline_autocomplete,
                     bool prefer_keyword,
                     bool allow_exact_keyword_match,
@@ -56,7 +90,8 @@ class AutocompleteInput {
   ~AutocompleteInput();
 
   // If type is |FORCED_QUERY| and |text| starts with '?', it is removed.
-  static void RemoveForcedQueryStringIfNecessary(Type type, string16* text);
+  // Returns number of leading characters removed.
+  static size_t RemoveForcedQueryStringIfNecessary(Type type, string16* text);
 
   // Converts |type| to a string representation.  Used in logging.
   static std::string TypeToString(Type type);
@@ -77,7 +112,6 @@ class AutocompleteInput {
   // is view-source, this function returns the positions of scheme and host
   // in the URL qualified by "view-source:" prefix.
   static void ParseForEmphasizeComponents(const string16& text,
-                                          const string16& desired_tld,
                                           url_parse::Component* scheme,
                                           url_parse::Component* host);
 
@@ -97,16 +131,19 @@ class AutocompleteInput {
   // User-provided text to be completed.
   const string16& text() const { return text_; }
 
-  // Use of this setter is risky, since no other internal state is updated
-  // besides |text_| and |parts_|.  Only callers who know that they're not
-  // changing the type/scheme/etc. should use this.
-  void UpdateText(const string16& text, const url_parse::Parsed& parts);
+  // Returns 0-based cursor position within |text_| or string16::npos if not
+  // used.
+  size_t cursor_position() const { return cursor_position_; }
 
-  // User's desired TLD, if one is not already present in the text to
-  // autocomplete.  When this is non-empty, it also implies that "www." should
-  // be prepended to the domain where possible.  This should not have a leading
-  // '.' (use "com" instead of ".com").
-  const string16& desired_tld() const { return desired_tld_; }
+  // Use of this setter is risky, since no other internal state is updated
+  // besides |text_|, |cursor_position_| and |parts_|.  Only callers who know
+  // that they're not changing the type/scheme/etc. should use this.
+  void UpdateText(const string16& text,
+                  size_t cursor_position,
+                  const url_parse::Parsed& parts);
+
+  // The current URL, or an invalid GURL if query refinement is not desired.
+  const GURL& current_url() const { return current_url_; }
 
   // The type of input supplied.
   Type type() const { return type_; }
@@ -138,15 +175,15 @@ class AutocompleteInput {
   // See description of enum for details.
   MatchesRequested matches_requested() const { return matches_requested_; }
 
-  // operator==() by another name.
-  bool Equals(const AutocompleteInput& other) const;
-
   // Resets all internal variables to the null-constructed state.
   void Clear();
 
  private:
+  // NOTE: Whenever adding a new field here, please make sure to update Clear()
+  // method.
   string16 text_;
-  string16 desired_tld_;
+  size_t cursor_position_;
+  GURL current_url_;
   Type type_;
   url_parse::Parsed parts_;
   string16 scheme_;

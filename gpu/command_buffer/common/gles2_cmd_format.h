@@ -12,6 +12,7 @@
 
 #include <string.h>
 
+#include "base/safe_numerics.h"
 #include "../common/types.h"
 #include "../common/bitfield_helpers.h"
 #include "../common/cmd_buffer_common.h"
@@ -170,6 +171,8 @@ COMPILE_ASSERT(offsetof(ProgramInfoHeader, num_attribs) == 4,
 COMPILE_ASSERT(offsetof(ProgramInfoHeader, num_uniforms) == 8,
                OffsetOf_ProgramInfoHeader_num_uniforms_not_8);
 
+namespace cmds {
+
 #include "../common/gles2_cmd_format_autogen.h"
 
 // These are hand written commands.
@@ -248,11 +251,12 @@ struct GetAttribLocationImmediate {
   typedef GLint Result;
 
   static uint32 ComputeDataSize(const char* s) {
-    return strlen(s);
+    return base::checked_numeric_cast<uint32>(strlen(s));
   }
 
   static uint32 ComputeSize(const char* s) {
-    return static_cast<uint32>(sizeof(ValueType) + ComputeDataSize(s));
+    return base::checked_numeric_cast<uint32>(sizeof(ValueType) +
+                                              ComputeDataSize(s));
   }
 
   void SetHeader(const char* s) {
@@ -428,11 +432,12 @@ struct GetUniformLocationImmediate {
   typedef GLint Result;
 
   static uint32 ComputeDataSize(const char* s) {
-    return strlen(s);
+    return base::checked_numeric_cast<uint32>(strlen(s));
   }
 
   static uint32 ComputeSize(const char* s) {
-    return static_cast<uint32>(sizeof(ValueType) + ComputeDataSize(s));
+    return base::checked_numeric_cast<uint32>(sizeof(ValueType) +
+                                              ComputeDataSize(s));
   }
 
   void SetHeader(const char* s) {
@@ -535,8 +540,16 @@ COMPILE_ASSERT(offsetof(GetUniformLocationBucket, location_shm_id) == 12,
 COMPILE_ASSERT(offsetof(GetUniformLocationBucket, location_shm_offset) == 16,
                OffsetOf_GetUniformLocationBucket_location_shm_offset_not_16);
 
+struct InsertSyncPointCHROMIUM {
+  typedef InsertSyncPointCHROMIUM ValueType;
+  static const CommandId kCmdId = kInsertSyncPointCHROMIUM;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  CommandHeader header;
+};
+
 #pragma pack(pop)
 
+}  // namespace cmd
 }  // namespace gles2
 }  // namespace gpu
 

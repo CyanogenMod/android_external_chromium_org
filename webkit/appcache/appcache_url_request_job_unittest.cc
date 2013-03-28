@@ -48,7 +48,7 @@ class AppCacheURLRequestJobTest : public testing::Test {
     }
 
     virtual void OnResponseInfoLoaded(AppCacheResponseInfo* info,
-                                      int64 response_id) {
+                                      int64 response_id) OVERRIDE {
       loaded_info_ = info;
       loaded_info_id_ = response_id;
       test_->ScheduleNextTask();
@@ -68,7 +68,7 @@ class AppCacheURLRequestJobTest : public testing::Test {
           kill_after_amount_received_(0), kill_with_io_pending_(false) {
     }
 
-    virtual void OnResponseStarted(net::URLRequest* request) {
+    virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE {
       amount_received_ = 0;
       did_receive_headers_ = false;
       if (request->status().is_success()) {
@@ -81,7 +81,8 @@ class AppCacheURLRequestJobTest : public testing::Test {
       }
     }
 
-    virtual void OnReadCompleted(net::URLRequest* request, int bytes_read) {
+    virtual void OnReadCompleted(net::URLRequest* request,
+                                 int bytes_read) OVERRIDE {
       if (bytes_read > 0) {
         amount_received_ += bytes_read;
 
@@ -379,7 +380,7 @@ class AppCacheURLRequestJobTest : public testing::Test {
     // Create an instance and see that it looks as expected.
 
     job = new AppCacheURLRequestJob(
-        &request, empty_context_.network_delegate(), storage);
+        &request, NULL, storage);
     EXPECT_TRUE(job->is_waiting());
     EXPECT_FALSE(job->is_delivering_appcache_response());
     EXPECT_FALSE(job->is_delivering_network_response());
@@ -402,20 +403,17 @@ class AppCacheURLRequestJobTest : public testing::Test {
     // Create an instance, give it a delivery order and see that
     // it looks as expected.
 
-    job = new AppCacheURLRequestJob(
-        &request, empty_context_.network_delegate(), storage);
+    job = new AppCacheURLRequestJob(&request, NULL, storage);
     job->DeliverErrorResponse();
     EXPECT_TRUE(job->is_delivering_error_response());
     EXPECT_FALSE(job->has_been_started());
 
-    job = new AppCacheURLRequestJob(
-        &request, empty_context_.network_delegate(), storage);
+    job = new AppCacheURLRequestJob(&request, NULL, storage);
     job->DeliverNetworkResponse();
     EXPECT_TRUE(job->is_delivering_network_response());
     EXPECT_FALSE(job->has_been_started());
 
-    job = new AppCacheURLRequestJob(
-        &request, empty_context_.network_delegate(), storage);
+    job = new AppCacheURLRequestJob(&request, NULL, storage);
     const GURL kManifestUrl("http://blah/");
     const int64 kCacheId(1);
     const int64 kGroupId(1);
@@ -449,7 +447,7 @@ class AppCacheURLRequestJobTest : public testing::Test {
     // Setup to create an AppCacheURLRequestJob with orders to deliver
     // a network response.
     mock_factory_job_ = new AppCacheURLRequestJob(
-        request_.get(), empty_context_.network_delegate(), storage);
+        request_.get(), NULL, storage);
     mock_factory_job_->DeliverNetworkResponse();
     EXPECT_TRUE(mock_factory_job_->is_delivering_network_response());
     EXPECT_FALSE(mock_factory_job_->has_been_started());
@@ -483,7 +481,7 @@ class AppCacheURLRequestJobTest : public testing::Test {
     // Setup to create an AppCacheURLRequestJob with orders to deliver
     // a network response.
     mock_factory_job_ = new AppCacheURLRequestJob(
-        request_.get(), empty_context_.network_delegate(), storage);
+        request_.get(), NULL, storage);
     mock_factory_job_->DeliverErrorResponse();
     EXPECT_TRUE(mock_factory_job_->is_delivering_error_response());
     EXPECT_FALSE(mock_factory_job_->has_been_started());
@@ -532,7 +530,7 @@ class AppCacheURLRequestJobTest : public testing::Test {
     // Setup to create an AppCacheURLRequestJob with orders to deliver
     // a network response.
     scoped_refptr<AppCacheURLRequestJob> job(new AppCacheURLRequestJob(
-        request_.get(), empty_context_.network_delegate(), storage));
+        request_.get(), NULL, storage));
 
     if (start_after_delivery_orders) {
       job->DeliverAppCachedResponse(
@@ -648,7 +646,7 @@ class AppCacheURLRequestJobTest : public testing::Test {
 
     // Create job with orders to deliver an appcached entry.
     scoped_refptr<AppCacheURLRequestJob> job(new AppCacheURLRequestJob(
-        request_.get(), empty_context_.network_delegate(), storage));
+        request_.get(), NULL, storage));
     job->DeliverAppCachedResponse(
         GURL(), 0, 111,
         AppCacheEntry(AppCacheEntry::EXPLICIT, written_response_id_),

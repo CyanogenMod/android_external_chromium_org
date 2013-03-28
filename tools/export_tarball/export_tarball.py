@@ -27,14 +27,10 @@ NONESSENTIAL_DIRS = (
     'breakpad/src/processor/testdata',
     'chrome/browser/resources/tracing/tests',
     'chrome/common/extensions/docs',
-    'chrome/test/data',
     'chrome/tools/test/reference_build',
-    'content/test/data',
     'courgette/testdata',
     'data',
-    'media/test/data',
     'native_client/src/trusted/service_runtime/testdata',
-    'net/data',
     'src/chrome/test/data',
     'o3d/documentation',
     'o3d/samples',
@@ -46,6 +42,7 @@ NONESSENTIAL_DIRS = (
     'third_party/hunspell_dictionaries',
     'third_party/hunspell/tests',
     'third_party/lighttpd',
+    'third_party/sqlite/src/test',
     'third_party/sqlite/test',
     'third_party/vc_80',
     'third_party/xdg-utils/tests',
@@ -70,6 +67,13 @@ NONESSENTIAL_DIRS = (
     'webkit/tools/test/reference_build',
 )
 
+TESTDIRS = (
+    'chrome/test/data',
+    'content/test/data',
+    'media/test/data',
+    'net/data',
+)
+
 
 def GetSourceDirectory():
   return os.path.realpath(
@@ -82,15 +86,24 @@ class MyTarFile(tarfile.TarFile):
   def set_remove_nonessential_files(self, remove):
     self.__remove_nonessential_files = remove
 
-  def add(self, name, arcname=None, recursive=True, exclude=None):
+  def add(self, name, arcname=None, recursive=True, exclude=None, filter=None):
     head, tail = os.path.split(name)
     if tail in ('.svn', '.git'):
       return
 
     if self.__remove_nonessential_files:
-      for nonessential_dir in NONESSENTIAL_DIRS:
+      # WebKit change logs take quite a lot of space. This saves ~10 MB
+      # in a bzip2-compressed tarball.
+      if 'ChangeLog' in name:
+        return
+
+      # Remove contents of non-essential directories, but preserve gyp files,
+      # so that build/gyp_chromium can work.
+      for nonessential_dir in (NONESSENTIAL_DIRS + TESTDIRS):
         dir_path = os.path.join(GetSourceDirectory(), nonessential_dir)
-        if name.startswith(dir_path):
+        if (name.startswith(dir_path) and
+            os.path.isfile(name) and
+            'gyp' not in name):
           return
 
     tarfile.TarFile.add(self, name, arcname=arcname, recursive=recursive)
@@ -98,9 +111,12 @@ class MyTarFile(tarfile.TarFile):
 
 def main(argv):
   parser = optparse.OptionParser()
+  parser.add_option("--basename")
   parser.add_option("--remove-nonessential-files",
                     dest="remove_nonessential_files",
                     action="store_true", default=False)
+  parser.add_option("--test-data", action="store_true")
+  parser.add_option("--xz", action="store_true")
 
   options, args = parser.parse_args(argv)
 
@@ -110,7 +126,7 @@ def main(argv):
     return 1
 
   if not os.path.exists(GetSourceDirectory()):
-    print 'Cannot find the src directory.'
+    print 'Cannot find the src directory ' + GetSourceDirectory()
     return 1
 
   # This command is from src/DEPS; please keep them in sync.
@@ -119,15 +135,32 @@ def main(argv):
     print 'Could not run build/util/lastchange.py to update LASTCHANGE.'
     return 1
 
-  output_fullname = args[0] + '.tar.bz2'
-  output_basename = os.path.basename(args[0])
+  if options.xz:
+    output_fullname = args[0] + '.tar'
+  else:
+    output_fullname = args[0] + '.tar.bz2'
 
-  archive = MyTarFile.open(output_fullname, 'w:bz2')
+  output_basename = options.basename or os.path.basename(args[0])
+
+  if options.xz:
+    archive = MyTarFile.open(output_fullname, 'w')
+  else:
+    archive = MyTarFile.open(output_fullname, 'w:bz2')
   archive.set_remove_nonessential_files(options.remove_nonessential_files)
   try:
-    archive.add(GetSourceDirectory(), arcname=output_basename)
+    if options.test_data:
+      for directory in TESTDIRS:
+        archive.add(os.path.join(GetSourceDirectory(), directory),
+                    arcname=os.path.join(output_basename, directory))
+    else:
+      archive.add(GetSourceDirectory(), arcname=output_basename)
   finally:
     archive.close()
+
+  if options.xz:
+    if subprocess.call(['xz', '-9', output_fullname]) != 0:
+      print 'xz -9 failed!'
+      return 1
 
   return 0
 

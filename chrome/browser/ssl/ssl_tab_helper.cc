@@ -9,22 +9,23 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/api/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/browser/certificate_viewer.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ssl/ssl_add_cert_handler.h"
 #include "chrome/browser/ssl/ssl_client_certificate_selector.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -35,23 +36,27 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+
+// SSLCertResultInfoBarDelegate -----------------------------------------------
+
 namespace {
 
-gfx::Image* GetCertIcon() {
-  // TODO(davidben): use a more appropriate icon.
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_INFOBAR_SAVE_PASSWORD);
-}
-
-// SSLCertAddedInfoBarDelegate ------------------------------------------------
-
-class SSLCertAddedInfoBarDelegate : public ConfirmInfoBarDelegate {
+class SSLCertResultInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  SSLCertAddedInfoBarDelegate(InfoBarTabHelper* infobar_helper,
-                              net::X509Certificate* cert);
+  // Creates an SSL cert result delegate.  If |previous_infobar| is
+  // NULL, adds the infobar to |infobar_service|; otherwise, replaces
+  // |previous_infobar|.  Returns the new delegate if it was successfully added.
+  // |cert| is valid iff cert addition was successful.
+  static InfoBarDelegate* Create(InfoBarService* infobar_service,
+                                 InfoBarDelegate* previous_infobar,
+                                 const string16& message,
+                                 net::X509Certificate* cert);
 
  private:
-  virtual ~SSLCertAddedInfoBarDelegate();
+  SSLCertResultInfoBarDelegate(InfoBarService* infobar_service,
+                               const string16& message,
+                               net::X509Certificate* cert);
+  virtual ~SSLCertResultInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
   virtual gfx::Image* GetIcon() const OVERRIDE;
@@ -61,44 +66,60 @@ class SSLCertAddedInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
-  scoped_refptr<net::X509Certificate> cert_;  // The cert we added.
+  string16 message_;
+  scoped_refptr<net::X509Certificate> cert_;  // The cert we added, if any.
 };
 
-SSLCertAddedInfoBarDelegate::SSLCertAddedInfoBarDelegate(
-    InfoBarTabHelper* infobar_helper,
+// static
+InfoBarDelegate* SSLCertResultInfoBarDelegate::Create(
+    InfoBarService* infobar_service,
+    InfoBarDelegate* previous_infobar,
+    const string16& message,
+    net::X509Certificate* cert) {
+  scoped_ptr<InfoBarDelegate> infobar(
+     new SSLCertResultInfoBarDelegate(infobar_service, message, cert));
+  return previous_infobar ?
+      infobar_service->ReplaceInfoBar(previous_infobar, infobar.Pass()) :
+      infobar_service->AddInfoBar(infobar.Pass());
+}
+
+SSLCertResultInfoBarDelegate::SSLCertResultInfoBarDelegate(
+    InfoBarService* infobar_service,
+    const string16& message,
     net::X509Certificate* cert)
-    : ConfirmInfoBarDelegate(infobar_helper),
+    : ConfirmInfoBarDelegate(infobar_service),
+      message_(message),
       cert_(cert) {
 }
 
-SSLCertAddedInfoBarDelegate::~SSLCertAddedInfoBarDelegate() {
+SSLCertResultInfoBarDelegate::~SSLCertResultInfoBarDelegate() {
 }
 
-gfx::Image* SSLCertAddedInfoBarDelegate::GetIcon() const {
-  return GetCertIcon();
+gfx::Image* SSLCertResultInfoBarDelegate::GetIcon() const {
+  // TODO(davidben): use a more appropriate icon.
+  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+      IDR_INFOBAR_SAVE_PASSWORD);
 }
 
-InfoBarDelegate::Type SSLCertAddedInfoBarDelegate::GetInfoBarType() const {
-  return PAGE_ACTION_TYPE;
+InfoBarDelegate::Type SSLCertResultInfoBarDelegate::GetInfoBarType() const {
+  return cert_.get() ? PAGE_ACTION_TYPE : WARNING_TYPE;
 }
 
-string16 SSLCertAddedInfoBarDelegate::GetMessageText() const {
-  // TODO(evanm): GetDisplayName should return UTF-16.
-  return l10n_util::GetStringFUTF16(IDS_ADD_CERT_SUCCESS_INFOBAR_LABEL,
-      UTF8ToUTF16(cert_->issuer().GetDisplayName()));
+string16 SSLCertResultInfoBarDelegate::GetMessageText() const {
+  return message_;
 }
 
-int SSLCertAddedInfoBarDelegate::GetButtons() const {
-  return BUTTON_OK;
+int SSLCertResultInfoBarDelegate::GetButtons() const {
+  return cert_.get() ? BUTTON_OK : BUTTON_NONE;
 }
 
-string16 SSLCertAddedInfoBarDelegate::GetButtonLabel(
+string16 SSLCertResultInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   DCHECK_EQ(BUTTON_OK, button);
   return l10n_util::GetStringUTF16(IDS_ADD_CERT_SUCCESS_INFOBAR_BUTTON);
 }
 
-bool SSLCertAddedInfoBarDelegate::Accept() {
+bool SSLCertResultInfoBarDelegate::Accept() {
   ShowCertificateViewer(
       owner()->GetWebContents(),
       owner()->GetWebContents()->GetView()->GetTopLevelNativeWindow(),
@@ -117,21 +138,16 @@ class SSLTabHelper::SSLAddCertData
   explicit SSLAddCertData(content::WebContents* contents);
   virtual ~SSLAddCertData();
 
-  // Displays |delegate| as an infobar in |tab_|, replacing our current one if
-  // still active.
-  void ShowInfoBar(InfoBarDelegate* delegate);
-
-  // Same as above, for the common case of wanting to show a simple alert
-  // message.
-  void ShowErrorInfoBar(const string16& message);
+  // Displays an infobar, replacing |infobar_delegate_| if it exists.
+  void ShowInfoBar(const string16& message, net::X509Certificate* cert);
 
  private:
   // content::NotificationObserver:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details);
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  InfoBarTabHelper* infobar_helper_;
+  InfoBarService* infobar_service_;
   InfoBarDelegate* infobar_delegate_;
   content::NotificationRegistrar registrar_;
 
@@ -139,9 +155,9 @@ class SSLTabHelper::SSLAddCertData
 };
 
 SSLTabHelper::SSLAddCertData::SSLAddCertData(content::WebContents* contents)
-    : infobar_helper_(InfoBarTabHelper::FromWebContents(contents)),
+    : infobar_service_(InfoBarService::FromWebContents(contents)),
       infobar_delegate_(NULL) {
-  content::Source<InfoBarTabHelper> source(infobar_helper_);
+  content::Source<InfoBarService> source(infobar_service_);
   registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
                  source);
   registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REPLACED,
@@ -151,17 +167,10 @@ SSLTabHelper::SSLAddCertData::SSLAddCertData(content::WebContents* contents)
 SSLTabHelper::SSLAddCertData::~SSLAddCertData() {
 }
 
-void SSLTabHelper::SSLAddCertData::ShowInfoBar(InfoBarDelegate* delegate) {
-  if (infobar_delegate_)
-    infobar_helper_->ReplaceInfoBar(infobar_delegate_, delegate);
-  else
-    infobar_helper_->AddInfoBar(delegate);
-  infobar_delegate_ = delegate;
-}
-
-void SSLTabHelper::SSLAddCertData::ShowErrorInfoBar(const string16& message) {
-  ShowInfoBar(new SimpleAlertInfoBarDelegate(
-      infobar_helper_, GetCertIcon(), message, true));
+void SSLTabHelper::SSLAddCertData::ShowInfoBar(const string16& message,
+                                               net::X509Certificate* cert) {
+  infobar_delegate_ = SSLCertResultInfoBarDelegate::Create(
+      infobar_service_, infobar_delegate_, message, cert);
 }
 
 void SSLTabHelper::SSLAddCertData::Observe(
@@ -180,13 +189,22 @@ void SSLTabHelper::SSLAddCertData::Observe(
 
 // SSLTabHelper ----------------------------------------------------------------
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(SSLTabHelper)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(SSLTabHelper);
 
 SSLTabHelper::SSLTabHelper(content::WebContents* contents)
-    : web_contents_(contents) {
+    : WebContentsObserver(contents),
+      web_contents_(contents) {
 }
 
 SSLTabHelper::~SSLTabHelper() {
+}
+
+void SSLTabHelper::DidChangeVisibleSSLState() {
+#if !defined(OS_ANDROID)
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents_);
+  if (browser)
+    browser->VisibleSSLStateChanged(web_contents_);
+#endif  // !defined(OS_ANDROID)
 }
 
 void SSLTabHelper::ShowClientCertificateRequestDialog(
@@ -202,10 +220,11 @@ void SSLTabHelper::OnVerifyClientCertificateError(
   SSLAddCertData* add_cert_data = GetAddCertData(handler);
   // Display an infobar with the error message.
   // TODO(davidben): Display a more user-friendly error string.
-  add_cert_data->ShowErrorInfoBar(
+  add_cert_data->ShowInfoBar(
       l10n_util::GetStringFUTF16(IDS_ADD_CERT_ERR_INVALID_CERT,
                                  base::IntToString16(-error_code),
-                                 ASCIIToUTF16(net::ErrorToString(error_code))));
+                                 ASCIIToUTF16(net::ErrorToString(error_code))),
+      NULL);
 }
 
 void SSLTabHelper::AskToAddClientCertificate(
@@ -217,10 +236,12 @@ void SSLTabHelper::OnAddClientCertificateSuccess(
     scoped_refptr<SSLAddCertHandler> handler) {
   SSLAddCertData* add_cert_data = GetAddCertData(handler);
   // Display an infobar to inform the user.
-  InfoBarTabHelper* infobar_tab_helper =
-      InfoBarTabHelper::FromWebContents(web_contents_);
-  add_cert_data->ShowInfoBar(new SSLCertAddedInfoBarDelegate(
-      infobar_tab_helper, handler->cert()));
+  net::X509Certificate* cert = handler->cert();
+  // TODO(evanm): GetDisplayName should return UTF-16.
+  add_cert_data->ShowInfoBar(
+      l10n_util::GetStringFUTF16(IDS_ADD_CERT_SUCCESS_INFOBAR_LABEL,
+                                 UTF8ToUTF16(cert->issuer().GetDisplayName())),
+      cert);
 }
 
 void SSLTabHelper::OnAddClientCertificateError(
@@ -228,10 +249,11 @@ void SSLTabHelper::OnAddClientCertificateError(
   SSLAddCertData* add_cert_data = GetAddCertData(handler);
   // Display an infobar with the error message.
   // TODO(davidben): Display a more user-friendly error string.
-  add_cert_data->ShowErrorInfoBar(
+  add_cert_data->ShowInfoBar(
       l10n_util::GetStringFUTF16(IDS_ADD_CERT_ERR_FAILED,
                                  base::IntToString16(-error_code),
-                                 ASCIIToUTF16(net::ErrorToString(error_code))));
+                                 ASCIIToUTF16(net::ErrorToString(error_code))),
+      NULL);
 }
 
 void SSLTabHelper::OnAddClientCertificateFinished(

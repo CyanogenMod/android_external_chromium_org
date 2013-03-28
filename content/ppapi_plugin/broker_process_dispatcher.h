@@ -34,47 +34,47 @@ class BrokerProcessDispatcher
       const ppapi::FlashSiteSettings& sites);
 
  private:
-  void OnMsgGetSitesWithData(uint32 request_id,
-                             const FilePath& plugin_data_path);
-  void OnMsgClearSiteData(uint32 request_id,
-                          const FilePath& plugin_data_path,
-                          const std::string& site,
-                          uint64 flags,
-                          uint64 max_age);
-  void OnMsgDeauthorizeContentLicenses(uint32 request_id,
-                                       const FilePath& plugin_data_path);
-  void OnMsgGetPermissionSettings(
+  void OnGetSitesWithData(uint32 request_id,
+                          const base::FilePath& plugin_data_path);
+  void OnClearSiteData(uint32 request_id,
+                       const base::FilePath& plugin_data_path,
+                       const std::string& site,
+                       uint64 flags,
+                       uint64 max_age);
+  void OnDeauthorizeContentLicenses(uint32 request_id,
+                                    const base::FilePath& plugin_data_path);
+  void OnGetPermissionSettings(
       uint32 request_id,
-      const FilePath& plugin_data_path,
+      const base::FilePath& plugin_data_path,
       PP_Flash_BrowserOperations_SettingType setting_type);
-  void OnMsgSetDefaultPermission(
+  void OnSetDefaultPermission(
       uint32 request_id,
-      const FilePath& plugin_data_path,
+      const base::FilePath& plugin_data_path,
       PP_Flash_BrowserOperations_SettingType setting_type,
       PP_Flash_BrowserOperations_Permission permission,
       bool clear_site_specific);
-  void OnMsgSetSitePermission(
+  void OnSetSitePermission(
       uint32 request_id,
-      const FilePath& plugin_data_path,
+      const base::FilePath& plugin_data_path,
       PP_Flash_BrowserOperations_SettingType setting_type,
       const ppapi::FlashSiteSettings& sites);
 
   // Returns a list of sites that have data stored.
-  void GetSitesWithData(const FilePath& plugin_data_path,
+  void GetSitesWithData(const base::FilePath& plugin_data_path,
                         std::vector<std::string>* sites);
 
   // Requests that the plugin clear data, returning true on success.
-  bool ClearSiteData(const FilePath& plugin_data_path,
+  bool ClearSiteData(const base::FilePath& plugin_data_path,
                      const std::string& site,
                      uint64 flags,
                      uint64 max_age);
 
-  bool DeauthorizeContentLicenses(const FilePath& plugin_data_path);
-  bool SetDefaultPermission(const FilePath& plugin_data_path,
+  bool DeauthorizeContentLicenses(const base::FilePath& plugin_data_path);
+  bool SetDefaultPermission(const base::FilePath& plugin_data_path,
                             PP_Flash_BrowserOperations_SettingType setting_type,
                             PP_Flash_BrowserOperations_Permission permission,
                             bool clear_site_specific);
-  bool SetSitePermission(const FilePath& plugin_data_path,
+  bool SetSitePermission(const base::FilePath& plugin_data_path,
                          PP_Flash_BrowserOperations_SettingType setting_type,
                          const ppapi::FlashSiteSettings& sites);
 

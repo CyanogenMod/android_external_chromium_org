@@ -101,6 +101,32 @@ scoped_refptr<AudioInputController> AudioInputController::CreateLowLatency(
   return controller;
 }
 
+// static
+scoped_refptr<AudioInputController> AudioInputController::CreateForStream(
+    AudioManager* audio_manager,
+    EventHandler* event_handler,
+    AudioInputStream* stream,
+    SyncWriter* sync_writer) {
+  DCHECK(audio_manager);
+  DCHECK(sync_writer);
+  DCHECK(stream);
+
+  // Create the AudioInputController object and ensure that it runs on
+  // the audio-manager thread.
+  scoped_refptr<AudioInputController> controller(new AudioInputController(
+      event_handler, sync_writer));
+  controller->message_loop_ = audio_manager->GetMessageLoop();
+
+  if (!controller->message_loop_->PostTask(
+          FROM_HERE,
+          base::Bind(&AudioInputController::DoCreateForStream, controller,
+                     stream))) {
+    controller = NULL;
+  }
+
+  return controller;
+}
+
 void AudioInputController::Record() {
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &AudioInputController::DoRecord, this));
@@ -128,20 +154,25 @@ void AudioInputController::DoCreate(AudioManager* audio_manager,
                                     const AudioParameters& params,
                                     const std::string& device_id) {
   DCHECK(message_loop_->BelongsToCurrentThread());
+  DoCreateForStream(audio_manager->MakeAudioInputStream(params, device_id));
+}
 
-  stream_ = audio_manager->MakeAudioInputStream(params, device_id);
+void AudioInputController::DoCreateForStream(
+    AudioInputStream* stream_to_control) {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+
+  DCHECK(!stream_);
+  stream_ = stream_to_control;
 
   if (!stream_) {
-    // TODO(satish): Define error types.
-    handler_->OnError(this, 0);
+    handler_->OnError(this);
     return;
   }
 
   if (stream_ && !stream_->Open()) {
     stream_->Close();
     stream_ = NULL;
-    // TODO(satish): Define error types.
-    handler_->OnError(this, 0);
+    handler_->OnError(this);
     return;
   }
 
@@ -193,9 +224,9 @@ void AudioInputController::DoClose() {
   }
 }
 
-void AudioInputController::DoReportError(int code) {
+void AudioInputController::DoReportError() {
   DCHECK(message_loop_->BelongsToCurrentThread());
-  handler_->OnError(this, code);
+  handler_->OnError(this);
 }
 
 void AudioInputController::DoSetVolume(double volume) {
@@ -239,7 +270,7 @@ void AudioInputController::DoCheckForNoData() {
     // The data-is-active marker will be false only if it has been more than
     // one second since a data packet was recorded. This can happen if a
     // capture device has been removed or disabled.
-    handler_->OnError(this, 0);
+    handler_->OnError(this);
     return;
   }
 
@@ -286,10 +317,10 @@ void AudioInputController::OnClose(AudioInputStream* stream) {
   // such cases here.
 }
 
-void AudioInputController::OnError(AudioInputStream* stream, int code) {
+void AudioInputController::OnError(AudioInputStream* stream) {
   // Handle error on the audio-manager thread.
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &AudioInputController::DoReportError, this, code));
+      &AudioInputController::DoReportError, this));
 }
 
 void AudioInputController::DoStopCloseAndClearStream(

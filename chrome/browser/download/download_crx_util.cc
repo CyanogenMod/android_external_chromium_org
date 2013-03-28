@@ -4,7 +4,8 @@
 //
 // Download code which handles CRX files (extensions, themes, apps, ...).
 
-#include "chrome/browser/download/download_util.h"
+#include "chrome/browser/download/download_crx_util.h"
+
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -12,6 +13,7 @@
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/download_item.h"
@@ -44,27 +46,16 @@ ExtensionInstallPrompt* CreateExtensionInstallPrompt(
   } else {
     content::WebContents* web_contents = download_item.GetWebContents();
     if (!web_contents) {
-      Browser* browser = chrome::FindLastActiveWithProfile(profile);
+      chrome::HostDesktopType active_desktop = chrome::GetActiveDesktop();
+      Browser* browser = chrome::FindLastActiveWithProfile(profile,
+          active_desktop);
       if (!browser)
-        browser = new Browser(Browser::CreateParams(profile));
+        browser = new Browser(Browser::CreateParams(Browser::TYPE_TABBED,
+                                                    profile, active_desktop));
       web_contents = browser->tab_strip_model()->GetActiveWebContents();
     }
     return new ExtensionInstallPrompt(web_contents);
   }
-}
-
-bool OffStoreInstallAllowedByPrefs(Profile* profile, const DownloadItem& item) {
-  extensions::ExtensionPrefs* prefs = extensions::ExtensionSystem::Get(
-      profile)->extension_service()->extension_prefs();
-  CHECK(prefs);
-
-  URLPatternSet url_patterns = prefs->GetAllowedInstallSites();
-
-  // TODO(aa): RefererURL is cleared in some cases, for example when going
-  // between secure and non-secure URLs. It would be better if DownloadItem
-  // tracked the initiating page explicitly.
-  return url_patterns.MatchesURL(item.GetURL()) &&
-      url_patterns.MatchesURL(item.GetReferrerUrl());
 }
 
 }  // namespace
@@ -80,7 +71,8 @@ scoped_refptr<extensions::CrxInstaller> OpenChromeExtension(
     const DownloadItem& download_item) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  ExtensionService* service = profile->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile)->
+      extension_service();
   CHECK(service);
 
   scoped_refptr<extensions::CrxInstaller> installer(
@@ -130,6 +122,25 @@ bool IsExtensionDownload(const DownloadItem& download_item) {
   } else {
     return false;
   }
+}
+
+bool OffStoreInstallAllowedByPrefs(Profile* profile, const DownloadItem& item) {
+  extensions::ExtensionPrefs* prefs = extensions::ExtensionSystem::Get(
+      profile)->extension_service()->extension_prefs();
+  CHECK(prefs);
+
+  extensions::URLPatternSet url_patterns = prefs->GetAllowedInstallSites();
+
+  if (!url_patterns.MatchesURL(item.GetURL()))
+    return false;
+
+  // The referrer URL must also be whitelisted, unless the URL has the file
+  // scheme (there's no referrer for those URLs).
+  // TODO(aa): RefererURL is cleared in some cases, for example when going
+  // between secure and non-secure URLs. It would be better if DownloadItem
+  // tracked the initiating page explicitly.
+  return url_patterns.MatchesURL(item.GetReferrerUrl()) ||
+         item.GetURL().SchemeIsFile();
 }
 
 }  // namespace download_crx_util

@@ -12,6 +12,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/models/table_model.h"
 #include "ui/views/controls/button/button.h"
+#include "ui/views/controls/table/table_grouper.h"
 #include "ui/views/controls/table/table_view.h"
 #include "ui/views/controls/table/table_view_observer.h"
 #include "ui/views/examples/example_base.h"
@@ -22,13 +23,13 @@ class ImageSkia;
 
 namespace views {
 class Checkbox;
-class Event;
 class TableView;
 
 namespace examples {
 
 class TableExample : public ExampleBase,
                      public ui::TableModel,
+                     public TableGrouper,
                      public TableViewObserver,
                      public ButtonListener {
  public:
@@ -44,13 +45,14 @@ class TableExample : public ExampleBase,
   virtual gfx::ImageSkia GetIcon(int row) OVERRIDE;
   virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
 
+  // TableGrouper:
+  virtual void GetGroupRange(int model_index, GroupRange* range) OVERRIDE;
+
   // TableViewObserver:
   virtual void OnSelectionChanged() OVERRIDE;
   virtual void OnDoubleClick() OVERRIDE;
   virtual void OnMiddleClick() OVERRIDE;
   virtual void OnKeyDown(ui::KeyboardCode virtual_keycode) OVERRIDE;
-  virtual void OnTableViewDelete(TableView* table_view) OVERRIDE;
-  virtual void OnTableView2Delete(TableView2* table_view) OVERRIDE;
 
   // ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;

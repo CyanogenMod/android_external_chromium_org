@@ -4,14 +4,14 @@
 
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autofill/autofill_common_test.h"
-#include "chrome/browser/autofill/autofill_profile.h"
 #include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/autofill_helper.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/performance/sync_timing_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/webdata/autofill_entry.h"
+#include "components/autofill/browser/autofill_common_test.h"
+#include "components/autofill/browser/autofill_profile.h"
 
 using autofill_helper::AllProfilesMatch;
 using autofill_helper::GetAllKeys;
@@ -135,7 +135,7 @@ const std::string AutofillSyncPerfTest::NextGUID() {
 }
 
 const std::string AutofillSyncPerfTest::IntToGUID(int n) {
-  return StringPrintf("00000000-0000-0000-0000-%012X", n);
+  return base::StringPrintf("00000000-0000-0000-0000-%012X", n);
 }
 
 const std::string AutofillSyncPerfTest::NextName() {
@@ -143,7 +143,7 @@ const std::string AutofillSyncPerfTest::NextName() {
 }
 
 const std::string AutofillSyncPerfTest::IntToName(int n) {
-  return StringPrintf("Name%d", n);
+  return base::StringPrintf("Name%d", n);
 }
 
 const std::string AutofillSyncPerfTest::NextValue() {
@@ -151,7 +151,7 @@ const std::string AutofillSyncPerfTest::NextValue() {
 }
 
 const std::string AutofillSyncPerfTest::IntToValue(int n) {
-  return StringPrintf("Value%d", n);
+  return base::StringPrintf("Value%d", n);
 }
 
 void ForceSync(int profile) {

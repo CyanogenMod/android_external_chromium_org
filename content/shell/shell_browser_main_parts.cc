@@ -6,11 +6,12 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "cc/base/switches.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/url_constants.h"
@@ -25,8 +26,8 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_ANDROID)
-#include "net/base/network_change_notifier.h"
 #include "net/android/network_change_notifier_factory_android.h"
+#include "net/base/network_change_notifier.h"
 #endif
 
 #if defined(USE_AURA) && defined(USE_X11)
@@ -55,7 +56,7 @@ static GURL GetStartupURL() {
   if (url.is_valid() && url.has_scheme())
     return url;
 
-  return net::FilePathToFileURL(FilePath(args[0]));
+  return net::FilePathToFileURL(base::FilePath(args[0]));
 }
 
 base::StringPiece PlatformResourceProvider(int key) {
@@ -99,6 +100,9 @@ void ShellBrowserMainParts::PreEarlyInitialization() {
 #if defined(OS_ANDROID)
   net::NetworkChangeNotifier::SetFactory(
       new net::NetworkChangeNotifierFactoryAndroid());
+
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      cc::switches::kCompositeToMailbox);
 #endif
 }
 
@@ -106,7 +110,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   browser_context_.reset(new ShellBrowserContext(false));
   off_the_record_browser_context_.reset(new ShellBrowserContext(true));
 
-  Shell::PlatformInitialize();
+  Shell::Initialize();
   net::NetModule::SetResourceProvider(PlatformResourceProvider);
 
   int port = 0;
@@ -134,7 +138,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
                            GetStartupURL(),
                            NULL,
                            MSG_ROUTING_NONE,
-                           NULL);
+                           gfx::Size());
   }
 
   if (parameters_.ui_task) {

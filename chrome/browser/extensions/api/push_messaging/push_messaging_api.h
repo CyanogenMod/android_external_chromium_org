@@ -11,6 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/api/push_messaging/obfuscated_gaia_id_fetcher.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler_delegate.h"
 #include "chrome/browser/extensions/extension_function.h"
@@ -28,18 +29,12 @@ class ObfuscatedGaiaIdFetcher;
 
 // Observes a single InvalidationHandler and generates onMessage events.
 class PushMessagingEventRouter
-    : public PushMessagingInvalidationHandlerDelegate,
-      public content::NotificationObserver {
+    : public PushMessagingInvalidationHandlerDelegate {
  public:
   explicit PushMessagingEventRouter(Profile* profile);
   virtual ~PushMessagingEventRouter();
 
-  void Shutdown();
-
-  PushMessagingInvalidationMapper* GetMapperForTest() const {
-    return handler_.get();
-  }
-  void SetMapperForTest(scoped_ptr<PushMessagingInvalidationMapper> mapper);
+  // For testing purposes.
   void TriggerMessageForTest(const std::string& extension_id,
                              int subchannel,
                              const std::string& payload);
@@ -50,14 +45,7 @@ class PushMessagingEventRouter
                          int subchannel,
                          const std::string& payload) OVERRIDE;
 
-  // content::NotificationDelegate implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
-  content::NotificationRegistrar registrar_;
   Profile* const profile_;
-  scoped_ptr<PushMessagingInvalidationMapper> handler_;
 
   DISALLOW_COPY_AND_ASSIGN(PushMessagingEventRouter);
 };
@@ -74,7 +62,8 @@ class PushMessagingGetChannelIdFunction
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("pushMessaging.getChannelId");
+  DECLARE_EXTENSION_FUNCTION("pushMessaging.getChannelId",
+                             PUSHMESSAGING_GETCHANNELID)
 
  private:
   void ReportResult(const std::string& gaia_id,
@@ -104,6 +93,59 @@ class PushMessagingGetChannelIdFunction
   DISALLOW_COPY_AND_ASSIGN(PushMessagingGetChannelIdFunction);
 };
 
-}  // namespace extension
+class PushMessagingAPI : public ProfileKeyedAPI,
+                         public content::NotificationObserver {
+ public:
+  explicit PushMessagingAPI(Profile* profile);
+  virtual ~PushMessagingAPI();
+
+  // Convenience method to get the PushMessagingAPI for a profile.
+  static PushMessagingAPI* Get(Profile* profile);
+
+  // ProfileKeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
+
+  // ProfileKeyedAPI implementation.
+  static ProfileKeyedAPIFactory<PushMessagingAPI>* GetFactoryInstance();
+
+  // For testing purposes.
+  PushMessagingEventRouter* GetEventRouterForTest() const {
+  return event_router_.get();
+  }
+  PushMessagingInvalidationMapper* GetMapperForTest() const {
+    return handler_.get();
+  }
+  void SetMapperForTest(scoped_ptr<PushMessagingInvalidationMapper> mapper);
+
+ private:
+  friend class ProfileKeyedAPIFactory<PushMessagingAPI>;
+
+  // ProfileKeyedAPI implementation.
+  static const char* service_name() {
+    return "PushMessagingAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
+
+  // content::NotificationDelegate implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+  // Created lazily when an app or extension with the push messaging permission
+  // is loaded.
+  scoped_ptr<PushMessagingEventRouter> event_router_;
+  scoped_ptr<PushMessagingInvalidationMapper> handler_;
+
+  content::NotificationRegistrar registrar_;
+
+  Profile* profile_;
+
+  DISALLOW_COPY_AND_ASSIGN(PushMessagingAPI);
+};
+
+template <>
+void ProfileKeyedAPIFactory<PushMessagingAPI>::DeclareFactoryDependencies();
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_API_PUSH_MESSAGING_PUSH_MESSAGING_API_H__

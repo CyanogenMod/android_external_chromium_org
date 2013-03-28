@@ -12,6 +12,8 @@
 
 class GLTestHelper {
  public:
+  static const uint8 kCheckClearValue = 123u;
+
   static bool HasExtension(const char* extension);
   static bool CheckGLError(const char* msg, int line);
 
@@ -32,6 +34,11 @@ class GLTestHelper {
   // Make a unit quad with position only.
   // Returns the created buffer.
   static GLuint SetupUnitQuad(GLint position_location);
+
+  // Make a 6 vertex colors.
+  // Returns the created buffer.
+  static GLuint SetupColorsForUnitQuad(
+      GLint location, const GLfloat color[4], GLenum usage);
 
   // Checks an area of pixels for a color.
   static bool CheckPixels(

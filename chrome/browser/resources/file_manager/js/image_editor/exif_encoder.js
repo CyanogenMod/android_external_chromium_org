@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 // TODO:(kaznacheev) Share the EXIF constants with exif_parser.js
 var EXIF_MARK_SOS = 0xffda;  // Start of "stream" (the actual image data).
 var EXIF_MARK_SOI = 0xffd8;  // Start of image data.
@@ -78,8 +80,8 @@ ExifEncoder.prototype.setImageData = function(canvas) {
 
 
 /**
- * @param {HTMLCanvasElement} canvas Thumbnail canvas
- * @param {number} quality (0..1] Thumbnail encoding quality
+ * @param {HTMLCanvasElement} canvas Thumbnail canvas.
+ * @param {number} quality (0..1] Thumbnail encoding quality.
  */
 ExifEncoder.prototype.setThumbnailData = function(canvas, quality) {
   // Empirical formula with reasonable behavior:
@@ -130,7 +132,7 @@ ExifEncoder.prototype.setThumbnailData = function(canvas, quality) {
 
 /**
  * Return a range where the metadata is (or should be) located.
- * @param {String} encodedImage Raw image data to look for metadata.
+ * @param {string} encodedImage Raw image data to look for metadata.
  * @return {Object} An object with from and to properties.
  */
 ExifEncoder.prototype.findInsertionRange = function(encodedImage) {
@@ -268,7 +270,7 @@ ExifEncoder.prototype.encode = function() {
  * @param {Object} directory A directory map as created by ExifParser.
  * @param {Array} resolveLater An array of tag ids for which the values will be
  *                resolved later.
- * @param {String} nextDirPointer A forward key for the pointer to the next
+ * @param {string} nextDirPointer A forward key for the pointer to the next
  *                 directory. If omitted the pointer is set to 0.
  */
 ExifEncoder.encodeDirectory = function(
@@ -366,14 +368,14 @@ ExifEncoder.writeValue = function(bw, tag) {
   } else {  // Scalar or rational
     var width = ExifEncoder.getComponentWidth(tag);
 
-    function writeComponent(value, signed) {
+    var writeComponent = function(value, signed) {
       if (width == 8) {
         bw.writeScalar(value[0], 4, signed);
         bw.writeScalar(value[1], 4, signed);
       } else {
         bw.writeScalar(value, width, signed);
       }
-    }
+    };
 
     var signed = (tag.format == 9 || tag.format == 10);
     if (tag.componentCount == 1) {
@@ -437,7 +439,7 @@ ByteWriter.BIG_ENDIAN = 1;
 /**
  * Set the byte ordering for future writes.
  * @param {number} order ByteOrder to use {ByteWriter.LITTLE_ENDIAN}
- *   or {ByteWriter.BIG_ENDIAN}
+ *   or {ByteWriter.BIG_ENDIAN}.
  */
 ByteWriter.prototype.setByteOrder = function(order) {
   this.littleEndian_ = (order == ByteWriter.LITTLE_ENDIAN);
@@ -471,7 +473,7 @@ ByteWriter.prototype.validateWrite = function(width) {
  * Writes scalar value to output stream.
  * @param {number} value Value to write.
  * @param {number} width Desired width of written value.
- * @param {boolean} opt_signed True if value represents signed number.
+ * @param {boolean=} opt_signed True if value represents signed number.
  */
 ByteWriter.prototype.writeScalar = function(value, width, opt_signed) {
   var method;
@@ -507,7 +509,7 @@ ByteWriter.prototype.writeScalar = function(value, width, opt_signed) {
 
 /**
  * Writes string.
- * @param {String} str String to write.
+ * @param {string} str String to write.
  */
 ByteWriter.prototype.writeString = function(str) {
   this.validateWrite(str.length);

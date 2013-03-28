@@ -6,24 +6,24 @@
 #define WEBKIT_PLATFORM_SUPPORT_IMPL_H_
 
 #include "base/compiler_specific.h"
+#include "base/debug/trace_event.h"
 #include "base/platform_file.h"
 #include "base/threading/thread_local_storage.h"
 #include "base/timer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
 #include "ui/base/layout.h"
 #include "webkit/glue/resource_loader_bridge.h"
 #include "webkit/glue/webkit_glue_export.h"
 
-#if defined(OS_WIN)
+#if defined(USE_DEFAULT_RENDER_THEME)
+#include "webkit/glue/webthemeengine_impl_default.h"
+#elif defined(OS_WIN)
 #include "webkit/glue/webthemeengine_impl_win.h"
 #elif defined(OS_MACOSX)
 #include "webkit/glue/webthemeengine_impl_mac.h"
 #elif defined(OS_ANDROID)
 #include "webkit/glue/webthemeengine_impl_android.h"
-#elif defined(OS_POSIX) && !defined(OS_ANDROID)
-#include "webkit/glue/webthemeengine_impl_linux.h"
 #endif
-
 
 class MessageLoop;
 
@@ -33,22 +33,26 @@ struct WebPluginInfo;
 }
 
 namespace WebKit {
-class WebFlingAnimator;
 class WebSocketStreamHandle;
 }
 
 namespace webkit_glue {
 
+  class FlingCurveConfiguration;
 class WebSocketStreamHandleDelegate;
 class WebSocketStreamHandleBridge;
 
 class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
-    NON_EXPORTED_BASE(public WebKit::WebKitPlatformSupport) {
+    NON_EXPORTED_BASE(public WebKit::Platform) {
  public:
   WebKitPlatformSupportImpl();
   virtual ~WebKitPlatformSupportImpl();
 
-  // WebKitPlatformSupport methods (partial implementation):
+  void SetFlingCurveParameters(
+    const std::vector<float>& new_touchpad,
+    const std::vector<float>& new_touchscreen);
+
+  // Platform methods (partial implementation):
   virtual WebKit::WebThemeEngine* themeEngine();
 
   virtual base::PlatformFile databaseOpenFile(
@@ -72,6 +76,7 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
 #endif
   virtual bool processMemorySizesInBytes(size_t* private_bytes,
                                          size_t* shared_bytes);
+  virtual bool memoryAllocatorWasteInBytes(size_t* size);
   virtual WebKit::WebURLLoader* createURLLoader();
   virtual WebKit::WebSocketStreamHandle* createSocketStreamHandle();
   virtual WebKit::WebString userAgent(const WebKit::WebURL& url);
@@ -84,7 +89,8 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
     const char* name, int sample, int boundary_value);
   virtual const unsigned char* getTraceCategoryEnabledFlag(
       const char* category_name);
-  virtual int addTraceEvent(
+  virtual long* getTraceSamplingState(const unsigned thread_bucket);
+  virtual void addTraceEvent(
       char phase,
       const unsigned char* category_enabled,
       const char* name,
@@ -93,8 +99,6 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
       const char** arg_names,
       const unsigned char* arg_types,
       const unsigned long long* arg_values,
-      int threshold_begin_id,
-      long long threshold,
       unsigned char flags);
   virtual WebKit::WebData loadResource(const char* name);
   virtual bool loadAudioResource(
@@ -121,6 +125,8 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   virtual WebKit::WebThread* createThread(const char* name);
   virtual WebKit::WebThread* currentThread();
   virtual WebKit::WebCompositorSupport* compositorSupport();
+  virtual WebKit::WebDiscardableMemory* allocateAndLockDiscardableMemory(
+      size_t bytes);
 
 
   // Embedder functions. The following are not implemented by the glue layer and
@@ -155,14 +161,14 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   virtual void didStopWorkerRunLoop(
       const WebKit::WebWorkerRunLoop& runLoop) OVERRIDE;
 
-#if defined(OS_ANDROID)
-  virtual WebKit::WebFlingAnimator* createFlingAnimator();
-#endif
-
   virtual WebKit::WebGestureCurve* createFlingAnimationCurve(
       int device_source,
       const WebKit::WebFloatPoint& velocity,
       const WebKit::WebSize& cumulative_scroll) OVERRIDE;
+
+  webkit::WebCompositorSupportImpl* compositor_support_impl() const {
+    return compositor_support_.get();
+  }
 
  private:
   void DoTimeout() {
@@ -175,10 +181,12 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   base::OneShotTimer<WebKitPlatformSupportImpl> shared_timer_;
   void (*shared_timer_func_)();
   double shared_timer_fire_time_;
+  bool shared_timer_fire_time_was_set_while_suspended_;
   int shared_timer_suspended_;  // counter
   WebThemeEngineImpl theme_engine_;
   base::ThreadLocalStorage::Slot current_thread_slot_;
   scoped_ptr<webkit::WebCompositorSupportImpl> compositor_support_;
+  scoped_ptr<FlingCurveConfiguration> fling_curve_configuration_;
 };
 
 }  // namespace webkit_glue

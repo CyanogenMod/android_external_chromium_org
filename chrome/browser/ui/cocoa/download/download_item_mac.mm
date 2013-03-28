@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/cocoa/download/download_item_mac.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_item_model.h"
@@ -15,21 +16,21 @@ using content::DownloadItem;
 
 // DownloadItemMac -------------------------------------------------------------
 
-DownloadItemMac::DownloadItemMac(BaseDownloadItemModel* download_model,
+DownloadItemMac::DownloadItemMac(DownloadItem* download,
                                  DownloadItemController* controller)
-    : download_model_(download_model), item_controller_(controller) {
-  download_model_->download()->AddObserver(this);
+    : download_model_(download),
+      item_controller_(controller) {
+  download_model_.download()->AddObserver(this);
 }
 
 DownloadItemMac::~DownloadItemMac() {
-  download_model_->download()->RemoveObserver(this);
-  icon_consumer_.CancelAllRequests();
+  download_model_.download()->RemoveObserver(this);
 }
 
 void DownloadItemMac::OnDownloadUpdated(content::DownloadItem* download) {
-  DCHECK_EQ(download, download_model_->download());
+  DCHECK_EQ(download, download_model_.download());
 
-  if ([item_controller_ isDangerousMode] && !download_model_->IsDangerous()) {
+  if ([item_controller_ isDangerousMode] && !download_model_.IsDangerous()) {
     // We have been approved.
     [item_controller_ clearDangerousMode];
   }
@@ -46,18 +47,18 @@ void DownloadItemMac::OnDownloadUpdated(content::DownloadItem* download) {
 
   switch (download->GetState()) {
     case DownloadItem::COMPLETE:
-      if (download->GetAutoOpened()) {
+      if (download_model_.ShouldRemoveFromShelfWhenComplete()) {
         [item_controller_ remove];  // We're deleted now!
         return;
       }
       // fall through
     case DownloadItem::IN_PROGRESS:
     case DownloadItem::CANCELLED:
-      [item_controller_ setStateFromDownload:download_model_.get()];
+      [item_controller_ setStateFromDownload:&download_model_];
       break;
     case DownloadItem::INTERRUPTED:
       [item_controller_ updateToolTip];
-      [item_controller_ setStateFromDownload:download_model_.get()];
+      [item_controller_ setStateFromDownload:&download_model_];
       break;
     default:
       NOTREACHED();
@@ -69,7 +70,7 @@ void DownloadItemMac::OnDownloadDestroyed(content::DownloadItem* download) {
 }
 
 void DownloadItemMac::OnDownloadOpened(content::DownloadItem* download) {
-  DCHECK_EQ(download, download_model_->download());
+  DCHECK_EQ(download, download_model_.download());
   [item_controller_ downloadWasOpened];
 }
 
@@ -81,7 +82,7 @@ void DownloadItemMac::LoadIcon() {
   }
 
   // We may already have this particular image cached.
-  FilePath file = download_model_->download()->GetUserVerifiedFilePath();
+  base::FilePath file = download_model_.download()->GetUserVerifiedFilePath();
   gfx::Image* icon = icon_manager->LookupIcon(file, IconLoader::ALL);
   if (icon) {
     [item_controller_ setIcon:icon->ToNSImage()];
@@ -89,13 +90,14 @@ void DownloadItemMac::LoadIcon() {
   }
 
   // The icon isn't cached, load it asynchronously.
-  icon_manager->LoadIcon(file, IconLoader::ALL, &icon_consumer_,
+  icon_manager->LoadIcon(file,
+                         IconLoader::ALL,
                          base::Bind(&DownloadItemMac::OnExtractIconComplete,
-                                    base::Unretained(this)));
+                                    base::Unretained(this)),
+                         &cancelable_task_tracker_);
 }
 
-void DownloadItemMac::OnExtractIconComplete(IconManager::Handle handle,
-                                            gfx::Image* icon) {
+void DownloadItemMac::OnExtractIconComplete(gfx::Image* icon) {
   if (!icon)
     return;
   [item_controller_ setIcon:icon->ToNSImage()];

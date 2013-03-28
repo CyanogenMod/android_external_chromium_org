@@ -10,6 +10,7 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
 #include "chrome/common/extensions/permissions/permission_message.h"
 
@@ -38,14 +39,16 @@ class APIPermission {
 
     // Real permissions.
     kActiveTab,
+    kAdView,
     kAlarms,
     kAppCurrentWindowInternal,
-    kAppNotifications,
     kAppRuntime,
     kAppWindow,
     kAudioCapture,
+    kAutoTestPrivate,
     kBackground,
     kBluetooth,
+    kBluetoothDevice,
     kBookmark,
     kBookmarkManagerPrivate,
     kBrowsingData,
@@ -56,11 +59,15 @@ class APIPermission {
     kContentSettings,
     kContextMenus,
     kCookie,
+    kDial,
     kDebugger,
     kDeclarative,
+    kDeclarativeContent,
     kDeclarativeWebRequest,
+    kDeveloperPrivate,
     kDevtools,
     kDownloads,
+    kDownloadsInternal,
     kEchoPrivate,
     kExperimental,
     kFileBrowserHandler,
@@ -69,6 +76,7 @@ class APIPermission {
     kFileSystem,
     kFileSystemWrite,
     kFontSettings,
+    kFullscreen,
     kGeolocation,
     kHistory,
     kIdle,
@@ -77,23 +85,30 @@ class APIPermission {
     kManagedModePrivate,
     kManagement,
     kMediaGalleries,
-    kMediaGalleriesRead,
-    kMediaGalleriesAllAutoDetected,
     kMediaGalleriesPrivate,
     kMediaPlayerPrivate,
     kMetricsPrivate,
+    kNativeMessaging,
+    kNetworkingPrivate,
     kNotification,
     kPageCapture,
+    kPointerLock,
     kPlugin,
+    kPower,
     kPrivacy,
     kProxy,
     kPushMessaging,
     kRtcPrivate,
+    kScreensaver,
     kSerial,
+    kSessionRestore,
     kSocket,
     kStorage,
+    kStreamsPrivate,
     kSyncFileSystem,
     kSystemPrivate,
+    kSystemIndicator,
+    kSystemInfoDisplay,
     kTab,
     kTabCapture,
     kTerminalPrivate,
@@ -102,6 +117,7 @@ class APIPermission {
     kTtsEngine,
     kUnlimitedStorage,
     kUsb,
+    kUsbDevice,
     kVideoCapture,
     kWallpaperPrivate,
     kWebNavigation,
@@ -132,6 +148,9 @@ class APIPermission {
     return info_;
   }
 
+  // Returns true if this permission cannot be found in the manifest.
+  virtual bool ManifestEntryForbidden() const;
+
   // Returns true if this permission has any PermissionMessages.
   virtual bool HasMessages() const = 0;
 
@@ -151,7 +170,7 @@ class APIPermission {
   virtual bool FromValue(const base::Value* value) = 0;
 
   // Stores this into a new created |value|.
-  virtual void ToValue(base::Value** value) const = 0;
+  virtual scoped_ptr<base::Value> ToValue() const = 0;
 
   // Clones this.
   virtual APIPermission* Clone() const = 0;
@@ -200,7 +219,10 @@ class APIPermissionInfo {
     kFlagImpliesFullURLAccess = 1 << 1,
 
     // Indicates that extensions cannot specify the permission as optional.
-    kFlagCannotBeOptional = 1 << 3
+    kFlagCannotBeOptional = 1 << 3,
+
+    // Indicates that extensions must specify the permission as optional.
+    kFlagMustBeOptional = 1 << 4
   };
 
   typedef APIPermission* (*APIPermissionConstructor)(const APIPermissionInfo*);
@@ -238,6 +260,12 @@ class APIPermissionInfo {
   // optional permissions extension API.
   bool supports_optional() const {
     return (flags_ & kFlagCannotBeOptional) == 0;
+  }
+
+  // Returns true if this permission must be added and removed via the
+  // optional permissions extension API.
+  bool must_be_optional() const {
+    return (flags_ & kFlagMustBeOptional) != 0;
   }
 
  private:

@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/string16.h"
 #include "chrome/browser/history/history_types.h"
 #include "googleurl/src/gurl.h"
@@ -67,7 +67,7 @@ class TextDatabase {
   // |allow_create| indicates if we want to allow creation of the file if it
   // doesn't exist. For files associated with older time periods, we don't want
   // to create them if they don't exist, so this flag would be false.
-  TextDatabase(const FilePath& path,
+  TextDatabase(const base::FilePath& path,
                DBIdent id,
                bool allow_create);
   ~TextDatabase();
@@ -86,16 +86,16 @@ class TextDatabase {
 
   // For testing, returns the file name of the database so it can be deleted
   // after the test. This is valid even before Init() is called.
-  const FilePath& file_name() const { return file_name_; }
+  const base::FilePath& file_name() const { return file_name_; }
 
   // Returns a NULL-terminated string that is the base of history index files,
   // which is the part before the database identifier. For example
   // "History Index *". This is for finding existing database files.
-  static const FilePath::CharType* file_base();
+  static const base::FilePath::CharType* file_base();
 
   // Converts a filename on disk (optionally including a path) to a database
   // identifier. If the filename doesn't have the correct format, returns 0.
-  static DBIdent FileNameToID(const FilePath& file_path);
+  static DBIdent FileNameToID(const base::FilePath& file_path);
 
   // Changing operations -------------------------------------------------------
 
@@ -121,9 +121,7 @@ class TextDatabase {
 
   // Executes the given query. See QueryOptions for more info on input.
   //
-  // The results are appended to any existing ones in |*results|, and the first
-  // time considered for the output is in |first_time_searched|
-  // (see QueryResults for more).
+  // The results are appended to any existing ones in |*results|.
   //
   // Any URLs found will be added to |unique_urls|. If a URL is already in the
   // set, additional results will not be added (giving the ability to uniquify
@@ -131,15 +129,17 @@ class TextDatabase {
   //
   // Callers must run QueryParser on the user text and pass the results of the
   // QueryParser to this method as the query string.
-  void GetTextMatches(const std::string& query,
+  //
+  // Returns true if there are more results available, i.e. if the number of
+  // results was restricted by |options.max_count|.
+  bool GetTextMatches(const std::string& query,
                       const QueryOptions& options,
                       std::vector<Match>* results,
-                      URLSet* unique_urls,
-                      base::Time* first_time_searched);
+                      URLSet* unique_urls);
 
   // Converts the given database identifier to a filename. This does not include
   // the path, just the file and extension.
-  static FilePath IDToFileName(DBIdent id);
+  static base::FilePath IDToFileName(DBIdent id);
 
  private:
   // Ensures that the tables and indices are created. Returns true on success.
@@ -148,12 +148,12 @@ class TextDatabase {
   // The sql database. Not valid until Init is called.
   sql::Connection db_;
 
-  const FilePath path_;
+  const base::FilePath path_;
   const DBIdent ident_;
   const bool allow_create_;
 
   // Full file name of the file on disk, computed in Init().
-  FilePath file_name_;
+  base::FilePath file_name_;
 
   sql::MetaTable meta_table_;
 

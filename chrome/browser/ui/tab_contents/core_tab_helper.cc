@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 
 #include "chrome/browser/renderer_host/web_cache_manager.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -15,7 +14,7 @@
 
 using content::WebContents;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(CoreTabHelper)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(CoreTabHelper);
 
 CoreTabHelper::CoreTabHelper(WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
@@ -46,6 +45,8 @@ string16 CoreTabHelper::GetStatusText() const {
     case net::LOAD_STATE_ESTABLISHING_PROXY_TUNNEL:
       return
           l10n_util::GetStringUTF16(IDS_LOAD_STATE_ESTABLISHING_PROXY_TUNNEL);
+    case net::LOAD_STATE_DOWNLOADING_PROXY_SCRIPT:
+      return l10n_util::GetStringUTF16(IDS_LOAD_STATE_DOWNLOADING_PROXY_SCRIPT);
     case net::LOAD_STATE_RESOLVING_PROXY_FOR_URL:
       return l10n_util::GetStringUTF16(IDS_LOAD_STATE_RESOLVING_PROXY_FOR_URL);
     case net::LOAD_STATE_RESOLVING_HOST_IN_PROXY_SCRIPT:

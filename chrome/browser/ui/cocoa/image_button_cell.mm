@@ -6,10 +6,12 @@
 
 #include "base/logging.h"
 #import "chrome/browser/themes/theme_service.h"
+#import "chrome/browser/ui/cocoa/nsview_additions.h"
+#import "chrome/browser/ui/cocoa/rect_path_utils.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
-
-namespace {
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 // Adjust the overlay position relative to the top right of the button image.
 const CGFloat kOverlayOffsetX = -3;
@@ -18,8 +20,6 @@ const CGFloat kOverlayOffsetY = 5;
 // When the window doesn't have focus then we want to draw the button with a
 // slightly lighter color. We do this by just reducing the alpha.
 const CGFloat kImageNoFocusAlpha = 0.65;
-
-} // namespace
 
 @interface ImageButtonCell (Private)
 - (void)sharedInit;
@@ -30,8 +30,8 @@ const CGFloat kImageNoFocusAlpha = 0.65;
 
 @implementation ImageButtonCell
 
-@synthesize isMouseInside = isMouseInside_;
 @synthesize overlayImageID = overlayImageID_;
+@synthesize isMouseInside = isMouseInside_;
 
 // For nib instantiations
 - (id)initWithCoder:(NSCoder*)decoder {
@@ -57,13 +57,38 @@ const CGFloat kImageNoFocusAlpha = 0.65;
   [self setShowsBorderOnlyWhileMouseInside:YES];
 }
 
+- (NSImage*)imageForState:(image_button_cell::ButtonState)state
+                     view:(NSView*)controlView{
+  if (image_[state].imageId)
+    return [self imageForID:image_[state].imageId controlView:controlView];
+  return image_[state].image;
+}
+
 - (void)drawWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
+  image_button_cell::ButtonState state = [self currentButtonState];
   BOOL windowHasFocus = [[controlView window] isMainWindow] ||
                         [[controlView window] isKeyWindow];
   CGFloat alpha = windowHasFocus ? 1.0 : kImageNoFocusAlpha;
+  NSImage* image = [self imageForState:state view:controlView];
 
-  NSImage* image = [self imageForID:imageID_[[self currentButtonState]]
-                        controlView:controlView];
+  if (!windowHasFocus) {
+    NSImage* defaultImage = [self
+      imageForState:image_button_cell::kDefaultStateBackground
+               view:controlView];
+    NSImage* hoverImage = [self
+      imageForState:image_button_cell::kHoverStateBackground
+               view:controlView];
+    if ([self currentButtonState] == image_button_cell::kDefaultState &&
+        defaultImage) {
+      image = defaultImage;
+      alpha = 1.0;
+    } else if ([self currentButtonState] == image_button_cell::kHoverState &&
+        hoverImage) {
+      image = hoverImage;
+      alpha = 1.0;
+    }
+  }
+
   NSRect imageRect;
   imageRect.size = [image size];
   imageRect.origin.x = cellFrame.origin.x +
@@ -94,16 +119,41 @@ const CGFloat kImageNoFocusAlpha = 0.65;
               respectFlipped:YES
                        hints:nil];
   }
+
+  // Draws the blue focus ring.
+  if ([self showsFirstResponder]) {
+    gfx::ScopedNSGraphicsContextSaveGState scoped_state;
+    const CGFloat lineWidth = [controlView cr_lineWidth];
+    rect_path_utils::FrameRectWithInset(rect_path_utils::RoundedCornerAll,
+                                        NSInsetRect(cellFrame, 0, lineWidth),
+                                        0.0,            // insetX
+                                        0.0,            // insetY
+                                        3.0,            // outerRadius
+                                        lineWidth * 2,  // lineWidth
+                                        [controlView
+                                            cr_keyboardFocusIndicatorColor]);
+  }
 }
 
 - (void)setImageID:(NSInteger)imageID
     forButtonState:(image_button_cell::ButtonState)state {
   DCHECK_GE(state, 0);
   DCHECK_LT(state, image_button_cell::kButtonStateCount);
-  if (imageID_[state] != imageID) {
-    imageID_[state] = imageID;
-    [[self controlView] setNeedsDisplay:YES];
-  }
+
+  image_[state].image.reset();
+  image_[state].imageId = imageID;
+  [[self controlView] setNeedsDisplay:YES];
+}
+
+// Sets the image for the given button state using an image.
+- (void)setImage:(NSImage*)image
+  forButtonState:(image_button_cell::ButtonState)state {
+  DCHECK_GE(state, 0);
+  DCHECK_LT(state, image_button_cell::kButtonStateCount);
+
+  image_[state].image.reset([image retain]);
+  image_[state].imageId = 0;
+  [[self controlView] setNeedsDisplay:YES];
 }
 
 - (void)setOverlayImageID:(NSInteger)imageID {
@@ -114,14 +164,17 @@ const CGFloat kImageNoFocusAlpha = 0.65;
 }
 
 - (image_button_cell::ButtonState)currentButtonState {
-  if (![self isEnabled] && imageID_[image_button_cell::kDisabledState])
+  bool (^has)(image_button_cell::ButtonState) =
+      ^(image_button_cell::ButtonState state) {
+          return image_[state].image || image_[state].imageId;
+      };
+  if (![self isEnabled] && has(image_button_cell::kDisabledState))
     return image_button_cell::kDisabledState;
-  else if ([self isHighlighted] && imageID_[image_button_cell::kPressedState])
+  if ([self isHighlighted] && has(image_button_cell::kPressedState))
     return image_button_cell::kPressedState;
-  else if ([self isMouseInside] && imageID_[image_button_cell::kHoverState])
+  if ([self isMouseInside] && has(image_button_cell::kHoverState))
     return image_button_cell::kHoverState;
-  else
-    return image_button_cell::kDefaultState;
+  return image_button_cell::kDefaultState;
 }
 
 - (NSImage*)imageForID:(NSInteger)imageID

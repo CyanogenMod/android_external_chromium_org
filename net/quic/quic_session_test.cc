@@ -8,6 +8,7 @@
 #include <set>
 
 #include "base/hash_tables.h"
+#include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -15,6 +16,7 @@
 using base::hash_map;
 using std::set;
 using testing::_;
+using testing::InSequence;
 
 namespace net {
 namespace test {
@@ -26,8 +28,9 @@ class TestCryptoStream : public QuicCryptoStream {
       : QuicCryptoStream(session) {
   }
 
-  void OnHandshakeMessage(const CryptoHandshakeMessage& message) {
-    set_handshake_complete(true);
+  virtual void OnHandshakeMessage(
+      const CryptoHandshakeMessage& message) OVERRIDE {
+    SetHandshakeComplete(QUIC_NO_ERROR);
   }
 };
 
@@ -40,6 +43,8 @@ class TestStream : public ReliableQuicStream {
   virtual uint32 ProcessData(const char* data, uint32 data_len) {
     return data_len;
   }
+
+  MOCK_METHOD0(OnCanWrite, void());
 };
 
 class TestSession : public QuicSession {
@@ -49,17 +54,17 @@ class TestSession : public QuicSession {
         crypto_stream_(this) {
   }
 
-  virtual QuicCryptoStream* GetCryptoStream() {
+  virtual QuicCryptoStream* GetCryptoStream() OVERRIDE {
     return &crypto_stream_;
   }
 
-  virtual TestStream* CreateOutgoingReliableStream() {
+  virtual TestStream* CreateOutgoingReliableStream() OVERRIDE {
     TestStream* stream = new TestStream(GetNextStreamId(), this);
     ActivateStream(stream);
     return stream;
   }
 
-  virtual TestStream* CreateIncomingReliableStream(QuicStreamId id) {
+  virtual TestStream* CreateIncomingReliableStream(QuicStreamId id) OVERRIDE {
     return new TestStream(id, this);
   }
 
@@ -71,6 +76,11 @@ class TestSession : public QuicSession {
     return QuicSession::GetIncomingReliableStream(stream_id);
   }
 
+  // Helper method for gmock
+  void MarkTwoWriteBlocked() {
+    this->MarkWriteBlocked(2);
+  }
+
   TestCryptoStream crypto_stream_;
 };
 
@@ -78,7 +88,7 @@ class QuicSessionTest : public ::testing::Test {
  protected:
   QuicSessionTest()
       : guid_(1),
-        connection_(new MockConnection(guid_, IPEndPoint())),
+        connection_(new MockConnection(guid_, IPEndPoint(), false)),
         session_(connection_, true) {
   }
 
@@ -105,11 +115,11 @@ class QuicSessionTest : public ::testing::Test {
   set<QuicStreamId> closed_streams_;
 };
 
-TEST_F(QuicSessionTest, IsHandshakeComplete) {
-  EXPECT_FALSE(session_.IsHandshakeComplete());
+TEST_F(QuicSessionTest, IsCryptoHandshakeComplete) {
+  EXPECT_FALSE(session_.IsCryptoHandshakeComplete());
   CryptoHandshakeMessage message;
   session_.crypto_stream_.OnHandshakeMessage(message);
-  EXPECT_TRUE(session_.IsHandshakeComplete());
+  EXPECT_TRUE(session_.IsCryptoHandshakeComplete());
 }
 
 TEST_F(QuicSessionTest, IsClosedStreamDefault) {
@@ -120,8 +130,10 @@ TEST_F(QuicSessionTest, IsClosedStreamDefault) {
 }
 
 TEST_F(QuicSessionTest, IsClosedStreamLocallyCreated) {
-  scoped_ptr<TestStream> stream2(session_.CreateOutgoingReliableStream());
-  scoped_ptr<TestStream> stream4(session_.CreateOutgoingReliableStream());
+  TestStream* stream2 = session_.CreateOutgoingReliableStream();
+  EXPECT_EQ(2u, stream2->id());
+  TestStream* stream4 = session_.CreateOutgoingReliableStream();
+  EXPECT_EQ(4u, stream4->id());
 
   CheckClosedStreams();
   CloseStream(4);
@@ -131,15 +143,15 @@ TEST_F(QuicSessionTest, IsClosedStreamLocallyCreated) {
 }
 
 TEST_F(QuicSessionTest, IsClosedStreamPeerCreated) {
-  scoped_ptr<ReliableQuicStream> stream3(session_.GetIncomingReliableStream(3));
-  scoped_ptr<ReliableQuicStream> stream5(session_.GetIncomingReliableStream(5));
+  session_.GetIncomingReliableStream(3);
+  session_.GetIncomingReliableStream(5);
 
   CheckClosedStreams();
   CloseStream(3);
   CheckClosedStreams();
   CloseStream(5);
   // Create stream id 9, and implicitly 7
-  scoped_ptr<ReliableQuicStream> stream9(session_.GetIncomingReliableStream(9));
+  session_.GetIncomingReliableStream(9);
   CheckClosedStreams();
   // Close 9, but make sure 7 is still not closed
   CloseStream(9);
@@ -147,12 +159,57 @@ TEST_F(QuicSessionTest, IsClosedStreamPeerCreated) {
 }
 
 TEST_F(QuicSessionTest, StreamIdTooLarge) {
-  scoped_ptr<ReliableQuicStream> stream3(session_.GetIncomingReliableStream(3));
+  session_.GetIncomingReliableStream(3);
   EXPECT_CALL(*connection_, SendConnectionClose(QUIC_INVALID_STREAM_ID));
-  scoped_ptr<ReliableQuicStream> stream5(
-      session_.GetIncomingReliableStream(105));
+  session_.GetIncomingReliableStream(105);
 }
 
+TEST_F(QuicSessionTest, OnCanWrite) {
+  TestStream* stream2 = session_.CreateOutgoingReliableStream();
+  TestStream* stream4 = session_.CreateOutgoingReliableStream();
+  TestStream* stream6 = session_.CreateOutgoingReliableStream();
+
+  session_.MarkWriteBlocked(2);
+  session_.MarkWriteBlocked(6);
+  session_.MarkWriteBlocked(4);
+
+  InSequence s;
+  EXPECT_CALL(*stream2, OnCanWrite()).WillOnce(
+      // Reregister, to test the loop limit.
+      testing::InvokeWithoutArgs(&session_, &TestSession::MarkTwoWriteBlocked));
+  EXPECT_CALL(*stream6, OnCanWrite());
+  EXPECT_CALL(*stream4, OnCanWrite());
+
+  EXPECT_FALSE(session_.OnCanWrite());
+}
+
+TEST_F(QuicSessionTest, OnCanWriteWithClosedStream) {
+  TestStream* stream2 = session_.CreateOutgoingReliableStream();
+  TestStream* stream4 = session_.CreateOutgoingReliableStream();
+  session_.CreateOutgoingReliableStream();  // stream 6
+
+  session_.MarkWriteBlocked(2);
+  session_.MarkWriteBlocked(6);
+  session_.MarkWriteBlocked(4);
+  CloseStream(6);
+
+  InSequence s;
+  EXPECT_CALL(*stream2, OnCanWrite());
+  EXPECT_CALL(*stream4, OnCanWrite());
+  EXPECT_TRUE(session_.OnCanWrite());
+}
+
+TEST_F(QuicSessionTest, SendGoAway) {
+  // After sending a GoAway, ensure new incoming streams cannot be created and
+  // result in a RST being sent.
+  EXPECT_CALL(*connection_,
+              SendGoAway(QUIC_PEER_GOING_AWAY, 0u, "Going Away."));
+  session_.SendGoAway(QUIC_PEER_GOING_AWAY, "Going Away.");
+  EXPECT_TRUE(session_.goaway_sent());
+
+  EXPECT_CALL(*connection_, SendRstStream(3u, QUIC_PEER_GOING_AWAY));
+  EXPECT_FALSE(session_.GetIncomingReliableStream(3u));
+}
 }  // namespace
 }  // namespace test
 }  // namespace net

@@ -7,9 +7,10 @@
 
 #include <string>
 
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/version_loader.h"
-#include "chrome/browser/policy/cloud_policy_subsystem.h"
+#include "chrome/browser/policy/cloud/cloud_policy_store.h"
 #include "content/public/browser/notification_observer.h"
 
 namespace chromeos {
@@ -18,7 +19,7 @@ class CrosSettings;
 
 // Fetches all info we want to show on OOBE/Login screens about system
 // version, boot times and cloud policy.
-class VersionInfoUpdater : public policy::CloudPolicySubsystem::Observer,
+class VersionInfoUpdater : public policy::CloudPolicyStore::Observer,
                            public content::NotificationObserver {
  public:
   class Delegate {
@@ -35,8 +36,7 @@ class VersionInfoUpdater : public policy::CloudPolicySubsystem::Observer,
 
     // Called when the enterprise info notice should be updated.
     virtual void OnEnterpriseInfoUpdated(
-        const std::string& enterprise_info,
-        bool reporting_hint) = 0;
+        const std::string& enterprise_info) = 0;
   };
 
   explicit VersionInfoUpdater(Delegate* delegate);
@@ -50,10 +50,9 @@ class VersionInfoUpdater : public policy::CloudPolicySubsystem::Observer,
   void StartUpdate(bool is_official_build);
 
  private:
-  // policy::CloudPolicySubsystem::Observer methods:
-  virtual void OnPolicyStateChanged(
-      policy::CloudPolicySubsystem::PolicySubsystemState state,
-      policy::CloudPolicySubsystem::ErrorDetails error_details) OVERRIDE;
+  // policy::CloudPolicyStore::Observer interface:
+  virtual void OnStoreLoaded(policy::CloudPolicyStore* store) OVERRIDE;
+  virtual void OnStoreError(policy::CloudPolicyStore* store) OVERRIDE;
 
   // content::NotificationObserver interface.
   virtual void Observe(
@@ -68,45 +67,36 @@ class VersionInfoUpdater : public policy::CloudPolicySubsystem::Observer,
   void UpdateEnterpriseInfo();
 
   // Set enterprise domain name.
-  void SetEnterpriseInfo(const std::string& domain_name,
-                         const std::string& status_text,
-                         bool reporting_hint);
+  void SetEnterpriseInfo(const std::string& domain_name);
 
   // Callback from chromeos::VersionLoader giving the version.
-  void OnVersion(VersionLoader::Handle handle, const std::string& version);
+  void OnVersion(const std::string& version);
   // Callback from chromeos::InfoLoader giving the boot times.
-  void OnBootTimes(
-      BootTimesLoader::Handle handle, BootTimesLoader::BootTimes boot_times);
+  void OnBootTimes(const BootTimesLoader::BootTimes& boot_times);
   // Null callback from chromeos::InfoLoader.
-  void OnBootTimesNoop(
-      BootTimesLoader::Handle handle, BootTimesLoader::BootTimes boot_times);
+  void OnBootTimesNoop(const BootTimesLoader::BootTimes& boot_times);
 
   // Handles asynchronously loading the version.
   VersionLoader version_loader_;
-  // Used to request the version.
-  CancelableRequestConsumer version_consumer_;
-
   // Handles asynchronously loading the boot times.
   BootTimesLoader boot_times_loader_;
-  // Used to request the boot times.
-  CancelableRequestConsumer boot_times_consumer_;
+  // Used to request version and boot times.
+  CancelableTaskTracker tracker_;
 
   // Information pieces for version label.
   std::string version_text_;
-  std::string enterprise_domain_text_;
-  std::string enterprise_status_text_;
-  bool enterprise_reporting_hint_;
 
   // Full text for the OS version label.
   std::string os_version_label_text_;
 
-  // CloudPolicySubsysterm observer registrar
-  scoped_ptr<policy::CloudPolicySubsystem::ObserverRegistrar>
-      cloud_policy_registrar_;
-
   chromeos::CrosSettings* cros_settings_;
 
   Delegate* delegate_;
+
+  // Weak pointer factory so we can give our callbacks for invocation
+  // at a later time without worrying that they will actually try to
+  // happen after the lifetime of this object.
+  base::WeakPtrFactory<VersionInfoUpdater> weak_pointer_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(VersionInfoUpdater);
 };

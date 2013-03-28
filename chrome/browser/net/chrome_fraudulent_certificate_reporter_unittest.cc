@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/synchronization/waitable_event.h"
@@ -15,10 +15,10 @@
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "content/public/test/test_browser_thread.h"
 #include "net/base/cert_test_util.h"
-#include "net/base/ssl_info.h"
 #include "net/base/test_data_directory.h"
-#include "net/base/transport_security_state.h"
 #include "net/base/x509_certificate.h"
+#include "net/http/transport_security_state.h"
+#include "net/ssl/ssl_info.h"
 #include "net/url_request/fraudulent_certificate_reporter.h"
 #include "net/url_request/url_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -144,7 +144,7 @@ class MockReporter : public ChromeFraudulentCertificateReporter {
   virtual void SendReport(
       const std::string& hostname,
       const net::SSLInfo& ssl_info,
-      bool sni_available) {
+      bool sni_available) OVERRIDE {
     DCHECK(!hostname.empty());
     DCHECK(ssl_info.is_valid());
     ChromeFraudulentCertificateReporter::SendReport(hostname, ssl_info,
@@ -188,21 +188,21 @@ TEST(ChromeFraudulentCertificateReporterTest, ReportIsSent) {
   MessageLoop loop(MessageLoop::TYPE_IO);
   content::TestBrowserThread io_thread(BrowserThread::IO, &loop);
   loop.PostTask(FROM_HERE, base::Bind(&DoReportIsSent));
-  loop.RunAllPending();
+  loop.RunUntilIdle();
 }
 
 TEST(ChromeFraudulentCertificateReporterTest, MockReportIsSent) {
   MessageLoop loop(MessageLoop::TYPE_IO);
   content::TestBrowserThread io_thread(BrowserThread::IO, &loop);
   loop.PostTask(FROM_HERE, base::Bind(&DoMockReportIsSent));
-  loop.RunAllPending();
+  loop.RunUntilIdle();
 }
 
 TEST(ChromeFraudulentCertificateReporterTest, ReportIsNotSent) {
   MessageLoop loop(MessageLoop::TYPE_IO);
   content::TestBrowserThread io_thread(BrowserThread::IO, &loop);
   loop.PostTask(FROM_HERE, base::Bind(&DoReportIsNotSent));
-  loop.RunAllPending();
+  loop.RunUntilIdle();
 }
 
 }  // namespace chrome_browser_net

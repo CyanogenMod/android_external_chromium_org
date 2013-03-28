@@ -7,7 +7,6 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button_cell.h"
-#import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "grit/ui_resources.h"
@@ -15,7 +14,6 @@
 #include "testing/platform_test.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/mac/nsimage_cache.h"
 
 // Simple class to remember how many mouseEntered: and mouseExited:
 // calls it gets.  Only used by BookmarkMouseForwarding but placed
@@ -93,7 +91,7 @@ TEST_F(BookmarkButtonCellTest, MouseEnterStuff) {
       [[BookmarkButtonCell alloc] initTextCell:@"Testing"]);
   // Setting the menu should have no affect since we either share or
   // dynamically compose the menu given a node.
-  [cell setMenu:[[[BookmarkMenu alloc] initWithTitle:@"foo"] autorelease]];
+  [cell setMenu:[[[NSMenu alloc] initWithTitle:@"foo"] autorelease]];
   EXPECT_FALSE([cell menu]);
 
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
@@ -101,23 +99,21 @@ TEST_F(BookmarkButtonCellTest, MouseEnterStuff) {
   [cell setEmpty:NO];
   [cell setBookmarkNode:node];
   EXPECT_TRUE([cell showsBorderOnlyWhileMouseInside]);
-  EXPECT_TRUE([cell menu]);
 
   [cell setEmpty:YES];
   EXPECT_FALSE([cell.get() showsBorderOnlyWhileMouseInside]);
-  EXPECT_FALSE([cell menu]);
 }
 
 TEST_F(BookmarkButtonCellTest, BookmarkNode) {
-  BookmarkModel& model(*(BookmarkModelFactory::GetForProfile(profile())));
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
   scoped_nsobject<BookmarkButtonCell> cell(
       [[BookmarkButtonCell alloc] initTextCell:@"Testing"]);
 
-  const BookmarkNode* node = model.bookmark_bar_node();
+  const BookmarkNode* node = model->bookmark_bar_node();
   [cell setBookmarkNode:node];
   EXPECT_EQ(node, [cell bookmarkNode]);
 
-  node = model.other_node();
+  node = model->other_node();
   [cell setBookmarkNode:node];
   EXPECT_EQ(node, [cell bookmarkNode]);
 }
@@ -165,9 +161,9 @@ TEST_F(BookmarkButtonCellTest, FolderArrow) {
                                            GURL("http://www.google.com"));
   scoped_nsobject<BookmarkButtonCell> cell(
     [[BookmarkButtonCell alloc] initForNode:node
-                                contextMenu:nil
-                                   cellText:@"small"
-                                  cellImage:nil]);
+                                       text:@"small"
+                                      image:nil
+                             menuController:nil]);
   EXPECT_TRUE(cell.get());
 
   NSSize size = [cell cellSize];
@@ -192,9 +188,9 @@ TEST_F(BookmarkButtonCellTest, VerticalTextOffset) {
       [[GradientButtonCell alloc] initTextCell:@"Testing"]);
   scoped_nsobject<BookmarkButtonCell> bookmark_cell(
       [[BookmarkButtonCell alloc] initForNode:node
-                                  contextMenu:nil
-                                     cellText:@"small"
-                                    cellImage:nil]);
+                                         text:@"small"
+                                        image:nil
+                               menuController:nil]);
 
   ASSERT_TRUE(gradient_cell.get());
   ASSERT_TRUE(bookmark_cell.get());

@@ -5,9 +5,11 @@
 #ifndef ASH_SYSTEM_TRAY_TRAY_EVENT_FILTER_H_
 #define ASH_SYSTEM_TRAY_TRAY_EVENT_FILTER_H_
 
+#include <set>
+
 #include "base/basictypes.h"
-#include "ui/aura/event_filter.h"
 #include "ui/base/events/event.h"
+#include "ui/base/events/event_handler.h"
 
 namespace aura {
 class Window;
@@ -20,28 +22,23 @@ class TrayBubbleWrapper;
 
 // Handles events for a tray bubble.
 
-class TrayEventFilter : public aura::EventFilter {
+class TrayEventFilter : public ui::EventHandler {
  public:
-  explicit TrayEventFilter(TrayBubbleWrapper* wrapper);
+  explicit TrayEventFilter();
   virtual ~TrayEventFilter();
 
-  // Overridden from aura::EventFilter.
-  virtual bool PreHandleKeyEvent(aura::Window* target,
-                                 ui::KeyEvent* event) OVERRIDE;
-  virtual bool PreHandleMouseEvent(aura::Window* target,
-                                   ui::MouseEvent* event) OVERRIDE;
-  virtual ui::EventResult PreHandleTouchEvent(aura::Window* target,
-                                              ui::TouchEvent* event) OVERRIDE;
-  virtual ui::EventResult PreHandleGestureEvent(
-      aura::Window* target,
-      ui::GestureEvent* event) OVERRIDE;
+  void AddWrapper(TrayBubbleWrapper* wrapper);
+  void RemoveWrapper(TrayBubbleWrapper* wrapper);
+
+  // Overridden from ui::EventHandler.
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
  private:
   // Returns true if the event is handled.
-  bool ProcessLocatedEvent(aura::Window* target,
-                           const ui::LocatedEvent& event);
+  bool ProcessLocatedEvent(ui::LocatedEvent* event);
 
-  TrayBubbleWrapper* wrapper_;
+  std::set<TrayBubbleWrapper*> wrappers_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayEventFilter);
 };

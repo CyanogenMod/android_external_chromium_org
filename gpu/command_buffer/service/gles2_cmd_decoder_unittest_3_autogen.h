@@ -57,5 +57,24 @@
 // TODO(gman): BindUniformLocationCHROMIUMBucket
 // TODO(gman): BindTexImage2DCHROMIUM
 // TODO(gman): ReleaseTexImage2DCHROMIUM
+// TODO(gman): TraceBeginCHROMIUM
+
+// TODO(gman): TraceEndCHROMIUM
+// TODO(gman): AsyncTexSubImage2DCHROMIUM
+
+// TODO(gman): AsyncTexImage2DCHROMIUM
+
+// TODO(gman): WaitAsyncTexImage2DCHROMIUM
+
+// TODO(gman): DiscardFramebufferEXT
+// TODO(gman): DiscardFramebufferEXTImmediate
+// TODO(gman): LoseContextCHROMIUM
+
+// TODO(gman): InsertSyncPointCHROMIUM
+
+// TODO(gman): WaitSyncPointCHROMIUM
+
+// TODO(gman): DrawBuffersEXT
+// TODO(gman): DrawBuffersEXTImmediate
 #endif  // GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_3_AUTOGEN_H_
 

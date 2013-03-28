@@ -6,13 +6,14 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task_runner.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/importer/profile_import_process_messages.h"
 #include "content/public/common/password_form.h"
+#include "ipc/ipc_sender.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/password_manager/ie7_password.h"

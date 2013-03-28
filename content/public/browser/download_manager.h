@@ -32,11 +32,10 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/time.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_id.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
@@ -83,6 +82,10 @@ class CONTENT_EXPORT DownloadManager
     // When we've fully specified the possible states of the DownloadItem in
     // download_item.h, we should remove the caveat above.
     virtual void OnDownloadCreated(
+        DownloadManager* manager, DownloadItem* item) {}
+
+    // A SavePackage has successfully finished.
+    virtual void OnSavePackageSuccessfullyFinished(
         DownloadManager* manager, DownloadItem* item) {}
 
     // Called when the DownloadManager is being destroyed to prevent Observers
@@ -140,15 +143,23 @@ class CONTENT_EXPORT DownloadManager
 
   // Called by the embedder, after creating the download manager, to let it know
   // about downloads from previous runs of the browser.
-  virtual void OnPersistentStoreQueryComplete(
-      std::vector<DownloadPersistentStoreInfo>* entries) = 0;
-
-  // Called by the embedder, in response to
-  // DownloadManagerDelegate::AddItemToPersistentStore.
-  virtual void OnItemAddedToPersistentStore(int32 download_id,
-                                            int64 db_handle) = 0;
+  virtual DownloadItem* CreateDownloadItem(
+      const base::FilePath& current_path,
+      const base::FilePath& target_path,
+      const std::vector<GURL>& url_chain,
+      const GURL& referrer_url,
+      const base::Time& start_time,
+      const base::Time& end_time,
+      int64 received_bytes,
+      int64 total_bytes,
+      DownloadItem::DownloadState state,
+      DownloadDangerType danger_type,
+      DownloadInterruptReason interrupt_reason,
+      bool opened) = 0;
 
   // The number of in progress (including paused) downloads.
+  // Performance note: this loops over all items. If profiling finds that this
+  // is too slow, use an AllDownloadItemNotifier to count in-progress items.
   virtual int InProgressCount() const = 0;
 
   virtual BrowserContext* GetBrowserContext() const = 0;
@@ -161,9 +172,6 @@ class CONTENT_EXPORT DownloadManager
   // Get the download item for |id| if present, no matter what type of download
   // it is or state it's in.
   virtual DownloadItem* GetDownload(int id) = 0;
-
-  // Called when Save Page download is done.
-  virtual void SavePageDownloadFinished(DownloadItem* download) = 0;
 
  protected:
   virtual ~DownloadManager() {}

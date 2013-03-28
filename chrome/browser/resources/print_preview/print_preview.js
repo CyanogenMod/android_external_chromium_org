@@ -481,7 +481,9 @@ cr.define('print_preview', function() {
           settings.documentTitle,
           settings.thousandsDelimeter,
           settings.decimalDelimeter,
-          settings.unitType);
+          settings.unitType,
+          settings.documentHasSelection,
+          settings.selectionOnly);
       this.destinationStore_.init(settings.systemDefaultDestinationId);
     },
 
@@ -519,9 +521,9 @@ cr.define('print_preview', function() {
 
       this.userInfo_.setCloudPrintInterface(this.cloudPrintInterface_);
       this.destinationStore_.setCloudPrintInterface(this.cloudPrintInterface_);
-      this.destinationStore_.startLoadRecentCloudDestinations();
+      this.destinationStore_.startLoadCloudDestinations(true);
       if (this.destinationSearch_.getIsVisible()) {
-        this.destinationStore_.startLoadAllCloudDestinations();
+        this.destinationStore_.startLoadCloudDestinations(false);
       }
     },
 
@@ -579,7 +581,7 @@ cr.define('print_preview', function() {
                  this.uiState_);
       if (this.destinationStore_.selectedDestination.id ==
               print_preview.Destination.GooglePromotedId.FEDEX) {
-        window.open(
+        this.nativeLayer_.startForceOpenNewTab(
             'https://www.google.com/cloudprint/fedexcode.html?jobid=' +
             event.jobId);
       }
@@ -622,6 +624,7 @@ cr.define('print_preview', function() {
      */
     onPreviewGenerationDone_: function() {
       this.isPreviewGenerationInProgress_ = false;
+      this.printHeader_.isPrintButtonEnabled = true;
       this.printIfReady_();
     },
 
@@ -631,6 +634,7 @@ cr.define('print_preview', function() {
      */
     onPreviewGenerationFail_: function() {
       this.isPreviewGenerationInProgress_ = false;
+      this.printHeader_.isPrintButtonEnabled = false;
       if (this.uiState_ == PrintPreview.UiState_.PRINTING) {
         this.nativeLayer_.startCancelPendingPrint();
       }
@@ -742,7 +746,7 @@ cr.define('print_preview', function() {
      */
     onDestinationChangeButtonActivate_: function() {
       this.destinationSearch_.setIsVisible(true);
-      this.destinationStore_.startLoadAllCloudDestinations();
+      this.destinationStore_.startLoadCloudDestinations(false);
       this.metrics_.incrementDestinationSearchBucket(
           print_preview.Metrics.DestinationSearchBucket.SHOWN);
     },
@@ -895,6 +899,8 @@ cr.define('print_preview', function() {
 <include src="data/ticket_items/margins_type.js"/>
 <include src="data/ticket_items/page_range.js"/>
 <include src="data/ticket_items/fit_to_page.js"/>
+<include src="data/ticket_items/css_background.js"/>
+<include src="data/ticket_items/selection_only.js"/>
 
 <include src="native_layer.js"/>
 <include src="print_preview_animations.js"/>

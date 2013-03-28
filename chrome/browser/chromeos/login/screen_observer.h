@@ -30,11 +30,12 @@ class ScreenObserver {
     USER_IMAGE_SELECTED,
     EULA_ACCEPTED,
     EULA_BACK,
-    REGISTRATION_SUCCESS,
-    REGISTRATION_SKIPPED,
     ENTERPRISE_ENROLLMENT_COMPLETED,
     ENTERPRISE_AUTO_MAGIC_ENROLLMENT_COMPLETED,
     RESET_CANCELED,
+    TERMS_OF_SERVICE_DECLINED,
+    TERMS_OF_SERVICE_ACCEPTED,
+    WRONG_HWID_WARNING_SKIPPED,
     EXIT_CODES_COUNT  // not a real code, must be the last
   };
 
@@ -49,7 +50,7 @@ class ScreenObserver {
   virtual void OnSetUserNamePassword(const std::string& username,
                                      const std::string& password) = 0;
 
-  // Set/get usage statistics reporting checkbox status on EULA screen.
+  // Whether usage statistics reporting is enabled on EULA screen.
   virtual void SetUsageStatisticsReporting(bool val) = 0;
   virtual bool GetUsageStatisticsReporting() const = 0;
 

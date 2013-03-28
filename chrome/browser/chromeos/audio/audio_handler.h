@@ -8,20 +8,20 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "base/threading/thread.h"
 
 template <typename T> struct DefaultSingletonTraits;
 
 class PrefChangeRegistrar;
+class PrefRegistrySimple;
 class PrefService;
 
 namespace chromeos {
 
 class AudioMixer;
 
-class AudioHandler : public PrefObserver {
+class AudioHandler {
  public:
   class VolumeObserver {
    public:
@@ -44,7 +44,7 @@ class AudioHandler : public PrefObserver {
   static AudioHandler* GetInstance();
 
   // Registers volume and mute preferences.
-  static void RegisterPrefs(PrefService* local_state);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // Gets volume level in our internal 0-100% range, 0 being pure silence.
   double GetVolumePercent();
@@ -72,10 +72,6 @@ class AudioHandler : public PrefObserver {
 
   void AddVolumeObserver(VolumeObserver* observer);
   void RemoveVolumeObserver(VolumeObserver* observer);
-
-  // Overridden from PrefObserver:
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
 
  private:
   // Defines the delete on exit Singleton traits we like.  Best to have this

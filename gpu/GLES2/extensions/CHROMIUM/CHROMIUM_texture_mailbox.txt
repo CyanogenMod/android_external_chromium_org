@@ -38,16 +38,15 @@ New Procedures and Functions
 
     void glProduceTextureCHROMIUM (GLenum target, const GLbyte *mailbox)
 
-    Moves the image data of the currently bound texture object into the mailbox.
-    The texture object is redefined as though all its levels had been resized to
-    zero by zero and the texture object is therefore incomplete. If the mailbox
-    previously contained image data, the old image data is deleted. The state
-    of the bound texture object is not saved in the mailbox, only the image
-    data, as well as the immutable state. The texture object is no longer
-    immutable.
+    Moves the image data and parameters of the currently bound texture object
+    into the mailbox. The texture object is redefined as though all its levels
+    had been resized to zero by zero and the texture object is therefore
+    incomplete.  The texture object parameters are undefined. The texture
+    object is no longer immutable. If the mailbox previously contained image
+    data, the old image data is deleted.
 
     If glProduceTextureCHROMIUM generates an error, the associated image data
-    is preserved in the texture object.
+    and state is preserved in the texture object.
 
     The mailbox is emptied and the texture image data deleted if the context
     is destroyed before being consumed. See glConsumeTextureCHROMIUM.
@@ -73,11 +72,10 @@ New Procedures and Functions
     <mailbox> identifies a GL_MAILBOX_SIZE_CHROMIUM byte sized name returned by
     glGenMailboxCHROMIUM.
 
-    Redefines the image data of the currently bound texture object with the
-    image data in the mailbox and empties the mailbox. The state of the
-    currently bound texture object is not modified, only the image data. All
-    levels are redefined, and the immutable state is set according to the
-    contents of the mailbox.
+    Redefines the image data and parameters of the currently bound texture
+    object with the image data and parameters in the mailbox and empties the
+    mailbox. All levels are redefined, and the immutable state is set according
+    to the contents of the mailbox.
 
     If glConsumeTextureCHROMIUM generates an error, the associated image data
     is preserved in the texture object.

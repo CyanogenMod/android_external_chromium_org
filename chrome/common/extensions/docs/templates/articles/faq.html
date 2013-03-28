@@ -73,12 +73,12 @@ try the
   </p>
 
   <p>
-  Click the settings menu icon
+  Click the Chrome menu icon
   <img src="{{static}}/images/hotdogmenu.png" height="29" width="29" alt=""
     class="nomargin" />
   and select <b>Extensions</b> from the <b>Tools</b> menu.
-  If there's a "+" next to "Developer mode",
-  click the "+" so it turns into a "-".
+  Ensure that the "Developer mode" checkbox in the top right-hand corner
+  is checked.
   Now you can reload extensions,
   load an unpacked directory of files as if it were a packaged extension,
   and more. For a complete tutorial, see
@@ -230,7 +230,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
 <p>
   Yes, since extensions are built just like websites, they can use
   <a href="http://www.google.com/analytics/">Google Analytics</a> to track
-  usage.  However, we strongly advise you to modify the tracking code to pull
+  usage.  However, you must modify the tracking code to pull
   an HTTPS version of the Google Analytics library.  See
   <a href="tut_analytics.html">this tutorial</a> for more information on doing
   this.
@@ -276,7 +276,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
   installed/uninstalled?</h3>
 <p>
   You can listen to the
-  <a href="runtime.html#event-onInstalled">runtime.onInstalled</a>
+  $ref:runtime.onInstalled
   event to be notified when your extension is installed or updated, or when
   Chrome itself is updated. There is no corresponding event for when your
   extension is uninstalled.
@@ -353,7 +353,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
   the first time?</h3>
 <p>
   You can listen to the
-  <a href="runtime.html#event-onInstalled">runtime.onInstalled</a>
+  $ref:runtime.onInstalled
   event. See <a href="#faq-lifecycle-events">this FAQ entry</a>.
 </p>
 
@@ -383,7 +383,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
   </li>
   <li>
     Search the issue tracker at
-    <a href="http://www.crbug.com">http://www.crbug.com</a> to see whether
+    <a href="http://crbug.com">http://crbug.com</a> to see whether
     someone has reported a similar issue.  Most issues related to
     extensions are filed under <strong>Feature=Extensions</strong>, so to
     look for an extension bug related to the
@@ -438,7 +438,7 @@ cros,beta,#.#.###.#,#.#.###.#,mm/dd/yy,mm/dd/yy,#####,#####,#####</pre>
 <ol>
   <li>
     Search the issue tracker at
-    <a href="http://www.crbug.com">http://www.crbug.com</a> to see whether
+    <a href="http://crbug.com">http://crbug.com</a> to see whether
     someone has requested a similar feature.  Most requests related to
     extensions are filed under <strong>Feature=Extensions</strong>, so to
     look for an extension feature request related to keyboard shortcuts

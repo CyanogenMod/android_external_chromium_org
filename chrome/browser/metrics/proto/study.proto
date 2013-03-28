@@ -4,6 +4,8 @@
 
 syntax = "proto2";
 
+option optimize_for = LITE_RUNTIME;
+
 package chrome_variations;
 
 // This defines the Protocol Buffer representation of a Chrome Variations study
@@ -50,8 +52,11 @@ message Study {
     // where N is the sum of all x’s).
     // Ex: "50"
     required uint32 probability_weight = 2;
-    // Optional id used to uniquely identify this experiment.
-    optional uint64 experiment_id = 3;
+    // Optional id used to uniquely identify this experiment for Google web
+    // properties.
+    optional uint64 google_web_experiment_id = 3;
+    // Optional id used to uniquely identify this experiment for Google Update.
+    optional uint64 google_update_experiment_id = 4;
   }
 
   // List of experiments in this study. This list should include the default /
@@ -85,7 +90,7 @@ message Study {
   // Filtering criteria specifying whether this study is applicable to a given
   // Chrome instance.
   //
-  // Next tag: 6
+  // Next tag: 7
   message Filter {
     // The start date of the study in Unix time format. (Seconds since midnight
     // January 1, 1970 UTC). See: http://en.wikipedia.org/wiki/Unix_time

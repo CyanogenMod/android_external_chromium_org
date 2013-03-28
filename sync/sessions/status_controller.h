@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,15 +34,16 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/time.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/sessions/model_neutral_state.h"
 #include "sync/sessions/ordered_commit_set.h"
 
 namespace syncer {
 namespace sessions {
 
-class StatusController {
+class SYNC_EXPORT_PRIVATE StatusController {
  public:
-  explicit StatusController(const ModelSafeRoutingInfo& routes);
+  explicit StatusController();
   ~StatusController();
 
   // ClientToServer messages.
@@ -111,10 +112,6 @@ class StatusController {
     return sync_start_time_;
   }
 
-  bool HasBookmarkCommitActivity() const {
-    return ActiveGroupRestrictionIncludesModel(BOOKMARKS);
-  }
-
   const ModelNeutralState& model_neutral_state() const {
     return model_neutral_;
   }
@@ -158,25 +155,12 @@ class StatusController {
  private:
   friend class ScopedModelSafeGroupRestriction;
 
-  // Check whether a particular model is included by the active group
-  // restriction.
-  bool ActiveGroupRestrictionIncludesModel(ModelType model) const {
-    if (!group_restriction_in_effect_)
-      return true;
-    ModelSafeRoutingInfo::const_iterator it = routing_info_.find(model);
-    if (it == routing_info_.end())
-      return false;
-    return group_restriction() == it->second;
-  }
-
   ModelNeutralState model_neutral_;
 
   // Used to fail read/write operations on state that don't obey the current
   // active ModelSafeWorker contract.
   bool group_restriction_in_effect_;
   ModelSafeGroup group_restriction_;
-
-  const ModelSafeRoutingInfo routing_info_;
 
   base::Time sync_start_time_;
 

@@ -4,7 +4,6 @@
 
 #include "ui/gfx/skia_util.h"
 
-#include "base/i18n/char_iterator.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
@@ -14,32 +13,45 @@
 #include "third_party/skia/include/effects/SkLayerDrawLooper.h"
 #include "ui/gfx/image/image_skia_rep.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/rect_f.h"
 #include "ui/gfx/shadow_value.h"
 
 namespace gfx {
 
-SkRect RectToSkRect(const gfx::Rect& rect) {
+SkRect RectToSkRect(const Rect& rect) {
   SkRect r;
   r.iset(rect.x(), rect.y(), rect.right(), rect.bottom());
   return r;
 }
 
-SkIRect RectToSkIRect(const gfx::Rect& rect) {
+SkIRect RectToSkIRect(const Rect& rect) {
   return SkIRect::MakeXYWH(rect.x(), rect.y(), rect.width(), rect.height());
 }
 
-gfx::Rect SkRectToRect(const SkRect& rect) {
-  return gfx::Rect(static_cast<int>(rect.left()),
-                   static_cast<int>(rect.top()),
-                   static_cast<int>(rect.width()),
-                   static_cast<int>(rect.height()));
+Rect SkIRectToRect(const SkIRect& rect) {
+  return Rect(rect.x(), rect.y(), rect.width(), rect.height());
 }
 
-SkShader* CreateImageRepShader(const gfx::ImageSkiaRep& image_rep,
-                               SkShader::TileMode tile_mode,
-                               const SkMatrix& local_matrix) {
-  SkShader* shader = SkShader::CreateBitmapShader(image_rep.sk_bitmap(),
-      tile_mode, tile_mode);
+SkRect RectFToSkRect(const RectF& rect) {
+  return SkRect::MakeXYWH(SkFloatToScalar(rect.x()),
+                          SkFloatToScalar(rect.y()),
+                          SkFloatToScalar(rect.width()),
+                          SkFloatToScalar(rect.height()));
+}
+
+RectF SkRectToRectF(const SkRect& rect) {
+  return RectF(SkScalarToFloat(rect.x()),
+               SkScalarToFloat(rect.y()),
+               SkScalarToFloat(rect.width()),
+               SkScalarToFloat(rect.height()));
+}
+
+
+skia::RefPtr<SkShader> CreateImageRepShader(const gfx::ImageSkiaRep& image_rep,
+                                            SkShader::TileMode tile_mode,
+                                            const SkMatrix& local_matrix) {
+  skia::RefPtr<SkShader> shader = skia::AdoptRef(SkShader::CreateBitmapShader(
+      image_rep.sk_bitmap(), tile_mode, tile_mode));
   SkScalar scale_x = local_matrix.getScaleX();
   SkScalar scale_y = local_matrix.getScaleY();
   SkScalar bitmap_scale = SkFloatToScalar(image_rep.GetScale());
@@ -60,24 +72,26 @@ SkShader* CreateImageRepShader(const gfx::ImageSkiaRep& image_rep,
   return shader;
 }
 
-SkShader* CreateGradientShader(int start_point,
-                               int end_point,
-                               SkColor start_color,
-                               SkColor end_color) {
+skia::RefPtr<SkShader> CreateGradientShader(int start_point,
+                                            int end_point,
+                                            SkColor start_color,
+                                            SkColor end_color) {
   SkColor grad_colors[2] = { start_color, end_color};
   SkPoint grad_points[2];
   grad_points[0].iset(0, start_point);
   grad_points[1].iset(0, end_point);
 
-  return SkGradientShader::CreateLinear(
-      grad_points, grad_colors, NULL, 2, SkShader::kRepeat_TileMode);
+  return skia::AdoptRef(SkGradientShader::CreateLinear(
+      grad_points, grad_colors, NULL, 2, SkShader::kRepeat_TileMode));
 }
 
-SkDrawLooper* CreateShadowDrawLooper(const std::vector<ShadowValue>& shadows) {
+skia::RefPtr<SkDrawLooper> CreateShadowDrawLooper(
+    const std::vector<ShadowValue>& shadows) {
   if (shadows.empty())
-    return NULL;
+    return skia::RefPtr<SkDrawLooper>();
 
-  SkLayerDrawLooper* looper = new SkLayerDrawLooper;
+  skia::RefPtr<SkLayerDrawLooper> looper =
+      skia::AdoptRef(new SkLayerDrawLooper);
 
   looper->addLayer();  // top layer of the original.
 
@@ -94,17 +108,17 @@ SkDrawLooper* CreateShadowDrawLooper(const std::vector<ShadowValue>& shadows) {
 
     // SkBlurMaskFilter's blur radius defines the range to extend the blur from
     // original mask, which is half of blur amount as defined in ShadowValue.
-    SkMaskFilter* blur_mask = SkBlurMaskFilter::Create(
-        SkDoubleToScalar(shadow.blur() / 2),
-        SkBlurMaskFilter::kNormal_BlurStyle,
-        SkBlurMaskFilter::kHighQuality_BlurFlag);
-    SkColorFilter* color_filter = SkColorFilter::CreateModeFilter(
-        shadow.color(),
-        SkXfermode::kSrcIn_Mode);
+    skia::RefPtr<SkMaskFilter> blur_mask = skia::AdoptRef(
+        SkBlurMaskFilter::Create(SkDoubleToScalar(shadow.blur() / 2),
+                                 SkBlurMaskFilter::kNormal_BlurStyle,
+                                 SkBlurMaskFilter::kHighQuality_BlurFlag));
+    skia::RefPtr<SkColorFilter> color_filter = skia::AdoptRef(
+        SkColorFilter::CreateModeFilter(shadow.color(),
+                                        SkXfermode::kSrcIn_Mode));
 
     SkPaint* paint = looper->addLayer(layer_info);
-    SkSafeUnref(paint->setMaskFilter(blur_mask));
-    SkSafeUnref(paint->setColorFilter(color_filter));
+    paint->setMaskFilter(blur_mask.get());
+    paint->setColorFilter(color_filter.get());
   }
 
   return looper;
@@ -127,44 +141,6 @@ bool BitmapsAreEqual(const SkBitmap& bitmap1, const SkBitmap& bitmap2) {
   bitmap2.unlockPixels();
 
   return (size1 == size2) && (0 == memcmp(addr1, addr2, bitmap1.getSize()));
-}
-
-string16 RemoveAcceleratorChar(const string16& s,
-                               char16 accelerator_char,
-                               int* accelerated_char_pos,
-                               int* accelerated_char_span) {
-  bool escaped = false;
-  int last_char_pos = -1;
-  int last_char_span = 0;
-  base::i18n::UTF16CharIterator chars(&s);
-  string16 accelerator_removed;
-
-  accelerator_removed.reserve(s.size());
-  while (!chars.end()) {
-    int32 c = chars.get();
-    int array_pos = chars.array_pos();
-    chars.Advance();
-
-    if (c != accelerator_char || escaped) {
-      int span = chars.array_pos() - array_pos;
-      if (escaped && c != accelerator_char) {
-        last_char_pos = accelerator_removed.size();
-        last_char_span = span;
-      }
-      for (int i = 0; i < span; i++)
-        accelerator_removed.push_back(s[array_pos + i]);
-      escaped = false;
-    } else {
-      escaped = true;
-    }
-  }
-
-  if (accelerated_char_pos)
-    *accelerated_char_pos = last_char_pos;
-  if (accelerated_char_span)
-    *accelerated_char_span = last_char_span;
-
-  return accelerator_removed;
 }
 
 void ConvertSkiaToRGBA(const unsigned char* skia,

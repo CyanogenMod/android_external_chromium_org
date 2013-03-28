@@ -6,13 +6,18 @@
 
 #include <Carbon/Carbon.h>  // kVK_Return
 
+#include "base/mac/foundation_util.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/cocoa/event_utils.h"
+#include "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
+#import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
 #include "chrome/browser/ui/cocoa/omnibox/omnibox_popup_view_mac.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
@@ -23,7 +28,6 @@
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/mac/nsimage_cache.h"
 #include "ui/gfx/rect.h"
 
 using content::WebContents;
@@ -73,9 +77,6 @@ NSColor* HostTextColor() {
 }
 NSColor* BaseTextColor() {
   return [NSColor darkGrayColor];
-}
-NSColor* SuggestTextColor() {
-  return [NSColor grayColor];
 }
 NSColor* SecureSchemeColor() {
   return ColorWithRGBBytes(0x07, 0x95, 0x00);
@@ -127,23 +128,22 @@ NSImage* OmniboxViewMac::ImageForResource(int resource_id) {
   return rb.GetNativeImageNamed(resource_id).ToNSImage();
 }
 
+// static
+NSColor* OmniboxViewMac::SuggestTextColor() {
+  return [NSColor colorWithCalibratedWhite:0.0 alpha:0.5];
+}
+
 OmniboxViewMac::OmniboxViewMac(OmniboxEditController* controller,
                                ToolbarModel* toolbar_model,
                                Profile* profile,
                                CommandUpdater* command_updater,
                                AutocompleteTextField* field)
     : OmniboxView(profile, controller, toolbar_model, command_updater),
-      popup_view_(new OmniboxPopupViewMac(this, model(), field)),
+      popup_view_(OmniboxPopupViewMac::Create(this, model(), field)),
       field_(field),
-      suggest_text_length_(0),
       delete_was_pressed_(false),
       delete_at_end_pressed_(false),
       line_height_(0) {
-  DCHECK(controller);
-  DCHECK(toolbar_model);
-  DCHECK(profile);
-  DCHECK(command_updater);
-  DCHECK(field);
   [field_ setObserver:this];
 
   // Needed so that editing doesn't lose the styling.
@@ -234,7 +234,7 @@ void OmniboxViewMac::Update(const WebContents* tab_for_state_restoring) {
 }
 
 string16 OmniboxViewMac::GetText() const {
-  return base::SysNSStringToUTF16(GetNonSuggestTextSubstring());
+  return base::SysNSStringToUTF16([field_ stringValue]);
 }
 
 NSRange OmniboxViewMac::GetSelectedRange() const {
@@ -269,7 +269,7 @@ void OmniboxViewMac::SetWindowTextAndCaretPos(const string16& text,
                                               bool update_popup,
                                               bool notify_text_changed) {
   DCHECK_LE(caret_pos, text.size());
-  SetTextAndSelectedRange(text, NSMakeRange(caret_pos, caret_pos));
+  SetTextAndSelectedRange(text, NSMakeRange(caret_pos, 0));
 
   if (update_popup)
     UpdatePopup();
@@ -344,8 +344,7 @@ void OmniboxViewMac::UpdatePopup() {
   bool prevent_inline_autocomplete = IsImeComposing();
   NSTextView* editor = (NSTextView*)[field_ currentEditor];
   if (editor) {
-    if (NSMaxRange([editor selectedRange]) <
-        [[editor textStorage] length] - suggest_text_length_)
+    if (NSMaxRange([editor selectedRange]) < [[editor textStorage] length])
       prevent_inline_autocomplete = true;
   }
 
@@ -360,11 +359,18 @@ void OmniboxViewMac::CloseOmniboxPopup() {
 }
 
 void OmniboxViewMac::SetFocus() {
+  FocusLocation(false);
+  model()->SetCaretVisibility(true);
+}
+
+void OmniboxViewMac::ApplyCaretVisibility() {
+  [[field_ cell] setHideFocusState:!model()->is_caret_visible()
+                            ofView:field_];
 }
 
 void OmniboxViewMac::SetText(const string16& display_text) {
   // If we are setting the text directly, there cannot be any suggest text.
-  suggest_text_length_ = 0;
+  SetInstantSuggestion(string16());
   SetTextInternal(display_text);
 }
 
@@ -374,7 +380,6 @@ void OmniboxViewMac::SetTextInternal(const string16& display_text) {
       [[[NSMutableAttributedString alloc] initWithString:ss] autorelease];
 
   ApplyTextAttributes(display_text, as);
-
   [field_ setAttributedStringValue:as];
 
   // TODO(shess): This may be an appropriate place to call:
@@ -398,27 +403,6 @@ void OmniboxViewMac::SetTextAndSelectedRange(const string16& display_text,
                                              const NSRange range) {
   SetText(display_text);
   SetSelectedRange(range);
-}
-
-NSString* OmniboxViewMac::GetNonSuggestTextSubstring() const {
-  NSString* text = [field_ stringValue];
-  if (suggest_text_length_ > 0) {
-    NSUInteger length = [text length];
-
-    DCHECK_LE(suggest_text_length_, length);
-    text = [text substringToIndex:(length - suggest_text_length_)];
-  }
-  return text;
-}
-
-NSString* OmniboxViewMac::GetSuggestTextSubstring() const {
-  if (suggest_text_length_ == 0)
-    return nil;
-
-  NSString* text = [field_ stringValue];
-  NSUInteger length = [text length];
-  DCHECK_LE(suggest_text_length_, length);
-  return [text substringFromIndex:(length - suggest_text_length_)];
 }
 
 void OmniboxViewMac::EmphasizeURLComponents() {
@@ -459,17 +443,13 @@ void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
   scoped_nsobject<NSMutableParagraphStyle>
       paragraph_style([[NSMutableParagraphStyle alloc] init]);
   [paragraph_style setMaximumLineHeight:line_height_];
+  [paragraph_style setMinimumLineHeight:line_height_];
   [as addAttribute:NSParagraphStyleAttributeName value:paragraph_style
              range:as_entire_string];
 
-  // Grey out the suggest text.
-  [as addAttribute:NSForegroundColorAttributeName value:SuggestTextColor()
-             range:NSMakeRange(as_length - suggest_text_length_,
-                               suggest_text_length_)];
-
   url_parse::Component scheme, host;
   AutocompleteInput::ParseForEmphasizeComponents(
-      display_text, model()->GetDesiredTLD(), &scheme, &host);
+      display_text, &scheme, &host);
   const bool emphasize = model()->CurrentTextIsURL() && (host.len > 0);
   if (emphasize) {
     [as addAttribute:NSForegroundColorAttributeName value:BaseTextColor()
@@ -510,13 +490,15 @@ void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
 }
 
 void OmniboxViewMac::OnTemporaryTextMaybeChanged(const string16& display_text,
-                                                 bool save_original_selection) {
+                                                 bool save_original_selection,
+                                                 bool notify_text_changed) {
   if (save_original_selection)
     saved_temporary_selection_ = GetSelectedRange();
 
-  suggest_text_length_ = 0;
+  SetInstantSuggestion(string16());
   SetWindowTextAndCaretPos(display_text, display_text.size(), false, false);
-  model()->OnChanged();
+  if (notify_text_changed)
+    model()->OnChanged();
   [field_ clearUndoChain];
 }
 
@@ -625,30 +607,15 @@ gfx::NativeView OmniboxViewMac::GetRelativeWindowForPopup() const {
 }
 
 void OmniboxViewMac::SetInstantSuggestion(const string16& suggest_text) {
-  NSString* text = GetNonSuggestTextSubstring();
-  bool needs_update = (suggest_text_length_ > 0);
-
-  // Append the new suggest text.
-  suggest_text_length_ = suggest_text.length();
-  if (suggest_text_length_ > 0) {
-    text = [text stringByAppendingString:base::SysUTF16ToNSString(
-               suggest_text)];
-    needs_update = true;
-  }
-
-  if (needs_update) {
-    NSRange current_range = GetSelectedRange();
-    SetTextInternal(base::SysNSStringToUTF16(text));
-    if (NSMaxRange(current_range) <= [text length] - suggest_text_length_)
-      SetSelectedRange(current_range);
-    else
-      SetSelectedRange(NSMakeRange([text length] - suggest_text_length_, 0));
-  }
+  if (suggest_text == suggest_text_)
+    return;
+  suggest_text_ = suggest_text;
+  [field_ setInstantSuggestion:base::SysUTF16ToNSString(suggest_text)
+                     textColor:SuggestTextColor()];
 }
 
 string16 OmniboxViewMac::GetInstantSuggestion() const {
-  return suggest_text_length_ ?
-      base::SysNSStringToUTF16(GetSuggestTextSubstring()) : string16();
+  return suggest_text_;
 }
 
 int OmniboxViewMac::TextWidth() const {
@@ -681,9 +648,6 @@ void OmniboxViewMac::OnDidEndEditing() {
 }
 
 bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
-  // We should only arrive here when the field is focussed.
-  DCHECK(IsFirstResponder());
-
   if (cmd != @selector(moveRight:) &&
       cmd != @selector(insertTab:) &&
       cmd != @selector(insertTabIgnoringFieldEditor:)) {
@@ -696,22 +660,36 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
   if (cmd == @selector(deleteForward:))
     delete_was_pressed_ = true;
 
-  // Don't intercept up/down-arrow or backtab if the popup isn't open.
-  if (popup_view_->IsOpen()) {
-    if (cmd == @selector(moveDown:)) {
-      model()->OnUpOrDownKeyPressed(1);
-      return true;
-    }
+  if (cmd == @selector(moveDown:)) {
+    model()->OnUpOrDownKeyPressed(1);
+    return true;
+  }
 
-    if (cmd == @selector(moveUp:)) {
-      model()->OnUpOrDownKeyPressed(-1);
-      return true;
-    }
+  if (cmd == @selector(moveUp:)) {
+    model()->OnUpOrDownKeyPressed(-1);
+    return true;
+  }
 
-    if (cmd == @selector(insertBacktab:) &&
-        model()->popup_model()->selected_line_state() ==
+  if (model()->popup_model()->IsOpen()) {
+    // If instant extended is enabled then allow users to press tab to select
+    // results from the omnibox popup.
+    BOOL enableTabAutocomplete = chrome::search::IsInstantExtendedAPIEnabled();
+
+    if (cmd == @selector(insertBacktab:)) {
+      if (model()->popup_model()->selected_line_state() ==
             OmniboxPopupModel::KEYWORD) {
-      model()->ClearKeyword(GetText());
+        model()->ClearKeyword(GetText());
+        return true;
+      } else if (enableTabAutocomplete) {
+        model()->OnUpOrDownKeyPressed(-1);
+        return true;
+      }
+    }
+
+    if ((cmd == @selector(insertTab:) ||
+        cmd == @selector(insertTabIgnoringFieldEditor:)) &&
+        !model()->is_keyword_hint() && enableTabAutocomplete) {
+      model()->OnUpOrDownKeyPressed(1);
       return true;
     }
   }
@@ -719,7 +697,7 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
   if (cmd == @selector(moveRight:)) {
     // Only commit suggested text if the cursor is all the way to the right and
     // there is no selection.
-    if (suggest_text_length_ > 0 && IsCaretAtEnd()) {
+    if (suggest_text_.length() > 0 && IsCaretAtEnd()) {
       model()->CommitSuggestedText(true);
       return true;
     }
@@ -812,6 +790,14 @@ void OmniboxViewMac::OnKillFocus() {
   controller()->OnKillFocus();
 }
 
+void OmniboxViewMac::OnMouseDown(NSInteger button_number) {
+  // Restore caret visibility whenever the user clicks in the the omnibox. This
+  // is not always covered by OnSetFocus() because when clicking while the
+  // omnibox has invisible focus does not trigger a new OnSetFocus() call.
+  if (button_number == 0 || button_number == 1)
+    model()->SetCaretVisibility(true);
+}
+
 bool OmniboxViewMac::CanCopy() {
   const NSRange selection = GetSelectedRange();
   return selection.length > 0;
@@ -841,6 +827,10 @@ void OmniboxViewMac::CopyToPasteboard(NSPasteboard* pb) {
     [pb declareURLPasteboardWithAdditionalTypes:[NSArray array] owner:nil];
     [pb setDataForURL:base::SysUTF8ToNSString(url.spec()) title:nstext];
   }
+  ui::Clipboard::WriteSourceTag(pb,
+                                content::BrowserContext::
+                                    GetMarkerForOffTheRecordContext(
+                                        model()->profile()));
 }
 
 void OmniboxViewMac::CopyURLToPasteboard(NSPasteboard* pb) {
@@ -856,6 +846,10 @@ void OmniboxViewMac::CopyURLToPasteboard(NSPasteboard* pb) {
 
   [pb declareURLPasteboardWithAdditionalTypes:[NSArray array] owner:nil];
   [pb setDataForURL:base::SysUTF8ToNSString(url.spec()) title:nstext];
+  ui::Clipboard::WriteSourceTag(pb,
+                                content::BrowserContext::
+                                    GetMarkerForOffTheRecordContext(
+                                        model()->profile()));
 }
 
 void OmniboxViewMac::OnPaste() {
@@ -906,7 +900,7 @@ bool OmniboxViewMac::CanPasteAndGo() {
 int OmniboxViewMac::GetPasteActionStringId() {
   string16 text(GetClipboardText());
   DCHECK(model()->CanPasteAndGo(text));
-  return model()->IsPasteAndSearch(GetClipboardText()) ?
+  return model()->IsPasteAndSearch(text) ?
       IDS_PASTE_AND_SEARCH : IDS_PASTE_AND_GO;
 }
 
@@ -922,7 +916,7 @@ void OmniboxViewMac::OnFrameChanged() {
   // things even cheaper by refactoring between the popup-placement
   // code and the matrix-population code.
   popup_view_->UpdatePopupAppearance();
-  model()->PopupBoundsChangedTo(popup_view_->GetTargetBounds());
+  model()->OnPopupBoundsChanged(popup_view_->GetTargetBounds());
 
   // Give controller a chance to rearrange decorations.
   model()->OnChanged();
@@ -952,30 +946,7 @@ bool OmniboxViewMac::OnBackspacePressed() {
 }
 
 NSRange OmniboxViewMac::SelectionRangeForProposedRange(NSRange proposed_range) {
-  // Should never call this function unless editing is in progress.
-  DCHECK([field_ currentEditor]);
-
-  if (![field_ currentEditor])
-    return proposed_range;
-
-  // Do not use [field_ stringValue] here, as that forces a sync between the
-  // field and the editor.  This sync will end up setting the selection, which
-  // in turn calls this method, leading to an infinite loop.  Instead, retrieve
-  // the current string value directly from the editor.
-  size_t text_length = [[[field_ currentEditor] string] length];
-
-  // Cannot select suggested text.
-  size_t max = text_length - suggest_text_length_;
-  NSUInteger start = proposed_range.location;
-  NSUInteger end = proposed_range.location + proposed_range.length;
-
-  if (start > max)
-    start = max;
-
-  if (end > max)
-    end = max;
-
-  return NSMakeRange(start, end - start);
+  return proposed_range;
 }
 
 void OmniboxViewMac::OnControlKeyChanged(bool pressed) {
@@ -1004,12 +975,11 @@ int OmniboxViewMac::GetOmniboxTextLength() const {
 }
 
 NSUInteger OmniboxViewMac::GetTextLength() const {
-  return ([field_ currentEditor] ?
-          [[[field_ currentEditor] string] length] :
-          [[field_ stringValue] length]) - suggest_text_length_;
+  return [field_ currentEditor] ?  [[[field_ currentEditor] string] length] :
+                                   [[field_ stringValue] length];
 }
 
 bool OmniboxViewMac::IsCaretAtEnd() const {
   const NSRange selection = GetSelectedRange();
-  return selection.length == 0 && selection.location == GetTextLength();
+  return NSMaxRange(selection) == GetTextLength();
 }

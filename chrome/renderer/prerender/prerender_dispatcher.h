@@ -10,6 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/renderer/render_process_observer.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebPrerender.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebPrerenderingSupport.h"
 
 class GURL;
@@ -31,8 +32,11 @@ class PrerenderDispatcher : public content::RenderProcessObserver,
  private:
   friend class PrerenderDispatcherTest;
 
-  void OnAddPrerenderURL(const GURL& url);
-  void OnRemovePrerenderURL(const GURL& url);
+  // Message handlers for messages from the browser process.
+  void OnPrerenderStart(int prerender_id);
+  void OnPrerenderStopLoading(int prerender_id);
+  void OnPrerenderAddAlias(int prerender_id, const GURL& url);
+  void OnPrerenderStop(int prerender_id);
 
   // From RenderProcessObserver:
   virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -42,8 +46,12 @@ class PrerenderDispatcher : public content::RenderProcessObserver,
   virtual void cancel(const WebKit::WebPrerender& prerender) OVERRIDE;
   virtual void abandon(const WebKit::WebPrerender& prerender) OVERRIDE;
 
-  typedef std::map<GURL, int> PrerenderMap;
-  PrerenderMap prerender_urls_;
+  // From WebKit, prerender elements launched by renderers in our process.
+  std::map<int, WebKit::WebPrerender> prerenders_;
+
+  // From the browser process, which prerenders are running, indexed by URL.
+  // Updated by the browser processes as aliases are discovered.
+  std::multimap<GURL, int> running_prerender_urls_;
 };
 
 }  // namespace prerender

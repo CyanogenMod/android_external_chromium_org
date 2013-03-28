@@ -7,6 +7,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "base/prefs/pref_service.h"
+#include "base/prefs/testing_pref_service.h"
+#include "base/run_loop.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
@@ -17,10 +20,9 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/settings/cros_settings_provider.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chrome/test/base/testing_pref_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -36,7 +38,7 @@ class UserManagerTest : public testing::Test {
         file_thread_(content::BrowserThread::FILE, &message_loop_) {
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     MockCertLibrary* mock_cert_library = new MockCertLibrary();
     EXPECT_CALL(*mock_cert_library, LoadKeyStore()).Times(AnyNumber());
     chromeos::CrosLibrary::Get()->GetTestApi()->SetCertLibrary(
@@ -47,7 +49,7 @@ class UserManagerTest : public testing::Test {
     // Replace the real DeviceSettingsProvider with a stub.
     device_settings_provider_ =
         cros_settings_->GetProvider(chromeos::kReportDeviceVersionInfo);
-    EXPECT_TRUE(device_settings_provider_ != NULL);
+    EXPECT_TRUE(device_settings_provider_);
     EXPECT_TRUE(
         cros_settings_->RemoveSettingsProvider(device_settings_provider_));
     cros_settings_->AddSettingsProvider(&stub_settings_provider_);
@@ -56,20 +58,20 @@ class UserManagerTest : public testing::Test {
     SetDeviceSettings(false, "");
 
     // Register an in-memory local settings instance.
-    local_state_.reset(new TestingPrefService);
+    local_state_.reset(new TestingPrefServiceSimple);
     reinterpret_cast<TestingBrowserProcess*>(g_browser_process)
         ->SetLocalState(local_state_.get());
-    UserManager::RegisterPrefs(local_state_.get());
+    UserManager::RegisterPrefs(local_state_->registry());
     // Wallpaper manager and user image managers prefs will be accessed by the
     // unit-test as well.
-    UserImageManager::RegisterPrefs(local_state_.get());
-    WallpaperManager::RegisterPrefs(local_state_.get());
+    UserImageManager::RegisterPrefs(local_state_->registry());
+    WallpaperManager::RegisterPrefs(local_state_->registry());
 
     old_user_manager_ = UserManager::Get();
     ResetUserManager();
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     // Unregister the in-memory local settings instance.
     reinterpret_cast<TestingBrowserProcess*>(g_browser_process)
         ->SetLocalState(0);
@@ -80,6 +82,16 @@ class UserManagerTest : public testing::Test {
     cros_settings_->AddSettingsProvider(device_settings_provider_);
 
     UserManager::Set(old_user_manager_);
+
+    // Shut down the DeviceSettingsService.
+    DeviceSettingsService::Get()->Shutdown();
+
+    // Shut down the remaining UserManager instances.
+    if (user_manager_impl)
+      user_manager_impl->Shutdown();
+    UserManager::Get()->Shutdown();
+
+    base::RunLoop().RunUntilIdle();
   }
 
   bool GetUserManagerEphemeralUsersEnabled() const {
@@ -103,6 +115,8 @@ class UserManagerTest : public testing::Test {
   }
 
   void ResetUserManager() {
+    if (user_manager_impl)
+      user_manager_impl->Shutdown();
     user_manager_impl.reset(new UserManagerImpl());
     UserManager::Set(user_manager_impl.get());
   }
@@ -130,7 +144,7 @@ class UserManagerTest : public testing::Test {
   CrosSettings* cros_settings_;
   CrosSettingsProvider* device_settings_provider_;
   StubCrosSettingsProvider stub_settings_provider_;
-  scoped_ptr<TestingPrefService> local_state_;
+  scoped_ptr<TestingPrefServiceSimple> local_state_;
 
   // Initializes / shuts down a stub CrosLibrary.
   chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
@@ -151,15 +165,15 @@ TEST_F(UserManagerTest, RetrieveTrustedDevicePolicies) {
 }
 
 TEST_F(UserManagerTest, RemoveAllExceptOwnerFromList) {
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn("owner@invalid.domain", false);
   ResetUserManager();
-  UserManager::Get()->UserLoggedIn("user0@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn("user0@invalid.domain", false);
   ResetUserManager();
-  UserManager::Get()->UserLoggedIn("user1@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn("user1@invalid.domain", false);
   ResetUserManager();
 
   const UserList* users = &UserManager::Get()->GetUsers();
-  ASSERT_TRUE(users->size() == 3);
+  ASSERT_EQ(3U, users->size());
   EXPECT_EQ((*users)[0]->email(), "user1@invalid.domain");
   EXPECT_EQ((*users)[1]->email(), "user0@invalid.domain");
   EXPECT_EQ((*users)[2]->email(), "owner@invalid.domain");
@@ -168,21 +182,21 @@ TEST_F(UserManagerTest, RemoveAllExceptOwnerFromList) {
   RetrieveTrustedDevicePolicies();
 
   users = &UserManager::Get()->GetUsers();
-  EXPECT_TRUE(users->size() == 1);
+  EXPECT_EQ(1U, users->size());
   EXPECT_EQ((*users)[0]->email(), "owner@invalid.domain");
 }
 
-TEST_F(UserManagerTest, EphemeralUserLoggedIn) {
+TEST_F(UserManagerTest, RegularUserLoggedInAsEphemeral) {
   SetDeviceSettings(true, "owner@invalid.domain");
   RetrieveTrustedDevicePolicies();
 
-  UserManager::Get()->UserLoggedIn("owner@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn("owner@invalid.domain", false);
   ResetUserManager();
-  UserManager::Get()->UserLoggedIn("user0@invalid.domain", true);
+  UserManager::Get()->UserLoggedIn("user0@invalid.domain", false);
   ResetUserManager();
 
   const UserList* users = &UserManager::Get()->GetUsers();
-  EXPECT_TRUE(users->size() == 1);
+  EXPECT_EQ(1U, users->size());
   EXPECT_EQ((*users)[0]->email(), "owner@invalid.domain");
 }
 

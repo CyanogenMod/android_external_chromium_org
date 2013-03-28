@@ -11,6 +11,7 @@ namespace content {
 const char kMediaStreamSource[] = "chromeMediaSource";
 const char kMediaStreamSourceId[] = "chromeMediaSourceId";
 const char kMediaStreamSourceTab[] = "tab";
+const char kMediaStreamSourceScreen[] = "screen";
 
 StreamOptions::StreamOptions()
     : audio_type(MEDIA_NO_SERVICE),
@@ -27,26 +28,38 @@ StreamOptions::StreamOptions(MediaStreamType audio_type,
 const int StreamDeviceInfo::kNoId = -1;
 
 StreamDeviceInfo::StreamDeviceInfo()
-    : stream_type(MEDIA_NO_SERVICE),
-      in_use(false),
+    : in_use(false),
       session_id(kNoId) {}
 
 StreamDeviceInfo::StreamDeviceInfo(MediaStreamType service_param,
                                    const std::string& name_param,
                                    const std::string& device_param,
                                    bool opened)
-    : stream_type(service_param),
-      name(name_param),
-      device_id(device_param),
+    : device(service_param, device_param, name_param),
       in_use(opened),
-      session_id(kNoId) {}
+      session_id(kNoId) {
+}
+
+StreamDeviceInfo::StreamDeviceInfo(MediaStreamType service_param,
+                                   const std::string& name_param,
+                                   const std::string& device_param,
+                                   int sample_rate,
+                                   int channel_layout,
+                                   bool opened)
+    : device(service_param, device_param, name_param, sample_rate,
+             channel_layout),
+      in_use(opened),
+      session_id(kNoId) {
+}
 
 // static
 bool StreamDeviceInfo::IsEqual(const StreamDeviceInfo& first,
                                const StreamDeviceInfo& second) {
-  return first.stream_type == second.stream_type &&
-      first.name == second.name &&
-      first.device_id == second.device_id &&
+  return first.device.type == second.device.type &&
+      first.device.name == second.device.name &&
+      first.device.id == second.device.id &&
+      first.device.sample_rate == second.device.sample_rate &&
+      first.device.channel_layout == second.device.channel_layout &&
       first.in_use == second.in_use &&
       first.session_id == second.session_id;
 }

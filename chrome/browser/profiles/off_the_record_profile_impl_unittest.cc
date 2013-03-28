@@ -4,6 +4,8 @@
 
 #include "chrome/browser/profiles/off_the_record_profile_impl.h"
 
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/net/ssl_config_service_manager.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
@@ -11,27 +13,28 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/host_zoom_map.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 
 using content::HostZoomMap;
 
 namespace {
 
-class TestingProfileWithHostZoomMap : public TestingProfile,
-                                      public content::NotificationObserver {
+class TestingProfileWithHostZoomMap : public TestingProfile {
  public:
-  TestingProfileWithHostZoomMap() {
-    HostZoomMap* host_zoom_map = HostZoomMap::GetForBrowserContext(this);
-    registrar_.Add(this, content::NOTIFICATION_ZOOM_LEVEL_CHANGED,
-                     content::Source<HostZoomMap>(host_zoom_map));
+  TestingProfileWithHostZoomMap()
+      : zoom_callback_(
+          base::Bind(&TestingProfileWithHostZoomMap::OnZoomLevelChanged,
+                     base::Unretained(this))) {
+    HostZoomMap::GetForBrowserContext(this)->AddZoomLevelChangedCallback(
+        zoom_callback_);
   }
 
-  virtual ~TestingProfileWithHostZoomMap() {}
+  virtual ~TestingProfileWithHostZoomMap() {
+    HostZoomMap::GetForBrowserContext(this)->RemoveZoomLevelChangedCallback(
+        zoom_callback_);
+  }
 
   virtual Profile* GetOffTheRecordProfile() OVERRIDE {
     if (!off_the_record_profile_.get())
@@ -43,31 +46,29 @@ class TestingProfileWithHostZoomMap : public TestingProfile,
     return GetPrefs();
   }
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-    const std::string& host =
-        *(content::Details<const std::string>(details).ptr());
-    DCHECK(type == content::NOTIFICATION_ZOOM_LEVEL_CHANGED);
-    if (host.empty())
+ private:
+  void OnZoomLevelChanged(const HostZoomMap::ZoomLevelChange& change) {
+
+    if (change.mode != HostZoomMap::ZOOM_CHANGED_FOR_HOST)
       return;
 
     HostZoomMap* host_zoom_map = HostZoomMap::GetForBrowserContext(this);
-    double level = host_zoom_map->GetZoomLevel(host);
+
+    double level = change.zoom_level;
     DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
     DictionaryValue* host_zoom_dictionary = update.Get();
     if (level == host_zoom_map->GetDefaultZoomLevel()) {
-      host_zoom_dictionary->RemoveWithoutPathExpansion(host, NULL);
+      host_zoom_dictionary->RemoveWithoutPathExpansion(change.host, NULL);
     } else {
       host_zoom_dictionary->SetWithoutPathExpansion(
-          host, Value::CreateDoubleValue(level));
+          change.host, Value::CreateDoubleValue(level));
     }
   }
 
- private:
-  content::NotificationRegistrar registrar_;
   scoped_ptr<Profile> off_the_record_profile_;
   scoped_ptr<SSLConfigServiceManager> ssl_config_service_manager_;
+
+  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(TestingProfileWithHostZoomMap);
 };
@@ -84,8 +85,8 @@ class OffTheRecordProfileImplTest : public BrowserWithTestWindowTest {
   virtual ~OffTheRecordProfileImplTest() {}
 
   virtual void SetUp() OVERRIDE {
-    prefs_.reset(new TestingPrefService);
-    chrome::RegisterLocalState(prefs_.get());
+    prefs_.reset(new TestingPrefServiceSimple);
+    chrome::RegisterLocalState(prefs_->registry());
 
     browser_process()->SetLocalState(prefs_.get());
 
@@ -101,10 +102,10 @@ class OffTheRecordProfileImplTest : public BrowserWithTestWindowTest {
 
  private:
   TestingBrowserProcess* browser_process() {
-    return static_cast<TestingBrowserProcess*>(g_browser_process);
+    return TestingBrowserProcess::GetGlobal();
   }
 
-  scoped_ptr<PrefService> prefs_;
+  scoped_ptr<TestingPrefServiceSimple> prefs_;
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileImplTest);
 };
@@ -132,11 +133,12 @@ TEST_F(OffTheRecordProfileImplTest, GetHostZoomMap) {
       HostZoomMap::GetForBrowserContext(parent_profile.get());
   ASSERT_TRUE(parent_zoom_map);
 
-  parent_zoom_map->SetZoomLevel(host, zoom_level_25);
-  ASSERT_EQ(parent_zoom_map->GetZoomLevel(host), zoom_level_25);
+  parent_zoom_map->SetZoomLevelForHost(host, zoom_level_25);
+  ASSERT_EQ(parent_zoom_map->GetZoomLevelForHostAndScheme("http", host),
+      zoom_level_25);
 
   // TODO(yosin) We need to wait ProfileImpl::Observe done for
-  // NOTIFICATION_ZOOM_LEVEL_CHANGED.
+  // OnZoomLevelChanged.
 
   // Prepare child profile as off the record profile.
   scoped_ptr<OffTheRecordProfileImpl> child_profile(
@@ -154,21 +156,25 @@ TEST_F(OffTheRecordProfileImplTest, GetHostZoomMap) {
   // Verity.
   EXPECT_NE(parent_zoom_map, child_zoom_map);
 
-  EXPECT_EQ(parent_zoom_map->GetZoomLevel(host),
-            child_zoom_map->GetZoomLevel(host)) <<
+  EXPECT_EQ(parent_zoom_map->GetZoomLevelForHostAndScheme("http", host),
+            child_zoom_map->GetZoomLevelForHostAndScheme("http", host)) <<
                 "Child must inherit from parent.";
 
-  child_zoom_map->SetZoomLevel(host, zoom_level_30);
-  ASSERT_EQ(child_zoom_map->GetZoomLevel(host), zoom_level_30);
+  child_zoom_map->SetZoomLevelForHost(host, zoom_level_30);
+  ASSERT_EQ(
+      child_zoom_map->GetZoomLevelForHostAndScheme("http", host),
+      zoom_level_30);
 
-  EXPECT_NE(parent_zoom_map->GetZoomLevel(host),
-            child_zoom_map->GetZoomLevel(host)) <<
+  EXPECT_NE(parent_zoom_map->GetZoomLevelForHostAndScheme("http", host),
+            child_zoom_map->GetZoomLevelForHostAndScheme("http", host)) <<
                 "Child change must not propagate to parent.";
 
-  parent_zoom_map->SetZoomLevel(host, zoom_level_40);
-  ASSERT_EQ(parent_zoom_map->GetZoomLevel(host), zoom_level_40);
+  parent_zoom_map->SetZoomLevelForHost(host, zoom_level_40);
+  ASSERT_EQ(
+      parent_zoom_map->GetZoomLevelForHostAndScheme("http", host),
+      zoom_level_40);
 
-  EXPECT_EQ(parent_zoom_map->GetZoomLevel(host),
-            child_zoom_map->GetZoomLevel(host)) <<
+  EXPECT_EQ(parent_zoom_map->GetZoomLevelForHostAndScheme("http", host),
+            child_zoom_map->GetZoomLevelForHostAndScheme("http", host)) <<
                 "Parent change should propagate to child.";
 }

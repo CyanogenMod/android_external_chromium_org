@@ -9,8 +9,8 @@
 #include "base/debug/trace_event.h"
 #include "base/environment.h"
 #include "base/event_recorder.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/i18n/icu_util.h"
 #include "base/message_loop.h"
 #include "base/metrics/stats_table.h"
@@ -29,11 +29,11 @@
 #include "net/url_request/url_request_context.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptController.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webpreferences.h"
-#include "webkit/glue/window_open_disposition.h"
 #include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
 #include "webkit/tools/test_shell/test_shell.h"
 #include "webkit/tools/test_shell/test_shell_platform_delegate.h"
@@ -160,7 +160,7 @@ int main(int argc, char* argv[]) {
   if (parsed_command_line.HasSwitch(test_shell::kEnableFileCookies))
     net::CookieMonster::EnableFileScheme();
 
-  FilePath cache_path =
+  base::FilePath cache_path =
       parsed_command_line.GetSwitchValuePath(test_shell::kCacheDir);
   if (cache_path.empty()) {
     PathService::Get(base::DIR_EXE, &cache_path);
@@ -214,7 +214,7 @@ int main(int argc, char* argv[]) {
   // Treat the first argument as the initial URL to open.
   GURL starting_url;
 
-  FilePath path;
+  base::FilePath path;
   PathService::Get(base::DIR_SOURCE_ROOT, &path);
   path = path.AppendASCII("webkit").AppendASCII("data")
              .AppendASCII("test_shell").AppendASCII("index.html");
@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
       starting_url = url;
     } else {
       // Treat as a relative file path.
-      FilePath path = FilePath(args[0]);
+      base::FilePath path = base::FilePath(args[0]);
       file_util::AbsolutePath(&path);
       starting_url = net::FilePathToFileURL(path);
     }

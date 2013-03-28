@@ -4,14 +4,13 @@
 
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_views.h"
 
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/event_disposition.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_delegate.h"
@@ -99,6 +98,11 @@ bool BookmarkMenuController::IsTriggerableEvent(views::MenuItemView* menu,
 
 void BookmarkMenuController::ExecuteCommand(int id, int mouse_event_flags) {
   menu_delegate_->ExecuteCommand(id, mouse_event_flags);
+}
+
+bool BookmarkMenuController::ShouldExecuteCommandWithoutClosingMenu(
+      int id, const ui::Event& e) {
+  return menu_delegate_->ShouldExecuteCommandWithoutClosingMenu(id, e);
 }
 
 bool BookmarkMenuController::GetDropFormats(

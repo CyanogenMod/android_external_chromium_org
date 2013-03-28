@@ -8,6 +8,7 @@
 #include "ui/base/models/simple_menu_model.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_types.h"
+#include "googleurl/src/gurl.h"
 
 class PermissionMenuModel : public ui::SimpleMenuModel,
                             public ui::SimpleMenuModel::Delegate {
@@ -28,6 +29,7 @@ class PermissionMenuModel : public ui::SimpleMenuModel,
   };
 
   PermissionMenuModel(Delegate* delegate,
+                      const GURL& url,
                       ContentSettingsType type,
                       ContentSetting default_setting,
                       ContentSetting current_setting);
@@ -38,11 +40,14 @@ class PermissionMenuModel : public ui::SimpleMenuModel,
   virtual bool GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
  private:
   // The delegate of the |PermissionMenuModel|. |delegate_| can be NULL.
   Delegate* delegate_;
+
+  // The URL of the website for which to display site permissions.
+  GURL site_url_;
 
   DISALLOW_COPY_AND_ASSIGN(PermissionMenuModel);
 };

@@ -5,90 +5,77 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_TAB_CAPTURE_TAB_CAPTURE_REGISTRY_H_
 #define CHROME_BROWSER_EXTENSIONS_API_TAB_CAPTURE_TAB_CAPTURE_REGISTRY_H_
 
-#include <map>
+#include <string>
 
-#include "chrome/browser/media/media_internals.h"
-#include "chrome/browser/media/media_internals_observer.h"
+#include "base/memory/scoped_vector.h"
+#include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/extensions/api/tab_capture.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/media_request_state.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "content/public/common/media_stream_request.h"
 
 class Profile;
 
 namespace extensions {
 
+struct TabCaptureRequest;
+class FullscreenObserver;
+
 namespace tab_capture = extensions::api::tab_capture;
 
 class TabCaptureRegistry : public ProfileKeyedService,
-                           public content::NotificationObserver {
+                           public content::NotificationObserver,
+                           public MediaCaptureDevicesDispatcher::Observer {
  public:
-  struct TabCaptureRequest {
-    std::string extension_id;
-    int tab_id;
-    tab_capture::TabCaptureState status;
-
-    TabCaptureRequest() {}
-    TabCaptureRequest(std::string extension_id, int tab_id,
-                      tab_capture::TabCaptureState status)
-        : extension_id(extension_id), tab_id(tab_id), status(status) {}
-  };
-  typedef std::vector<TabCaptureRequest> CaptureRequestList;
+  typedef std::vector<std::pair<int, tab_capture::TabCaptureState> >
+      RegistryCaptureInfo;
 
   explicit TabCaptureRegistry(Profile* profile);
 
-  const CaptureRequestList GetCapturedTabs(const std::string& extension_id);
-  bool AddRequest(const std::string& key, const TabCaptureRequest& request);
-  bool VerifyRequest(const std::string& key);
+  // List all pending, active and stopped capture requests.
+  const RegistryCaptureInfo GetCapturedTabs(
+      const std::string& extension_id) const;
+
+  // Add a tab capture request to the registry when a stream is requested
+  // through the API.
+  bool AddRequest(int render_process_id,
+                  int render_view_id,
+                  const std::string& extension_id,
+                  int tab_id,
+                  tab_capture::TabCaptureState status);
+
+  // The MediaStreamDevicesController will verify the request before creating
+  // the stream by checking the registry here.
+  bool VerifyRequest(int render_process_id, int render_view_id);
 
  private:
-  // Maps device_id to information about the media stream request. This is
-  // expected to be small since maintaining a media stream is expensive.
-  typedef std::map<std::string, TabCaptureRequest> DeviceCaptureRequestMap;
-
-  class MediaObserverProxy : public MediaInternalsObserver,
-                             public base::RefCountedThreadSafe<
-                                 MediaObserverProxy> {
-   public:
-    MediaObserverProxy() : handler_(NULL) {}
-    void Attach(TabCaptureRegistry* handler);
-    void Detach();
-
-   private:
-    friend class base::RefCountedThreadSafe<MediaObserverProxy>;
-    virtual ~MediaObserverProxy() {}
-
-    // MediaInternalsObserver.
-    virtual void OnRequestUpdate(
-        const content::MediaStreamDevice& device,
-        const content::MediaRequestState state) OVERRIDE;
-
-    void RegisterAsMediaObserverOnIOThread(bool unregister);
-    void UpdateOnUIThread(
-        const content::MediaStreamDevice& device,
-        const content::MediaRequestState new_state);
-
-    TabCaptureRegistry* handler_;
-  };
+  friend class FullscreenObserver;
 
   virtual ~TabCaptureRegistry();
-
-  void HandleRequestUpdateOnUIThread(
-      const content::MediaStreamDevice& device,
-      const content::MediaRequestState state);
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  scoped_refptr<MediaObserverProxy> proxy_;
+  // MediaCaptureDevicesDispatcher::Observer implementation.
+  virtual void OnRequestUpdate(
+      int render_process_id,
+      int render_view_id,
+      const content::MediaStreamDevice& device,
+      const content::MediaRequestState state) OVERRIDE;
+
+  void DispatchStatusChangeEvent(const TabCaptureRequest* request) const;
+
+  TabCaptureRequest* FindCaptureRequest(int render_process_id,
+                                        int render_view_id) const;
+
+  void DeleteCaptureRequest(int render_process_id, int render_view_id);
+
   content::NotificationRegistrar registrar_;
   Profile* const profile_;
-  DeviceCaptureRequestMap requests_;
+  ScopedVector<TabCaptureRequest> requests_;
 
   DISALLOW_COPY_AND_ASSIGN(TabCaptureRegistry);
 };

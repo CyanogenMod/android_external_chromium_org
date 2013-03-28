@@ -8,21 +8,18 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/file_path.h"
-#include "base/memory/ref_counted.h"
-#include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/platform_file.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_codec.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
@@ -91,7 +88,7 @@ const size_t kIndentSize = 4;
 class Writer : public base::RefCountedThreadSafe<Writer> {
  public:
   Writer(base::Value* bookmarks,
-         const FilePath& path,
+         const base::FilePath& path,
          BookmarkFaviconFetcher::URLFaviconMap* favicons_map,
          BookmarksExportObserver* observer)
       : bookmarks_(bookmarks),
@@ -197,6 +194,9 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
   // Writes raw text out returning true on success. This does not escape
   // the text in anyway.
   bool Write(const std::string& text) {
+    // net::FileStream does not allow 0-byte writes.
+    if (!text.length())
+      return true;
     size_t wrote = file_stream_->WriteSync(text.c_str(), text.length());
     bool result = (wrote == text.length());
     DCHECK(result);
@@ -365,7 +365,7 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
   scoped_ptr<Value> bookmarks_;
 
   // Path we're writing to.
-  FilePath path_;
+  base::FilePath path_;
 
   // Map that stores favicon per URL.
   scoped_ptr<BookmarkFaviconFetcher::URLFaviconMap> favicons_map_;
@@ -387,7 +387,7 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
 
 BookmarkFaviconFetcher::BookmarkFaviconFetcher(
     Profile* profile,
-    const FilePath& path,
+    const base::FilePath& path,
     BookmarksExportObserver* observer)
     : profile_(profile),
       path_(path),
@@ -462,11 +462,12 @@ bool BookmarkFaviconFetcher::FetchNextFavicon() {
       FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
           profile_, Profile::EXPLICIT_ACCESS);
       favicon_service->GetRawFaviconForURL(
-          FaviconService::FaviconForURLParams(profile_, GURL(url),
-              history::FAVICON, gfx::kFaviconSize, &favicon_consumer_),
+          FaviconService::FaviconForURLParams(
+              profile_, GURL(url), history::FAVICON, gfx::kFaviconSize),
           ui::SCALE_FACTOR_100P,
           base::Bind(&BookmarkFaviconFetcher::OnFaviconDataAvailable,
-                     base::Unretained(this)));
+                     base::Unretained(this)),
+          &cancelable_task_tracker_);
       return true;
     } else {
       bookmark_urls_.pop_front();
@@ -476,7 +477,6 @@ bool BookmarkFaviconFetcher::FetchNextFavicon() {
 }
 
 void BookmarkFaviconFetcher::OnFaviconDataAvailable(
-    FaviconService::Handle handle,
     const history::FaviconBitmapResult& bitmap_result) {
   GURL url;
   if (!bookmark_urls_.empty()) {
@@ -497,7 +497,7 @@ void BookmarkFaviconFetcher::OnFaviconDataAvailable(
 namespace bookmark_html_writer {
 
 void WriteBookmarks(Profile* profile,
-                    const FilePath& path,
+                    const base::FilePath& path,
                     BookmarksExportObserver* observer) {
   // BookmarkModel isn't thread safe (nor would we want to lock it down
   // for the duration of the write), as such we make a copy of the

@@ -7,10 +7,11 @@
 
 #include "chrome/browser/extensions/extension_function.h"
 
-class ShowInfoBarFunction : public SyncExtensionFunction {
-  virtual ~ShowInfoBarFunction() {}
+class InfobarsShowFunction : public SyncExtensionFunction {
+  virtual ~InfobarsShowFunction() {}
   virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.infobars.show")
+  DECLARE_EXTENSION_FUNCTION("experimental.infobars.show",
+                             EXPERIMENTAL_INFOBARS_SHOW)
 };
 
 #endif  // CHROME_BROWSER_INFOBARS_INFOBAR_EXTENSION_API_H_

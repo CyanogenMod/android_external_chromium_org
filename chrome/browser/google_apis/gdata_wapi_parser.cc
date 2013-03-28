@@ -5,19 +5,19 @@
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 
 #include <algorithm>
+#include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/json/json_value_converter.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
-#include "chrome/browser/google_apis/gdata_util.h"
-#include "third_party/libxml/chromium/libxml_utils.h"
+#include "chrome/browser/google_apis/time_util.h"
 
 using base::Value;
 using base::DictionaryValue;
@@ -68,6 +68,7 @@ const char kWritersCanInviteNode[] = "writersCanInvite";
 // Field names.
 const char kAuthorField[] = "author";
 const char kCategoryField[] = "category";
+const char kChangestampField[] = "docs$changestamp.value";
 const char kContentField[] = "content";
 const char kDeletedField[] = "gd$deleted";
 const char kETagField[] = "gd$etag";
@@ -209,15 +210,15 @@ const LinkTypeMap kLinkTypeMap[] = {
       "http://schemas.google.com/docs/2007#share"},
 };
 
-struct FeedLinkTypeMap {
-  FeedLink::FeedLinkType type;
+struct ResourceLinkTypeMap {
+  ResourceLink::ResourceLinkType type;
   const char* rel;
 };
 
-const FeedLinkTypeMap kFeedLinkTypeMap[] = {
-    { FeedLink::FEED_LINK_ACL,
+const ResourceLinkTypeMap kFeedLinkTypeMap[] = {
+    { ResourceLink::FEED_LINK_ACL,
       "http://schemas.google.com/acl/2007#accessControlList" },
-    { FeedLink::FEED_LINK_REVISIONS,
+    { ResourceLink::FEED_LINK_REVISIONS,
       "http://schemas.google.com/docs/2007/revisions" },
 };
 
@@ -274,33 +275,6 @@ void Author::RegisterJSONConverter(
     base::JSONValueConverter<Author>* converter) {
   converter->RegisterStringField(kNameField, &Author::name_);
   converter->RegisterStringField(kEmailField, &Author::email_);
-}
-
-Author* Author::CreateFromXml(XmlReader* xml_reader) {
-  if (xml_reader->NodeName() != kAuthorNode)
-    return NULL;
-
-  if (!xml_reader->Read())
-    return NULL;
-
-  const int depth = xml_reader->Depth();
-  Author* author = new Author();
-  bool skip_read = false;
-  do {
-    skip_read = false;
-    DVLOG(1) << "Parsing author node " << xml_reader->NodeName()
-            << ", depth = " << depth;
-    if (xml_reader->NodeName() == kNameNode) {
-     std::string name;
-     if (xml_reader->ReadElementContent(&name))
-       author->name_ = UTF8ToUTF16(name);
-     skip_read = true;
-    } else if (xml_reader->NodeName() == kEmailNode) {
-     xml_reader->ReadElementContent(&author->email_);
-     skip_read = true;
-    }
-  } while (depth == xml_reader->Depth() && (skip_read || xml_reader->Next()));
-  return author;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -372,37 +346,15 @@ void Link::RegisterJSONConverter(base::JSONValueConverter<Link>* converter) {
   converter->RegisterStringField(kTypeField, &Link::mime_type_);
 }
 
-// static.
-Link* Link::CreateFromXml(XmlReader* xml_reader) {
-  if (xml_reader->NodeName() != kLinkNode)
-    return NULL;
-
-  Link* link = new Link();
-  xml_reader->NodeAttribute(kTypeAttr, &link->mime_type_);
-
-  std::string href;
-  if (xml_reader->NodeAttribute(kHrefAttr, &href))
-      link->href_ = GURL(href);
-
-  std::string rel;
-  if (xml_reader->NodeAttribute(kRelAttr, &rel)) {
-    GetLinkType(rel, &link->type_);
-    if (link->type_ == LINK_OPEN_WITH)
-      GetAppID(rel, &link->app_id_);
-  }
-
-  return link;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
-// FeedLink implementation
+// ResourceLink implementation
 
-FeedLink::FeedLink() : type_(FeedLink::FEED_LINK_UNKNOWN) {
+ResourceLink::ResourceLink() : type_(ResourceLink::FEED_LINK_UNKNOWN) {
 }
 
 // static.
-bool FeedLink::GetFeedLinkType(
-    const base::StringPiece& rel, FeedLink::FeedLinkType* result) {
+bool ResourceLink::GetFeedLinkType(
+    const base::StringPiece& rel, ResourceLink::ResourceLinkType* result) {
   for (size_t i = 0; i < arraysize(kFeedLinkTypeMap); i++) {
     if (rel == kFeedLinkTypeMap[i].rel) {
       *result = kFeedLinkTypeMap[i].type;
@@ -414,29 +366,12 @@ bool FeedLink::GetFeedLinkType(
 }
 
 // static
-void FeedLink::RegisterJSONConverter(
-    base::JSONValueConverter<FeedLink>* converter) {
-  converter->RegisterCustomField<FeedLink::FeedLinkType>(
-      kRelField, &FeedLink::type_, &FeedLink::GetFeedLinkType);
+void ResourceLink::RegisterJSONConverter(
+    base::JSONValueConverter<ResourceLink>* converter) {
+  converter->RegisterCustomField<ResourceLink::ResourceLinkType>(
+      kRelField, &ResourceLink::type_, &ResourceLink::GetFeedLinkType);
   converter->RegisterCustomField(
-      kHrefField, &FeedLink::href_, &GetGURLFromString);
-}
-
-// static
-FeedLink* FeedLink::CreateFromXml(XmlReader* xml_reader) {
-  if (xml_reader->NodeName() != kFeedLinkNode)
-    return NULL;
-
-  FeedLink* link = new FeedLink();
-  std::string href;
-  if (xml_reader->NodeAttribute(kHrefAttr, &href))
-    link->href_ = GURL(href);
-
-  std::string rel;
-  if (xml_reader->NodeAttribute(kRelAttr, &rel))
-    GetFeedLinkType(rel, &link->type_);
-
-  return link;
+      kHrefField, &ResourceLink::href_, &GetGURLFromString);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -467,26 +402,7 @@ void Category::RegisterJSONConverter(
   converter->RegisterStringField(kTermField, &Category::term_);
 }
 
-// static
-Category* Category::CreateFromXml(XmlReader* xml_reader) {
-  if (xml_reader->NodeName() != kCategoryNode)
-    return NULL;
-
-  Category* category = new Category();
-  xml_reader->NodeAttribute(kTermAttr, &category->term_);
-
-  std::string scheme;
-  if (xml_reader->NodeAttribute(kSchemeAttr, &scheme))
-    GetCategoryTypeFromScheme(scheme, &category->type_);
-
-  std::string label;
-  if (xml_reader->NodeAttribute(kLabelAttr, &label))
-    category->label_ = UTF8ToUTF16(label);
-
-  return category;
-}
-
-const Link* FeedEntry::GetLinkByType(Link::LinkType type) const {
+const Link* CommonMetadata::GetLinkByType(Link::LinkType type) const {
   for (size_t i = 0; i < links_.size(); ++i) {
     if (links_[i]->type() == type)
       return links_[i];
@@ -506,20 +422,6 @@ void Content::RegisterJSONConverter(
   converter->RegisterCustomField(kSrcField, &Content::url_, &GetGURLFromString);
   converter->RegisterStringField(kTypeField, &Content::mime_type_);
 }
-
-Content* Content::CreateFromXml(XmlReader* xml_reader) {
-  if (xml_reader->NodeName() != kContentNode)
-    return NULL;
-
-  Content* content = new Content();
-  std::string src;
-  if (xml_reader->NodeAttribute(kSrcAttr, &src))
-    content->url_ = GURL(src);
-
-  xml_reader->NodeAttribute(kTypeAttr, &content->mime_type_);
-  return content;
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////
 // AppIcon implementation
@@ -565,84 +467,105 @@ bool AppIcon::GetIconCategory(const base::StringPiece& category,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// FeedEntry implementation
+// CommonMetadata implementation
 
-FeedEntry::FeedEntry() {
+CommonMetadata::CommonMetadata() {
 }
 
-FeedEntry::~FeedEntry() {
+CommonMetadata::~CommonMetadata() {
 }
 
 // static
-void FeedEntry::RegisterJSONConverter(
-    base::JSONValueConverter<FeedEntry>* converter) {
-  converter->RegisterStringField(kETagField, &FeedEntry::etag_);
-  converter->RegisterRepeatedMessage(kAuthorField, &FeedEntry::authors_);
-  converter->RegisterRepeatedMessage(kLinkField, &FeedEntry::links_);
-  converter->RegisterRepeatedMessage(kCategoryField, &FeedEntry::categories_);
-  converter->RegisterCustomField<base::Time>(
-      kUpdatedField,
-      &FeedEntry::updated_time_,
-      &google_apis::util::GetTimeFromString);
+template<typename CommonMetadataDescendant>
+void CommonMetadata::RegisterJSONConverter(
+    base::JSONValueConverter<CommonMetadataDescendant>* converter) {
+  converter->RegisterStringField(kETagField, &CommonMetadata::etag_);
+  converter->template RegisterRepeatedMessage<Author>(
+      kAuthorField, &CommonMetadata::authors_);
+  converter->template RegisterRepeatedMessage<Link>(
+      kLinkField, &CommonMetadata::links_);
+  converter->template RegisterRepeatedMessage<Category>(
+      kCategoryField, &CommonMetadata::categories_);
+  converter->template RegisterCustomField<base::Time>(
+      kUpdatedField, &CommonMetadata::updated_time_, &util::GetTimeFromString);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DocumentEntry implementation
+// ResourceEntry implementation
 
-DocumentEntry::DocumentEntry()
+ResourceEntry::ResourceEntry()
     : kind_(ENTRY_KIND_UNKNOWN),
       file_size_(0),
       deleted_(false),
-      removed_(false) {
+      removed_(false),
+      changestamp_(0) {
 }
 
-DocumentEntry::~DocumentEntry() {
+ResourceEntry::~ResourceEntry() {
 }
 
-bool DocumentEntry::HasFieldPresent(const base::Value* value,
+bool ResourceEntry::HasFieldPresent(const base::Value* value,
                                     bool* result) {
   *result = (value != NULL);
   return true;
 }
 
-// static
-void DocumentEntry::RegisterJSONConverter(
-    base::JSONValueConverter<DocumentEntry>* converter) {
-  // Inherit the parent registrations.
-  FeedEntry::RegisterJSONConverter(
-      reinterpret_cast<base::JSONValueConverter<FeedEntry>*>(converter));
-  converter->RegisterStringField(
-      kResourceIdField, &DocumentEntry::resource_id_);
-  converter->RegisterStringField(kIDField, &DocumentEntry::id_);
-  converter->RegisterStringField(kTitleTField, &DocumentEntry::title_);
-  converter->RegisterCustomField<base::Time>(
-      kPublishedField, &DocumentEntry::published_time_,
-      &google_apis::util::GetTimeFromString);
-  converter->RegisterCustomField<base::Time>(
-      kLastViewedField, &DocumentEntry::last_viewed_time_,
-      &google_apis::util::GetTimeFromString);
-  converter->RegisterRepeatedMessage(
-      kFeedLinkField, &DocumentEntry::feed_links_);
-  converter->RegisterNestedField(kContentField, &DocumentEntry::content_);
+bool ResourceEntry::ParseChangestamp(const base::Value* value,
+                                     int64* result) {
+  DCHECK(result);
+  if (!value) {
+    *result = 0;
+    return true;
+  }
 
-  // File properties.  If the document type is not a normal file, then
+  std::string string_value;
+  if (value->GetAsString(&string_value) &&
+      base::StringToInt64(string_value, result))
+    return true;
+
+  return false;
+}
+
+// static
+void ResourceEntry::RegisterJSONConverter(
+    base::JSONValueConverter<ResourceEntry>* converter) {
+  // Inherit the parent registrations.
+  CommonMetadata::RegisterJSONConverter(converter);
+  converter->RegisterStringField(
+      kResourceIdField, &ResourceEntry::resource_id_);
+  converter->RegisterStringField(kIDField, &ResourceEntry::id_);
+  converter->RegisterStringField(kTitleTField, &ResourceEntry::title_);
+  converter->RegisterCustomField<base::Time>(
+      kPublishedField, &ResourceEntry::published_time_,
+      &util::GetTimeFromString);
+  converter->RegisterCustomField<base::Time>(
+      kLastViewedField, &ResourceEntry::last_viewed_time_,
+      &util::GetTimeFromString);
+  converter->RegisterRepeatedMessage(
+      kFeedLinkField, &ResourceEntry::resource_links_);
+  converter->RegisterNestedField(kContentField, &ResourceEntry::content_);
+
+  // File properties.  If the resource type is not a normal file, then
   // that's no problem because those feed must not have these fields
   // themselves, which does not report errors.
-  converter->RegisterStringField(kFileNameField, &DocumentEntry::filename_);
-  converter->RegisterStringField(kMD5Field, &DocumentEntry::file_md5_);
+  converter->RegisterStringField(kFileNameField, &ResourceEntry::filename_);
+  converter->RegisterStringField(kMD5Field, &ResourceEntry::file_md5_);
   converter->RegisterCustomField<int64>(
-      kSizeField, &DocumentEntry::file_size_, &base::StringToInt64);
+      kSizeField, &ResourceEntry::file_size_, &base::StringToInt64);
   converter->RegisterStringField(
-      kSuggestedFileNameField, &DocumentEntry::suggested_filename_);
+      kSuggestedFileNameField, &ResourceEntry::suggested_filename_);
   // Deleted are treated as 'trashed' items on web client side. Removed files
   // are gone for good. We treat both cases as 'deleted' for this client.
   converter->RegisterCustomValueField<bool>(
-      kDeletedField, &DocumentEntry::deleted_, &DocumentEntry::HasFieldPresent);
+      kDeletedField, &ResourceEntry::deleted_, &ResourceEntry::HasFieldPresent);
   converter->RegisterCustomValueField<bool>(
-      kRemovedField, &DocumentEntry::removed_, &DocumentEntry::HasFieldPresent);
+      kRemovedField, &ResourceEntry::removed_, &ResourceEntry::HasFieldPresent);
+  converter->RegisterCustomValueField<int64>(
+      kChangestampField, &ResourceEntry::changestamp_,
+      &ResourceEntry::ParseChangestamp);
 }
 
-std::string DocumentEntry::GetHostedDocumentExtension() const {
+std::string ResourceEntry::GetHostedDocumentExtension() const {
   for (size_t i = 0; i < arraysize(kEntryKindMap); i++) {
     if (kEntryKindMap[i].kind == kind_) {
       if (kEntryKindMap[i].extension)
@@ -655,7 +578,7 @@ std::string DocumentEntry::GetHostedDocumentExtension() const {
 }
 
 // static
-bool DocumentEntry::HasHostedDocumentExtension(const FilePath& file) {
+bool ResourceEntry::HasHostedDocumentExtension(const base::FilePath& file) {
 #if defined(OS_WIN)
   std::string file_extension = WideToUTF8(file.Extension());
 #else
@@ -670,7 +593,7 @@ bool DocumentEntry::HasHostedDocumentExtension(const FilePath& file) {
 }
 
 // static
-DriveEntryKind DocumentEntry::GetEntryKindFromTerm(
+DriveEntryKind ResourceEntry::GetEntryKindFromTerm(
     const std::string& term) {
   if (!StartsWithASCII(term, kTermPrefix, false)) {
     DVLOG(1) << "Unexpected term prefix term " << term;
@@ -687,7 +610,7 @@ DriveEntryKind DocumentEntry::GetEntryKindFromTerm(
 }
 
 // static
-int DocumentEntry::ClassifyEntryKind(DriveEntryKind kind) {
+int ResourceEntry::ClassifyEntryKind(DriveEntryKind kind) {
   int classes = 0;
 
   // All DriveEntryKind members are listed here, so the compiler catches if a
@@ -731,7 +654,7 @@ int DocumentEntry::ClassifyEntryKind(DriveEntryKind kind) {
   return classes;
 }
 
-void DocumentEntry::FillRemainingFields() {
+void ResourceEntry::FillRemainingFields() {
   // Set |kind_| and |labels_| based on the |categories_| in the class.
   // JSONValueConverter does not have the ability to catch an element in a list
   // based on a predicate.  Thus we need to iterate over |categories_| and
@@ -746,140 +669,50 @@ void DocumentEntry::FillRemainingFields() {
 }
 
 // static
-scoped_ptr<DocumentEntry> DocumentEntry::ExtractAndParse(
+scoped_ptr<ResourceEntry> ResourceEntry::ExtractAndParse(
     const base::Value& value) {
   const base::DictionaryValue* as_dict = NULL;
   const base::DictionaryValue* entry_dict = NULL;
   if (value.GetAsDictionary(&as_dict) &&
       as_dict->GetDictionary(kEntryField, &entry_dict)) {
-    return DocumentEntry::CreateFrom(*entry_dict);
+    return ResourceEntry::CreateFrom(*entry_dict);
   }
-  return scoped_ptr<DocumentEntry>();
+  return scoped_ptr<ResourceEntry>();
 }
 
 // static
-scoped_ptr<DocumentEntry> DocumentEntry::CreateFrom(const base::Value& value) {
-  base::JSONValueConverter<DocumentEntry> converter;
-  scoped_ptr<DocumentEntry> entry(new DocumentEntry());
+scoped_ptr<ResourceEntry> ResourceEntry::CreateFrom(const base::Value& value) {
+  base::JSONValueConverter<ResourceEntry> converter;
+  scoped_ptr<ResourceEntry> entry(new ResourceEntry());
   if (!converter.Convert(value, entry.get())) {
-    DVLOG(1) << "Invalid document entry!";
-    return scoped_ptr<DocumentEntry>();
+    DVLOG(1) << "Invalid resource entry!";
+    return scoped_ptr<ResourceEntry>();
   }
 
   entry->FillRemainingFields();
   return entry.Pass();
 }
 
-// static.
-scoped_ptr<DocumentEntry> DocumentEntry::CreateFromXml(XmlReader* xml_reader) {
-  if (xml_reader->NodeName() != kEntryNode)
-    return scoped_ptr<DocumentEntry>();
-
-  scoped_ptr<DocumentEntry> entry(new DocumentEntry);
-  xml_reader->NodeAttribute(kETagAttr, &entry->etag_);
-
-  if (!xml_reader->Read())
-    return entry.Pass();
-
-  bool skip_read = false;
-  do {
-    DVLOG(1) << "Parsing node " << xml_reader->NodeName();
-    skip_read = false;
-
-    if (xml_reader->NodeName() == kAuthorNode) {
-      scoped_ptr<Author> author(Author::CreateFromXml(xml_reader));
-      if (author.get())
-        entry->authors_.push_back(author.release());
-    }
-
-    if (xml_reader->NodeName() == kContentNode) {
-      scoped_ptr<Content> content(Content::CreateFromXml(xml_reader));
-      if (content.get())
-        entry->content_ = *content.get();
-    } else if (xml_reader->NodeName() == kLinkNode) {
-      scoped_ptr<Link> link(Link::CreateFromXml(xml_reader));
-      if (link.get())
-        entry->links_.push_back(link.release());
-    } else if (xml_reader->NodeName() == kFeedLinkNode) {
-      scoped_ptr<FeedLink> link(FeedLink::CreateFromXml(xml_reader));
-      if (link.get())
-        entry->feed_links_.push_back(link.release());
-    } else if (xml_reader->NodeName() == kCategoryNode) {
-      scoped_ptr<Category> category(Category::CreateFromXml(xml_reader));
-      if (category.get())
-        entry->categories_.push_back(category.release());
-    } else if (xml_reader->NodeName() == kUpdatedNode) {
-      std::string time;
-      if (xml_reader->ReadElementContent(&time))
-        google_apis::util::GetTimeFromString(time, &entry->updated_time_);
-      skip_read = true;
-    } else if (xml_reader->NodeName() == kPublishedNode) {
-      std::string time;
-      if (xml_reader->ReadElementContent(&time))
-        google_apis::util::GetTimeFromString(time, &entry->published_time_);
-      skip_read = true;
-    } else if (xml_reader->NodeName() == kIDNode) {
-      xml_reader->ReadElementContent(&entry->id_);
-      skip_read = true;
-    } else if (xml_reader->NodeName() == kResourceIdNode) {
-      xml_reader->ReadElementContent(&entry->resource_id_);
-      skip_read = true;
-    } else if (xml_reader->NodeName() == kTitleNode) {
-      std::string title;
-      if (xml_reader->ReadElementContent(&title))
-        entry->title_ = UTF8ToUTF16(title);
-      skip_read = true;
-    } else if (xml_reader->NodeName() == kFilenameNode) {
-      std::string file_name;
-      if (xml_reader->ReadElementContent(&file_name))
-        entry->filename_ = UTF8ToUTF16(file_name);
-      skip_read = true;
-    } else if (xml_reader->NodeName() == kSuggestedFilenameNode) {
-      std::string suggested_filename;
-      if (xml_reader->ReadElementContent(&suggested_filename))
-        entry->suggested_filename_ = UTF8ToUTF16(suggested_filename);
-      skip_read = true;
-    } else if (xml_reader->NodeName() == kMd5ChecksumNode) {
-      xml_reader->ReadElementContent(&entry->file_md5_);
-      skip_read = true;
-    } else if (xml_reader->NodeName() == kSizeNode) {
-      std::string size;
-      if (xml_reader->ReadElementContent(&size))
-        base::StringToInt64(size, &entry->file_size_);
-      skip_read = true;
-    } else if (xml_reader->NodeName() == kLastViewedNode) {
-      std::string time;
-      if (xml_reader->ReadElementContent(&time))
-        google_apis::util::GetTimeFromString(time, &entry->last_viewed_time_);
-      skip_read = true;
-    } else {
-      DVLOG(1) << "Unknown node " << xml_reader->NodeName();
-    }
-  } while (skip_read || xml_reader->Next());
-
-  entry->FillRemainingFields();
-  return entry.Pass();
-}
-
 // static
-scoped_ptr<DocumentEntry> DocumentEntry::CreateFromFileResource(
+scoped_ptr<ResourceEntry> ResourceEntry::CreateFromFileResource(
     const FileResource& file) {
-  scoped_ptr<DocumentEntry> entry(new DocumentEntry());
+  scoped_ptr<ResourceEntry> entry(new ResourceEntry());
 
-  // DocumentEntry
+  // ResourceEntry
   entry->resource_id_ = file.file_id();
   entry->id_ = file.file_id();
   entry->kind_ = file.GetKind();
-  entry->title_ = UTF8ToUTF16(file.title());
+  entry->title_ = file.title();
   entry->published_time_ = file.created_date();
   // TODO(kochi): entry->labels_
-  entry->content_.url_ = file.web_content_link();
+  // This should be the url to download the file.
+  entry->content_.url_ = file.download_url();
   entry->content_.mime_type_ = file.mime_type();
-  // TODO(kochi): entry->feed_links_
+  // TODO(kochi): entry->resource_links_
 
   // For file entries
-  entry->filename_ = UTF8ToUTF16(file.title());
-  entry->suggested_filename_ = UTF8ToUTF16(file.title());
+  entry->filename_ = file.title();
+  entry->suggested_filename_ = file.title();
   entry->file_md5_ = file.md5_checksum();
   entry->file_size_ = file.file_size();
 
@@ -888,7 +721,7 @@ scoped_ptr<DocumentEntry> DocumentEntry::CreateFromFileResource(
   // file entry still exists but with its "trashed" label true.
   entry->deleted_ = file.labels().is_trashed();
 
-  // FeedEntry
+  // CommonMetadata
   entry->etag_ = file.etag();
   // entry->authors_
   // entry->links_.
@@ -931,9 +764,9 @@ scoped_ptr<DocumentEntry> DocumentEntry::CreateFromFileResource(
 }
 
 // static
-scoped_ptr<DocumentEntry> DocumentEntry::CreateFromChangeResource(
+scoped_ptr<ResourceEntry> ResourceEntry::CreateFromChangeResource(
     const ChangeResource& change) {
-  scoped_ptr<DocumentEntry> entry = CreateFromFileResource(change.file());
+  scoped_ptr<ResourceEntry> entry = CreateFromFileResource(change.file());
 
   entry->resource_id_ = change.file_id();
   // If |is_deleted()| returns true, the file is removed from Drive.
@@ -943,51 +776,50 @@ scoped_ptr<DocumentEntry> DocumentEntry::CreateFromChangeResource(
 }
 
 // static
-std::string DocumentEntry::GetEntryNodeName() {
+std::string ResourceEntry::GetEntryNodeName() {
   return kEntryNode;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DocumentFeed implementation
+// ResourceList implementation
 
-DocumentFeed::DocumentFeed()
+ResourceList::ResourceList()
     : start_index_(0),
       items_per_page_(0),
       largest_changestamp_(0) {
 }
 
-DocumentFeed::~DocumentFeed() {
+ResourceList::~ResourceList() {
 }
 
 // static
-void DocumentFeed::RegisterJSONConverter(
-    base::JSONValueConverter<DocumentFeed>* converter) {
+void ResourceList::RegisterJSONConverter(
+    base::JSONValueConverter<ResourceList>* converter) {
   // inheritance
-  FeedEntry::RegisterJSONConverter(
-      reinterpret_cast<base::JSONValueConverter<FeedEntry>*>(converter));
+  CommonMetadata::RegisterJSONConverter(converter);
   // TODO(zelidrag): Once we figure out where these will be used, we should
   // check for valid start_index_ and items_per_page_ values.
   converter->RegisterCustomField<int>(
-      kStartIndexField, &DocumentFeed::start_index_, &base::StringToInt);
+      kStartIndexField, &ResourceList::start_index_, &base::StringToInt);
   converter->RegisterCustomField<int>(
-      kItemsPerPageField, &DocumentFeed::items_per_page_, &base::StringToInt);
-  converter->RegisterStringField(kTitleTField, &DocumentFeed::title_);
-  converter->RegisterRepeatedMessage(kEntryField, &DocumentFeed::entries_);
+      kItemsPerPageField, &ResourceList::items_per_page_, &base::StringToInt);
+  converter->RegisterStringField(kTitleTField, &ResourceList::title_);
+  converter->RegisterRepeatedMessage(kEntryField, &ResourceList::entries_);
   converter->RegisterCustomField<int64>(
-     kLargestChangestampField, &DocumentFeed::largest_changestamp_,
+     kLargestChangestampField, &ResourceList::largest_changestamp_,
      &base::StringToInt64);
 }
 
-bool DocumentFeed::Parse(const base::Value& value) {
-  base::JSONValueConverter<DocumentFeed> converter;
+bool ResourceList::Parse(const base::Value& value) {
+  base::JSONValueConverter<ResourceList> converter;
   if (!converter.Convert(value, this)) {
-    DVLOG(1) << "Invalid document feed!";
+    DVLOG(1) << "Invalid resource list!";
     return false;
   }
 
-  ScopedVector<DocumentEntry>::iterator iter = entries_.begin();
+  ScopedVector<ResourceEntry>::iterator iter = entries_.begin();
   while (iter != entries_.end()) {
-    DocumentEntry* entry = (*iter);
+    ResourceEntry* entry = (*iter);
     entry->FillRemainingFields();
     ++iter;
   }
@@ -995,32 +827,32 @@ bool DocumentFeed::Parse(const base::Value& value) {
 }
 
 // static
-scoped_ptr<DocumentFeed> DocumentFeed::ExtractAndParse(
+scoped_ptr<ResourceList> ResourceList::ExtractAndParse(
     const base::Value& value) {
   const base::DictionaryValue* as_dict = NULL;
   const base::DictionaryValue* feed_dict = NULL;
   if (value.GetAsDictionary(&as_dict) &&
       as_dict->GetDictionary(kFeedField, &feed_dict)) {
-    return DocumentFeed::CreateFrom(*feed_dict);
+    return ResourceList::CreateFrom(*feed_dict);
   }
-  return scoped_ptr<DocumentFeed>(NULL);
+  return scoped_ptr<ResourceList>(NULL);
 }
 
 // static
-scoped_ptr<DocumentFeed> DocumentFeed::CreateFrom(const base::Value& value) {
-  scoped_ptr<DocumentFeed> feed(new DocumentFeed());
+scoped_ptr<ResourceList> ResourceList::CreateFrom(const base::Value& value) {
+  scoped_ptr<ResourceList> feed(new ResourceList());
   if (!feed->Parse(value)) {
-    DVLOG(1) << "Invalid document feed!";
-    return scoped_ptr<DocumentFeed>(NULL);
+    DVLOG(1) << "Invalid resource list!";
+    return scoped_ptr<ResourceList>(NULL);
   }
 
   return feed.Pass();
 }
 
 // static
-scoped_ptr<DocumentFeed> DocumentFeed::CreateFromChangeList(
+scoped_ptr<ResourceList> ResourceList::CreateFromChangeList(
     const ChangeList& changelist) {
-  scoped_ptr<DocumentFeed> feed(new DocumentFeed());
+  scoped_ptr<ResourceList> feed(new ResourceList());
   int64 largest_changestamp = 0;
   ScopedVector<ChangeResource>::const_iterator iter =
       changelist.items().begin();
@@ -1028,14 +860,14 @@ scoped_ptr<DocumentFeed> DocumentFeed::CreateFromChangeList(
     const ChangeResource& change = **iter;
     largest_changestamp = std::max(largest_changestamp, change.change_id());
     feed->entries_.push_back(
-        DocumentEntry::CreateFromChangeResource(change).release());
+        ResourceEntry::CreateFromChangeResource(change).release());
     ++iter;
   }
   feed->largest_changestamp_ = largest_changestamp;
   return feed.Pass();
 }
 
-bool DocumentFeed::GetNextFeedURL(GURL* url) {
+bool ResourceList::GetNextFeedURL(GURL* url) const {
   DCHECK(url);
   for (size_t i = 0; i < links_.size(); ++i) {
     if (links_[i]->type() == Link::LINK_NEXT) {
@@ -1046,7 +878,7 @@ bool DocumentFeed::GetNextFeedURL(GURL* url) {
   return false;
 }
 
-void DocumentFeed::ReleaseEntries(std::vector<DocumentEntry*>* entries) {
+void ResourceList::ReleaseEntries(std::vector<ResourceEntry*>* entries) {
   entries_.release(entries);
 }
 
@@ -1133,54 +965,54 @@ void InstalledApp::RegisterJSONConverter(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// AccountMetadataFeed implementation
+// AccountMetadata implementation
 
-AccountMetadataFeed::AccountMetadataFeed()
+AccountMetadata::AccountMetadata()
     : quota_bytes_total_(0),
       quota_bytes_used_(0),
       largest_changestamp_(0) {
 }
 
-AccountMetadataFeed::~AccountMetadataFeed() {
+AccountMetadata::~AccountMetadata() {
 }
 
 // static
-void AccountMetadataFeed::RegisterJSONConverter(
-    base::JSONValueConverter<AccountMetadataFeed>* converter) {
+void AccountMetadata::RegisterJSONConverter(
+    base::JSONValueConverter<AccountMetadata>* converter) {
   converter->RegisterCustomField<int64>(
       kQuotaBytesTotalField,
-      &AccountMetadataFeed::quota_bytes_total_,
+      &AccountMetadata::quota_bytes_total_,
       &base::StringToInt64);
   converter->RegisterCustomField<int64>(
       kQuotaBytesUsedField,
-      &AccountMetadataFeed::quota_bytes_used_,
+      &AccountMetadata::quota_bytes_used_,
       &base::StringToInt64);
   converter->RegisterCustomField<int64>(
       kLargestChangestampField,
-      &AccountMetadataFeed::largest_changestamp_,
+      &AccountMetadata::largest_changestamp_,
       &base::StringToInt64);
   converter->RegisterRepeatedMessage(kInstalledAppField,
-                                     &AccountMetadataFeed::installed_apps_);
+                                     &AccountMetadata::installed_apps_);
 }
 
 // static
-scoped_ptr<AccountMetadataFeed> AccountMetadataFeed::CreateFrom(
+scoped_ptr<AccountMetadata> AccountMetadata::CreateFrom(
     const base::Value& value) {
-  scoped_ptr<AccountMetadataFeed> feed(new AccountMetadataFeed());
+  scoped_ptr<AccountMetadata> metadata(new AccountMetadata());
   const base::DictionaryValue* dictionary = NULL;
   const base::Value* entry = NULL;
   if (!value.GetAsDictionary(&dictionary) ||
       !dictionary->Get(kEntryField, &entry) ||
-      !feed->Parse(*entry)) {
+      !metadata->Parse(*entry)) {
     LOG(ERROR) << "Unable to create: Invalid account metadata feed!";
-    return scoped_ptr<AccountMetadataFeed>(NULL);
+    return scoped_ptr<AccountMetadata>(NULL);
   }
 
-  return feed.Pass();
+  return metadata.Pass();
 }
 
-bool AccountMetadataFeed::Parse(const base::Value& value) {
-  base::JSONValueConverter<AccountMetadataFeed> converter;
+bool AccountMetadata::Parse(const base::Value& value) {
+  base::JSONValueConverter<AccountMetadata> converter;
   if (!converter.Convert(value, this)) {
     LOG(ERROR) << "Unable to parse: Invalid account metadata feed!";
     return false;

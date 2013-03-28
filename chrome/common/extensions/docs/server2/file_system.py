@@ -15,9 +15,18 @@ class StatInfo(object):
     self.version = version
     self.child_versions = child_versions
 
-def _ProcessFileData(data, path):
-  if os.path.splitext(path)[-1] not in ['.js', '.html', '.json']:
-    return data
+  def __eq__(self, other):
+    return (self.version == other.version and
+            self.child_versions == other.child_versions)
+
+  def __ne__(self, other):
+    return not (self == other)
+
+  def __str__(self):
+    return '{version: %s, child_versions: %s}' % (self.version,
+                                                  self.child_versions)
+
+def _ToUnicode(data):
   try:
     return unicode(data, 'utf-8')
   except:
@@ -38,10 +47,10 @@ class FileSystem(object):
     """
     raise NotImplementedError()
 
-  def ReadSingle(self, path):
+  def ReadSingle(self, path, binary=False):
     """Reads a single file from the FileSystem.
     """
-    return self.Read([path]).Get()[path]
+    return self.Read([path], binary=binary).Get()[path]
 
   # TODO(cduvall): Allow Stat to take a list of paths like Read.
   def Stat(self, path):

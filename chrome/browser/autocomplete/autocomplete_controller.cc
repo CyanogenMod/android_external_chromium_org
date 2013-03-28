@@ -11,8 +11,8 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "chrome/browser/autocomplete/autocomplete_controller_delegate.h"
 #include "chrome/browser/autocomplete/bookmark_provider.h"
@@ -25,6 +25,7 @@
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/autocomplete/shortcuts_provider.h"
 #include "chrome/browser/autocomplete/zero_suggest_provider.h"
+#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -94,6 +95,8 @@ AutocompleteController::AutocompleteController(
       in_start_(false),
       in_zero_suggest_(false),
       profile_(profile) {
+  // AND with the disabled providers, if any.
+  provider_types &= ~OmniboxFieldTrial::GetDisabledProviderTypes();
   bool use_hqp = !!(provider_types & AutocompleteProvider::TYPE_HISTORY_QUICK);
   // TODO(mrossetti): Permanently modify the HistoryURLProvider to not search
   // titles once HQP is turned on permanently.
@@ -166,18 +169,11 @@ AutocompleteController::~AutocompleteController() {
   providers_.clear();  // Not really necessary.
 }
 
-void AutocompleteController::Start(
-    const string16& text,
-    const string16& desired_tld,
-    bool prevent_inline_autocomplete,
-    bool prefer_keyword,
-    bool allow_exact_keyword_match,
-    AutocompleteInput::MatchesRequested matches_requested) {
+void AutocompleteController::Start(const AutocompleteInput& input) {
   const string16 old_input_text(input_.text());
   const AutocompleteInput::MatchesRequested old_matches_requested =
       input_.matches_requested();
-  input_ = AutocompleteInput(text, desired_tld, prevent_inline_autocomplete,
-      prefer_keyword, allow_exact_keyword_match, matches_requested);
+  input_ = input;
 
   // See if we can avoid rerunning autocomplete when the query hasn't changed
   // much.  When the user presses or releases the ctrl key, the desired_tld
@@ -200,20 +196,34 @@ void AutocompleteController::Start(
   for (ACProviders::iterator i(providers_.begin()); i != providers_.end();
        ++i) {
     (*i)->Start(input_, minimal_changes);
-    if (matches_requested != AutocompleteInput::ALL_MATCHES)
+    if (input.matches_requested() != AutocompleteInput::ALL_MATCHES)
       DCHECK((*i)->done());
   }
-  if (matches_requested == AutocompleteInput::ALL_MATCHES &&
-      (text.length() < 6)) {
+  if (input.matches_requested() == AutocompleteInput::ALL_MATCHES &&
+      (input.text().length() < 6)) {
     base::TimeTicks end_time = base::TimeTicks::Now();
-    std::string name = "Omnibox.QueryTime." + base::IntToString(text.length());
-    base::Histogram* counter = base::Histogram::FactoryGet(
+    std::string name = "Omnibox.QueryTime." + base::IntToString(
+        input.text().length());
+    base::HistogramBase* counter = base::Histogram::FactoryGet(
         name, 1, 1000, 50, base::Histogram::kUmaTargetedHistogramFlag);
     counter->Add(static_cast<int>((end_time - start_time).InMilliseconds()));
   }
   in_start_ = false;
   CheckIfDone();
-  UpdateResult(true);
+  // The second true forces saying the default match has changed.
+  // This triggers the edit model to update things such as the inline
+  // autocomplete state.  In particular, if the user has typed a key
+  // since the last notification, and we're now re-running
+  // autocomplete, then we need to update the inline autocompletion
+  // even if the current match is for the same URL as the last run's
+  // default match.  Likewise, the controller doesn't know what's
+  // happened in the edit since the last time it ran autocomplete.
+  // The user might have selected all the text and hit delete, then
+  // typed a new character.  The selection and delete won't send any
+  // signals to the controller so it doesn't realize that anything was
+  // cleared or changed.  Even if the default match hasn't changed, we
+  // need the edit model to update the display.
+  UpdateResult(false, true);
 
   if (!done_)
     StartExpireTimer();
@@ -263,13 +273,10 @@ void AutocompleteController::DeleteMatch(const AutocompleteMatch& match) {
 }
 
 void AutocompleteController::ExpireCopiedEntries() {
-  // Clear out the results. This ensures no results from the previous result set
-  // are copied over.
-  result_.Reset();
-  // We allow matches from the previous result set to starve out matches from
-  // the new result set. This means in order to expire matches we have to query
-  // the providers again.
-  UpdateResult(false);
+  // The first true makes UpdateResult() clear out the results and
+  // regenerate them, thus ensuring that no results from the previous
+  // result set remain.
+  UpdateResult(true, false);
 }
 
 void AutocompleteController::OnProviderUpdate(bool updated_matches) {
@@ -285,7 +292,7 @@ void AutocompleteController::OnProviderUpdate(bool updated_matches) {
     // Multiple providers may provide synchronous results, so we only update the
     // results if we're not in Start().
     if (!in_start_ && (updated_matches || done_))
-      UpdateResult(false);
+      UpdateResult(false, false);
   }
 }
 
@@ -302,7 +309,29 @@ void AutocompleteController::AddProvidersInfo(
   }
 }
 
-void AutocompleteController::UpdateResult(bool is_synchronous_pass) {
+void AutocompleteController::ResetSession() {
+  for (ACProviders::const_iterator i(providers_.begin()); i != providers_.end();
+       ++i)
+    (*i)->ResetSession();
+}
+
+void AutocompleteController::UpdateResult(
+    bool regenerate_result,
+    bool force_notify_default_match_changed) {
+  const bool last_default_was_valid = result_.default_match() != result_.end();
+  // The following two variables are only set and used if
+  // |last_default_was_valid|.
+  string16 last_default_fill_into_edit, last_default_associated_keyword;
+  if (last_default_was_valid) {
+    last_default_fill_into_edit = result_.default_match()->fill_into_edit;
+    if (result_.default_match()->associated_keyword != NULL)
+      last_default_associated_keyword =
+          result_.default_match()->associated_keyword->keyword;
+  }
+
+  if (regenerate_result)
+    result_.Reset();
+
   AutocompleteResult last_result;
   last_result.Swap(&result_);
 
@@ -329,27 +358,29 @@ void AutocompleteController::UpdateResult(bool is_synchronous_pass) {
   UpdateAssociatedKeywords(&result_);
   UpdateAssistedQueryStats(&result_);
 
-  bool notify_default_match = is_synchronous_pass;
-  if (!is_synchronous_pass) {
-    const bool last_default_was_valid =
-        last_result.default_match() != last_result.end();
-    const bool default_is_valid = result_.default_match() != result_.end();
-    // We've gotten async results. Send notification that the default match
-    // updated if fill_into_edit differs or associated_keyword differ.  (The
-    // latter can change if we've just started Chrome and the keyword database
-    // finishes loading while processing this request.) We don't check the URL
-    // as that may change for the default match even though the fill into edit
-    // hasn't changed (see SearchProvider for one case of this).
-    notify_default_match =
-        (last_default_was_valid != default_is_valid) ||
-        (default_is_valid &&
-          ((result_.default_match()->fill_into_edit !=
-            last_result.default_match()->fill_into_edit) ||
-            (result_.default_match()->associated_keyword.get() !=
-              last_result.default_match()->associated_keyword.get())));
+  const bool default_is_valid = result_.default_match() != result_.end();
+  string16 default_associated_keyword;
+  if (default_is_valid &&
+      (result_.default_match()->associated_keyword != NULL)) {
+    default_associated_keyword =
+        result_.default_match()->associated_keyword->keyword;
   }
+  // We've gotten async results. Send notification that the default match
+  // updated if fill_into_edit differs or associated_keyword differ.  (The
+  // latter can change if we've just started Chrome and the keyword database
+  // finishes loading while processing this request.) We don't check the URL
+  // as that may change for the default match even though the fill into edit
+  // hasn't changed (see SearchProvider for one case of this).
+  const bool notify_default_match =
+      (last_default_was_valid != default_is_valid) ||
+      (last_default_was_valid &&
+       ((result_.default_match()->fill_into_edit !=
+          last_default_fill_into_edit) ||
+         (default_associated_keyword != last_default_associated_keyword)));
+  if (notify_default_match)
+    last_time_default_match_changed_ = base::TimeTicks::Now();
 
-  NotifyChanged(notify_default_match);
+  NotifyChanged(force_notify_default_match_changed || notify_default_match);
 }
 
 void AutocompleteController::UpdateAssociatedKeywords(
@@ -419,6 +450,30 @@ void AutocompleteController::UpdateAssistedQueryStats(
     match->destination_url = GURL(template_url->url_ref().ReplaceSearchTerms(
         *match->search_terms_args));
   }
+}
+
+GURL AutocompleteController::GetDestinationURL(
+    const AutocompleteMatch& match,
+    base::TimeDelta query_formulation_time) const {
+  GURL destination_url(match.destination_url);
+  TemplateURL* template_url = match.GetTemplateURL(profile_, false);
+
+  // Append the query formulation time (time from when the user first typed a
+  // character into the omnibox to when the user selected a query) and whether
+  // a field trial has triggered to the AQS parameter, if other AQS parameters
+  // were already populated.
+  if (template_url && match.search_terms_args.get() &&
+      !match.search_terms_args->assisted_query_stats.empty()) {
+    TemplateURLRef::SearchTermsArgs search_terms_args(*match.search_terms_args);
+    search_terms_args.assisted_query_stats += base::StringPrintf(
+        ".%" PRId64 "j%d",
+        query_formulation_time.InMilliseconds(),
+        search_provider_ &&
+        search_provider_->field_trial_triggered_in_session());
+    destination_url = GURL(template_url->url_ref().
+                           ReplaceSearchTerms(search_terms_args));
+  }
+  return destination_url;
 }
 
 void AutocompleteController::UpdateKeywordDescriptions(

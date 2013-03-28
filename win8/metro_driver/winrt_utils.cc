@@ -7,7 +7,7 @@
 
 #include <shlobj.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
@@ -23,7 +23,8 @@ void CheckHR(HRESULT hr, const char* message) {
 
 HSTRING MakeHString(const string16& str) {
   HSTRING hstr;
-  if (FAILED(::WindowsCreateString(str.c_str(), str.size(), &hstr))) {
+  if (FAILED(::WindowsCreateString(str.c_str(), static_cast<UINT32>(str.size()),
+                                   &hstr))) {
     PLOG(DFATAL) << "Hstring creation failed";
   }
   return hstr;
@@ -179,7 +180,7 @@ HRESULT CompareProperties(winfoundtn::IPropertyValue* lhs,
   return hr;
 }
 
-bool GetArgumentsFromShortcut(const FilePath& shortcut,
+bool GetArgumentsFromShortcut(const base::FilePath& shortcut,
                               string16* arguments) {
   HRESULT result;
   base::win::ScopedComPtr<IShellLink> i_shell_link;
@@ -215,7 +216,7 @@ string16 ReadArgumentsFromPinnedTaskbarShortcut() {
 
   if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA, NULL,
                                 SHGFP_TYPE_CURRENT, path_buffer))) {
-    FilePath shortcut(path_buffer);
+    base::FilePath shortcut(path_buffer);
     shortcut = shortcut.Append(
         L"Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar");
 

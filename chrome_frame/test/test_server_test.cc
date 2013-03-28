@@ -11,9 +11,9 @@
 #include "base/stringprintf.h"
 #include "base/win/scoped_handle.h"
 #include "chrome_frame/test/test_server.h"
-#include "net/base/host_resolver_proc.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/dns/host_resolver_proc.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
@@ -32,12 +32,12 @@ class TestServerTest: public testing::Test {
   }
 
  public:
-  const FilePath& source_path() const {
+  const base::FilePath& source_path() const {
     return source_path_;
   }
 
  protected:
-  FilePath source_path_;
+  base::FilePath source_path_;
 };
 
 namespace {
@@ -65,7 +65,7 @@ class TestURLRequest : public net::URLRequest {
  public:
   TestURLRequest(const GURL& url,
                  Delegate* delegate,
-                 TestURLRequestContext* context)
+                 net::TestURLRequestContext* context)
       : net::URLRequest(url, delegate, context) {
   }
 };
@@ -81,7 +81,7 @@ class UrlTaskChain {
 
     MessageLoopForIO loop;
 
-    TestURLRequestContext context;
+    net::TestURLRequestContext context;
     TestURLRequest r(GURL(url_), &delegate_, &context);
     r.Start();
     EXPECT_TRUE(r.is_pending());
@@ -103,7 +103,7 @@ class UrlTaskChain {
 
  protected:
   std::string url_;
-  TestDelegate delegate_;
+  net::TestDelegate delegate_;
   UrlTaskChain* next_;
 };
 

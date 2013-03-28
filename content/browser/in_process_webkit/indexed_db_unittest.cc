@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/in_process_webkit/indexed_db_context_impl.h"
 #include "content/public/browser/storage_partition.h"
@@ -39,11 +39,11 @@ class IndexedDBTest : public testing::Test {
 };
 
 TEST_F(IndexedDBTest, ClearSessionOnlyDatabases) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
-  FilePath normal_path;
-  FilePath session_only_path;
+  base::FilePath normal_path;
+  base::FilePath session_only_path;
 
   // Create the scope which will ensure we run the destructor of the webkit
   // context which should trigger the clean up.
@@ -83,11 +83,11 @@ TEST_F(IndexedDBTest, ClearSessionOnlyDatabases) {
 }
 
 TEST_F(IndexedDBTest, SetForceKeepSessionState) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
-  FilePath normal_path;
-  FilePath session_only_path;
+  base::FilePath normal_path;
+  base::FilePath session_only_path;
 
   // Create the scope which will ensure we run the destructor of the webkit
   // context.
@@ -138,7 +138,7 @@ class MockWebIDBDatabase : public WebKit::WebIDBDatabase
       : expect_force_close_(expect_force_close),
         force_close_called_(false) {}
 
-  ~MockWebIDBDatabase()
+  virtual ~MockWebIDBDatabase()
   {
     EXPECT_TRUE(force_close_called_ == expect_force_close_);
   }
@@ -156,10 +156,10 @@ class MockWebIDBDatabase : public WebKit::WebIDBDatabase
 
 
 TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnDelete) {
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
-  FilePath test_path;
+  base::FilePath test_path;
 
   // Create the scope which will ensure we run the destructor of the webkit
   // context.

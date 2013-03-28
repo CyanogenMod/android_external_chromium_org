@@ -6,6 +6,7 @@
 
 #include "chromeos/dbus/dbus_thread_manager_observer.h"
 #include "chromeos/dbus/ibus/mock_ibus_client.h"
+#include "chromeos/dbus/ibus/mock_ibus_config_client.h"
 #include "chromeos/dbus/ibus/mock_ibus_engine_factory_service.h"
 #include "chromeos/dbus/ibus/mock_ibus_engine_service.h"
 #include "chromeos/dbus/ibus/mock_ibus_input_context_client.h"
@@ -37,7 +38,8 @@ void MockDBusThreadManagerWithoutGMock::RemoveObserver(
 }
 
 void MockDBusThreadManagerWithoutGMock::InitIBusBus(
-    const std::string& ibus_address) {
+    const std::string& ibus_address,
+    const base::Closure& closure) {
   // Non-null bus address is used to ensure the connection to ibus-daemon.
   ibus_bus_ = reinterpret_cast<dbus::Bus*>(0xdeadbeef);
 }
@@ -80,11 +82,6 @@ BluetoothNodeClient*
   return NULL;
 }
 
-CashewClient* MockDBusThreadManagerWithoutGMock::GetCashewClient() {
-  NOTIMPLEMENTED();
-  return NULL;
-}
-
 CrosDisksClient* MockDBusThreadManagerWithoutGMock::GetCrosDisksClient() {
   NOTIMPLEMENTED();
   return NULL;
@@ -114,12 +111,6 @@ ShillIPConfigClient*
 
 ShillManagerClient*
     MockDBusThreadManagerWithoutGMock::GetShillManagerClient() {
-  NOTIMPLEMENTED();
-  return NULL;
-}
-
-ShillNetworkClient*
-    MockDBusThreadManagerWithoutGMock::GetShillNetworkClient() {
   NOTIMPLEMENTED();
   return NULL;
 }
@@ -169,6 +160,12 @@ PowerManagerClient* MockDBusThreadManagerWithoutGMock::GetPowerManagerClient() {
   return NULL;
 }
 
+PowerPolicyController*
+MockDBusThreadManagerWithoutGMock::GetPowerPolicyController() {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+
 SessionManagerClient*
     MockDBusThreadManagerWithoutGMock::GetSessionManagerClient() {
   NOTIMPLEMENTED();
@@ -180,8 +177,7 @@ SMSClient* MockDBusThreadManagerWithoutGMock::GetSMSClient() {
   return NULL;
 }
 
-SpeechSynthesizerClient*
-    MockDBusThreadManagerWithoutGMock::GetSpeechSynthesizerClient() {
+SystemClockClient* MockDBusThreadManagerWithoutGMock::GetSystemClockClient() {
   NOTIMPLEMENTED();
   return NULL;
 }
@@ -199,6 +195,10 @@ BluetoothOutOfBandClient*
 
 IBusClient* MockDBusThreadManagerWithoutGMock::GetIBusClient() {
   return mock_ibus_client_.get();
+}
+
+IBusConfigClient* MockDBusThreadManagerWithoutGMock::GetIBusConfigClient() {
+  return mock_ibus_config_client_.get();
 }
 
 IBusInputContextClient*
@@ -220,8 +220,7 @@ void MockDBusThreadManagerWithoutGMock::RemoveIBusEngineService(
     const dbus::ObjectPath& object_path) {
 }
 
-ibus::IBusPanelService*
-    MockDBusThreadManagerWithoutGMock::GetIBusPanelService() {
+IBusPanelService* MockDBusThreadManagerWithoutGMock::GetIBusPanelService() {
   return mock_ibus_panel_service_.get();
 }
 

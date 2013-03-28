@@ -5,7 +5,7 @@
 #ifndef ASH_SYSTEM_TRAY_TRAY_ITEM_MORE_H_
 #define ASH_SYSTEM_TRAY_TRAY_ITEM_MORE_H_
 
-#include "ash/system/tray/tray_views.h"
+#include "ash/system/tray/actionable_view.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -26,6 +26,8 @@ class TrayItemMore : public ActionableView {
  public:
   TrayItemMore(SystemTrayItem* owner, bool show_more);
   virtual ~TrayItemMore();
+
+  SystemTrayItem* owner() const { return owner_; }
 
   void SetLabel(const string16& label);
   void SetImage(const gfx::ImageSkia* image_skia);

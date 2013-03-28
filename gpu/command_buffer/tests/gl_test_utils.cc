@@ -10,6 +10,11 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+// GCC requires these declarations, but MSVC requires they not be present.
+#ifndef COMPILER_MSVC
+const uint8 GLTestHelper::kCheckClearValue;
+#endif
+
 bool GLTestHelper::HasExtension(const char* extension) {
   std::string extensions(
       reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)));
@@ -103,17 +108,35 @@ GLuint GLTestHelper::SetupUnitQuad(GLint position_location) {
   return vbo;
 }
 
+GLuint GLTestHelper::SetupColorsForUnitQuad(
+    GLint location, const GLfloat color[4], GLenum usage) {
+  GLuint vbo = 0;
+  glGenBuffers(1, &vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  GLfloat vertices[6 * 4];
+  for (int ii = 0; ii < 6; ++ii) {
+    for (int jj = 0; jj < 4; ++jj) {
+      vertices[ii * 4 + jj] = color[jj];
+    }
+  }
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, usage);
+  glEnableVertexAttribArray(location);
+  glVertexAttribPointer(location, 4, GL_FLOAT, GL_FALSE, 0, 0);
+
+  return vbo;
+}
+
 bool GLTestHelper::CheckPixels(
     GLint x, GLint y, GLsizei width, GLsizei height, GLint tolerance,
     const uint8* color) {
   GLsizei size = width * height * 4;
   scoped_array<uint8> pixels(new uint8[size]);
-  memset(pixels.get(), 123, size);
+  memset(pixels.get(), kCheckClearValue, size);
   glReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.get());
   bool same = true;
   for (GLint yy = 0; yy < height; ++yy) {
     for (GLint xx = 0; xx < width; ++xx) {
-      int offset = yy * width + xx * 4;
+      int offset = yy * width * 4 + xx * 4;
       for (int jj = 0; jj < 4; ++jj) {
         uint8 actual = pixels[offset + jj];
         uint8 expected = color[jj];

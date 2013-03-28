@@ -42,6 +42,10 @@ namespace {
 // Google search for 'gnutls thread safety' provided a solution that
 // initialized gcrypt and gnutls.
 
+// TODO(phajdan.jr): Remove this after https://bugs.g10code.com/gnupg/issue1197
+// gets fixed on all Linux distros we support (i.e. when they ship libgcrypt
+// with the fix).
+
 // Initially, we linked with -lgnutls and simply called gnutls_global_init(),
 // but this did not work well since we build one binary on Ubuntu Hardy and
 // expect it to run on many Linux distros. (See http://crbug.com/46954)
@@ -124,7 +128,7 @@ class PrintBackendCUPS : public PrintBackend {
   // version in another case. There is an issue specifing CUPS_HTTP_DEFAULT
   // in the <functions>2(), it does not work in CUPS prior to 1.4.
   int GetDests(cups_dest_t** dests);
-  FilePath GetPPD(const char* name);
+  base::FilePath GetPPD(const char* name);
 
   GURL print_server_url_;
   http_encryption_t cups_encryption_;
@@ -231,7 +235,7 @@ bool PrintBackendCUPS::GetPrinterCapsAndDefaults(
   VLOG(1) << "CUPS: Getting caps and defaults"
           << ", printer name: " << printer_name;
 
-  FilePath ppd_path(GetPPD(printer_name.c_str()));
+  base::FilePath ppd_path(GetPPD(printer_name.c_str()));
   // In some cases CUPS failed to get ppd file.
   if (ppd_path.empty()) {
     LOG(ERROR) << "CUPS: Failed to get PPD"
@@ -323,17 +327,17 @@ int PrintBackendCUPS::GetDests(cups_dest_t** dests) {
   }
 }
 
-FilePath PrintBackendCUPS::GetPPD(const char* name) {
+base::FilePath PrintBackendCUPS::GetPPD(const char* name) {
   // cupsGetPPD returns a filename stored in a static buffer in CUPS.
   // Protect this code with lock.
   CR_DEFINE_STATIC_LOCAL(base::Lock, ppd_lock, ());
   base::AutoLock ppd_autolock(ppd_lock);
-  FilePath ppd_path;
+  base::FilePath ppd_path;
   const char* ppd_file_path = NULL;
   if (print_server_url_.is_empty()) {  // Use default (local) print server.
     ppd_file_path = cupsGetPPD(name);
     if (ppd_file_path)
-      ppd_path = FilePath(ppd_file_path);
+      ppd_path = base::FilePath(ppd_file_path);
   } else {
     // cupsGetPPD2 gets stuck sometimes in an infinite time due to network
     // configuration/issues. To prevent that, use non-blocking http connection
@@ -356,7 +360,7 @@ FilePath PrintBackendCUPS::GetPPD(const char* name) {
       // Comparing file size against that content length might be unreliable
       // since some http reponses are encoded and content_length > file size.
       // Let's just check for the obvious CUPS and http errors here.
-      ppd_path = FilePath(ppd_file_path);
+      ppd_path = base::FilePath(ppd_file_path);
       ipp_status_t error_code = cupsLastError();
       int http_error = httpError(http.http());
       if (error_code > IPP_OK_EVENTS_COMPLETE || http_error != 0) {

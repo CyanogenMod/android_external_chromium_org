@@ -44,15 +44,15 @@ class FileStreamTest : public PlatformTest {
     file_util::WriteFile(temp_file_path_, kTestData, kTestDataSize);
   }
   virtual void TearDown() {
-    file_util::Delete(temp_file_path_, false);
+    EXPECT_TRUE(file_util::Delete(temp_file_path_, false));
 
     PlatformTest::TearDown();
   }
 
-  const FilePath temp_file_path() const { return temp_file_path_; }
+  const base::FilePath temp_file_path() const { return temp_file_path_; }
 
  private:
-  FilePath temp_file_path_;
+  base::FilePath temp_file_path_;
 };
 
 namespace {
@@ -91,7 +91,6 @@ TEST_F(FileStreamTest, FileHandleNotLeftOpen) {
   base::PlatformFileInfo info;
   // The file should be closed.
   EXPECT_FALSE(base::GetPlatformFileInfo(file, &info));
-  EXPECT_FALSE(base::ClosePlatformFile(file));
 }
 
 // Test the use of FileStream with a file handle provided at construction.
@@ -191,13 +190,13 @@ TEST_F(FileStreamTest, AsyncRead) {
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_ASYNC;
-  int rv = stream.OpenSync(temp_file_path(), flags);
-  EXPECT_EQ(OK, rv);
+  TestCompletionCallback callback;
+  int rv = stream.Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
 
   int64 total_bytes_avail = stream.Available();
   EXPECT_EQ(file_size, total_bytes_avail);
-
-  TestCompletionCallback callback;
 
   int total_bytes_read = 0;
 
@@ -240,7 +239,7 @@ TEST_F(FileStreamTest, AsyncRead_EarlyDelete) {
   if (rv < 0) {
     EXPECT_EQ(ERR_IO_PENDING, rv);
     // The callback should not be called if the request is cancelled.
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     EXPECT_FALSE(callback.have_result());
   } else {
     EXPECT_EQ(std::string(kTestData, rv), std::string(buf->data(), rv));
@@ -291,8 +290,10 @@ TEST_F(FileStreamTest, AsyncRead_FromOffset) {
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_ASYNC;
-  int rv = stream.OpenSync(temp_file_path(), flags);
-  EXPECT_EQ(OK, rv);
+  TestCompletionCallback callback;
+  int rv = stream.Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
 
   TestInt64CompletionCallback callback64;
   const int64 kOffset = 3;
@@ -303,8 +304,6 @@ TEST_F(FileStreamTest, AsyncRead_FromOffset) {
 
   int64 total_bytes_avail = stream.Available();
   EXPECT_EQ(file_size - kOffset, total_bytes_avail);
-
-  TestCompletionCallback callback;
 
   int total_bytes_read = 0;
 
@@ -352,32 +351,34 @@ TEST_F(FileStreamTest, AsyncSeekAround) {
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_ASYNC |
               base::PLATFORM_FILE_READ;
-  int rv = stream.OpenSync(temp_file_path(), flags);
-  EXPECT_EQ(OK, rv);
+  TestCompletionCallback callback;
+  int rv = stream.Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
 
-  TestInt64CompletionCallback callback;
+  TestInt64CompletionCallback callback64;
 
   const int64 kOffset = 3;
-  rv = stream.Seek(FROM_BEGIN, kOffset, callback.callback());
+  rv = stream.Seek(FROM_BEGIN, kOffset, callback64.callback());
   ASSERT_EQ(ERR_IO_PENDING, rv);
-  int64 new_offset = callback.WaitForResult();
+  int64 new_offset = callback64.WaitForResult();
   EXPECT_EQ(kOffset, new_offset);
 
-  rv = stream.Seek(FROM_CURRENT, kOffset, callback.callback());
+  rv = stream.Seek(FROM_CURRENT, kOffset, callback64.callback());
   ASSERT_EQ(ERR_IO_PENDING, rv);
-  new_offset = callback.WaitForResult();
+  new_offset = callback64.WaitForResult();
   EXPECT_EQ(2 * kOffset, new_offset);
 
-  rv = stream.Seek(FROM_CURRENT, -kOffset, callback.callback());
+  rv = stream.Seek(FROM_CURRENT, -kOffset, callback64.callback());
   ASSERT_EQ(ERR_IO_PENDING, rv);
-  new_offset = callback.WaitForResult();
+  new_offset = callback64.WaitForResult();
   EXPECT_EQ(kOffset, new_offset);
 
   const int kTestDataLen = arraysize(kTestData) - 1;
 
-  rv = stream.Seek(FROM_END, -kTestDataLen, callback.callback());
+  rv = stream.Seek(FROM_END, -kTestDataLen, callback64.callback());
   ASSERT_EQ(ERR_IO_PENDING, rv);
-  new_offset = callback.WaitForResult();
+  new_offset = callback64.WaitForResult();
   EXPECT_EQ(0, new_offset);
 }
 
@@ -407,15 +408,16 @@ TEST_F(FileStreamTest, AsyncWrite) {
   int flags = base::PLATFORM_FILE_CREATE_ALWAYS |
               base::PLATFORM_FILE_WRITE |
               base::PLATFORM_FILE_ASYNC;
-  int rv = stream.OpenSync(temp_file_path(), flags);
-  EXPECT_EQ(OK, rv);
+  TestCompletionCallback callback;
+  int rv = stream.Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
 
   int64 file_size;
   bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(0, file_size);
 
-  TestCompletionCallback callback;
   int total_bytes_written = 0;
 
   scoped_refptr<IOBufferWithSize> buf = CreateTestDataBuffer();
@@ -442,15 +444,15 @@ TEST_F(FileStreamTest, AsyncWrite_EarlyDelete) {
   int flags = base::PLATFORM_FILE_CREATE_ALWAYS |
               base::PLATFORM_FILE_WRITE |
               base::PLATFORM_FILE_ASYNC;
-  int rv = stream->OpenSync(temp_file_path(), flags);
-  EXPECT_EQ(OK, rv);
+  TestCompletionCallback callback;
+  int rv = stream->Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
 
   int64 file_size;
   bool ok = file_util::GetFileSize(temp_file_path(), &file_size);
   EXPECT_TRUE(ok);
   EXPECT_EQ(0, file_size);
-
-  TestCompletionCallback callback;
 
   scoped_refptr<IOBufferWithSize> buf = CreateTestDataBuffer();
   rv = stream->Write(buf, buf->size(), callback.callback());
@@ -458,7 +460,7 @@ TEST_F(FileStreamTest, AsyncWrite_EarlyDelete) {
   if (rv < 0) {
     EXPECT_EQ(ERR_IO_PENDING, rv);
     // The callback should not be called if the request is cancelled.
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     EXPECT_FALSE(callback.have_result());
   } else {
     ok = file_util::GetFileSize(temp_file_path(), &file_size);
@@ -501,8 +503,10 @@ TEST_F(FileStreamTest, AsyncWrite_FromOffset) {
   int flags = base::PLATFORM_FILE_OPEN |
               base::PLATFORM_FILE_WRITE |
               base::PLATFORM_FILE_ASYNC;
-  int rv = stream.OpenSync(temp_file_path(), flags);
-  EXPECT_EQ(OK, rv);
+  TestCompletionCallback callback;
+  int rv = stream.Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
 
   TestInt64CompletionCallback callback64;
   const int64 kOffset = 0;
@@ -511,7 +515,6 @@ TEST_F(FileStreamTest, AsyncWrite_FromOffset) {
   int64 new_offset = callback64.WaitForResult();
   EXPECT_EQ(kTestDataSize, new_offset);
 
-  TestCompletionCallback callback;
   int total_bytes_written = 0;
 
   scoped_refptr<IOBufferWithSize> buf = CreateTestDataBuffer();
@@ -630,13 +633,14 @@ TEST_F(FileStreamTest, BasicAsyncReadWrite) {
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE |
               base::PLATFORM_FILE_ASYNC;
-  int rv = stream->OpenSync(temp_file_path(), flags);
-  EXPECT_EQ(OK, rv);
+  TestCompletionCallback callback;
+  int rv = stream->Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
 
   int64 total_bytes_avail = stream->Available();
   EXPECT_EQ(file_size, total_bytes_avail);
 
-  TestCompletionCallback callback;
   int64 total_bytes_read = 0;
 
   std::string data_read;
@@ -688,8 +692,10 @@ TEST_F(FileStreamTest, BasicAsyncWriteRead) {
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE |
               base::PLATFORM_FILE_ASYNC;
-  int rv = stream->OpenSync(temp_file_path(), flags);
-  EXPECT_EQ(OK, rv);
+  TestCompletionCallback callback;
+  int rv = stream->Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
 
   int64 total_bytes_avail = stream->Available();
   EXPECT_EQ(file_size, total_bytes_avail);
@@ -700,7 +706,6 @@ TEST_F(FileStreamTest, BasicAsyncWriteRead) {
   int64 offset = callback64.WaitForResult();
   EXPECT_EQ(offset, file_size);
 
-  TestCompletionCallback callback;
   int total_bytes_written = 0;
 
   scoped_refptr<IOBufferWithSize> buf = CreateTestDataBuffer();
@@ -854,8 +859,10 @@ TEST_F(FileStreamTest, AsyncWriteRead) {
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE |
               base::PLATFORM_FILE_ASYNC;
-  int rv = stream->OpenSync(temp_file_path(), flags);
-  EXPECT_EQ(OK, rv);
+  TestCompletionCallback open_callback;
+  int rv = stream->Open(temp_file_path(), flags, open_callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, open_callback.WaitForResult());
 
   int64 total_bytes_avail = stream->Available();
   EXPECT_EQ(file_size, total_bytes_avail);
@@ -962,8 +969,10 @@ TEST_F(FileStreamTest, AsyncWriteClose) {
               base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE |
               base::PLATFORM_FILE_ASYNC;
-  int rv = stream->OpenSync(temp_file_path(), flags);
-  EXPECT_EQ(OK, rv);
+  TestCompletionCallback open_callback;
+  int rv = stream->Open(temp_file_path(), flags, open_callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, open_callback.WaitForResult());
 
   int64 total_bytes_avail = stream->Available();
   EXPECT_EQ(file_size, total_bytes_avail);
@@ -1030,6 +1039,44 @@ TEST_F(FileStreamTest, AsyncOpenAndDelete) {
   // open_callback won't be called.
   MessageLoop::current()->RunUntilIdle();
   EXPECT_FALSE(open_callback.have_result());
+}
+
+// Verify that async Write() errors are mapped correctly.
+TEST_F(FileStreamTest, AsyncWriteError) {
+  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  int flags = base::PLATFORM_FILE_CREATE_ALWAYS |
+              base::PLATFORM_FILE_WRITE |
+              base::PLATFORM_FILE_ASYNC;
+  TestCompletionCallback callback;
+  int rv = stream->Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
+
+  // Try passing NULL buffer to Write() and check that it fails.
+  scoped_refptr<IOBuffer> buf = new WrappedIOBuffer(NULL);
+  rv = stream->Write(buf, 1, callback.callback());
+  if (rv == ERR_IO_PENDING)
+    rv = callback.WaitForResult();
+  EXPECT_LT(rv, 0);
+}
+
+// Verify that async Read() errors are mapped correctly.
+TEST_F(FileStreamTest, AsyncReadError) {
+  scoped_ptr<FileStream> stream(new FileStream(NULL));
+  int flags = base::PLATFORM_FILE_OPEN |
+              base::PLATFORM_FILE_READ |
+              base::PLATFORM_FILE_ASYNC;
+  TestCompletionCallback callback;
+  int rv = stream->Open(temp_file_path(), flags, callback.callback());
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(OK, callback.WaitForResult());
+
+  // Try passing NULL buffer to Read() and check that it fails.
+  scoped_refptr<IOBuffer> buf = new WrappedIOBuffer(NULL);
+  rv = stream->Read(buf, 1, callback.callback());
+  if (rv == ERR_IO_PENDING)
+    rv = callback.WaitForResult();
+  EXPECT_LT(rv, 0);
 }
 
 }  // namespace

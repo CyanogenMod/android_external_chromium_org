@@ -9,11 +9,12 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/url_pattern.h"
+#include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/resource_throttle.h"
+#include "extensions/common/url_pattern.h"
 #include "net/url_request/url_request.h"
 
 using content::BrowserThread;
@@ -37,7 +38,7 @@ class UserScriptListener::Throttle
   }
 
   // ResourceThrottle implementation:
-  virtual void WillStartRequest(bool* defer) {
+  virtual void WillStartRequest(bool* defer) OVERRIDE {
     // Only defer requests if Resume has not yet been called.
     if (should_defer_) {
       *defer = true;
@@ -185,7 +186,8 @@ void UserScriptListener::CollectURLPatterns(const Extension* extension,
                                             URLPatterns* patterns) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  const UserScriptList& scripts = extension->content_scripts();
+  const UserScriptList& scripts =
+      ContentScriptsInfo::GetContentScripts(extension);
   for (UserScriptList::const_iterator iter = scripts.begin();
        iter != scripts.end(); ++iter) {
     patterns->insert(patterns->end(),
@@ -204,7 +206,7 @@ void UserScriptListener::Observe(int type,
       Profile* profile = content::Source<Profile>(source).ptr();
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
-      if (extension->content_scripts().empty())
+      if (ContentScriptsInfo::GetContentScripts(extension).empty())
         return;  // no new patterns from this extension.
 
       URLPatterns new_patterns;
@@ -221,7 +223,7 @@ void UserScriptListener::Observe(int type,
       Profile* profile = content::Source<Profile>(source).ptr();
       const Extension* unloaded_extension =
           content::Details<UnloadedExtensionInfo>(details)->extension;
-      if (unloaded_extension->content_scripts().empty())
+      if (ContentScriptsInfo::GetContentScripts(unloaded_extension).empty())
         return;  // no patterns to delete for this extension.
 
       // Clear all our patterns and reregister all the still-loaded extensions.

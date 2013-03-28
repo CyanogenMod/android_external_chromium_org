@@ -20,6 +20,8 @@
 #include "base/win/scoped_comptr.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/ui_export.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/vector2d.h"
 
 namespace ui {
 
@@ -44,7 +46,7 @@ class DataObjectImpl : public DownloadFileObserver,
   size_t size() const { return contents_.size(); }
 
   // DownloadFileObserver implementation:
-  virtual void OnDownloadCompleted(const FilePath& file_path);
+  virtual void OnDownloadCompleted(const base::FilePath& file_path);
   virtual void OnDownloadAborted();
 
   // IDataObject implementation:
@@ -159,28 +161,23 @@ class UI_EXPORT OSExchangeDataProviderWin : public OSExchangeData::Provider {
   // OSExchangeData::Provider methods.
   virtual void SetString(const string16& data);
   virtual void SetURL(const GURL& url, const string16& title);
-  virtual void SetFilename(const FilePath& path);
+  virtual void SetFilename(const base::FilePath& path);
   virtual void SetFilenames(
-      const std::vector<OSExchangeData::FileInfo>& filenames) {
-    NOTREACHED();
-  }
+      const std::vector<OSExchangeData::FileInfo>& filenames);
   virtual void SetPickledData(OSExchangeData::CustomFormat format,
                               const Pickle& data);
-  virtual void SetFileContents(const FilePath& filename,
+  virtual void SetFileContents(const base::FilePath& filename,
                                const std::string& file_contents);
   virtual void SetHtml(const string16& html, const GURL& base_url);
 
   virtual bool GetString(string16* data) const;
   virtual bool GetURLAndTitle(GURL* url, string16* title) const;
-  virtual bool GetFilename(FilePath* path) const;
+  virtual bool GetFilename(base::FilePath* path) const;
   virtual bool GetFilenames(
-      std::vector<OSExchangeData::FileInfo>* filenames) const {
-    NOTREACHED();
-    return false;
-  }
+      std::vector<OSExchangeData::FileInfo>* filenames) const;
   virtual bool GetPickledData(OSExchangeData::CustomFormat format,
                               Pickle* data) const;
-  virtual bool GetFileContents(FilePath* filename,
+  virtual bool GetFileContents(base::FilePath* filename,
                                std::string* file_contents) const;
   virtual bool GetHtml(string16* html, GURL* base_url) const;
   virtual bool HasString() const;
@@ -191,10 +188,22 @@ class UI_EXPORT OSExchangeDataProviderWin : public OSExchangeData::Provider {
   virtual bool HasCustomFormat(OSExchangeData::CustomFormat format) const;
   virtual void SetDownloadFileInfo(
       const OSExchangeData::DownloadFileInfo& download_info);
+#if defined(USE_AURA)
+  virtual void SetDragImage(const gfx::ImageSkia& image,
+                            const gfx::Vector2d& cursor_offset) OVERRIDE;
+  virtual const gfx::ImageSkia& GetDragImage() const OVERRIDE;
+  virtual const gfx::Vector2d& GetDragImageOffset() const OVERRIDE;
+#endif
 
  private:
   scoped_refptr<DataObjectImpl> data_;
   base::win::ScopedComPtr<IDataObject> source_object_;
+
+#if defined(USE_AURA)
+  // Drag image and offset data. Only used for Ash.
+  gfx::ImageSkia drag_image_;
+  gfx::Vector2d drag_image_offset_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(OSExchangeDataProviderWin);
 };

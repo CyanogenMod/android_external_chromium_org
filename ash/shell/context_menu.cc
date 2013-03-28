@@ -6,8 +6,8 @@
 
 #include "ash/launcher/launcher.h"
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_types.h"
 #include "ash/shell.h"
-#include "ash/wm/shelf_types.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -33,7 +33,8 @@ ContextMenu::~ContextMenu() {
 bool ContextMenu::IsCommandIdChecked(int command_id) const {
   switch (command_id) {
     case MENU_AUTO_HIDE:
-      return Shell::GetInstance()->IsShelfAutoHideMenuHideChecked(root_window_);
+      return Shell::GetInstance()->GetShelfAutoHideBehavior(root_window_) ==
+          ash::SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS;
     default:
       return false;
   }
@@ -49,11 +50,15 @@ bool ContextMenu::GetAcceleratorForCommandId(
   return false;
 }
 
-void ContextMenu::ExecuteCommand(int command_id) {
+void ContextMenu::ExecuteCommand(int command_id, int event_flags) {
+  Shell* shell = Shell::GetInstance();
   switch (static_cast<MenuItem>(command_id)) {
     case MENU_AUTO_HIDE:
-      Shell::GetInstance()->SetShelfAutoHideBehavior(
-          Shell::GetInstance()->GetToggledShelfAutoHideBehavior(root_window_),
+      shell->SetShelfAutoHideBehavior(
+          shell->GetShelfAutoHideBehavior(root_window_) ==
+              SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS ?
+                  SHELF_AUTO_HIDE_BEHAVIOR_NEVER :
+                  SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS,
           root_window_);
       break;
     case MENU_ALIGNMENT_MENU:

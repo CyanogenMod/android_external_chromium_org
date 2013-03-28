@@ -17,21 +17,18 @@
 #include "ui/views/view.h"
 
 class LocationBarView;
-class TabContents;
 
 namespace content {
 class WebContents;
 }
 
-namespace views {
-class GestureEvent;
-class ImageView;
-class Label;
-class MouseEvent;
-}
-
 namespace ui {
 class SlideAnimation;
+}
+
+namespace views {
+class ImageView;
+class Label;
 }
 
 // A base class for location bar decorations showing icons and label animations.
@@ -49,8 +46,8 @@ class LocationBarDecorationView : public views::View,
                             SkColor font_color);
   virtual ~LocationBarDecorationView();
 
-  // Update the decoration from the shown TabContents.
-  virtual void Update(TabContents* tab_contents) = 0;
+  // Update the decoration from the shown WebContents.
+  virtual void Update(content::WebContents* web_contents) = 0;
 
   void SetImage(const gfx::ImageSkia* image_skia);
   void SetTooltipText(const string16& tooltip);
@@ -59,7 +56,7 @@ class LocationBarDecorationView : public views::View,
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
   // ui::EventHandler overrides:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // ui::AnimationDelegate overrides:
   virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;

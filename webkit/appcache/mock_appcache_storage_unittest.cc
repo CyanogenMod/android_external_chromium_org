@@ -21,33 +21,37 @@ class MockAppCacheStorageTest : public testing::Test {
           obsoleted_success_(false), found_cache_id_(kNoCacheId) {
     }
 
-    void OnCacheLoaded(AppCache* cache, int64 cache_id) {
+    virtual void OnCacheLoaded(AppCache* cache, int64 cache_id) OVERRIDE {
       loaded_cache_ = cache;
       loaded_cache_id_ = cache_id;
     }
 
-    void OnGroupLoaded(AppCacheGroup* group, const GURL& manifest_url) {
+    virtual void OnGroupLoaded(AppCacheGroup* group,
+                               const GURL& manifest_url) OVERRIDE {
       loaded_group_ = group;
       loaded_manifest_url_ = manifest_url;
     }
 
-    void OnGroupAndNewestCacheStored(
+    virtual void OnGroupAndNewestCacheStored(
         AppCacheGroup* group, AppCache* newest_cache, bool success,
-        bool would_exceed_quota) {
+        bool would_exceed_quota) OVERRIDE {
       stored_group_ = group;
       stored_group_success_ = success;
     }
 
-    void OnGroupMadeObsolete(AppCacheGroup* group, bool success) {
+    virtual void OnGroupMadeObsolete(AppCacheGroup* group,
+                                     bool success) OVERRIDE {
       obsoleted_group_ = group;
       obsoleted_success_ = success;
     }
 
-    void OnMainResponseFound(const GURL& url, const AppCacheEntry& entry,
-                             const GURL& fallback_url,
-                             const AppCacheEntry& fallback_entry,
-                             int64 cache_id, int64 group_id,
-                             const GURL& manifest_url) {
+    virtual void OnMainResponseFound(const GURL& url,
+                                     const AppCacheEntry& entry,
+                                     const GURL& fallback_url,
+                                     const AppCacheEntry& fallback_entry,
+                                     int64 cache_id,
+                                     int64 group_id,
+                                     const GURL& manifest_url) OVERRIDE {
       found_url_ = url;
       found_entry_ = entry;
       found_fallback_url_ = fallback_url;
@@ -84,7 +88,7 @@ TEST_F(MockAppCacheStorageTest, LoadCache_Miss) {
   MockStorageDelegate delegate;
   service.storage()->LoadCache(111, &delegate);
   EXPECT_NE(111, delegate.loaded_cache_id_);
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(111, delegate.loaded_cache_id_);
   EXPECT_FALSE(delegate.loaded_cache_);
 }
@@ -98,7 +102,7 @@ TEST_F(MockAppCacheStorageTest, LoadCache_NearHit) {
   // Setup some preconditions. Make an 'unstored' cache for
   // us to load. The ctor should put it in the working set.
   int64 cache_id = service.storage()->NewCacheId();
-  scoped_refptr<AppCache> cache(new AppCache(&service, cache_id));
+  scoped_refptr<AppCache> cache(new AppCache(service.storage(), cache_id));
 
   // Conduct the test.
   MockStorageDelegate delegate;
@@ -118,7 +122,7 @@ TEST_F(MockAppCacheStorageTest, CreateGroup) {
   service.storage()->LoadOrCreateGroup(manifest_url, &delegate);
   EXPECT_NE(manifest_url, delegate.loaded_manifest_url_);
   EXPECT_FALSE(delegate.loaded_group_.get());
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(manifest_url, delegate.loaded_manifest_url_);
   EXPECT_TRUE(delegate.loaded_group_.get());
   EXPECT_TRUE(delegate.loaded_group_->HasOneRef());
@@ -137,7 +141,7 @@ TEST_F(MockAppCacheStorageTest, LoadGroup_NearHit) {
   // to be "unstored" and "currently in use".
   GURL manifest_url("http://blah/");
   service.storage()->LoadOrCreateGroup(manifest_url, &delegate);
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(manifest_url, delegate.loaded_manifest_url_);
   EXPECT_TRUE(delegate.loaded_group_.get());
 
@@ -164,9 +168,9 @@ TEST_F(MockAppCacheStorageTest, LoadGroupAndCache_FarHit) {
   // appears to be "stored" and "not currently in use".
   GURL manifest_url("http://blah/");
   scoped_refptr<AppCacheGroup> group(
-      new AppCacheGroup(&service, manifest_url, 111));
+      new AppCacheGroup(service.storage(), manifest_url, 111));
   int64 cache_id = storage->NewCacheId();
-  scoped_refptr<AppCache> cache(new AppCache(&service, cache_id));
+  scoped_refptr<AppCache> cache(new AppCache(service.storage(), cache_id));
   cache->set_complete(true);
   group->AddCache(cache);
   storage->AddStoredGroup(group);
@@ -189,7 +193,7 @@ TEST_F(MockAppCacheStorageTest, LoadGroupAndCache_FarHit) {
   storage->LoadCache(cache_id, &delegate);
   EXPECT_NE(cache_id, delegate.loaded_cache_id_);
   EXPECT_NE(cache_ptr, delegate.loaded_cache_.get());
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(cache_id, delegate.loaded_cache_id_);
   EXPECT_EQ(cache_ptr, delegate.loaded_cache_.get());
   delegate.loaded_cache_ = NULL;
@@ -200,7 +204,7 @@ TEST_F(MockAppCacheStorageTest, LoadGroupAndCache_FarHit) {
   storage->LoadOrCreateGroup(manifest_url, &delegate);
   EXPECT_NE(manifest_url, delegate.loaded_manifest_url_);
   EXPECT_FALSE(delegate.loaded_group_.get());
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(manifest_url, delegate.loaded_manifest_url_);
   EXPECT_EQ(group_ptr, delegate.loaded_group_.get());
 }
@@ -215,9 +219,9 @@ TEST_F(MockAppCacheStorageTest, StoreNewGroup) {
   // appears to be "unstored".
   GURL manifest_url("http://blah/");
   scoped_refptr<AppCacheGroup> group(
-      new AppCacheGroup(&service, manifest_url, 111));
+      new AppCacheGroup(service.storage(), manifest_url, 111));
   int64 cache_id = storage->NewCacheId();
-  scoped_refptr<AppCache> cache(new AppCache(&service, cache_id));
+  scoped_refptr<AppCache> cache(new AppCache(service.storage(), cache_id));
   // Hold a ref to the cache simulate the UpdateJob holding that ref,
   // and hold a ref to the group to simulate the CacheHost holding that ref.
 
@@ -229,7 +233,7 @@ TEST_F(MockAppCacheStorageTest, StoreNewGroup) {
   EXPECT_FALSE(delegate.stored_group_success_);
   EXPECT_TRUE(storage->stored_caches_.empty());
   EXPECT_TRUE(storage->stored_groups_.empty());
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_TRUE(delegate.stored_group_success_);
   EXPECT_FALSE(storage->stored_caches_.empty());
   EXPECT_FALSE(storage->stored_groups_.empty());
@@ -247,15 +251,17 @@ TEST_F(MockAppCacheStorageTest, StoreExistingGroup) {
   // that appear to be "stored", and a newest unstored complete cache.
   GURL manifest_url("http://blah/");
   scoped_refptr<AppCacheGroup> group(
-      new AppCacheGroup(&service, manifest_url, 111));
+      new AppCacheGroup(service.storage(), manifest_url, 111));
   int64 old_cache_id = storage->NewCacheId();
-  scoped_refptr<AppCache> old_cache(new AppCache(&service, old_cache_id));
+  scoped_refptr<AppCache> old_cache(
+      new AppCache(service.storage(), old_cache_id));
   old_cache->set_complete(true);
   group->AddCache(old_cache);
   storage->AddStoredGroup(group);
   storage->AddStoredCache(old_cache);
   int64 new_cache_id = storage->NewCacheId();
-  scoped_refptr<AppCache> new_cache(new AppCache(&service, new_cache_id));
+  scoped_refptr<AppCache> new_cache(
+      new AppCache(service.storage(), new_cache_id));
   // Hold our refs to simulate the UpdateJob holding these refs.
 
   // Conduct the test.
@@ -270,7 +276,7 @@ TEST_F(MockAppCacheStorageTest, StoreExistingGroup) {
   EXPECT_EQ(size_t(1), storage->stored_groups_.size());
   EXPECT_TRUE(storage->IsCacheStored(old_cache));
   EXPECT_FALSE(storage->IsCacheStored(new_cache));
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_TRUE(delegate.stored_group_success_);
   EXPECT_EQ(size_t(1), storage->stored_caches_.size());
   EXPECT_EQ(size_t(1), storage->stored_groups_.size());
@@ -290,9 +296,9 @@ TEST_F(MockAppCacheStorageTest, StoreExistingGroupExistingCache) {
   // appear to be "stored".
   GURL manifest_url("http://blah");
   scoped_refptr<AppCacheGroup> group(
-      new AppCacheGroup(&service, manifest_url, 111));
+      new AppCacheGroup(service.storage(), manifest_url, 111));
   int64 cache_id = storage->NewCacheId();
-  scoped_refptr<AppCache> cache(new AppCache(&service, cache_id));
+  scoped_refptr<AppCache> cache(new AppCache(service.storage(), cache_id));
   cache->set_complete(true);
   group->AddCache(cache);
   storage->AddStoredGroup(group);
@@ -313,7 +319,7 @@ TEST_F(MockAppCacheStorageTest, StoreExistingGroupExistingCache) {
   EXPECT_FALSE(delegate.stored_group_success_);
   EXPECT_EQ(size_t(1), storage->stored_caches_.size());
   EXPECT_EQ(size_t(1), storage->stored_groups_.size());
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_TRUE(delegate.stored_group_success_);
   EXPECT_EQ(size_t(1), storage->stored_caches_.size());
   EXPECT_EQ(size_t(1), storage->stored_groups_.size());
@@ -332,9 +338,9 @@ TEST_F(MockAppCacheStorageTest, MakeGroupObsolete) {
   // appears to be "stored" and "currently in use".
   GURL manifest_url("http://blah/");
   scoped_refptr<AppCacheGroup> group(
-      new AppCacheGroup(&service, manifest_url, 111));
+      new AppCacheGroup(service.storage(), manifest_url, 111));
   int64 cache_id = storage->NewCacheId();
-  scoped_refptr<AppCache> cache(new AppCache(&service, cache_id));
+  scoped_refptr<AppCache> cache(new AppCache(service.storage(), cache_id));
   cache->set_complete(true);
   group->AddCache(cache);
   storage->AddStoredGroup(group);
@@ -354,7 +360,7 @@ TEST_F(MockAppCacheStorageTest, MakeGroupObsolete) {
   EXPECT_EQ(size_t(1), storage->stored_groups_.size());
   EXPECT_FALSE(cache->HasOneRef());
   EXPECT_FALSE(group->HasOneRef());
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_TRUE(delegate.obsoleted_success_);
   EXPECT_EQ(group.get(), delegate.obsoleted_group_.get());
   EXPECT_TRUE(group->is_obsolete());
@@ -376,7 +382,7 @@ TEST_F(MockAppCacheStorageTest, MarkEntryAsForeign) {
   // Setup some preconditions. Create a cache with an entry.
   GURL entry_url("http://blah/entry");
   int64 cache_id = storage->NewCacheId();
-  scoped_refptr<AppCache> cache(new AppCache(&service, cache_id));
+  scoped_refptr<AppCache> cache(new AppCache(service.storage(), cache_id));
   cache->AddEntry(entry_url, AppCacheEntry(AppCacheEntry::EXPLICIT));
 
   // Conduct the test.
@@ -399,7 +405,7 @@ TEST_F(MockAppCacheStorageTest, FindNoMainResponse) {
   EXPECT_NE(url, delegate.found_url_);
   storage->FindResponseForMainRequest(url, GURL(), &delegate);
   EXPECT_NE(url, delegate.found_url_);
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(url, delegate.found_url_);
   EXPECT_TRUE(delegate.found_manifest_url_.is_empty());
   EXPECT_EQ(kNoCacheId, delegate.found_cache_id_);
@@ -421,12 +427,12 @@ TEST_F(MockAppCacheStorageTest, BasicFindMainResponse) {
   const GURL kEntryUrl("http://blah/entry");
   const GURL kManifestUrl("http://blah/manifest");
   const int64 kResponseId = 1;
-  scoped_refptr<AppCache> cache(new AppCache(&service, kCacheId));
+  scoped_refptr<AppCache> cache(new AppCache(service.storage(), kCacheId));
   cache->AddEntry(
       kEntryUrl, AppCacheEntry(AppCacheEntry::EXPLICIT, kResponseId));
   cache->set_complete(true);
   scoped_refptr<AppCacheGroup> group(
-      new AppCacheGroup(&service, kManifestUrl, 111));
+      new AppCacheGroup(service.storage(), kManifestUrl, 111));
   group->AddCache(cache);
   storage->AddStoredGroup(group);
   storage->AddStoredCache(cache);
@@ -436,7 +442,7 @@ TEST_F(MockAppCacheStorageTest, BasicFindMainResponse) {
   EXPECT_NE(kEntryUrl, delegate.found_url_);
   storage->FindResponseForMainRequest(kEntryUrl, GURL(), &delegate);
   EXPECT_NE(kEntryUrl, delegate.found_url_);
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(kEntryUrl, delegate.found_url_);
   EXPECT_EQ(kManifestUrl, delegate.found_manifest_url_);
   EXPECT_EQ(kCacheId, delegate.found_cache_id_);
@@ -470,7 +476,7 @@ TEST_F(MockAppCacheStorageTest, BasicFindMainFallbackResponse) {
       Namespace(FALLBACK_NAMESPACE, kFallbackNamespaceUrl2,
                 kFallbackEntryUrl2));
 
-  scoped_refptr<AppCache> cache(new AppCache(&service, kCacheId));
+  scoped_refptr<AppCache> cache(new AppCache(service.storage(), kCacheId));
   cache->InitializeWithManifest(&manifest);
   cache->AddEntry(kFallbackEntryUrl1,
                   AppCacheEntry(AppCacheEntry::FALLBACK, kResponseId1));
@@ -479,7 +485,7 @@ TEST_F(MockAppCacheStorageTest, BasicFindMainFallbackResponse) {
   cache->set_complete(true);
 
   scoped_refptr<AppCacheGroup> group(
-      new AppCacheGroup(&service, kManifestUrl, 111));
+      new AppCacheGroup(service.storage(), kManifestUrl, 111));
   group->AddCache(cache);
   storage->AddStoredGroup(group);
   storage->AddStoredCache(cache);
@@ -493,7 +499,7 @@ TEST_F(MockAppCacheStorageTest, BasicFindMainFallbackResponse) {
   EXPECT_NE(kTestUrl, delegate.found_url_);
   storage->FindResponseForMainRequest(kTestUrl, GURL(), &delegate);
   EXPECT_NE(kTestUrl, delegate.found_url_);
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(kTestUrl, delegate.found_url_);
   EXPECT_EQ(kManifestUrl, delegate.found_manifest_url_);
   EXPECT_EQ(kCacheId, delegate.found_cache_id_);
@@ -521,12 +527,12 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseWithMultipleCandidates) {
   const int64 kResponseId2 = 2;
 
   // The first cache.
-  scoped_refptr<AppCache> cache(new AppCache(&service, kCacheId1));
+  scoped_refptr<AppCache> cache(new AppCache(service.storage(), kCacheId1));
   cache->AddEntry(
       kEntryUrl, AppCacheEntry(AppCacheEntry::EXPLICIT, kResponseId1));
   cache->set_complete(true);
   scoped_refptr<AppCacheGroup> group(
-      new AppCacheGroup(&service, kManifestUrl1, 111));
+      new AppCacheGroup(service.storage(), kManifestUrl1, 111));
   group->AddCache(cache);
   storage->AddStoredGroup(group);
   storage->AddStoredCache(cache);
@@ -535,11 +541,11 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseWithMultipleCandidates) {
   group = NULL;
 
   // The second cache.
-  cache = new AppCache(&service, kCacheId2);
+  cache = new AppCache(service.storage(), kCacheId2);
   cache->AddEntry(
       kEntryUrl, AppCacheEntry(AppCacheEntry::EXPLICIT, kResponseId2));
   cache->set_complete(true);
-  group = new AppCacheGroup(&service, kManifestUrl2, 222);
+  group = new AppCacheGroup(service.storage(), kManifestUrl2, 222);
   group->AddCache(cache);
   storage->AddStoredGroup(group);
   storage->AddStoredCache(cache);
@@ -550,7 +556,7 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseWithMultipleCandidates) {
   EXPECT_NE(kEntryUrl, delegate.found_url_);
   storage->FindResponseForMainRequest(kEntryUrl, GURL(), &delegate);
   EXPECT_NE(kEntryUrl, delegate.found_url_);
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(kEntryUrl, delegate.found_url_);
   EXPECT_EQ(kManifestUrl2, delegate.found_manifest_url_);
   EXPECT_EQ(kCacheId2, delegate.found_cache_id_);
@@ -577,7 +583,7 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseExclusions) {
   Manifest manifest;
   manifest.online_whitelist_namespaces.push_back(kOnlineNamespaceUrl);
 
-  scoped_refptr<AppCache> cache(new AppCache(&service, kCacheId));
+  scoped_refptr<AppCache> cache(new AppCache(service.storage(), kCacheId));
   cache->InitializeWithManifest(&manifest);
   cache->AddEntry(
       kEntryUrl,
@@ -585,7 +591,7 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseExclusions) {
                     kResponseId));
   cache->set_complete(true);
   scoped_refptr<AppCacheGroup> group(
-      new AppCacheGroup(&service, kManifestUrl, 111));
+      new AppCacheGroup(service.storage(), kManifestUrl, 111));
   group->AddCache(cache);
   storage->AddStoredGroup(group);
   storage->AddStoredCache(cache);
@@ -596,7 +602,7 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseExclusions) {
   EXPECT_NE(kEntryUrl, delegate.found_url_);
   storage->FindResponseForMainRequest(kEntryUrl, GURL(), &delegate);
   EXPECT_NE(kEntryUrl, delegate.found_url_);
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(kEntryUrl, delegate.found_url_);
   EXPECT_TRUE(delegate.found_manifest_url_.is_empty());
   EXPECT_EQ(kNoCacheId, delegate.found_cache_id_);
@@ -610,7 +616,7 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseExclusions) {
   EXPECT_NE(kOnlineNamespaceUrl, delegate.found_url_);
   storage->FindResponseForMainRequest(kOnlineNamespaceUrl, GURL(), &delegate);
   EXPECT_NE(kOnlineNamespaceUrl, delegate.found_url_);
-  MessageLoop::current()->RunAllPending();  // Do async task execution.
+  MessageLoop::current()->RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(kOnlineNamespaceUrl, delegate.found_url_);
   EXPECT_TRUE(delegate.found_manifest_url_.is_empty());
   EXPECT_EQ(kNoCacheId, delegate.found_cache_id_);

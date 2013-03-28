@@ -44,6 +44,8 @@
             'installer/gcapi/gcapi_reactivation.cc',
             'installer/gcapi/gcapi_reactivation.h',
           ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         },
         {
           'target_name': 'gcapi_test',
@@ -78,7 +80,6 @@
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
             '../base/base.gyp:test_support_base',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
             '../chrome/chrome.gyp:chrome_version_resources',
             '../content/content.gyp:content_common',
             '../testing/gmock.gyp:gmock',
@@ -138,6 +139,8 @@
               'AdditionalManifestFiles': '$(ProjectDir)\\installer\\mini_installer\\mini_installer.exe.manifest',
             },
           },
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         },
         {
           'target_name': 'installer_util_strings',
@@ -166,6 +169,7 @@
                          '<(SHARED_INTERMEDIATE_DIR)/installer_util_strings',
                          '<(branding)',],
               'message': 'Generating resources from <(RULE_INPUT_PATH)',
+              'msvs_cygwin_shell': 1,
             },
           ],
           'sources': [
@@ -191,33 +195,6 @@
           'dependencies': [
             '<(DEPTH)/base/base.gyp:base',
           ],
-          'sources': [
-            'installer/launcher_support/chrome_launcher_support.cc',
-            'installer/launcher_support/chrome_launcher_support.h',
-          ],
-        },
-        {
-          'target_name': 'launcher_support64',
-          'type': 'static_library',
-          'include_dirs': [
-            '..',
-          ],
-          'direct_dependent_settings': {
-            'include_dirs': [
-              '..',
-            ],
-          },
-          'defines': [
-              '<@(nacl_win64_defines)',
-          ],
-              'dependencies': [
-              '<(DEPTH)/base/base.gyp:base_nacl_win64',
-          ],
-          'configurations': {
-            'Common_Base': {
-              'msvs_target_platform': 'x64',
-            },
-          },
           'sources': [
             'installer/launcher_support/chrome_launcher_support.cc',
             'installer/launcher_support/chrome_launcher_support.h',
@@ -265,9 +242,9 @@
           'dependencies': [
             'installer_util',
             'installer_util_strings',
+            'launcher_support',
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
             '../chrome/common_constants.gyp:common_constants',
             '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
             '../chrome_frame/chrome_frame.gyp:npchrome_frame',
@@ -314,6 +291,8 @@
               'AdditionalManifestFiles': '$(ProjectDir)\\installer\\setup\\setup.exe.manifest',
             },
           },
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
           'rules': [
             {
               'rule_name': 'setup_version',
@@ -366,6 +345,7 @@
                 #'--distribution=$(CHROMIUM_BUILD)',
                 '--distribution=_google_chrome',
               ],
+              'msvs_cygwin_shell': 1,
             },
           ],
           'conditions': [
@@ -394,7 +374,7 @@
                  'branding_dir_100': 'app/theme/default_100_percent/chromium',
               },
             }],
-            ['use_aura==1', {
+            ['target_arch=="x64"', {
               'dependencies!': [
                 '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
                 '../chrome_frame/chrome_frame.gyp:npchrome_frame',
@@ -411,10 +391,10 @@
           'dependencies': [
             'installer_util',
             'installer_util_strings',
+            'launcher_support',
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
             '../base/base.gyp:test_support_base',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
             '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
@@ -478,7 +458,41 @@
                 #'--distribution=$(CHROMIUM_BUILD)',
                 '--distribution=_google_chrome',
               ],
+              'msvs_cygwin_shell': 1,
             },
+          ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
+        },
+      ],
+    }],
+    ['OS=="win" and target_arch=="ia32"', {
+      'targets': [
+        {
+          'target_name': 'launcher_support64',
+          'type': 'static_library',
+          'include_dirs': [
+            '..',
+          ],
+          'direct_dependent_settings': {
+            'include_dirs': [
+              '..',
+            ],
+          },
+          'defines': [
+              '<@(nacl_win64_defines)',
+          ],
+              'dependencies': [
+              '<(DEPTH)/base/base.gyp:base_nacl_win64',
+          ],
+          'configurations': {
+            'Common_Base': {
+              'msvs_target_platform': 'x64',
+            },
+          },
+          'sources': [
+            'installer/launcher_support/chrome_launcher_support.cc',
+            'installer/launcher_support/chrome_launcher_support.h',
           ],
         },
       ],
@@ -550,7 +564,8 @@
             'rpm_arch': 'i386',
             'packaging_files_binaries': [
               '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
-              '<(PRODUCT_DIR)/nacl_ipc_irt_x86_32.nexe',
+              '<(PRODUCT_DIR)/libwidevinecdmadapter.so',
+              '<(PRODUCT_DIR)/libwidevinecdm.so',
             ],
           }],
           ['target_arch=="x64"', {
@@ -558,7 +573,8 @@
             'rpm_arch': 'x86_64',
             'packaging_files_binaries': [
               '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
-              '<(PRODUCT_DIR)/nacl_ipc_irt_x86_64.nexe',
+              '<(PRODUCT_DIR)/libwidevinecdmadapter.so',
+              '<(PRODUCT_DIR)/libwidevinecdm.so',
             ],
           }],
           ['target_arch=="arm"', {

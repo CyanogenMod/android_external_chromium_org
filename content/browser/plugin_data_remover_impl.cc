@@ -14,7 +14,7 @@
 #include "base/version.h"
 #include "content/browser/plugin_process_host.h"
 #include "content/browser/plugin_service_impl.h"
-#include "content/browser/renderer_host/pepper/pepper_file_message_filter.h"
+#include "content/browser/renderer_host/pepper/pepper_flash_file_message_filter.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/plugin_messages.h"
 #include "content/public/browser/browser_context.h"
@@ -93,7 +93,7 @@ class PluginDataRemoverImpl::Context
     std::vector<webkit::WebPluginInfo> plugins;
     plugin_service->GetPluginInfoArray(
         GURL(), mime_type, false, &plugins, NULL);
-    FilePath plugin_path;
+    base::FilePath plugin_path;
     if (!plugins.empty())  // May be empty for some tests.
       plugin_path = plugins[0].path;
 
@@ -109,7 +109,7 @@ class PluginDataRemoverImpl::Context
     if (pepper_info) {
       plugin_name_ = pepper_info->name;
       // Use the broker since we run this function outside the sandbox.
-      plugin_service->OpenChannelToPpapiBroker(plugin_path, this);
+      plugin_service->OpenChannelToPpapiBroker(0, plugin_path, this);
     } else {
       plugin_service->OpenChannelToNpapiPlugin(
           0, 0, GURL(), GURL(), mime_type, this);
@@ -165,6 +165,7 @@ class PluginDataRemoverImpl::Context
 
   virtual void OnPpapiChannelOpened(
       const IPC::ChannelHandle& channel_handle,
+      base::ProcessId  /* peer_pid */,
       int /* child_id */) OVERRIDE {
     if (!channel_handle.name.empty())
       ConnectToChannel(channel_handle, true);
@@ -200,6 +201,24 @@ class PluginDataRemoverImpl::Context
   friend class base::DeleteHelper<Context>;
   virtual ~Context() {}
 
+  IPC::Message* CreatePpapiClearSiteDataMsg(uint64 max_age) {
+    base::FilePath profile_path =
+        PepperFlashFileMessageFilter::GetDataDirName(browser_context_path_);
+    // TODO(vtl): This "duplicates" logic in webkit/plugins/ppapi/file_path.cc
+    // (which prepends the plugin name to the relative part of the path
+    // instead, with the absolute, profile-dependent part being enforced by
+    // the browser).
+#if defined(OS_WIN)
+    base::FilePath plugin_data_path =
+        profile_path.Append(base::FilePath(UTF8ToUTF16(plugin_name_)));
+#else
+    base::FilePath plugin_data_path =
+        profile_path.Append(base::FilePath(plugin_name_));
+#endif  // defined(OS_WIN)
+    return new PpapiMsg_ClearSiteData(0u, plugin_data_path, std::string(),
+                                      kClearAllData, max_age);
+  }
+
   // Connects the client side of a newly opened plug-in channel.
   void ConnectToChannel(const IPC::ChannelHandle& handle, bool is_ppapi) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -222,20 +241,7 @@ class PluginDataRemoverImpl::Context
 
     IPC::Message* msg;
     if (is_ppapi) {
-      FilePath profile_path =
-          PepperFileMessageFilter::GetDataDirName(browser_context_path_);
-      // TODO(vtl): This "duplicates" logic in webkit/plugins/ppapi/file_path.cc
-      // (which prepends the plugin name to the relative part of the path
-      // instead, with the absolute, profile-dependent part being enforced by
-      // the browser).
-#if defined(OS_WIN)
-      FilePath plugin_data_path =
-          profile_path.Append(FilePath(UTF8ToUTF16(plugin_name_)));
-#else
-      FilePath plugin_data_path = profile_path.Append(FilePath(plugin_name_));
-#endif
-      msg = new PpapiMsg_ClearSiteData(0u, plugin_data_path, std::string(),
-                                       kClearAllData, max_age);
+      msg = CreatePpapiClearSiteDataMsg(max_age);
     } else {
       msg = new PluginMsg_ClearSiteData(std::string(), kClearAllData, max_age);
     }
@@ -280,7 +286,7 @@ class PluginDataRemoverImpl::Context
 
   // Path for the current profile. Must be retrieved on the UI thread from the
   // browser context when we start so we can use it later on the I/O thread.
-  FilePath browser_context_path_;
+  base::FilePath browser_context_path_;
 
   // The resource context for the profile. Use only on the I/O thread.
   ResourceContext* resource_context_;

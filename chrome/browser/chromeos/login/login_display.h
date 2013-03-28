@@ -22,37 +22,51 @@ namespace chromeos {
 // An abstract class that defines login UI implementation.
 class LoginDisplay : public RemoveUserDelegate {
  public:
+  // Sign in error IDs that require detailed error screen and not just
+  // a simple error bubble.
+  enum SigninError {
+    // Shown in case of critical TPM error.
+    TPM_ERROR,
+  };
+
   class Delegate {
    public:
+    // Cancels current password changed flow.
+    virtual void CancelPasswordChangedFlow() = 0;
+
     // Create new Google account.
     virtual void CreateAccount() = 0;
+
+    // Create a new locally managed user.
+    virtual void CreateLocallyManagedUser(const string16& display_name,
+                                          const std::string& password) = 0;
+
+    // Complete sign process with specified |credentials|.
+    // Used for new users authenticated through an extension.
+    virtual void CompleteLogin(const UserCredentials& credentials) = 0;
 
     // Returns name of the currently connected network.
     virtual string16 GetConnectedNetworkName() = 0;
 
-    // Sets the displayed email for the next login attempt with |CompleteLogin|.
-    // If it succeeds, user's displayed email value will be updated to |email|.
-    virtual void SetDisplayEmail(const std::string& email) = 0;
-
-    // Complete sign process with specified |username| and |password|.
-    // Used for new users authenticated through an extension.
-    virtual void CompleteLogin(const std::string& username,
-                               const std::string& password) = 0;
-
     // Sign in using |username| and |password| specified.
     // Used for known users only.
-    virtual void Login(const std::string& username,
-                       const std::string& password) = 0;
+    virtual void Login(const UserCredentials& credentials) = 0;
 
-    // Sign in as a demo user.
-    virtual void LoginAsDemoUser() = 0;
+    // Sign in as a retail mode user.
+    virtual void LoginAsRetailModeUser() = 0;
 
-    // Sign in into Guest session.
+    // Sign in into guest session.
     virtual void LoginAsGuest() = 0;
 
-    // Sign out the currently signed in user.
-    // Used when the lock screen is being displayed.
-    virtual void Signout() = 0;
+    // Decrypt cryptohome using user provided |old_password|
+    // and migrate to new password.
+    virtual void MigrateUserData(const std::string& old_password) = 0;
+
+    // Sign in into the public account identified by |username|.
+    virtual void LoginAsPublicAccount(const std::string& username) = 0;
+
+    // Notify the delegate when the sign-in UI is finished loading.
+    virtual void OnSigninScreenReady() = 0;
 
     // Called when existing user pod is selected in the UI.
     virtual void OnUserSelected(const std::string& username) = 0;
@@ -62,6 +76,24 @@ class LoginDisplay : public RemoveUserDelegate {
 
     // Called when the user requests device reset.
     virtual void OnStartDeviceReset() = 0;
+
+    // Shows wrong HWID screen.
+    virtual void ShowWrongHWIDScreen() = 0;
+
+    // Restarts the public-session auto-login timer if it is running.
+    virtual void ResetPublicSessionAutoLoginTimer() = 0;
+
+    // Ignore password change, remove existing cryptohome and
+    // force full sync of user data.
+    virtual void ResyncUserData() = 0;
+
+    // Sets the displayed email for the next login attempt with |CompleteLogin|.
+    // If it succeeds, user's displayed email value will be updated to |email|.
+    virtual void SetDisplayEmail(const std::string& email) = 0;
+
+    // Sign out the currently signed in user.
+    // Used when the lock screen is being displayed.
+    virtual void Signout() = 0;
 
    protected:
     virtual ~Delegate();
@@ -100,15 +132,25 @@ class LoginDisplay : public RemoveUserDelegate {
   // Does nothing if current user is already selected.
   virtual void SelectPod(int index) = 0;
 
-  // Displays error with |error_msg_id| specified.
+  // Displays simple error bubble with |error_msg_id| specified.
   // |login_attempts| shows number of login attempts made by current user.
   // |help_topic_id| is additional help topic that is presented as link.
   virtual void ShowError(int error_msg_id,
                          int login_attempts,
                          HelpAppLauncher::HelpTopic help_topic_id) = 0;
 
+  // Displays detailed error screen for error with ID |error_id|.
+  virtual void ShowErrorScreen(LoginDisplay::SigninError error_id) = 0;
+
   // Proceed with Gaia flow because password has changed.
   virtual void ShowGaiaPasswordChanged(const std::string& username) = 0;
+
+  // Show password changed dialog. If |show_password_error| is not null
+  // user already tried to enter old password but it turned out to be incorrect.
+  virtual void ShowPasswordChangedDialog(bool show_password_error) = 0;
+
+  // Shows signin UI with specified email.
+  virtual void ShowSigninUI(const std::string& email) = 0;
 
   gfx::Rect background_bounds() const { return background_bounds_; }
   void set_background_bounds(const gfx::Rect background_bounds){

@@ -7,18 +7,19 @@
 #include "ash/shell.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/tray_constants.h"
+#include "ash/system/tray/tray_views.h"
 #include "base/i18n/time_formatting.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "grit/ash_strings.h"
+#include "third_party/icu/public/i18n/unicode/datefmt.h"
+#include "third_party/icu/public/i18n/unicode/dtptngen.h"
+#include "third_party/icu/public/i18n/unicode/smpdtfmt.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/widget/widget.h"
-#include "unicode/datefmt.h"
-#include "unicode/dtptngen.h"
-#include "unicode/smpdtfmt.h"
 
 namespace ash {
 namespace internal {
@@ -136,6 +137,11 @@ void DateView::SetActionable(bool actionable) {
 }
 
 void DateView::UpdateTextInternal(const base::Time& now) {
+  SetAccessibleName(
+      base::TimeFormatFriendlyDate(now) +
+      ASCIIToUTF16(",") +
+      base::TimeFormatTimeOfDayWithHourClockType(
+          now, base::k12HourClock, base:: kKeepAmPm));
   date_label_->SetText(
       l10n_util::GetStringFUTF16(
           IDS_ASH_STATUS_TRAY_DATE, FormatDayOfWeek(now), FormatDate(now)));
@@ -145,7 +151,7 @@ bool DateView::PerformAction(const ui::Event& event) {
   if (!actionable_)
     return false;
 
-  ash::Shell::GetInstance()->tray_delegate()->ShowDateSettings();
+  ash::Shell::GetInstance()->system_tray_delegate()->ShowDateSettings();
   return true;
 }
 
@@ -164,8 +170,8 @@ void DateView::OnMouseExited(const ui::MouseEvent& event) {
 }
 
 TimeView::TimeView(TrayDate::ClockLayout clock_layout)
-    : hour_type_(
-          ash::Shell::GetInstance()->tray_delegate()->GetHourClockType()) {
+    : hour_type_(ash::Shell::GetInstance()->system_tray_delegate()->
+                 GetHourClockType()) {
   SetupLabels();
   UpdateTextInternal(base::Time::Now());
   UpdateClockLayout(clock_layout);
@@ -176,7 +182,8 @@ TimeView::~TimeView() {
 }
 
 void TimeView::UpdateTimeFormat() {
-  hour_type_ = ash::Shell::GetInstance()->tray_delegate()->GetHourClockType();
+  hour_type_ =
+      ash::Shell::GetInstance()->system_tray_delegate()->GetHourClockType();
   UpdateText();
 }
 

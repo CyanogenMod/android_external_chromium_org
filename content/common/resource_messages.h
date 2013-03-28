@@ -3,13 +3,17 @@
 // found in the LICENSE file.
 
 // IPC messages for resource loading.
+//
+// NOTE: All messages must send an |int request_id| as their first parameter.
 
 // Multiply-included message file, hence no include guard.
+#include "base/process.h"
 #include "base/shared_memory.h"
 #include "content/common/content_param_traits_macros.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/resource_response.h"
 #include "ipc/ipc_message_macros.h"
+#include "net/base/request_priority.h"
 #include "webkit/glue/resource_request_body.h"
 
 #ifndef CONTENT_COMMON_RESOURCE_MESSAGES_H_
@@ -143,6 +147,9 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   // object).
   IPC_STRUCT_MEMBER(ResourceType::Type, resource_type)
 
+  // The priority of this request.
+  IPC_STRUCT_MEMBER(net::RequestPriority, priority)
+
   // Used by plugin->browser requests to get the correct net::URLRequestContext.
   IPC_STRUCT_MEMBER(uint32, request_context)
 
@@ -220,10 +227,14 @@ IPC_MESSAGE_ROUTED3(ResourceMsg_ReceivedRedirect,
 // NOTE: The shared memory handle should already be mapped into the process
 // that receives this message.
 //
-IPC_MESSAGE_ROUTED3(ResourceMsg_SetDataBuffer,
+// TODO(darin): The |renderer_pid| parameter is just a temporary parameter,
+// added to help in debugging crbug/160401.
+//
+IPC_MESSAGE_ROUTED4(ResourceMsg_SetDataBuffer,
                     int /* request_id */,
                     base::SharedMemoryHandle /* shm_handle */,
-                    int /* shm_size */)
+                    int /* shm_size */,
+                    base::ProcessId /* renderer_pid */)
 
 // Sent when some data from a resource request is ready.  The data offset and
 // length specify a byte range into the shared memory buffer provided by the
@@ -290,3 +301,8 @@ IPC_MESSAGE_ROUTED1(ResourceHostMsg_UploadProgress_ACK,
 // Sent when the renderer process deletes a resource loader.
 IPC_MESSAGE_CONTROL1(ResourceHostMsg_ReleaseDownloadedFile,
                      int /* request_id */)
+
+// Sent by the renderer when a resource request changes priority.
+IPC_MESSAGE_ROUTED2(ResourceHostMsg_DidChangePriority,
+                    int /* request_id */,
+                    net::RequestPriority)

@@ -11,12 +11,14 @@
 #include "base/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/nacl_cmd_line.h"
 #include "chrome/common/nacl_debug_exception_handler_win.h"
 #include "chrome/common/nacl_messages.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/sandbox_init.h"
+#include "ipc/ipc_channel.h"
 #include "ipc/ipc_switches.h"
+#include "sandbox/win/src/sandbox_policy.h"
 
 namespace {
 
@@ -42,6 +44,21 @@ void NaClBrokerListener::Listen() {
       channel_name, IPC::Channel::MODE_CLIENT, this));
   CHECK(channel_->Connect());
   MessageLoop::current()->Run();
+}
+
+// NOTE: changes to this method need to be reviewed by the security team.
+void NaClBrokerListener::PreSpawnTarget(sandbox::TargetPolicy* policy,
+                                        bool* success) {
+  // This code is duplicated in chrome_content_browser_client.cc.
+
+  // Allow the server side of a pipe restricted to the "chrome.nacl."
+  // namespace so that it cannot impersonate other system or other chrome
+  // service pipes.
+  sandbox::ResultCode result = policy->AddRule(
+      sandbox::TargetPolicy::SUBSYS_NAMED_PIPES,
+      sandbox::TargetPolicy::NAMEDPIPES_ALLOW_ANY,
+      L"\\\\.\\pipe\\chrome.nacl.*");
+  *success = (result == sandbox::SBOX_ALL_OK);
 }
 
 void NaClBrokerListener::OnChannelConnected(int32 peer_pid) {
@@ -74,7 +91,7 @@ void NaClBrokerListener::OnLaunchLoaderThroughBroker(
 
   // Create the path to the nacl broker/loader executable - it's the executable
   // this code is running in.
-  FilePath exe_path;
+  base::FilePath exe_path;
   PathService::Get(base::FILE_EXE, &exe_path);
   if (!exe_path.empty()) {
     CommandLine* cmd_line = new CommandLine(exe_path);
@@ -86,7 +103,7 @@ void NaClBrokerListener::OnLaunchLoaderThroughBroker(
     cmd_line->AppendSwitchASCII(switches::kProcessChannelID,
                                 loader_channel_id);
 
-    loader_process = content::StartProcessWithAccess(cmd_line, FilePath());
+    loader_process = content::StartSandboxedProcess(this, cmd_line);
     if (loader_process) {
       DuplicateHandle(::GetCurrentProcess(), loader_process,
           browser_handle_, &loader_handle_in_browser,

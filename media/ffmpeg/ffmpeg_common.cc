@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 
 namespace media {
@@ -17,18 +18,31 @@ namespace media {
 COMPILE_ASSERT(DecoderBuffer::kPaddingSize >= FF_INPUT_BUFFER_PADDING_SIZE,
                decoder_buffer_padding_size_does_not_fit_ffmpeg_requirement);
 
-// Alignment requirement by FFmpeg for input buffers. This need to be updated
-// to match FFmpeg when it changes.
+// Alignment requirement by FFmpeg for input and output buffers. This need to
+// be updated to match FFmpeg when it changes.
 #if defined(ARCH_CPU_ARM_FAMILY)
-static const int kFFmpegInputBufferAlignmentSize = 16;
+static const int kFFmpegBufferAddressAlignment = 16;
 #else
-static const int kFFmpegInputBufferAlignmentSize = 32;
+static const int kFFmpegBufferAddressAlignment = 32;
 #endif
+
 // Check here to ensure FFmpeg only receives data aligned to its specifications.
 COMPILE_ASSERT(
-    DecoderBuffer::kAlignmentSize >= kFFmpegInputBufferAlignmentSize &&
-    DecoderBuffer::kAlignmentSize % kFFmpegInputBufferAlignmentSize == 0,
+    DecoderBuffer::kAlignmentSize >= kFFmpegBufferAddressAlignment &&
+    DecoderBuffer::kAlignmentSize % kFFmpegBufferAddressAlignment == 0,
     decoder_buffer_alignment_size_does_not_fit_ffmpeg_requirement);
+
+// Allows faster SIMD YUV convert. Also, FFmpeg overreads/-writes occasionally.
+// See video_get_buffer() in libavcodec/utils.c.
+static const int kFFmpegOutputBufferPaddingSize = 16;
+
+COMPILE_ASSERT(VideoFrame::kFrameSizePadding >= kFFmpegOutputBufferPaddingSize,
+               video_frame_padding_size_does_not_fit_ffmpeg_requirement);
+
+COMPILE_ASSERT(
+    VideoFrame::kFrameAddressAlignment >= kFFmpegBufferAddressAlignment &&
+    VideoFrame::kFrameAddressAlignment % kFFmpegBufferAddressAlignment == 0,
+    video_frame_address_alignment_does_not_fit_ffmpeg_requirement);
 
 static const AVRational kMicrosBase = { 1, base::Time::kMicrosecondsPerSecond };
 
@@ -54,6 +68,7 @@ AudioCodec CodecIDToAudioCodec(CodecID codec_id) {
     case CODEC_ID_PCM_U8:
     case CODEC_ID_PCM_S16LE:
     case CODEC_ID_PCM_S24LE:
+    case CODEC_ID_PCM_F32LE:
       return kCodecPCM;
     case CODEC_ID_PCM_S16BE:
       return kCodecPCM_S16BE;
@@ -69,6 +84,10 @@ AudioCodec CodecIDToAudioCodec(CodecID codec_id) {
       return kCodecGSM_MS;
     case CODEC_ID_PCM_MULAW:
       return kCodecPCM_MULAW;
+#ifndef CHROMIUM_OMIT_CODEC_ID_OPUS
+    case CODEC_ID_OPUS:
+      return kCodecOpus;
+#endif
     default:
       DVLOG(1) << "Unknown audio CodecID: " << codec_id;
   }
@@ -76,22 +95,24 @@ AudioCodec CodecIDToAudioCodec(CodecID codec_id) {
 }
 
 static CodecID AudioCodecToCodecID(AudioCodec audio_codec,
-                                   int bits_per_channel) {
+                                   SampleFormat sample_format) {
   switch (audio_codec) {
     case kCodecAAC:
       return CODEC_ID_AAC;
     case kCodecMP3:
       return CODEC_ID_MP3;
     case kCodecPCM:
-      switch (bits_per_channel) {
-        case 8:
+      switch (sample_format) {
+        case kSampleFormatU8:
           return CODEC_ID_PCM_U8;
-        case 16:
+        case kSampleFormatS16:
           return CODEC_ID_PCM_S16LE;
-        case 32:
+        case kSampleFormatS32:
           return CODEC_ID_PCM_S24LE;
+        case kSampleFormatF32:
+          return CODEC_ID_PCM_F32LE;
         default:
-          DVLOG(1) << "Unsupported bits per channel: " << bits_per_channel;
+          DVLOG(1) << "Unsupported sample format: " << sample_format;
       }
       break;
     case kCodecPCM_S16BE:
@@ -110,6 +131,10 @@ static CodecID AudioCodecToCodecID(AudioCodec audio_codec,
       return CODEC_ID_GSM_MS;
     case kCodecPCM_MULAW:
       return CODEC_ID_PCM_MULAW;
+#ifndef CHROMIUM_OMIT_CODEC_ID_OPUS
+    case kCodecOpus:
+      return CODEC_ID_OPUS;
+#endif
     default:
       DVLOG(1) << "Unknown AudioCodec: " << audio_codec;
   }
@@ -118,18 +143,18 @@ static CodecID AudioCodecToCodecID(AudioCodec audio_codec,
 
 VideoCodec CodecIDToVideoCodec(CodecID codec_id) {
   switch (codec_id) {
-    case CODEC_ID_VC1:
-      return kCodecVC1;
     case CODEC_ID_H264:
       return kCodecH264;
     case CODEC_ID_THEORA:
       return kCodecTheora;
-    case CODEC_ID_MPEG2VIDEO:
-      return kCodecMPEG2;
     case CODEC_ID_MPEG4:
       return kCodecMPEG4;
     case CODEC_ID_VP8:
       return kCodecVP8;
+#ifndef CHROMIUM_OMIT_AV_CODEC_ID_VP9
+    case AV_CODEC_ID_VP9:
+      return kCodecVP9;
+#endif
     default:
       DVLOG(1) << "Unknown video CodecID: " << codec_id;
   }
@@ -138,18 +163,18 @@ VideoCodec CodecIDToVideoCodec(CodecID codec_id) {
 
 static CodecID VideoCodecToCodecID(VideoCodec video_codec) {
   switch (video_codec) {
-    case kCodecVC1:
-      return CODEC_ID_VC1;
     case kCodecH264:
       return CODEC_ID_H264;
     case kCodecTheora:
       return CODEC_ID_THEORA;
-    case kCodecMPEG2:
-      return CODEC_ID_MPEG2VIDEO;
     case kCodecMPEG4:
       return CODEC_ID_MPEG4;
     case kCodecVP8:
       return CODEC_ID_VP8;
+#ifndef CHROMIUM_OMIT_AV_CODEC_ID_VP9
+    case kCodecVP9:
+      return AV_CODEC_ID_VP9;
+#endif
     default:
       DVLOG(1) << "Unknown VideoCodec: " << video_codec;
   }
@@ -204,48 +229,98 @@ static int VideoCodecProfileToProfileID(VideoCodecProfile profile) {
   return FF_PROFILE_UNKNOWN;
 }
 
-void AVCodecContextToAudioDecoderConfig(
+static SampleFormat AVSampleFormatToSampleFormat(AVSampleFormat sample_format) {
+  switch (sample_format) {
+    case AV_SAMPLE_FMT_U8:
+      return kSampleFormatU8;
+    case AV_SAMPLE_FMT_S16:
+      return kSampleFormatS16;
+    case AV_SAMPLE_FMT_S32:
+      return kSampleFormatS32;
+    case AV_SAMPLE_FMT_FLT:
+      return kSampleFormatF32;
+    case AV_SAMPLE_FMT_S16P:
+      return kSampleFormatPlanarS16;
+    case AV_SAMPLE_FMT_FLTP:
+      return kSampleFormatPlanarF32;
+    default:
+      DVLOG(1) << "Unknown AVSampleFormat: " << sample_format;
+  }
+  return kUnknownSampleFormat;
+}
+
+static AVSampleFormat SampleFormatToAVSampleFormat(SampleFormat sample_format) {
+  switch (sample_format) {
+    case kSampleFormatU8:
+      return AV_SAMPLE_FMT_U8;
+    case kSampleFormatS16:
+      return AV_SAMPLE_FMT_S16;
+    case kSampleFormatS32:
+      return AV_SAMPLE_FMT_S32;
+    case kSampleFormatF32:
+      return AV_SAMPLE_FMT_FLT;
+    case kSampleFormatPlanarS16:
+      return AV_SAMPLE_FMT_S16P;
+    case kSampleFormatPlanarF32:
+      return AV_SAMPLE_FMT_FLTP;
+    default:
+      DVLOG(1) << "Unknown SampleFormat: " << sample_format;
+  }
+  return AV_SAMPLE_FMT_NONE;
+}
+
+static void AVCodecContextToAudioDecoderConfig(
     const AVCodecContext* codec_context,
+    bool is_encrypted,
     AudioDecoderConfig* config) {
   DCHECK_EQ(codec_context->codec_type, AVMEDIA_TYPE_AUDIO);
 
   AudioCodec codec = CodecIDToAudioCodec(codec_context->codec_id);
-  int bytes_per_channel = av_get_bytes_per_sample(codec_context->sample_fmt);
-  ChannelLayout channel_layout =
-      ChannelLayoutToChromeChannelLayout(codec_context->channel_layout,
-                                         codec_context->channels);
-  int samples_per_second = codec_context->sample_rate;
+
+  SampleFormat sample_format =
+      AVSampleFormatToSampleFormat(codec_context->sample_fmt);
+
+  ChannelLayout channel_layout = ChannelLayoutToChromeChannelLayout(
+      codec_context->channel_layout, codec_context->channels);
+
+  if (codec == kCodecOpus) {
+    // |codec_context->sample_fmt| is not set by FFmpeg because Opus decoding is
+    // not enabled in FFmpeg, so we need to manually set the sample format.
+    sample_format = kSampleFormatS16;
+  }
 
   config->Initialize(codec,
-                     bytes_per_channel << 3,
+                     sample_format,
                      channel_layout,
-                     samples_per_second,
+                     codec_context->sample_rate,
                      codec_context->extradata,
                      codec_context->extradata_size,
-                     false,  // Not encrypted.
+                     is_encrypted,
                      true);
+  if (codec != kCodecOpus) {
+    DCHECK_EQ(av_get_bytes_per_sample(codec_context->sample_fmt) * 8,
+              config->bits_per_channel());
+  }
+}
+
+void AVStreamToAudioDecoderConfig(
+    const AVStream* stream,
+    AudioDecoderConfig* config) {
+  bool is_encrypted = false;
+  AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL, 0);
+  if (key)
+    is_encrypted = true;
+  return AVCodecContextToAudioDecoderConfig(stream->codec,
+                                            is_encrypted, config);
 }
 
 void AudioDecoderConfigToAVCodecContext(const AudioDecoderConfig& config,
                                         AVCodecContext* codec_context) {
   codec_context->codec_type = AVMEDIA_TYPE_AUDIO;
   codec_context->codec_id = AudioCodecToCodecID(config.codec(),
-                                                config.bits_per_channel());
-
-  switch (config.bits_per_channel()) {
-    case 8:
-      codec_context->sample_fmt = AV_SAMPLE_FMT_U8;
-      break;
-    case 16:
-      codec_context->sample_fmt = AV_SAMPLE_FMT_S16;
-      break;
-    case 32:
-      codec_context->sample_fmt = AV_SAMPLE_FMT_S32;
-      break;
-    default:
-      DVLOG(1) << "Unsupported bits per channel: " << config.bits_per_channel();
-      codec_context->sample_fmt = AV_SAMPLE_FMT_NONE;
-  }
+                                                config.sample_format());
+  codec_context->sample_fmt = SampleFormatToAVSampleFormat(
+      config.sample_format());
 
   // TODO(scherkus): should we set |channel_layout|? I'm not sure if FFmpeg uses
   // said information to decode.
@@ -283,16 +358,36 @@ void AVStreamToVideoDecoderConfig(
     aspect_ratio = stream->codec->sample_aspect_ratio;
 
   VideoCodec codec = CodecIDToVideoCodec(stream->codec->codec_id);
-  VideoCodecProfile profile = (codec == kCodecVP8) ? VP8PROFILE_MAIN :
-      ProfileIDToVideoCodecProfile(stream->codec->profile);
+
+  VideoCodecProfile profile = VIDEO_CODEC_PROFILE_UNKNOWN;
+  if (codec == kCodecVP8)
+    profile = VP8PROFILE_MAIN;
+  else if (codec == kCodecVP9)
+    profile = VP9PROFILE_MAIN;
+  else
+    profile = ProfileIDToVideoCodecProfile(stream->codec->profile);
+
   gfx::Size natural_size = GetNaturalSize(
       visible_rect.size(), aspect_ratio.num, aspect_ratio.den);
+
+  VideoFrame::Format format = PixelFormatToVideoFormat(stream->codec->pix_fmt);
+  if (codec == kCodecVP9) {
+    // TODO(tomfinegan): libavcodec doesn't know about VP9.
+    format = VideoFrame::YV12;
+    coded_size = natural_size;
+  }
+
+  bool is_encrypted = false;
+  AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL, 0);
+  if (key)
+    is_encrypted = true;
+
   config->Initialize(codec,
                      profile,
-                     PixelFormatToVideoFormat(stream->codec->pix_fmt),
+                     format,
                      coded_size, visible_rect, natural_size,
                      stream->codec->extradata, stream->codec->extradata_size,
-                     false,  // Not encrypted.
+                     is_encrypted,
                      true);
 }
 
@@ -320,8 +415,7 @@ void VideoDecoderConfigToAVCodecContext(
   }
 }
 
-ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
-                                                 int channels) {
+ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout, int channels) {
   switch (layout) {
     case AV_CH_LAYOUT_MONO:
       return CHANNEL_LAYOUT_MONO;
@@ -373,27 +467,28 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
       return CHANNEL_LAYOUT_6_1_FRONT;
     case AV_CH_LAYOUT_7POINT0_FRONT:
       return CHANNEL_LAYOUT_7_0_FRONT;
+#ifdef AV_CH_LAYOUT_7POINT1_WIDE_BACK
     case AV_CH_LAYOUT_7POINT1_WIDE_BACK:
       return CHANNEL_LAYOUT_7_1_WIDE_BACK;
+#endif
     case AV_CH_LAYOUT_OCTAGONAL:
       return CHANNEL_LAYOUT_OCTAGONAL;
     default:
-      // FFmpeg channel_layout is 0 for .wav and .mp3.  We know mono and stereo
-      // from the number of channels, otherwise report errors.
-      if (channels == 1)
-        return CHANNEL_LAYOUT_MONO;
-      if (channels == 2)
-        return CHANNEL_LAYOUT_STEREO;
-      LOG(ERROR) << "Unsupported channel layout: " << layout;
+      // FFmpeg channel_layout is 0 for .wav and .mp3.  Attempt to guess layout
+      // based on the channel count.
+      return GuessChannelLayout(channels);
   }
-  return CHANNEL_LAYOUT_UNSUPPORTED;
 }
 
 VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format) {
   switch (pixel_format) {
     case PIX_FMT_YUV422P:
       return VideoFrame::YV16;
+    // TODO(scherkus): We should be paying attention to the color range of each
+    // format and scaling as appropriate when rendering. Regular YUV has a range
+    // of 16-239 where as YUVJ has a range of 0-255.
     case PIX_FMT_YUV420P:
+    case PIX_FMT_YUVJ420P:
       return VideoFrame::YV12;
     default:
       DVLOG(1) << "Unsupported PixelFormat: " << pixel_format;

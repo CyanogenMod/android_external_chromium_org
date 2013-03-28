@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autofill/autofill_profile.h"
-#include "chrome/browser/autofill/credit_card.h"
-#include "chrome/browser/autofill/personal_data_manager.h"
 #include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/autofill_helper.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/webdata/autofill_entry.h"
 #include "chrome/browser/webdata/autofill_table.h"
+#include "components/autofill/browser/autofill_profile.h"
+#include "components/autofill/browser/credit_card.h"
+#include "components/autofill/browser/personal_data_manager.h"
 
 using autofill_helper::AddKeys;
 using autofill_helper::AddProfile;
@@ -51,9 +51,7 @@ class TwoClientAutofillSyncTest : public SyncTest {
   DISALLOW_COPY_AND_ASSIGN(TwoClientAutofillSyncTest);
 };
 
-// Flaky, http://crbug.com/102687
-IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest,
-                       DISABLED_WebDataServiceSanity) {
+IN_PROC_BROWSER_TEST_F(TwoClientAutofillSyncTest, WebDataServiceSanity) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   // Client0 adds a key.

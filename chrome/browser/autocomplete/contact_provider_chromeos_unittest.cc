@@ -11,8 +11,8 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/string_number_conversions.h"
 #include "base/string16.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
@@ -54,8 +54,7 @@ class ContactProviderTest : public testing::Test {
   // testing::Test implementation.
   virtual void SetUp() OVERRIDE {
     profile_manager_.reset(
-        new TestingProfileManager(
-            static_cast<TestingBrowserProcess*>(g_browser_process)));
+        new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
     ASSERT_TRUE(profile_manager_->SetUp());
     profile_ = profile_manager_->CreateTestingProfile("test_profile");
     contact_manager_.reset(new contacts::ContactManagerStub(profile_));
@@ -67,10 +66,12 @@ class ContactProviderTest : public testing::Test {
   void StartQuery(const std::string& utf8_text) {
     contact_provider_->Start(
         AutocompleteInput(UTF8ToUTF16(utf8_text),
-                          string16(),  // desired_tld
-                          false,       // prevent_inline_autocomplete
-                          false,       // prefer_keyword
-                          false,       // allow_exact_keyword_match
+                          string16::npos,  // cursor_position
+                          string16(),      // desired_tld
+                          GURL(),          // current_url
+                          false,           // prevent_inline_autocomplete
+                          false,           // prefer_keyword
+                          false,           // allow_exact_keyword_match
                           AutocompleteInput::ALL_MATCHES),
         false);  // minimal_changes
   }

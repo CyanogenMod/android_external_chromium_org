@@ -28,10 +28,18 @@ base::LazyInstance<WaitableEvent, WaitableEventLazyInstanceTraits> dummy_event =
 base::subtle::AtomicWord g_last_id = 0;
 }
 
+JavaBridgeChannelHost::~JavaBridgeChannelHost() {
+#if defined(OS_POSIX)
+  if (channel_handle_.socket.fd > 0) {
+    close(channel_handle_.socket.fd);
+  }
+#endif
+}
+
 JavaBridgeChannelHost* JavaBridgeChannelHost::GetJavaBridgeChannelHost(
     int renderer_id,
     base::MessageLoopProxy* ipc_message_loop) {
-  std::string channel_name(StringPrintf("r%d.javabridge", renderer_id));
+  std::string channel_name(base::StringPrintf("r%d.javabridge", renderer_id));
   // There's no need for a shutdown event here. If the browser is terminated
   // while the JavaBridgeChannelHost is blocked on a synchronous IPC call, the
   // renderer's shutdown event will cause the underlying channel to shut down,
@@ -62,8 +70,10 @@ bool JavaBridgeChannelHost::Init(base::MessageLoopProxy* ipc_message_loop,
 
   // Finish populating our ChannelHandle.
 #if defined(OS_POSIX)
-  // Leave the auto-close property at its default value.
-  channel_handle_.socket.fd = channel_->GetClientFileDescriptor();
+  // We take control of the FD for all session between this host and
+  // the corresponding renderers. We keep it open until this object
+  // is deleted.
+  channel_handle_.socket.fd = channel_->TakeClientFileDescriptor();
 #endif
 
   return true;

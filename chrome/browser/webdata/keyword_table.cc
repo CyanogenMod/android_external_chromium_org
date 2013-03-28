@@ -10,17 +10,12 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/metrics/histogram.h"
-#include "base/metrics/stats_counters.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/history/history_database.h"
-#include "chrome/browser/protector/histograms.h"
-#include "chrome/browser/protector/protector_utils.h"
 #include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -34,10 +29,6 @@ using base::Time;
 // static
 const char KeywordTable::kDefaultSearchProviderKey[] =
     "Default Search Provider ID";
-const char KeywordTable::kDefaultSearchIDBackupKey[] =
-    "Default Search Provider ID Backup";
-const char KeywordTable::kBackupSignatureKey[] =
-    "Default Search Provider ID Backup Signature";
 
 namespace {
 
@@ -72,6 +63,10 @@ const std::string ColumnsForVersion(int version, bool concatenated) {
   if (version >= 47) {
     // Column added in version 47.
     columns.push_back("alternate_urls");
+  }
+  if (version >= 49) {
+    // Column added in version 49.
+    columns.push_back("search_terms_replacement_key");
   }
 
   return JoinString(columns, std::string(concatenated ? " || " : ", "));
@@ -118,53 +113,113 @@ void BindURLToStatement(const TemplateURLData& data,
   s->BindInt64(starting_column + 14, data.last_modified.ToTimeT());
   s->BindString(starting_column + 15, data.sync_guid);
   s->BindString(starting_column + 16, alternate_urls);
+  s->BindString(starting_column + 17, data.search_terms_replacement_key);
 }
 
-}  // anonymous namespace
+int table_key = 0;
 
-KeywordTable::KeywordTable(sql::Connection* db, sql::MetaTable* meta_table)
-    : WebDatabaseTable(db, meta_table),
-      backup_overwritten_(false) {
+WebDatabaseTable::TypeKey GetKey() {
+  return reinterpret_cast<void*>(&table_key);
+}
+
+}  // namespace
+
+KeywordTable::KeywordTable() {
 }
 
 KeywordTable::~KeywordTable() {}
 
-bool KeywordTable::Init() {
+KeywordTable* KeywordTable::FromWebDatabase(WebDatabase* db) {
+  return static_cast<KeywordTable*>(db->GetTable(GetKey()));
+}
+
+WebDatabaseTable::TypeKey KeywordTable::GetTypeKey() const {
+  return GetKey();
+}
+
+bool KeywordTable::Init(sql::Connection* db, sql::MetaTable* meta_table) {
+  WebDatabaseTable::Init(db, meta_table);
   return db_->DoesTableExist("keywords") ||
-      (db_->Execute("CREATE TABLE keywords ("
-                    "id INTEGER PRIMARY KEY,"
-                    "short_name VARCHAR NOT NULL,"
-                    "keyword VARCHAR NOT NULL,"
-                    "favicon_url VARCHAR NOT NULL,"
-                    "url VARCHAR NOT NULL,"
-                    "safe_for_autoreplace INTEGER,"
-                    "originating_url VARCHAR,"
-                    "date_created INTEGER DEFAULT 0,"
-                    "usage_count INTEGER DEFAULT 0,"
-                    "input_encodings VARCHAR,"
-                    "show_in_default_list INTEGER,"
-                    "suggest_url VARCHAR,"
-                    "prepopulate_id INTEGER DEFAULT 0,"
-                    "created_by_policy INTEGER DEFAULT 0,"
-                    "instant_url VARCHAR,"
-                    "last_modified INTEGER DEFAULT 0,"
-                    "sync_guid VARCHAR,"
-                    "alternate_urls VARCHAR)") &&
-       UpdateBackupSignature(WebDatabase::kCurrentVersionNumber));
+      db_->Execute("CREATE TABLE keywords ("
+                   "id INTEGER PRIMARY KEY,"
+                   "short_name VARCHAR NOT NULL,"
+                   "keyword VARCHAR NOT NULL,"
+                   "favicon_url VARCHAR NOT NULL,"
+                   "url VARCHAR NOT NULL,"
+                   "safe_for_autoreplace INTEGER,"
+                   "originating_url VARCHAR,"
+                   "date_created INTEGER DEFAULT 0,"
+                   "usage_count INTEGER DEFAULT 0,"
+                   "input_encodings VARCHAR,"
+                   "show_in_default_list INTEGER,"
+                   "suggest_url VARCHAR,"
+                   "prepopulate_id INTEGER DEFAULT 0,"
+                   "created_by_policy INTEGER DEFAULT 0,"
+                   "instant_url VARCHAR,"
+                   "last_modified INTEGER DEFAULT 0,"
+                   "sync_guid VARCHAR,"
+                   "alternate_urls VARCHAR,"
+                   "search_terms_replacement_key VARCHAR)");
 }
 
 bool KeywordTable::IsSyncable() {
   return true;
 }
 
+bool KeywordTable::MigrateToVersion(int version,
+                                    const std::string& app_locale,
+                                    bool* update_compatible_version) {
+  // Migrate if necessary.
+  switch (version) {
+    case 21:
+      *update_compatible_version = true;
+      return MigrateToVersion21AutoGenerateKeywordColumn();
+    case 25:
+      *update_compatible_version = true;
+      return MigrateToVersion25AddLogoIDColumn();
+    case 26:
+      *update_compatible_version = true;
+      return MigrateToVersion26AddCreatedByPolicyColumn();
+    case 28:
+      *update_compatible_version = true;
+      return MigrateToVersion28SupportsInstantColumn();
+    case 29:
+      *update_compatible_version = true;
+      return MigrateToVersion29InstantURLToSupportsInstant();
+    case 38:
+      *update_compatible_version = true;
+      return MigrateToVersion38AddLastModifiedColumn();
+    case 39:
+      *update_compatible_version = true;
+      return MigrateToVersion39AddSyncGUIDColumn();
+    case 44:
+      *update_compatible_version = true;
+      return MigrateToVersion44AddDefaultSearchProviderBackup();
+    case 45:
+      *update_compatible_version = true;
+      return MigrateToVersion45RemoveLogoIDAndAutogenerateColumns();
+    case 47:
+      *update_compatible_version = true;
+      return MigrateToVersion47AddAlternateURLsColumn();
+    case 48:
+      *update_compatible_version = true;
+      return MigrateToVersion48RemoveKeywordsBackup();
+    case 49:
+      *update_compatible_version = true;
+      return MigrateToVersion49AddSearchTermsReplacementKeyColumn();
+  }
+
+  return true;
+}
+
 bool KeywordTable::AddKeyword(const TemplateURLData& data) {
   DCHECK(data.id);
   std::string query("INSERT INTO keywords (" + GetKeywordColumns() +
-                    ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                    ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
   sql::Statement s(db_->GetUniqueStatement(query.c_str()));
   BindURLToStatement(data, &s, 0, 1);
 
-  return s.Run() && UpdateBackupSignature(WebDatabase::kCurrentVersionNumber);
+  return s.Run();
 }
 
 bool KeywordTable::RemoveKeyword(TemplateURLID id) {
@@ -173,7 +228,7 @@ bool KeywordTable::RemoveKeyword(TemplateURLID id) {
       db_->GetUniqueStatement("DELETE FROM keywords WHERE id = ?"));
   s.BindInt64(0, id);
 
-  return s.Run() && UpdateBackupSignature(WebDatabase::kCurrentVersionNumber);
+  return s.Run();
 }
 
 bool KeywordTable::GetKeywords(Keywords* keywords) {
@@ -203,101 +258,20 @@ bool KeywordTable::UpdateKeyword(const TemplateURLData& data) {
       "originating_url=?, date_created=?, usage_count=?, input_encodings=?, "
       "show_in_default_list=?, suggest_url=?, prepopulate_id=?, "
       "created_by_policy=?, instant_url=?, last_modified=?, sync_guid=?, "
-      "alternate_urls=? WHERE id=?"));
-  BindURLToStatement(data, &s, 17, 0);  // "17" binds id() as the last item.
+      "alternate_urls=?, search_terms_replacement_key=? WHERE id=?"));
+  BindURLToStatement(data, &s, 18, 0);  // "18" binds id() as the last item.
 
-  return s.Run() && UpdateBackupSignature(WebDatabase::kCurrentVersionNumber);
+  return s.Run();
 }
 
 bool KeywordTable::SetDefaultSearchProviderID(int64 id) {
-  // Added for http://crbug.com/116952.
-  UMA_HISTOGRAM_COUNTS_100("Search.DefaultSearchProviderID",
-                           static_cast<int32>(id));
-  return meta_table_->SetValue(kDefaultSearchProviderKey, id) &&
-      UpdateBackupSignature(WebDatabase::kCurrentVersionNumber);
+  return meta_table_->SetValue(kDefaultSearchProviderKey, id);
 }
 
 int64 KeywordTable::GetDefaultSearchProviderID() {
   int64 value = kInvalidTemplateURLID;
   meta_table_->GetValue(kDefaultSearchProviderKey, &value);
   return value;
-}
-
-bool KeywordTable::GetDefaultSearchProviderBackup(TemplateURLData* backup) {
-  if (!IsBackupSignatureValid(WebDatabase::kCurrentVersionNumber))
-    return false;
-
-  int64 backup_id = kInvalidTemplateURLID;
-  if (!meta_table_->GetValue(kDefaultSearchIDBackupKey, &backup_id)) {
-    LOG(ERROR) << "No default search id backup found.";
-    return false;
-  }
-  std::string query("SELECT " + GetKeywordColumns() +
-                    " FROM keywords_backup WHERE id=?");
-  sql::Statement s(db_->GetUniqueStatement(query.c_str()));
-  s.BindInt64(0, backup_id);
-
-  if (!s.Step()) {
-    LOG_IF(ERROR, s.Succeeded())
-        << "No default search provider with backup id.";
-    return false;
-  }
-
-  if (!GetKeywordDataFromStatement(s, backup))
-    return false;
-
-  // ID has no meaning for the backup and should be kInvalidTemplateURLID in
-  // case the TemplateURL will be added to keywords if missing.
-  backup->id = kInvalidTemplateURLID;
-  return true;
-}
-
-bool KeywordTable::DidDefaultSearchProviderChange() {
-  if (!IsBackupSignatureValid(WebDatabase::kCurrentVersionNumber)) {
-    UMA_HISTOGRAM_ENUMERATION(
-        protector::kProtectorHistogramDefaultSearchProvider,
-        protector::kProtectorErrorBackupInvalid,
-        protector::kProtectorErrorCount);
-    LOG(ERROR) << "Backup signature is invalid.";
-    return true;
-  }
-
-  int64 backup_id = kInvalidTemplateURLID;
-  meta_table_->GetValue(kDefaultSearchIDBackupKey, &backup_id);
-  int64 current_id = GetDefaultSearchProviderID();
-  if (backup_id == current_id) {
-    // Either this is a new profile and both IDs are kInvalidTemplateURLID or
-    // the search engines with the ids are equal.
-    if (backup_id == kInvalidTemplateURLID) {
-      UMA_HISTOGRAM_ENUMERATION(
-          protector::kProtectorHistogramDefaultSearchProvider,
-          backup_overwritten_ ?
-              protector::kProtectorErrorOverwrittenByMigration :
-              protector::kProtectorErrorValueValidZero,
-          protector::kProtectorErrorCount);
-      return false;
-    }
-    std::string backup_url;
-    std::string current_url;
-    if (GetKeywordAsString(backup_id, "keywords_backup", &backup_url) &&
-        GetKeywordAsString(current_id, "keywords", &current_url) &&
-        current_url == backup_url) {
-      UMA_HISTOGRAM_ENUMERATION(
-          protector::kProtectorHistogramDefaultSearchProvider,
-          backup_overwritten_ ?
-              protector::kProtectorErrorOverwrittenByMigration :
-              protector::kProtectorErrorValueValid,
-          protector::kProtectorErrorCount);
-      return false;
-    }
-  }
-
-  UMA_HISTOGRAM_ENUMERATION(
-      protector::kProtectorHistogramDefaultSearchProvider,
-      protector::kProtectorErrorValueChanged,
-      protector::kProtectorErrorCount);
-  LOG(WARNING) << "Default Search Provider has changed.";
-  return true;
 }
 
 bool KeywordTable::SetBuiltinKeywordVersion(int version) {
@@ -377,10 +351,26 @@ bool KeywordTable::MigrateToVersion39AddSyncGUIDColumn() {
 }
 
 bool KeywordTable::MigrateToVersion44AddDefaultSearchProviderBackup() {
-  if (IsBackupSignatureValid(44))
-    return true;
-  backup_overwritten_ = true;
-  return UpdateBackupSignature(44);
+  sql::Transaction transaction(db_);
+  if (!transaction.Begin())
+    return false;
+
+  int64 default_search_id = GetDefaultSearchProviderID();
+  if (!meta_table_->SetValue("Default Search Provider ID Backup",
+                             default_search_id))
+    return false;
+
+  // Backup of all keywords.
+  if (db_->DoesTableExist("keywords_backup") &&
+      !db_->Execute("DROP TABLE keywords_backup"))
+    return false;
+
+  std::string query("CREATE TABLE keywords_backup AS SELECT " +
+      ColumnsForVersion(44, false) + " FROM keywords ORDER BY id ASC");
+  if (!db_->Execute(query.c_str()))
+    return false;
+
+  return transaction.Commit();
 }
 
 bool KeywordTable::MigrateToVersion45RemoveLogoIDAndAutogenerateColumns() {
@@ -396,17 +386,11 @@ bool KeywordTable::MigrateToVersion45RemoveLogoIDAndAutogenerateColumns() {
   if (!MigrateKeywordsTableForVersion45("keywords"))
     return false;
 
-  if (IsBackupSignatureValid(44)) {
-    // Migrate the keywords backup table as well.
-    if (!MigrateKeywordsTableForVersion45("keywords_backup") || !SignBackup(45))
-      return false;
-  } else {
-    // Old backup was invalid; drop the table entirely, which will trigger the
-    // protector code to prompt the user and recreate the table.
-    if (db_->DoesTableExist("keywords_backup") &&
-        !db_->Execute("DROP TABLE keywords_backup"))
-      return false;
-  }
+  // Migrate the keywords backup table as well.
+  if (!MigrateKeywordsTableForVersion45("keywords_backup") ||
+      !meta_table_->SetValue("Default Search Provider ID Backup Signature",
+                             ""))
+    return false;
 
   return transaction.Commit();
 }
@@ -422,19 +406,40 @@ bool KeywordTable::MigrateToVersion47AddAlternateURLsColumn() {
                     "alternate_urls VARCHAR DEFAULT ''"))
     return false;
 
-  if (IsBackupSignatureValid(46)) {
-    // Migrate the keywords backup table as well.
-    if (!db_->Execute("ALTER TABLE keywords_backup ADD COLUMN "
-                      "alternate_urls VARCHAR DEFAULT ''") ||
-        !SignBackup(47))
-      return false;
-  } else {
-    // Old backup was invalid; drop the table entirely, which will trigger the
-    // protector code to prompt the user and recreate the table.
-    if (db_->DoesTableExist("keywords_backup") &&
-        !db_->Execute("DROP TABLE keywords_backup"))
-      return false;
-  }
+  // Migrate the keywords backup table as well.
+  if (!db_->Execute("ALTER TABLE keywords_backup ADD COLUMN "
+                    "alternate_urls VARCHAR DEFAULT ''") ||
+      !meta_table_->SetValue("Default Search Provider ID Backup Signature",
+                             ""))
+    return false;
+
+  return transaction.Commit();
+}
+
+bool KeywordTable::MigrateToVersion48RemoveKeywordsBackup() {
+  sql::Transaction transaction(db_);
+  if (!transaction.Begin())
+    return false;
+
+  if (!meta_table_->DeleteKey("Default Search Provider ID Backup") ||
+      !meta_table_->DeleteKey("Default Search Provider ID Backup Signature"))
+    return false;
+
+  if (!db_->Execute("DROP TABLE keywords_backup"))
+    return false;
+
+  return transaction.Commit();
+}
+
+bool KeywordTable::MigrateToVersion49AddSearchTermsReplacementKeyColumn() {
+  sql::Transaction transaction(db_);
+
+  // Fill the |search_terms_replacement_key| column with empty strings;
+  // See comments in MigrateToVersion47AddAlternateURLsColumn().
+  if (!transaction.Begin() ||
+      !db_->Execute("ALTER TABLE keywords ADD COLUMN "
+                    "search_terms_replacement_key VARCHAR DEFAULT ''"))
+    return false;
 
   return transaction.Commit();
 }
@@ -480,25 +485,8 @@ bool KeywordTable::GetKeywordDataFromStatement(const sql::Statement& s,
     }
   }
 
-  return true;
-}
+  data->search_terms_replacement_key = s.ColumnString(18);
 
-bool KeywordTable::GetSignatureData(int table_version, std::string* backup) {
-  DCHECK(backup);
-
-  int64 backup_value = kInvalidTemplateURLID;
-  if (!meta_table_->GetValue(kDefaultSearchIDBackupKey, &backup_value)) {
-    LOG(ERROR) << "No backup id for signing.";
-    return false;
-  }
-
-  std::string keywords_backup_data;
-  if (!GetTableContents("keywords_backup", table_version,
-                        &keywords_backup_data)) {
-    LOG(ERROR) << "Can't get keywords backup data";
-    return false;
-  }
-  *backup = base::Int64ToString(backup_value) + keywords_backup_data;
   return true;
 }
 
@@ -521,57 +509,6 @@ bool KeywordTable::GetTableContents(const char* table_name,
   return s.Succeeded();
 }
 
-bool KeywordTable::UpdateBackupSignature(int table_version) {
-  sql::Transaction transaction(db_);
-  if (!transaction.Begin())
-    return false;
-
-  int64 id = kInvalidTemplateURLID;
-  if (!UpdateDefaultSearchProviderIDBackup(&id)) {
-    LOG(ERROR) << "Failed to update default search id backup.";
-    return false;
-  }
-
-  // Backup of all keywords.
-  if (db_->DoesTableExist("keywords_backup") &&
-      !db_->Execute("DROP TABLE keywords_backup"))
-    return false;
-
-  std::string query("CREATE TABLE keywords_backup AS SELECT " +
-      ColumnsForVersion(table_version, false) +
-      " FROM keywords ORDER BY id ASC");
-  if (!db_->Execute(query.c_str())) {
-    LOG(ERROR) << "Failed to create keywords_backup table.";
-    return false;
-  }
-
-  return SignBackup(table_version) && transaction.Commit();
-}
-
-bool KeywordTable::SignBackup(int table_version) {
-  std::string data_to_sign;
-  if (!GetSignatureData(table_version, &data_to_sign)) {
-    LOG(ERROR) << "No data to sign.";
-    return false;
-  }
-
-  std::string signature = protector::SignSetting(data_to_sign);
-  if (signature.empty()) {
-    LOG(ERROR) << "Signature is empty";
-    return false;
-  }
-
-  return meta_table_->SetValue(kBackupSignatureKey, signature);
-}
-
-bool KeywordTable::IsBackupSignatureValid(int table_version) {
-  std::string signature;
-  std::string signature_data;
-  return meta_table_->GetValue(kBackupSignatureKey, &signature) &&
-         GetSignatureData(table_version, &signature_data) &&
-         protector::IsSettingValid(signature_data, signature);
-}
-
 bool KeywordTable::GetKeywordAsString(TemplateURLID id,
                                       const std::string& table_name,
                                       std::string* result) {
@@ -591,19 +528,6 @@ bool KeywordTable::GetKeywordAsString(TemplateURLID id,
     return false;
 
   *result = s.ColumnString(0);
-  return true;
-}
-
-bool KeywordTable::UpdateDefaultSearchProviderIDBackup(TemplateURLID* id) {
-  DCHECK(id);
-  int64 default_search_id = GetDefaultSearchProviderID();
-  if (!meta_table_->SetValue(kDefaultSearchIDBackupKey,
-                             default_search_id)) {
-    LOG(ERROR) << "Can't write default search id backup.";
-    return false;
-  }
-
-  *id = default_search_id;
   return true;
 }
 

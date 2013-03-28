@@ -17,6 +17,7 @@
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '<(DEPTH)/gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/mesa/mesa.gyp:mesa_headers',
         '<(DEPTH)/ui/ui.gyp:ui',
       ],
       'variables': {
@@ -32,11 +33,18 @@
       ],
       'direct_dependent_settings': {
         'include_dirs': [
-          '<(DEPTH)/third_party/mesa/MesaLib/include',
           '<(gl_binding_output_dir)',
         ],
       },
+      'export_dependent_settings': [
+        '<(DEPTH)/third_party/mesa/mesa.gyp:mesa_headers',
+      ],
      'sources': [
+        'async_pixel_transfer_delegate.h',
+        'async_pixel_transfer_delegate_idle.cc',
+        'async_pixel_transfer_delegate_idle.h',
+        'async_pixel_transfer_delegate_stub.cc',
+        'async_pixel_transfer_delegate_stub.h',
         'gl_bindings.h',
         'gl_bindings_skia_in_process.cc',
         'gl_bindings_skia_in_process.h',
@@ -80,7 +88,6 @@
         'gl_surface.cc',
         'gl_surface.h',
         'gl_surface_android.cc',
-        'gl_surface_android.h',
         'gl_surface_linux.cc',
         'gl_surface_mac.cc',
         'gl_surface_stub.cc',
@@ -92,15 +99,20 @@
         'gl_switches.h',
         'gpu_switching_manager.cc',
         'gpu_switching_manager.h',
+        'safe_shared_memory_pool.h',
+        'safe_shared_memory_pool.cc',
         'scoped_make_current.cc',
         'scoped_make_current.h',
         'gl_state_restorer.cc',
         'gl_state_restorer.h',
+        'vsync_provider.cc',
+        'vsync_provider.h',
         '<(gl_binding_output_dir)/gl_bindings_autogen_gl.cc',
         '<(gl_binding_output_dir)/gl_bindings_autogen_gl.h',
         '<(gl_binding_output_dir)/gl_bindings_autogen_mock.cc',
         '<(gl_binding_output_dir)/gl_bindings_autogen_osmesa.cc',
         '<(gl_binding_output_dir)/gl_bindings_autogen_osmesa.h',
+        '<(gl_binding_output_dir)/gl_interface_autogen_gl.h',
       ],
       # hard_dependency is necessary for this target because it has actions
       # that generate header files included by dependent targets. The header
@@ -110,14 +122,19 @@
       'actions': [
         {
           'action_name': 'generate_gl_bindings',
+          'variables': {
+            'generator_path': 'generate_bindings.py',
+            'conditions': [
+              ['use_system_mesa==0', {
+                'header_paths': '../../third_party/mesa/MesaLib/include:../../third_party/khronos',
+              }, { # use_system_mesa==1
+                'header_paths': '/usr/include',
+              }],
+            ],
+          },
           'inputs': [
-            'generate_bindings.py',
-            '<(DEPTH)/third_party/khronos/GLES2/gl2ext.h',
-            '<(DEPTH)/third_party/khronos/EGL/eglext.h',
-            '<(DEPTH)/third_party/mesa/MesaLib/include/GL/glext.h',
-            '<(DEPTH)/third_party/mesa/MesaLib/include/GL/glx.h',
-            '<(DEPTH)/third_party/mesa/MesaLib/include/GL/glxext.h',
-            '<(DEPTH)/third_party/mesa/MesaLib/include/GL/wglext.h',
+            '<(generator_path)',
+            '<!@(python <(generator_path) --header-paths=<(header_paths) --inputs)',
           ],
           'outputs': [
             '<(gl_binding_output_dir)/gl_bindings_autogen_egl.cc',
@@ -136,10 +153,21 @@
             '<(gl_binding_output_dir)/gl_bindings_autogen_wgl.cc',
             '<(gl_binding_output_dir)/gl_bindings_autogen_wgl.h',
             '<(gl_binding_output_dir)/gl_bindings_api_autogen_wgl.h',
+            '<(gl_binding_output_dir)/gl_interface_autogen_egl.h',
+            '<(gl_binding_output_dir)/gl_interface_autogen_gl.h',
+            '<(gl_binding_output_dir)/gl_interface_autogen_glx.h',
+            '<(gl_binding_output_dir)/gl_interface_autogen_osmesa.h',
+            '<(gl_binding_output_dir)/gl_interface_autogen_wgl.h',
+            '<(gl_binding_output_dir)/gl_mock_autogen_egl.h',
+            '<(gl_binding_output_dir)/gl_mock_autogen_gl.h',
+            '<(gl_binding_output_dir)/gl_mock_autogen_glx.h',
+            '<(gl_binding_output_dir)/gl_mock_autogen_osmesa.h',
+            '<(gl_binding_output_dir)/gl_mock_autogen_wgl.h',
           ],
           'action': [
             'python',
-            'generate_bindings.py',
+            '<(generator_path)',
+            '--header-paths=<(header_paths)',
             '<(gl_binding_output_dir)',
           ],
         },
@@ -226,6 +254,8 @@
         }],
         ['OS=="android"', {
           'sources': [
+            'async_pixel_transfer_delegate_android.cc',
+            'async_pixel_transfer_delegate_android.h',
             'android_native_window.cc',
             'android_native_window.h',
           ],
@@ -238,6 +268,32 @@
             'EGL_EGLEXT_PROTOTYPES',
           ],
         }],
+      ],
+    },
+    {
+      'target_name': 'gl_unittest_utils',
+      'type': 'static_library',
+      'variables': {
+        'gl_binding_output_dir': '<(SHARED_INTERMEDIATE_DIR)/ui/gl',
+      },
+      'dependencies': [
+        '../../testing/gmock.gyp:gmock',
+        '../../third_party/khronos/khronos.gyp:khronos_headers',
+        'gl',
+      ],
+      'include_dirs': [
+        '<(gl_binding_output_dir)',
+        '../..',
+      ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(gl_binding_output_dir)',
+        ],
+      },
+      'sources': [
+        'gl_mock.h',
+        'gl_mock.cc',
+        '<(gl_binding_output_dir)/gl_mock_autogen_gl.h',
       ],
     },
   ],

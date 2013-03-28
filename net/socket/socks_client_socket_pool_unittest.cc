@@ -7,9 +7,11 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/time.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/base/load_timing_info.h"
+#include "net/base/load_timing_info_test_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool_histograms.h"
@@ -22,6 +24,22 @@ namespace {
 
 const int kMaxSockets = 32;
 const int kMaxSocketsPerGroup = 6;
+
+// Make sure |handle|'s load times are set correctly.  Only connect times should
+// be set.
+void TestLoadTimingInfo(const ClientSocketHandle& handle) {
+  LoadTimingInfo load_timing_info;
+  EXPECT_TRUE(handle.GetLoadTimingInfo(false, &load_timing_info));
+
+  // None of these tests use a NetLog.
+  EXPECT_EQ(NetLog::Source::kInvalidId, load_timing_info.socket_log_id);
+
+  EXPECT_FALSE(load_timing_info.socket_reused);
+
+  ExpectConnectTimingHasTimes(load_timing_info.connect_timing,
+                              CONNECT_TIMING_HAS_CONNECT_TIMES_ONLY);
+  ExpectLoadTimingHasOnlyConnectionTimes(load_timing_info);
+}
 
 class SOCKSClientSocketPoolTest : public testing::Test {
  protected:
@@ -107,6 +125,7 @@ TEST_F(SOCKSClientSocketPoolTest, Simple) {
   EXPECT_EQ(OK, rv);
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
+  TestLoadTimingInfo(handle);
 }
 
 TEST_F(SOCKSClientSocketPoolTest, Async) {
@@ -124,6 +143,7 @@ TEST_F(SOCKSClientSocketPoolTest, Async) {
   EXPECT_EQ(OK, callback.WaitForResult());
   EXPECT_TRUE(handle.is_initialized());
   EXPECT_TRUE(handle.socket());
+  TestLoadTimingInfo(handle);
 }
 
 TEST_F(SOCKSClientSocketPoolTest, TransportConnectError) {
@@ -222,7 +242,7 @@ TEST_F(SOCKSClientSocketPoolTest, CancelDuringTransportConnect) {
   EXPECT_EQ(0, transport_socket_pool_.cancel_count());
 
   // Now wait for the TCP sockets to connect.
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(ClientSocketPoolTest::kRequestNotFound, GetOrderOfRequest(1));
   EXPECT_EQ(ClientSocketPoolTest::kRequestNotFound, GetOrderOfRequest(2));
@@ -258,7 +278,7 @@ TEST_F(SOCKSClientSocketPoolTest, CancelDuringSOCKSConnect) {
   EXPECT_EQ(0, transport_socket_pool_.release_count());
 
   // Now wait for the async data to reach the SOCKS connect jobs.
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(ClientSocketPoolTest::kRequestNotFound, GetOrderOfRequest(1));
   EXPECT_EQ(ClientSocketPoolTest::kRequestNotFound, GetOrderOfRequest(2));

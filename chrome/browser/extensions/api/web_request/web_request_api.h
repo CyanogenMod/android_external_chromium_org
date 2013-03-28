@@ -20,7 +20,7 @@
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/url_pattern_set.h"
+#include "extensions/common/url_pattern_set.h"
 #include "ipc/ipc_sender.h"
 #include "net/base/completion_callback.h"
 #include "net/base/network_delegate.h"
@@ -85,7 +85,7 @@ class ExtensionWebRequestEventRouter
     // unexpected).
     bool InitFromValue(const base::DictionaryValue& value, std::string* error);
 
-    URLPatternSet urls;
+    extensions::URLPatternSet urls;
     std::vector<ResourceType::Type> types;
     int tab_id;
     int window_id;
@@ -245,6 +245,8 @@ class ExtensionWebRequestEventRouter
       const std::string& sub_event_name,
       const RequestFilter& filter,
       int extra_info_spec,
+      int target_process_id,
+      int target_route_id,
       base::WeakPtr<IPC::Sender> ipc_sender);
 
   // Removes the listener for the given sub-event.
@@ -309,6 +311,8 @@ class ExtensionWebRequestEventRouter
       const GURL& url,
       int tab_id,
       int window_id,
+      int render_process_host_id,
+      int routing_id,
       ResourceType::Type resource_type,
       bool is_async_request,
       bool is_request_from_extension,
@@ -348,6 +352,11 @@ class ExtensionWebRequestEventRouter
       net::URLRequest* request,
       extensions::RequestStage request_stage,
       const net::HttpResponseHeaders* original_response_headers);
+
+  // If the BlockedRequest contains messages_to_extension entries in the event
+  // deltas, we send them to subscribers of
+  // chrome.declarativeWebRequest.onMessage.
+  void SendMessages(void* profile, const BlockedRequest& blocked_request);
 
   // Called when the RulesRegistry is ready to unblock a request that was
   // waiting for said event.
@@ -408,7 +417,8 @@ class ExtensionWebRequestEventRouter
 
 class WebRequestAddEventListener : public SyncIOThreadExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webRequestInternal.addEventListener");
+  DECLARE_EXTENSION_FUNCTION("webRequestInternal.addEventListener",
+                             WEBREQUESTINTERNAL_ADDEVENTLISTENER)
 
  protected:
   virtual ~WebRequestAddEventListener() {}
@@ -419,7 +429,8 @@ class WebRequestAddEventListener : public SyncIOThreadExtensionFunction {
 
 class WebRequestEventHandled : public SyncIOThreadExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webRequestInternal.eventHandled");
+  DECLARE_EXTENSION_FUNCTION("webRequestInternal.eventHandled",
+                             WEBREQUESTINTERNAL_EVENTHANDLED)
 
  protected:
   virtual ~WebRequestEventHandled() {}
@@ -428,12 +439,14 @@ class WebRequestEventHandled : public SyncIOThreadExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class WebRequestHandlerBehaviorChanged : public SyncIOThreadExtensionFunction {
+class WebRequestHandlerBehaviorChangedFunction
+    : public SyncIOThreadExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("webRequest.handlerBehaviorChanged");
+  DECLARE_EXTENSION_FUNCTION("webRequest.handlerBehaviorChanged",
+                             WEBREQUEST_HANDLERBEHAVIORCHANGED)
 
  protected:
-  virtual ~WebRequestHandlerBehaviorChanged() {}
+  virtual ~WebRequestHandlerBehaviorChangedFunction() {}
 
   // ExtensionFunction:
   virtual void GetQuotaLimitHeuristics(

@@ -9,12 +9,14 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 
 namespace gfx {
 class Rect;
 class Size;
 }
+
+class SkRegion;
 
 namespace content {
 
@@ -48,7 +50,7 @@ class GLHelper {
   // GL_UNSIGNED_BYTE.  This is a blocking call that calls glReadPixels on this
   // current context.
   void ReadbackTextureSync(WebKit::WebGLId texture,
-                           const gfx::Size& size,
+                           const gfx::Rect& src_rect,
                            unsigned char* out);
 
   // Creates a copy of the specified texture. |size| is the size of the texture.
@@ -59,11 +61,19 @@ class GLHelper {
   // the texture and |dst_size| is the size of the resulting copy.
   WebKit::WebGLId CopyAndScaleTexture(WebKit::WebGLId texture,
                                       const gfx::Size& src_size,
-                                      const gfx::Size& dst_size);
+                                      const gfx::Size& dst_size,
+                                      bool vertically_flip_texture);
 
   // Returns the shader compiled from the source.
   WebKit::WebGLId CompileShaderFromSource(const WebKit::WGC3Dchar* source,
                                           WebKit::WGC3Denum type);
+
+  // Copies all pixels from |previous_texture| into |texture| that are
+  // inside the region covered by |old_damage| but not part of |new_damage|.
+  void CopySubBufferDamage(WebKit::WebGLId texture,
+                           WebKit::WebGLId previous_texture,
+                           const SkRegion& new_damage,
+                           const SkRegion& old_damage);
 
  private:
   class CopyTextureToImpl;

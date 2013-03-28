@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "chrome/browser/ui/gtk/gtk_util.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/rect.h"
 
@@ -61,7 +60,7 @@ class WindowManagerWindowFinder : public ui::EnumerateWindowsDelegate {
   XID window() const { return window_; }
 
  protected:
-  virtual bool ShouldStopIterating(XID window) {
+  virtual bool ShouldStopIterating(XID window) OVERRIDE {
     if (ui::PropertyExists(window, "WM_STATE")) {
       window_ = window;
       return true;
@@ -83,7 +82,7 @@ class TopMostWindowFinder : public ui::EnumerateWindowsDelegate {
   XID top_most_window() const { return top_most_window_; }
 
  protected:
-   virtual bool ShouldStopIterating(XID window) {
+   virtual bool ShouldStopIterating(XID window) OVERRIDE {
      if (!ui::IsWindowVisible(window))
        return false;
      if (ui::PropertyExists(window, "WM_STATE")) {

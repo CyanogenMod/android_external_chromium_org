@@ -11,8 +11,8 @@
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -119,7 +119,7 @@ void ImportDataHandler::ImportData(const ListValue* args) {
 #endif
     importer_host_->SetObserver(this);
     importer_host_->set_browser(
-        browser::FindBrowserWithWebContents(web_ui()->GetWebContents()));
+        chrome::FindBrowserWithWebContents(web_ui()->GetWebContents()));
     Profile* profile = Profile::FromWebUI(web_ui());
     importer_host_->StartImportSettings(source_profile, profile,
                                         import_services,

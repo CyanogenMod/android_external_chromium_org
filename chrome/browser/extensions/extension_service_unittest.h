@@ -6,11 +6,11 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_SERVICE_UNITTEST_H_
 
 #include "base/at_exit.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/scoped_temp_dir.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "content/public/test/test_browser_thread.h"
@@ -18,18 +18,23 @@
 
 class TestingProfile;
 
+namespace extensions {
+class ManagementPolicy;
+}
+
 class ExtensionServiceTestBase : public testing::Test {
  public:
   ExtensionServiceTestBase();
   virtual ~ExtensionServiceTestBase();
 
-  void InitializeExtensionService(const FilePath& profile_path,
-                                  const FilePath& pref_file,
-                                  const FilePath& extensions_install_dir,
+  void InitializeExtensionService(const base::FilePath& profile_path,
+                                  const base::FilePath& pref_file,
+                                  const base::FilePath& extensions_install_dir,
                                   bool autoupdate_enabled);
 
-  void InitializeInstalledExtensionService(const FilePath& prefs_file,
-                                           const FilePath& source_install_dir);
+  void InitializeInstalledExtensionService(
+      const base::FilePath& prefs_file,
+      const base::FilePath& source_install_dir);
 
   void InitializeEmptyExtensionService();
 
@@ -43,6 +48,8 @@ class ExtensionServiceTestBase : public testing::Test {
 
   virtual void SetUp() OVERRIDE;
 
+  virtual void TearDown() OVERRIDE;
+
   void set_extensions_enabled(bool enabled) {
     service_->set_extensions_enabled(enabled);
   }
@@ -52,10 +59,10 @@ class ExtensionServiceTestBase : public testing::Test {
 
   MessageLoop loop_;
   base::ShadowingAtExitManager at_exit_manager_;
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   scoped_ptr<TestingProfile> profile_;
-  FilePath extensions_install_dir_;
-  FilePath data_dir_;
+  base::FilePath extensions_install_dir_;
+  base::FilePath data_dir_;
   // Managed by extensions::ExtensionSystemFactory.
   ExtensionService* service_;
   extensions::ManagementPolicy* management_policy_;

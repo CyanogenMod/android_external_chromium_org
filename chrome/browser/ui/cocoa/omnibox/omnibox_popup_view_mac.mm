@@ -9,10 +9,12 @@
 #include "base/stl_util.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/cocoa/event_utils.h"
 #include "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
+#include "chrome/browser/ui/omnibox/omnibox_popup_non_view.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
@@ -32,7 +34,7 @@ const int kCellHeightAdjust = 6.0;
 
 // How to round off the popup's corners.  Goal is to match star and go
 // buttons.
-const CGFloat kPopupRoundingRadius = 3.5;
+const CGFloat kPopupRoundingRadius = 3;
 
 // Gap between the field and the popup.
 const CGFloat kPopupFieldGap = 2.0;
@@ -277,6 +279,16 @@ NSAttributedString* OmniboxPopupViewMac::MatchText(
 - (NSInteger)highlightedRow;
 
 @end
+
+// static
+OmniboxPopupView* OmniboxPopupViewMac::Create(OmniboxView* omnibox_view,
+                                              OmniboxEditModel* edit_model,
+                                              NSTextField* field) {
+  if (chrome::search::IsInstantExtendedAPIEnabled())
+    return new OmniboxPopupNonView(edit_model);
+  return new OmniboxPopupViewMac(omnibox_view, edit_model, field);
+}
+
 
 OmniboxPopupViewMac::OmniboxPopupViewMac(OmniboxView* omnibox_view,
                                          OmniboxEditModel* edit_model,

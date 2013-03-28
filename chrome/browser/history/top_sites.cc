@@ -13,16 +13,17 @@
 #include "base/md5.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/message_loop_proxy.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/task_runner.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/history/history_backend.h"
+#include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/history/top_sites_cache.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/ntp/most_visited_handler.h"
@@ -44,10 +45,6 @@
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_util.h"
-
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/existing_user_controller.h"
-#endif
 
 using base::DictionaryValue;
 using content::BrowserThread;
@@ -88,11 +85,7 @@ static const int64 kMaxUpdateIntervalMinutes = 60;
 static const int kTopSitesImageQuality = 100;
 
 const TopSites::PrepopulatedPage kPrepopulatedPages[] = {
-#if defined(OS_CHROMEOS)
-  { IDS_CHROMEOS_WELCOME_URL, IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE,
-    IDR_PRODUCT_LOGO_16, IDR_NEWTAB_CHROME_WELCOME_PAGE_THUMBNAIL,
-    SkColorSetRGB(0, 147, 60) },
-#elif defined(OS_ANDROID)
+#if defined(OS_ANDROID)
     { IDS_MOBILE_WELCOME_URL, IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE,
     IDR_PRODUCT_LOGO_16, IDR_NEWTAB_CHROME_WELCOME_PAGE_THUMBNAIL,
     SkColorSetRGB(0, 147, 60) }
@@ -129,7 +122,7 @@ class LoadThumbnailsFromHistoryTask : public HistoryDBTask {
   }
 
   virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) {
+                             history::HistoryDatabase* db) OVERRIDE {
     // Get the most visited urls.
     backend->QueryMostVisitedURLsImpl(result_count_,
                                       kDaysOfHistory,
@@ -147,7 +140,7 @@ class LoadThumbnailsFromHistoryTask : public HistoryDBTask {
     return true;
   }
 
-  virtual void DoneRunOnMainThread() {
+  virtual void DoneRunOnMainThread() OVERRIDE {
     top_sites_->FinishHistoryMigration(data_);
   }
 
@@ -172,26 +165,6 @@ class LoadThumbnailsFromHistoryTask : public HistoryDBTask {
   DISALLOW_COPY_AND_ASSIGN(LoadThumbnailsFromHistoryTask);
 };
 
-// Adds overridden URL to the given vector and returns true if the given
-// |url_id| needs to be overridden. Otherwise, does nothing but returns false.
-bool MaybeOverrideUrl(int url_id, std::vector<GURL>* prepopulated_page_urls) {
-#if defined(OS_CHROMEOS)
-  if (url_id == IDS_CHROMEOS_WELCOME_URL) {
-    std::string getting_started_guide_url;
-    if (chromeos::ExistingUserController::current_controller()) {
-      getting_started_guide_url =
-          chromeos::ExistingUserController::current_controller()->
-          GetGettingStartedGuideURL();
-    }
-    if (!getting_started_guide_url.empty()) {
-      prepopulated_page_urls->push_back(GURL(getting_started_guide_url));
-      return true;
-    }
-  }
-#endif
-  return false;
-}
-
 }  // namespace
 
 TopSites::TopSites(Profile* profile)
@@ -214,17 +187,14 @@ TopSites::TopSites(Profile* profile)
     registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
                    content::NotificationService::AllSources());
   }
-
   for (size_t i = 0; i < arraysize(kPrepopulatedPages); i++) {
     int url_id = kPrepopulatedPages[i].url_id;
-    if (!MaybeOverrideUrl(url_id, &prepopulated_page_urls_)) {
-      prepopulated_page_urls_.push_back(
-          GURL(l10n_util::GetStringUTF8(url_id)));
-    }
+    prepopulated_page_urls_.push_back(
+        GURL(l10n_util::GetStringUTF8(url_id)));
   }
 }
 
-void TopSites::Init(const FilePath& db_name) {
+void TopSites::Init(const base::FilePath& db_name) {
   // Create the backend here, rather than in the constructor, so that
   // unit tests that do not need the backend can run without a problem.
   backend_ = new TopSitesBackend;
@@ -620,7 +590,7 @@ bool TopSites::EncodeBitmap(const gfx::Image& bitmap,
     return false;
   *bytes = new base::RefCountedBytes();
   std::vector<unsigned char> data;
-  if (!gfx::JPEGEncodedDataFromImage(bitmap, kTopSitesImageQuality, &data))
+  if (!gfx::JPEG1xEncodedDataFromImage(bitmap, kTopSitesImageQuality, &data))
     return false;
 
   // As we're going to cache this data, make sure the vector is only as big as

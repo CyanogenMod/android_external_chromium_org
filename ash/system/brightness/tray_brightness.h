@@ -20,7 +20,7 @@ class BrightnessView;
 class TrayBrightness : public SystemTrayItem,
                        public BrightnessObserver {
  public:
-  TrayBrightness();
+  explicit TrayBrightness(SystemTray* system_tray);
   virtual ~TrayBrightness();
 
  private:
@@ -41,6 +41,7 @@ class TrayBrightness : public SystemTrayItem,
   virtual void DestroyDefaultView() OVERRIDE;
   virtual void DestroyDetailedView() OVERRIDE;
   virtual void UpdateAfterLoginStatusChange(user::LoginStatus status) OVERRIDE;
+  virtual bool ShouldHideArrow() const OVERRIDE;
   virtual bool ShouldShowLauncher() const OVERRIDE;
 
   // Overridden from BrightnessObserver.

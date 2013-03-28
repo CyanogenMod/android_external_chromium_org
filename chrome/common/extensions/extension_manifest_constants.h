@@ -24,6 +24,8 @@ namespace extension_manifest_keys {
   extern const char kBrowseURLs[];
   extern const char kChromeURLOverrides[];
   extern const char kCommands[];
+  extern const char kContentPack[];
+  extern const char kContentPackSites[];
   extern const char kContentScripts[];
   extern const char kContentSecurityPolicy[];
   extern const char kConvertedFromUserScript[];
@@ -44,6 +46,7 @@ namespace extension_manifest_keys {
   extern const char kFileHandlerTypes[];
   extern const char kFileFilters[];
   extern const char kFileBrowserHandlers[];
+  extern const char kMediaGalleriesHandlers[];
   extern const char kHomepageURL[];
   extern const char kIcons[];
   extern const char kId[];
@@ -60,6 +63,7 @@ namespace extension_manifest_keys {
   extern const char kJs[];
   extern const char kKey[];
   extern const char kKeycode[];
+  extern const char kKioskEnabled[];
   extern const char kLanguage[];
   extern const char kLaunch[];
   extern const char kLaunchContainer[];
@@ -74,6 +78,8 @@ namespace extension_manifest_keys {
   extern const char kLayouts[];
   extern const char kManifestVersion[];
   extern const char kMatches[];
+  extern const char kMIMETypes[];
+  extern const char kMimeTypesHandler[];
   extern const char kMinimumChromeVersion[];
   extern const char kNaClModules[];
   extern const char kNaClModulesMIMEType[];
@@ -96,6 +102,7 @@ namespace extension_manifest_keys {
   extern const char kPageActionPopup[];
   extern const char kPageActionPopupPath[];
   extern const char kPageActions[];
+  extern const char kPageLauncher[];
   extern const char kPermissions[];
   extern const char kPlatformAppBackground[];
   extern const char kPlatformAppBackgroundPage[];
@@ -114,6 +121,7 @@ namespace extension_manifest_keys {
   extern const char kShortcutKey[];
   extern const char kSignature[];
   extern const char kSuggestedKey[];
+  extern const char kSystemIndicator[];
   extern const char kTheme[];
   extern const char kThemeColors[];
   extern const char kThemeDisplayProperties[];
@@ -195,6 +203,8 @@ namespace extension_manifest_errors {
   extern const char kInvalidBrowseURLs[];
   extern const char kInvalidChromeURLOverrides[];
   extern const char kInvalidCommandsKey[];
+  extern const char kInvalidContentPack[];
+  extern const char kInvalidContentPackSites[];
   extern const char kInvalidContentScript[];
   extern const char kInvalidContentScriptsList[];
   extern const char kInvalidContentSecurityPolicy[];
@@ -210,6 +220,8 @@ namespace extension_manifest_errors {
   extern const char kInvalidFileAccessList[];
   extern const char kInvalidFileAccessValue[];
   extern const char kInvalidFileBrowserHandler[];
+  extern const char kInvalidFileBrowserHandlerMIMETypes[];
+  extern const char kInvalidMediaGalleriesHandler[];
   extern const char kInvalidFileFiltersList[];
   extern const char kInvalidFileFilterValue[];
   extern const char kInvalidFileHandlers[];
@@ -254,6 +266,7 @@ namespace extension_manifest_errors {
   extern const char kInvalidKeyBindingMissingPlatform[];
   extern const char kInvalidKeyBindingTooMany[];
   extern const char kInvalidKeyBindingUnknownPlatform[];
+  extern const char kInvalidKioskEnabled[];
   extern const char kInvalidLaunchContainer[];
   extern const char kInvalidLaunchValue[];
   extern const char kInvalidLaunchValueContainer[];
@@ -263,6 +276,8 @@ namespace extension_manifest_errors {
   extern const char kInvalidMatch[];
   extern const char kInvalidMatchCount[];
   extern const char kInvalidMatches[];
+  extern const char kInvalidMIMETypes[];
+  extern const char kInvalidMimeTypesHandler[];
   extern const char kInvalidMinimumChromeVersion[];
   extern const char kInvalidNaClModules[];
   extern const char kInvalidNaClModulesMIMEType[];
@@ -287,6 +302,7 @@ namespace extension_manifest_errors {
   extern const char kInvalidPageActionsList[];
   extern const char kInvalidPageActionsListSize[];
   extern const char kInvalidPageActionTypeValue[];
+  extern const char kInvalidPageLauncher[];
   extern const char kInvalidPermission[];
   extern const char kInvalidPermissions[];
   extern const char kInvalidPermissionScheme[];
@@ -301,6 +317,7 @@ namespace extension_manifest_errors {
   extern const char kInvalidSandboxedPagesCSP[];
   extern const char kInvalidScriptBadge[];
   extern const char kInvalidSignature[];
+  extern const char kInvalidSystemIndicator[];
   extern const char kInvalidTheme[];
   extern const char kInvalidThemeColors[];
   extern const char kInvalidThemeImages[];
@@ -333,8 +350,11 @@ namespace extension_manifest_errors {
   extern const char kManifestUnreadable[];
   extern const char kMissingFile[];
   extern const char kMultipleOverrides[];
+  extern const char kNoPermissionForMIMETypes[];
   extern const char kNoWildCardsInPaths[];
+  extern const char kPermissionMustBeOptional[];
   extern const char kPermissionNotAllowed[];
+  extern const char kPermissionNotAllowedInManifest[];
   extern const char kPlatformAppNeedsManifestVersion2[];
   extern const char kOneUISurfaceOnly[];
   extern const char kReservedMessageFound[];

@@ -8,10 +8,10 @@
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_service.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/spellchecker/spelling_service_client.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -162,7 +162,7 @@ class TestingSpellingServiceClient : public SpellingServiceClient {
   }
 
  private:
-  virtual net::URLFetcher* CreateURLFetcher(const GURL& url) {
+  virtual net::URLFetcher* CreateURLFetcher(const GURL& url) OVERRIDE {
     EXPECT_EQ("https://www.googleapis.com/rpc", url.spec());
     fetcher_ = new TestSpellingURLFetcher(0, url, this,
                                           request_type_, request_text_,
@@ -189,9 +189,7 @@ class SpellingServiceClientTest : public testing::Test {
   SpellingServiceClientTest() {}
   virtual ~SpellingServiceClientTest() {}
 
-  void SetUp() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kUseSpellingService);
+  virtual void SetUp() OVERRIDE {
   }
 
   void OnTextCheckComplete(int tag,
@@ -302,7 +300,7 @@ TEST_F(SpellingServiceClientTest, RequestTextCheck) {
   };
 
   PrefService* pref = profile_.GetPrefs();
-  pref->SetBoolean(prefs::kEnableSpellCheck, true);
+  pref->SetBoolean(prefs::kEnableContinuousSpellcheck, true);
   pref->SetBoolean(prefs::kSpellCheckUseSpellingService, true);
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTests); ++i) {
@@ -314,11 +312,10 @@ TEST_F(SpellingServiceClientTest, RequestTextCheck) {
     pref->SetString(prefs::kSpellCheckDictionary, kTests[i].language);
     client_.RequestTextCheck(
         &profile_,
-        0,
         kTests[i].request_type,
         ASCIIToUTF16(kTests[i].request_text),
         base::Bind(&SpellingServiceClientTest::OnTextCheckComplete,
-                   base::Unretained(this)));
+                   base::Unretained(this), 0));
     client_.CallOnURLFetchComplete();
   }
 }
@@ -334,12 +331,12 @@ TEST_F(SpellingServiceClientTest, AvailableServices) {
   // When a user disables spellchecking or prevent using the Spelling service,
   // this function should return false both for suggestions and for spellcheck.
   PrefService* pref = profile_.GetPrefs();
-  pref->SetBoolean(prefs::kEnableSpellCheck, false);
+  pref->SetBoolean(prefs::kEnableContinuousSpellcheck, false);
   pref->SetBoolean(prefs::kSpellCheckUseSpellingService, false);
   EXPECT_FALSE(client_.IsAvailable(&profile_, kSuggest));
   EXPECT_FALSE(client_.IsAvailable(&profile_, kSpellcheck));
 
-  pref->SetBoolean(prefs::kEnableSpellCheck, true);
+  pref->SetBoolean(prefs::kEnableContinuousSpellcheck, true);
   pref->SetBoolean(prefs::kSpellCheckUseSpellingService, true);
 
   // For locales supported by the SpellCheck service, this function returns
@@ -356,11 +353,11 @@ TEST_F(SpellingServiceClientTest, AvailableServices) {
     "en-AU", "en-CA", "en-GB", "en-US",
 #endif
   };
-  // TODO(rlp): We are currently allowing suggest for languages even if
-  // spellcheck is also available.
+  // If spellcheck is allowed, then suggest is not since spellcheck is a
+  // superset of suggest.
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kSupported); ++i) {
     pref->SetString(prefs::kSpellCheckDictionary, kSupported[i]);
-    EXPECT_TRUE(client_.IsAvailable(&profile_, kSuggest));
+    EXPECT_FALSE(client_.IsAvailable(&profile_, kSuggest));
     EXPECT_TRUE(client_.IsAvailable(&profile_, kSpellcheck));
   }
 

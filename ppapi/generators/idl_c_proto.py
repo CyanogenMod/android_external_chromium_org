@@ -79,7 +79,8 @@ class CGen(object):
       'inout': '%s',
       'out': '%s*',
       'store': '%s',
-      'return': '%s'
+      'return': '%s',
+      'ref': '%s*'
     },
     'Callspec': {
       'in': '%s',
@@ -107,7 +108,8 @@ class CGen(object):
       'inout': '%s*',
       'out': '%s*',
       'return': ' %s*',
-      'store': '%s'
+      'store': '%s',
+      'ref': '%s*'
     },
     'blob_t': {
       'in': 'const %s',
@@ -396,9 +398,15 @@ class CGen(object):
 
 
   def Compose(self, rtype, name, arrayspec, callspec, prefix, func_as_ptr,
-              ptr_prefix, include_name):
+              ptr_prefix, include_name, unsized_as_ptr):
     self.LogEnter('Compose: %s %s' % (rtype, name))
     arrayspec = ''.join(arrayspec)
+
+    # Switch unsized array to a ptr. NOTE: Only last element can be unsized.
+    if unsized_as_ptr and arrayspec[-2:] == '[]':
+      prefix +=  '*'
+      arrayspec=arrayspec[:-2]
+
     if not include_name:
       name = prefix + arrayspec
     else:
@@ -409,9 +417,12 @@ class CGen(object):
       params = []
       for ptype, pname, parray, pspec in callspec:
         params.append(self.Compose(ptype, pname, parray, pspec, '', True,
-                                   ptr_prefix='', include_name=True))
+                                   ptr_prefix='', include_name=True,
+                                   unsized_as_ptr=unsized_as_ptr))
       if func_as_ptr:
         name = '(%s*%s)' % (ptr_prefix, name)
+      if not params:
+        params = ['void']
       out = '%s %s(%s)' % (rtype, name, ', '.join(params))
     self.LogExit('Exit Compose: %s' % out)
     return out
@@ -426,14 +437,22 @@ class CGen(object):
   #  include_name - If true, include member name in the signature.
   #                 If false, leave it out. In any case, prefix and ptr_prefix
   #                 are always included.
+  #  include_version - if True, include version in the member name
   #
   def GetSignature(self, node, release, mode, prefix='', func_as_ptr=True,
-                   ptr_prefix='', include_name=True):
+                   ptr_prefix='', include_name=True, include_version=False):
     self.LogEnter('GetSignature %s %s as func=%s' %
                   (node, mode, func_as_ptr))
     rtype, name, arrayspec, callspec = self.GetComponents(node, release, mode)
+    if include_version:
+      name = self.GetStructName(node, release, True)
+
+    # If not a callspec (such as a struct) use a ptr instead of []
+    unsized_as_ptr = not callspec
+
     out = self.Compose(rtype, name, arrayspec, callspec, prefix,
-                       func_as_ptr, ptr_prefix, include_name)
+                       func_as_ptr, ptr_prefix, include_name, unsized_as_ptr)
+
     self.LogExit('Exit GetSignature: %s' % out)
     return out
 
@@ -444,7 +463,7 @@ class CGen(object):
 
     # TODO(noelallen) : Bug 157017 finish multiversion support
     if len(build_list) != 1:
-      node.Error('Can not support multiple versions of node.')
+      node.Error('Can not support multiple versions of node: %s' % build_list)
     assert len(build_list) == 1
 
     out = 'typedef %s;\n' % self.GetSignature(node, build_list[0], 'return',
@@ -487,7 +506,10 @@ class CGen(object):
     __pychecker__ = 'unusednames=prefix,comment'
     release = releases[0]
     self.LogEnter('DefineMember %s' % node)
-    out = '%s;' % self.GetSignature(node, release, 'store', '', True)
+    if node.GetProperty('ref'):
+      out = '%s;' % self.GetSignature(node, release, 'ref', '', True)
+    else:
+      out = '%s;' % self.GetSignature(node, release, 'store', '', True)
     self.LogExit('Exit DefineMember')
     return out
 
@@ -562,9 +584,49 @@ class CGen(object):
   #
   # Generate a comment or copyright block
   #
-  def Copyright(self, node, tabs=0):
+  def Copyright(self, node, cpp_style=False):
     lines = node.GetName().split('\n')
-    return CommentLines(lines, tabs)
+    if cpp_style:
+      return '//' + '\n//'.join(filter(lambda f: f != '', lines)) + '\n'
+    return CommentLines(lines)
+
+
+  def Indent(self, data, tabs=0):
+    """Handles indentation and 80-column line wrapping."""
+    tab = '  ' * tabs
+    lines = []
+    for line in data.split('\n'):
+      # Add indentation
+      line = tab + line
+      if len(line) <= 80:
+        lines.append(line.rstrip())
+      else:
+        left = line.rfind('(') + 1
+        args = line[left:].split(',')
+        orig_args = args
+        orig_left = left
+        # Try to split on '(arg1)' or '(arg1, arg2)', not '()'
+        while args[0][0] == ')':
+          left = line.rfind('(', 0, left - 1) + 1
+          if left == 0:  # No more parens, take the original option
+            args = orig_args
+            left = orig_left
+            break
+          args = line[left:].split(',')
+
+        line_max = 0
+        for arg in args:
+          if len(arg) > line_max: line_max = len(arg)
+
+        if left + line_max >= 80:
+          indent = '%s    ' % tab
+          args =  (',\n%s' % indent).join([arg.strip() for arg in args])
+          lines.append('%s\n%s%s' % (line[:left], indent, args))
+        else:
+          indent = ' ' * (left - 1)
+          args =  (',\n%s' % indent).join(args)
+          lines.append('%s%s' % (line[:left], args))
+    return '\n'.join(lines)
 
 
   # Define a top level object.
@@ -596,30 +658,10 @@ class CGen(object):
       out += comment_txt
     out += define_txt
 
-    tab = '  ' * tabs
-    lines = []
-    for line in out.split('\n'):
-      # Add indentation
-      line = tab + line
-      if len(line) > 80:
-        left = line.rfind('(') + 1
-        args = line[left:].split(',')
-        line_max = 0
-        for arg in args:
-          if len(arg) > line_max: line_max = len(arg)
-
-        if left + line_max >= 80:
-          space = '%s    ' % tab
-          args =  (',\n%s' % space).join([arg.strip() for arg in args])
-          lines.append('%s\n%s%s' % (line[:left], space, args))
-        else:
-          space = ' ' * (left - 1)
-          args =  (',\n%s' % space).join(args)
-          lines.append('%s%s' % (line[:left], args))
-      else:
-        lines.append(line.rstrip())
+    indented_out = self.Indent(out, tabs)
     self.LogExit('Exit Define')
-    return '\n'.join(lines)
+    return indented_out
+
 
 # Clean a string representing an object definition and return then string
 # as a single space delimited set of tokens.
@@ -646,7 +688,8 @@ def TestFile(filenode):
     outstr = CleanString(outstr)
 
     if instr != outstr:
-      ErrOut.Log('Failed match of\n>>%s<<\n>>%s<<\nto:' % (instr, outstr))
+      ErrOut.Log('Failed match of\n>>%s<<\nto:\n>>%s<<\nFor:\n' %
+                 (instr, outstr))
       node.Dump(1, comments=True)
       errors += 1
   return errors
@@ -676,7 +719,7 @@ def TestFiles(filenames):
     InfoOut.Log('Passed generator test.')
   return total_errs
 
-def Main(args):
+def main(args):
   filenames = ParseOptions(args)
   if GetOption('test'):
     return TestFiles(filenames)
@@ -691,5 +734,5 @@ def Main(args):
 
 
 if __name__ == '__main__':
-  sys.exit(Main(sys.argv[1:]))
+  sys.exit(main(sys.argv[1:]))
 

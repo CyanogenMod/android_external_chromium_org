@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 
 // Namespace object for the utilities.
 function ImageUtil() {}
@@ -67,7 +69,7 @@ ImageUtil.clamp = function(min, value, max) {
  * @param {number} min Minimum value.
  * @param {number} value Value to check.
  * @param {number} max Maximum value.
- * @return {boolean} True if value is between
+ * @return {boolean} True if value is between.
  */
 ImageUtil.between = function(min, value, max) {
   return (value - min) * (value - max) <= 0;
@@ -263,10 +265,8 @@ Rect.prototype.toString = function() {
  * Draw the image in context with appropriate scaling.
  * @param {CanvasRenderingContext2D} context Context to draw.
  * @param {Image} image Image to draw.
- * @param {Rect=} opt_dstRect Rectangle in the canvas
- *                            (whole canvas by default).
- * @param {Rect=} opt_srcRect Rectangle in the imsge
- *                            (whole image by default).
+ * @param {Rect=} opt_dstRect Rectangle in the canvas (whole canvas by default).
+ * @param {Rect=} opt_srcRect Rectangle in the imsge (whole image by default).
  */
 Rect.drawImage = function(context, image, opt_dstRect, opt_srcRect) {
   opt_dstRect = opt_dstRect || new Rect(context.canvas);
@@ -304,10 +304,10 @@ Rect.fill = function(context, rect) {
  * @param {Rect} outer Outer rectangle.
  */
 Rect.fillBetween = function(context, inner, outer) {
-  var inner_right = inner.left + inner.width;
-  var inner_bottom = inner.top + inner.height;
-  var outer_right = outer.left + outer.width;
-  var outer_bottom = outer.top + outer.height;
+  var innerRight = inner.left + inner.width;
+  var innerBottom = inner.top + inner.height;
+  var outerRight = outer.left + outer.width;
+  var outerBottom = outer.top + outer.height;
   if (inner.top > outer.top) {
     context.fillRect(
         outer.left, outer.top, outer.width, inner.top - outer.top);
@@ -316,13 +316,13 @@ Rect.fillBetween = function(context, inner, outer) {
     context.fillRect(
         outer.left, inner.top, inner.left - outer.left, inner.height);
   }
-  if (inner.width < outer_right) {
+  if (inner.width < outerRight) {
     context.fillRect(
-        inner_right, inner.top, outer_right - inner_right, inner.height);
+        innerRight, inner.top, outerRight - innerRight, inner.height);
   }
-  if (inner.height < outer_bottom) {
+  if (inner.height < outerBottom) {
     context.fillRect(
-        outer.left, inner_bottom, outer.width, outer_bottom - inner_bottom);
+        outer.left, innerBottom, outer.width, outerBottom - innerBottom);
   }
 };
 
@@ -358,7 +358,7 @@ Circle.prototype.inside = function(x, y) {
  * @param {HTMLCanvasElement|HTMLImageElement} src Source.
  * @param {number} scaleX Y scale transformation.
  * @param {number} scaleY X scale transformation.
- * @param {number} angle (in radians)
+ * @param {number} angle (in radians).
  */
 ImageUtil.drawImageTransformed = function(dst, src, scaleX, scaleY, angle) {
   var context = dst.getContext('2d');
@@ -368,14 +368,6 @@ ImageUtil.drawImageTransformed = function(dst, src, scaleX, scaleY, angle) {
   context.scale(scaleX, scaleY);
   context.drawImage(src, -src.width / 2, -src.height / 2);
   context.restore();
-};
-
-/**
- * @param {*} value Structure.
- * @return {*} Clone of the value.
- */
-ImageUtil.deepCopy = function(value) {
-  return JSON.parse(JSON.stringify(value));
 };
 
 /**
@@ -416,7 +408,7 @@ ImageUtil.setClass = function(element, className, on) {
  */
 ImageUtil.ImageLoader = function(document) {
   this.document_ = document;
-  this.image_ = null;
+  this.image_ = new Image();
   this.generation_ = 0;
 };
 
@@ -426,12 +418,21 @@ ImageUtil.ImageLoader = function(document) {
 ImageUtil.ImageLoader.IMAGE_SIZE_LIMIT = 25 * 1000 * 1000;
 
 /**
+ * @param {HTMLImageElement|HTMLCanvasElement|Object} image Image or image
+ *     metadata, should have |width| and |height| properties.
+ * @return {boolean} True if the image is too large to be loaded.
+ */
+ImageUtil.ImageLoader.isTooLarge = function(image) {
+  return image.width * image.height > ImageUtil.ImageLoader.IMAGE_SIZE_LIMIT;
+};
+
+/**
  * @param {string} url Image URL.
  * @param {function(function(object))} transformFetcher function to get
- *    the image transform (which we need for the image orientation)
+ *     the image transform (which we need for the image orientation).
  * @param {function(HTMLCanvasElement)} callback To be called when loaded.
- * @param {number} opt_delay Load delay in milliseconds, useful to let the
- *        animations play out before the computation heavy image loading starts.
+ * @param {number=} opt_delay Load delay in milliseconds, useful to let the
+ *     animations play out before the computation heavy image loading starts.
  */
 ImageUtil.ImageLoader.prototype.load = function(
     url, transformFetcher, callback, opt_delay) {
@@ -454,19 +455,22 @@ ImageUtil.ImageLoader.prototype.load = function(
     this.timeout_ = null;
     // The clients of this class sometimes request the same url repeatedly.
     // The onload fires only if the src is different from the previous value.
-    // To work around that we create a new Image every time.
-    this.image_ = new Image();
+    // To work around that we reset the src temporarily.
+    this.image_.src = '';
     var errorCallback = function(error) {
-      this.image_ = null;
+      this.image_.onerror = null;
+      this.image_.onload = null;
+      var tmpCallback = this.callback_;
       this.callback_ = null;
       var emptyCanvas = this.document_.createElement('canvas');
       emptyCanvas.width = 0;
       emptyCanvas.height = 0;
-      callback(emptyCanvas, error);
+      tmpCallback(emptyCanvas, error);
     }.bind(this);
     this.image_.onload = function(e) {
-      if (this.image_.width * this.image_.height >
-          ImageUtil.ImageLoader.IMAGE_SIZE_LIMIT) {
+      this.image_.onerror = null;
+      this.image_.onload = null;
+      if (ImageUtil.ImageLoader.isTooLarge(this.image_)) {
         errorCallback('IMAGE_TOO_BIG_ERROR');
         return;
       }
@@ -475,7 +479,7 @@ ImageUtil.ImageLoader.prototype.load = function(
     // errorCallback has an optional error argument, which in case of general
     // error should not be specified
     this.image_.onerror = errorCallback.bind(this, 'IMAGE_ERROR');
-    this.image_.src = url;
+    this.taskId_ = util.loadImage(this.image_, url);
   }.bind(this);
   if (opt_delay) {
     this.timeout_ = setTimeout(startLoad, opt_delay);
@@ -500,7 +504,7 @@ ImageUtil.ImageLoader.prototype.isLoading = function(url) {
 };
 
 /**
- * @param {Function} callback To be called when the image loaded.
+ * @param {function} callback To be called when the image loaded.
  */
 ImageUtil.ImageLoader.prototype.setCallback = function(callback) {
   this.callback_ = callback;
@@ -518,14 +522,17 @@ ImageUtil.ImageLoader.prototype.cancel = function() {
   }
   if (this.image_) {
     this.image_.onload = function() {};
-    this.image_ = null;
+    this.image_.onerror = function() {};
+    this.image_.src = '';
   }
+  if (this.taskId_)
+    util.cancelLoadImage(this.taskId_);
   this.generation_++;  // Silence the transform fetcher if it is in progress.
 };
 
 /**
  * @param {HTMLImageElement} image Image to be transformed.
- * @param {object} transform rransformation description to applay to the image.
+ * @param {Object} transform rransformation description to applay to the image.
  * @private
  */
 ImageUtil.ImageLoader.prototype.convertImage_ = function(image, transform) {

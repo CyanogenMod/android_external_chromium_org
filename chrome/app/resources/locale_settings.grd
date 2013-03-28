@@ -253,9 +253,14 @@
         55
       </message>
 
+      <!-- The width of the ash/ChromeOS system tray menu in pixels. -->
+      <message name="IDS_SYSTEM_TRAY_MENU_BUBBLE_WIDTH_PIXELS" use_name_for_id="true">
+        300
+      </message>
+       
       <!-- The width of the Disabled Extensions bubble in characters (See above). -->
       <message name="IDS_DISABLED_EXTENSIONS_BUBBLE_WIDTH_CHARS" use_name_for_id="true">
-        55
+        46
       </message>
 
       <!-- The width and height of the Join Wi-Fi network dialog box in -->
@@ -275,21 +280,12 @@
         30
       </message>
       
-      <!-- The width and height of the Page Info dialog box in characters and lines -->
-      <!-- (See above). -->
-      <message name="IDS_PAGEINFO_DIALOG_WIDTH_CHARS" use_name_for_id="true">
-        70
-      </message>
-      <message name="IDS_PAGEINFO_DIALOG_HEIGHT_LINES" use_name_for_id="true">
-        25
-      </message>
-
-      <!-- The width and height of the Page Info bubble characters and lines (See above). -->
-      <message name="IDS_PAGEINFOBUBBLE_WIDTH_CHARS" use_name_for_id="true">
+      <!-- The width and height of the Script Bubble in characters and lines -->
+      <message name="IDS_SCRIPTBUBBLE_WIDTH_CHARS" use_name_for_id="true">
         50
       </message>
-      <message name="IDS_PAGEINFOBUBBLE_HEIGHT_LINES" use_name_for_id="true">
-        30
+      <message name="IDS_SCRIPTBUBBLE_HEIGHT_LINES" use_name_for_id="true">
+        5
       </message>
 
       <!-- The width and height of the Edit Bookmark dialog box in characters and lines -->
@@ -344,6 +340,11 @@
         https://chrome.google.com/webstore?hl=[GRITLANGCODE]&amp;category=theme
       </message>
 
+      <!-- The URL for the content packs gallery. -->
+      <message name="IDS_GET_CONTENT_PACKS_URL" translateable="false">
+        https://chrome.google.com/webstore?hl=[GRITLANGCODE]
+      </message>
+
       <!-- The URL for the webstore. -->
       <message name="IDS_WEBSTORE_URL" translateable="false">
         https://chrome.google.com/webstore?hl=[GRITLANGCODE]
@@ -360,12 +361,6 @@
         </message>
       </if>
 
-      <!-- The URL for Google Chrome OS welcome page. This is used for the -->
-      <!-- pre populated thumbnails. -->
-      <message name="IDS_CHROMEOS_WELCOME_URL" translateable="false">
-        http://gweb-gettingstartedguide.appspot.com/?hl=[GRITLANGCODE]
-      </message>
-
       <!-- The URL for Google Chrome privacy policy. -->
       <if expr="pp_ifdef('ios')">
         <message name="IDS_PRIVACY_POLICY_URL" translateable="false">
@@ -373,11 +368,17 @@
         </message>
       </if>
 
-      <!-- The URL for Adobe Flash storage settings. We cannot rely on -->
+      <!-- The URLs for Adobe Flash settings. We cannot rely on -->
       <!-- the automatic expansion of GRITLANGCODE here because Adobe does -->
       <!-- not use the language/locale code. -->
       <message name="IDS_FLASH_STORAGE_URL" use_name_for_id="true">
         http://www.adobe.com/go/settmgr_storage_en
+      </message>
+      <message name="IDS_FLASH_GLOBAL_PRIVACY_URL" use_name_for_id="true">
+        http://www.macromedia.com/support/documentation/en/flashplayer/help/settings_manager02.html
+      </message>
+      <message name="IDS_FLASH_WEBSITE_PRIVACY_URL" use_name_for_id="true">
+        http://www.macromedia.com/support/documentation/en/flashplayer/help/settings_manager06.html
       </message>
 
       <message name="IDS_SYNC_GET_ACCESS_CODE_URL" translateable="false">
@@ -420,14 +421,6 @@
         15
       </message>
 
-      <!-- The default width and min height for the 'download_in_progress' dialog. -->
-      <message name="IDS_DOWNLOAD_IN_PROGRESS_WIDTH_CHARS" use_name_for_id="true">
-        67
-      </message>
-      <message name="IDS_DOWNLOAD_IN_PROGRESS_MINIMUM_HEIGHT_LINES" use_name_for_id="true">
-        4
-      </message>
-
       <!-- The width for the "create application shortcuts" dialog in characters. -->
       <message name="IDS_CREATE_SHORTCUTS_DIALOG_WIDTH_CHARS" use_name_for_id="true">
         65
@@ -442,11 +435,6 @@
          6
         </message>
       </if>
-
-      <!-- The width of the Instant confirm dialog box in characters. -->
-      <message name="IDS_INSTANT_CONFIRM_DIALOG_WIDTH_CHARS" use_name_for_id="true">
-        70
-      </message>
 
       <!-- The width of the make-default-in-metro dialog in characters. -->
       <message name="IDS_METRO_FLOW_WIDTH_CHARS" use_name_for_id="true">
@@ -464,23 +452,9 @@
       </message>
 
       <if expr="pp_ifdef('chromeos')">
-        <!-- The width and height of the CAPTCHA challenge dialog box in -->
-        <!-- characters and lines (See above). -->
-        <message name="IDS_CAPTCHA_INPUT_DIALOG_WIDTH_CHARS" use_name_for_id="true">
-          60
-        </message>
-        <message name="IDS_CAPTCHA_INPUT_DIALOG_HEIGHT_LINES" use_name_for_id="true">
-          13
-        </message>
-
-        <!-- The width and height of the password changed dialog box in -->
-        <!-- characters and lines (See above). -->
-        <message name="IDS_PASSWORD_CHANGED_DIALOG_WIDTH_CHARS" use_name_for_id="true">
-          70
-        </message>
-        <message name="IDS_PASSWORD_CHANGED_DIALOG_HEIGHT_LINES" use_name_for_id="true">
-          16
-        </message>
+	<message name="IDS_FACTORY_RESET_HELP_URL" translateable="false">
+	  http://support.google.com/chromeos/bin/answer.py?answer=183084&amp;hl=[GRITLANGCODE]
+	</message>
       </if>
     </messages>
   </release>

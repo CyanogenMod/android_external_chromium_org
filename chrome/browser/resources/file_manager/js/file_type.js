@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * Namespace object for file type utility functions.
  */
@@ -66,9 +68,9 @@ FileType.types = [
   {type: 'archive', name: 'TAR_ARCHIVE_FILE_TYPE', subtype: 'TAR',
    pattern: /\.tar$/i},
   {type: 'archive', name: 'TAR_BZIP2_ARCHIVE_FILE_TYPE', subtype: 'TBZ2',
-   pattern: /\.(tar.bz2|tbz|tbz2)$/i},
+   pattern: /\.(tar\.bz2|tbz|tbz2)$/i},
   {type: 'archive', name: 'TAR_GZIP_ARCHIVE_FILE_TYPE', subtype: 'TGZ',
-   pattern: /\.(tar.|t)gz$/i},
+   pattern: /\.(tar\.|t)gz$/i},
 
   // Hosted docs.
   {type: 'hosted', icon: 'gdoc', name: 'GDOC_DOCUMENT_FILE_TYPE',
@@ -134,17 +136,38 @@ FileType.getType = function(file) {
 };
 
 /**
+ * @param {string|Entry} file Reference to the file.
+ *     Can be a name, a path, a url or a File API Entry.
+ * @return {string} Localized string representation of file type.
+ */
+FileType.getTypeString = function(file) {
+  var fileType = FileType.getType(file);
+  if (fileType.subtype)
+    return strf(fileType.name, fileType.subtype);
+  else
+    return str(fileType.name);
+};
+
+/**
  * Pattern for urls pointing to Google Drive files.
  */
-FileType.GDRIVE_URL_PATTERN =
+FileType.DRIVE_URL_PATTERN =
     new RegExp('^filesystem:[^/]*://[^/]*/[^/]*/drive/(.*)');
 
 /**
- * @param {string} url The url.
+ * Pattern for file paths pointing to Google Drive files.
+ */
+FileType.DRIVE_PATH_PATTERN =
+    new RegExp('^/drive/');
+
+/**
+ * @param {string|Entry} file The url string or entry.
  * @return {boolean} Whether this provider supports the url.
  */
-FileType.isOnGDrive = function(url) {
-  return FileType.GDRIVE_URL_PATTERN.test(url);
+FileType.isOnDrive = function(file) {
+  return typeof file == 'string' ?
+      FileType.DRIVE_URL_PATTERN.test(file) :
+      FileType.DRIVE_PATH_PATTERN.test(file.fullPath);
 };
 
 
@@ -200,6 +223,30 @@ FileType.isImageOrVideo = function(file) {
  */
 FileType.isHosted = function(file) {
   return FileType.getType(file).type === 'hosted';
+};
+
+/**
+ * @param {string|Entry} file Reference to the file.
+ * @return {boolean} Returns true if the file is not hidden, and we should
+ *     display it.
+ */
+FileType.isVisible = function(file) {
+  if (typeof file == 'object') {
+    file = file.name;
+  }
+
+  var path = util.extractFilePath(file);
+  if (path) file = path;
+
+  file = file.split('/').pop();
+  return file.indexOf('.') != 0 && !(file in FileType.HIDDEN_NAMES);
+};
+
+/**
+ * File/directory names that we know are usually hidden.
+ */
+FileType.HIDDEN_NAMES = {
+  'RECYCLED': true
 };
 
 /**

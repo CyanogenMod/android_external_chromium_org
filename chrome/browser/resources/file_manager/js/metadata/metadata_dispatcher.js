@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Webworker spec says that the worker global object is called self.  That's
-// a terrible name since we use it all over the chrome codebase to capture
-// the 'this' keyword in lambdas.
-var global = self;
+'use strict';
 
 // All of these scripts could be imported with a single call to importScripts,
 // but then load and compile time errors would all be reported from the same
@@ -16,16 +13,22 @@ importScripts('../util.js');
 
 /**
  * Dispatches metadata requests to the correct parser.
+ *
+ * @param {Object} port Worker port.
+ * @constructor
  */
-function MetadataDispatcher() {
-  // Make sure to ipdate component_extension_resources.grd
+function MetadataDispatcher(port) {
+  this.port_ = port;
+  this.port_.onmessage = this.onMessage.bind(this);
+
+  // Make sure to update component_extension_resources.grd
   // when adding new parsers.
   importScripts('exif_parser.js');
   importScripts('image_parsers.js');
   importScripts('mpeg_parser.js');
   importScripts('id3_parser.js');
 
-  var patterns = ['blob:'];  // We use blob urls in gallery_demo.js
+  var patterns = [];
 
   this.parserInstances_ = [];
   for (var i = 0; i < MetadataDispatcher.parserClasses_.length; i++) {
@@ -93,7 +96,7 @@ MetadataDispatcher.prototype.request_ = function(fileURL) {
  * Indicate to the caller that an operation has failed.
  *
  * No other messages relating to the failed operation should be sent.
- * @param {Object...} var_args Arguments.
+ * @param {...Object} var_args Arguments.
  */
 MetadataDispatcher.prototype.error = function(var_args) {
   var ary = Array.apply(null, arguments);
@@ -104,7 +107,7 @@ MetadataDispatcher.prototype.error = function(var_args) {
  * Send a log message to the caller.
  *
  * Callers must not parse log messages for control flow.
- * @param {Object...} var_args Arguments.
+ * @param {...Object} var_args Arguments.
  */
 MetadataDispatcher.prototype.log = function(var_args) {
   var ary = Array.apply(null, arguments);
@@ -113,7 +116,7 @@ MetadataDispatcher.prototype.log = function(var_args) {
 
 /**
  * Send a log message to the caller only if this.verbose is true.
- * @param {Object...} var_args Arguments.
+ * @param {...Object} var_args Arguments.
  */
 MetadataDispatcher.prototype.vlog = function(var_args) {
   if (this.verbose)
@@ -126,7 +129,7 @@ MetadataDispatcher.prototype.vlog = function(var_args) {
  * @param {Array.<Object>} args Arguments array.
  */
 MetadataDispatcher.prototype.postMessage = function(verb, args) {
-  global.postMessage({verb: verb, arguments: args});
+  this.port_.postMessage({verb: verb, arguments: args});
 };
 
 /**
@@ -195,16 +198,29 @@ MetadataDispatcher.prototype.processOneFile = function(fileURL, callback) {
     // Step four, parse the file content.
     function parseContent(file, parser) {
       metadata.fileSize = file.size;
-      parser.parse(file, metadata, callback, onError);
+      try {
+        parser.parse(file, metadata, callback, onError);
+      } catch (e) {
+        onError(e.stack);
+      }
     }
   ];
 
   nextStep();
 };
 
-var dispatcher = new MetadataDispatcher();
+// Webworker spec says that the worker global object is called self.  That's
+// a terrible name since we use it all over the chrome codebase to capture
+// the 'this' keyword in lambdas.
+var global = self;
 
-/**
- * Set the web worker message handler.
- */
-global.onmessage = dispatcher.onMessage.bind(dispatcher);
+if (global.constructor.name == 'SharedWorkerContext') {
+  global.addEventListener('connect', function(e) {
+    var port = e.ports[0];
+    new MetadataDispatcher(port);
+    port.start();
+  });
+} else {
+  // Non-shared worker.
+  new MetadataDispatcher(global);
+}

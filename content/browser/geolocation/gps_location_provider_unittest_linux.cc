@@ -13,9 +13,9 @@ namespace content {
 class MockLibGps : public LibGps {
  public:
   MockLibGps();
-  ~MockLibGps();
+  virtual ~MockLibGps();
 
-  virtual bool GetPositionIfFixed(Geoposition* position) {
+  virtual bool GetPositionIfFixed(Geoposition* position) OVERRIDE {
     CHECK(position);
     ++get_position_calls_;
     *position = get_position_;
@@ -51,7 +51,8 @@ class MockLibGps : public LibGps {
 class LocaionProviderListenerLoopQuitter
     : public LocationProviderBase::ListenerInterface {
   // LocationProviderBase::ListenerInterface
-  virtual void LocationUpdateAvailable(LocationProviderBase* provider) {
+  virtual void LocationUpdateAvailable(
+      LocationProviderBase* provider) OVERRIDE {
     MessageLoop::current()->Quit();
   }
 };
@@ -59,7 +60,7 @@ class LocaionProviderListenerLoopQuitter
 class GeolocationGpsProviderLinuxTests : public testing::Test {
  public:
   GeolocationGpsProviderLinuxTests();
-  ~GeolocationGpsProviderLinuxTests();
+  virtual ~GeolocationGpsProviderLinuxTests();
 
   static LibGps* NewMockLibGps() {
     return new MockLibGps();
@@ -86,8 +87,7 @@ void CheckValidPosition(const Geoposition& expected,
 MockLibGps* MockLibGps::g_instance_ = NULL;
 
 MockLibGps::MockLibGps()
-    : LibGps(NULL, gps_open_stub, gps_close_stub, gps_read_stub),
-      get_position_calls_(0),
+    : get_position_calls_(0),
       get_position_ret_(true),
       gps_open_calls_(0),
       gps_open_ret_(0),
@@ -96,6 +96,11 @@ MockLibGps::MockLibGps()
   get_position_.error_code = Geoposition::ERROR_CODE_POSITION_UNAVAILABLE;
   EXPECT_FALSE(g_instance_);
   g_instance_ = this;
+#if defined(USE_LIBGPS)
+  libgps_loader_.gps_open = gps_open_stub;
+  libgps_loader_.gps_close = gps_close_stub;
+  libgps_loader_.gps_read = gps_read_stub;
+#endif  // defined(USE_LIBGPS)
 }
 
 MockLibGps::~MockLibGps() {

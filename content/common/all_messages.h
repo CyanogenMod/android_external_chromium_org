@@ -8,5 +8,6 @@
 // ipc/ipc_message_start.h to ensure the corresponding message file is
 // included here.
 #include "content/common/content_message_generator.h"
-#include "ppapi/proxy/pepper_file_messages.h"
+#if defined(ENABLE_PLUGINS)
 #include "ppapi/proxy/ppapi_messages.h"
+#endif

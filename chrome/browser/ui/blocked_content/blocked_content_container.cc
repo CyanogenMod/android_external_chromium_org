@@ -5,25 +5,13 @@
 #include "chrome/browser/ui/blocked_content/blocked_content_container.h"
 
 #include "base/logging.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/gfx/rect.h"
 
 using content::OpenURLParams;
 using content::WebContents;
-
-namespace {
-
-void DestroyBlockedContents(WebContents* web_contents) {
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents);
-  if (tab_contents)
-    delete tab_contents;
-  else
-    delete web_contents;
-}
-
-}  // namespace
 
 // static
 const size_t BlockedContentContainer::kImpossibleNumberOfPopups = 30;
@@ -67,7 +55,13 @@ void BlockedContentContainer::AddWebContents(content::WebContents* web_contents,
   blocked_contents_.push_back(
       BlockedContent(web_contents, disposition, bounds, user_gesture));
   web_contents->SetDelegate(this);
+
+  BlockedContentTabHelper::CreateForWebContents(web_contents);
+  // Various UI parts assume the ability to retrieve favicons from blocked
+  // content.
+  FaviconTabHelper::CreateForWebContents(web_contents);
   BlockedContentTabHelper::FromWebContents(web_contents)->set_delegate(this);
+
   // Since the new web_contents will not be shown, call WasHidden to change
   // its status on both RenderViewHost and RenderView.
   web_contents->WasHidden();
@@ -121,7 +115,7 @@ void BlockedContentContainer::Clear() {
     WebContents* web_contents = i->web_contents;
     web_contents->SetDelegate(NULL);
     BlockedContentTabHelper::FromWebContents(web_contents)->set_delegate(NULL);
-    DestroyBlockedContents(web_contents);
+    delete web_contents;
   }
   blocked_contents_.clear();
 }
@@ -156,7 +150,7 @@ void BlockedContentContainer::CloseContents(WebContents* source) {
       BlockedContentTabHelper::FromWebContents(web_contents)->
           set_delegate(NULL);
       blocked_contents_.erase(i);
-      DestroyBlockedContents(web_contents);
+      delete web_contents;
       break;
     }
   }

@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/observer_list_threadsafe.h"
+#include "base/time.h"
 #include "net/base/net_export.h"
 
 class GURL;
@@ -16,6 +17,7 @@ namespace net {
 struct DnsConfig;
 class HistogramWatcher;
 class NetworkChangeNotifierFactory;
+class URLRequest;
 
 #if defined(OS_LINUX)
 namespace internal {
@@ -84,6 +86,43 @@ class NET_EXPORT NetworkChangeNotifier {
 
    private:
     DISALLOW_COPY_AND_ASSIGN(DNSObserver);
+  };
+
+  class NET_EXPORT NetworkChangeObserver {
+   public:
+    // OnNetworkChanged will be called when a change occurs to the host
+    // computer's hardware or software that affects the route network packets
+    // take to any network server. Some examples:
+    //   1. A network connection becoming available or going away. For example
+    //      plugging or unplugging an Ethernet cable, WiFi or cellular modem
+    //      connecting or disconnecting from a network, or a VPN tunnel being
+    //      established or taken down.
+    //   2. An active network connection's IP address changes.
+    //   3. A change to the local IP routing tables.
+    // The signal shall only be produced when the change is complete.  For
+    // example if a new network connection has become available, only give the
+    // signal once we think the O/S has finished establishing the connection
+    // (i.e. DHCP is done) to the point where the new connection is usable.
+    // The signal shall not be produced spuriously as it will be triggering some
+    // expensive operations, like socket pools closing all connections and
+    // sockets and then re-establishing them.
+    // |type| indicates the type of the active primary network connection after
+    // the change.  Observers performing "constructive" activities like trying
+    // to establish a connection to a server should only do so when
+    // |type != CONNECTION_NONE|.  Observers performing "destructive" activities
+    // like resetting already established server connections should only do so
+    // when |type == CONNECTION_NONE|.  OnNetworkChanged will always be called
+    // with CONNECTION_NONE immediately prior to being called with an online
+    // state; this is done to make sure that destructive actions take place
+    // prior to constructive actions.
+    virtual void OnNetworkChanged(ConnectionType type) = 0;
+
+   protected:
+    NetworkChangeObserver() {}
+    virtual ~NetworkChangeObserver() {}
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(NetworkChangeObserver);
   };
 
   virtual ~NetworkChangeNotifier();
@@ -155,6 +194,7 @@ class NET_EXPORT NetworkChangeNotifier {
   static void AddIPAddressObserver(IPAddressObserver* observer);
   static void AddConnectionTypeObserver(ConnectionTypeObserver* observer);
   static void AddDNSObserver(DNSObserver* observer);
+  static void AddNetworkChangeObserver(NetworkChangeObserver* observer);
 
   // Unregisters |observer| from receiving notifications.  This must be called
   // on the same thread on which AddObserver() was called.  Like AddObserver(),
@@ -166,6 +206,7 @@ class NET_EXPORT NetworkChangeNotifier {
   static void RemoveIPAddressObserver(IPAddressObserver* observer);
   static void RemoveConnectionTypeObserver(ConnectionTypeObserver* observer);
   static void RemoveDNSObserver(DNSObserver* observer);
+  static void RemoveNetworkChangeObserver(NetworkChangeObserver* observer);
 
   // Allow unit tests to trigger notifications.
   static void NotifyObserversOfIPAddressChangeForTests() {
@@ -176,16 +217,41 @@ class NET_EXPORT NetworkChangeNotifier {
   static const char* ConnectionTypeToString(ConnectionType type);
 
   // Let the NetworkChangeNotifier know we received some data.
-  // This is used strictly for producing histogram data about the accuracy of
-  // the NetworkChangenotifier's online detection.
-  static void NotifyDataReceived(const GURL& source);
+  // This is used for producing histogram data about the accuracy of
+  // the NetworkChangenotifier's online detection and rough network
+  // connection measurements.
+  static void NotifyDataReceived(const URLRequest& request, int bytes_read);
 
   // Register the Observer callbacks for producing histogram data.  This
   // should be called from the network thread to avoid race conditions.
   static void InitHistogramWatcher();
 
  protected:
-  NetworkChangeNotifier();
+  // NetworkChanged signal is calculated from the IPAddressChanged and
+  // ConnectionTypeChanged signals. Delay parameters control how long to delay
+  // producing NetworkChanged signal after particular input signals so as to
+  // combine duplicates.  In other words if an input signal is repeated within
+  // the corresponding delay period, only one resulting NetworkChange signal is
+  // produced.
+  struct NET_EXPORT NetworkChangeCalculatorParams {
+    NetworkChangeCalculatorParams();
+    // Controls delay after OnIPAddressChanged when transitioning from an
+    // offline state.
+    base::TimeDelta ip_address_offline_delay_;
+    // Controls delay after OnIPAddressChanged when transitioning from an
+    // online state.
+    base::TimeDelta ip_address_online_delay_;
+    // Controls delay after OnConnectionTypeChanged when transitioning from an
+    // offline state.
+    base::TimeDelta connection_type_offline_delay_;
+    // Controls delay after OnConnectionTypeChanged when transitioning from an
+    // online state.
+    base::TimeDelta connection_type_online_delay_;
+  };
+
+  explicit NetworkChangeNotifier(
+      const NetworkChangeCalculatorParams& params =
+          NetworkChangeCalculatorParams());
 
 #if defined(OS_LINUX)
   // Returns the AddressTrackerLinux if present.
@@ -200,6 +266,7 @@ class NET_EXPORT NetworkChangeNotifier {
   static void NotifyObserversOfIPAddressChange();
   static void NotifyObserversOfConnectionTypeChange();
   static void NotifyObserversOfDNSChange();
+  static void NotifyObserversOfNetworkChange(ConnectionType type);
 
   // Stores |config| in NetworkState and notifies observers.
   static void SetDnsConfig(const DnsConfig& config);
@@ -211,6 +278,7 @@ class NET_EXPORT NetworkChangeNotifier {
   friend class NetworkChangeNotifierWinTest;
 
   class NetworkState;
+  class NetworkChangeCalculator;
 
   // Allows a second NetworkChangeNotifier to be created for unit testing, so
   // the test suite can create a MockNetworkChangeNotifier, but platform
@@ -235,12 +303,17 @@ class NET_EXPORT NetworkChangeNotifier {
       connection_type_observer_list_;
   const scoped_refptr<ObserverListThreadSafe<DNSObserver> >
       resolver_state_observer_list_;
+  const scoped_refptr<ObserverListThreadSafe<NetworkChangeObserver> >
+      network_change_observer_list_;
 
   // The current network state. Hosts DnsConfig, exposed via GetDnsConfig.
   scoped_ptr<NetworkState> network_state_;
 
   // A little-piggy-back observer that simply logs UMA histogram data.
   scoped_ptr<HistogramWatcher> histogram_watcher_;
+
+  // Computes NetworkChange signal from IPAddress and ConnectionType signals.
+  scoped_ptr<NetworkChangeCalculator> network_change_calculator_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkChangeNotifier);
 };

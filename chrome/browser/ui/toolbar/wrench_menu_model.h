@@ -5,17 +5,19 @@
 #ifndef CHROME_BROWSER_UI_TOOLBAR_WRENCH_MENU_MODEL_H_
 #define CHROME_BROWSER_UI_TOOLBAR_WRENCH_MENU_MODEL_H_
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
-#include "chrome/browser/ui/toolbar/bookmark_sub_menu_model.h"
+#include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/models/button_menu_item_model.h"
 #include "ui/base/models/simple_menu_model.h"
 
+class BookmarkSubMenuModel;
 class Browser;
+class RecentTabsSubMenuModel;
 class TabStripModel;
 
 namespace {
@@ -35,7 +37,7 @@ class EncodingMenuModel : public ui::SimpleMenuModel,
   virtual bool GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
  private:
   void Build();
@@ -92,7 +94,7 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
   virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE;
   virtual bool GetIconForCommandId(int command_id,
                                    gfx::Image* icon) const OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
   virtual bool IsCommandIdVisible(int command_id) const OVERRIDE;
@@ -101,13 +103,13 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
       ui::Accelerator* accelerator) OVERRIDE;
 
   // Overridden from TabStripModelObserver:
-  virtual void ActiveTabChanged(TabContents* old_contents,
-                                TabContents* new_contents,
+  virtual void ActiveTabChanged(content::WebContents* old_contents,
+                                content::WebContents* new_contents,
                                 int index,
                                 bool user_gesture) OVERRIDE;
   virtual void TabReplacedAt(TabStripModel* tab_strip_model,
-                             TabContents* old_contents,
-                             TabContents* new_contents,
+                             content::WebContents* old_contents,
+                             content::WebContents* new_contents,
                              int index) OVERRIDE;
   virtual void TabStripModelDeleted() OVERRIDE;
 
@@ -146,7 +148,7 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
   // |new_menu| should be set to true.
   void CreateZoomMenu(bool new_menu);
 
-  string16 GetSyncMenuLabel() const;
+  void OnZoomLevelChanged(const content::HostZoomMap::ZoomLevelChange& change);
 
   // Models for the special menu items with buttons.
   scoped_ptr<ui::ButtonMenuItemModel> edit_menu_item_model_;
@@ -161,11 +163,15 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
   // Bookmark submenu.
   scoped_ptr<BookmarkSubMenuModel> bookmark_sub_menu_model_;
 
+  // Recent Tabs submenu.
+  scoped_ptr<RecentTabsSubMenuModel> recent_tabs_sub_menu_model_;
+
   ui::AcceleratorProvider* provider_;  // weak
 
   Browser* browser_;  // weak
   TabStripModel* tab_strip_model_; // weak
 
+  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
   content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(WrenchMenuModel);

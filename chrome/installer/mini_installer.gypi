@@ -48,12 +48,10 @@
     },
     'VCLinkerTool': {
       'OutputFile': '<(output_dir)/mini_installer.exe',
-      'ProgramDatabaseFile': '<(output_dir)/mini_installer.pdb',
       'MapFileName': '<(output_dir)/mini_installer.map',
       'RandomizedBaseAddress': '1',
       'DataExecutionPrevention': '0',
       'AdditionalLibraryDirectories': [
-        '<(DEPTH)/third_party/platformsdk_win7/files/Lib',
         '<(PRODUCT_DIR)/lib'
       ],
       'DelayLoadDLLs': [],
@@ -177,6 +175,19 @@
             'enable_touch_ui_flag': '',
           },
         }],
+        ['target_arch=="x64"', {
+          'inputs!': [
+            '<(PRODUCT_DIR)/nacl64.exe',
+            '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
+          ],
+          'variables': {
+            'target_arch_flag': '--target_arch=x64',
+          },
+        }, {
+          'variables': {
+            'target_arch_flag': '--target_arch=x86',
+          },
+        }],
       ],
       'inputs': [
         '<(create_installer_archive_py_path)',
@@ -187,8 +198,6 @@
         '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.dll',
         '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
         '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
-        '<(PRODUCT_DIR)/nacl_ipc_irt_x86_32.nexe',
-        '<(PRODUCT_DIR)/nacl_ipc_irt_x86_64.nexe',
         '<(PRODUCT_DIR)/locales/en-US.pak',
         '<(PRODUCT_DIR)/icudt.dll',
       ],
@@ -209,6 +218,7 @@
         '--resource_file_path=<(INTERMEDIATE_DIR)/packed_files.rc',
         '<(enable_hidpi_flag)',
         '<(enable_touch_ui_flag)',
+        '<(target_arch_flag)',
         # TODO(sgk):  may just use environment variables
         #'--distribution=$(CHROMIUM_BUILD)',
         '--distribution=_google_chrome',

@@ -10,19 +10,16 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
 #include "base/string_piece.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
@@ -50,9 +47,9 @@ const char kOperatorNameProperty[] = "operatorName";
 const char kStatusProperty[] = "status";
 const char kTechnologyProperty[] = "technology";
 
-ChromeWebUIDataSource *CreateChooseMobileNetworkUIHTMLSource() {
-  ChromeWebUIDataSource *source =
-      new ChromeWebUIDataSource(chrome::kChromeUIChooseMobileNetworkHost);
+content::WebUIDataSource* CreateChooseMobileNetworkUIHTMLSource() {
+  content::WebUIDataSource* source = content::WebUIDataSource::Create(
+      chrome::kChromeUIChooseMobileNetworkHost);
 
   source->AddLocalizedString("chooseNetworkTitle",
                              IDS_NETWORK_CHOOSE_MOBILE_NETWORK);
@@ -65,10 +62,10 @@ ChromeWebUIDataSource *CreateChooseMobileNetworkUIHTMLSource() {
   source->AddLocalizedString("connect", IDS_OPTIONS_SETTINGS_CONNECT);
   source->AddLocalizedString("cancel", IDS_CANCEL);
 
-  source->set_json_path("strings.js");
-  source->add_resource_path("choose_mobile_network.js",
-                            IDR_CHOOSE_MOBILE_NETWORK_JS);
-  source->set_default_resource(IDR_CHOOSE_MOBILE_NETWORK_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("choose_mobile_network.js",
+                          IDR_CHOOSE_MOBILE_NETWORK_JS);
+  source->SetDefaultResource(IDR_CHOOSE_MOBILE_NETWORK_HTML);
   return source;
 }
 
@@ -217,8 +214,8 @@ ChooseMobileNetworkUI::ChooseMobileNetworkUI(content::WebUI* web_ui)
   web_ui->AddMessageHandler(handler);
   // Set up the "chrome://choose-mobile-network" source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile,
-      CreateChooseMobileNetworkUIHTMLSource());
+  content::WebUIDataSource::Add(
+      profile, CreateChooseMobileNetworkUIHTMLSource());
 }
 
 }  // namespace chromeos

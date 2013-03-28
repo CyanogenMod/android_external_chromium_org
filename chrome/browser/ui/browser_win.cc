@@ -12,33 +12,37 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "win8/util/win8_util.h"
 
 namespace {
 
-void NewMetroWindow(Browser* source_browser, Profile* profile) {
-  typedef void (*FlipFrameWindows)();
-
-  static FlipFrameWindows flip_window_fn = reinterpret_cast<FlipFrameWindows>(
-      ::GetProcAddress(base::win::GetMetroModule(), "FlipFrameWindows"));
-  DCHECK(flip_window_fn);
-
+void NewWindowMaybeMetro(Browser* source_browser, Profile* profile) {
   chrome::HostDesktopType host_desktop_type =
       source_browser->host_desktop_type();
-  Browser* browser =
-      browser::FindTabbedBrowser(profile, false, host_desktop_type);
+  if (win8::IsSingleWindowMetroMode()) {
+    typedef void (*FlipFrameWindows)();
 
-  if (!browser) {
-    chrome::OpenEmptyWindow(profile);
-    return;
-  }
+    static FlipFrameWindows flip_window_fn = reinterpret_cast<FlipFrameWindows>(
+        ::GetProcAddress(base::win::GetMetroModule(), "FlipFrameWindows"));
+    DCHECK(flip_window_fn);
 
-  chrome::NewTab(browser);
+    Browser* browser = chrome::FindTabbedBrowser(profile, false,
+                                                 host_desktop_type);
 
-  if (browser != source_browser) {
-    // Tell the metro_driver to flip our window. This causes the current
-    // browser window to be hidden and the next window to be shown.
-    flip_window_fn();
+    if (!browser) {
+      chrome::OpenEmptyWindow(profile, host_desktop_type);
+      return;
+    }
+
+    chrome::NewTab(browser);
+
+    if (browser != source_browser) {
+      // Tell the metro_driver to flip our window. This causes the current
+      // browser window to be hidden and the next window to be shown.
+      flip_window_fn();
+    }
+  } else {
+    NewEmptyWindow(profile, host_desktop_type);
   }
 }
 
@@ -47,21 +51,11 @@ void NewMetroWindow(Browser* source_browser, Profile* profile) {
 namespace chrome {
 
 void NewWindow(Browser* browser) {
-  if (base::win::IsMetroProcess()) {
-    NewMetroWindow(browser, browser->profile()->GetOriginalProfile());
-    return;
-  }
-  NewEmptyWindow(browser->profile()->GetOriginalProfile(),
-                 browser->host_desktop_type());
+  NewWindowMaybeMetro(browser, browser->profile()->GetOriginalProfile());
 }
 
 void NewIncognitoWindow(Browser* browser) {
-  if (base::win::IsMetroProcess()) {
-    NewMetroWindow(browser, browser->profile()->GetOffTheRecordProfile());
-    return;
-  }
-  NewEmptyWindow(browser->profile()->GetOffTheRecordProfile(),
-                 browser->host_desktop_type());
+  NewWindowMaybeMetro(browser, browser->profile()->GetOffTheRecordProfile());
 }
 
 }  // namespace chrome

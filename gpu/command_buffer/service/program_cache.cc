@@ -5,6 +5,7 @@
 #include "gpu/command_buffer/service/program_cache.h"
 
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/service/shader_manager.h"
 
 namespace gpu {
 namespace gles2 {
@@ -38,7 +39,11 @@ void ProgramCache::ShaderCompilationSucceeded(
   char sha[kHashLength];
   ComputeShaderHash(shader_src, sha);
   const std::string sha_string(sha, kHashLength);
+  ShaderCompilationSucceededSha(sha_string);
+}
 
+void ProgramCache::ShaderCompilationSucceededSha(
+    const std::string& sha_string) {
   CompileStatusMap::iterator it = shader_status_.find(sha_string);
   if (it == shader_status_.end()) {
     shader_status_[sha_string] = CompiledShaderInfo(COMPILATION_SUCCEEDED);

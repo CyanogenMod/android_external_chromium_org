@@ -21,17 +21,17 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/string16.h"
 #include "base/supports_user_data.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/common/page_transition_types.h"
 
-class FilePath;
 class GURL;
 
 namespace base {
+class FilePath;
 class Time;
 class TimeDelta;
 }
@@ -42,8 +42,6 @@ class BrowserContext;
 class DownloadId;
 class DownloadManager;
 class WebContents;
-struct DownloadCreateInfo;
-struct DownloadPersistentStoreInfo;
 
 // One DownloadItem per download. This is the model class that stores all the
 // state for a download. Multiple views, such as a tab's download shelf and the
@@ -69,12 +67,6 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
     MAX_DOWNLOAD_STATE
   };
 
-  enum SafetyState {
-    SAFE = 0,
-    DANGEROUS,
-    DANGEROUS_BUT_VALIDATED  // Dangerous but the user confirmed the download.
-  };
-
   // Reason for deleting the download.  Passed to Delete().
   enum DeleteReason {
     DELETE_DUE_TO_BROWSER_SHUTDOWN = 0,
@@ -88,10 +80,6 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
                                   // target. Implies
                                   // TARGET_DISPOSITION_OVERWRITE.
   };
-
-  // A fake download table ID which represents a download that has started,
-  // but is not yet in the table.
-  static const int kUninitializedHandle;
 
   static const char kEmptyFileHash[];
 
@@ -125,8 +113,17 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // Called when the user has validated the download of a dangerous file.
   virtual void DangerousDownloadValidated() = 0;
 
-  // Allow the user to temporarily pause a download or resume a paused download.
-  virtual void TogglePause() = 0;
+  // Pause a download.  Will have no effect if the download is already
+  // paused.
+  virtual void Pause() = 0;
+
+  // Resume a download.  Will have no effect if the download is not
+  // paused.
+  virtual void Resume() = 0;
+
+  // Resume a download that's been interrupted.  No-op if the download
+  // has not been interrupted.
+  virtual void ResumeInterruptedDownload() = 0;
 
   // Cancel the download operation. We need to distinguish between cancels at
   // exit (DownloadManager destructor) from user interface initiated cancels
@@ -157,7 +154,6 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
 
   virtual int32 GetId() const = 0;
   virtual DownloadId GetGlobalId() const = 0;
-  virtual int64 GetDbHandle() const = 0;
   virtual DownloadState GetState() const = 0;
 
   // Only valid if |GetState() == DownloadItem::INTERRUPTED|.
@@ -165,7 +161,6 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
 
   virtual bool IsPaused() const = 0;
   virtual bool IsTemporary() const = 0;
-  virtual bool IsPersisted() const = 0;
 
   //    Convenience routines for accessing GetState() results conceptually -----
 
@@ -207,27 +202,27 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // physical file, if one exists. It should be considered a hint; changes to
   // this value and renames of the file on disk are not atomic with each other.
   // May be empty if the in-progress path hasn't been determined yet.
-  virtual const FilePath& GetFullPath() const = 0;
+  virtual const base::FilePath& GetFullPath() const = 0;
 
   // Target path of an in-progress download. We may be downloading to a
   // temporary or intermediate file (specified by GetFullPath()); this is the
   // name we will use once the download completes.
   // May be empty if the target path hasn't yet been determined.
-  virtual const FilePath& GetTargetFilePath() const = 0;
+  virtual const base::FilePath& GetTargetFilePath() const = 0;
 
   // If the download forced a path rather than requesting name determination,
   // return the path requested.
-  virtual const FilePath& GetForcedFilePath() const = 0;
+  virtual const base::FilePath& GetForcedFilePath() const = 0;
 
   // Returns the user-verified target file path for the download.
   // This returns the same path as GetTargetFilePath() for safe downloads
   // but does not for dangerous downloads until the name is verified.
-  virtual FilePath GetUserVerifiedFilePath() const = 0;
+  virtual base::FilePath GetUserVerifiedFilePath() const = 0;
 
   // Returns the file-name that should be reported to the user. If a display
   // name has been explicitly set using SetDisplayName(), this function returns
   // that display name. Otherwise returns the final target filename.
-  virtual FilePath GetFileNameToReportUser() const = 0;
+  virtual base::FilePath GetFileNameToReportUser() const = 0;
 
   virtual TargetDisposition GetTargetDisposition() const = 0;
 
@@ -242,13 +237,9 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // external action.
   virtual bool GetFileExternallyRemoved() const = 0;
 
-  // The safety state of the download.  |GetSafetyState() == DANGEROUS|
-  // may represent a potentially dangerous download, and may occur even
-  // if |IsDangerous() == false|.
-  virtual SafetyState GetSafetyState() const = 0;
-
   // True if the file that will be written by the download is dangerous
-  // and we will require user intervention to complete the download.
+  // and we will require a call to DangerousDownloadValidated() to complete.
+  // False if the download is safe or that function has been called.
   virtual bool IsDangerous() const = 0;
 
   // Why |safety_state_| is not SAFE.
@@ -299,7 +290,6 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
 
   //    Misc State accessors ---------------------------------------------------
 
-  virtual DownloadPersistentStoreInfo GetPersistentStoreInfo() const = 0;
   virtual BrowserContext* GetBrowserContext() const = 0;
   virtual WebContents* GetWebContents() const = 0;
 
@@ -325,11 +315,10 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // Set a display name for the download that will be independent of the target
   // filename. If |name| is not empty, then GetFileNameToReportUser() will
   // return |name|. Has no effect on the final target filename.
-  virtual void SetDisplayName(const FilePath& name) = 0;
+  virtual void SetDisplayName(const base::FilePath& name) = 0;
 
   // Debug/testing -------------------------------------------------------------
   virtual std::string DebugString(bool verbose) const = 0;
-  virtual void MockDownloadOpenForTesting() = 0;
 };
 
 }  // namespace content

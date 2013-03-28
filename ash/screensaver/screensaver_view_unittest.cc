@@ -7,6 +7,7 @@
 #include "ash/test/ash_test_base.h"
 #include "base/bind.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/web_contents.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/test/webview_test_helper.h"
 
@@ -33,15 +34,7 @@ class ScreensaverViewTest : public ash::test::AshTestBase {
         internal::ScreensaverView::GetInstance();
     EXPECT_TRUE(screensaver != NULL);
     if (!screensaver) return;
-
-    EXPECT_TRUE(screensaver->screensaver_webview_ != NULL);
-    if (!screensaver->screensaver_webview_) return;
-
-    EXPECT_TRUE(screensaver->screensaver_webview_->web_contents() != NULL);
-    if (!screensaver->screensaver_webview_->web_contents()) return;
-
-    EXPECT_EQ(screensaver->screensaver_webview_->web_contents()->GetURL(),
-              url_);
+    EXPECT_TRUE(screensaver->IsScreensaverShowingURL(url_));
   }
 
   void ExpectClosedScreensaver() {

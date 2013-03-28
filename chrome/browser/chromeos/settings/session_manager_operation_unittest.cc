@@ -10,13 +10,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chrome/browser/chromeos/settings/mock_owner_key_util.h"
-#include "chrome/browser/policy/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud_policy_validator.h"
-#include "chrome/browser/policy/policy_builder.h"
-#include "chrome/browser/policy/proto/chrome_device_policy.pb.h"
-#include "chrome/browser/policy/proto/device_management_backend.pb.h"
+#include "chrome/browser/policy/cloud/cloud_policy_constants.h"
+#include "chrome/browser/policy/cloud/cloud_policy_validator.h"
+#include "chrome/browser/policy/cloud/policy_builder.h"
+#include "chrome/browser/policy/cloud/proto/device_management_backend.pb.h"
 #include "content/public/test/test_browser_thread.h"
 #include "crypto/rsa_private_key.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -252,19 +252,22 @@ TEST_F(SessionManagerOperationTest, SignAndStoreSettings) {
       policy_response->ParseFromString(
           device_settings_test_helper_.policy_blob()));
   policy::DeviceCloudPolicyValidator* validator =
-      policy::DeviceCloudPolicyValidator::Create(
-          policy_response.Pass(),
-          base::Bind(&SessionManagerOperationTest::CheckSuccessfulValidation,
-                     base::Unretained(this)));
+      policy::DeviceCloudPolicyValidator::Create(policy_response.Pass());
   validator->ValidateUsername(policy_.policy_data().username());
-  validator->ValidateTimestamp(before, after, false);
+  validator->ValidateTimestamp(
+      before,
+      after,
+      policy::CloudPolicyValidatorBase::TIMESTAMP_REQUIRED);
   validator->ValidatePolicyType(policy::dm_protocol::kChromeDevicePolicyType);
   validator->ValidatePayload();
   std::vector<uint8> public_key;
   policy_.signing_key()->ExportPublicKey(&public_key);
   validator->ValidateSignature(public_key, false);
-  validator->StartValidation();
-  message_loop_.RunAllPending();
+  validator->StartValidation(
+      base::Bind(&SessionManagerOperationTest::CheckSuccessfulValidation,
+                 base::Unretained(this)));
+
+  message_loop_.RunUntilIdle();
   EXPECT_TRUE(validated_);
 
   // Check that the loaded policy_data contains the expected values.

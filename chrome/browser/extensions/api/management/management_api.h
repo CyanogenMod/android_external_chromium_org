@@ -6,98 +6,106 @@
 #define CHROME_BROWSER_EXTENSIONS_API_MANAGEMENT_MANAGEMENT_API_H_
 
 #include "base/compiler_specific.h"
+#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
 class ExtensionService;
 class ExtensionUninstallDialog;
 
-class ExtensionManagementFunction : public SyncExtensionFunction {
+namespace extensions {
+
+class ManagementFunction : public SyncExtensionFunction {
  protected:
-  virtual ~ExtensionManagementFunction() {}
+  virtual ~ManagementFunction() {}
 
   ExtensionService* service();
 };
 
-class AsyncExtensionManagementFunction : public AsyncExtensionFunction {
+class AsyncManagementFunction : public AsyncExtensionFunction {
  protected:
-  virtual ~AsyncExtensionManagementFunction() {}
+  virtual ~AsyncManagementFunction() {}
 
   ExtensionService* service();
 };
 
-class GetAllExtensionsFunction : public ExtensionManagementFunction {
+class ManagementGetAllFunction : public ManagementFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("management.getAll");
+  DECLARE_EXTENSION_FUNCTION("management.getAll", MANAGEMENT_GETALL)
 
  protected:
-  virtual ~GetAllExtensionsFunction() {}
+  virtual ~ManagementGetAllFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
-class GetExtensionByIdFunction : public ExtensionManagementFunction {
+class ManagementGetFunction : public ManagementFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("management.get");
+  DECLARE_EXTENSION_FUNCTION("management.get", MANAGEMENT_GET)
 
  protected:
-  virtual ~GetExtensionByIdFunction() {}
+  virtual ~ManagementGetFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
-class GetPermissionWarningsByIdFunction : public ExtensionManagementFunction {
+class ManagementGetPermissionWarningsByIdFunction : public ManagementFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("management.getPermissionWarningsById");
+  DECLARE_EXTENSION_FUNCTION("management.getPermissionWarningsById",
+                             MANAGEMENT_GETPERMISSIONWARNINGSBYID)
 
  protected:
-  virtual ~GetPermissionWarningsByIdFunction() {}
+  virtual ~ManagementGetPermissionWarningsByIdFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
-class GetPermissionWarningsByManifestFunction : public AsyncExtensionFunction {
+class ManagementGetPermissionWarningsByManifestFunction
+    : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME(
-      "management.getPermissionWarningsByManifest");
+  DECLARE_EXTENSION_FUNCTION(
+      "management.getPermissionWarningsByManifest",
+      MANAGEMENT_GETPERMISSIONWARNINGSBYMANIFEST);
 
   // Called when utility process finishes.
   void OnParseSuccess(base::DictionaryValue* parsed_manifest);
   void OnParseFailure(const std::string& error);
 
  protected:
-  virtual ~GetPermissionWarningsByManifestFunction() {}
+  virtual ~ManagementGetPermissionWarningsByManifestFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
-class LaunchAppFunction : public ExtensionManagementFunction {
+class ManagementLaunchAppFunction : public ManagementFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("management.launchApp");
+  DECLARE_EXTENSION_FUNCTION("management.launchApp", MANAGEMENT_LAUNCHAPP)
 
  protected:
-  virtual ~LaunchAppFunction() {}
+  virtual ~ManagementLaunchAppFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
-class SetEnabledFunction : public AsyncExtensionManagementFunction,
+class ManagementSetEnabledFunction : public AsyncManagementFunction,
                            public ExtensionInstallPrompt::Delegate {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("management.setEnabled");
+  DECLARE_EXTENSION_FUNCTION("management.setEnabled", MANAGEMENT_SETENABLED)
 
-  SetEnabledFunction();
+  ManagementSetEnabledFunction();
 
  protected:
-  virtual ~SetEnabledFunction();
+  virtual ~ManagementSetEnabledFunction();
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
@@ -113,22 +121,22 @@ class SetEnabledFunction : public AsyncExtensionManagementFunction,
   scoped_ptr<ExtensionInstallPrompt> install_prompt_;
 };
 
-class UninstallFunction : public AsyncExtensionManagementFunction,
+class ManagementUninstallFunctionBase : public AsyncManagementFunction,
                           public ExtensionUninstallDialog::Delegate {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("management.uninstall");
+  ManagementUninstallFunctionBase();
 
-  UninstallFunction();
   static void SetAutoConfirmForTest(bool should_proceed);
 
   // ExtensionUninstallDialog::Delegate implementation.
   virtual void ExtensionUninstallAccepted() OVERRIDE;
   virtual void ExtensionUninstallCanceled() OVERRIDE;
 
- private:
-  virtual ~UninstallFunction();
+ protected:
+  virtual ~ManagementUninstallFunctionBase();
 
-  virtual bool RunImpl() OVERRIDE;
+  bool Uninstall(const std::string& extension_id, bool show_confirm_dialog);
+ private:
 
   // If should_uninstall is true, this method does the actual uninstall.
   // If |show_uninstall_dialog|, then this function will be called by one of the
@@ -139,10 +147,35 @@ class UninstallFunction : public AsyncExtensionManagementFunction,
   scoped_ptr<ExtensionUninstallDialog> extension_uninstall_dialog_;
 };
 
-class ExtensionManagementEventRouter : public content::NotificationObserver {
+class ManagementUninstallFunction : public ManagementUninstallFunctionBase {
  public:
-  explicit ExtensionManagementEventRouter(Profile* profile);
-  virtual ~ExtensionManagementEventRouter();
+  DECLARE_EXTENSION_FUNCTION("management.uninstall", MANAGEMENT_UNINSTALL)
+
+  ManagementUninstallFunction();
+
+ private:
+  virtual ~ManagementUninstallFunction();
+
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class ManagementUninstallSelfFunction : public ManagementUninstallFunctionBase {
+ public:
+  DECLARE_EXTENSION_FUNCTION("management.uninstallSelf",
+      MANAGEMENT_UNINSTALLSELF);
+
+  ManagementUninstallSelfFunction();
+
+ private:
+  virtual ~ManagementUninstallSelfFunction();
+
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class ManagementEventRouter : public content::NotificationObserver {
+ public:
+  explicit ManagementEventRouter(Profile* profile);
+  virtual ~ManagementEventRouter();
 
  private:
   // content::NotificationObserver implementation.
@@ -154,7 +187,42 @@ class ExtensionManagementEventRouter : public content::NotificationObserver {
 
   Profile* profile_;
 
-  DISALLOW_COPY_AND_ASSIGN(ExtensionManagementEventRouter);
+  DISALLOW_COPY_AND_ASSIGN(ManagementEventRouter);
 };
+
+class ManagementAPI : public ProfileKeyedAPI,
+                      public extensions::EventRouter::Observer {
+ public:
+  explicit ManagementAPI(Profile* profile);
+  virtual ~ManagementAPI();
+
+  // ProfileKeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
+
+  // ProfileKeyedAPI implementation.
+  static ProfileKeyedAPIFactory<ManagementAPI>* GetFactoryInstance();
+
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(const extensions::EventListenerInfo& details)
+      OVERRIDE;
+
+ private:
+  friend class ProfileKeyedAPIFactory<ManagementAPI>;
+
+  Profile* profile_;
+
+  // ProfileKeyedAPI implementation.
+  static const char* service_name() {
+    return "ManagementAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
+
+  // Created lazily upon OnListenerAdded.
+  scoped_ptr<ManagementEventRouter> management_event_router_;
+
+  DISALLOW_COPY_AND_ASSIGN(ManagementAPI);
+};
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_API_MANAGEMENT_MANAGEMENT_API_H_

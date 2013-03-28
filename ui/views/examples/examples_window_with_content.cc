@@ -46,7 +46,7 @@
 #include "ui/views/widget/widget_delegate.h"
 
 #if defined(USE_AURA)
-#include "ui/views/widget/desktop_native_widget_aura.h"
+#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #endif
 
 namespace views {
@@ -213,6 +213,7 @@ void ShowExamplesWindowWithContent(Operation operation,
     Widget::InitParams params;
     params.delegate = new ExamplesWindowContents(operation, browser_context);
     params.bounds = gfx::Rect(0, 0, 850, 300);
+    params.top_level = true;
     widget->Init(params);
     widget->Show();
   }

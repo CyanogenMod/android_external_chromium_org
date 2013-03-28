@@ -10,13 +10,16 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
+#include "base/synchronization/waitable_event_watcher.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/common/child_process_host_delegate.h"
 
 namespace content {
+
 class BrowserChildProcessHostIterator;
+class BrowserChildProcessObserver;
 
 // Plugins/workers and other child processes that live on the IO thread use this
 // class. RenderProcessHostImpl is the main exception that doesn't use this
@@ -27,7 +30,7 @@ class CONTENT_EXPORT BrowserChildProcessHostImpl
       public ChildProcessLauncher::Client {
  public:
   BrowserChildProcessHostImpl(
-      ProcessType type,
+      int process_type,
       BrowserChildProcessHostDelegate* delegate);
   virtual ~BrowserChildProcessHostImpl();
 
@@ -39,7 +42,7 @@ class CONTENT_EXPORT BrowserChildProcessHostImpl
   virtual bool Send(IPC::Message* message) OVERRIDE;
   virtual void Launch(
 #if defined(OS_WIN)
-      const FilePath& exposed_dir,
+      SandboxedProcessLauncherDelegate* delegate,
 #elif defined(OS_POSIX)
       bool use_zygote,
       const base::EnvironmentVector& environ,
@@ -62,17 +65,20 @@ class CONTENT_EXPORT BrowserChildProcessHostImpl
   // shutdown. Default is to always terminate.
   void SetTerminateChildOnShutdown(bool terminate_on_shutdown);
 
-  // Sends the given notification on the UI thread.
-  void Notify(int type);
+  // Called when an instance of a particular child is created in a page.
+  static void NotifyProcessInstanceCreated(const ChildProcessData& data);
 
-  BrowserChildProcessHostDelegate* delegate() const { return delegate_;
-  }
+  BrowserChildProcessHostDelegate* delegate() const { return delegate_; }
 
   typedef std::list<BrowserChildProcessHostImpl*> BrowserChildProcessList;
  private:
   friend class BrowserChildProcessHostIterator;
+  friend class BrowserChildProcessObserver;
 
   static BrowserChildProcessList* GetIterator();
+
+  static void AddObserver(BrowserChildProcessObserver* observer);
+  static void RemoveObserver(BrowserChildProcessObserver* observer);
 
   // ChildProcessHostDelegate implementation:
   virtual bool CanShutdown() OVERRIDE;
@@ -84,11 +90,23 @@ class CONTENT_EXPORT BrowserChildProcessHostImpl
   // ChildProcessLauncher::Client implementation.
   virtual void OnProcessLaunched() OVERRIDE;
 
+#if defined(OS_WIN)
+  void DeleteProcessWaitableEvent(base::WaitableEvent* event);
+  void OnProcessExitedEarly(base::WaitableEvent* event);
+#endif
+
   ChildProcessData data_;
   BrowserChildProcessHostDelegate* delegate_;
   scoped_ptr<ChildProcessHost> child_process_host_;
 
   scoped_ptr<ChildProcessLauncher> child_process_;
+
+#if defined(OS_WIN)
+  // Watches to see if the child process exits before the IPC channel has
+  // been connected. Thereafter, its exit is determined by an error on the
+  // IPC channel.
+  base::WaitableEventWatcher early_exit_watcher_;
+#endif
 };
 
 }  // namespace content

@@ -12,7 +12,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/api/infobars/infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/ui/views/infobars/infobar_background.h"
 #include "chrome/browser/ui/views/infobars/infobar_button_border.h"
 #include "grit/generated_resources.h"
@@ -56,7 +56,7 @@ const int InfoBarView::kButtonButtonSpacing = 10;
 const int InfoBarView::kEndOfLabelSpacing = 16;
 const int InfoBarView::kHorizontalPadding = 6;
 
-InfoBarView::InfoBarView(InfoBarTabHelper* owner, InfoBarDelegate* delegate)
+InfoBarView::InfoBarView(InfoBarService* owner, InfoBarDelegate* delegate)
     : InfoBar(owner, delegate),
       icon_(NULL),
       close_button_(NULL) {
@@ -146,7 +146,7 @@ views::TextButton* InfoBarView::CreateTextButton(
           icon_info.hIcon, gfx::Size(GetSystemMetrics(SM_CXSMICON),
                                      GetSystemMetrics(SM_CYSMICON))));
       if (icon.get())
-        text_button->SetIcon(gfx::ImageSkia(*icon));
+        text_button->SetIcon(gfx::ImageSkia::CreateFrom1xBitmap(*icon));
       DestroyIcon(icon_info.hIcon);
     }
   }
@@ -226,11 +226,11 @@ void InfoBarView::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
 
     close_button_ = new views::ImageButton(this);
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-    close_button_->SetImage(views::CustomButton::BS_NORMAL,
+    close_button_->SetImage(views::CustomButton::STATE_NORMAL,
                             rb.GetImageNamed(IDR_CLOSE_BAR).ToImageSkia());
-    close_button_->SetImage(views::CustomButton::BS_HOT,
+    close_button_->SetImage(views::CustomButton::STATE_HOVERED,
                             rb.GetImageNamed(IDR_CLOSE_BAR_H).ToImageSkia());
-    close_button_->SetImage(views::CustomButton::BS_PUSHED,
+    close_button_->SetImage(views::CustomButton::STATE_PRESSED,
                             rb.GetImageNamed(IDR_CLOSE_BAR_P).ToImageSkia());
     close_button_->SetAccessibleName(
         l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));

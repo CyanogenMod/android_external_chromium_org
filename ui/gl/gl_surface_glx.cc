@@ -24,6 +24,7 @@ extern "C" {
 #include "ui/base/x/x11_util.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/gl/vsync_provider.h"
 
 namespace gfx {
 
@@ -41,6 +42,7 @@ class ScopedPtrXFree {
 
 Display* g_display;
 const char* g_glx_extensions = NULL;
+bool g_glx_context_create = false;
 bool g_glx_create_context_robustness_supported = false;
 bool g_glx_texture_from_pixmap_supported = false;
 bool g_glx_oml_sync_control_supported = false;
@@ -53,84 +55,35 @@ bool g_glx_get_msc_rate_oml_supported = false;
 bool g_glx_sgi_video_sync_supported = false;
 
 class OMLSyncControlVSyncProvider
-    : public gfx::NativeViewGLSurfaceGLX::VSyncProvider {
+    : public gfx::SyncControlVSyncProvider {
  public:
   explicit OMLSyncControlVSyncProvider(gfx::AcceleratedWidget window)
-      : window_(window) {
+      : SyncControlVSyncProvider(),
+        window_(window) {
   }
 
   virtual ~OMLSyncControlVSyncProvider() { }
 
-  virtual void GetVSyncParameters(
-      const GLSurface::UpdateVSyncCallback& callback) OVERRIDE {
-    base::TimeTicks timebase;
-    base::TimeDelta interval;
+ protected:
+  virtual bool GetSyncValues(int64* system_time,
+                             int64* media_stream_counter,
+                             int64* swap_buffer_counter) OVERRIDE {
+    return glXGetSyncValuesOML(g_display, window_, system_time,
+                               media_stream_counter, swap_buffer_counter);
+  }
 
-    // The actual clock used for the system time returned by glXGetSyncValuesOML
-    // is unspecified. In practice, the clock used is likely to be either
-    // CLOCK_REALTIME or CLOCK_MONOTONIC, so we compare the returned time to the
-    // current time according to both clocks, and assume that the returned time
-    // was produced by the clock whose current time is closest to it, subject
-    // to the restriction that the returned time must not be in the future
-    // (since it is the time of a vblank that has already occurred).
-    int64 system_time;
-    int64 media_stream_counter;
-    int64 swap_buffer_counter;
-    if (!glXGetSyncValuesOML(g_display, window_, &system_time,
-                             &media_stream_counter, &swap_buffer_counter))
-      return;
+  virtual bool GetMscRate(int32* numerator, int32* denominator) OVERRIDE {
+    if (!g_glx_get_msc_rate_oml_supported)
+      return false;
 
-    struct timespec real_time;
-    struct timespec monotonic_time;
-    clock_gettime(CLOCK_REALTIME, &real_time);
-    clock_gettime(CLOCK_MONOTONIC, &monotonic_time);
-
-    int64 real_time_in_microseconds =
-        real_time.tv_sec * base::Time::kMicrosecondsPerSecond +
-        real_time.tv_nsec / base::Time::kNanosecondsPerMicrosecond;
-    int64 monotonic_time_in_microseconds =
-        monotonic_time.tv_sec * base::Time::kMicrosecondsPerSecond +
-        monotonic_time.tv_nsec / base::Time::kNanosecondsPerMicrosecond;
-
-    if ((system_time > real_time_in_microseconds) &&
-        (system_time > monotonic_time_in_microseconds))
-      return;
-
-    // We need the time according to CLOCK_MONOTONIC, so if we've been given
-    // a time from CLOCK_REALTIME, we need to convert.
-    bool time_conversion_needed =
-      (system_time > monotonic_time_in_microseconds) ||
-      (real_time_in_microseconds - system_time <
-       monotonic_time_in_microseconds - system_time);
-
-    if (time_conversion_needed) {
-      int64 time_difference =
-        real_time_in_microseconds - monotonic_time_in_microseconds;
-      timebase = base::TimeTicks::FromInternalValue(
-          system_time - time_difference);
-    } else {
-      timebase = base::TimeTicks::FromInternalValue(system_time);
+    if (!glXGetMscRateOML(g_display, window_, numerator, denominator)) {
+      // Once glXGetMscRateOML has been found to fail, don't try again,
+      // since each failing call may spew an error message.
+      g_glx_get_msc_rate_oml_supported = false;
+      return false;
     }
 
-    // On platforms where glXGetMscRateOML doesn't work, we fall back to the
-    // assumption that we're displaying 60 frames per second.
-    const int64 kDefaultIntervalTime =
-        base::Time::kMicrosecondsPerSecond / 60;
-    int64 interval_time = kDefaultIntervalTime;
-    int32 numerator;
-    int32 denominator;
-    if (g_glx_get_msc_rate_oml_supported) {
-      if (glXGetMscRateOML(g_display, window_, &numerator, &denominator)) {
-        interval_time =
-            (base::Time::kMicrosecondsPerSecond * denominator) / numerator;
-      } else {
-        // Once glXGetMscRateOML has been found to fail, don't try again,
-        // since each failing call may spew an error message.
-        g_glx_get_msc_rate_oml_supported = false;
-      }
-    }
-    interval = base::TimeDelta::FromMicroseconds(interval_time);
-    callback.Run(timebase, interval);
+    return true;
   }
 
  private:
@@ -159,7 +112,7 @@ class SGIVideoSyncThread
     DCHECK(CalledOnValidThread());
   }
 
-  ~SGIVideoSyncThread() {
+  virtual ~SGIVideoSyncThread() {
     DCHECK(CalledOnValidThread());
     g_video_sync_thread = NULL;
     Stop();
@@ -181,7 +134,7 @@ class SGIVideoSyncProviderThreadShim
         vsync_lock_() {
     // This ensures that creation of |window_| has occured when this shim
     // is executing in the same process as the call to create |window_|.
-    XSync(::gfx::g_display, False);
+    XSync(g_display, False);
   }
 
   base::CancellationFlag* cancel_vsync_flag() {
@@ -193,11 +146,10 @@ class SGIVideoSyncProviderThreadShim
   }
 
   void Initialize() {
-    DCHECK(SGIVideoSyncProviderThreadShim::g_display);
+    DCHECK(display_);
 
     XWindowAttributes attributes;
-    if (!XGetWindowAttributes(SGIVideoSyncProviderThreadShim::g_display,
-                              window_, &attributes)) {
+    if (!XGetWindowAttributes(display_, window_, &attributes)) {
       LOG(ERROR) << "XGetWindowAttributes failed for window " <<
         window_ << ".";
       return;
@@ -208,7 +160,7 @@ class SGIVideoSyncProviderThreadShim
 
     int visual_info_count = 0;
     scoped_ptr_malloc<XVisualInfo, ScopedPtrXFree> visual_info_list(
-        XGetVisualInfo(SGIVideoSyncProviderThreadShim::g_display, VisualIDMask,
+        XGetVisualInfo(display_, VisualIDMask,
                        &visual_info_template, &visual_info_count));
 
     DCHECK(visual_info_list.get());
@@ -217,23 +169,20 @@ class SGIVideoSyncProviderThreadShim
       return;
     }
 
-    context_ = glXCreateContext(SGIVideoSyncProviderThreadShim::g_display,
-                                visual_info_list.get(),
-                                NULL,
-                                True);
+    context_ = glXCreateContext(display_, visual_info_list.get(), NULL, True);
 
     DCHECK(NULL != context_);
   }
 
   void Destroy() {
     if (context_) {
-      glXDestroyContext(SGIVideoSyncProviderThreadShim::g_display, context_);
+      glXDestroyContext(display_, context_);
       context_ = NULL;
     }
     delete this;
   }
 
-  void GetVSyncParameters(const GLSurface::UpdateVSyncCallback& callback) {
+  void GetVSyncParameters(const VSyncProvider::UpdateVSyncCallback& callback) {
     base::TimeTicks now;
     {
       // Don't allow |window_| destruction while we're probing vsync.
@@ -242,8 +191,7 @@ class SGIVideoSyncProviderThreadShim
       if (!context_ || cancel_vsync_flag_.IsSet())
         return;
 
-      glXMakeCurrent(SGIVideoSyncProviderThreadShim::g_display,
-                     window_, context_);
+      glXMakeCurrent(display_, window_, context_);
 
       unsigned int retrace_count = 0;
       if (glXWaitVideoSyncSGI(1, 0, &retrace_count) != 0)
@@ -252,26 +200,25 @@ class SGIVideoSyncProviderThreadShim
       TRACE_EVENT_INSTANT0("gpu", "vblank");
       now = base::TimeTicks::HighResNow();
 
-      glXMakeCurrent(SGIVideoSyncProviderThreadShim::g_display, 0, 0);
+      glXMakeCurrent(display_, 0, 0);
     }
 
-    const int64 kDefaultIntervalTime =
-        base::Time::kMicrosecondsPerSecond / 60;
-    base::TimeDelta interval =
-        base::TimeDelta::FromMicroseconds(kDefaultIntervalTime);
+    const base::TimeDelta kDefaultInterval =
+        base::TimeDelta::FromSeconds(1) / 60;
 
-    message_loop_->PostTask(FROM_HERE, base::Bind(callback, now, interval));
+    message_loop_->PostTask(
+        FROM_HERE, base::Bind(callback, now, kDefaultInterval));
   }
 
  private:
-  // For initialization of g_display in GLSurface::InitializeOneOff before
+  // For initialization of display_ in GLSurface::InitializeOneOff before
   // the sandbox goes up.
   friend class gfx::GLSurfaceGLX;
 
   virtual ~SGIVideoSyncProviderThreadShim() {
   }
 
-  static Display* g_display;
+  static Display* display_;
 
   XID window_;
   GLXContext context_;
@@ -285,7 +232,7 @@ class SGIVideoSyncProviderThreadShim
 };
 
 class SGIVideoSyncVSyncProvider
-    : public gfx::NativeViewGLSurfaceGLX::VSyncProvider,
+    : public gfx::VSyncProvider,
       public base::SupportsWeakPtr<SGIVideoSyncVSyncProvider> {
  public:
   explicit SGIVideoSyncVSyncProvider(gfx::AcceleratedWidget window)
@@ -312,10 +259,11 @@ class SGIVideoSyncVSyncProvider
   }
 
   virtual void GetVSyncParameters(
-      const GLSurface::UpdateVSyncCallback& callback) OVERRIDE {
+      const VSyncProvider::UpdateVSyncCallback& callback) OVERRIDE {
     // Only one outstanding request per surface.
     if (!pending_callback_) {
-      pending_callback_.reset(new GLSurface::UpdateVSyncCallback(callback));
+      pending_callback_.reset(
+          new VSyncProvider::UpdateVSyncCallback(callback));
       vsync_thread_->message_loop()->PostTask(
           FROM_HERE,
           base::Bind(&SGIVideoSyncProviderThreadShim::GetVSyncParameters,
@@ -336,7 +284,7 @@ class SGIVideoSyncVSyncProvider
   scoped_refptr<SGIVideoSyncThread> vsync_thread_;
   base::WeakPtr<SGIVideoSyncProviderThreadShim> shim_;
 
-  scoped_ptr<GLSurface::UpdateVSyncCallback> pending_callback_;
+  scoped_ptr<VSyncProvider::UpdateVSyncCallback> pending_callback_;
 
   // Raw pointers to sync primitives owned by the shim_.
   // These will only be referenced before we post a task to destroy
@@ -352,7 +300,7 @@ SGIVideoSyncThread* SGIVideoSyncThread::g_video_sync_thread = NULL;
 // In order to take advantage of GLX_SGI_video_sync, we need a display
 // for use on a separate thread. We must allocate this before the sandbox
 // goes up (rather than on-demand when we start the thread).
-Display* SGIVideoSyncProviderThreadShim::g_display = NULL;
+Display* SGIVideoSyncProviderThreadShim::display_ = NULL;
 
 }  // namespace
 
@@ -385,6 +333,8 @@ bool GLSurfaceGLX::InitializeOneOff() {
   }
 
   g_glx_extensions = glXQueryExtensionsString(g_display, 0);
+  g_glx_context_create =
+      HasGLXExtension("GLX_ARB_create_context");
   g_glx_create_context_robustness_supported =
       HasGLXExtension("GLX_ARB_create_context_robustness");
   g_glx_texture_from_pixmap_supported =
@@ -396,7 +346,7 @@ bool GLSurfaceGLX::InitializeOneOff() {
       HasGLXExtension("GLX_SGI_video_sync");
 
   if (!g_glx_get_msc_rate_oml_supported && g_glx_sgi_video_sync_supported)
-    SGIVideoSyncProviderThreadShim::g_display = XOpenDisplay(NULL);
+    SGIVideoSyncProviderThreadShim::display_ = XOpenDisplay(NULL);
 
   initialized = true;
   return true;
@@ -410,6 +360,11 @@ const char* GLSurfaceGLX::GetGLXExtensions() {
 // static
 bool GLSurfaceGLX::HasGLXExtension(const char* name) {
   return ExtensionsContain(GetGLXExtensions(), name);
+}
+
+// static
+bool GLSurfaceGLX::IsCreateContextSupported() {
+  return g_glx_context_create;
 }
 
 // static
@@ -512,10 +467,10 @@ void* NativeViewGLSurfaceGLX::GetConfig() {
     XWindowAttributes attributes;
     if (!XGetWindowAttributes(
         g_display,
-        reinterpret_cast<GLXDrawable>(GetHandle()),
+        window_,
         &attributes)) {
       LOG(ERROR) << "XGetWindowAttributes failed for window " <<
-          reinterpret_cast<GLXDrawable>(GetHandle()) << ".";
+          window_ << ".";
       return NULL;
     }
 
@@ -563,10 +518,8 @@ bool NativeViewGLSurfaceGLX::PostSubBuffer(
   return true;
 }
 
-void NativeViewGLSurfaceGLX::GetVSyncParameters(
-    const UpdateVSyncCallback& callback) {
-  if (vsync_provider_)
-    vsync_provider_->GetVSyncParameters(callback);
+VSyncProvider* NativeViewGLSurfaceGLX::GetVSyncProvider() {
+  return vsync_provider_.get();
 }
 
 NativeViewGLSurfaceGLX::NativeViewGLSurfaceGLX()

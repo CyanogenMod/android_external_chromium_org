@@ -24,20 +24,19 @@ class MockCommandBuffer : public CommandBuffer {
   MOCK_METHOD0(Initialize, bool());
   MOCK_METHOD0(GetState, State());
   MOCK_METHOD0(GetLastState, State());
+  MOCK_METHOD0(GetLastToken, int32());
   MOCK_METHOD1(Flush, void(int32 put_offset));
   MOCK_METHOD2(FlushSync, State(int32 put_offset, int32 last_known_get));
   MOCK_METHOD1(SetGetBuffer, void(int32 transfer_buffer_id));
   MOCK_METHOD1(SetGetOffset, void(int32 get_offset));
-  MOCK_METHOD2(CreateTransferBuffer, int32(size_t size, int32 id_request));
-  MOCK_METHOD1(DestroyTransferBuffer, void(int32 handle));
-  MOCK_METHOD1(GetTransferBuffer, Buffer(int32 handle));
-  MOCK_METHOD3(RegisterTransferBuffer, int32(base::SharedMemory* shared_memory,
-                                             size_t size,
-                                             int32 id_request));
+  MOCK_METHOD2(CreateTransferBuffer, Buffer(size_t size, int32* id));
+  MOCK_METHOD1(DestroyTransferBuffer, void(int32 id));
+  MOCK_METHOD1(GetTransferBuffer, Buffer(int32 id));
   MOCK_METHOD1(SetToken, void(int32 token));
   MOCK_METHOD1(SetParseError, void(error::Error error));
   MOCK_METHOD1(SetContextLostReason,
                void(error::ContextLostReason context_lost_reason));
+  MOCK_METHOD0(InsertSyncPoint, uint32());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockCommandBuffer);

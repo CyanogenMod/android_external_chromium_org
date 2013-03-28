@@ -27,19 +27,18 @@ class GPU_EXPORT CommandBufferService : public CommandBuffer {
   virtual bool Initialize() OVERRIDE;
   virtual State GetState() OVERRIDE;
   virtual State GetLastState() OVERRIDE;
+  virtual int32 GetLastToken() OVERRIDE;
   virtual void Flush(int32 put_offset) OVERRIDE;
   virtual State FlushSync(int32 put_offset, int32 last_known_get) OVERRIDE;
   virtual void SetGetBuffer(int32 transfer_buffer_id) OVERRIDE;
   virtual void SetGetOffset(int32 get_offset) OVERRIDE;
-  virtual int32 CreateTransferBuffer(size_t size, int32 id_request) OVERRIDE;
-  virtual int32 RegisterTransferBuffer(base::SharedMemory* shared_memory,
-                                       size_t size,
-                                       int32 id_request) OVERRIDE;
+  virtual Buffer CreateTransferBuffer(size_t size, int32* id) OVERRIDE;
   virtual void DestroyTransferBuffer(int32 id) OVERRIDE;
-  virtual Buffer GetTransferBuffer(int32 handle) OVERRIDE;
+  virtual Buffer GetTransferBuffer(int32 id) OVERRIDE;
   virtual void SetToken(int32 token) OVERRIDE;
   virtual void SetParseError(error::Error error) OVERRIDE;
   virtual void SetContextLostReason(error::ContextLostReason) OVERRIDE;
+  virtual uint32 InsertSyncPoint() OVERRIDE;
 
   // Sets a callback that is called whenever the put offset is changed. When
   // called with sync==true, the callback must not return until some progress
@@ -55,15 +54,23 @@ class GPU_EXPORT CommandBufferService : public CommandBuffer {
       const GetBufferChangedCallback& callback);
   virtual void SetParseErrorCallback(const base::Closure& callback);
 
-  // Setup the transfer buffer that shared state should be copied into.
-  void SetSharedStateBuffer(int32 transfer_buffer_id);
+  // Setup the shared memory that shared state should be copied into.
+  bool SetSharedStateBuffer(scoped_ptr<base::SharedMemory> shared_state_shm);
 
   // Copy the current state into the shared state transfer buffer.
   void UpdateState();
 
+  // Register an existing shared memory object and get an ID that can be used
+  // to identify it in the command buffer. Callee dups the handle until
+  // DestroyTransferBuffer is called.
+  bool RegisterTransferBuffer(int32 id,
+                              base::SharedMemory* shared_memory,
+                              size_t size);
+
  private:
   int32 ring_buffer_id_;
   Buffer ring_buffer_;
+  scoped_ptr<base::SharedMemory> shared_state_shm_;
   CommandBufferSharedState* shared_state_;
   int32 num_entries_;
   int32 get_offset_;

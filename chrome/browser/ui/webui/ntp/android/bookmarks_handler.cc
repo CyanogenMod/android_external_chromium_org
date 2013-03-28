@@ -6,17 +6,17 @@
 
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -37,6 +37,9 @@ static const char* kNodeIdParam = "node_id";
 bool ParseNtpBookmarkId(const ListValue* args,
                         int64* out_id,
                         bool* out_is_partner) {
+  if (!args || args->empty())
+    return false;
+
   std::string string_id;
   if (!args->GetString(0, &string_id))
     return false;
@@ -76,7 +79,7 @@ SkColor GetDominantColorForFavicon(scoped_refptr<base::RefCountedMemory> png) {
   // components that is acceptable as a color choice. This can be from 0 to 765.
   // 665 here is the brightness_limit represents the maximum sum of the RGB
   // components that is acceptable as a color choice. This can be from 0 to 765.
-  return color_utils::CalculateKMeanColorOfPNG(png, 100, 665, sampler);
+  return color_utils::CalculateKMeanColorOfPNG(png, 100, 665, &sampler);
 }
 
 }  // namespace
@@ -102,8 +105,8 @@ void BookmarksHandler::RegisterMessages() {
   Profile* profile = Profile::FromBrowserContext(
       web_ui()->GetWebContents()->GetBrowserContext());
 
-  ChromeURLDataManager::AddDataSource(profile,
-      new FaviconSource(profile, FaviconSource::ANY));
+  content::URLDataSource::Add(
+      profile, new FaviconSource(profile, FaviconSource::ANY));
 
   bookmark_model_ = BookmarkModelFactory::GetForProfile(profile);
   if (bookmark_model_) {
@@ -127,6 +130,9 @@ void BookmarksHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("deleteBookmark",
       base::Bind(&BookmarksHandler::HandleDeleteBookmark,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("editBookmark",
+        base::Bind(&BookmarksHandler::HandleEditBookmark,
+                   base::Unretained(this)));
   web_ui()->RegisterMessageCallback("createHomeScreenBookmarkShortcut",
       base::Bind(&BookmarksHandler::HandleCreateHomeScreenBookmarkShortcut,
                  base::Unretained(this)));
@@ -153,7 +159,7 @@ void BookmarksHandler::HandleGetBookmarks(const ListValue* args) {
 
   int64 id;
   bool is_partner;
-  if (args && !args->empty() && ParseNtpBookmarkId(args, &id, &is_partner))
+  if (ParseNtpBookmarkId(args, &id, &is_partner))
     QueryBookmarkFolder(id, is_partner);
   else
     QueryInitialBookmarks();
@@ -163,14 +169,37 @@ void BookmarksHandler::HandleDeleteBookmark(const ListValue* args) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   int64 id;
   bool is_partner;
-  if (args && !args->empty() && ParseNtpBookmarkId(args, &id, &is_partner)) {
-    DCHECK(!is_partner);
-    const BookmarkNode* node = bookmark_model_->GetNodeByID(id);
-    if (node && node->parent()) {
-      const BookmarkNode* parent_node = node->parent();
-      bookmark_model_->Remove(parent_node, parent_node->GetIndexOf(node));
-    }
+  if (!ParseNtpBookmarkId(args, &id, &is_partner))
+    return;
+
+  const BookmarkNode* node =
+      partner_bookmarks_shim_->GetNodeByID(id, is_partner);
+  if (!partner_bookmarks_shim_->IsBookmarkEditable(node)) {
+    NOTREACHED();
+    return;
   }
+
+  const BookmarkNode* parent_node = node->parent();
+  bookmark_model_->Remove(parent_node, parent_node->GetIndexOf(node));
+}
+
+void BookmarksHandler::HandleEditBookmark(const ListValue* args) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  int64 id;
+  bool is_partner;
+  if (!ParseNtpBookmarkId(args, &id, &is_partner))
+    return;
+
+  const BookmarkNode* node =
+      partner_bookmarks_shim_->GetNodeByID(id, is_partner);
+  if (!partner_bookmarks_shim_->IsBookmarkEditable(node)) {
+    NOTREACHED();
+    return;
+  }
+
+  TabAndroid* tab = TabAndroid::FromWebContents(web_ui()->GetWebContents());
+  if (tab)
+    tab->EditBookmark(node->id(), node->is_folder());
 }
 
 std::string BookmarksHandler::GetBookmarkIdForNtp(const BookmarkNode* node) {
@@ -345,31 +374,33 @@ void BookmarksHandler::HandleCreateHomeScreenBookmarkShortcut(
 
   int64 id;
   bool is_partner;
-  if (args && !args->empty() && ParseNtpBookmarkId(args, &id, &is_partner)) {
-    DCHECK(partner_bookmarks_shim_ != NULL);
-    const BookmarkNode* node =
-        partner_bookmarks_shim_->GetNodeByID(id, is_partner);
-    if (!node)
-      return;
+  if (!ParseNtpBookmarkId(args, &id, &is_partner))
+    return;
 
-    FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
-        profile, Profile::EXPLICIT_ACCESS);
-    FaviconService::Handle handle = favicon_service->GetRawFaviconForURL(
-        FaviconService::FaviconForURLParams(
-            profile,
-            node->url(),
-            history::FAVICON | history::TOUCH_ICON,
-            gfx::kFaviconSize,
-            &cancelable_consumer_),
-        ui::SCALE_FACTOR_100P,
-        base::Bind(&BookmarksHandler::OnShortcutFaviconDataAvailable,
-                   base::Unretained(this)));
-    cancelable_consumer_.SetClientData(favicon_service, handle, node);
-  }
+  DCHECK(partner_bookmarks_shim_ != NULL);
+  const BookmarkNode* node =
+      partner_bookmarks_shim_->GetNodeByID(id, is_partner);
+  if (!node)
+    return;
+
+  FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
+      profile, Profile::EXPLICIT_ACCESS);
+  favicon_service->GetRawFaviconForURL(
+      FaviconService::FaviconForURLParams(
+          profile,
+          node->url(),
+          history::TOUCH_PRECOMPOSED_ICON | history::TOUCH_ICON |
+              history::FAVICON,
+          0),  // request the largest icon.
+      ui::SCALE_FACTOR_100P,  // density doesn't matter for the largest icon.
+      base::Bind(&BookmarksHandler::OnShortcutFaviconDataAvailable,
+                 base::Unretained(this),
+                 node),
+      &cancelable_task_tracker_);
 }
 
 void BookmarksHandler::OnShortcutFaviconDataAvailable(
-    FaviconService::Handle handle,
+    const BookmarkNode* node,
     const history::FaviconBitmapResult& bitmap_result) {
   SkColor color = SK_ColorWHITE;
   SkBitmap favicon_bitmap;
@@ -379,15 +410,7 @@ void BookmarksHandler::OnShortcutFaviconDataAvailable(
                           bitmap_result.bitmap_data->size(),
                           &favicon_bitmap);
   }
-
-  Profile* profile = Profile::FromBrowserContext(
-      web_ui()->GetWebContents()->GetBrowserContext());
-  const BookmarkNode* node = cancelable_consumer_.GetClientData(
-      FaviconServiceFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS),
-      handle);
-
-  TabAndroid* tab = TabAndroid::FromWebContents(
-      web_ui()->GetWebContents());
+  TabAndroid* tab = TabAndroid::FromWebContents(web_ui()->GetWebContents());
   if (tab) {
     tab->AddShortcutToBookmark(node->url(), node->GetTitle(),
                                favicon_bitmap, SkColorGetR(color),

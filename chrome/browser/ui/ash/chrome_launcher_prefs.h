@@ -7,7 +7,7 @@
 
 #include <string>
 
-class PrefService;
+class PrefRegistrySyncable;
 
 namespace base {
 class DictionaryValue;
@@ -27,8 +27,9 @@ extern const char kShelfAutoHideBehaviorNever[];
 extern const char kShelfAlignmentBottom[];
 extern const char kShelfAlignmentLeft[];
 extern const char kShelfAlignmentRight[];
+extern const char kShelfAlignmentTop[];
 
-void RegisterChromeLauncherUserPrefs(PrefService* user_prefs);
+void RegisterChromeLauncherUserPrefs(PrefRegistrySyncable* registry);
 
 base::DictionaryValue* CreateAppDict(const std::string& app_id);
 

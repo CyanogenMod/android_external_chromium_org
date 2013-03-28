@@ -17,6 +17,7 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
+#include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
 #include "net/cookies/canonical_cookie.h"
 
@@ -28,11 +29,12 @@ class CookieOptions;
 class HttpRequestHeaders;
 class HttpResponseInfo;
 class IOBuffer;
+struct LoadTimingInfo;
 class NetworkDelegate;
 class SSLCertRequestInfo;
 class SSLInfo;
 class URLRequest;
-class UploadData;
+class UploadDataStream;
 class URLRequestStatus;
 class X509Certificate;
 
@@ -50,10 +52,15 @@ class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
 
   // Sets the upload data, most requests have no upload data, so this is a NOP.
   // Job types supporting upload data will override this.
-  virtual void SetUpload(UploadData* upload);
+  virtual void SetUpload(UploadDataStream* upload_data_stream);
 
-  // Sets extra request headers for Job types that support request headers.
+  // Sets extra request headers for Job types that support request
+  // headers. Called once before Start() is called.
   virtual void SetExtraRequestHeaders(const HttpRequestHeaders& headers);
+
+  // Sets the priority of the job. Called once before Start() is
+  // called, but also when the priority of the parent request changes.
+  virtual void SetPriority(RequestPriority priority);
 
   // If any error occurs while starting the Job, NotifyStartError should be
   // called.
@@ -109,6 +116,8 @@ class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
 
   // Called to get response info.
   virtual void GetResponseInfo(HttpResponseInfo* info);
+
+  virtual void GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const;
 
   // Returns the cookie values included in the response, if applicable.
   // Returns true if applicable.
@@ -241,8 +250,8 @@ class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
   // Should only be called if the job has not started a resposne.
   void NotifyRestartRequired();
 
-  // Called when the delegate blocks or unblocks this request when intercepting
-  // certain requests.
+  // Called when the network delegate blocks or unblocks this request when
+  // intercepting certain requests.
   void SetBlockedOnDelegate();
   void SetUnblockedOnDelegate();
 
@@ -280,6 +289,9 @@ class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
   // still present to assist in calculations.  This is used by URLRequestHttpJob
   // to get SDCH to emit stats.
   void DestroyFilters() { filter_.reset(); }
+
+  // Provides derived classes with access to the request's network delegate.
+  NetworkDelegate* network_delegate() { return network_delegate_; }
 
   // The status of the job.
   const URLRequestStatus GetStatus();
@@ -376,6 +388,7 @@ class NET_EXPORT URLRequestJob : public base::RefCounted<URLRequestJob>,
   GURL deferred_redirect_url_;
   int deferred_redirect_status_code_;
 
+  // The network delegate to use with this request, if any.
   NetworkDelegate* network_delegate_;
 
   base::WeakPtrFactory<URLRequestJob> weak_factory_;

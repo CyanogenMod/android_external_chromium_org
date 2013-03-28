@@ -5,12 +5,11 @@
 #include <algorithm>
 #include <vector>
 
+#include "ash/display/display_manager.h"
 #include "ash/launcher/launcher.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
-#include "ash/wm/shadow.h"
-#include "ash/wm/shadow_controller.h"
-#include "ash/wm/shadow_types.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_util.h"
 #include "base/memory/scoped_ptr.h"
@@ -21,22 +20,18 @@
 #include "ui/gfx/display.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/screen.h"
+#include "ui/views/corewm/shadow.h"
+#include "ui/views/corewm/shadow_controller.h"
+#include "ui/views/corewm/shadow_types.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
 
 typedef ash::test::AshTestBase DIPTest;
 
-#if defined(OS_WIN)
-// Windows/Aura doesn't have DIP support in display yet.
-#define MAYBE_WorkArea DISABLED_WorkArea
-#else
-#define MAYBE_WorkArea WorkArea
-#endif
-
 // Test if the WM sets correct work area under different density.
-TEST_F(DIPTest, MAYBE_WorkArea) {
-  ChangeDisplayConfig(1.0f, gfx::Rect(0, 0, 1000, 900));
+TEST_F(DIPTest, WorkArea) {
+  UpdateDisplay("1000x900*1.0f");
 
   aura::RootWindow* root = Shell::GetPrimaryRootWindow();
   const gfx::Display display =
@@ -47,13 +42,16 @@ TEST_F(DIPTest, MAYBE_WorkArea) {
   EXPECT_EQ("0,0 1000x852", work_area.ToString());
   EXPECT_EQ("0,0,48,0", display.bounds().InsetsFrom(work_area).ToString());
 
-  ChangeDisplayConfig(2.0f, gfx::Rect(0, 0, 2000, 1800));
+  UpdateDisplay("2000x1800*2.0f");
+  gfx::Screen* screen = Shell::GetScreen();
 
-  const gfx::Display display_2x =
-      Shell::GetScreen()->GetDisplayNearestWindow(root);
+  const gfx::Display display_2x = screen->GetDisplayNearestWindow(root);
+  const internal::DisplayInfo display_info_2x =
+      Shell::GetInstance()->display_manager()->GetDisplayInfo(display_2x.id());
 
   // The |bounds_in_pixel()| should report bounds in pixel coordinate.
-  EXPECT_EQ("0,0 2000x1800", display_2x.bounds_in_pixel().ToString());
+  EXPECT_EQ("1,1 2000x1800",
+            display_info_2x.bounds_in_pixel().ToString());
 
   // Aura and views coordinates are in DIP, so they their bounds do not change.
   EXPECT_EQ("0,0 1000x900", display_2x.bounds().ToString());
@@ -66,7 +64,7 @@ TEST_F(DIPTest, MAYBE_WorkArea) {
   Launcher* launcher = Launcher::ForPrimaryDisplay();
   EXPECT_EQ(
       display_2x.bounds().InsetsFrom(work_area).height(),
-      launcher->widget()->GetNativeView()->layer()->bounds().height());
+      launcher->shelf_widget()->GetNativeView()->layer()->bounds().height());
 }
 
 }  // namespace ash

@@ -2,23 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "autofill_popup_view_gtk.h"
+#include "chrome/browser/ui/gtk/autofill/autofill_popup_view_gtk.h"
 
 #include <gdk/gdkkeysyms.h>
 
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autofill/autofill_external_delegate.h"
+#include "chrome/browser/ui/autofill/autofill_popup_controller.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
-#include "chrome/browser/ui/gtk/gtk_theme_service.h"
-#include "content/public/browser/render_view_host.h"
-#include "content/public/browser/web_contents.h"
 #include "grit/ui_resources.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAutofillClient.h"
 #include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_windowing.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/pango_util.h"
@@ -27,29 +25,18 @@
 using WebKit::WebAutofillClient;
 
 namespace {
+
 const GdkColor kBorderColor = GDK_COLOR_RGB(0xc7, 0xca, 0xce);
 const GdkColor kHoveredBackgroundColor = GDK_COLOR_RGB(0xcd, 0xcd, 0xcd);
-const GdkColor kValueTextColor = GDK_COLOR_RGB(0x00, 0x00, 0x00);
-const GdkColor kLabelTextColor = GDK_COLOR_RGB(0x7f, 0x7f, 0x7f);
-
-gfx::Rect GetWindowRect(GdkWindow* window) {
-  return gfx::Rect(gdk_window_get_width(window),
-                   gdk_window_get_height(window));
-}
+const GdkColor kNameColor = GDK_COLOR_RGB(0x00, 0x00, 0x00);
+const GdkColor kSubtextColor = GDK_COLOR_RGB(0x7f, 0x7f, 0x7f);
 
 }  // namespace
 
 AutofillPopupViewGtk::AutofillPopupViewGtk(
-    content::WebContents* web_contents,
-    GtkThemeService* theme_service,
-    AutofillExternalDelegate* external_delegate,
-    GtkWidget* parent)
-    : AutofillPopupView(web_contents, external_delegate),
-      parent_(parent),
-      window_(gtk_window_new(GTK_WINDOW_POPUP)),
-      theme_service_(theme_service),
-      render_view_host_(web_contents->GetRenderViewHost()) {
-  CHECK(parent != NULL);
+    AutofillPopupController* controller)
+    : controller_(controller),
+      window_(gtk_window_new(GTK_WINDOW_POPUP)) {
   gtk_window_set_resizable(GTK_WINDOW(window_), FALSE);
   gtk_widget_set_app_paintable(window_, TRUE);
   gtk_widget_set_double_buffered(window_, TRUE);
@@ -59,6 +46,11 @@ AutofillPopupViewGtk::AutofillPopupViewGtk(
                                  GDK_BUTTON_RELEASE_MASK |
                                  GDK_EXPOSURE_MASK |
                                  GDK_POINTER_MOTION_MASK);
+
+  GtkWidget* toplevel_window = gtk_widget_get_toplevel(
+      controller->container_view());
+  signals_.Connect(toplevel_window, "configure-event",
+                   G_CALLBACK(HandleConfigureThunk), this);
   g_signal_connect(window_, "expose-event",
                    G_CALLBACK(HandleExposeThunk), this);
   g_signal_connect(window_, "leave-notify-event",
@@ -78,44 +70,45 @@ AutofillPopupViewGtk::~AutofillPopupViewGtk() {
 }
 
 void AutofillPopupViewGtk::Hide() {
-  render_view_host_->RemoveKeyboardListener(this);
+  AutofillPopupView::Hide();
 
-  gtk_widget_hide(window_);
+  delete this;
 }
 
-void AutofillPopupViewGtk::ShowInternal() {
-  SetBounds();
+void AutofillPopupViewGtk::Show() {
   UpdateBoundsAndRedrawPopup();
-
-  render_view_host_->AddKeyboardListener(this);
 
   gtk_widget_show(window_);
 
-  GtkWidget* toplevel = gtk_widget_get_toplevel(parent_);
-  CHECK(gtk_widget_is_toplevel(toplevel));
-  ui::StackPopupWindow(window_, toplevel);
+  GtkWidget* parent_window =
+      gtk_widget_get_toplevel(controller_->container_view());
+  ui::StackPopupWindow(window_, parent_window);
 }
 
 void AutofillPopupViewGtk::InvalidateRow(size_t row) {
-  GdkRectangle row_rect = GetRectForRow(
-      row,
-      element_bounds().width()).ToGdkRectangle();
+  GdkRectangle row_rect = controller_->GetRowBounds(row).ToGdkRectangle();
   GdkWindow* gdk_window = gtk_widget_get_window(window_);
   gdk_window_invalidate_rect(gdk_window, &row_rect, FALSE);
 }
 
-void AutofillPopupViewGtk::UpdateBoundsAndRedrawPopupInternal() {
+void AutofillPopupViewGtk::UpdateBoundsAndRedrawPopup() {
   gtk_widget_set_size_request(window_,
-                              element_bounds().width(),
-                              element_bounds().height());
+                              controller_->popup_bounds().width(),
+                              controller_->popup_bounds().height());
   gtk_window_move(GTK_WINDOW(window_),
-                  element_bounds().x(),
-                  element_bounds().y());
+                  controller_->popup_bounds().x(),
+                  controller_->popup_bounds().y());
 
   GdkWindow* gdk_window = gtk_widget_get_window(window_);
-  GdkRectangle popup_rect = element_bounds().ToGdkRectangle();
+  GdkRectangle popup_rect = controller_->popup_bounds().ToGdkRectangle();
   if (gdk_window != NULL)
     gdk_window_invalidate_rect(gdk_window, &popup_rect, FALSE);
+}
+
+gboolean AutofillPopupViewGtk::HandleConfigure(GtkWidget* widget,
+                                               GdkEventConfigure* event) {
+  controller_->Hide();
+  return FALSE;
 }
 
 gboolean AutofillPopupViewGtk::HandleButtonRelease(GtkWidget* widget,
@@ -124,15 +117,12 @@ gboolean AutofillPopupViewGtk::HandleButtonRelease(GtkWidget* widget,
   if (event->button != 1)
     return FALSE;
 
-  AcceptSelectedPosition(event->x, event->y);
+  controller_->MouseClicked(event->x, event->y);
   return TRUE;
 }
 
 gboolean AutofillPopupViewGtk::HandleExpose(GtkWidget* widget,
                                             GdkEventExpose* event) {
-  gfx::Rect window_rect = GetWindowRect(event->window);
-  gfx::Rect damage_rect = gfx::Rect(event->area);
-
   cairo_t* cr = gdk_cairo_create(GDK_DRAWABLE(gtk_widget_get_window(widget)));
   gdk_cairo_rectangle(cr, &event->area);
   cairo_clip(cr);
@@ -140,21 +130,22 @@ gboolean AutofillPopupViewGtk::HandleExpose(GtkWidget* widget,
   // This assert is kinda ugly, but it would be more currently unneeded work
   // to support painting a border that isn't 1 pixel thick.  There is no point
   // in writing that code now, and explode if that day ever comes.
-  DCHECK_EQ(kBorderThickness, static_cast<size_t>(1));
+  DCHECK_EQ(1, kBorderThickness);
   // Draw the 1px border around the entire window.
   gdk_cairo_set_source_color(cr, &kBorderColor);
-  cairo_rectangle(cr, 0, 0, window_rect.width(), window_rect.height());
+  gdk_cairo_rectangle(cr, &widget->allocation);
   cairo_stroke(cr);
+  SetUpLayout();
 
-  SetupLayout(window_rect);
+  gfx::Rect damage_rect(event->area);
 
-  for (size_t i = 0; i < autofill_values().size(); ++i) {
-    gfx::Rect line_rect = GetRectForRow(i, window_rect.width());
+  for (size_t i = 0; i < controller_->names().size(); ++i) {
+    gfx::Rect line_rect = controller_->GetRowBounds(i);
     // Only repaint and layout damaged lines.
     if (!line_rect.Intersects(damage_rect))
       continue;
 
-    if (autofill_unique_ids()[i] == WebAutofillClient::MenuItemIDSeparator)
+    if (controller_->identifiers()[i] == WebAutofillClient::MenuItemIDSeparator)
       DrawSeparator(cr, line_rect);
     else
       DrawAutofillEntry(cr, i, line_rect);
@@ -167,52 +158,21 @@ gboolean AutofillPopupViewGtk::HandleExpose(GtkWidget* widget,
 
 gboolean AutofillPopupViewGtk::HandleLeave(GtkWidget* widget,
                                            GdkEventCrossing* event) {
-  ClearSelectedLine();
+  controller_->MouseExitedPopup();
 
   return FALSE;
 }
 
 gboolean AutofillPopupViewGtk::HandleMotion(GtkWidget* widget,
                                             GdkEventMotion* event) {
-  SetSelectedPosition(event->x, event->y);
+  controller_->MouseHovered(event->x, event->y);
 
   return TRUE;
 }
 
-bool AutofillPopupViewGtk::HandleKeyPressEvent(GdkEventKey* event) {
-  // Filter modifier to only include accelerator modifiers.
-  guint modifier = event->state & gtk_accelerator_get_default_mod_mask();
-
-  switch (event->keyval) {
-    case GDK_Up:
-      SelectPreviousLine();
-      return true;
-    case GDK_Down:
-      SelectNextLine();
-      return true;
-    case GDK_Page_Up:
-      SetSelectedLine(0);
-      return true;
-    case GDK_Page_Down:
-      SetSelectedLine(autofill_values().size() - 1);
-      return true;
-    case GDK_Escape:
-      external_delegate()->HideAutofillPopup();
-      return true;
-    case GDK_Delete:
-    case GDK_KP_Delete:
-      return (modifier == GDK_SHIFT_MASK) && RemoveSelectedLine();
-    case GDK_Return:
-    case GDK_KP_Enter:
-      return AcceptSelectedLine();
-  }
-
-  return false;
-}
-
-void AutofillPopupViewGtk::SetupLayout(const gfx::Rect& window_rect) {
-  pango_layout_set_width(layout_, window_rect.width() * PANGO_SCALE);
-  pango_layout_set_height(layout_, window_rect.height() * PANGO_SCALE);
+void AutofillPopupViewGtk::SetUpLayout() {
+  pango_layout_set_width(layout_, window_->allocation.width * PANGO_SCALE);
+  pango_layout_set_height(layout_, window_->allocation.height * PANGO_SCALE);
 }
 
 void AutofillPopupViewGtk::SetLayoutText(const string16& text,
@@ -254,7 +214,7 @@ void AutofillPopupViewGtk::DrawSeparator(cairo_t* cairo_context,
 void AutofillPopupViewGtk::DrawAutofillEntry(cairo_t* cairo_context,
                                              size_t index,
                                              const gfx::Rect& entry_rect) {
-  if (selected_line() == static_cast<int>(index)) {
+  if (controller_->selected_line() == static_cast<int>(index)) {
     gdk_cairo_set_source_color(cairo_context, &kHoveredBackgroundColor);
     cairo_rectangle(cairo_context, entry_rect.x(), entry_rect.y(),
                     entry_rect.width(), entry_rect.height());
@@ -262,14 +222,18 @@ void AutofillPopupViewGtk::DrawAutofillEntry(cairo_t* cairo_context,
   }
 
   // Draw the value.
-  SetLayoutText(autofill_values()[index], value_font(), kValueTextColor);
-  int value_text_width = value_font().GetStringWidth(autofill_values()[index]);
+  SetLayoutText(controller_->names()[index],
+                controller_->GetNameFontForRow(index),
+                kNameColor);
+  int value_text_width = controller_->GetNameFontForRow(index).GetStringWidth(
+      controller_->names()[index]);
 
   // Center the text within the line.
-  int row_height = GetRowHeightFromId(autofill_unique_ids()[index]);
+  int row_height = entry_rect.height();
   int value_content_y = std::max(
       entry_rect.y(),
-      entry_rect.y() + ((row_height - value_font().GetHeight()) / 2));
+      entry_rect.y() +
+          (row_height - controller_->GetNameFontForRow(index).GetHeight()) / 2);
 
   bool is_rtl = base::i18n::IsRTL();
   int value_content_x = is_rtl ?
@@ -283,44 +247,19 @@ void AutofillPopupViewGtk::DrawAutofillEntry(cairo_t* cairo_context,
   // Use this to figure out where all the other Autofill items should be placed.
   int x_align_left = is_rtl ? kEndPadding : entry_rect.width() - kEndPadding;
 
-  // Draw the delete icon, if one is needed.
-  if (CanDelete(autofill_unique_ids()[index])) {
-    x_align_left += is_rtl ? 0 : -kDeleteIconWidth;
-
-    gfx::Image delete_icon;
-    if (static_cast<int>(index) == selected_line() && delete_icon_selected())
-      delete_icon = theme_service_->GetImageNamed(IDR_CLOSE_BAR_H);
-    else
-      delete_icon = theme_service_->GetImageNamed(IDR_CLOSE_BAR);
-
-    // TODO(csharp): Create a custom resource for the delete icon.
-    // http://www.crbug.com/131801
-    cairo_save(cairo_context);
-    gtk_util::DrawFullImage(
-        cairo_context,
-        window_,
-        delete_icon,
-        x_align_left,
-        entry_rect.y() +
-            ((row_height - kDeleteIconHeight) / 2));
-    cairo_restore(cairo_context);
-    cairo_save(cairo_context);
-
-    x_align_left += is_rtl ? kDeleteIconWidth + kIconPadding : -kIconPadding;
-  }
-
   // Draw the Autofill icon, if one exists
-  if (!autofill_icons()[index].empty()) {
-    int icon = GetIconResourceID(autofill_icons()[index]);
+  if (!controller_->icons()[index].empty()) {
+    int icon = controller_->GetIconResourceID(controller_->icons()[index]);
     DCHECK_NE(-1, icon);
     int icon_y = entry_rect.y() + (row_height - kAutofillIconHeight) / 2;
 
     x_align_left += is_rtl ? 0 : -kAutofillIconWidth;
 
     cairo_save(cairo_context);
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     gtk_util::DrawFullImage(cairo_context,
                             window_,
-                            theme_service_->GetImageNamed(icon),
+                            rb.GetImageNamed(icon),
                             x_align_left,
                             icon_y);
     cairo_restore(cairo_context);
@@ -328,46 +267,28 @@ void AutofillPopupViewGtk::DrawAutofillEntry(cairo_t* cairo_context,
     x_align_left += is_rtl ? kAutofillIconWidth + kIconPadding : -kIconPadding;
   }
 
-  // Draw the label text.
-  SetLayoutText(autofill_labels()[index], label_font(), kLabelTextColor);
-  x_align_left +=
-      is_rtl ? 0 : -label_font().GetStringWidth(autofill_labels()[index]);
+  // Draw the subtext.
+  SetLayoutText(controller_->subtexts()[index],
+                controller_->subtext_font(),
+                kSubtextColor);
+  if (!is_rtl) {
+    x_align_left -= controller_->subtext_font().GetStringWidth(
+        controller_->subtexts()[index]);
+  }
 
   // Center the text within the line.
-  int label_content_y = std::max(
+  int subtext_content_y = std::max(
       entry_rect.y(),
-      entry_rect.y() + ((row_height - label_font().GetHeight()) / 2));
+      entry_rect.y() +
+          (row_height - controller_->subtext_font().GetHeight()) / 2);
 
   cairo_save(cairo_context);
-  cairo_move_to(cairo_context, x_align_left, label_content_y);
+  cairo_move_to(cairo_context, x_align_left, subtext_content_y);
   pango_cairo_show_layout(cairo_context, layout_);
   cairo_restore(cairo_context);
 }
 
-void AutofillPopupViewGtk::SetBounds() {
-  gint origin_x, origin_y;
-  gdk_window_get_origin(gtk_widget_get_window(parent_), &origin_x, &origin_y);
-
-  GdkScreen* screen = gtk_widget_get_screen(parent_);
-  gint screen_height = gdk_screen_get_height(screen);
-
-  int bottom_of_field = origin_y + element_bounds().y() +
-      element_bounds().height();
-  int popup_height =  GetPopupRequiredHeight();
-
-  // Find the correct top position of the popup so that is doesn't go off
-  // the screen.
-  int top_of_popup = 0;
-  if (screen_height < bottom_of_field + popup_height) {
-    // The popup must appear above the field.
-    top_of_popup = origin_y + element_bounds().y() - popup_height;
-  } else {
-    // The popup can appear below the field.
-    top_of_popup = bottom_of_field;
-  }
-
-  SetElementBounds(gfx::Rect(origin_x + element_bounds().x(),
-                             top_of_popup,
-                             GetPopupRequiredWidth(),
-                             popup_height));
+AutofillPopupView* AutofillPopupView::Create(
+    AutofillPopupController* controller) {
+  return new AutofillPopupViewGtk(controller);
 }

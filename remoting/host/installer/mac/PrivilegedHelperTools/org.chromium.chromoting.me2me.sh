@@ -23,20 +23,32 @@ SIGTERM_EXIT_CODE=143
 MIN_PERMANENT_ERROR_EXIT_CODE=100
 MAX_PERMANENT_ERROR_EXIT_CODE=105
 
+# Constants controlling the host process relaunch throttling.
+MINIMUM_RELAUNCH_INTERVAL=60
+MAXIMUM_HOST_FAILURES=10
+
+# Exit code 126 is defined by Posix to mean "Command found, but not
+# executable", and is returned if the process cannot be launched due to
+# parental control.
+PERMISSION_DENIED_PARENTAL_CONTROL=126
+
 HOST_PID=0
 SIGNAL_WAS_TRAPPED=0
+
+# This script works as a proxy between launchd and the host. Signals of
+# interest to the host must be forwarded.
+SIGNAL_LIST="SIGHUP SIGINT SIGQUIT SIGILL SIGTRAP SIGABRT SIGEMT \
+      SIGFPE SIGKILL SIGBUS SIGSEGV SIGSYS SIGPIPE SIGALRM SIGTERM SIGURG \
+      SIGSTOP SIGTSTP SIGCONT SIGCHLD SIGTTIN SIGTTOU SIGIO SIGXCPU SIGXFSZ \
+      SIGVTALRM SIGPROF SIGWINCH SIGINFO SIGUSR1 SIGUSR2"
 
 handle_signal() {
   SIGNAL_WAS_TRAPPED=1
 }
 
 run_host() {
-  # This script works as a proxy between launchd and the host. Signals of
-  # interest to the host must be forwarded.
-  trap "handle_signal" SIGHUP SIGINT SIGQUIT SIGILL SIGTRAP SIGABRT SIGEMT \
-      SIGFPE SIGKILL SIGBUS SIGSEGV SIGSYS SIGPIPE SIGALRM SIGTERM SIGURG \
-      SIGSTOP SIGTSTP SIGCONT SIGCHLD SIGTTIN SIGTTOU SIGIO SIGXCPU SIGXFSZ \
-      SIGVTALRM SIGPROF SIGWINCH SIGINFO SIGUSR1 SIGUSR2
+  local host_failure_count=0
+  local host_start_time=0
 
   while true; do
     if [[ ! -f "$ENABLED_FILE" ]]; then
@@ -44,7 +56,32 @@ run_host() {
       exit 0
     fi
 
-    # Execute the host asynchronously
+    # If this is not the first time the host has run, make sure we don't
+    # relaunch it too soon.
+    if [[ "$host_start_time" -gt 0 ]]; then
+      local host_lifetime=$(($(date +%s) - $host_start_time))
+      echo "Host ran for ${host_lifetime}s"
+      if [[ "$host_lifetime" -lt "$MINIMUM_RELAUNCH_INTERVAL" ]]; then
+        # If the host didn't run for very long, assume it crashed. Relaunch only
+        # after a suitable delay and increase the failure count.
+        host_failure_count=$(($host_failure_count + 1))
+        echo "Host failure count $host_failure_count/$MAXIMUM_HOST_FAILURES"
+        if [[ "$host_failure_count" -ge "$MAXIMUM_HOST_FAILURES" ]]; then
+          echo "Too many host failures. Giving up."
+          exit 1
+        fi
+        local relaunch_in=$(($MINIMUM_RELAUNCH_INTERVAL - $host_lifetime))
+        echo "Relaunching in ${relaunch_in}s"
+        sleep "$relaunch_in"
+      else
+        # If the host ran for long enough, reset the crash counter.
+        host_failure_count=0
+      fi
+    fi
+
+    # Execute the host asynchronously and forward signals to it.
+    trap "handle_signal" $SIGNAL_LIST
+    host_start_time=$(date +%s)
     "$HOST_EXE" --host-config="$CONFIG_FILE" &
     HOST_PID="$!"
 
@@ -59,14 +96,31 @@ run_host() {
         local SIGNAL=$(($EXIT_CODE - 128))
         echo "Forwarding signal $SIGNAL to host"
         kill -$SIGNAL "$HOST_PID"
-      elif [[ "$EXIT_CODE" -eq "$SIGTERM_EXIT_CODE" ||
+      elif [[ "$EXIT_CODE" -eq "0" ||
+              "$EXIT_CODE" -eq "$SIGTERM_EXIT_CODE" ||
+              "$EXIT_CODE" -eq "$PERMISSION_DENIED_PARENTAL_CONTROL" ||
               ("$EXIT_CODE" -ge "$MIN_PERMANENT_ERROR_EXIT_CODE" && \
               "$EXIT_CODE" -le "$MAX_PERMANENT_ERROR_EXIT_CODE") ]]; then
-        echo "Host returned permanent exit code $EXIT_CODE"
+        echo "Host returned permanent exit code $EXIT_CODE at ""$(date)"""
+        if [[ "$EXIT_CODE" -eq 101 ]]; then
+          # Exit code 101 is "hostID deleted", which indicates that the host
+          # was taken off-line remotely. To prevent the host being restarted
+          # when the login context changes, try to delete the "enabled" file.
+          # Since this requires root privileges, this is only possible when
+          # this script is launched in the "login" context. In the "aqua"
+          # context, just exit and try again next time.
+          echo "Host id deleted - disabling"
+          rm -f "$ENABLED_FILE" 2>/dev/null
+        fi
         exit "$EXIT_CODE"
       else
-        # Ignore non-permanent error-code and launch host again.
-        echo "Host returned non-permanent exit code $EXIT_CODE"
+        # Ignore non-permanent error-code and launch host again. Stop handling
+        # signals temporarily in case the script has to sleep to throttle host
+        # relaunches. While throttling, there is no host process to which to
+        # forward the signal, so the default behaviour should be restored.
+        echo "Host returned non-permanent exit code $EXIT_CODE at ""$(date)"""
+        trap - $SIGNAL_LIST
+        HOST_PID=0
         break
       fi
     done
@@ -99,6 +153,7 @@ elif [[ "$1" = "--relaunch-prefpane" ]]; then
   cat 2>/dev/null || true
   open "$PREF_PANE_BUNDLE"
 elif [[ "$1" = "--run-from-launchd" ]]; then
+  echo Host started for user $USER at $"$(date)"
   run_host
 else
   echo $$

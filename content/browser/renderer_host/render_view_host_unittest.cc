@@ -6,13 +6,13 @@
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/web_contents/navigation_controller_impl.h"
-#include "content/browser/web_contents/test_web_contents.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/mock_render_process_host.h"
+#include "content/test/test_web_contents.h"
 #include "net/base/net_util.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
 #include "webkit/glue/webdropdata.h"
@@ -23,7 +23,7 @@ class RenderViewHostTest : public RenderViewHostImplTestHarness {
 };
 
 // All about URLs reported by the renderer should get rewritten to about:blank.
-// See RenderViewHost::OnMsgNavigate for a discussion.
+// See RenderViewHost::OnNavigate for a discussion.
 TEST_F(RenderViewHostTest, FilterAbout) {
   test_rvh()->SendNavigate(1, GURL("about:cache"));
   ASSERT_TRUE(controller().GetActiveEntry());
@@ -127,28 +127,28 @@ TEST_F(RenderViewHostTest, StartDragging) {
   GURL file_url = GURL("file:///home/user/secrets.txt");
   drop_data.url = file_url;
   drop_data.html_base_url = file_url;
-  test_rvh()->TestOnMsgStartDragging(drop_data);
+  test_rvh()->TestOnStartDragging(drop_data);
   EXPECT_EQ(GURL("about:blank"), delegate_view.drag_url());
   EXPECT_EQ(GURL("about:blank"), delegate_view.html_base_url());
 
   GURL http_url = GURL("http://www.domain.com/index.html");
   drop_data.url = http_url;
   drop_data.html_base_url = http_url;
-  test_rvh()->TestOnMsgStartDragging(drop_data);
+  test_rvh()->TestOnStartDragging(drop_data);
   EXPECT_EQ(http_url, delegate_view.drag_url());
   EXPECT_EQ(http_url, delegate_view.html_base_url());
 
   GURL https_url = GURL("https://www.domain.com/index.html");
   drop_data.url = https_url;
   drop_data.html_base_url = https_url;
-  test_rvh()->TestOnMsgStartDragging(drop_data);
+  test_rvh()->TestOnStartDragging(drop_data);
   EXPECT_EQ(https_url, delegate_view.drag_url());
   EXPECT_EQ(https_url, delegate_view.html_base_url());
 
   GURL javascript_url = GURL("javascript:alert('I am a bookmarklet')");
   drop_data.url = javascript_url;
   drop_data.html_base_url = http_url;
-  test_rvh()->TestOnMsgStartDragging(drop_data);
+  test_rvh()->TestOnStartDragging(drop_data);
   EXPECT_EQ(javascript_url, delegate_view.drag_url());
   EXPECT_EQ(http_url, delegate_view.html_base_url());
 }
@@ -159,9 +159,9 @@ TEST_F(RenderViewHostTest, DragEnteredFileURLsStillBlocked) {
   gfx::Point screen_point;
   // We use "//foo/bar" path (rather than "/foo/bar") since dragged paths are
   // expected to be absolute on any platforms.
-  FilePath highlighted_file_path(FILE_PATH_LITERAL("//tmp/foo.html"));
-  FilePath dragged_file_path(FILE_PATH_LITERAL("//tmp/image.jpg"));
-  FilePath sensitive_file_path(FILE_PATH_LITERAL("//etc/passwd"));
+  base::FilePath highlighted_file_path(FILE_PATH_LITERAL("//tmp/foo.html"));
+  base::FilePath dragged_file_path(FILE_PATH_LITERAL("//tmp/image.jpg"));
+  base::FilePath sensitive_file_path(FILE_PATH_LITERAL("//etc/passwd"));
   GURL highlighted_file_url = net::FilePathToFileURL(highlighted_file_path);
   GURL dragged_file_url = net::FilePathToFileURL(dragged_file_path);
   GURL sensitive_file_url = net::FilePathToFileURL(sensitive_file_path);
@@ -211,13 +211,13 @@ TEST_F(RenderViewHostTest, BadMessageHandlerRenderWidgetHost) {
   EXPECT_EQ(1, process()->bad_msg_count());
 }
 
-// Test that OnMsgInputEventAck() detects bad messages.
+// Test that OnInputEventAck() detects bad messages.
 TEST_F(RenderViewHostTest, BadMessageHandlerInputEventAck) {
   EXPECT_EQ(0, process()->bad_msg_count());
   // ViewHostMsg_HandleInputEvent_ACK is defined taking 0 params but
   // the code actually expects it to have at least one int para, this this
   // bogus message will not fail at de-serialization but should fail in
-  // OnMsgInputEventAck() processing.
+  // OnInputEventAck() processing.
   IPC::Message message(0, ViewHostMsg_HandleInputEvent_ACK::ID,
                        IPC::Message::PRIORITY_NORMAL);
   test_rvh()->OnMessageReceived(message);

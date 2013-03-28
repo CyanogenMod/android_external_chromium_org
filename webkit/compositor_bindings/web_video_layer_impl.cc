@@ -5,37 +5,25 @@
 #include "webkit/compositor_bindings/web_video_layer_impl.h"
 
 #include "base/bind.h"
-#include "cc/video_layer.h"
+#include "cc/layers/video_layer.h"
 #include "webkit/compositor_bindings/web_layer_impl.h"
+#include "webkit/compositor_bindings/web_to_ccvideo_frame_provider.h"
 #include "webkit/media/webvideoframe_impl.h"
 
-namespace WebKit {
+namespace webkit {
 
-WebVideoLayer* WebVideoLayer::create(WebVideoFrameProvider* provider)
-{
-    return new WebVideoLayerImpl(provider);
+WebVideoLayerImpl::WebVideoLayerImpl(
+    WebKit::WebVideoFrameProvider* web_provider)
+    : provider_adapter_(WebToCCVideoFrameProvider::Create(web_provider)),
+      layer_(
+          new WebLayerImpl(cc::VideoLayer::Create(provider_adapter_.get()))) {}
+
+WebVideoLayerImpl::~WebVideoLayerImpl() {}
+
+WebKit::WebLayer* WebVideoLayerImpl::layer() { return layer_.get(); }
+
+bool WebVideoLayerImpl::active() const {
+  return !!layer_->layer()->layer_tree_host();
 }
 
-WebVideoLayerImpl::WebVideoLayerImpl(WebVideoFrameProvider* provider)
-    : m_layer(new WebLayerImpl(
-        cc::VideoLayer::create(
-            provider,
-            base::Bind(webkit_media::WebVideoFrameImpl::toVideoFrame))))
-{
-}
-
-WebVideoLayerImpl::~WebVideoLayerImpl()
-{
-}
-
-WebLayer* WebVideoLayerImpl::layer()
-{
-    return m_layer.get();
-}
-
-bool WebVideoLayerImpl::active() const
-{
-    return m_layer->layer()->layerTreeHost();
-}
-
-} // namespace WebKit
+}  // namespace webkit

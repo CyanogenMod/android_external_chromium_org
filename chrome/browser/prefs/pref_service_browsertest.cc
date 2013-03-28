@@ -6,9 +6,9 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/test/test_file_util.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -34,7 +34,14 @@ IN_PROC_BROWSER_TEST_F(PreservedWindowPlacement, PRE_Test) {
   browser()->window()->SetBounds(gfx::Rect(20, 30, 400, 500));
 }
 
-IN_PROC_BROWSER_TEST_F(PreservedWindowPlacement, Test) {
+// Fails on Chrome OS as the browser thinks it is restarting after a crash, see
+// http://crbug.com/168044
+#if defined(OS_CHROMEOS)
+#define MAYBE_Test DISABLED_Test
+#else
+#define MAYBE_Test Test
+#endif
+IN_PROC_BROWSER_TEST_F(PreservedWindowPlacement, MAYBE_Test) {
   gfx::Rect bounds = browser()->window()->GetBounds();
   gfx::Rect expected_bounds(gfx::Rect(20, 30, 400, 500));
   ASSERT_EQ(expected_bounds.ToString(), bounds.ToString());
@@ -48,25 +55,25 @@ class PreferenceServiceTest : public InProcessBrowserTest {
   }
 
   virtual bool SetUpUserDataDirectory() OVERRIDE {
-    FilePath user_data_directory;
+    base::FilePath user_data_directory;
     PathService::Get(chrome::DIR_USER_DATA, &user_data_directory);
 
-    FilePath reference_pref_file;
+    base::FilePath reference_pref_file;
     if (new_profile_) {
       reference_pref_file = ui_test_utils::GetTestFilePath(
-          FilePath().AppendASCII("profiles").
+          base::FilePath().AppendASCII("profiles").
                      AppendASCII("window_placement").
                      AppendASCII("Default"),
-          FilePath().Append(chrome::kPreferencesFilename));
+          base::FilePath().Append(chrome::kPreferencesFilename));
       tmp_pref_file_ =
           user_data_directory.AppendASCII(TestingProfile::kTestUserProfileDir);
       CHECK(file_util::CreateDirectory(tmp_pref_file_));
       tmp_pref_file_ = tmp_pref_file_.Append(chrome::kPreferencesFilename);
     } else {
       reference_pref_file = ui_test_utils::GetTestFilePath(
-          FilePath().AppendASCII("profiles").
+          base::FilePath().AppendASCII("profiles").
                      AppendASCII("window_placement"),
-          FilePath().Append(chrome::kLocalStateFilename));
+          base::FilePath().Append(chrome::kLocalStateFilename));
       tmp_pref_file_ = user_data_directory.Append(chrome::kLocalStateFilename);
     }
 
@@ -85,7 +92,7 @@ class PreferenceServiceTest : public InProcessBrowserTest {
   }
 
  protected:
-  FilePath tmp_pref_file_;
+  base::FilePath tmp_pref_file_;
 
  private:
   bool new_profile_;

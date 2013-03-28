@@ -14,19 +14,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/window_tracker.h"
 
-namespace aura {
-class RootWindow;
-}  // namespace aura
-
-namespace ui {
-class Layer;
-}  // namespace ui
-
 namespace ash {
 namespace internal {
 
 class PhantomWindowController;
 class SnapSizer;
+class WindowSize;
 
 // WindowResizer implementation for workspaces. This enforces that windows are
 // not allowed to vertically move or resize outside of the work area. As windows
@@ -56,13 +49,6 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
       int window_component,
       const std::vector<aura::Window*>& attached_windows);
 
-  // Returns true if the drag will result in changing the window in anyway.
-  bool is_resizable() const { return details_.is_resizable; }
-
-  const gfx::Point& initial_location_in_parent() const {
-    return details_.initial_location_in_parent;
-  }
-
   // Overridden from WindowResizer:
   virtual void Drag(const gfx::Point& location_in_parent,
                     int event_flags) OVERRIDE;
@@ -70,13 +56,17 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   virtual void RevertDrag() OVERRIDE;
   virtual aura::Window* GetTarget() OVERRIDE;
 
+  const gfx::Point& GetInitialLocationInParentForTest() const {
+    return details_.initial_location_in_parent;
+  }
+
  private:
   WorkspaceWindowResizer(const Details& details,
                          const std::vector<aura::Window*>& attached_windows);
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(WorkspaceWindowResizerTest, PhantomStyle);
   FRIEND_TEST_ALL_PREFIXES(WorkspaceWindowResizerTest, CancelSnapPhantom);
+  FRIEND_TEST_ALL_PREFIXES(WorkspaceWindowResizerTest, PhantomSnapMaxSize);
 
   // Type of snapping.
   enum SnapType {
@@ -93,17 +83,36 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   gfx::Rect GetFinalBounds(const gfx::Rect& bounds) const;
 
   // Lays out the attached windows. |bounds| is the bounds of the main window.
-  void LayoutAttachedWindows(const gfx::Rect& bounds);
+  void LayoutAttachedWindows(gfx::Rect* bounds);
 
-  // Calculates the size (along the primary axis) of the attached windows.
-  // |initial_size| is the initial size of the main window, |current_size| the
-  // new size of the main window, |start| the position to layout the attached
-  // windows from and |end| the coordinate to position to.
-  void CalculateAttachedSizes(int initial_size,
-                              int current_size,
-                              int start,
-                              int end,
-                              std::vector<int>* sizes) const;
+  // Calculates the new sizes of the attached windows, given that the main
+  // window has been resized (along the primary axis) by |delta|.
+  // |available_size| is the maximum length of the space that the attached
+  // windows are allowed to occupy (ie: the distance between the right/bottom
+  // edge of the primary window and the right/bottom of the desktop area).
+  // Populates |sizes| with the desired sizes of the attached windows, and
+  // returns the number of pixels that couldn't be allocated to the attached
+  // windows (due to min/max size constraints).
+  // Note the return value can be positive or negative, a negative value
+  // indicating that that many pixels couldn't be removed from the attached
+  // windows.
+  int CalculateAttachedSizes(
+      int delta,
+      int available_size,
+      std::vector<int>* sizes) const;
+
+  // Divides |amount| evenly between |sizes|. If |amount| is negative it
+  // indicates how many pixels |sizes| should be shrunk by.
+  // Returns how many pixels failed to be allocated/removed from |sizes|.
+  int GrowFairly(int amount, std::vector<WindowSize>& sizes) const;
+
+  // Calculate the ratio of pixels that each WindowSize in |sizes| should
+  // receive when growing or shrinking.
+  void CalculateGrowthRatios(const std::vector<WindowSize*>& sizes,
+                             std::vector<float>* out_ratios) const;
+
+  // Adds a WindowSize to |sizes| for each attached window.
+  void CreateBucketsForAttached(std::vector<WindowSize>* sizes) const;
 
   // If possible snaps the window to a neary window. Updates |bounds| if there
   // was a close enough window.
@@ -145,10 +154,6 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   void UpdateSnapPhantomWindow(const gfx::Point& location,
                                const gfx::Rect& bounds);
 
-  // Updates the bounds of the phantom window for window dragging. Set true on
-  // |in_original_root| if the pointer is still in |window()->GetRootWindow()|.
-  void UpdateDragPhantomWindow(const gfx::Rect& bounds, bool in_original_root);
-
   // Restacks the windows z-order position so that one of the windows is at the
   // top of the z-order, and the rest directly underneath it.
   void RestackWindows();
@@ -156,12 +161,6 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // Returns the SnapType for the specified point. SNAP_NONE is used if no
   // snapping should be used.
   SnapType GetSnapType(const gfx::Point& location) const;
-
-  // Returns true if we should allow the mouse pointer to warp.
-  bool ShouldAllowMouseWarp() const;
-
-  // Recreates a fresh layer for window() and all its child windows.
-  void RecreateWindowLayers();
 
   aura::Window* window() const { return details_.window; }
 
@@ -176,21 +175,7 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // primary axis.
   std::vector<int> initial_size_;
 
-  // The min size of each of the windows in |attached_windows_| along the
-  // primary axis.
-  std::vector<int> min_size_;
-
-  // The amount each of the windows in |attached_windows_| can be compressed.
-  // This is a fraction of the amount a window can be compressed over the total
-  // space the windows can be compressed.
-  std::vector<float> compress_fraction_;
-
-  // The amount each of the windows in |attached_windows_| should be expanded
-  // by. This is used when the user drags to the left/up. In this case the main
-  // window shrinks and the attached windows expand.
-  std::vector<float> expand_fraction_;
-
-  // Sum of sizes in |min_size_|.
+  // Sum of the minimum sizes of the attached windows.
   int total_min_;
 
   // Sum of the sizes in |initial_size_|.
@@ -199,9 +184,6 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // Gives a previews of where the the window will end up. Only used if there
   // is a grid and the caption is being dragged.
   scoped_ptr<PhantomWindowController> snap_phantom_window_controller_;
-
-  // Shows a semi-transparent image of the window being dragged.
-  scoped_ptr<PhantomWindowController> drag_phantom_window_controller_;
 
   // Used to determine the target position of a snap.
   scoped_ptr<SnapSizer> snap_sizer_;
@@ -216,14 +198,6 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
 
   // The mouse location passed to Drag().
   gfx::Point last_mouse_location_;
-
-  // The copy of window()->layer() and its children. This object is the owner of
-  // the layer.
-  ui::Layer* layer_;
-
-  // If non-NULL the destructor sets this to true. Used to determine if this has
-  // been deleted.
-  bool* destroyed_;
 
   // Window the drag has magnetically attached to.
   aura::Window* magnetism_window_;

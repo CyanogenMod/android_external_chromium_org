@@ -13,17 +13,18 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api_constants.h"
-#include "chrome/browser/speech/extension_api/tts_extension_api_controller.h"
+#include "chrome/browser/speech/tts_controller.h"
+#include "chrome/common/extensions/api/speech/tts_engine_manifest_handler.h"
 #include "chrome/common/extensions/extension.h"
 
 using extensions::Extension;
 
 namespace constants = tts_extension_api_constants;
 
-namespace events {
+namespace tts_engine_events {
 const char kOnSpeak[] = "ttsEngine.onSpeak";
 const char kOnStop[] = "ttsEngine.onStop";
-};  // namespace events
+};  // namespace tts_engine_events
 
 namespace {
 // Given a language/region code of the form 'fr-FR', returns just the basic
@@ -49,16 +50,19 @@ void GetExtensionVoices(Profile* profile, ListValue* result_voices) {
     const Extension* extension = *iter;
 
     if (!event_router->ExtensionHasEventListener(
-            extension->id(), events::kOnSpeak) ||
+            extension->id(), tts_engine_events::kOnSpeak) ||
         !event_router->ExtensionHasEventListener(
-            extension->id(), events::kOnStop)) {
+            extension->id(), tts_engine_events::kOnStop)) {
       continue;
     }
 
-    const std::vector<Extension::TtsVoice>& tts_voices =
-        extension->tts_voices();
-    for (size_t i = 0; i < tts_voices.size(); ++i) {
-      const Extension::TtsVoice& voice = tts_voices[i];
+    const std::vector<extensions::TtsVoice>* tts_voices =
+        extensions::TtsVoice::GetTtsVoices(extension);
+    if (!tts_voices)
+      continue;
+
+    for (size_t i = 0; i < tts_voices->size(); ++i) {
+      const extensions::TtsVoice& voice = tts_voices->at(i);
       DictionaryValue* result_voice = new DictionaryValue();
       if (!voice.voice_name.empty())
         result_voice->SetString(constants::kVoiceNameKey, voice.voice_name);
@@ -124,9 +128,9 @@ bool GetMatchingExtensionVoice(
       const Extension* extension = *iter;
 
       if (!event_router->ExtensionHasEventListener(
-              extension->id(), events::kOnSpeak) ||
+              extension->id(), tts_engine_events::kOnSpeak) ||
           !event_router->ExtensionHasEventListener(
-              extension->id(), events::kOnStop)) {
+              extension->id(), tts_engine_events::kOnStop)) {
         continue;
       }
 
@@ -135,10 +139,13 @@ bool GetMatchingExtensionVoice(
         continue;
       }
 
-      const std::vector<Extension::TtsVoice>& tts_voices =
-          extension->tts_voices();
-      for (size_t i = 0; i < tts_voices.size(); ++i) {
-        const Extension::TtsVoice& voice = tts_voices[i];
+      const std::vector<extensions::TtsVoice>* tts_voices =
+          extensions::TtsVoice::GetTtsVoices(extension);
+      if (!tts_voices)
+        continue;
+
+      for (size_t i = 0; i < tts_voices->size(); ++i) {
+        const extensions::TtsVoice& voice = tts_voices->at(i);
         if (!voice.voice_name.empty() &&
             !utterance->voice_name().empty() &&
             voice.voice_name != utterance->voice_name()) {
@@ -190,8 +197,12 @@ void ExtensionTtsEngineSpeak(Utterance* utterance,
   // See if the engine supports the "end" event; if so, we can keep the
   // utterance around and track it. If not, we're finished with this
   // utterance now.
-  const std::set<std::string> event_types =
-      extension->tts_voices()[voice_index].event_types;
+  const std::vector<extensions::TtsVoice>* tts_voices =
+      extensions::TtsVoice::GetTtsVoices(extension);
+  std::set<std::string> event_types;
+  if (tts_voices)
+    event_types = tts_voices->at(voice_index).event_types;
+
   bool sends_end_event =
       (event_types.find(constants::kEventTypeEnd) != event_types.end());
 
@@ -218,24 +229,20 @@ void ExtensionTtsEngineSpeak(Utterance* utterance,
   args->Set(1, options);
   args->Set(2, Value::CreateIntegerValue(utterance->id()));
 
+  scoped_ptr<extensions::Event> event(new extensions::Event(
+      tts_engine_events::kOnSpeak, args.Pass()));
+  event->restrict_to_profile = utterance->profile();
   extensions::ExtensionSystem::Get(utterance->profile())->event_router()->
-      DispatchEventToExtension(
-          extension->id(),
-          events::kOnSpeak,
-          args.Pass(),
-          utterance->profile(),
-          GURL());
+      DispatchEventToExtension(utterance->extension_id(), event.Pass());
 }
 
 void ExtensionTtsEngineStop(Utterance* utterance) {
   scoped_ptr<ListValue> args(new ListValue());
+  scoped_ptr<extensions::Event> event(new extensions::Event(
+      tts_engine_events::kOnStop, args.Pass()));
+  event->restrict_to_profile = utterance->profile();
   extensions::ExtensionSystem::Get(utterance->profile())->event_router()->
-      DispatchEventToExtension(
-          utterance->extension_id(),
-          events::kOnStop,
-          args.Pass(),
-          utterance->profile(),
-          GURL());
+      DispatchEventToExtension(utterance->extension_id(), event.Pass());
 }
 
 bool ExtensionTtsEngineSendTtsEventFunction::RunImpl() {
@@ -259,8 +266,15 @@ bool ExtensionTtsEngineSendTtsEventFunction::RunImpl() {
   // Make sure the extension has included this event type in its manifest.
   bool event_type_allowed = false;
   const Extension* extension = GetExtension();
-  for (size_t i = 0; i < extension->tts_voices().size(); i++) {
-    const Extension::TtsVoice& voice = extension->tts_voices()[i];
+  const std::vector<extensions::TtsVoice>* tts_voices =
+      extensions::TtsVoice::GetTtsVoices(extension);
+  if (!tts_voices) {
+    error_ = constants::kErrorUndeclaredEventType;
+    return false;
+  }
+
+  for (size_t i = 0; i < tts_voices->size(); i++) {
+    const extensions::TtsVoice& voice = tts_voices->at(i);
     if (voice.event_types.find(event_type) != voice.event_types.end()) {
       event_type_allowed = true;
       break;
@@ -271,7 +285,7 @@ bool ExtensionTtsEngineSendTtsEventFunction::RunImpl() {
     return false;
   }
 
-  ExtensionTtsController* controller = ExtensionTtsController::GetInstance();
+  TtsController* controller = TtsController::GetInstance();
   if (event_type == constants::kEventTypeStart) {
     controller->OnTtsEvent(
         utterance_id, TTS_EVENT_START, char_index, std::string());

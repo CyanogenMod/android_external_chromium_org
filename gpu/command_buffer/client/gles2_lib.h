@@ -7,11 +7,17 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_GLES2_LIB_H_
 #define GPU_COMMAND_BUFFER_CLIENT_GLES2_LIB_H_
 
+#include "../client/gles2_interface.h"
 #include "gpu/command_buffer/client/gles2_c_lib_export.h"
 
-#include "../client/gles2_implementation.h"
-
 namespace gles2 {
+
+typedef void (*GLES2FunctionPointer)(void);
+
+struct NameToFunc {
+  const char* name;
+  gles2::GLES2FunctionPointer func;
+};
 
 // Initialize the GLES2 library.
 GLES2_C_LIB_EXPORT void Initialize();
@@ -20,10 +26,12 @@ GLES2_C_LIB_EXPORT void Initialize();
 GLES2_C_LIB_EXPORT void Terminate();
 
 // Get the current GL context.
-GLES2_C_LIB_EXPORT gpu::gles2::GLES2Implementation* GetGLContext();
+GLES2_C_LIB_EXPORT gpu::gles2::GLES2Interface* GetGLContext();
 
 // Set the current GL context.
-GLES2_C_LIB_EXPORT void SetGLContext(gpu::gles2::GLES2Implementation* impl);
+GLES2_C_LIB_EXPORT void SetGLContext(gpu::gles2::GLES2Interface* impl);
+
+GLES2_C_LIB_EXPORT GLES2FunctionPointer GetGLFunctionPointer(const char* name);
 
 }  // namespace gles2
 

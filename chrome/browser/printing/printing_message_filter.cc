@@ -35,7 +35,7 @@ using content::BrowserThread;
 namespace {
 
 #if defined(OS_CHROMEOS)
-typedef std::map<int, FilePath> SequenceToPathMap;
+typedef std::map<int, base::FilePath> SequenceToPathMap;
 
 struct PrintingSequencePathMap {
   SequenceToPathMap map;
@@ -71,10 +71,8 @@ void RenderParamsFromPrintSettings(const printing::PrintSettings& settings,
   params->document_cookie = 0;
   params->selection_only = settings.selection_only;
   params->supports_alpha_blend = settings.supports_alpha_blend();
-
+  params->should_print_backgrounds = settings.should_print_backgrounds;
   params->display_header_footer = settings.display_header_footer;
-  if (!settings.display_header_footer)
-    return;
   params->date = settings.date;
   params->title = settings.title;
   params->url = settings.url;
@@ -148,7 +146,7 @@ void PrintingMessageFilter::OnAllocateTempFileForPrinting(
   SequenceToPathMap* map = &g_printing_file_descriptor_map.Get().map;
   *sequence_number = g_printing_file_descriptor_map.Get().sequence++;
 
-  FilePath path;
+  base::FilePath path;
   if (file_util::CreateTemporaryFile(&path)) {
     int fd = open(path.value().c_str(), O_WRONLY);
     if (fd >= 0) {
@@ -184,8 +182,9 @@ void PrintingMessageFilter::OnTempFileForPrintingWritten(int render_view_id,
   map->erase(it);
 }
 
-void PrintingMessageFilter::CreatePrintDialogForFile(int render_view_id,
-                                                     const FilePath& path) {
+void PrintingMessageFilter::CreatePrintDialogForFile(
+    int render_view_id,
+    const base::FilePath& path) {
   content::WebContents* wc = GetWebContentsForRenderView(render_view_id);
   print_dialog_cloud::CreatePrintDialogForFile(
       wc->GetBrowserContext(),

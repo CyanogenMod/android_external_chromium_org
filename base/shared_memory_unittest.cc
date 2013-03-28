@@ -8,6 +8,7 @@
 #endif
 #include "base/memory/scoped_ptr.h"
 #include "base/shared_memory.h"
+#include "base/sys_info.h"
 #include "base/test/multiprocess_test.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
@@ -248,8 +249,8 @@ TEST(SharedMemoryTest, MultipleThreads) {
   int threadcounts[] = { 1, kNumThreads };
   for (size_t i = 0; i < arraysize(threadcounts); i++) {
     int numthreads = threadcounts[i];
-    scoped_array<PlatformThreadHandle> thread_handles;
-    scoped_array<MultipleThreadMain*> thread_delegates;
+    scoped_ptr<PlatformThreadHandle[]> thread_handles;
+    scoped_ptr<MultipleThreadMain*[]> thread_delegates;
 
     thread_handles.reset(new PlatformThreadHandle[numthreads]);
     thread_delegates.reset(new MultipleThreadMain*[numthreads]);
@@ -308,8 +309,8 @@ TEST(SharedMemoryTest, AnonymousPrivate) {
   bool rv;
   const uint32 kDataSize = 8192;
 
-  scoped_array<SharedMemory> memories(new SharedMemory[count]);
-  scoped_array<int*> pointers(new int*[count]);
+  scoped_ptr<SharedMemory[]> memories(new SharedMemory[count]);
+  scoped_ptr<int*[]> pointers(new int*[count]);
   ASSERT_TRUE(memories.get());
   ASSERT_TRUE(pointers.get());
 
@@ -340,6 +341,33 @@ TEST(SharedMemoryTest, AnonymousPrivate) {
 
   for (int i = 0; i < count; i++) {
     memories[i].Close();
+  }
+}
+
+TEST(SharedMemoryTest, MapAt) {
+  ASSERT_TRUE(SysInfo::VMAllocationGranularity() >= sizeof(uint32));
+  const size_t kCount = SysInfo::VMAllocationGranularity();
+  const size_t kDataSize = kCount * sizeof(uint32);
+
+  SharedMemory memory;
+  ASSERT_TRUE(memory.CreateAndMapAnonymous(kDataSize));
+  ASSERT_TRUE(memory.Map(kDataSize));
+  uint32* ptr = static_cast<uint32*>(memory.memory());
+  ASSERT_NE(ptr, static_cast<void*>(NULL));
+
+  for (size_t i = 0; i < kCount; ++i) {
+    ptr[i] = i;
+  }
+
+  memory.Unmap();
+
+  off_t offset = SysInfo::VMAllocationGranularity();
+  ASSERT_TRUE(memory.MapAt(offset, kDataSize - offset));
+  offset /= sizeof(uint32);
+  ptr = static_cast<uint32*>(memory.memory());
+  ASSERT_NE(ptr, static_cast<void*>(NULL));
+  for (size_t i = offset; i < kCount; ++i) {
+    EXPECT_EQ(ptr[i - offset], i);
   }
 }
 

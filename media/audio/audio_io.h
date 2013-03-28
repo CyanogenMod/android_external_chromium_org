@@ -70,18 +70,11 @@ class MEDIA_EXPORT AudioOutputStream {
     // There was an error while playing a buffer. Audio source cannot be
     // destroyed yet. No direct action needed by the AudioStream, but it is
     // a good place to stop accumulating sound data since is is likely that
-    // playback will not continue. |code| is an error code that is platform
-    // specific.
-    virtual void OnError(AudioOutputStream* stream, int code) = 0;
+    // playback will not continue.
+    virtual void OnError(AudioOutputStream* stream) = 0;
 
-    // Waits till data becomes available. Used when buffering data starting
-    // new audio stream.
-    // Polling is not the best approach, but incorporating messaging loop
-    // with delayed tasks into guts of complex code is even worse, as it is
-    // very error-prone. We cannot easily add synchronization, interface is
-    // already cut in stone because of need of backward compatibility with
-    // plugins. In any case, data is usually immediately available,
-    // so there would be no delay.
+    // Will block until the client has written its audio data or 1.5 seconds
+    // have elapsed.
     virtual void WaitTillDataReady() {}
 
    protected:
@@ -90,7 +83,8 @@ class MEDIA_EXPORT AudioOutputStream {
 
   virtual ~AudioOutputStream() {}
 
-  // Open the stream. false is returned if the stream cannot be opened.
+  // Open the stream. false is returned if the stream cannot be opened.  Open()
+  // must always be followed by a call to Close() even if Open() fails.
   virtual bool Open() = 0;
 
   // Starts playing audio and generating AudioSourceCallback::OnMoreData().
@@ -134,9 +128,8 @@ class MEDIA_EXPORT AudioInputStream {
     // There was an error while recording audio. The audio sink cannot be
     // destroyed yet. No direct action needed by the AudioInputStream, but it
     // is a good place to stop accumulating sound data since is is likely that
-    // recording will not continue. |code| is an error code that is platform
-    // specific.
-    virtual void OnError(AudioInputStream* stream, int code) = 0;
+    // recording will not continue.
+    virtual void OnError(AudioInputStream* stream) = 0;
 
    protected:
     virtual ~AudioInputCallback() {}

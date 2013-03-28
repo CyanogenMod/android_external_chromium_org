@@ -5,23 +5,25 @@
 // Defines the classes to realize the Font Settings Extension API as specified
 // in the extension API JSON.
 
-#ifndef CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H__
-#define CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H__
+#ifndef CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H_
+#define CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H_
 
-#include <map>
 #include <string>
-#include <utility>
 
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function.h"
-#include "chrome/browser/prefs/pref_service.h"
+
+class Profile;
 
 namespace extensions {
 
 // This class observes pref changed events on a profile and dispatches the
 // corresponding extension API events to extensions.
-class FontSettingsEventRouter : public PrefObserver {
+class FontSettingsEventRouter {
  public:
   // Constructor for observing pref changed events on |profile|. Stores a
   // pointer to |profile| but does not take ownership. |profile| must be
@@ -30,13 +32,6 @@ class FontSettingsEventRouter : public PrefObserver {
   virtual ~FontSettingsEventRouter();
 
  private:
-  typedef std::pair<std::string, std::string> EventAndKeyPair;
-  // Map of pref name to a pair of event name and key (defined in the extension
-  // API) for dispatching a pref changed event. For example,
-  // "webkit.webprefs.default_font_size" to ("onDefaultFontSizedChanged",
-  // "pixelSize").
-  typedef std::map<std::string, EventAndKeyPair> PrefEventMap;
-
   // Observes browser pref |pref_name|. When a change is observed, dispatches
   // event |event_name| to extensions. A JavaScript object is passed to the
   // extension event function with the new value of the pref in property |key|.
@@ -44,38 +39,27 @@ class FontSettingsEventRouter : public PrefObserver {
                         const char* event_name,
                         const char* key);
 
-  // PrefObserver implementation.
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
+  // Decodes a preference change for a font family map and invokes
+  // OnFontNamePrefChange with the right parameters.
+  void OnFontFamilyMapPrefChanged(const std::string& pref_name);
 
   // Dispatches a changed event for the font setting for |generic_family| and
   // |script| to extensions. The new value of the setting is the value of
-  // browser pref |pref_name|. If the pref changed on the incognito profile,
-  // |incognito| must be set to true for extensions to get the appropriate
-  // event.
-  void OnFontNamePrefChanged(PrefServiceBase* pref_service,
-                             const std::string& pref_name,
+  // browser pref |pref_name|.
+  void OnFontNamePrefChanged(const std::string& pref_name,
                              const std::string& generic_family,
-                             const std::string& script,
-                             bool incognito);
+                             const std::string& script);
 
   // Dispatches the setting changed event |event_name| to extensions. The new
   // value of the setting is the value of browser pref |pref_name|. This value
   // is passed in the JavaScript object argument to the extension event function
-  // under the key |key|. If the pref changed on the incognito profile,
-  // |incognito| must be set to true for extensions to get the appropriate
-  // event.
-  void OnFontPrefChanged(PrefServiceBase* pref_service,
-                         const std::string& pref_name,
-                         const std::string& event_name,
+  // under the key |key|.
+  void OnFontPrefChanged(const std::string& event_name,
                          const std::string& key,
-                         bool incognito);
+                         const std::string& pref_name);
 
   // Manages pref observation registration.
   PrefChangeRegistrar registrar_;
-
-  // Maps browser pref names to extension API <event name, key> pairs.
-  PrefEventMap pref_event_map_;
 
   // Weak, owns us (transitively via ExtensionService).
   Profile* profile_;
@@ -83,51 +67,75 @@ class FontSettingsEventRouter : public PrefObserver {
   DISALLOW_COPY_AND_ASSIGN(FontSettingsEventRouter);
 };
 
-// fontSettings.clearFont API function.
-class ClearFontFunction : public SyncExtensionFunction {
+// The profile-keyed service that manages the font_settings extension API.
+// This is not an EventRouter::Observer (and does not lazily initialize) because
+// doing so caused a regression in perf tests. See crbug.com/163466.
+class FontSettingsAPI : public ProfileKeyedAPI {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.clearFont")
+  explicit FontSettingsAPI(Profile* profile);
+  virtual ~FontSettingsAPI();
+
+  // ProfileKeyedAPI implementation.
+  static ProfileKeyedAPIFactory<FontSettingsAPI>* GetFactoryInstance();
+
+ private:
+  friend class ProfileKeyedAPIFactory<FontSettingsAPI>;
+
+  // ProfileKeyedAPI implementation.
+  static const char* service_name() {
+    return "FontSettingsAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
+
+  scoped_ptr<FontSettingsEventRouter> font_settings_event_router_;
+};
+
+// fontSettings.clearFont API function.
+class FontSettingsClearFontFunction : public SyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fontSettings.clearFont", FONTSETTINGS_CLEARFONT)
 
  protected:
   // RefCounted types have non-public destructors, as with all extension
   // functions in this file.
-  virtual ~ClearFontFunction() {}
+  virtual ~FontSettingsClearFontFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
 // fontSettings.getFont API function.
-class GetFontFunction : public SyncExtensionFunction {
+class FontSettingsGetFontFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.getFont")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.getFont", FONTSETTINGS_GETFONT)
 
  protected:
-  virtual ~GetFontFunction() {}
+  virtual ~FontSettingsGetFontFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
 // fontSettings.setFont API function.
-class SetFontFunction : public SyncExtensionFunction {
+class FontSettingsSetFontFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.setFont")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.setFont", FONTSETTINGS_SETFONT)
 
  protected:
-  virtual ~SetFontFunction() {}
+  virtual ~FontSettingsSetFontFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
 // fontSettings.getFontList API function.
-class GetFontListFunction : public AsyncExtensionFunction {
+class FontSettingsGetFontListFunction : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.getFontList")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.getFontList",
+                             FONTSETTINGS_GETFONTLIST)
 
  protected:
-  virtual ~GetFontListFunction() {}
+  virtual ~FontSettingsGetFontListFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
@@ -187,106 +195,123 @@ class SetFontPrefExtensionFunction : public SyncExtensionFunction {
 // The following are get/set/clear API functions that act on a browser font
 // pref.
 
-class ClearDefaultFontSizeFunction : public ClearFontPrefExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.clearDefaultFontSize")
-
- protected:
-  virtual ~ClearDefaultFontSizeFunction() {}
-
-  // ClearFontPrefExtensionFunction:
-  virtual const char* GetPrefName() OVERRIDE;
-};
-
-class GetDefaultFontSizeFunction : public GetFontPrefExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.getDefaultFontSize")
-
- protected:
-  virtual ~GetDefaultFontSizeFunction() {}
-
-  // GetFontPrefExtensionFunction:
-  virtual const char* GetPrefName() OVERRIDE;
-  virtual const char* GetKey() OVERRIDE;
-};
-
-class SetDefaultFontSizeFunction : public SetFontPrefExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.setDefaultFontSize")
-
- protected:
-  virtual ~SetDefaultFontSizeFunction() {}
-
-  // SetFontPrefExtensionFunction:
-  virtual const char* GetPrefName() OVERRIDE;
-  virtual const char* GetKey() OVERRIDE;
-};
-
-class ClearDefaultFixedFontSizeFunction
+class FontSettingsClearDefaultFontSizeFunction
     : public ClearFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.clearDefaultFixedFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.clearDefaultFontSize",
+                             FONTSETTINGS_CLEARDEFAULTFONTSIZE)
 
  protected:
-  virtual ~ClearDefaultFixedFontSizeFunction() {}
+  virtual ~FontSettingsClearDefaultFontSizeFunction() {}
 
   // ClearFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
 };
 
-class GetDefaultFixedFontSizeFunction : public GetFontPrefExtensionFunction {
+class FontSettingsGetDefaultFontSizeFunction
+    : public GetFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.getDefaultFixedFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.getDefaultFontSize",
+                             FONTSETTINGS_GETDEFAULTFONTSIZE)
 
  protected:
-  virtual ~GetDefaultFixedFontSizeFunction() {}
+  virtual ~FontSettingsGetDefaultFontSizeFunction() {}
 
   // GetFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
   virtual const char* GetKey() OVERRIDE;
 };
 
-class SetDefaultFixedFontSizeFunction : public SetFontPrefExtensionFunction {
+class FontSettingsSetDefaultFontSizeFunction
+    : public SetFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.setDefaultFixedFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.setDefaultFontSize",
+                             FONTSETTINGS_SETDEFAULTFONTSIZE)
 
  protected:
-  virtual ~SetDefaultFixedFontSizeFunction() {}
+  virtual ~FontSettingsSetDefaultFontSizeFunction() {}
 
   // SetFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
   virtual const char* GetKey() OVERRIDE;
 };
 
-class ClearMinimumFontSizeFunction : public ClearFontPrefExtensionFunction {
+class FontSettingsClearDefaultFixedFontSizeFunction
+    : public ClearFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.clearMinimumFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.clearDefaultFixedFontSize",
+                             FONTSETTINGS_CLEARDEFAULTFIXEDFONTSIZE)
 
  protected:
-  virtual ~ClearMinimumFontSizeFunction() {}
+  virtual ~FontSettingsClearDefaultFixedFontSizeFunction() {}
 
   // ClearFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
 };
 
-class GetMinimumFontSizeFunction : public GetFontPrefExtensionFunction {
+class FontSettingsGetDefaultFixedFontSizeFunction
+    : public GetFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.getMinimumFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.getDefaultFixedFontSize",
+                             FONTSETTINGS_GETDEFAULTFIXEDFONTSIZE)
 
  protected:
-  virtual ~GetMinimumFontSizeFunction() {}
+  virtual ~FontSettingsGetDefaultFixedFontSizeFunction() {}
 
   // GetFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
   virtual const char* GetKey() OVERRIDE;
 };
 
-class SetMinimumFontSizeFunction : public SetFontPrefExtensionFunction {
+class FontSettingsSetDefaultFixedFontSizeFunction
+    : public SetFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.setMinimumFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.setDefaultFixedFontSize",
+                             FONTSETTINGS_SETDEFAULTFIXEDFONTSIZE)
 
  protected:
-  virtual ~SetMinimumFontSizeFunction() {}
+  virtual ~FontSettingsSetDefaultFixedFontSizeFunction() {}
+
+  // SetFontPrefExtensionFunction:
+  virtual const char* GetPrefName() OVERRIDE;
+  virtual const char* GetKey() OVERRIDE;
+};
+
+class FontSettingsClearMinimumFontSizeFunction
+    : public ClearFontPrefExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fontSettings.clearMinimumFontSize",
+                             FONTSETTINGS_CLEARMINIMUMFONTSIZE)
+
+ protected:
+  virtual ~FontSettingsClearMinimumFontSizeFunction() {}
+
+  // ClearFontPrefExtensionFunction:
+  virtual const char* GetPrefName() OVERRIDE;
+};
+
+class FontSettingsGetMinimumFontSizeFunction
+    : public GetFontPrefExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fontSettings.getMinimumFontSize",
+                             FONTSETTINGS_GETMINIMUMFONTSIZE)
+
+ protected:
+  virtual ~FontSettingsGetMinimumFontSizeFunction() {}
+
+  // GetFontPrefExtensionFunction:
+  virtual const char* GetPrefName() OVERRIDE;
+  virtual const char* GetKey() OVERRIDE;
+};
+
+class FontSettingsSetMinimumFontSizeFunction
+    : public SetFontPrefExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fontSettings.setMinimumFontSize",
+                             FONTSETTINGS_SETMINIMUMFONTSIZE)
+
+ protected:
+  virtual ~FontSettingsSetMinimumFontSizeFunction() {}
 
   // SetFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
@@ -295,4 +320,4 @@ class SetMinimumFontSizeFunction : public SetFontPrefExtensionFunction {
 
 }  // namespace extensions
 
-#endif  // CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H__
+#endif  // CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H_

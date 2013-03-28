@@ -19,6 +19,7 @@
 #include "base/metrics/stats_table.h"
 #include "base/path_service.h"
 #include "base/shared_memory.h"
+#include "base/string16.h"
 #include "base/string_number_conversions.h"  // Temporary
 #include "base/threading/thread_local.h"
 #include "base/utf_string_conversions.h"
@@ -29,6 +30,7 @@
 #include "content/common/database_messages.h"
 #include "content/common/db_message_filter.h"
 #include "content/common/dom_storage_messages.h"
+#include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/indexed_db/indexed_db_dispatcher.h"
@@ -47,21 +49,22 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/render_process_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
-#include "content/renderer/devtools_agent_filter.h"
+#include "content/renderer/devtools/devtools_agent_filter.h"
 #include "content/renderer/dom_storage/dom_storage_dispatcher.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
-#include "content/renderer/gpu/compositor_thread.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
 #include "content/renderer/gpu/gpu_benchmarking_extension.h"
-#include "content/renderer/media/audio_hardware.h"
+#include "content/renderer/gpu/input_handler_manager.h"
 #include "content/renderer/media/audio_input_message_filter.h"
 #include "content/renderer/media/audio_message_filter.h"
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
 #include "content/renderer/media/media_stream_center.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
+#include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
+#include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/plugin_channel_host.h"
 #include "content/renderer/render_process_impl.h"
@@ -71,22 +74,24 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_forwarding_message_filter.h"
 #include "ipc/ipc_platform_file.h"
+#include "media/base/audio_hardware_config.h"
 #include "media/base/media.h"
+#include "media/base/media_switches.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebCompositorSupport.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebColorName.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNetworkStateNotifier.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptController.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorkerRepository.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_switches.h"
@@ -105,6 +110,10 @@
 
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
+#endif
+
+#if defined(ENABLE_WEBRTC)
+#include "third_party/webrtc/system_wrappers/interface/event_tracer.h"
 #endif
 
 using WebKit::WebDocument;
@@ -132,11 +141,14 @@ base::LazyInstance<base::ThreadLocalPointer<RenderThreadImpl> >
 
 class RenderViewZoomer : public RenderViewVisitor {
  public:
-  RenderViewZoomer(const std::string& host, double zoom_level)
-      : host_(host), zoom_level_(zoom_level) {
+  RenderViewZoomer(const std::string& scheme,
+                   const std::string& host,
+                   double zoom_level) : scheme_(scheme),
+                                        host_(host),
+                                        zoom_level_(zoom_level) {
   }
 
-  virtual bool Visit(RenderView* render_view) {
+  virtual bool Visit(RenderView* render_view) OVERRIDE {
     WebView* webview = render_view->GetWebView();
     WebDocument document = webview->mainFrame()->document();
 
@@ -144,15 +156,19 @@ class RenderViewZoomer : public RenderViewVisitor {
     // zoom settings.
     if (document.isPluginDocument())
       return true;
-
-    if (net::GetHostOrSpecFromURL(GURL(document.url())) == host_)
+    GURL url(document.url());
+    // Empty scheme works as wildcard that matches any scheme,
+    if ((net::GetHostOrSpecFromURL(url) == host_) &&
+        (scheme_.empty() || scheme_ == url.scheme())) {
       webview->setZoomLevel(false, zoom_level_);
+    }
     return true;
   }
 
  private:
-  std::string host_;
-  double zoom_level_;
+  const std::string scheme_;
+  const std::string host_;
+  const double zoom_level_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewZoomer);
 };
@@ -179,7 +195,7 @@ void* CreateHistogram(
   } else {
     histogram_name = std::string(name);
   }
-  base::Histogram* histogram = base::Histogram::FactoryGet(
+  base::HistogramBase* histogram = base::Histogram::FactoryGet(
       histogram_name, min, max, buckets,
       base::Histogram::kUmaTargetedHistogramFlag);
   return histogram;
@@ -189,6 +205,25 @@ void AddHistogramSample(void* hist, int sample) {
   base::Histogram* histogram = static_cast<base::Histogram*>(hist);
   histogram->Add(sample);
 }
+
+#if defined(ENABLE_WEBRTC)
+const unsigned char* GetCategoryEnabled(const char* name) {
+  return TRACE_EVENT_API_GET_CATEGORY_ENABLED(name);
+}
+
+void AddTraceEvent(char phase,
+                   const unsigned char* category_enabled,
+                   const char* name,
+                   unsigned long long id,
+                   int num_args,
+                   const char** arg_names,
+                   const unsigned char* arg_types,
+                   const unsigned long long* arg_values,
+                   unsigned char flags) {
+  TRACE_EVENT_API_ADD_TRACE_EVENT(phase, category_enabled, name, id, num_args,
+                                  arg_names, arg_types, arg_values, flags);
+}
+#endif
 
 }  // namespace
 
@@ -203,6 +238,28 @@ class RenderThreadImpl::GpuVDAContextLostCallback
   }
 };
 
+class RenderThreadImpl::RendererContextProviderCommandBuffer
+    : public ContextProviderCommandBuffer {
+ public:
+  static scoped_refptr<RendererContextProviderCommandBuffer> Create() {
+    scoped_refptr<RendererContextProviderCommandBuffer> provider =
+        new RendererContextProviderCommandBuffer();
+    if (!provider->InitializeOnMainThread())
+      return NULL;
+    return provider;
+  }
+
+ protected:
+  virtual ~RendererContextProviderCommandBuffer() {}
+
+  virtual scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
+  CreateOffscreenContext3d() OVERRIDE {
+    RenderThreadImpl* self = RenderThreadImpl::current();
+    DCHECK(self);
+    return self->CreateOffscreenContext3d().Pass();
+  }
+};
+
 RenderThreadImpl::HistogramCustomizer::HistogramCustomizer() {
   custom_histograms_.insert("V8.MemoryExternalFragmentationTotal");
   custom_histograms_.insert("V8.MemoryHeapSampleTotalCommitted");
@@ -213,6 +270,10 @@ RenderThreadImpl::HistogramCustomizer::~HistogramCustomizer() {}
 
 void RenderThreadImpl::HistogramCustomizer::RenderViewNavigatedToHost(
     const std::string& host, size_t view_count) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableHistogramCustomizer)) {
+    return;
+  }
   // Check if all RenderViews are displaying a page from the same host. If there
   // is only one RenderView, the common host is this view's host. If there are
   // many, check if this one shares the common host of the other
@@ -288,11 +349,13 @@ void RenderThreadImpl::Init() {
   hidden_widget_count_ = 0;
   idle_notification_delay_in_ms_ = kInitialIdleHandlerDelayMs;
   idle_notifications_to_skip_ = 0;
-  compositor_initialized_ = false;
+  should_send_focus_ipcs_ = true;
+  short_circuit_size_updates_ = false;
+  skip_error_pages_ = false;
 
-  appcache_dispatcher_.reset(new content::AppCacheDispatcher(Get()));
+  appcache_dispatcher_.reset(new AppCacheDispatcher(Get()));
   dom_storage_dispatcher_.reset(new DomStorageDispatcher());
-  main_thread_indexed_db_dispatcher_.reset(new content::IndexedDBDispatcher());
+  main_thread_indexed_db_dispatcher_.reset(new IndexedDBDispatcher());
 
   media_stream_center_ = NULL;
 
@@ -300,16 +363,22 @@ void RenderThreadImpl::Init() {
   AddFilter(db_message_filter_.get());
 
 #if defined(ENABLE_WEBRTC)
+  webrtc::SetupEventTracer(&GetCategoryEnabled, &AddTraceEvent);
+
+  peer_connection_tracker_.reset(new PeerConnectionTracker());
+  AddObserver(peer_connection_tracker_.get());
+
   p2p_socket_dispatcher_ = new P2PSocketDispatcher(GetIOMessageLoopProxy());
   AddFilter(p2p_socket_dispatcher_);
 #endif  // defined(ENABLE_WEBRTC)
   vc_manager_ = new VideoCaptureImplManager();
   AddFilter(vc_manager_->video_capture_message_filter());
 
-  audio_input_message_filter_ = new AudioInputMessageFilter();
+  audio_input_message_filter_ =
+      new AudioInputMessageFilter(GetIOMessageLoopProxy());
   AddFilter(audio_input_message_filter_.get());
 
-  audio_message_filter_ = new AudioMessageFilter();
+  audio_message_filter_ = new AudioMessageFilter(GetIOMessageLoopProxy());
   AddFilter(audio_message_filter_.get());
 
   AddFilter(new IndexedDBMessageFilter);
@@ -320,11 +389,14 @@ void RenderThreadImpl::Init() {
   if (command_line.HasSwitch(switches::kEnableGpuBenchmarking))
       RegisterExtension(GpuBenchmarkingExtension::Get());
 
+  if (command_line.HasSwitch(switches::kEnableMemoryBenchmarking))
+    RegisterExtension(MemoryBenchmarkingExtension::Get());
+
   context_lost_cb_.reset(new GpuVDAContextLostCallback());
 
   // Note that under Linux, the media library will normally already have
   // been initialized by the Zygote before this instance became a Renderer.
-  FilePath media_path;
+  base::FilePath media_path;
   PathService::Get(DIR_MEDIA_LIBS, &media_path);
   if (!media_path.empty())
     media::InitializeMediaLibrary(media_path);
@@ -366,13 +438,9 @@ RenderThreadImpl::~RenderThreadImpl() {
     compositor_output_surface_filter_ = NULL;
   }
 
-  if (compositor_initialized_) {
-    WebKit::Platform::current()->compositorSupport()->shutdown();
-    compositor_initialized_ = false;
-  }
-  if (compositor_thread_.get()) {
-    RemoveFilter(compositor_thread_->GetMessageFilter());
-    compositor_thread_.reset();
+  if (input_handler_manager_.get()) {
+    RemoveFilter(input_handler_manager_->GetMessageFilter());
+    input_handler_manager_.reset();
   }
 
   if (webkit_platform_support_.get())
@@ -385,6 +453,11 @@ RenderThreadImpl::~RenderThreadImpl() {
   // Clean up plugin channels before this thread goes away.
   NPChannelBase::CleanupChannels();
 #endif
+
+  // Leak shared contexts on other threads, as we can not get to the correct
+  // thread to destroy them.
+  if (shared_contexts_compositor_thread_)
+    shared_contexts_compositor_thread_->set_leak_on_destroy();
 }
 
 bool RenderThreadImpl::Send(IPC::Message* msg) {
@@ -551,35 +624,41 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   webkit_platform_support_.reset(new RendererWebKitPlatformSupportImpl);
   WebKit::initialize(webkit_platform_support_.get());
+  WebKit::setSharedWorkerRepository(
+      webkit_platform_support_.get()->sharedWorkerRepository());
+  WebKit::setIDBFactory(
+      webkit_platform_support_.get()->idbFactory());
 
-  WebKit::WebCompositorSupport* compositor_support =
-      WebKit::Platform::current()->compositorSupport();
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
-  // TODO(fsamuel): Guests don't currently support threaded compositing.
-  // This should go away with the new design of the browser plugin.
-  // The new design can be tracked at: http://crbug.com/134492.
-  bool is_guest = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kGuestRenderer);
-  bool threaded = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableThreadedCompositing);
-
-  bool enable = threaded && !is_guest;
+  bool enable = command_line.HasSwitch(switches::kEnableThreadedCompositing);
   if (enable) {
-    compositor_thread_.reset(new CompositorThread(this));
-    AddFilter(compositor_thread_->GetMessageFilter());
-    compositor_support->initialize(compositor_thread_->GetWebThread());
-  } else {
-    compositor_support->initialize(NULL);
+    MessageLoop* override_loop =
+        GetContentClient()->renderer()->OverrideCompositorMessageLoop();
+    if (override_loop) {
+      compositor_message_loop_proxy_ = override_loop->message_loop_proxy();
+    } else {
+      compositor_thread_.reset(new base::Thread("Compositor"));
+      compositor_thread_->Start();
+      compositor_message_loop_proxy_ =
+          compositor_thread_->message_loop_proxy();
+    }
+
+    if (GetContentClient()->renderer()->ShouldCreateCompositorInputHandler()) {
+      input_handler_manager_.reset(
+          new InputHandlerManager(this, compositor_message_loop_proxy_));
+      AddFilter(input_handler_manager_->GetMessageFilter());
+    }
   }
-  compositor_initialized_ = true;
 
-  MessageLoop* output_surface_loop = enable ?
-      compositor_thread_->message_loop() :
-      MessageLoop::current();
+  scoped_refptr<base::MessageLoopProxy> output_surface_loop;
+  if (enable)
+    output_surface_loop = compositor_message_loop_proxy_;
+  else
+    output_surface_loop = base::MessageLoopProxy::current();
 
-  compositor_output_surface_filter_ = CompositorOutputSurface::CreateFilter(
-      output_surface_loop->message_loop_proxy());
+  compositor_output_surface_filter_ =
+      CompositorOutputSurface::CreateFilter(output_surface_loop);
   AddFilter(compositor_output_surface_filter_.get());
 
   WebScriptController::enableV8SingleThreadMode();
@@ -588,14 +667,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   webkit_glue::EnableWebCoreLogChannels(
       command_line.GetSwitchValueASCII(switches::kWebCoreLogChannels));
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDomAutomationController)) {
-    base::StringPiece extension = GetContentClient()->GetDataResource(
-        IDR_DOM_AUTOMATION_JS, ui::SCALE_FACTOR_NONE);
-    RegisterExtension(new v8::Extension(
-        "dom_automation.js", extension.data(), 0, NULL, extension.size()));
-  }
 
   web_database_observer_impl_.reset(
       new WebDatabaseObserverImpl(sync_message_filter()));
@@ -632,16 +703,21 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   WebRuntimeFeatures::enableMediaPlayer(
       media::IsMediaLibraryInitialized());
 
+#if defined(OS_ANDROID)
+  WebKit::WebRuntimeFeatures::enableMediaStream(
+      !command_line.HasSwitch(switches::kDisableWebRTC));
+  WebKit::WebRuntimeFeatures::enablePeerConnection(
+      !command_line.HasSwitch(switches::kDisableWebRTC));
+#else
   WebKit::WebRuntimeFeatures::enableMediaStream(true);
   WebKit::WebRuntimeFeatures::enablePeerConnection(true);
+#endif
 
   WebKit::WebRuntimeFeatures::enableFullScreenAPI(
       !command_line.HasSwitch(switches::kDisableFullScreen));
 
-  WebKit::WebRuntimeFeatures::enablePointerLock(true);
-
   WebKit::WebRuntimeFeatures::enableEncryptedMedia(
-      command_line.HasSwitch(switches::kEnableEncryptedMedia));
+      !command_line.HasSwitch(switches::kDisableEncryptedMedia));
 
 #if defined(OS_ANDROID)
   WebRuntimeFeatures::enableWebAudio(
@@ -653,13 +729,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
       media::IsMediaLibraryInitialized());
 #endif
 
-#if defined(OS_CHROMEOS)
-  WebRuntimeFeatures::enableTouch(true);
-#else
-  WebRuntimeFeatures::enableTouch(
-      command_line.HasSwitch(switches::kEnableTouchEvents));
-#endif
-
   WebRuntimeFeatures::enableDeviceMotion(
       command_line.HasSwitch(switches::kEnableDeviceMotion));
 
@@ -669,8 +738,12 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   WebRuntimeFeatures::enableSpeechInput(
       !command_line.HasSwitch(switches::kDisableSpeechInput));
 
-  WebRuntimeFeatures::enableScriptedSpeech(
-      command_line.HasSwitch(switches::kEnableScriptedSpeech));
+#if defined(OS_ANDROID)
+  // Web Speech API Speech recognition is not implemented on Android yet.
+  WebRuntimeFeatures::enableScriptedSpeech(false);
+#else
+  WebRuntimeFeatures::enableScriptedSpeech(true);
+#endif
 
   WebRuntimeFeatures::enableFileSystem(
       !command_line.HasSwitch(switches::kDisableFileSystem));
@@ -684,10 +757,17 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   WebRuntimeFeatures::enableShadowDOM(true);
 
-  WebRuntimeFeatures::enableStyleScoped(
-      command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures));
+  if (command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures)) {
+    WebRuntimeFeatures::enableStyleScoped(true);
+    WebRuntimeFeatures::enableCustomDOMElements(true);
+    WebRuntimeFeatures::enableCSSExclusions(true);
+    WebRuntimeFeatures::enableExperimentalContentSecurityPolicyFeatures(true);
+    WebRuntimeFeatures::enableCSSRegions(true);
+    WebRuntimeFeatures::enableDialogElement(true);
+    WebRuntimeFeatures::enableFontLoadEvents(true);
+  }
 
-  WebRuntimeFeatures::enableCSSExclusions(
+  WebRuntimeFeatures::enableSeamlessIFrames(
       command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures));
 
   FOR_EACH_OBSERVER(RenderProcessObserver, observers_, WebKitInitialized());
@@ -711,12 +791,29 @@ void RenderThreadImpl::RecordUserMetrics(const std::string& action) {
   Send(new ViewHostMsg_UserMetricsRecordAction(action));
 }
 
-base::SharedMemoryHandle RenderThreadImpl::HostAllocateSharedMemoryBuffer(
-    uint32 buffer_size) {
-  base::SharedMemoryHandle mem_handle = base::SharedMemoryHandle();
-  Send(new ChildProcessHostMsg_SyncAllocateSharedMemory(
-                buffer_size, &mem_handle));
-  return mem_handle;
+scoped_ptr<base::SharedMemory>
+    RenderThreadImpl::HostAllocateSharedMemoryBuffer(size_t size) {
+  if (size > static_cast<size_t>(std::numeric_limits<int>::max()))
+    return scoped_ptr<base::SharedMemory>();
+
+  base::SharedMemoryHandle handle;
+  bool success;
+  IPC::Message* message =
+      new ChildProcessHostMsg_SyncAllocateSharedMemory(size, &handle);
+
+  // Allow calling this from the compositor thread.
+  if (MessageLoop::current() == message_loop())
+    success = ChildThread::Send(message);
+  else
+    success = sync_message_filter()->Send(message);
+
+  if (!success)
+    return scoped_ptr<base::SharedMemory>();
+
+  if (!base::SharedMemory::IsHandleValid(handle))
+    return scoped_ptr<base::SharedMemory>();
+
+  return scoped_ptr<base::SharedMemory>(new base::SharedMemory(handle, false));
 }
 
 void RenderThreadImpl::RegisterExtension(v8::Extension* extension) {
@@ -812,6 +909,12 @@ void RenderThreadImpl::UpdateHistograms(int sequence_number) {
   child_histogram_message_filter()->SendHistograms(sequence_number);
 }
 
+bool RenderThreadImpl::ResolveProxy(const GURL& url, std::string* proxy_list) {
+  bool result = false;
+  Send(new ViewHostMsg_ResolveProxy(url, &result, proxy_list));
+  return result;
+}
+
 void RenderThreadImpl::PostponeIdleNotification() {
   idle_notifications_to_skip_ = 2;
 }
@@ -822,8 +925,8 @@ void RenderThreadImpl::OnGpuVDAContextLoss() {
   DCHECK(self);
   if (!self->gpu_vda_context3d_.get())
     return;
-  if (self->compositor_thread()) {
-    self->compositor_thread()->GetWebThread()->message_loop()->DeleteSoon(
+  if (self->compositor_message_loop_proxy()) {
+    self->compositor_message_loop_proxy()->DeleteSoon(
         FROM_HERE, self->gpu_vda_context3d_.release());
   } else {
     self->gpu_vda_context3d_.reset();
@@ -843,17 +946,79 @@ RenderThreadImpl::GetGpuVDAContext3D() {
   return gpu_vda_context3d_.get();
 }
 
+scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
+RenderThreadImpl::CreateOffscreenContext3d() {
+  WebKit::WebGraphicsContext3D::Attributes attributes;
+  attributes.shareResources = true;
+  attributes.depth = false;
+  attributes.stencil = false;
+  attributes.antialias = false;
+  attributes.noAutomaticFlushes = true;
+
+  return make_scoped_ptr(
+      WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
+          this,
+          attributes,
+          GURL("chrome://gpu/RenderThreadImpl::CreateOffscreenContext3d")));
+}
+
+scoped_refptr<ContextProviderCommandBuffer>
+RenderThreadImpl::OffscreenContextProviderForMainThread() {
+  DCHECK(IsMainThread());
+
+  if (!shared_contexts_main_thread_ ||
+      shared_contexts_main_thread_->DestroyedOnMainThread()) {
+    shared_contexts_main_thread_ =
+        RendererContextProviderCommandBuffer::Create();
+    if (shared_contexts_main_thread_ &&
+        !shared_contexts_main_thread_->BindToCurrentThread())
+      shared_contexts_main_thread_ = NULL;
+  }
+  return shared_contexts_main_thread_;
+}
+
+scoped_refptr<ContextProviderCommandBuffer>
+RenderThreadImpl::OffscreenContextProviderForCompositorThread() {
+  DCHECK(IsMainThread());
+
+  if (!shared_contexts_compositor_thread_ ||
+      shared_contexts_compositor_thread_->DestroyedOnMainThread()) {
+    shared_contexts_compositor_thread_ =
+        RendererContextProviderCommandBuffer::Create();
+  }
+  return shared_contexts_compositor_thread_;
+}
+
 AudioRendererMixerManager* RenderThreadImpl::GetAudioRendererMixerManager() {
   if (!audio_renderer_mixer_manager_.get()) {
     audio_renderer_mixer_manager_.reset(new AudioRendererMixerManager(
-        GetAudioOutputSampleRate(),
-        GetAudioOutputBufferSize()));
+        GetAudioHardwareConfig()));
   }
 
   return audio_renderer_mixer_manager_.get();
 }
 
+media::AudioHardwareConfig* RenderThreadImpl::GetAudioHardwareConfig() {
+  if (!audio_hardware_config_) {
+    media::AudioParameters input_params;
+    media::AudioParameters output_params;
+    Send(new ViewHostMsg_GetAudioHardwareConfig(
+        &input_params, &output_params));
+
+    audio_hardware_config_.reset(new media::AudioHardwareConfig(
+        input_params, output_params));
+    audio_message_filter_->SetAudioHardwareConfig(audio_hardware_config_.get());
+  }
+
+  return audio_hardware_config_.get();
+}
+
 #if defined(OS_WIN)
+void RenderThreadImpl::PreCacheFontCharacters(const LOGFONT& log_font,
+                                              const string16& str) {
+  Send(new ViewHostMsg_PreCacheFontCharacters(log_font, str));
+}
+
 void RenderThreadImpl::PreCacheFont(const LOGFONT& log_font) {
   Send(new ChildProcessHostMsg_PreCacheFont(log_font));
 }
@@ -896,24 +1061,9 @@ base::WaitableEvent* RenderThreadImpl::GetShutDownEvent() {
 }
 
 scoped_ptr<base::SharedMemory> RenderThreadImpl::AllocateSharedMemory(
-    uint32 size) {
-  base::SharedMemoryHandle handle;
-  bool success;
-  IPC::Message* message =
-      new ChildProcessHostMsg_SyncAllocateSharedMemory(size, &handle);
-
-  // Allow calling this from the compositor thread.
-  if (MessageLoop::current() == message_loop())
-    success = ChildThread::Send(message);
-  else
-    success = sync_message_filter()->Send(message);
-
-  if (!success)
-    return scoped_ptr<base::SharedMemory>();
-
-  if (!base::SharedMemory::IsHandleValid(handle))
-    return scoped_ptr<base::SharedMemory>();
-  return scoped_ptr<base::SharedMemory>(new base::SharedMemory(handle, false));
+    size_t size) {
+  return scoped_ptr<base::SharedMemory>(
+      HostAllocateSharedMemoryBuffer(size));
 }
 
 int32 RenderThreadImpl::CreateViewCommandBuffer(
@@ -957,9 +1107,10 @@ void RenderThreadImpl::DoNotNotifyWebKitOfModalLoop() {
   notify_webkit_of_modal_loop_ = false;
 }
 
-void RenderThreadImpl::OnSetZoomLevelForCurrentURL(const std::string& host,
+void RenderThreadImpl::OnSetZoomLevelForCurrentURL(const std::string& scheme,
+                                                   const std::string& host,
                                                    double zoom_level) {
-  RenderViewZoomer zoomer(host, zoom_level);
+  RenderViewZoomer zoomer(scheme, host, zoom_level);
   RenderView::ForEach(&zoomer);
 }
 
@@ -987,6 +1138,8 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewMsg_PurgePluginListCache, OnPurgePluginListCache)
     IPC_MESSAGE_HANDLER(ViewMsg_NetworkStateChanged, OnNetworkStateChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_TempCrashWithData, OnTempCrashWithData)
+    IPC_MESSAGE_HANDLER(ViewMsg_SetWebKitSharedTimersSuspended,
+                        OnSetWebKitSharedTimersSuspended)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -1008,7 +1161,8 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
       params.swapped_out,
       params.next_page_id,
       params.screen_info,
-      params.accessibility_mode);
+      params.accessibility_mode,
+      params.allow_partial_swap);
 }
 
 GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
@@ -1055,10 +1209,21 @@ GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
 
 WebKit::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
     WebKit::WebMediaStreamCenterClient* client) {
+#if defined(OS_ANDROID)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableWebRTC))
+    return NULL;
+#endif
+
 #if defined(ENABLE_WEBRTC)
-  if (!media_stream_center_)
-    media_stream_center_ = new MediaStreamCenter(
-        client, GetMediaStreamDependencyFactory());
+  if (!media_stream_center_) {
+    media_stream_center_ = GetContentClient()->renderer()
+        ->OverrideCreateWebMediaStreamCenter(client);
+    if (!media_stream_center_) {
+      media_stream_center_ = new MediaStreamCenter(
+          client, GetMediaStreamDependencyFactory());
+    }
+  }
 #endif
   return media_stream_center_;
 }
@@ -1107,6 +1272,10 @@ void RenderThreadImpl::OnTempCrashWithData(const GURL& data) {
   CHECK(false);
 }
 
+void RenderThreadImpl::OnSetWebKitSharedTimersSuspended(bool suspend) {
+  ToggleWebKitSharedTimer(suspend);
+}
+
 scoped_refptr<base::MessageLoopProxy>
 RenderThreadImpl::GetFileThreadMessageLoopProxy() {
   DCHECK(message_loop() == MessageLoop::current());
@@ -1115,6 +1284,14 @@ RenderThreadImpl::GetFileThreadMessageLoopProxy() {
     file_thread_->Start();
   }
   return file_thread_->message_loop_proxy();
+}
+
+void RenderThreadImpl::SetFlingCurveParameters(
+    const std::vector<float>& new_touchpad,
+    const std::vector<float>& new_touchscreen) {
+  webkit_platform_support_->SetFlingCurveParameters(new_touchpad,
+                                                    new_touchscreen);
+
 }
 
 }  // namespace content

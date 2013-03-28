@@ -10,12 +10,11 @@
 #include "media/base/data_buffer.h"
 
 namespace media {
-  class DataBuffer;
-}
+class ScreenCaptureData;
+}  // namespace media
 
 namespace remoting {
 
-class CaptureData;
 class VideoPacket;
 
 // A class to perform the task of encoding a continous stream of
@@ -24,9 +23,8 @@ class VideoPacket;
 class VideoEncoder {
  public:
 
-  // DataAvailableCallback is called as blocks of data are made available
-  // from the encoder. Data made available by the encoder is in the form
-  // of HostMessage to reduce the amount of memory copies.
+  // DataAvailableCallback is called one or more times, for each chunk the
+  // underlying video encoder generates.
   typedef base::Callback<void(scoped_ptr<VideoPacket>)> DataAvailableCallback;
 
   virtual ~VideoEncoder() {}
@@ -38,7 +36,7 @@ class VideoEncoder {
   //
   // When encoded data is available, partial or full |data_available_callback|
   // is called.
-  virtual void Encode(scoped_refptr<CaptureData> capture_data,
+  virtual void Encode(scoped_refptr<media::ScreenCaptureData> capture_data,
                       bool key_frame,
                       const DataAvailableCallback& data_available_callback) = 0;
 };

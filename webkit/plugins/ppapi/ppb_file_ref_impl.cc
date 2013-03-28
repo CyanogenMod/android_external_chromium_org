@@ -7,6 +7,7 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/escape.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_file_system_api.h"
@@ -17,7 +18,6 @@
 #include "webkit/plugins/ppapi/plugin_delegate.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
-#include "webkit/plugins/ppapi/ppb_directory_reader_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_system_impl.h"
 #include "webkit/plugins/ppapi/resource_helper.h"
 
@@ -37,11 +37,20 @@ namespace {
 
 bool IsValidLocalPath(const std::string& path) {
   // The path must start with '/'
-  if (path.empty() || path[0] != '/' || path.find("..") != std::string::npos)
+  if (path.empty() || path[0] != '/')
     return false;
 
   // The path must contain valid UTF-8 characters.
   if (!IsStringUTF8(path))
+    return false;
+
+#if defined(OS_WIN)
+  base::FilePath::StringType path_win(path.begin(), path.end());
+  base::FilePath file_path(path_win);
+#else
+  base::FilePath file_path(path);
+#endif
+  if (file_path.ReferencesParent())
     return false;
 
   return true;
@@ -54,10 +63,10 @@ void TrimTrailingSlash(std::string* path) {
     path->erase(path->size() - 1, 1);
 }
 
-std::string GetNameForExternalFilePath(const FilePath& in_path) {
-  const FilePath::StringType& path = in_path.value();
-  size_t pos = path.rfind(FilePath::kSeparators[0]);
-  CHECK(pos != FilePath::StringType::npos);
+std::string GetNameForExternalFilePath(const base::FilePath& in_path) {
+  const base::FilePath::StringType& path = in_path.value();
+  size_t pos = path.rfind(base::FilePath::kSeparators[0]);
+  CHECK(pos != base::FilePath::StringType::npos);
 #if defined(OS_WIN)
   return WideToUTF8(path.substr(pos + 1));
 #elif defined(OS_POSIX)
@@ -87,7 +96,7 @@ PPB_FileRef_Impl::PPB_FileRef_Impl(const PPB_FileRef_CreateInfo& info,
 }
 
 PPB_FileRef_Impl::PPB_FileRef_Impl(const PPB_FileRef_CreateInfo& info,
-                                   const FilePath& external_file_path)
+                                   const base::FilePath& external_file_path)
     : PPB_FileRef_Shared(::ppapi::OBJECT_IS_IMPL, info),
       file_system_(),
       external_file_system_path_(external_file_path) {
@@ -131,7 +140,7 @@ PPB_FileRef_Impl* PPB_FileRef_Impl::CreateInternal(PP_Resource pp_file_system,
 // static
 PPB_FileRef_Impl* PPB_FileRef_Impl::CreateExternal(
     PP_Instance instance,
-    const FilePath& external_file_path,
+    const base::FilePath& external_file_path,
     const std::string& display_name) {
   PPB_FileRef_CreateInfo info;
   info.resource = HostResource::MakeInstanceOnly(instance);
@@ -177,7 +186,7 @@ int32_t PPB_FileRef_Impl::MakeDirectory(
     return PP_ERROR_FAILED;
   if (!plugin_instance->delegate()->MakeDirectory(
           GetFileSystemURL(), PP_ToBool(make_ancestors),
-          new FileCallbacks(this, callback, NULL, NULL, NULL)))
+          new FileCallbacks(this, callback, NULL, NULL)))
     return PP_ERROR_FAILED;
   return PP_OK_COMPLETIONPENDING;
 }
@@ -195,7 +204,7 @@ int32_t PPB_FileRef_Impl::Touch(PP_Time last_access_time,
           GetFileSystemURL(),
           PPTimeToTime(last_access_time),
           PPTimeToTime(last_modified_time),
-          new FileCallbacks(this, callback, NULL, NULL, NULL)))
+          new FileCallbacks(this, callback, NULL, NULL)))
     return PP_ERROR_FAILED;
   return PP_OK_COMPLETIONPENDING;
 }
@@ -209,7 +218,7 @@ int32_t PPB_FileRef_Impl::Delete(scoped_refptr<TrackedCallback> callback) {
     return PP_ERROR_FAILED;
   if (!plugin_instance->delegate()->Delete(
           GetFileSystemURL(),
-          new FileCallbacks(this, callback, NULL, NULL, NULL)))
+          new FileCallbacks(this, callback, NULL, NULL)))
     return PP_ERROR_FAILED;
   return PP_OK_COMPLETIONPENDING;
 }
@@ -233,7 +242,7 @@ int32_t PPB_FileRef_Impl::Rename(PP_Resource new_pp_file_ref,
     return PP_ERROR_FAILED;
   if (!plugin_instance->delegate()->Rename(
           GetFileSystemURL(), new_file_ref->GetFileSystemURL(),
-          new FileCallbacks(this, callback, NULL, NULL, NULL)))
+          new FileCallbacks(this, callback, NULL, NULL)))
     return PP_ERROR_FAILED;
   return PP_OK_COMPLETIONPENDING;
 }
@@ -248,10 +257,10 @@ PP_Var PPB_FileRef_Impl::GetAbsolutePath() {
   return external_path_var_->GetPPVar();
 }
 
-FilePath PPB_FileRef_Impl::GetSystemPath() const {
+base::FilePath PPB_FileRef_Impl::GetSystemPath() const {
   if (GetFileSystemType() != PP_FILESYSTEMTYPE_EXTERNAL) {
     NOTREACHED();
-    return FilePath();
+    return base::FilePath();
   }
   return external_file_system_path_;
 }
@@ -270,9 +279,9 @@ GURL PPB_FileRef_Impl::GetFileSystemURL() const {
   // Since |virtual_path_| starts with a '/', it looks like an absolute path.
   // We need to trim off the '/' before calling Resolve, as FileSystem URLs
   // start with a storage type identifier that looks like a path segment.
-  // TODO(ericu): Switch this to use Resolve after fixing GURL to understand
-  // FileSystem URLs.
-  return GURL(file_system_->root_url().spec() + virtual_path.substr(1));
+
+  return file_system_->root_url().Resolve(
+      net::EscapePath(virtual_path.substr(1)));
 }
 
 bool PPB_FileRef_Impl::HasValidFileSystem() const {

@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/observer_list.h"
+#include "chromeos/dbus/cros_disks_client.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -32,11 +33,14 @@ class MockDiskMountManager : public DiskMountManager {
   MOCK_METHOD0(RequestMountInfoRefresh, void(void));
   MOCK_METHOD4(MountPath, void(const std::string&, const std::string&,
                                const std::string&, MountType));
-  MOCK_METHOD2(UnmountPath, void(const std::string&, UnmountOptions));
-  MOCK_METHOD1(FormatUnmountedDevice, void(const std::string&));
+  MOCK_METHOD3(UnmountPath, void(const std::string&,
+                                 UnmountOptions,
+                                 const DiskMountManager::UnmountPathCallback&));
   MOCK_METHOD1(FormatMountedDevice, void(const std::string&));
-  MOCK_METHOD3(UnmountDeviceRecursive, void(const std::string&,
-      DiskMountManager::UnmountDeviceRecursiveCallbackType, void*));
+  MOCK_METHOD2(
+      UnmountDeviceRecursively,
+      void(const std::string&,
+           const DiskMountManager::UnmountDeviceRecursivelyCallbackType&));
 
   // Invokes fake device insert events.
   void NotifyDeviceInsertEvents();
@@ -48,14 +52,18 @@ class MockDiskMountManager : public DiskMountManager {
   void SetupDefaultReplies();
 
   // Creates a fake disk entry for the mounted device. This function is
-  // primarily for RemovableDeviceNotificationsTest.
+  // primarily for StorageMonitorTest.
   void CreateDiskEntryForMountDevice(
       const DiskMountManager::MountPointInfo& mount_info,
       const std::string& device_id,
-      const std::string& device_label);
+      const std::string& device_label,
+      const std::string& vendor_name,
+      const std::string& product_name,
+      DeviceType device_type,
+      uint64 total_size_in_bytes);
 
   // Removes the fake disk entry associated with the mounted device. This
-  // function is primarily for RemovableDeviceNotificationsTest.
+  // function is primarily for StorageMonitorTest.
   void RemoveDiskEntryForMountDevice(
       const DiskMountManager::MountPointInfo& mount_info);
 
@@ -76,11 +84,11 @@ class MockDiskMountManager : public DiskMountManager {
       const std::string& source_path) const;
 
   // Notifies observers about device status update.
-  void NotifyDeviceChanged(DiskMountManagerEventType event,
+  void NotifyDeviceChanged(DeviceEvent event,
                            const std::string& path);
 
   // Notifies observers about disk status update.
-  void NotifyDiskChanged(DiskMountManagerEventType event,
+  void NotifyDiskChanged(DiskEvent event,
                          const DiskMountManager::Disk* disk);
 
   // The list of observers.

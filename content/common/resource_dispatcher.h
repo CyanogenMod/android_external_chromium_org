@@ -61,6 +61,10 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   // Toggles the is_deferred attribute for the specified request.
   void SetDefersLoading(int request_id, bool value);
 
+  // Indicates the priority of the specified request changed.
+  void DidChangePriority(int routing_id, int request_id,
+                         net::RequestPriority new_priority);
+
   // This does not take ownership of the delegate. It is expected that the
   // delegate have a longer lifetime than the ResourceDispatcher.
   void set_delegate(ResourceDispatcherDelegate* delegate) {
@@ -118,7 +122,8 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
       const IPC::Message& message,
       int request_id,
       base::SharedMemoryHandle shm_handle,
-      int shm_size);
+      int shm_size,
+      base::ProcessId renderer_pid);
   void OnReceivedData(
       const IPC::Message& message,
       int request_id,

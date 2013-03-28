@@ -4,12 +4,17 @@
 
 #include "chrome/browser/extensions/extension_action_manager.h"
 
+#include "chrome/browser/extensions/api/system_indicator/system_indicator_manager.h"
+#include "chrome/browser/extensions/api/system_indicator/system_indicator_manager_factory.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/profiles/profile_keyed_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/extensions/api/extension_action/action_info.h"
+#include "chrome/common/extensions/api/extension_action/page_action_handler.h"
+#include "chrome/common/extensions/api/extension_action/script_badge_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "content/public/browser/notification_service.h"
@@ -55,7 +60,8 @@ ExtensionActionManagerFactory::GetInstance() {
 
 }  // namespace
 
-ExtensionActionManager::ExtensionActionManager(Profile* profile) {
+ExtensionActionManager::ExtensionActionManager(Profile* profile)
+    : profile_(profile) {
   CHECK_EQ(profile, profile->GetOriginalProfile())
       << "Don't instantiate this with an incognito profile.";
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
@@ -82,6 +88,7 @@ void ExtensionActionManager::Observe(
       page_actions_.erase(extension->id());
       browser_actions_.erase(extension->id());
       script_badges_.erase(extension->id());
+      system_indicators_.erase(extension->id());
       break;
     }
   }
@@ -95,8 +102,8 @@ namespace {
 ExtensionAction* GetOrCreateOrNull(
     std::map<std::string, linked_ptr<ExtensionAction> >* map,
     const std::string& extension_id,
-    Extension::ActionInfo::Type action_type,
-    const Extension::ActionInfo* action_info) {
+    ActionInfo::Type action_type,
+    const ActionInfo* action_info) {
   std::map<std::string, linked_ptr<ExtensionAction> >::const_iterator it =
       map->find(extension_id);
   if (it != map->end())
@@ -109,7 +116,7 @@ ExtensionAction* GetOrCreateOrNull(
   return action.get();
 }
 
-}
+}  // namespace
 
 ExtensionAction* ExtensionActionManager::GetPageAction(
     const extensions::Extension& extension) const {
@@ -118,30 +125,44 @@ ExtensionAction* ExtensionActionManager::GetPageAction(
   if (FeatureSwitch::script_badges()->IsEnabled())
     return NULL;
   return GetOrCreateOrNull(&page_actions_, extension.id(),
-                           Extension::ActionInfo::TYPE_PAGE,
-                           extension.page_action_info());
+                           ActionInfo::TYPE_PAGE,
+                           ActionInfo::GetPageActionInfo(&extension));
 }
 
 ExtensionAction* ExtensionActionManager::GetBrowserAction(
     const extensions::Extension& extension) const {
-  const Extension::ActionInfo* action_info = extension.browser_action_info();
-  Extension::ActionInfo::Type action_type = Extension::ActionInfo::TYPE_BROWSER;
+  const ActionInfo* action_info = ActionInfo::GetBrowserActionInfo(&extension);
+  ActionInfo::Type action_type = ActionInfo::TYPE_BROWSER;
   if (FeatureSwitch::script_badges()->IsEnabled() &&
-      extension.page_action_info()) {
+      ActionInfo::GetPageActionInfo(&extension)) {
     // The action box changes the meaning of the page action area, so we
     // need to convert page actions into browser actions.
-    action_info = extension.page_action_info();
-    action_type = Extension::ActionInfo::TYPE_PAGE;
+    action_info = ActionInfo::GetPageActionInfo(&extension);
+    action_type = ActionInfo::TYPE_PAGE;
   }
   return GetOrCreateOrNull(&browser_actions_, extension.id(),
                            action_type, action_info);
 }
 
+ExtensionAction* ExtensionActionManager::GetSystemIndicator(
+    const extensions::Extension& extension) const {
+  // If it does not already exist, create the SystemIndicatorManager for the
+  // given profile.  This could return NULL if the system indicator area is
+  // unavailable on the current system.  If so, return NULL to signal that
+  // the system indicator area is unusable.
+  if (!extensions::SystemIndicatorManagerFactory::GetForProfile(profile_))
+    return NULL;
+
+  return GetOrCreateOrNull(&system_indicators_, extension.id(),
+                           ActionInfo::TYPE_SYSTEM_INDICATOR,
+                           ActionInfo::GetSystemIndicatorInfo(&extension));
+}
+
 ExtensionAction* ExtensionActionManager::GetScriptBadge(
     const extensions::Extension& extension) const {
   return GetOrCreateOrNull(&script_badges_, extension.id(),
-                           Extension::ActionInfo::TYPE_SCRIPT_BADGE,
-                           extension.script_badge_info());
+                           ActionInfo::TYPE_SCRIPT_BADGE,
+                           ActionInfo::GetScriptBadgeInfo(&extension));
 }
 
-}
+}  // namespace extensions

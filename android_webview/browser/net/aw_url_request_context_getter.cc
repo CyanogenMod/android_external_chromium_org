@@ -4,6 +4,8 @@
 
 #include "android_webview/browser/net/aw_url_request_context_getter.h"
 
+#include <vector>
+
 #include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/aw_request_interceptor.h"
 #include "android_webview/browser/net/aw_network_delegate.h"
@@ -11,52 +13,20 @@
 #include "android_webview/browser/net/init_native_callback.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/resource_context.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
+#include "net/cookies/cookie_store.h"
+#include "net/http/http_cache.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/file_protocol_handler.h"
+#include "net/url_request/protocol_intercept_job_factory.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "net/url_request/url_request_context.h"
 
 using content::BrowserThread;
 
 namespace android_webview {
-
-namespace {
-
-class AwResourceContext : public content::ResourceContext {
- public:
-  AwResourceContext(net::URLRequestContext* getter);
-  virtual ~AwResourceContext();
-  virtual net::HostResolver* GetHostResolver() OVERRIDE;
-  virtual net::URLRequestContext* GetRequestContext() OVERRIDE;
-
- private:
-  net::URLRequestContext* context_;  // weak
-
-  DISALLOW_COPY_AND_ASSIGN(AwResourceContext);
-};
-
-AwResourceContext::AwResourceContext(net::URLRequestContext* context)
-    : context_(context) {
-}
-
-AwResourceContext::~AwResourceContext() {
-}
-
-net::HostResolver* AwResourceContext::GetHostResolver() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  return context_->host_resolver();
-}
-
-net::URLRequestContext* AwResourceContext::GetRequestContext() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  return context_;
-}
-
-}  // namespace
 
 AwURLRequestContextGetter::AwURLRequestContextGetter(
     AwBrowserContext* browser_context)
@@ -88,48 +58,118 @@ void AwURLRequestContextGetter::Init() {
       content::GetContentClient()->browser()->GetAcceptLangs(
           browser_context_)));
 
-  // TODO(boliu): Values from chrome/app/resources/locale_settings_en-GB.xtb
-  builder.set_accept_charset(
-      net::HttpUtil::GenerateAcceptCharsetHeader("ISO-8859-1"));
-
-  net::URLRequestContextBuilder::HttpCacheParams cache_params;
-  cache_params.type = net::URLRequestContextBuilder::HttpCacheParams::DISK;
-  cache_params.max_size = 10 * 1024 * 1024;  // 10M
-  cache_params.path =
-      browser_context_->GetPath().Append(FILE_PATH_LITERAL("Cache")),
-  builder.EnableHttpCache(cache_params);
-
   url_request_context_.reset(builder.Build());
 
-  job_factory_.reset(new AwURLRequestJobFactory);
-  bool set_protocol = job_factory_->SetProtocolHandler(
-      chrome::kFileScheme, new net::FileProtocolHandler());
-  DCHECK(set_protocol);
-  set_protocol = job_factory_->SetProtocolHandler(
-      chrome::kDataScheme, new net::DataProtocolHandler());
-  DCHECK(set_protocol);
-  job_factory_->AddInterceptor(new AwRequestInterceptor());
-  url_request_context_->set_job_factory(job_factory_.get());
+  // TODO(mnaganov): Fix URLRequestContextBuilder to use proper threads.
+  net::HttpNetworkSession::Params network_session_params;
+  PopulateNetworkSessionParams(&network_session_params);
+  net::HttpCache* main_cache = new net::HttpCache(
+      network_session_params,
+      new net::HttpCache::DefaultBackend(
+          net::DISK_CACHE,
+          browser_context_->GetPath().Append(FILE_PATH_LITERAL("Cache")),
+          10 * 1024 * 1024,  // 10M
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE)));
+  main_http_factory_.reset(main_cache);
+  url_request_context_->set_http_transaction_factory(main_cache);
 
-  OnNetworkStackInitialized(url_request_context_.get(),
-                            job_factory_.get());
+  // The CookieMonster must be passed here so it happens synchronously to
+  // the main thread initialization (to avoid race condition in another
+  // thread trying to access the CookieManager API).
+  DidCreateCookieMonster(
+      url_request_context_->cookie_store()->GetCookieMonster());
 }
 
-content::ResourceContext* AwURLRequestContextGetter::GetResourceContext() {
-  DCHECK(url_request_context_);
-  if (!resource_context_)
-    resource_context_.reset(new AwResourceContext(url_request_context_.get()));
-  return resource_context_.get();
+void AwURLRequestContextGetter::PopulateNetworkSessionParams(
+    net::HttpNetworkSession::Params* params) {
+  net::URLRequestContext* context = url_request_context_.get();
+  params->host_resolver = context->host_resolver();
+  params->cert_verifier = context->cert_verifier();
+  params->server_bound_cert_service = context->server_bound_cert_service();
+  params->transport_security_state = context->transport_security_state();
+  params->proxy_service = context->proxy_service();
+  params->ssl_config_service = context->ssl_config_service();
+  params->http_auth_handler_factory = context->http_auth_handler_factory();
+  params->network_delegate = context->network_delegate();
+  params->http_server_properties = context->http_server_properties();
+  params->net_log = context->net_log();
 }
 
 net::URLRequestContext* AwURLRequestContextGetter::GetURLRequestContext() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (!job_factory_) {
+    scoped_ptr<AwURLRequestJobFactory> job_factory(new AwURLRequestJobFactory);
+    bool set_protocol = job_factory->SetProtocolHandler(
+        chrome::kFileScheme, new net::FileProtocolHandler());
+    DCHECK(set_protocol);
+    set_protocol = job_factory->SetProtocolHandler(
+        chrome::kDataScheme, new net::DataProtocolHandler());
+    DCHECK(set_protocol);
+    set_protocol = job_factory->SetProtocolHandler(
+        chrome::kBlobScheme, protocol_handlers_[chrome::kBlobScheme].release());
+    DCHECK(set_protocol);
+    set_protocol = job_factory->SetProtocolHandler(
+        chrome::kFileSystemScheme,
+        protocol_handlers_[chrome::kFileSystemScheme].release());
+    DCHECK(set_protocol);
+    set_protocol = job_factory->SetProtocolHandler(
+        chrome::kChromeUIScheme,
+        protocol_handlers_[chrome::kChromeUIScheme].release());
+    DCHECK(set_protocol);
+    set_protocol = job_factory->SetProtocolHandler(
+        chrome::kChromeDevToolsScheme,
+        protocol_handlers_[chrome::kChromeDevToolsScheme].release());
+    DCHECK(set_protocol);
+    protocol_handlers_.clear();
+
+    // Create a chain of URLRequestJobFactories. The handlers will be invoked
+    // in the order in which they appear in the protocol_handlers vector.
+    typedef std::vector<net::URLRequestJobFactory::ProtocolHandler*>
+        ProtocolHandlerVector;
+    ProtocolHandlerVector protocol_interceptors;
+
+    // Note that even though the content:// scheme handler is created here,
+    // it cannot be used by child processes until access to it is granted via
+    // ChildProcessSecurityPolicy::GrantScheme(). This is done in
+    // AwContentBrowserClient.
+    protocol_interceptors.push_back(
+        CreateAndroidContentProtocolHandler().release());
+    protocol_interceptors.push_back(
+        CreateAndroidAssetFileProtocolHandler().release());
+    // The AwRequestInterceptor must come after the content and asset file job
+    // factories. This for WebViewClassic compatibility where it was not
+    // possible to intercept resource loads to resolvable content:// and
+    // file:// URIs.
+    // This logical dependency is also the reason why the Content
+    // ProtocolHandler has to be added as a ProtocolInterceptJobFactory rather
+    // than via SetProtocolHandler.
+    protocol_interceptors.push_back(new AwRequestInterceptor());
+
+    // The chain of responsibility will execute the handlers in reverse to the
+    // order in which the elements of the chain are created.
+    job_factory_ = job_factory.PassAs<net::URLRequestJobFactory>();
+    for (ProtocolHandlerVector::reverse_iterator
+             i = protocol_interceptors.rbegin();
+         i != protocol_interceptors.rend();
+         ++i) {
+      job_factory_.reset(new net::ProtocolInterceptJobFactory(
+          job_factory_.Pass(), make_scoped_ptr(*i)));
+    }
+
+    url_request_context_->set_job_factory(job_factory_.get());
+  }
+
   return url_request_context_.get();
 }
 
 scoped_refptr<base::SingleThreadTaskRunner>
 AwURLRequestContextGetter::GetNetworkTaskRunner() const {
   return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
+}
+
+void AwURLRequestContextGetter::SetProtocolHandlers(
+    content::ProtocolHandlerMap* protocol_handlers) {
+  std::swap(protocol_handlers_, *protocol_handlers);
 }
 
 }  // namespace android_webview

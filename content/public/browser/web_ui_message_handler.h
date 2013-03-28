@@ -9,7 +9,6 @@
 #include "base/gtest_prod_util.h"
 #include "base/string16.h"
 #include "content/common/content_export.h"
-#include "testing/gtest/include/gtest/gtest_prod.h"
 
 class GURL;
 class WebUIBrowserTest;
@@ -38,12 +37,6 @@ class CONTENT_EXPORT WebUIMessageHandler {
   FRIEND_TEST_ALL_PREFIXES(WebUIMessageHandlerTest, ExtractStringValue);
 
   // Helper methods:
-
-  // Adds "url" and "title" keys on incoming dictionary, setting title
-  // as the url as a fallback on empty title.
-  static void SetURLAndTitle(base::DictionaryValue* dictionary,
-                             const string16& title,
-                             const GURL& gurl);
 
   // Extract an integer value from a list Value.
   static bool ExtractIntegerValue(const base::ListValue* value, int* out_int);

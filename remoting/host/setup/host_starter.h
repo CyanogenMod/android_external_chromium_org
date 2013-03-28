@@ -9,7 +9,7 @@
 
 #include "base/callback.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
-#include "remoting/host/host_key_pair.h"
+#include "remoting/base/rsa_key_pair.h"
 #include "remoting/host/service_client.h"
 #include "remoting/host/setup/daemon_controller.h"
 #include "remoting/host/url_request_context.h"
@@ -33,6 +33,8 @@ class HostStarter : public gaia::GaiaOAuthClient::Delegate,
 
   // Creates a HostStarter.
   static scoped_ptr<HostStarter> Create(
+      const std::string& oauth2_token_url,
+      const std::string& chromoting_hosts_url,
       net::URLRequestContextGetter* url_request_context_getter);
 
   // Registers a new host with the Chromoting service, and starts it.
@@ -83,7 +85,7 @@ class HostStarter : public gaia::GaiaOAuthClient::Delegate,
   std::string refresh_token_;
   std::string access_token_;
   std::string user_email_;
-  remoting::HostKeyPair key_pair_;
+  scoped_refptr<remoting::RsaKeyPair> key_pair_;
   std::string host_id_;
 
   base::WeakPtrFactory<HostStarter> weak_ptr_factory_;

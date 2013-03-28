@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,17 +10,17 @@
 #include "base/string_number_conversions.h"
 #include "sync/internal_api/public/base/node_ordinal.h"
 #include "sync/internal_api/public/util/unrecoverable_error_handler.h"
-#include "sync/syncable/base_transaction.h"
 #include "sync/syncable/entry.h"
 #include "sync/syncable/entry_kernel.h"
 #include "sync/syncable/in_memory_directory_backing_store.h"
 #include "sync/syncable/on_disk_directory_backing_store.h"
-#include "sync/syncable/read_transaction.h"
 #include "sync/syncable/scoped_index_updater.h"
 #include "sync/syncable/syncable-inl.h"
+#include "sync/syncable/syncable_base_transaction.h"
 #include "sync/syncable/syncable_changes_version.h"
+#include "sync/syncable/syncable_read_transaction.h"
 #include "sync/syncable/syncable_util.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 
 using std::string;
 
@@ -68,7 +68,7 @@ bool ParentIdAndHandleIndexer::ShouldInclude(const EntryKernel* a) {
 }
 
 // static
-const FilePath::CharType Directory::kSyncDatabaseFilename[] =
+const base::FilePath::CharType Directory::kSyncDatabaseFilename[] =
     FILE_PATH_LITERAL("SyncData.sqlite3");
 
 void Directory::InitKernelForTest(
@@ -81,9 +81,11 @@ void Directory::InitKernelForTest(
 
 Directory::PersistedKernelInfo::PersistedKernelInfo()
     : next_id(0) {
-  for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
-    reset_download_progress(ModelTypeFromInt(i));
-    transaction_version[i] = 0;
+  ModelTypeSet protocol_types = ProtocolTypes();
+  for (ModelTypeSet::Iterator iter = protocol_types.First(); iter.Good();
+       iter.Inc()) {
+    reset_download_progress(iter.Get());
+    transaction_version[iter.Get()] = 0;
   }
 }
 
@@ -101,7 +103,10 @@ Directory::SaveChangesSnapshot::SaveChangesSnapshot()
     : kernel_info_status(KERNEL_SHARE_INFO_INVALID) {
 }
 
-Directory::SaveChangesSnapshot::~SaveChangesSnapshot() {}
+Directory::SaveChangesSnapshot::~SaveChangesSnapshot() {
+  STLDeleteElements(&dirty_metas);
+  STLDeleteElements(&delete_journals);
+}
 
 Directory::Kernel::Kernel(
     const std::string& name,
@@ -196,17 +201,19 @@ DirOpenResult Directory::OpenImpl(
     DirectoryChangeDelegate* delegate,
     const WeakHandle<TransactionObserver>&
         transaction_observer) {
-
   KernelLoadInfo info;
   // Temporary indices before kernel_ initialized in case Load fails. We 0(1)
   // swap these later.
   MetahandlesIndex metas_bucket;
-  DirOpenResult result = store_->Load(&metas_bucket, &info);
+  JournalIndex delete_journals;
+
+  DirOpenResult result = store_->Load(&metas_bucket, &delete_journals, &info);
   if (OPENED != result)
     return result;
 
   kernel_ = new Kernel(name, info, delegate, transaction_observer);
   kernel_->metahandles_index->swap(metas_bucket);
+  delete_journal_.reset(new DeleteJournal(&delete_journals));
   InitializeIndices();
 
   // Write back the share info to reserve some space in 'next_id'.  This will
@@ -217,6 +224,11 @@ DirOpenResult Directory::OpenImpl(
     return FAILED_INITIAL_WRITE;
 
   return OPENED;
+}
+
+DeleteJournal* Directory::delete_journal() {
+  DCHECK(delete_journal_.get());
+  return delete_journal_.get();
 }
 
 void Directory::Close() {
@@ -235,7 +247,6 @@ void Directory::OnUnrecoverableError(const BaseTransaction* trans,
   unrecoverable_error_handler_->OnUnrecoverableError(location,
                                                      message);
 }
-
 
 EntryKernel* Directory::GetEntryById(const Id& id) {
   ScopedKernelLock lock(this);
@@ -466,7 +477,8 @@ void Directory::TakeSnapshotForSaveChanges(SaveChangesSnapshot* snapshot) {
     // Skip over false positives; it happens relatively infrequently.
     if (!entry->is_dirty())
       continue;
-    snapshot->dirty_metas.insert(snapshot->dirty_metas.end(), *entry);
+    snapshot->dirty_metas.insert(snapshot->dirty_metas.end(),
+                                 new EntryKernel(*entry));
     DCHECK_EQ(1U, kernel_->dirty_metahandles->count(*i));
     // We don't bother removing from the index here as we blow the entire thing
     // in a moment, and it unnecessarily complicates iteration.
@@ -488,6 +500,9 @@ void Directory::TakeSnapshotForSaveChanges(SaveChangesSnapshot* snapshot) {
   snapshot->kernel_info_status = kernel_->info_status;
   // This one we reset on failure.
   kernel_->info_status = KERNEL_SHARE_INFO_VALID;
+
+  delete_journal_->TakeSnapshotAndClear(
+      &trans, &snapshot->delete_journals, &snapshot->delete_journals_to_purge);
 }
 
 bool Directory::SaveChanges() {
@@ -518,7 +533,7 @@ bool Directory::VacuumAfterSaveChanges(const SaveChangesSnapshot& snapshot) {
   // Now drop everything we can out of memory.
   for (EntryKernelSet::const_iterator i = snapshot.dirty_metas.begin();
        i != snapshot.dirty_metas.end(); ++i) {
-    kernel_->needle.put(META_HANDLE, i->ref(META_HANDLE));
+    kernel_->needle.put(META_HANDLE, (*i)->ref(META_HANDLE));
     MetahandlesIndex::iterator found =
         kernel_->metahandles_index->find(&kernel_->needle);
     EntryKernel* entry = (found == kernel_->metahandles_index->end() ?
@@ -548,12 +563,19 @@ bool Directory::VacuumAfterSaveChanges(const SaveChangesSnapshot& snapshot) {
   return true;
 }
 
-bool Directory::PurgeEntriesWithTypeIn(ModelTypeSet types) {
+bool Directory::PurgeEntriesWithTypeIn(ModelTypeSet types,
+                                       ModelTypeSet types_to_journal) {
+  types.RemoveAll(ProxyTypes());
+
   if (types.Empty())
     return true;
 
   {
     WriteTransaction trans(FROM_HERE, PURGE_ENTRIES, this);
+
+    EntryKernelSet entries_to_journal;
+    STLElementDeleter<EntryKernelSet> journal_deleter(&entries_to_journal);
+
     {
       ScopedKernelLock lock(this);
       MetahandlesIndex::iterator it = kernel_->metahandles_index->begin();
@@ -587,16 +609,25 @@ bool Directory::PurgeEntriesWithTypeIn(ModelTypeSet types) {
           num_erased = kernel_->parent_id_child_index->erase(entry);
           DCHECK_EQ(entry->ref(IS_DEL), !num_erased);
           kernel_->metahandles_index->erase(it++);
-          delete entry;
+
+          if ((types_to_journal.Has(local_type) ||
+              types_to_journal.Has(server_type)) &&
+              (delete_journal_->IsDeleteJournalEnabled(local_type) ||
+                  delete_journal_->IsDeleteJournalEnabled(server_type))) {
+            entries_to_journal.insert(entry);
+          } else {
+            delete entry;
+          }
         } else {
           ++it;
         }
       }
 
+      delete_journal_->AddJournalBatch(&trans, entries_to_journal);
+
       // Ensure meta tracking for these data types reflects the deleted state.
       for (ModelTypeSet::Iterator it = types.First();
            it.Good(); it.Inc()) {
-        set_initial_sync_ended_for_type_unsafe(it.Get(), false);
         kernel_->persisted_info.reset_download_progress(it.Get());
         kernel_->persisted_info.transaction_version[it.Get()] = 0;
       }
@@ -606,6 +637,7 @@ bool Directory::PurgeEntriesWithTypeIn(ModelTypeSet types) {
 }
 
 void Directory::HandleSaveChangesFailure(const SaveChangesSnapshot& snapshot) {
+  WriteTransaction trans(FROM_HERE, HANDLE_SAVE_FAILURE, this);
   ScopedKernelLock lock(this);
   kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
 
@@ -616,7 +648,7 @@ void Directory::HandleSaveChangesFailure(const SaveChangesSnapshot& snapshot) {
   // that SaveChanges will at least try again later.
   for (EntryKernelSet::const_iterator i = snapshot.dirty_metas.begin();
        i != snapshot.dirty_metas.end(); ++i) {
-    kernel_->needle.put(META_HANDLE, i->ref(META_HANDLE));
+    kernel_->needle.put(META_HANDLE, (*i)->ref(META_HANDLE));
     MetahandlesIndex::iterator found =
         kernel_->metahandles_index->find(&kernel_->needle);
     if (found != kernel_->metahandles_index->end()) {
@@ -626,6 +658,11 @@ void Directory::HandleSaveChangesFailure(const SaveChangesSnapshot& snapshot) {
 
   kernel_->metahandles_to_purge->insert(snapshot.metahandles_to_purge.begin(),
                                         snapshot.metahandles_to_purge.end());
+
+  // Restore delete journals.
+  delete_journal_->AddJournalBatch(&trans, snapshot.delete_journals);
+  delete_journal_->PurgeDeleteJournals(&trans,
+                                       snapshot.delete_journals_to_purge);
 }
 
 void Directory::GetDownloadProgress(
@@ -667,14 +704,30 @@ void Directory::IncrementTransactionVersion(ModelType type) {
   kernel_->persisted_info.transaction_version[type]++;
 }
 
-ModelTypeSet Directory::initial_sync_ended_types() const {
-  ScopedKernelLock lock(this);
-  return kernel_->persisted_info.initial_sync_ended;
+ModelTypeSet Directory::InitialSyncEndedTypes() {
+  syncable::ReadTransaction trans(FROM_HERE, this);
+  ModelTypeSet protocol_types = ProtocolTypes();
+  ModelTypeSet initial_sync_ended_types;
+  for (ModelTypeSet::Iterator i = protocol_types.First(); i.Good(); i.Inc()) {
+    if (InitialSyncEndedForType(&trans, i.Get())) {
+      initial_sync_ended_types.Put(i.Get());
+    }
+  }
+  return initial_sync_ended_types;
 }
 
-bool Directory::initial_sync_ended_for_type(ModelType type) const {
-  ScopedKernelLock lock(this);
-  return kernel_->persisted_info.initial_sync_ended.Has(type);
+bool Directory::InitialSyncEndedForType(ModelType type) {
+  syncable::ReadTransaction trans(FROM_HERE, this);
+  return InitialSyncEndedForType(&trans, type);
+}
+
+bool Directory::InitialSyncEndedForType(
+    BaseTransaction* trans, ModelType type) {
+  // True iff the type's root node has been received and applied.
+  syncable::Entry entry(trans,
+                        syncable::GET_BY_SERVER_TAG,
+                        ModelTypeToRootTag(type));
+  return entry.good() && entry.Get(syncable::BASE_VERSION) != CHANGES_VERSION;
 }
 
 template <class T> void Directory::TestAndSet(
@@ -683,31 +736,6 @@ template <class T> void Directory::TestAndSet(
     *kernel_data = *data_to_set;
     kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
   }
-}
-
-void Directory::set_initial_sync_ended_for_type(ModelType type, bool x) {
-  ScopedKernelLock lock(this);
-  set_initial_sync_ended_for_type_unsafe(type, x);
-}
-
-void Directory::set_initial_sync_ended_for_type_unsafe(ModelType type,
-                                                       bool x) {
-  if (kernel_->persisted_info.initial_sync_ended.Has(type) == x)
-    return;
-  if (x) {
-    kernel_->persisted_info.initial_sync_ended.Put(type);
-  } else {
-    kernel_->persisted_info.initial_sync_ended.Remove(type);
-  }
-  kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
-}
-
-void Directory::SetNotificationStateUnsafe(
-    const std::string& notification_state) {
-  if (notification_state == kernel_->persisted_info.notification_state)
-    return;
-  kernel_->persisted_info.notification_state = notification_state;
-  kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
 }
 
 string Directory::store_birthday() const {
@@ -736,16 +764,6 @@ void Directory::set_bag_of_chips(const string& bag_of_chips) {
   kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
 }
 
-std::string Directory::GetNotificationState() const {
-  ScopedKernelLock lock(this);
-  std::string notification_state = kernel_->persisted_info.notification_state;
-  return notification_state;
-}
-
-void Directory::SetNotificationState(const std::string& notification_state) {
-  ScopedKernelLock lock(this);
-  SetNotificationStateUnsafe(notification_state);
-}
 
 string Directory::cache_guid() const {
   // No need to lock since nothing ever writes to it after load.
@@ -821,6 +839,22 @@ void Directory::GetUnappliedUpdateMetaHandles(
                 kernel_->unapplied_update_metahandles[type].end(),
                 back_inserter(*result));
     }
+  }
+}
+
+void Directory::CollectMetaHandleCounts(
+    std::vector<int>* num_entries_by_type,
+    std::vector<int>* num_to_delete_entries_by_type) {
+  syncable::ReadTransaction trans(FROM_HERE, this);
+  ScopedKernelLock lock(this);
+
+  MetahandlesIndex::iterator it = kernel_->metahandles_index->begin();
+  for( ; it != kernel_->metahandles_index->end(); ++it) {
+    EntryKernel* entry = *it;
+    const ModelType type = GetModelTypeFromSpecifics(entry->ref(SPECIFICS));
+    (*num_entries_by_type)[type]++;
+    if(entry->ref(IS_DEL))
+      (*num_to_delete_entries_by_type)[type]++;
   }
 }
 

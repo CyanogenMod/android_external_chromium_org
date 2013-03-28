@@ -9,11 +9,13 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "chrome/browser/ui/panels/detached_panel_strip.h"
-#include "chrome/browser/ui/panels/docked_panel_strip.h"
+#include "chrome/browser/ui/panels/detached_panel_collection.h"
+#include "chrome/browser/ui/panels/docked_panel_collection.h"
+#include "chrome/browser/ui/panels/native_panel_stack.h"
 #include "chrome/browser/ui/panels/panel_drag_controller.h"
 #include "chrome/browser/ui/panels/panel_mouse_watcher.h"
 #include "chrome/browser/ui/panels/panel_resize_controller.h"
+#include "chrome/browser/ui/panels/stacked_panel_collection.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
@@ -25,14 +27,10 @@
 #endif
 
 #if defined(OS_WIN)
-#include "base/win/metro.h"
+#include "win8/util/win8_util.h"
 #endif
 
 namespace {
-// Width of spacing around panel strip and the left/right edges of the screen.
-const int kPanelStripLeftMargin = 6;
-const int kPanelStripRightMargin = 24;
-
 // Maxmium width of a panel is based on a factor of the working area.
 #if defined(OS_CHROMEOS)
 // ChromeOS device screens are relatively small and limiting the width
@@ -48,6 +46,52 @@ const double kPanelMaxHeightFactor = 0.5;
 // Width to height ratio is used to compute the default width or height
 // when only one value is provided.
 const double kPanelDefaultWidthToHeightRatio = 1.62;  // golden ratio
+
+// When the stacking mode is enabled, the detached panel will be positioned
+// near the top of the working area such that the subsequent panel could be
+// stacked to the bottom of the detached panel. This value is experimental
+// and subjective.
+const int kDetachedPanelStartingYPositionOnStackingEnabled = 20;
+
+// The test code could call PanelManager::SetDisplaySettingsProviderForTesting
+// to set this for testing purpose.
+DisplaySettingsProvider* display_settings_provider_for_testing;
+
+// The following comparers are used by std::list<>::sort to determine which
+// stack or panel we want to seacrh first for adding new panel.
+bool ComparePanelsByPosition(Panel* panel1, Panel* panel2) {
+  gfx::Rect bounds1 = panel1->GetBounds();
+  gfx::Rect bounds2 = panel2->GetBounds();
+
+  // When there're ties, the right-most stack will appear first.
+  if (bounds1.x() > bounds2.x())
+    return true;
+  if (bounds1.x() < bounds2.x())
+    return false;
+
+  // In the event of another draw, the top-most stack will appear first.
+  return bounds1.y() < bounds2.y();
+}
+
+bool ComparerNumberOfPanelsInStack(StackedPanelCollection* stack1,
+                                   StackedPanelCollection* stack2) {
+  // The stack with more panels will appear first.
+  int num_panels_in_stack1 = stack1->num_panels();
+  int num_panels_in_stack2 = stack2->num_panels();
+  if (num_panels_in_stack1 > num_panels_in_stack2)
+    return true;
+  if (num_panels_in_stack1 < num_panels_in_stack2)
+    return false;
+
+  DCHECK(num_panels_in_stack1);
+
+  return ComparePanelsByPosition(stack1->top_panel(), stack2->top_panel());
+}
+
+bool CompareDetachedPanels(Panel* panel1, Panel* panel2) {
+  return ComparePanelsByPosition(panel1, panel2);
+}
+
 }  // namespace
 
 // static
@@ -60,14 +104,25 @@ PanelManager* PanelManager::GetInstance() {
 }
 
 // static
+void PanelManager::SetDisplaySettingsProviderForTesting(
+    DisplaySettingsProvider* provider) {
+  display_settings_provider_for_testing = provider;
+}
+
+// static
 bool PanelManager::ShouldUsePanels(const std::string& extension_id) {
 #if defined(TOOLKIT_GTK)
-  // Panels are only supported on a white list of window managers for Linux.
+  // If --enable-panels is on, always use panels on Linux.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnablePanels))
+    return true;
+
+  // Otherwise, panels are only supported on tested window managers.
   ui::WindowManagerName wm_type = ui::GuessWindowManager();
   if (wm_type != ui::WM_COMPIZ &&
       wm_type != ui::WM_ICE_WM &&
       wm_type != ui::WM_KWIN &&
       wm_type != ui::WM_METACITY &&
+      wm_type != ui::WM_MUFFIN &&
       wm_type != ui::WM_MUTTER &&
       wm_type != ui::WM_XFWM4) {
     return false;
@@ -76,7 +131,7 @@ bool PanelManager::ShouldUsePanels(const std::string& extension_id) {
 
 #if defined(OS_WIN)
   // No panels in Metro mode.
-  if (base::win::IsMetroProcess())
+  if (win8::IsSingleWindowMetroMode())
     return false;
 #endif // OS_WIN
 
@@ -94,57 +149,67 @@ bool PanelManager::ShouldUsePanels(const std::string& extension_id) {
   return true;
 }
 
+// static
+bool PanelManager::IsPanelStackingEnabled() {
+#if defined(OS_WIN)
+  return true;
+#else
+  return false;
+#endif
+}
+
 PanelManager::PanelManager()
     : panel_mouse_watcher_(PanelMouseWatcher::Create()),
       auto_sizing_enabled_(true) {
-  // DisplaySettingsProvider should be created before the creation of strips
-  // since some strip might depend on it.
-  display_settings_provider_.reset(DisplaySettingsProvider::Create());
-  display_settings_provider_->AddDisplayAreaObserver(this);
+  // DisplaySettingsProvider should be created before the creation of
+  // collections since some collection might depend on it.
+  if (display_settings_provider_for_testing)
+    display_settings_provider_.reset(display_settings_provider_for_testing);
+  else
+    display_settings_provider_.reset(DisplaySettingsProvider::Create());
+  display_settings_provider_->AddDisplayObserver(this);
 
-  detached_strip_.reset(new DetachedPanelStrip(this));
-  docked_strip_.reset(new DockedPanelStrip(this));
+  detached_collection_.reset(new DetachedPanelCollection(this));
+  docked_collection_.reset(new DockedPanelCollection(this));
   drag_controller_.reset(new PanelDragController(this));
   resize_controller_.reset(new PanelResizeController(this));
 }
 
 PanelManager::~PanelManager() {
-  display_settings_provider_->RemoveDisplayAreaObserver(this);
+  display_settings_provider_->RemoveDisplayObserver(this);
 
-  // Docked strip should be disposed explicitly before DisplaySettingsProvider
-  // is gone since docked strip needs to remove the observer from
-  // DisplaySettingsProvider.
-  docked_strip_.reset();
+  // Docked collection should be disposed explicitly before
+  // DisplaySettingsProvider is gone since docked collection needs to remove
+  // the observer from DisplaySettingsProvider.
+  docked_collection_.reset();
 }
 
 gfx::Point PanelManager::GetDefaultDetachedPanelOrigin() {
-  return detached_strip_->GetDefaultPanelOrigin();
+  return detached_collection_->GetDefaultPanelOrigin();
 }
 
-void PanelManager::OnDisplayAreaChanged(const gfx::Rect& display_area) {
-  if (display_area == display_area_)
-    return;
-  display_area_ = display_area;
-
-  gfx::Rect docked_strip_bounds = display_area;
-  docked_strip_bounds.set_x(display_area.x() + kPanelStripLeftMargin);
-  docked_strip_bounds.set_width(display_area.width() -
-                                kPanelStripLeftMargin - kPanelStripRightMargin);
-  docked_strip_->SetDisplayArea(docked_strip_bounds);
-
-  detached_strip_->SetDisplayArea(display_area);
+void PanelManager::OnDisplayChanged() {
+  docked_collection_->OnDisplayChanged();
+  detached_collection_->OnDisplayChanged();
+  for (Stacks::const_iterator iter = stacks_.begin();
+       iter != stacks_.end(); iter++)
+    (*iter)->OnDisplayChanged();
 }
 
 void PanelManager::OnFullScreenModeChanged(bool is_full_screen) {
-  docked_strip_->OnFullScreenModeChanged(is_full_screen);
+  std::vector<Panel*> all_panels = panels();
+  for (std::vector<Panel*>::const_iterator iter = all_panels.begin();
+       iter != all_panels.end(); ++iter) {
+    (*iter)->FullScreenModeChanged(is_full_screen);
+  }
 }
 
-int PanelManager::GetMaxPanelWidth() const {
-  return static_cast<int>(display_area_.width() * kPanelMaxWidthFactor);
+int PanelManager::GetMaxPanelWidth(const gfx::Rect& work_area) const {
+  return static_cast<int>(work_area.width() * kPanelMaxWidthFactor);
 }
 
-int PanelManager::GetMaxPanelHeight() const {
-  return display_area_.height() * kPanelMaxHeightFactor;
+int PanelManager::GetMaxPanelHeight(const gfx::Rect& work_area) const {
+  return static_cast<int>(work_area.height() * kPanelMaxHeightFactor);
 }
 
 Panel* PanelManager::CreatePanel(const std::string& app_name,
@@ -170,8 +235,10 @@ Panel* PanelManager::CreatePanel(const std::string& app_name,
   else if (height == 0)
     height = width / kPanelDefaultWidthToHeightRatio;
 
+  gfx::Rect work_area =
+      display_settings_provider_->GetWorkAreaMatching(requested_bounds);
   gfx::Size min_size(panel::kPanelMinWidth, panel::kPanelMinHeight);
-  gfx::Size max_size(GetMaxPanelWidth(), GetMaxPanelHeight());
+  gfx::Size max_size(GetMaxPanelWidth(work_area), GetMaxPanelHeight(work_area));
   if (width < min_size.width())
     width = min_size.width();
   else if (width > max_size.width())
@@ -184,10 +251,14 @@ Panel* PanelManager::CreatePanel(const std::string& app_name,
 
   gfx::Rect bounds(width, height);
   if (CREATE_AS_DOCKED == mode) {
-    bounds.set_origin(docked_strip_->GetDefaultPositionForPanel(bounds.size()));
+    bounds.set_origin(
+        docked_collection_->GetDefaultPositionForPanel(bounds.size()));
   } else {
-    bounds.set_origin(requested_bounds.origin());
-    bounds.AdjustToFit(display_settings_provider_->GetDisplayArea());
+    bounds.set_x(requested_bounds.x());
+    bounds.set_y(IsPanelStackingEnabled() ?
+        work_area.y() + kDetachedPanelStartingYPositionOnStackingEnabled :
+        requested_bounds.y());
+    bounds.AdjustToFit(work_area);
   }
 
   // Create the panel.
@@ -200,24 +271,117 @@ Panel* PanelManager::CreatePanel(const std::string& app_name,
     panel->SetAutoResizable(true);
   }
 
-  // Add the panel to the appropriate panel strip.
-  // Delay layout refreshes in case multiple panels are created within
-  // a short time of one another or the focus changes shortly after panel
-  // is created to avoid excessive screen redraws.
-  PanelStrip* panel_strip;
-  PanelStrip::PositioningMask positioning_mask;
-  if (CREATE_AS_DOCKED == mode) {
-    panel_strip = docked_strip_.get();
-    positioning_mask = PanelStrip::DELAY_LAYOUT_REFRESH;
-  } else {
-    panel_strip = detached_strip_.get();
-    positioning_mask = PanelStrip::KNOWN_POSITION;
-  }
-
-  panel_strip->AddPanel(panel, positioning_mask);
-  panel_strip->UpdatePanelOnStripChange(panel);
+  // Add the panel to the appropriate panel collection.
+  PanelCollection::PositioningMask positioning_mask;
+  PanelCollection* collection = GetCollectionForNewPanel(
+      panel, bounds, mode, &positioning_mask);
+  collection->AddPanel(panel, positioning_mask);
+  collection->UpdatePanelOnCollectionChange(panel);
 
   return panel;
+}
+
+PanelCollection* PanelManager::GetCollectionForNewPanel(
+    Panel* new_panel,
+    const gfx::Rect& bounds,
+    CreateMode mode,
+    PanelCollection::PositioningMask* positioning_mask) {
+  if (mode == CREATE_AS_DOCKED) {
+    // Delay layout refreshes in case multiple panels are created within
+    // a short time of one another or the focus changes shortly after panel
+    // is created to avoid excessive screen redraws.
+    *positioning_mask = PanelCollection::DELAY_LAYOUT_REFRESH;
+    return docked_collection_.get();
+  }
+
+  DCHECK_EQ(CREATE_AS_DETACHED, mode);
+  *positioning_mask = PanelCollection::DEFAULT_POSITION;
+
+  // If the stacking support is not enabled, new panel will still be created as
+  // detached.
+  if (!IsPanelStackingEnabled())
+    return detached_collection_.get();
+
+  // If there're stacks, try to find a stack that can fit new panel.
+  if (!stacks_.empty()) {
+    // Perform the search as:
+    // 1) Search from the stack with more panels to the stack with least panels.
+    // 2) Amongs the stacks with same number of panels, search from the right-
+    //    most stack to the left-most stack.
+    // 3) Among the stack with same number of panels and same x position,
+    //    search from the top-most stack to the bottom-most stack.
+    // 4) If there is not enough space to fit new panel even with all inactive
+    //    panels being collapsed, move to next stack.
+    stacks_.sort(ComparerNumberOfPanelsInStack);
+    for (Stacks::const_iterator iter = stacks_.begin();
+         iter != stacks_.end(); iter++) {
+      StackedPanelCollection* stack = *iter;
+
+      // Do not add to other stack that is from differnt extension or profile.
+      // Note that the check is based on bottom panel.
+      Panel* panel = stack->bottom_panel();
+      if (panel->profile() != new_panel->profile() ||
+          panel->extension_id() != new_panel->extension_id())
+        continue;
+
+      // Do not add to the stack that is minimized by the system.
+      if (stack->native_stack()->IsMinimized())
+        continue;
+
+      if (bounds.height() <= stack->GetMaximiumAvailableBottomSpace()) {
+        *positioning_mask = static_cast<PanelCollection::PositioningMask>(
+            *positioning_mask | PanelCollection::COLLAPSE_TO_FIT);
+        return stack;
+      }
+    }
+  }
+
+  // Then try to find a detached panel to which new panel can stack.
+  if (detached_collection_->num_panels()) {
+    // Perform the search as:
+    // 1) Search from the right-most detached panel to the left-most detached
+    //    panel.
+    // 2) Among the detached panels with same x position, search from the
+    //    top-most detached panel to the bottom-most deatched panel.
+    // 3) If there is not enough space beneath the detached panel, even by
+    //    collapsing it if it is inactive, to fit new panel, move to next
+    //    detached panel.
+    detached_collection_->SortPanels(CompareDetachedPanels);
+
+    for (DetachedPanelCollection::Panels::const_iterator iter =
+             detached_collection_->panels().begin();
+         iter != detached_collection_->panels().end(); ++iter) {
+      Panel* panel = *iter;
+
+      // Do not stack with other panel that is from differnt extension or
+      // profile.
+      if (panel->profile() != new_panel->profile() ||
+          panel->extension_id() != new_panel->extension_id())
+        continue;
+
+      // Do not stack with the panel that is minimized by the system.
+      if (panel->IsMinimizedBySystem())
+        continue;
+
+      gfx::Rect work_area =
+          display_settings_provider_->GetWorkAreaMatching(panel->GetBounds());
+      int max_available_space =
+          work_area.bottom() - panel->GetBounds().y() -
+          (panel->IsActive() ? panel->GetBounds().height()
+                             : panel::kTitlebarHeight);
+      if (bounds.height() <= max_available_space) {
+        StackedPanelCollection* new_stack = CreateStack();
+        MovePanelToCollection(panel,
+                              new_stack,
+                              PanelCollection::DEFAULT_POSITION);
+        *positioning_mask = static_cast<PanelCollection::PositioningMask>(
+            *positioning_mask | PanelCollection::COLLAPSE_TO_FIT);
+        return new_stack;
+      }
+    }
+  }
+
+  return detached_collection_.get();
 }
 
 void PanelManager::OnPanelClosed(Panel* panel) {
@@ -227,12 +391,45 @@ void PanelManager::OnPanelClosed(Panel* panel) {
 
   drag_controller_->OnPanelClosed(panel);
   resize_controller_->OnPanelClosed(panel);
-  panel->panel_strip()->RemovePanel(panel);
+
+  // Note that we need to keep track of panel's collection since it will be
+  // gone once RemovePanel is called.
+  PanelCollection* collection = panel->collection();
+  collection->RemovePanel(panel, PanelCollection::PANEL_CLOSED);
+
+  // If only one panel is left in the stack, move it out of the stack.
+  // Also make sure that this detached panel will be expanded if not yet.
+  if (collection->type() == PanelCollection::STACKED) {
+    StackedPanelCollection* stack =
+        static_cast<StackedPanelCollection*>(collection);
+    DCHECK_GE(stack->num_panels(), 1);
+    if (stack->num_panels() == 1) {
+      Panel* top_panel = stack->top_panel();
+      MovePanelToCollection(top_panel,
+                            detached_collection(),
+                            PanelCollection::DEFAULT_POSITION);
+      if (top_panel->expansion_state() != Panel::EXPANDED)
+        top_panel->SetExpansionState(Panel::EXPANDED);
+      RemoveStack(stack);
+    }
+  }
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PANEL_CLOSED,
       content::Source<Panel>(panel),
       content::NotificationService::NoDetails());
+}
+
+StackedPanelCollection* PanelManager::CreateStack() {
+  StackedPanelCollection* stack = new StackedPanelCollection(this);
+  stacks_.push_back(stack);
+  return stack;
+}
+
+void PanelManager::RemoveStack(StackedPanelCollection* stack) {
+  DCHECK_EQ(0, stack->num_panels());
+  stacks_.remove(stack);
+  stack->CloseAll();
 }
 
 void PanelManager::StartDragging(Panel* panel,
@@ -264,75 +461,89 @@ void PanelManager::ResizeByMouse(const gfx::Point& mouse_location) {
 void PanelManager::EndResizingByMouse(bool cancelled) {
   if (resize_controller_->IsResizing()) {
     Panel* resized_panel = resize_controller_->EndResizing(cancelled);
-    if (!cancelled && resized_panel->panel_strip())
-      resized_panel->panel_strip()->RefreshLayout();
+    if (!cancelled && resized_panel->collection())
+      resized_panel->collection()->RefreshLayout();
   }
 }
 
 void PanelManager::OnPanelExpansionStateChanged(Panel* panel) {
-  // For panels outside of the docked strip changing state is a no-op.
-  // But since this method may be called for panels in other strips
-  // we need to check this condition.
-  if (panel->panel_strip() == docked_strip_.get())
-    docked_strip_->OnPanelExpansionStateChanged(panel);
-
+  panel->collection()->OnPanelExpansionStateChanged(panel);
 }
 
-void PanelManager::MovePanelToStrip(
+void PanelManager::MovePanelToCollection(
     Panel* panel,
-    PanelStrip::Type new_layout,
-    PanelStrip::PositioningMask positioning_mask) {
+    PanelCollection* target_collection,
+    PanelCollection::PositioningMask positioning_mask) {
   DCHECK(panel);
-  PanelStrip* current_strip = panel->panel_strip();
-  DCHECK(current_strip);
-  DCHECK_NE(current_strip->type(), new_layout);
-  current_strip->RemovePanel(panel);
+  PanelCollection* current_collection = panel->collection();
+  DCHECK(current_collection);
+  DCHECK_NE(current_collection, target_collection);
+  current_collection->RemovePanel(panel,
+                                  PanelCollection::PANEL_CHANGED_COLLECTION);
 
-  PanelStrip* target_strip = NULL;
-  switch (new_layout) {
-    case PanelStrip::DETACHED:
-      target_strip = detached_strip_.get();
-      break;
-    case PanelStrip::DOCKED:
-      target_strip = docked_strip_.get();
-      break;
-    default:
-      NOTREACHED();
-  }
-
-  target_strip->AddPanel(panel, positioning_mask);
-  target_strip->UpdatePanelOnStripChange(panel);
+  target_collection->AddPanel(panel, positioning_mask);
+  target_collection->UpdatePanelOnCollectionChange(panel);
 }
 
 bool PanelManager::ShouldBringUpTitlebars(int mouse_x, int mouse_y) const {
-  return docked_strip_->ShouldBringUpTitlebars(mouse_x, mouse_y);
+  return docked_collection_->ShouldBringUpTitlebars(mouse_x, mouse_y);
 }
 
 void PanelManager::BringUpOrDownTitlebars(bool bring_up) {
-  docked_strip_->BringUpOrDownTitlebars(bring_up);
+  docked_collection_->BringUpOrDownTitlebars(bring_up);
 }
 
 void PanelManager::CloseAll() {
-  DCHECK(!drag_controller_->IsDragging());
+  DCHECK(!drag_controller_->is_dragging());
 
-  detached_strip_->CloseAll();
-  docked_strip_->CloseAll();
+  detached_collection_->CloseAll();
+  docked_collection_->CloseAll();
 }
 
 int PanelManager::num_panels() const {
-  return detached_strip_->num_panels() + docked_strip_->num_panels();
+  int count = detached_collection_->num_panels() +
+              docked_collection_->num_panels();
+  for (Stacks::const_iterator iter = stacks_.begin();
+       iter != stacks_.end(); iter++)
+    count += (*iter)->num_panels();
+  return count;
 }
 
 std::vector<Panel*> PanelManager::panels() const {
   std::vector<Panel*> panels;
-  for (DetachedPanelStrip::Panels::const_iterator iter =
-           detached_strip_->panels().begin();
-       iter != detached_strip_->panels().end(); ++iter)
+  for (DetachedPanelCollection::Panels::const_iterator iter =
+           detached_collection_->panels().begin();
+       iter != detached_collection_->panels().end(); ++iter)
     panels.push_back(*iter);
-  for (DockedPanelStrip::Panels::const_iterator iter =
-           docked_strip_->panels().begin();
-       iter != docked_strip_->panels().end(); ++iter)
+  for (DockedPanelCollection::Panels::const_iterator iter =
+           docked_collection_->panels().begin();
+       iter != docked_collection_->panels().end(); ++iter)
     panels.push_back(*iter);
+  for (Stacks::const_iterator stack_iter = stacks_.begin();
+       stack_iter != stacks_.end(); stack_iter++) {
+    for (StackedPanelCollection::Panels::const_iterator iter =
+             (*stack_iter)->panels().begin();
+         iter != (*stack_iter)->panels().end(); ++iter) {
+      panels.push_back(*iter);
+    }
+  }
+  return panels;
+}
+
+std::vector<Panel*> PanelManager::GetDetachedAndStackedPanels() const {
+  std::vector<Panel*> panels;
+  for (DetachedPanelCollection::Panels::const_iterator iter =
+           detached_collection_->panels().begin();
+       iter != detached_collection_->panels().end(); ++iter)
+    panels.push_back(*iter);
+  for (Stacks::const_iterator stack_iter = stacks_.begin();
+       stack_iter != stacks_.end(); stack_iter++) {
+    for (StackedPanelCollection::Panels::const_iterator iter =
+             (*stack_iter)->panels().begin();
+         iter != (*stack_iter)->panels().end(); ++iter) {
+      panels.push_back(*iter);
+    }
+  }
   return panels;
 }
 

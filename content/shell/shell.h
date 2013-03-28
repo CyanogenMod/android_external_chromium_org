@@ -1,7 +1,6 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 #ifndef CONTENT_SHELL_SHELL_H_
 #define CONTENT_SHELL_SHELL_H_
 
@@ -17,6 +16,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "ipc/ipc_channel.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/size.h"
 
 #if defined(TOOLKIT_GTK)
 #include <gtk/gtk.h>
@@ -25,18 +25,15 @@
 typedef struct _GtkToolItem GtkToolItem;
 #elif defined(OS_ANDROID)
 #include "base/android/scoped_java_ref.h"
-namespace content {
-class ContentViewLayerRenderer;
-}
 #elif defined(USE_AURA)
+#if defined(OS_CHROMEOS)
+namespace content {
+class MinimalAsh;
+}
+#endif
 namespace views {
 class Widget;
 class ViewsDelegate;
-}
-namespace aura {
-namespace client {
-class StackingClient;
-}
 }
 #endif
 
@@ -44,7 +41,8 @@ class GURL;
 namespace content {
 
 class BrowserContext;
-class ShellJavaScriptDialogCreator;
+class ShellDevToolsFrontend;
+class ShellJavaScriptDialogManager;
 class SiteInstance;
 class WebContents;
 
@@ -56,21 +54,27 @@ class Shell : public WebContentsDelegate,
   virtual ~Shell();
 
   void LoadURL(const GURL& url);
+  void LoadURLForFrame(const GURL& url, const std::string& frame_name);
   void GoBackOrForward(int offset);
   void Reload();
   void Stop();
   void UpdateNavigationControls();
   void Close();
   void ShowDevTools();
+  void CloseDevTools();
+#if (defined(OS_WIN) && !defined(USE_AURA)) || defined(TOOLKIT_GTK)
+  // Resizes the main window to the given dimensions.
+  void SizeTo(int width, int height);
+#endif
 
   // Do one time initialization at application startup.
-  static void PlatformInitialize();
+  static void Initialize();
 
   static Shell* CreateNewWindow(BrowserContext* browser_context,
                                 const GURL& url,
                                 SiteInstance* site_instance,
                                 int routing_id,
-                                WebContents* base_web_contents);
+                                const gfx::Size& initial_size);
 
   // Returns the Shell object corresponding to the given RenderViewHost.
   static Shell* FromRenderViewHost(RenderViewHost* rvh);
@@ -98,11 +102,6 @@ class Shell : public WebContentsDelegate,
 #elif defined(OS_ANDROID)
   // Registers the Android Java to native methods.
   static bool Register(JNIEnv* env);
-  // Called by the ShellManager to specify the object that should be notified of
-  // layer changes.
-  // Note that |content_view_layer_renderer| is owned by the ShellManager.
-  void SetContentViewLayerRenderer(
-      ContentViewLayerRenderer* content_view_layer_renderer);
 #endif
 
   // WebContentsDelegate
@@ -112,19 +111,24 @@ class Shell : public WebContentsDelegate,
 #if defined(OS_ANDROID)
   virtual void LoadProgressChanged(WebContents* source,
                                    double progress) OVERRIDE;
-  virtual void AttachLayer(WebContents* web_contents,
-                           WebKit::WebLayer* layer) OVERRIDE;
-  virtual void RemoveLayer(WebContents* web_contents,
-                           WebKit::WebLayer* layer) OVERRIDE;
 #endif
+  virtual void ToggleFullscreenModeForTab(WebContents* web_contents,
+                                          bool enter_fullscreen) OVERRIDE;
+  virtual bool IsFullscreenForTabOrPending(
+      const WebContents* web_contents) const OVERRIDE;
+  virtual void RequestToLockMouse(WebContents* web_contents,
+                                  bool user_gesture,
+                                  bool last_unlocked_by_target) OVERRIDE;
   virtual void CloseContents(WebContents* source) OVERRIDE;
+  virtual bool CanOverscrollContent() const OVERRIDE;
   virtual void WebContentsCreated(WebContents* source_contents,
                                   int64 source_frame_id,
+                                  const string16& frame_name,
                                   const GURL& target_url,
                                   WebContents* new_contents) OVERRIDE;
   virtual void DidNavigateMainFramePostCommit(
       WebContents* web_contents) OVERRIDE;
-  virtual JavaScriptDialogCreator* GetJavaScriptDialogCreator() OVERRIDE;
+  virtual JavaScriptDialogManager* GetJavaScriptDialogManager() OVERRIDE;
 #if defined(OS_MACOSX)
   virtual void HandleKeyboardEvent(
       WebContents* source,
@@ -136,6 +140,8 @@ class Shell : public WebContentsDelegate,
                                    int32 line_no,
                                    const string16& source_id) OVERRIDE;
   virtual void RendererUnresponsive(WebContents* source) OVERRIDE;
+  virtual void ActivateContents(WebContents* contents) OVERRIDE;
+  virtual void DeactivateContents(WebContents* contents) OVERRIDE;
 
  private:
   enum UIControl {
@@ -148,6 +154,9 @@ class Shell : public WebContentsDelegate,
 
   // Helper to create a new Shell given a newly created WebContents.
   static Shell* CreateShell(WebContents* web_contents);
+
+  // Helper for one time initialization of application
+  static void PlatformInitialize(const gfx::Size& default_window_size);
 
   // All the methods that begin with Platform need to be implemented by the
   // platform specific Shell implementation.
@@ -167,10 +176,11 @@ class Shell : public WebContentsDelegate,
   void PlatformSetIsLoading(bool loading);
   // Set the title of shell window
   void PlatformSetTitle(const string16& title);
-
-#if (defined(OS_WIN) && !defined(USE_AURA)) || defined(TOOLKIT_GTK)
-  // Resizes the main window to the given dimensions.
-  void SizeTo(int width, int height);
+#if defined(OS_ANDROID)
+  void PlatformToggleFullscreenModeForTab(WebContents* web_contents,
+                                          bool enter_fullscreen);
+  bool PlatformIsFullscreenForTabOrPending(
+      const WebContents* web_contents) const;
 #endif
 
   gfx::NativeView GetContentView();
@@ -200,9 +210,13 @@ class Shell : public WebContentsDelegate,
                      GObject*, guint, GdkModifierType);
 #endif
 
-  scoped_ptr<ShellJavaScriptDialogCreator> dialog_creator_;
+  scoped_ptr<ShellJavaScriptDialogManager> dialog_manager_;
 
   scoped_ptr<WebContents> web_contents_;
+
+  ShellDevToolsFrontend* devtools_frontend_;
+
+  bool is_fullscreen_;
 
   gfx::NativeWindow window_;
   gfx::NativeEditView url_edit_view_;
@@ -228,15 +242,16 @@ class Shell : public WebContentsDelegate,
   int content_height_;
 #elif defined(OS_ANDROID)
   base::android::ScopedJavaGlobalRef<jobject> java_object_;
-  // The ContentViewLayerRenderer that should be notified of compositing layer
-  // changes.  Global so guaranteed to outlive shell.
-  ContentViewLayerRenderer* content_view_layer_renderer_;
 #elif defined(USE_AURA)
-  static aura::client::StackingClient* stacking_client_;
+#if defined(OS_CHROMEOS)
+  static content::MinimalAsh* minimal_ash_;
+#endif
   static views::ViewsDelegate* views_delegate_;
 
   views::Widget* window_widget_;
 #endif
+
+  bool headless_;
 
   // A container of all the open windows. We use a vector so we can keep track
   // of ordering.

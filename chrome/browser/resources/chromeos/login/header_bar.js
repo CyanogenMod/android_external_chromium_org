@@ -7,13 +7,6 @@
  */
 
 cr.define('login', function() {
-  // Network state constants.
-  /** @const */ var NET_STATE = {
-    OFFLINE: 0,
-    ONLINE: 1,
-    PORTAL: 2
-  };
-
   /**
    * Creates a header bar element.
    * @constructor
@@ -27,17 +20,20 @@ cr.define('login', function() {
     // Whether guest button should be shown when header bar is in normal mode.
     showGuest_: false,
 
-    /** @inheritDoc */
+    // Current UI state of the sign-in screen.
+    signinUIState_: SIGNIN_UI_STATE.HIDDEN,
+
+    // Whether to show kiosk apps menu.
+    hasApps_: false,
+
+    /** @override */
     decorate: function() {
       $('shutdown-header-bar-item').addEventListener('click',
           this.handleShutdownClick_);
       $('shutdown-button').addEventListener('click',
           this.handleShutdownClick_);
-      $('add-user-button').addEventListener('click', function(e) {
-        chrome.send('loginRequestNetworkState',
-                    ['login.HeaderBar.handleAddUser',
-                     'check']);
-      });
+      $('add-user-button').addEventListener('click',
+          this.handleAddUserClick_);
       $('cancel-add-user-button').addEventListener('click',
           this.handleCancelAddUserClick_);
       $('guest-user-header-bar-item').addEventListener('click',
@@ -46,6 +42,11 @@ cr.define('login', function() {
           this.handleGuestClick_);
       $('sign-out-user-button').addEventListener('click',
           this.handleSignoutClick_);
+
+      if (loadTimeData.getBoolean('enableAppMode') &&
+          loadTimeData.getString('screenType') == 'login') {
+        login.AppsMenuButton.decorate($('show-apps-button'));
+      }
     },
 
     /**
@@ -65,9 +66,21 @@ cr.define('login', function() {
      */
     set disabled(value) {
       var buttons = this.getElementsByTagName('button');
-      for (var i = 0, button; button = buttons[i]; ++i) {
-        button.disabled = value;
-      }
+      for (var i = 0, button; button = buttons[i]; ++i)
+        if (!button.classList.contains('button-restricted'))
+          button.disabled = value;
+    },
+
+    /**
+     * Add user button click handler.
+     * @private
+     */
+    handleAddUserClick_: function(e) {
+      Oobe.showSigninUI();
+      // Prevent further propagation of click event. Otherwise, the click event
+      // handler of document object will set wallpaper to user's wallpaper when
+      // there is only one existing user. See http://crbug.com/166477
+      e.stopPropagation();
     },
 
     /**
@@ -75,8 +88,15 @@ cr.define('login', function() {
      * @private
      */
     handleCancelAddUserClick_: function(e) {
-      $('login-header-bar').signinUIActive = false;
+      // Let screen handle cancel itself if that is capable of doing so.
+      if (Oobe.getInstance().currentScreen &&
+          Oobe.getInstance().currentScreen.cancel) {
+        Oobe.getInstance().currentScreen.cancel();
+        return;
+      }
+
       $('pod-row').loadLastWallpaper();
+
       Oobe.showScreen({id: SCREEN_ACCOUNT_PICKER});
       Oobe.resetSigninUI(true);
     },
@@ -120,12 +140,12 @@ cr.define('login', function() {
     },
 
     /**
-     * If true then sign in UI is active and header controls
-     * should change accordingly.
-     * @type {boolean}
+     * Update current header bar UI.
+     * @type {number} state Current state of the sign-in screen
+     *                      (see SIGNIN_UI_STATE).
      */
-    set signinUIActive(value) {
-      this.signinUIActive_ = value;
+    set signinUIState(state) {
+      this.signinUIState_ = state;
       this.updateUI_();
     },
 
@@ -139,16 +159,42 @@ cr.define('login', function() {
     },
 
     /**
+     * Update whether there are kiosk apps.
+     * @type {boolean}
+     */
+    set hasApps(value) {
+      this.hasApps_ = value;
+      this.updateUI_();
+    },
+
+    /**
      * Updates visibility state of action buttons.
      * @private
      */
     updateUI_: function() {
-      $('add-user-header-bar-item').hidden = false;
-      $('add-user-button').hidden = this.signinUIActive_;
-      $('cancel-add-user-button').hidden =
-          !this.signinUIActive_ || !this.allowCancel_;
-      $('guest-user-header-bar-item').hidden =
-          this.signinUIActive_ || !this.showGuest_;
+      var gaiaIsActive = (this.signinUIState_ == SIGNIN_UI_STATE.GAIA_SIGNIN);
+      var accountPickerIsActive =
+          (this.signinUIState_ == SIGNIN_UI_STATE.ACCOUNT_PICKER);
+      var managedUserCreationDialogIsActive =
+          (this.signinUIState_ == SIGNIN_UI_STATE.MANAGED_USER_CREATION_DIALOG);
+      var wrongHWIDWarningIsActive =
+          (this.signinUIState_ == SIGNIN_UI_STATE.WRONG_HWID_WARNING);
+
+      $('add-user-button').hidden = !accountPickerIsActive;
+      $('cancel-add-user-button').hidden = accountPickerIsActive ||
+          !this.allowCancel_ ||
+          wrongHWIDWarningIsActive;
+      $('guest-user-header-bar-item').hidden = gaiaIsActive ||
+          managedUserCreationDialogIsActive ||
+          !this.showGuest_ ||
+          wrongHWIDWarningIsActive;
+      $('add-user-header-bar-item').hidden =
+          $('add-user-button').hidden && $('cancel-add-user-button').hidden;
+      $('apps-header-bar-item').hidden = !this.hasApps_ ||
+          (!gaiaIsActive && !accountPickerIsActive);
+
+      if (!$('apps-header-bar-item').hidden)
+        $('show-apps-button').didShow();
     },
 
     /**
@@ -175,44 +221,6 @@ cr.define('login', function() {
       this.classList.add('login-header-bar-animate-slow');
       this.classList.remove('login-header-bar-hidden');
     },
-  };
-
-  /**
-   * Continues add user button click handling after network state has
-   * been recieved.
-   * @param {number} state Current state of the network (see NET_STATE).
-   * @param {string} network Name of the network.
-   * @param {string} reason Reason the callback was called.
-   * @param {number} last Last active network type.
-   */
-  HeaderBar.handleAddUser = function(state, network, reason, last) {
-    if (state != NET_STATE.OFFLINE) {
-      Oobe.showSigninUI();
-    } else {
-      /** @const */ var BUBBLE_OFFSET = 8;
-      /** @const */ var BUBBLE_PADDING = 5;
-      $('bubble').showTextForElement(
-          $('add-user-button'),
-          localStrings.getString('addUserErrorMessage'),
-          cr.ui.Bubble.Attachment.TOP, BUBBLE_OFFSET, BUBBLE_PADDING);
-      chrome.send('loginAddNetworkStateObserver',
-                  ['login.HeaderBar.bubbleWatchdog']);
-    }
-  };
-
-  /**
-   * Observes network state, and close the bubble when network becomes online.
-   * @param {number} state Current state of the network (see NET_STATE).
-   * @param {string} network Name of the network.
-   * @param {string} reason Reason the callback was called.
-   * @param {number} last Last active network type.
-   */
-  HeaderBar.bubbleWatchdog = function(state, network, reason, last) {
-    if (state != NET_STATE.OFFLINE) {
-      $('bubble').hideForElement($('add-user-button'));
-      chrome.send('loginRemoveNetworkStateObserver',
-                  ['login.HeaderBar.bubbleWatchdog']);
-    }
   };
 
   return {

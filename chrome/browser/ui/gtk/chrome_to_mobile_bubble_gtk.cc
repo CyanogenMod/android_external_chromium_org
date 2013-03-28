@@ -105,7 +105,7 @@ void ChromeToMobileBubbleGtk::Observe(
     gtk_widget_modify_fg(*it, GTK_STATE_NORMAL, color);
 }
 
-void ChromeToMobileBubbleGtk::SnapshotGenerated(const FilePath& path,
+void ChromeToMobileBubbleGtk::SnapshotGenerated(const base::FilePath& path,
                                                 int64 bytes) {
   snapshot_path_ = path;
   if (bytes > 0) {
@@ -245,11 +245,10 @@ ChromeToMobileBubbleGtk::ChromeToMobileBubbleGtk(GtkWidget* anchor_widget,
   // Initialize focus to the send button.
   gtk_container_set_focus_child(GTK_CONTAINER(content), send_);
 
-  BubbleGtk::ArrowLocationGtk arrow_location = base::i18n::IsRTL() ?
-      BubbleGtk::ARROW_LOCATION_TOP_LEFT : BubbleGtk::ARROW_LOCATION_TOP_RIGHT;
+  BubbleGtk::FrameStyle frame_style = BubbleGtk::ANCHOR_TOP_RIGHT;
   const int attribute_flags = BubbleGtk::MATCH_SYSTEM_THEME |
                               BubbleGtk::POPUP_WINDOW | BubbleGtk::GRAB_INPUT;
-  bubble_ = BubbleGtk::Show(anchor_widget_, NULL, content, arrow_location,
+  bubble_ = BubbleGtk::Show(anchor_widget_, NULL, content, frame_style,
                             attribute_flags, theme_service_, this /*delegate*/);
   if (!bubble_) {
     NOTREACHED();
@@ -305,7 +304,7 @@ void ChromeToMobileBubbleGtk::OnSendClicked(GtkWidget* widget) {
   const DictionaryValue* mobile = NULL;
   if (mobiles->GetDictionary(selected_index, &mobile)) {
     bool snapshot = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(send_copy_));
-    service_->SendToMobile(mobile, snapshot ? snapshot_path_ : FilePath(),
+    service_->SendToMobile(mobile, snapshot ? snapshot_path_ : base::FilePath(),
                            browser_, weak_ptr_factory_.GetWeakPtr());
   } else {
     NOTREACHED();

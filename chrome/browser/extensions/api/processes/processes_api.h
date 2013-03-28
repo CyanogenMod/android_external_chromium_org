@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
@@ -45,7 +46,6 @@ class ProcessesEventRouter : public TaskManagerModelObserver,
   void StartTaskManagerListening();
 
   bool is_task_manager_listening() { return task_manager_listening_; }
-  int num_listeners() { return listeners_; }
 
  private:
   // content::NotificationObserver implementation.
@@ -92,7 +92,7 @@ class ProcessesEventRouter : public TaskManagerModelObserver,
 };
 
 // The profile-keyed service that manages the processes extension API.
-class ProcessesAPI : public ProfileKeyedService,
+class ProcessesAPI : public ProfileKeyedAPI,
                      public EventRouter::Observer {
  public:
   explicit ProcessesAPI(Profile* profile);
@@ -101,17 +101,29 @@ class ProcessesAPI : public ProfileKeyedService,
   // ProfileKeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
+  // ProfileKeyedAPI implementation.
+  static ProfileKeyedAPIFactory<ProcessesAPI>* GetFactoryInstance();
+
   // Convenience method to get the ProcessesAPI for a profile.
   static ProcessesAPI* Get(Profile* profile);
 
   ProcessesEventRouter* processes_event_router();
 
   // EventRouter::Observer implementation.
-  virtual void OnListenerAdded(const std::string& event_name) OVERRIDE;
-  virtual void OnListenerRemoved(const std::string& event_name) OVERRIDE;
+  virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
+  virtual void OnListenerRemoved(const EventListenerInfo& details) OVERRIDE;
 
  private:
+  friend class ProfileKeyedAPIFactory<ProcessesAPI>;
+
   Profile* profile_;
+
+  // ProfileKeyedAPI implementation.
+  static const char* service_name() {
+    return "ProcessesAPI";
+  }
+  static const bool kServiceRedirectedInIncognito = true;
+  static const bool kServiceIsNULLWhileTesting = true;
 
   // Created lazily on first access.
   scoped_ptr<ProcessesEventRouter> processes_event_router_;
@@ -140,7 +152,8 @@ class GetProcessIdForTabFunction : public AsyncExtensionFunction,
   // Storage for the tab ID parameter.
   int tab_id_;
 
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.processes.getProcessIdForTab")
+  DECLARE_EXTENSION_FUNCTION("experimental.processes.getProcessIdForTab",
+                             EXPERIMENTAL_PROCESSES_GETPROCESSIDFORTAB)
 };
 
 // Extension function that allows terminating Chrome subprocesses, by supplying
@@ -169,7 +182,8 @@ class TerminateFunction : public AsyncExtensionFunction,
   // Storage for the process ID parameter.
   int process_id_;
 
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.processes.terminate")
+  DECLARE_EXTENSION_FUNCTION("experimental.processes.terminate",
+                             EXPERIMENTAL_PROCESSES_TERMINATE)
 };
 
 // Extension function which returns a set of Process objects, containing the
@@ -198,7 +212,8 @@ class GetProcessInfoFunction : public AsyncExtensionFunction,
   bool memory_;
 #endif
 
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.processes.getProcessInfo")
+  DECLARE_EXTENSION_FUNCTION("experimental.processes.getProcessInfo",
+                             EXPERIMENTAL_PROCESSES_GETPROCESSINFO)
 };
 
 }  // namespace extensions

@@ -11,14 +11,12 @@
 #include "chromeos/dbus/mock_bluetooth_manager_client.h"
 #include "chromeos/dbus/mock_bluetooth_node_client.h"
 #include "chromeos/dbus/mock_bluetooth_out_of_band_client.h"
-#include "chromeos/dbus/mock_cashew_client.h"
 #include "chromeos/dbus/mock_cros_disks_client.h"
 #include "chromeos/dbus/mock_cryptohome_client.h"
 #include "chromeos/dbus/mock_debug_daemon_client.h"
 #include "chromeos/dbus/mock_shill_device_client.h"
 #include "chromeos/dbus/mock_shill_ipconfig_client.h"
 #include "chromeos/dbus/mock_shill_manager_client.h"
-#include "chromeos/dbus/mock_shill_network_client.h"
 #include "chromeos/dbus/mock_shill_profile_client.h"
 #include "chromeos/dbus/mock_shill_service_client.h"
 #include "chromeos/dbus/mock_gsm_sms_client.h"
@@ -29,8 +27,9 @@
 #include "chromeos/dbus/mock_power_manager_client.h"
 #include "chromeos/dbus/mock_session_manager_client.h"
 #include "chromeos/dbus/mock_sms_client.h"
-#include "chromeos/dbus/mock_speech_synthesizer_client.h"
+#include "chromeos/dbus/mock_system_clock_client.h"
 #include "chromeos/dbus/mock_update_engine_client.h"
+#include "chromeos/dbus/power_policy_controller.h"
 
 using ::testing::AnyNumber;
 using ::testing::Return;
@@ -46,14 +45,12 @@ MockDBusThreadManager::MockDBusThreadManager()
       mock_bluetooth_manager_client_(new MockBluetoothManagerClient),
       mock_bluetooth_node_client_(new MockBluetoothNodeClient),
       mock_bluetooth_out_of_band_client_(new MockBluetoothOutOfBandClient),
-      mock_cashew_client_(new MockCashewClient),
       mock_cros_disks_client_(new MockCrosDisksClient),
       mock_cryptohome_client_(new MockCryptohomeClient),
       mock_debugdaemon_client_(new MockDebugDaemonClient),
       mock_shill_device_client_(new MockShillDeviceClient),
       mock_shill_ipconfig_client_(new MockShillIPConfigClient),
       mock_shill_manager_client_(new MockShillManagerClient),
-      mock_shill_network_client_(new MockShillNetworkClient),
       mock_shill_profile_client_(new MockShillProfileClient),
       mock_shill_service_client_(new MockShillServiceClient),
       mock_gsm_sms_client_(new MockGsmSMSClient),
@@ -64,7 +61,7 @@ MockDBusThreadManager::MockDBusThreadManager()
       mock_power_manager_client_(new MockPowerManagerClient),
       mock_session_manager_client_(new MockSessionManagerClient),
       mock_sms_client_(new MockSMSClient),
-      mock_speech_synthesizer_client_(new MockSpeechSynthesizerClient),
+      mock_system_clock_client_(new MockSystemClockClient),
       mock_update_engine_client_(new MockUpdateEngineClient) {
   EXPECT_CALL(*this, GetBluetoothAdapterClient())
       .WillRepeatedly(Return(mock_bluetooth_adapter_client_.get()));
@@ -78,8 +75,6 @@ MockDBusThreadManager::MockDBusThreadManager()
       .WillRepeatedly(Return(mock_bluetooth_node_client_.get()));
   EXPECT_CALL(*this, GetBluetoothOutOfBandClient())
       .WillRepeatedly(Return(mock_bluetooth_out_of_band_client_.get()));
-  EXPECT_CALL(*this, GetCashewClient())
-      .WillRepeatedly(Return(mock_cashew_client()));
   EXPECT_CALL(*this, GetCrosDisksClient())
       .WillRepeatedly(Return(mock_cros_disks_client()));
   EXPECT_CALL(*this, GetCryptohomeClient())
@@ -92,8 +87,6 @@ MockDBusThreadManager::MockDBusThreadManager()
       .WillRepeatedly(Return(mock_shill_ipconfig_client()));
   EXPECT_CALL(*this, GetShillManagerClient())
       .WillRepeatedly(Return(mock_shill_manager_client()));
-  EXPECT_CALL(*this, GetShillNetworkClient())
-      .WillRepeatedly(Return(mock_shill_network_client()));
   EXPECT_CALL(*this, GetShillProfileClient())
       .WillRepeatedly(Return(mock_shill_profile_client()));
   EXPECT_CALL(*this, GetShillServiceClient())
@@ -112,24 +105,51 @@ MockDBusThreadManager::MockDBusThreadManager()
       .WillRepeatedly(Return(mock_session_manager_client_.get()));
   EXPECT_CALL(*this, GetSMSClient())
       .WillRepeatedly(Return(mock_sms_client_.get()));
-  EXPECT_CALL(*this, GetSpeechSynthesizerClient())
-      .WillRepeatedly(Return(mock_speech_synthesizer_client_.get()));
+  EXPECT_CALL(*this, GetSystemClockClient())
+      .WillRepeatedly(Return(mock_system_clock_client()));
   EXPECT_CALL(*this, GetUpdateEngineClient())
       .WillRepeatedly(Return(mock_update_engine_client_.get()));
+  EXPECT_CALL(*this, GetIBusInputContextClient())
+      .WillRepeatedly(ReturnNull());
+  EXPECT_CALL(*this, GetIBusConfigClient())
+      .WillRepeatedly(ReturnNull());
 
+  EXPECT_CALL(*this, GetSystemBus())
+      .WillRepeatedly(ReturnNull());
   EXPECT_CALL(*this, GetIBusBus())
       .WillRepeatedly(ReturnNull());
 
-  // These observers calls are used in ChromeBrowserMainPartsChromeos.
+  // |power_policy_controller_| calls some of these from the constructor, so
+  // set these expectations before creating the controller.
   EXPECT_CALL(*mock_power_manager_client_.get(), AddObserver(_))
       .Times(AnyNumber());
   EXPECT_CALL(*mock_power_manager_client_.get(), RemoveObserver(_))
       .Times(AnyNumber());
+  EXPECT_CALL(*mock_power_manager_client_.get(), NotifyUserActivity())
+      .Times(AnyNumber());
+  EXPECT_CALL(*mock_power_manager_client_.get(), NotifyVideoActivity(_, _))
+      .Times(AnyNumber());
+  EXPECT_CALL(*mock_power_manager_client_.get(), SetPolicy(_))
+      .Times(AnyNumber());
+  power_policy_controller_.reset(
+      new PowerPolicyController(this, mock_power_manager_client_.get()));
+  EXPECT_CALL(*this, GetPowerPolicyController())
+      .WillRepeatedly(Return(power_policy_controller_.get()));
+
+  // These observers calls are used in ChromeBrowserMainPartsChromeos.
   EXPECT_CALL(*mock_session_manager_client_.get(), AddObserver(_))
       .Times(AnyNumber());
   EXPECT_CALL(*mock_session_manager_client_.get(), RemoveObserver(_))
       .Times(AnyNumber());
+  EXPECT_CALL(*mock_session_manager_client_.get(), HasObserver(_))
+      .Times(AnyNumber());
   EXPECT_CALL(*mock_update_engine_client_.get(), AddObserver(_))
+      .Times(AnyNumber());
+  EXPECT_CALL(*mock_system_clock_client_.get(), AddObserver(_))
+      .Times(AnyNumber());
+  EXPECT_CALL(*mock_system_clock_client_.get(), RemoveObserver(_))
+      .Times(AnyNumber());
+  EXPECT_CALL(*mock_system_clock_client_.get(), HasObserver(_))
       .Times(AnyNumber());
   EXPECT_CALL(*mock_update_engine_client_.get(), RemoveObserver(_))
       .Times(AnyNumber());
@@ -161,20 +181,32 @@ MockDBusThreadManager::MockDBusThreadManager()
   // Called from DiskMountManager::Initialize(), ChromeBrowserMainPartsChromeos.
   EXPECT_CALL(*mock_cros_disks_client_.get(), SetUpConnections(_, _))
       .Times(AnyNumber());
+  EXPECT_CALL(*mock_cros_disks_client_.get(),
+              EnumerateAutoMountableDevices(_, _))
+      .Times(AnyNumber());
 
   // Called from BluetoothManagerImpl ctor.
   EXPECT_CALL(*mock_bluetooth_manager_client_.get(), DefaultAdapter(_))
       .Times(AnyNumber());
 
   // Called from AsyncMethodCaller ctor and dtor.
-  EXPECT_CALL(*mock_cryptohome_client_.get(), SetAsyncCallStatusHandler(_))
+  EXPECT_CALL(*mock_cryptohome_client_.get(), SetAsyncCallStatusHandlers(_, _))
       .Times(AnyNumber());
-  EXPECT_CALL(*mock_cryptohome_client_.get(), ResetAsyncCallStatusHandler())
+  EXPECT_CALL(*mock_cryptohome_client_.get(), ResetAsyncCallStatusHandlers())
       .Times(AnyNumber());
 
   // Called from BrightnessController::GetBrightnessPercent as part of ash tray
   // initialization.
   EXPECT_CALL(*mock_power_manager_client_.get(), GetScreenBrightnessPercent(_))
+      .Times(AnyNumber());
+
+  // Called from GeolocationHandler::Init().
+  EXPECT_CALL(*mock_shill_manager_client_.get(), GetProperties(_))
+      .Times(AnyNumber());
+  EXPECT_CALL(*mock_shill_manager_client_.get(), AddPropertyChangedObserver(_))
+      .Times(AnyNumber());
+  EXPECT_CALL(*mock_shill_manager_client_.get(),
+              RemovePropertyChangedObserver(_))
       .Times(AnyNumber());
 }
 

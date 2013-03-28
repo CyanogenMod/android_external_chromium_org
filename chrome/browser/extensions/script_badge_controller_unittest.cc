@@ -59,7 +59,7 @@ class ScriptBadgeControllerTest : public ChromeRenderViewHostTestHarness {
     // extensions.
     CommandLine command_line(CommandLine::NO_PROGRAM);
     extension_service_ = extension_system->CreateExtensionService(
-        &command_line, FilePath(), false);
+        &command_line, base::FilePath(), false);
 
     TabHelper::CreateForWebContents(web_contents());
     script_badge_controller_ = static_cast<ScriptBadgeController*>(
@@ -203,7 +203,6 @@ TEST_F(ScriptBadgeControllerTest, FragmentNavigation) {
 
     EXPECT_THAT(script_badge_controller_->GetCurrentActions(),
                 testing::ElementsAre());
-    EXPECT_EQ(0, location_bar_updated.events);
   }
 }
 

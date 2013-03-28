@@ -7,7 +7,7 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/files/file_path_watcher.h"
 #include "chrome/browser/policy/async_policy_loader.h"
 
@@ -42,7 +42,7 @@ class PolicyLoaderMac : public AsyncPolicyLoader {
 
  private:
   // Callback for the FilePathWatcher.
-  void OnFileUpdated(const FilePath& path, bool error);
+  void OnFileUpdated(const base::FilePath& path, bool error);
 
   // List of recognized policies.
   const PolicyDefinitionList* policy_list_;
@@ -51,10 +51,10 @@ class PolicyLoaderMac : public AsyncPolicyLoader {
 
   // Path to the managed preferences file for the current user, if it could
   // be found. Updates of this file trigger a policy reload.
-  FilePath managed_policy_path_;
+  base::FilePath managed_policy_path_;
 
   // Watches for events on the |managed_policy_path_|.
-  base::files::FilePathWatcher watcher_;
+  base::FilePathWatcher watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(PolicyLoaderMac);
 };

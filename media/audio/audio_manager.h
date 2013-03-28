@@ -35,6 +35,11 @@ class MEDIA_EXPORT AudioManager {
   // NOTE: There should only be one instance.
   static AudioManager* Create();
 
+  // Returns the pointer to the last created instance, or NULL if not yet
+  // created. This is a utility method for the code outside of media directory,
+  // like src/chrome.
+  static AudioManager* Get();
+
   // Returns true if the OS reports existence of audio devices. This does not
   // guarantee that the existing devices support all formats and sample rates.
   virtual bool HasAudioOutputDevices() = 0;
@@ -47,10 +52,6 @@ class MEDIA_EXPORT AudioManager {
   // Returns a human readable string for the model/make of the active audio
   // input device for this computer.
   virtual string16 GetAudioInputDeviceModel() = 0;
-
-  // Returns true if the platform specific audio input settings UI is known
-  // and can be shown.
-  virtual bool CanShowAudioInputSettings() = 0;
 
   // Opens the platform default audio input settings UI.
   // Note: This could invoke an external application/preferences pane, so
@@ -123,6 +124,18 @@ class MEDIA_EXPORT AudioManager {
   virtual void AddOutputDeviceChangeListener(AudioDeviceListener* listener) = 0;
   virtual void RemoveOutputDeviceChangeListener(
       AudioDeviceListener* listener) = 0;
+
+  // Returns the default output hardware audio parameters for opening output
+  // streams. It is a convenience interface to
+  // AudioManagerBase::GetPreferredOutputStreamParameters and each AudioManager
+  // does not need their own implementation to this interface.
+  virtual AudioParameters GetDefaultOutputStreamParameters() = 0;
+
+  // Returns the input hardware audio parameters of the specific device
+  // for opening input streams. Each AudioManager needs to implement their own
+  // version of this interface.
+  virtual AudioParameters GetInputStreamParameters(
+      const std::string& device_id) = 0;
 
  protected:
   AudioManager();

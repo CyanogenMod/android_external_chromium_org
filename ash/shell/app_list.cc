@@ -20,6 +20,7 @@
 #include "ui/app_list/search_result.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/examples/examples_window_with_content.h"
 
@@ -42,7 +43,7 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
   };
 
   explicit WindowTypeLauncherItem(Type type) : type_(type) {
-    SetIcon(GetIcon(type));
+    SetIcon(GetIcon(type), false);
     SetTitle(GetTitle(type));
   }
 
@@ -60,7 +61,7 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
     icon.setConfig(SkBitmap::kARGB_8888_Config, kIconSize, kIconSize);
     icon.allocPixels();
     icon.eraseColor(kColors[static_cast<int>(type) % arraysize(kColors)]);
-    return gfx::ImageSkia(icon);
+    return gfx::ImageSkia::CreateFrom1xBitmap(icon);
   }
 
   // The text below is not localized as this is an example code.
@@ -193,8 +194,6 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
          ++i) {
       WindowTypeLauncherItem::Type type =
           static_cast<WindowTypeLauncherItem::Type>(i);
-
-      std::string title = WindowTypeLauncherItem::GetTitle(type);
       apps->Add(new WindowTypeLauncherItem(type));
     }
   }
@@ -225,6 +224,10 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     model_ = model;
     PopulateApps(model_->apps());
     DecorateSearchBox(model_->search_box());
+  }
+
+  virtual app_list::SigninDelegate* GetSigninDelegate() OVERRIDE {
+    return NULL;
   }
 
   virtual void ActivateAppListItem(app_list::AppListItemModel* item,
@@ -272,10 +275,10 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     // Nothing needs to be done.
   }
 
-  virtual void Close() OVERRIDE {
+  virtual void Dismiss() OVERRIDE {
     DCHECK(ash::Shell::HasInstance());
     if (Shell::GetInstance()->GetAppListTargetVisibility())
-      Shell::GetInstance()->ToggleAppList();
+      Shell::GetInstance()->ToggleAppList(NULL);
   }
 
   virtual void ViewClosing() OVERRIDE {
@@ -283,6 +286,26 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   }
 
   virtual void ViewActivationChanged(bool active) OVERRIDE {
+    // Nothing needs to be done.
+  }
+
+  virtual gfx::ImageSkia GetWindowIcon() OVERRIDE {
+    return gfx::ImageSkia();
+  }
+
+  virtual string16 GetCurrentUserName() {
+    return string16();
+  }
+
+  virtual string16 GetCurrentUserEmail() {
+    return string16();
+  }
+
+  virtual void OpenSettings() {
+    // Nothing needs to be done.
+  }
+
+  virtual void OpenFeedback() {
     // Nothing needs to be done.
   }
 

@@ -9,23 +9,32 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "base/process.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
 #include "remoting/base/stoppable.h"
 #include "remoting/host/config_file_watcher.h"
+#include "remoting/host/host_status_monitor.h"
 #include "remoting/host/worker_process_ipc_delegate.h"
 
-class FilePath;
+struct SerializedTransportRoute;
+
+namespace tracked_objects {
+class Location;
+}  // namespace tracked_objects
 
 namespace remoting {
 
 class AutoThreadTaskRunner;
 class DesktopSession;
+class HostEventLogger;
+class HostStatusObserver;
+class ScreenResolution;
 
 // This class implements core of the daemon process. It manages the networking
 // process running at lower privileges and maintains the list of desktop
@@ -33,6 +42,7 @@ class DesktopSession;
 class DaemonProcess
     : public Stoppable,
       public ConfigFileWatcher::Delegate,
+      public HostStatusMonitor,
       public WorkerProcessIpcDelegate {
  public:
   typedef std::list<DesktopSession*> DesktopSessionList;
@@ -51,6 +61,10 @@ class DaemonProcess
   // ConfigFileWatcher::Delegate
   virtual void OnConfigUpdated(const std::string& serialized_config) OVERRIDE;
   virtual void OnConfigWatcherError() OVERRIDE;
+
+  // HostStatusMonitor interface.
+  virtual void AddStatusObserver(HostStatusObserver* observer) OVERRIDE;
+  virtual void RemoveStatusObserver(HostStatusObserver* observer) OVERRIDE;
 
   // WorkerProcessIpcDelegate implementation.
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
@@ -79,7 +93,13 @@ class DaemonProcess
                 const base::Closure& stopped_callback);
 
   // Creates a desktop session and assigns a unique ID to it.
-  void CreateDesktopSession(int terminal_id);
+  void CreateDesktopSession(int terminal_id,
+                            const ScreenResolution& resolution,
+                            bool virtual_terminal);
+
+  // Changes the screen resolution of the desktop session identified by
+  // |terminal_id|.
+  void SetScreenResolution(int terminal_id, const ScreenResolution& resolution);
 
   // Requests the network process to crash.
   void CrashNetworkProcess(const tracked_objects::Location& location);
@@ -87,16 +107,35 @@ class DaemonProcess
   // Reads the host configuration and launches the network process.
   void Initialize();
 
-  // Returns true if |terminal_id| is considered to be known. I.e. it is
+  // Returns true if |terminal_id| is in the range of allocated IDs. I.e. it is
   // less or equal to the highest ID we have seen so far.
-  bool IsTerminalIdKnown(int terminal_id);
+  bool WasTerminalIdAllocated(int terminal_id);
+
+  // Handlers for the host status notifications received from the network
+  // process.
+  void OnAccessDenied(const std::string& jid);
+  void OnClientAuthenticated(const std::string& jid);
+  void OnClientConnected(const std::string& jid);
+  void OnClientDisconnected(const std::string& jid);
+  void OnClientRouteChange(const std::string& jid,
+                           const std::string& channel_name,
+                           const SerializedTransportRoute& route);
+  void OnHostStarted(const std::string& xmpp_login);
+  void OnHostShutdown();
 
   // Stoppable implementation.
   virtual void DoStop() OVERRIDE;
 
   // Creates a platform-specific desktop session and assigns a unique ID to it.
+  // An implementation should validate |params| as they are received via IPC.
   virtual scoped_ptr<DesktopSession> DoCreateDesktopSession(
-      int terminal_id) = 0;
+      int terminal_id,
+      const ScreenResolution& resolution,
+      bool virtual_terminal) = 0;
+
+  // Requests the network process to crash.
+  virtual void DoCrashNetworkProcess(
+      const tracked_objects::Location& location) = 0;
 
   // Launches the network process and establishes an IPC channel with it.
   virtual void LaunchNetworkProcess() = 0;
@@ -135,6 +174,14 @@ class DaemonProcess
 
   // The highest desktop session ID that has been seen so far.
   int next_terminal_id_;
+
+  // Keeps track of observers receiving host status notifications.
+  ObserverList<HostStatusObserver> status_observers_;
+
+  // Writes host status updates to the system event log.
+  scoped_ptr<HostEventLogger> host_event_logger_;
+
+  base::WeakPtrFactory<DaemonProcess> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DaemonProcess);
 };

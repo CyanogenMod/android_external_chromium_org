@@ -5,14 +5,26 @@
 #include "chrome/browser/captive_portal/captive_portal_detector.h"
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
-#include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
 
 namespace captive_portal {
+
+namespace {
+
+const char* const kCaptivePortalResultNames[] = {
+  "InternetConnected",
+  "NoResponse",
+  "BehindCaptivePortal",
+  "NumCaptivePortalResults",
+};
+COMPILE_ASSERT(arraysize(kCaptivePortalResultNames) == RESULT_COUNT + 1,
+               captive_portal_result_name_count_mismatch);
+
+}  // namespace
 
 const char CaptivePortalDetector::kDefaultURL[] =
     "http://www.gstatic.com/generate_204";
@@ -23,6 +35,14 @@ CaptivePortalDetector::CaptivePortalDetector(
 }
 
 CaptivePortalDetector::~CaptivePortalDetector() {
+}
+
+// static
+std::string CaptivePortalDetector::CaptivePortalResultToString(Result result) {
+  DCHECK_GE(result, 0);
+  DCHECK_LT(static_cast<unsigned int>(result),
+            arraysize(kCaptivePortalResultNames));
+  return kCaptivePortalResultNames[result];
 }
 
 void CaptivePortalDetector::DetectCaptivePortal(
@@ -80,8 +100,9 @@ void CaptivePortalDetector::GetCaptivePortalResultFromResponse(
   DCHECK(results);
   DCHECK(!url_fetcher->GetStatus().is_io_pending());
 
-  results->retry_after_delta = base::TimeDelta();
   results->result = RESULT_NO_RESPONSE;
+  results->response_code = url_fetcher->GetResponseCode();
+  results->retry_after_delta = base::TimeDelta();
 
   // If there's a network error of some sort when fetching a file via HTTP,
   // there may be a networking problem, rather than a captive portal.
@@ -91,8 +112,7 @@ void CaptivePortalDetector::GetCaptivePortalResultFromResponse(
     return;
 
   // In the case of 503 errors, look for the Retry-After header.
-  int response_code = url_fetcher->GetResponseCode();
-  if (response_code == 503) {
+  if (results->response_code == 503) {
     net::HttpResponseHeaders* headers = url_fetcher->GetResponseHeaders();
     std::string retry_after_string;
 
@@ -116,17 +136,17 @@ void CaptivePortalDetector::GetCaptivePortalResultFromResponse(
   // A 511 response (Network Authentication Required) means that the user needs
   // to login to whatever server issued the response.
   // See:  http://tools.ietf.org/html/rfc6585
-  if (response_code == 511) {
+  if (results->response_code == 511) {
     results->result = RESULT_BEHIND_CAPTIVE_PORTAL;
     return;
   }
 
   // Other non-2xx/3xx HTTP responses may indicate server errors.
-  if (response_code >= 400 || response_code < 200)
+  if (results->response_code >= 400 || results->response_code < 200)
     return;
 
   // A 204 response code indicates there's no captive portal.
-  if (response_code == 204) {
+  if (results->response_code == 204) {
     results->result = RESULT_INTERNET_CONNECTED;
     return;
   }

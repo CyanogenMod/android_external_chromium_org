@@ -15,16 +15,18 @@
 #include "ui/aura/window_observer.h"
 
 namespace aura {
-class EventFilter;
 class RootWindow;
 class Window;
+namespace client {
+class ActivationClient;
+}
+}
+
+namespace ui {
+class EventHandler;
 }
 
 namespace ash {
-
-namespace internal {
-class ActivationController;
-}
 
 class WindowCycleList;
 
@@ -44,7 +46,7 @@ class ASH_EXPORT WindowCycleController
     BACKWARD
   };
   explicit WindowCycleController(
-      internal::ActivationController* activation_controller);
+      aura::client::ActivationClient* activation_client);
   virtual ~WindowCycleController();
 
   // Returns true if cycling through windows is enabled. This is false at
@@ -95,9 +97,9 @@ class ASH_EXPORT WindowCycleController
   // Checks if the window represents a container whose children we track.
   static bool IsTrackedContainer(aura::Window* window);
 
-  // Overridden from ActivationChangeObserver:
-  virtual void OnWindowActivated(aura::Window* active,
-                                 aura::Window* old_active) OVERRIDE;
+  // Overridden from aura::client::ActivationChangeObserver:
+  virtual void OnWindowActivated(aura::Window* gained_active,
+                                 aura::Window* lost_active) OVERRIDE;
 
   // Overridden from WindowObserver:
   virtual void OnWindowAdded(aura::Window* window) OVERRIDE;
@@ -106,14 +108,14 @@ class ASH_EXPORT WindowCycleController
 
   scoped_ptr<WindowCycleList> windows_;
 
-  // Event filter to watch for release of alt key.
-  scoped_ptr<aura::EventFilter> event_filter_;
+  // Event handler to watch for release of alt key.
+  scoped_ptr<ui::EventHandler> event_handler_;
 
   // List of windows that have been activated in containers that we cycle
   // through, sorted by most recently used.
   std::list<aura::Window*> mru_windows_;
 
-  internal::ActivationController* activation_controller_;
+  aura::client::ActivationClient* activation_client_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowCycleController);
 };

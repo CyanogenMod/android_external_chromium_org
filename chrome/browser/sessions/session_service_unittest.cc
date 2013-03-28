@@ -5,12 +5,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/defaults.h"
@@ -28,8 +28,8 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebHTTPBody.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPBody.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
 #include "webkit/glue/glue_serialize.h"
 
@@ -38,7 +38,7 @@ using content::NavigationEntry;
 class SessionServiceTest : public BrowserWithTestWindowTest,
                            public content::NotificationObserver {
  public:
-  SessionServiceTest() : window_bounds(0, 1, 2, 3), sync_save_count_(0){}
+  SessionServiceTest() : window_bounds(0, 1, 2, 3), sync_save_count_(0) {}
 
  protected:
   virtual void SetUp() {
@@ -61,9 +61,9 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
   }
 
   // Upon notification, increment the sync_save_count variable
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) {
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE {
     ASSERT_EQ(type, chrome::NOTIFICATION_SESSION_SERVICE_SAVED);
     sync_save_count_++;
   }
@@ -152,7 +152,6 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
                                ui::SHOW_STATE_MAXIMIZED);
     helper_.PrepareTabInWindow(window2_id, tab2_id, 0, true);
     UpdateNavigation(window2_id, tab2_id, *nav2, true);
-
   }
 
   SessionService* service() { return helper_.service(); }
@@ -166,8 +165,8 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
   int sync_save_count_;
 
   // Path used in testing.
-  ScopedTempDir temp_dir_;
-  FilePath path_;
+  base::ScopedTempDir temp_dir_;
+  base::FilePath path_;
 
   SessionServiceTestHelper helper_;
 };
@@ -525,8 +524,8 @@ TEST_F(SessionServiceTest, RestorePopup) {
   helper_.AssertNavigationEquals(nav2, tab->navigations[0]);
 }
 
-#if defined (USE_AURA)
-// Makes sure we track apps. Only applicable on aura.
+#if defined (OS_CHROMEOS)
+// Makes sure we track apps. Only applicable on chromeos.
 TEST_F(SessionServiceTest, RestoreApp) {
   SessionID window2_id;
   SessionID tab_id;
@@ -576,7 +575,7 @@ TEST_F(SessionServiceTest, RestoreApp) {
   helper_.AssertTabEquals(window2_id, tab2_id, 0, 0, 1, *tab);
   helper_.AssertNavigationEquals(nav2, tab->navigations[0]);
 }
-#endif  // defined (USE_AURA)
+#endif  // defined (OS_CHROMEOS)
 
 // Tests pruning from the front.
 TEST_F(SessionServiceTest, PruneFromFront) {
@@ -835,14 +834,14 @@ TEST_F(SessionServiceTest, RemovePostDataWithPasswords) {
 #if defined(OS_CHROMEOS)
 // Verifies migration of tab/window closed works.
 TEST_F(SessionServiceTest, CanOpenV1TabClosed) {
-  FilePath v1_file_path;
+  base::FilePath v1_file_path;
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &v1_file_path));
   // v1_session_file contains a tab closed command with the original id. The
   // file was generated from ClosingTabStaysClosed. If we successfully processed
   // the file we'll have one tab.
   v1_file_path =
       v1_file_path.AppendASCII("sessions").AppendASCII("v1_session_file");
-  FilePath dest_file_path(path_);
+  base::FilePath dest_file_path(path_);
   dest_file_path = dest_file_path.AppendASCII("Current Session");
 
   // Forces closing the file.

@@ -151,7 +151,9 @@ bool TypedUrlModelAssociator::ShouldIgnoreVisits(
   return true;
 }
 
-syncer::SyncError TypedUrlModelAssociator::AssociateModels() {
+syncer::SyncError TypedUrlModelAssociator::AssociateModels(
+    syncer::SyncMergeResult* local_merge_result,
+    syncer::SyncMergeResult* syncer_merge_result) {
   ClearErrorStats();
   syncer::SyncError error = DoAssociateModels();
   UMA_HISTOGRAM_PERCENTAGE("Sync.TypedUrlModelAssociationErrors",
@@ -379,7 +381,7 @@ syncer::SyncError TypedUrlModelAssociator::DoAssociateModels() {
               "Failed to fetch obsolete node.",
               model_type());
         }
-        sync_node.Remove();
+        sync_node.Tombstone();
       }
     }
   }
@@ -468,7 +470,7 @@ bool TypedUrlModelAssociator::DeleteAllNodes(
       return false;
     }
     sync_child_id = sync_child_node.GetSuccessorId();
-    sync_child_node.Remove();
+    sync_child_node.Tombstone();
   }
   return true;
 }

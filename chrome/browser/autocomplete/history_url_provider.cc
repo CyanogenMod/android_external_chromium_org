@@ -11,23 +11,24 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_field_trial.h"
-#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/net/url_fixer_upper.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_parse.h"
 #include "googleurl/src/url_util.h"
@@ -131,16 +132,110 @@ bool CompareHistoryMatch(const history::HistoryMatch& a,
   return a.url_info.last_visit() > b.url_info.last_visit();
 }
 
+// Extracts typed_count, visit_count, and last_visited time from the
+// URLRow and puts them in the additional info field of the |match|
+// for display in about:omnibox.
+void RecordAdditionalInfoFromUrlRow(const history::URLRow& info,
+                                    AutocompleteMatch* match) {
+  match->RecordAdditionalInfo("typed count", info.typed_count());
+  match->RecordAdditionalInfo("visit count", info.visit_count());
+  match->RecordAdditionalInfo("last visit", info.last_visit());
+}
+
 }  // namespace
+
+// -----------------------------------------------------------------
+// SearchTermsDataSnapshot
+
+// Implementation of SearchTermsData that takes a snapshot of another
+// SearchTermsData by copying all the responses to the different getters into
+// member strings, then returning those strings when its own getters are called.
+// This will typically be constructed on the UI thread from
+// UIThreadSearchTermsData but is subsequently safe to use on any thread.
+class SearchTermsDataSnapshot : public SearchTermsData {
+ public:
+  explicit SearchTermsDataSnapshot(const SearchTermsData& search_terms_data);
+  virtual ~SearchTermsDataSnapshot();
+
+  virtual std::string GoogleBaseURLValue() const OVERRIDE;
+  virtual std::string GetApplicationLocale() const OVERRIDE;
+  virtual string16 GetRlzParameterValue() const OVERRIDE;
+  virtual std::string GetSearchClient() const OVERRIDE;
+  virtual std::string InstantEnabledParam() const OVERRIDE;
+  virtual std::string InstantExtendedEnabledParam() const OVERRIDE;
+  virtual std::string NTPIsThemedParam() const OVERRIDE;
+
+ private:
+  std::string google_base_url_value_;
+  std::string application_locale_;
+  string16 rlz_parameter_value_;
+  std::string search_client_;
+  std::string instant_enabled_param_;
+  std::string instant_extended_enabled_param_;
+  std::string ntp_is_themed_param_;
+
+  DISALLOW_COPY_AND_ASSIGN(SearchTermsDataSnapshot);
+};
+
+SearchTermsDataSnapshot::SearchTermsDataSnapshot(
+    const SearchTermsData& search_terms_data)
+    : google_base_url_value_(search_terms_data.GoogleBaseURLValue()),
+      application_locale_(search_terms_data.GetApplicationLocale()),
+      rlz_parameter_value_(search_terms_data.GetRlzParameterValue()),
+      search_client_(search_terms_data.GetSearchClient()),
+      instant_enabled_param_(search_terms_data.InstantEnabledParam()),
+      instant_extended_enabled_param_(
+          search_terms_data.InstantExtendedEnabledParam()),
+      ntp_is_themed_param_(search_terms_data.NTPIsThemedParam()) {}
+
+SearchTermsDataSnapshot::~SearchTermsDataSnapshot() {
+}
+
+std::string SearchTermsDataSnapshot::GoogleBaseURLValue() const {
+  return google_base_url_value_;
+}
+
+std::string SearchTermsDataSnapshot::GetApplicationLocale() const {
+  return application_locale_;
+}
+
+string16 SearchTermsDataSnapshot::GetRlzParameterValue() const {
+  return rlz_parameter_value_;
+}
+
+std::string SearchTermsDataSnapshot::GetSearchClient() const {
+  return search_client_;
+}
+
+std::string SearchTermsDataSnapshot::InstantEnabledParam() const {
+  return instant_enabled_param_;
+}
+
+std::string SearchTermsDataSnapshot::InstantExtendedEnabledParam() const {
+  return instant_extended_enabled_param_;
+}
+
+std::string SearchTermsDataSnapshot::NTPIsThemedParam() const {
+  return ntp_is_themed_param_;
+}
+
+// -----------------------------------------------------------------
+// HistoryURLProvider
+
+// These ugly magic numbers will go away once we switch all scoring
+// behavior (including URL-what-you-typed) to HistoryQuick provider.
+const int HistoryURLProvider::kScoreForBestInlineableResult = 1413;
+const int HistoryURLProvider::kScoreForUnvisitedIntranetResult = 1403;
+const int HistoryURLProvider::kScoreForWhatYouTypedResult = 1203;
+const int HistoryURLProvider::kBaseScoreForNonInlineableResult = 900;
 
 // VisitClassifier is used to classify the type of visit to a particular url.
 class HistoryURLProvider::VisitClassifier {
  public:
   enum Type {
     INVALID,             // Navigations to the URL are not allowed.
-    UNVISITED,           // A navigable URL for which we have no visit data.
-    UNVISITED_INTRANET,  // A URL which is UNVISITED but which is known to
-                         // refer to a visited intranet host.
+    UNVISITED_INTRANET,  // A navigable URL for which we have no visit data but
+                         // which is known to refer to a visited intranet host.
     VISITED,             // The site has been previously visited.
   };
 
@@ -191,46 +286,26 @@ HistoryURLProvider::VisitClassifier::VisitClassifier(
     // different port and/or path) before.
     url_row_ = history::URLRow(url);
     type_ = UNVISITED_INTRANET;
-    return;
   }
-
-  // Tricky corner case: The user has visited intranet site "foo", but not
-  // internet site "www.foo.com".  He types in foo (getting an exact match),
-  // then tries to hit ctrl-enter.  When pressing ctrl, the what-you-typed match
-  // ("www.foo.com") doesn't show up in history, and thus doesn't get a promoted
-  // relevance, but a different match from the input ("foo") does, and gets
-  // promoted for inline autocomplete.  Thus instead of getting "www.foo.com",
-  // the user still gets "foo" (and, before hitting enter, probably gets an
-  // odd-looking inline autocomplete of "/").
-  //
-  // We detect this crazy case as follows:
-  // * If the what-you-typed match is not in the history DB,
-  // * and the user has specified a TLD,
-  // * and the input _without_ the TLD _is_ in the history DB,
-  // * ...then just before pressing "ctrl" the best match we supplied was the
-  //   what-you-typed match, so stick with it by promoting this.
-  if (input.desired_tld().empty())
-    return;
-  GURL destination_url(URLFixerUpper::FixupURL(UTF16ToUTF8(input.text()),
-                                               std::string()));
-  if (!db_->GetRowForURL(destination_url, NULL))
-    return;
-  // If we got here, then we hit the tricky corner case.
-  url_row_ = history::URLRow(url);
-  type_ = UNVISITED;
 }
 
 HistoryURLProviderParams::HistoryURLProviderParams(
     const AutocompleteInput& input,
     bool trim_http,
-    const std::string& languages)
+    const std::string& languages,
+    TemplateURL* default_search_provider,
+    const SearchTermsData& search_terms_data)
     : message_loop(MessageLoop::current()),
       input(input),
       prevent_inline_autocomplete(input.prevent_inline_autocomplete()),
       trim_http(trim_http),
       failed(false),
       languages(languages),
-      dont_suggest_exact_input(false) {
+      dont_suggest_exact_input(false),
+      default_search_provider(default_search_provider ?
+          new TemplateURL(default_search_provider->profile(),
+                          default_search_provider->data()) : NULL),
+      search_terms_data(new SearchTermsDataSnapshot(search_terms_data)) {
 }
 
 HistoryURLProviderParams::~HistoryURLProviderParams() {
@@ -242,16 +317,15 @@ HistoryURLProvider::HistoryURLProvider(AutocompleteProviderListener* listener,
           AutocompleteProvider::TYPE_HISTORY_URL),
       params_(NULL),
       cull_redirects_(
-          !AutocompleteFieldTrial::InHUPCullRedirectsFieldTrial() ||
-          !AutocompleteFieldTrial::
-              InHUPCullRedirectsFieldTrialExperimentGroup()),
+          !OmniboxFieldTrial::InHUPCullRedirectsFieldTrial() ||
+          !OmniboxFieldTrial::InHUPCullRedirectsFieldTrialExperimentGroup()),
       create_shorter_match_(
-          !AutocompleteFieldTrial::InHUPCreateShorterMatchFieldTrial() ||
-          !AutocompleteFieldTrial::
+          !OmniboxFieldTrial::InHUPCreateShorterMatchFieldTrial() ||
+          !OmniboxFieldTrial::
               InHUPCreateShorterMatchFieldTrialExperimentGroup()),
       search_url_database_(
-          !AutocompleteFieldTrial::InHQPReplaceHUPScoringFieldTrial() ||
-          !AutocompleteFieldTrial::
+          !OmniboxFieldTrial::InHQPReplaceHUPScoringFieldTrial() ||
+          !OmniboxFieldTrial::
               InHQPReplaceHUPScoringFieldTrialExperimentGroup()) {
 }
 
@@ -362,8 +436,9 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
   // We display this to the user when there's a reasonable chance they actually
   // care:
   // * Their input can be opened as a URL, and
-  // * They hit ctrl-enter, or we parsed the input as a URL, or it starts with
-  //   an explicit "http:" or "https:".
+  // * We parsed the input as a URL, or it starts with an explicit "http:" or
+  //   "https:".
+  //  that is when their input can be opened as a URL.
   // Otherwise, this is just low-quality noise.  In the cases where we've parsed
   // as UNKNOWN, we'll still show an accidental search infobar if need be.
   bool have_what_you_typed_match =
@@ -412,7 +487,7 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
   }
 
   // Create sorted list of suggestions.
-  CullPoorMatches(&history_matches);
+  CullPoorMatches(&history_matches, params);
   SortMatches(&history_matches);
   PromoteOrCreateShorterSuggestion(db, *params, have_what_you_typed_match,
                                    what_you_typed_match, &history_matches);
@@ -523,16 +598,17 @@ int HistoryURLProvider::CalculateRelevance(MatchType match_type,
                                            size_t match_number) const {
   switch (match_type) {
     case INLINE_AUTOCOMPLETE:
-      return 1410 + kMaxMatches;
+      return kScoreForBestInlineableResult;
 
     case UNVISITED_INTRANET:
-      return 1400 + kMaxMatches;
+      return kScoreForUnvisitedIntranetResult;
 
     case WHAT_YOU_TYPED:
-      return 1200 + kMaxMatches;
+      return kScoreForWhatYouTypedResult;
 
     default:  // NORMAL
-      return 900 + static_cast<int>(match_number);
+      return kBaseScoreForNonInlineableResult +
+          static_cast<int>(match_number);
   }
 }
 
@@ -566,6 +642,15 @@ void HistoryURLProvider::RunAutocompletePasses(
   if (!history_service)
     return;
 
+  // Get the default search provider and search terms data now since we have to
+  // retrieve these on the UI thread, and the second pass runs on the history
+  // thread. |template_url_service| can be NULL when testing.
+  TemplateURLService* template_url_service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  TemplateURL* default_search_provider = template_url_service ?
+      template_url_service->GetDefaultSearchProvider() : NULL;
+  UIThreadSearchTermsData data(profile_);
+
   // Create the data structure for the autocomplete passes.  We'll save this off
   // onto the |params_| member for later deletion below if we need to run pass
   // 2.
@@ -575,7 +660,8 @@ void HistoryURLProvider::RunAutocompletePasses(
         profile_->GetPrefs()->GetString(prefs::kAcceptLanguages);
   }
   scoped_ptr<HistoryURLProviderParams> params(
-      new HistoryURLProviderParams(input, trim_http, languages));
+      new HistoryURLProviderParams(input, trim_http, languages,
+                                   default_search_provider, data));
 
   params->prevent_inline_autocomplete =
       PreventInlineAutocomplete(input);
@@ -630,10 +716,15 @@ bool HistoryURLProvider::FixupExactSuggestion(
   switch (classifier.type()) {
     case VisitClassifier::INVALID:
       return false;
-    case VisitClassifier::VISITED:
+    case VisitClassifier::UNVISITED_INTRANET:
+      type = UNVISITED_INTRANET;
+      break;
+    default:
+      DCHECK_EQ(VisitClassifier::VISITED, classifier.type());
       // We have data for this match, use it.
       match->deletable = true;
       match->description = classifier.url_row().title();
+      RecordAdditionalInfoFromUrlRow(classifier.url_row(), match);
       AutocompleteMatch::ClassifyMatchInString(
           input.text(),
           classifier.url_row().title(),
@@ -647,12 +738,6 @@ bool HistoryURLProvider::FixupExactSuggestion(
         type = CanFindIntranetURL(db, input) ?
             UNVISITED_INTRANET : WHAT_YOU_TYPED;
       }
-      break;
-    case VisitClassifier::UNVISITED_INTRANET:
-      type = UNVISITED_INTRANET;
-      break;
-    default:
-      DCHECK_EQ(VisitClassifier::UNVISITED, classifier.type());
       break;
   }
 
@@ -843,14 +928,19 @@ void HistoryURLProvider::SortMatches(history::HistoryMatches* matches) const {
 }
 
 void HistoryURLProvider::CullPoorMatches(
-    history::HistoryMatches* matches) const {
+    history::HistoryMatches* matches,
+    HistoryURLProviderParams* params) const {
   const base::Time& threshold(history::AutocompleteAgeThreshold());
   for (history::HistoryMatches::iterator i(matches->begin());
        i != matches->end(); ) {
-    if (RowQualifiesAsSignificant(i->url_info, threshold))
+    if (RowQualifiesAsSignificant(i->url_info, threshold) &&
+        !(params->default_search_provider &&
+            params->default_search_provider->IsSearchURLUsingTermsData(
+                i->url_info.url(), *params->search_terms_data.get()))) {
       ++i;
-    else
+    } else {
       i = matches->erase(i);
+    }
   }
 }
 
@@ -962,10 +1052,6 @@ AutocompleteMatch HistoryURLProvider::HistoryMatchToACMatch(
                                            info.title(),
                                            ACMatchClassification::NONE,
                                            &match.description_class);
-
-  match.RecordAdditionalInfo("typed count", info.typed_count());
-  match.RecordAdditionalInfo("visit count", info.visit_count());
-  match.RecordAdditionalInfo("last visit", info.last_visit());
-
+  RecordAdditionalInfoFromUrlRow(info, &match);
   return match;
 }

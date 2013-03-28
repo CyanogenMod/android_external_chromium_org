@@ -6,7 +6,6 @@
 
 #include "ppapi/c/pp_size.h"
 #include "ppapi/shared_impl/ppb_audio_config_shared.h"
-#include "ppapi/shared_impl/private/ppb_browser_font_trusted_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/shared_impl/ppb_resource_array_shared.h"
 #include "ppapi/shared_impl/var.h"
@@ -14,23 +13,16 @@
 #include "webkit/plugins/ppapi/ppb_audio_impl.h"
 #include "webkit/plugins/ppapi/ppb_broker_impl.h"
 #include "webkit/plugins/ppapi/ppb_buffer_impl.h"
-#include "webkit/plugins/ppapi/ppb_directory_reader_impl.h"
-#include "webkit/plugins/ppapi/ppb_file_io_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_system_impl.h"
-#include "webkit/plugins/ppapi/ppb_flash_menu_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_message_loop_impl.h"
-#include "webkit/plugins/ppapi/ppb_graphics_2d_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_3d_impl.h"
-#include "webkit/plugins/ppapi/ppb_host_resolver_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
 #include "webkit/plugins/ppapi/ppb_network_monitor_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_scrollbar_impl.h"
 #include "webkit/plugins/ppapi/ppb_tcp_server_socket_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_tcp_socket_private_impl.h"
-#include "webkit/plugins/ppapi/ppb_udp_socket_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_url_loader_impl.h"
-#include "webkit/plugins/ppapi/ppb_video_capture_impl.h"
 #include "webkit/plugins/ppapi/ppb_video_decoder_impl.h"
 #include "webkit/plugins/ppapi/ppb_x509_certificate_private_impl.h"
 #include "webkit/plugins/ppapi/resource_helper.h"
@@ -79,30 +71,15 @@ PP_Resource ResourceCreationImpl::CreateBroker(PP_Instance instance) {
   return (new PPB_Broker_Impl(instance))->GetReference();
 }
 
-PP_Resource ResourceCreationImpl::CreateBrowserFont(
-    PP_Instance instance,
-    const PP_BrowserFont_Trusted_Description* description) {
-  PluginInstance* plugin_instance =
-      ResourceHelper::PPInstanceToPluginInstance(instance);
-  if (!plugin_instance)
-    return 0;
-  return ::ppapi::PPB_BrowserFont_Trusted_Shared::Create(
-      ::ppapi::OBJECT_IS_IMPL, instance, *description,
-      plugin_instance->delegate()->GetPreferences());
-}
-
 PP_Resource ResourceCreationImpl::CreateBuffer(PP_Instance instance,
                                                uint32_t size) {
   return PPB_Buffer_Impl::Create(instance, size);
 }
 
 PP_Resource ResourceCreationImpl::CreateDirectoryReader(
+    PP_Instance instance,
     PP_Resource directory_ref) {
-  return PPB_DirectoryReader_Impl::Create(directory_ref);
-}
-
-PP_Resource ResourceCreationImpl::CreateFileIO(PP_Instance instance) {
-  return (new PPB_FileIO_Impl(instance))->GetReference();
+  return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateFileRef(PP_Resource file_system,
@@ -123,7 +100,7 @@ PP_Resource ResourceCreationImpl::CreateFlashDeviceID(PP_Instance instance) {
 
 PP_Resource ResourceCreationImpl::CreateFlashFontFile(
     PP_Instance instance,
-    const PP_FontDescription_Dev* description,
+    const PP_BrowserFont_Trusted_Description* description,
     PP_PrivateFontCharset charset) {
   return 0;  // Not supported in-process.
 }
@@ -131,18 +108,11 @@ PP_Resource ResourceCreationImpl::CreateFlashFontFile(
 PP_Resource ResourceCreationImpl::CreateFlashMenu(
     PP_Instance instance,
     const PP_Flash_Menu* menu_data) {
-  return PPB_Flash_Menu_Impl::Create(instance, menu_data);
+  return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateFlashMessageLoop(PP_Instance instance) {
   return PPB_Flash_MessageLoop_Impl::Create(instance);
-}
-
-PP_Resource ResourceCreationImpl::CreateGraphics2D(
-    PP_Instance instance,
-    const PP_Size& size,
-    PP_Bool is_always_opaque) {
-  return PPB_Graphics2D_Impl::Create(instance, size, is_always_opaque);
 }
 
 PP_Resource ResourceCreationImpl::CreateGraphics3D(
@@ -161,7 +131,7 @@ PP_Resource ResourceCreationImpl::CreateGraphics3DRaw(
 
 PP_Resource ResourceCreationImpl::CreateHostResolverPrivate(
     PP_Instance instance) {
-  return (new PPB_HostResolver_Private_Impl(instance))->GetReference();
+  return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateImageData(PP_Instance instance,
@@ -265,7 +235,7 @@ PP_Resource ResourceCreationImpl::CreateTCPSocketPrivate(PP_Instance instance) {
 }
 
 PP_Resource ResourceCreationImpl::CreateUDPSocketPrivate(PP_Instance instance) {
-  return PPB_UDPSocket_Private_Impl::CreateResource(instance);
+  return 0;  // Not supported in-process.
 }
 
 PP_Resource ResourceCreationImpl::CreateURLLoader(PP_Instance instance) {
@@ -273,11 +243,7 @@ PP_Resource ResourceCreationImpl::CreateURLLoader(PP_Instance instance) {
 }
 
 PP_Resource ResourceCreationImpl::CreateVideoCapture(PP_Instance instance) {
-  scoped_refptr<PPB_VideoCapture_Impl> video_capture =
-      new PPB_VideoCapture_Impl(instance);
-  if (!video_capture->Init())
-    return 0;
-  return video_capture->GetReference();
+  return 0;  // VideoCapture is not supported in process now.
 }
 
 PP_Resource ResourceCreationImpl::CreateVideoDecoder(

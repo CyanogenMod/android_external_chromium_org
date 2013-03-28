@@ -6,7 +6,11 @@
 
 #include "base/stl_util.h"
 #include "chrome/common/spellcheck_messages.h"
+#include "chrome/renderer/spellchecker/spellcheck.h"
 #include "ipc/ipc_message_macros.h"
+
+class MockSpellcheck: public SpellCheck {
+};
 
 FakeTextCheckingCompletion::FakeTextCheckingCompletion()
 : completion_count_(0),
@@ -18,7 +22,6 @@ FakeTextCheckingCompletion::~FakeTextCheckingCompletion() {}
 void FakeTextCheckingCompletion::didFinishCheckingText(
     const WebKit::WebVector<WebKit::WebTextCheckingResult>& results) {
   ++completion_count_;
-  last_results_ = results;
 }
 
 void FakeTextCheckingCompletion::didCancelCheckingText() {
@@ -27,12 +30,14 @@ void FakeTextCheckingCompletion::didCancelCheckingText() {
 }
 
 TestingSpellCheckProvider::TestingSpellCheckProvider()
-      : SpellCheckProvider(NULL, NULL),
-        offset_(-1) {
+      : SpellCheckProvider(NULL, new MockSpellcheck),
+        offset_(-1),
+        spelling_service_call_count_(0) {
 }
 
 TestingSpellCheckProvider::~TestingSpellCheckProvider() {
-    STLDeleteContainerPointers(messages_.begin(), messages_.end());
+  STLDeleteContainerPointers(messages_.begin(), messages_.end());
+  delete spellcheck_;
 }
 
 bool TestingSpellCheckProvider::Send(IPC::Message* message)  {
@@ -62,6 +67,7 @@ void TestingSpellCheckProvider::OnCallSpellingService(int route_id,
 #if defined (OS_MACOSX)
   NOTREACHED();
 #else
+  ++spelling_service_call_count_;
   WebKit::WebTextCheckingCompletion* completion =
       text_check_completions_.Lookup(identifier);
   if (!completion) {
@@ -71,9 +77,13 @@ void TestingSpellCheckProvider::OnCallSpellingService(int route_id,
   offset_ = offset;
   text_.assign(text);
   text_check_completions_.Remove(identifier);
-  completion->didFinishCheckingText(
-      std::vector<WebKit::WebTextCheckingResult>());
+  std::vector<WebKit::WebTextCheckingResult> results;
+  results.push_back(WebKit::WebTextCheckingResult(
+      WebKit::WebTextCheckingTypeSpelling,
+      0, 5, WebKit::WebString("hello")));
+  completion->didFinishCheckingText(results);
   last_request_ = text;
+  last_results_ = results;
 #endif
 }
 

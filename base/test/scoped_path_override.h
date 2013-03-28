@@ -6,11 +6,11 @@
 #define BASE_TEST_SCOPED_PATH_OVERRIDE_H_
 
 #include "base/basictypes.h"
-#include "base/scoped_temp_dir.h"
-
-class FilePath;
+#include "base/files/scoped_temp_dir.h"
 
 namespace base {
+
+class FilePath;
 
 // Sets a path override on construction, and removes it when the object goes out
 // of scope. This class is intended to be used by tests that need to override

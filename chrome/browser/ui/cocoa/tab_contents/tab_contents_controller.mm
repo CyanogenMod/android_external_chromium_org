@@ -10,6 +10,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 
 using content::WebContents;
 
@@ -39,8 +40,10 @@ using content::WebContents;
 - (void)ensureContentsSizeDoesNotChange {
   NSView* contentsContainer = [self view];
   NSArray* subviews = [contentsContainer subviews];
-  if ([subviews count] > 0)
-    [contents_->GetNativeView() setAutoresizingMask:NSViewNotSizable];
+  if ([subviews count] > 0) {
+    [contents_->GetView()->GetNativeView()
+        setAutoresizingMask:NSViewNotSizable];
+  }
 }
 
 // Call when the tab view is properly sized and the render widget host view
@@ -50,7 +53,7 @@ using content::WebContents;
     return;
   NSView* contentsContainer = [self view];
   NSArray* subviews = [contentsContainer subviews];
-  NSView* contentsNativeView = contents_->GetNativeView();
+  NSView* contentsNativeView = contents_->GetView()->GetNativeView();
   [contentsNativeView setFrame:[contentsContainer frame]];
   if ([subviews count] == 0) {
     [contentsContainer addSubview:contentsNativeView];
@@ -60,6 +63,9 @@ using content::WebContents;
   }
   [contentsNativeView setAutoresizingMask:NSViewWidthSizable|
                                           NSViewHeightSizable];
+  // The find bar will overlap the content's view when it comes out; inform
+  // the view.
+  contents_->GetView()->SetAllowOverlappingViews(true);
 }
 
 - (void)changeWebContents:(WebContents*)newContents {

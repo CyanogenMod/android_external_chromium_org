@@ -40,11 +40,36 @@ const char kAshDisableAutoWindowPlacement[] =
 // Disables boot animation v2, go back to v1.
 const char kAshDisableBootAnimation2[] = "ash-disable-boot-animation2";
 
-// Disables panel fitting (used for mirror mode).
-const char kAshDisablePanelFitting[] = "ash-disable-panel-fitting";
+// Disables the limitter to throttle how quickly a user
+// can change display settings.
+const char kAshDisableDisplayChangeLimiter[] =
+    "ash-disable-display-change-limiter";
+
+// Disables creating a launcher per display.
+const char kAshDisableLauncherPerDisplay[] = "ash-disable-launcher-per-display";
+
+// If present new lock animations are enabled.
+const char kAshDisableNewLockAnimations[] = "ash-disable-new-lock-animations";
+
+// Disable new network handlers in the status area.
+const char kAshDisableNewNetworkStatusArea[] =
+    "ash-disable-new-network-status-area";
+
+// Disable the per application grouping version of the launcher.
+const char kAshDisablePerAppLauncher[] = "ash-disable-per-app-launcher";
+
+// Disables display rotation.
+const char kAshDisableDisplayRotation[] = "ash-disable-display-rotation";
+
+// Disables ui scaling.
+const char kAshDisableUIScaling[] = "ash-disable-ui-scaling";
 
 // Enable advanced gestures (e.g. for window management).
 const char kAshEnableAdvancedGestures[] = "ash-enable-advanced-gestures";
+
+// Always enable brightness control. Used by machines that don't report their
+// main monitor as internal.
+const char kAshEnableBrightnessControl[] = "ash-enable-brightness-control";
 
 #if defined(OS_LINUX)
 // Enable memory monitoring.
@@ -57,14 +82,25 @@ const char kAshEnableOak[] = "ash-enable-oak";
 // Enables showing the tray bubble by dragging on the shelf.
 const char kAshEnableTrayDragging[] = "ash-enable-tray-dragging";
 
-// Enables creating a launcher per display.
-const char kAshLauncherPerDisplay[] = "ash-launcher-per-display";
+// Enable workspace switching via a three finger vertical scroll.
+const char kAshEnableWorkspaceScrubbing[] = "ash-enable-workspace-scrubbing";
 
-// If present new lock animations are enabled.
-const char kAshNewLockAnimationsEnabled[] = "ash-new-lock-animations-enabled";
+// Sets a window size, optional position, and optional scale factor.
+// "1024x768" creates a window of size 1024x768.
+// "100+200-1024x768" positions the window at 100,200.
+// "1024x768*2" sets the scale factor to 2 for a high DPI display.
+const char kAshHostWindowBounds[] = "ash-host-window-bounds";
 
-// If present animations for lock screen are reversed.
-const char kAshReverseNewLockAnimations[] = "ash-reverse-new-lock-animations";
+// Enable immersive fullscreen mode.
+const char kAshImmersiveFullscreen[] = "ash-immersive-fullscreen";
+
+// Hides the small tab indicators at the top of the screen during immersive
+// fullscreen mode.
+const char kAshImmersiveHideTabIndicators[] =
+    "ash-immersive-hide-tab-indicators";
+
+// Specifies the internal display's ui scale.
+const char kAshInternalDisplayUIScale[] = "ash-internal-display-ui-scale";
 
 // Specifies the layout mode and offsets for the secondary display for
 // testing. The format is "<t|r|b|l>,<offset>" where t=TOP, r=RIGHT,
@@ -75,20 +111,18 @@ const char kAshSecondaryDisplayLayout[] = "ash-secondary-display-layout";
 // Enables the heads-up display for tracking touch points.
 const char kAshTouchHud[] = "ash-touch-hud";
 
-// If present animations are disabled.
-const char kAshWindowAnimationsDisabled[] = "ash-window-animations-disabled";
-
-// Use Google-style dialog box frames.
-const char kAuraGoogleDialogFrames[] = "aura-google-dialog-frames";
-
 // (Most) Chrome OS hardware reports ACPI power button releases correctly.
 // Standard hardware reports releases immediately after presses.  If set, we
 // lock the screen or shutdown the system immediately in response to a press
 // instead of displaying an interactive animation.
 const char kAuraLegacyPowerButton[] = "aura-legacy-power-button";
 
-// Avoid drawing drop shadows under windows.
-const char kAuraNoShadows[] = "aura-no-shadows";
+#if defined(OS_WIN)
+// Force Ash to open its root window on the desktop, even on Windows 8 where
+// it would normally end up in metro.
+const char kForceAshToDesktop[] = "ash-force-desktop";
+;
+#endif
 
 }  // namespace switches
 }  // namespace ash

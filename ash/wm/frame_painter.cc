@@ -4,7 +4,10 @@
 
 #include "ash/wm/frame_painter.h"
 
+#include <vector>
+
 #include "ash/ash_constants.h"
+#include "ash/root_window_controller.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/property_util.h"
@@ -36,6 +39,7 @@
 
 using aura::RootWindow;
 using aura::Window;
+using views::Widget;
 
 namespace {
 // TODO(jamescook): Border is specified to be a single pixel overlapping
@@ -44,7 +48,7 @@ const int kBorderThickness = 0;
 // Space between left edge of window and popup window icon.
 const int kIconOffsetX = 9;
 // Space between top of window and popup window icon.
-const int kIconOffsetY = 9;
+const int kIconOffsetY = 5;
 // Height and width of window icon.
 const int kIconSize = 16;
 // Space between the title text and the caption buttons.
@@ -65,7 +69,7 @@ const int kCloseButtonOffsetX = 0;
 const int kCloseButtonOffsetY = 0;
 // The size and close buttons are designed to slightly overlap in order
 // to do fancy hover highlighting.
-const int kButtonOverlap = 1;
+const int kSizeButtonOffsetX = -1;
 // In the pre-Ash era the web content area had a frame along the left edge, so
 // user-generated theme images for the new tab page assume they are shifted
 // right relative to the header.  Now that we have removed the left edge frame
@@ -112,6 +116,7 @@ bool IsVisibleToRoot(Window* child) {
   }
   return true;
 }
+
 // Returns true if |window| is a visible, normal window.
 bool IsVisibleNormalWindow(aura::Window* window) {
   // Test visibility up to root in case the whole workspace is hidden.
@@ -121,6 +126,32 @@ bool IsVisibleNormalWindow(aura::Window* window) {
      window->type() == aura::client::WINDOW_TYPE_PANEL);
 }
 
+// Returns a list of windows in |root_window|| that potentially could have
+// a transparent solo-window header.
+std::vector<Window*> GetWindowsForSoloHeaderUpdate(RootWindow* root_window) {
+  std::vector<Window*> windows;
+  // During shutdown there may not be a workspace controller. In that case
+  // we don't care about updating any windows.
+  ash::internal::WorkspaceController* workspace_controller =
+      ash::GetRootWindowController(root_window)->workspace_controller();
+  if (workspace_controller) {
+    // Avoid memory allocations for typical window counts.
+    windows.reserve(16);
+    // Collect windows from the active workspace.
+    Window* workspace = workspace_controller->GetActiveWorkspaceWindow();
+    windows.insert(windows.end(),
+                   workspace->children().begin(),
+                   workspace->children().end());
+    // Collect "always on top" windows.
+    Window* top_container =
+        ash::Shell::GetContainer(
+            root_window, ash::internal::kShellWindowId_AlwaysOnTopContainer);
+    windows.insert(windows.end(),
+                   top_container->children().begin(),
+                   top_container->children().end());
+  }
+  return windows;
+}
 }  // namespace
 
 namespace ash {
@@ -129,7 +160,6 @@ namespace ash {
 int FramePainter::kActiveWindowOpacity = 255;  // 1.0
 int FramePainter::kInactiveWindowOpacity = 255;  // 1.0
 int FramePainter::kSoloWindowOpacity = 77;  // 0.3
-std::set<FramePainter*>* FramePainter::instances_ = NULL;
 
 ///////////////////////////////////////////////////////////////////////////////
 // FramePainter, public:
@@ -152,23 +182,16 @@ FramePainter::FramePainter()
       crossfade_opacity_(0),
       crossfade_animation_(NULL),
       size_button_behavior_(SIZE_BUTTON_MAXIMIZES) {
-  if (!instances_)
-    instances_ = new std::set<FramePainter*>();
-  instances_->insert(this);
 }
 
 FramePainter::~FramePainter() {
   // Sometimes we are destroyed before the window closes, so ensure we clean up.
   if (window_) {
-    aura::RootWindow* root = window_->GetRootWindow();
-    if (root &&
-        root->GetProperty(internal::kSoloWindowFramePainterKey) == this) {
-      root->SetProperty(internal::kSoloWindowFramePainterKey,
-                        static_cast<FramePainter*>(NULL));
-    }
     window_->RemoveObserver(this);
+    aura::RootWindow* root = window_->GetRootWindow();
+    if (root)
+      root->RemoveObserver(this);
   }
-  instances_->erase(this);
 }
 
 void FramePainter::Init(views::Widget* frame,
@@ -216,10 +239,12 @@ void FramePainter::Init(views::Widget* frame,
   // itself in OnWindowDestroying() below, or in the destructor if we go away
   // before the window.
   window_->AddObserver(this);
+  aura::Window* root = window_->GetRootWindow();
+  if (root)
+    root->AddObserver(this);
 
-  // If there is already a solo window in the same root, this initialization
-  // should turn off its solo-mode.
-  UpdateSoloWindowFramePainter(NULL);
+  // Solo-window header updates are handled by the workspace controller when
+  // this window is added to the active workspace.
 }
 
 // static
@@ -306,19 +331,23 @@ gfx::Size FramePainter::GetMinimumSize(views::NonClientFrameView* view) {
   // Ensure we have enough space for the window icon and buttons.  We allow
   // the title string to collapse to zero width.
   int title_width = GetTitleOffsetX() +
-      size_button_->width() -
-      kButtonOverlap +
-      close_button_->width();
+      size_button_->width() + kSizeButtonOffsetX +
+      close_button_->width() + kCloseButtonOffsetX;
   if (title_width > min_size.width())
     min_size.set_width(title_width);
   return min_size;
 }
 
+gfx::Size FramePainter::GetMaximumSize(views::NonClientFrameView* view) {
+  return frame_->client_view()->GetMaximumSize();
+}
+
 int FramePainter::GetRightInset() const {
   gfx::Size close_size = close_button_->GetPreferredSize();
   gfx::Size size_button_size = size_button_->GetPreferredSize();
-  return close_size.width() + kCloseButtonOffsetX + size_button_size.width() -
-      kButtonOverlap;
+  int inset = close_size.width() + kCloseButtonOffsetX +
+      size_button_size.width() + kSizeButtonOffsetX;
+  return inset;
 }
 
 int FramePainter::GetThemeBackgroundXInset() const {
@@ -421,7 +450,9 @@ void FramePainter::PaintHeader(views::NonClientFrameView* view,
   // TODO(sky): this isn't quite right. What we really want is a method that
   // returns bounds ignoring transforms on certain windows (such as workspaces)
   // and is relative to the root.
-  if (frame_->GetNativeWindow()->bounds().y() == 0 || frame_->IsMaximized())
+  if (frame_->GetNativeWindow()->bounds().y() == 0 ||
+      frame_->IsMaximized() ||
+      frame_->IsFullscreen())
     return;
 
   // Draw the top corners and edge.
@@ -496,34 +527,44 @@ void FramePainter::PaintTitleBar(views::NonClientFrameView* view,
 
 void FramePainter::LayoutHeader(views::NonClientFrameView* view,
                                 bool shorter_layout) {
-  // The new assets only make sense if the window is actually maximized.
-  if (shorter_layout && frame_->IsMaximized() &&
+  // The new assets only make sense if the window is actually maximized or
+  // fullscreen.
+  if (shorter_layout &&
+      (frame_->IsMaximized() || frame_->IsFullscreen()) &&
       GetTrackedByWorkspace(frame_->GetNativeWindow())) {
     SetButtonImages(close_button_,
                     IDR_AURA_WINDOW_MAXIMIZED_CLOSE2,
                     IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_H,
                     IDR_AURA_WINDOW_MAXIMIZED_CLOSE2_P);
     // The chat window cannot be restored but only minimized.
-    // Case: (size_button_behavior_ == SIZE_BUTTON_MINIMIZES). We used to have
-    // a special set of artwork to show this case, but per discussion we
-    // removed this.
-    SetButtonImages(size_button_,
-                    IDR_AURA_WINDOW_MAXIMIZED_RESTORE2,
-                    IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_H,
-                    IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_P);
+    if (size_button_behavior_ == SIZE_BUTTON_MINIMIZES) {
+      SetButtonImages(size_button_,
+                      IDR_AURA_WINDOW_MINIMIZE_SHORT,
+                      IDR_AURA_WINDOW_MINIMIZE_SHORT_H,
+                      IDR_AURA_WINDOW_MINIMIZE_SHORT_P);
+    } else {
+      SetButtonImages(size_button_,
+                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE2,
+                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_H,
+                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE2_P);
+    }
   } else if (shorter_layout) {
     SetButtonImages(close_button_,
                     IDR_AURA_WINDOW_MAXIMIZED_CLOSE,
                     IDR_AURA_WINDOW_MAXIMIZED_CLOSE_H,
                     IDR_AURA_WINDOW_MAXIMIZED_CLOSE_P);
     // The chat window cannot be restored but only minimized.
-    // Case: (size_button_behavior_ == SIZE_BUTTON_MINIMIZES). We used to have
-    // a special set of artwork to show this case, but per discussion we
-    // removed this.
-    SetButtonImages(size_button_,
-                    IDR_AURA_WINDOW_MAXIMIZED_RESTORE,
-                    IDR_AURA_WINDOW_MAXIMIZED_RESTORE_H,
-                    IDR_AURA_WINDOW_MAXIMIZED_RESTORE_P);
+    if (size_button_behavior_ == SIZE_BUTTON_MINIMIZES) {
+      SetButtonImages(size_button_,
+                      IDR_AURA_WINDOW_MINIMIZE_SHORT,
+                      IDR_AURA_WINDOW_MINIMIZE_SHORT_H,
+                      IDR_AURA_WINDOW_MINIMIZE_SHORT_P);
+    } else {
+      SetButtonImages(size_button_,
+                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE,
+                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE_H,
+                      IDR_AURA_WINDOW_MAXIMIZED_RESTORE_P);
+    }
   } else {
     SetButtonImages(close_button_,
                     IDR_AURA_WINDOW_CLOSE,
@@ -544,14 +585,15 @@ void FramePainter::LayoutHeader(views::NonClientFrameView* view,
 
   gfx::Size size_button_size = size_button_->GetPreferredSize();
   size_button_->SetBounds(
-      close_button_->x() - size_button_size.width() + kButtonOverlap,
+      close_button_->x() - size_button_size.width() - kSizeButtonOffsetX,
       close_button_->y(),
       size_button_size.width(),
       size_button_size.height());
 
-  if (window_icon_)
+  if (window_icon_) {
     window_icon_->SetBoundsRect(
         gfx::Rect(kIconOffsetX, kIconOffsetY, kIconSize, kIconSize));
+  }
 }
 
 void FramePainter::SchedulePaintForTitle(views::NonClientFrameView* view,
@@ -566,13 +608,16 @@ void FramePainter::SchedulePaintForTitle(views::NonClientFrameView* view,
 void FramePainter::OnWindowPropertyChanged(aura::Window* window,
                                            const void* key,
                                            intptr_t old) {
+  // When either 'kWindowTrackedByWorkspaceKey' changes or
+  // 'kCyclingThroughWorkspacesKey' changes, we are going to paint the header
+  // differently. Schedule a paint to ensure everything is updated correctly.
   if (key == internal::kWindowTrackedByWorkspaceKey &&
       GetTrackedByWorkspace(window)) {
-    // When 'kWindowTrackedByWorkspaceKey' changes we're going to paint the
-    // header differently. Schedule a paint to ensure everything is updated
-    // correctly.
+    frame_->non_client_view()->SchedulePaint();
+  } else if (key == internal::kCyclingThroughWorkspacesKey) {
     frame_->non_client_view()->SchedulePaint();
   }
+
   if (key != aura::client::kShowStateKey)
     return;
 
@@ -591,23 +636,28 @@ void FramePainter::OnWindowPropertyChanged(aura::Window* window,
 
 void FramePainter::OnWindowVisibilityChanged(aura::Window* window,
                                              bool visible) {
+  // Ignore updates from the root window.
+  if (window != window_)
+    return;
+
   // Window visibility change may trigger the change of window solo-ness in a
   // different window.
-  UpdateSoloWindowFramePainter(visible ? NULL : window_);
+  UpdateSoloWindowInRoot(window_->GetRootWindow(), visible ? NULL : window_);
 }
 
 void FramePainter::OnWindowDestroying(aura::Window* destroying) {
-  DCHECK_EQ(window_, destroying);
+  aura::RootWindow* root = window_->GetRootWindow();
+  DCHECK(destroying == window_ || destroying == root);
+
   // Must be removed here and not in the destructor, as the aura::Window is
   // already destroyed when our destructor runs.
   window_->RemoveObserver(this);
-
-  // For purposes of painting and solo window computation, we're done.
-  instances_->erase(this);
+  if (root)
+    root->RemoveObserver(this);
 
   // If we have two or more windows open and we close this one, we might trigger
   // the solo window appearance for another window.
-  UpdateSoloWindowFramePainter(window_);
+  UpdateSoloWindowInRoot(root, window_);
 
   window_ = NULL;
 }
@@ -615,6 +665,10 @@ void FramePainter::OnWindowDestroying(aura::Window* destroying) {
 void FramePainter::OnWindowBoundsChanged(aura::Window* window,
                                          const gfx::Rect& old_bounds,
                                          const gfx::Rect& new_bounds) {
+  // Ignore updates from the root window.
+  if (window != window_)
+    return;
+
   // TODO(sky): this isn't quite right. What we really want is a method that
   // returns bounds ignoring transforms on certain windows (such as workspaces).
   if (!frame_->IsMaximized() &&
@@ -625,16 +679,24 @@ void FramePainter::OnWindowBoundsChanged(aura::Window* window,
 }
 
 void FramePainter::OnWindowAddedToRootWindow(aura::Window* window) {
+  DCHECK_EQ(window_, window);
+  RootWindow* root = window->GetRootWindow();
+  root->AddObserver(this);
+
   // Needs to trigger the window appearance change if the window moves across
   // root windows and a solo window is already in the new root.
-  UpdateSoloWindowFramePainter(NULL);
+  UpdateSoloWindowInRoot(root, NULL /* ignore_window */);
 }
 
 void FramePainter::OnWindowRemovingFromRootWindow(aura::Window* window) {
+  DCHECK_EQ(window_, window);
+  RootWindow* root = window->GetRootWindow();
+  root->RemoveObserver(this);
+
   // Needs to trigger the window appearance change if the window moves across
   // root windows and only one window is left in the previous root.  Because
   // |window| is not yet moved, |window| has to be ignored.
-  UpdateSoloWindowFramePainter(window);
+  UpdateSoloWindowInRoot(root, window);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -652,12 +714,25 @@ void FramePainter::SetButtonImages(views::ImageButton* button,
                                    int hot_image_id,
                                    int pushed_image_id) {
   ui::ThemeProvider* theme_provider = frame_->GetThemeProvider();
-  button->SetImage(views::CustomButton::BS_NORMAL,
+  button->SetImage(views::CustomButton::STATE_NORMAL,
                    theme_provider->GetImageSkiaNamed(normal_image_id));
-  button->SetImage(views::CustomButton::BS_HOT,
+  button->SetImage(views::CustomButton::STATE_HOVERED,
                    theme_provider->GetImageSkiaNamed(hot_image_id));
-  button->SetImage(views::CustomButton::BS_PUSHED,
+  button->SetImage(views::CustomButton::STATE_PRESSED,
                    theme_provider->GetImageSkiaNamed(pushed_image_id));
+}
+
+void FramePainter::SetToggledButtonImages(views::ToggleImageButton* button,
+                                          int normal_image_id,
+                                          int hot_image_id,
+                                          int pushed_image_id) {
+  ui::ThemeProvider* theme_provider = frame_->GetThemeProvider();
+  button->SetToggledImage(views::CustomButton::STATE_NORMAL,
+                          theme_provider->GetImageSkiaNamed(normal_image_id));
+  button->SetToggledImage(views::CustomButton::STATE_HOVERED,
+                          theme_provider->GetImageSkiaNamed(hot_image_id));
+  button->SetToggledImage(views::CustomButton::STATE_PRESSED,
+                          theme_provider->GetImageSkiaNamed(pushed_image_id));
 }
 
 int FramePainter::GetTitleOffsetX() const {
@@ -675,10 +750,15 @@ int FramePainter::GetHeaderOpacity(HeaderMode header_mode,
   if (theme_frame_overlay)
     return kFullyOpaque;
 
-  // Maximized windows with workspace2 are totally transparent, except those not
-  // tracked by workspace code (which are used for tab dragging).
-  if (frame_->IsMaximized() && GetTrackedByWorkspace(frame_->GetNativeWindow()))
+  // Maximized windows with workspaces are totally transparent, except:
+  // - For windows whose workspace is not tracked by the workspace code (which
+  //   are used for tab dragging).
+  // - When the user is cycling through workspaces.
+  if (frame_->IsMaximized() &&
+      GetTrackedByWorkspace(frame_->GetNativeWindow()) &&
+      !IsCyclingThroughWorkspaces()) {
     return 0;
+  }
 
   // Single browser window is very transparent.
   if (UseSoloWindowHeader())
@@ -727,73 +807,71 @@ int FramePainter::AdjustFrameHitCodeForMaximizedModes(int hit_code) {
   return hit_code;
 }
 
+bool FramePainter::IsCyclingThroughWorkspaces() const {
+  aura::RootWindow* root = window_->GetRootWindow();
+  return root && root->GetProperty(internal::kCyclingThroughWorkspacesKey);
+}
+
 bool FramePainter::UseSoloWindowHeader() {
   aura::RootWindow* root = window_->GetRootWindow();
-  if (!root)
+  if (!root || root->GetProperty(internal::kIgnoreSoloWindowFramePainterPolicy))
     return false;
-
-  return (root->GetProperty(internal::kSoloWindowFramePainterKey) == this);
+  // Don't recompute every time, as it would require many window property
+  // lookups.
+  return root->GetProperty(internal::kSoloWindowHeaderKey);
 }
 
 // static
-FramePainter* FramePainter::GetSoloPainterInRoot(RootWindow* root_window,
-                                                 Window* ignorable_window) {
-  // Can be NULL in tests that don't use FramePainter windows.
-  if (!instances_)
-    return NULL;
-
-  FramePainter* painter = NULL;
-  for (std::set<FramePainter*>::const_iterator it = instances_->begin();
-       it != instances_->end();
+bool FramePainter::UseSoloWindowHeaderInRoot(RootWindow* root_window,
+                                             Window* ignore_window) {
+  int visible_window_count = 0;
+  std::vector<Window*> windows = GetWindowsForSoloHeaderUpdate(root_window);
+  for (std::vector<Window*>::const_iterator it = windows.begin();
+       it != windows.end();
        ++it) {
-    if (ignorable_window == (*it)->window_)
+    Window* window = *it;
+    // Various sorts of windows "don't count" for this computation.
+    if (ignore_window == window ||
+        !IsVisibleNormalWindow(window) ||
+        window->GetProperty(kConstrainedWindowKey))
       continue;
-
-    if (root_window != (*it)->window_->GetRootWindow())
-      continue;
-
-    // The window needs to be a 'normal window'. To exclude constrained windows
-    // the existence of a layout manager gets additionally tested.
-    if (IsVisibleNormalWindow((*it)->window_) &&
-        (!(*it)->window_->GetProperty(ash::kConstrainedWindowKey))) {
-      if (wm::IsWindowMaximized((*it)->window_)) {
-        return NULL;
-      }
-      if (painter)
-        return NULL;
-
-      painter = (*it);
-    }
+    if (wm::IsWindowMaximized(window))
+      return false;
+    ++visible_window_count;
+    if (visible_window_count > 1)
+      return false;
   }
-
-  return painter;
+  // Count must be tested because all windows might be "don't count" windows
+  // in the loop above.
+  return visible_window_count == 1;
 }
 
 // static
 void FramePainter::UpdateSoloWindowInRoot(RootWindow* root,
-                                          Window* ignorable_window) {
+                                          Window* ignore_window) {
+#if defined(OS_WIN)
+  // Non-Ash Windows doesn't do solo-window counting for transparency effects,
+  // as the desktop background and window frames are managed by the OS.
+  if (!ash::Shell::HasInstance())
+    return;
+#endif
   if (!root)
     return;
-
-  FramePainter* old_solo_painter = root->GetProperty(
-      internal::kSoloWindowFramePainterKey);
-  FramePainter* new_solo_painter = GetSoloPainterInRoot(root, ignorable_window);
-  if (old_solo_painter != new_solo_painter) {
-    if (old_solo_painter && old_solo_painter->frame_ &&
-        old_solo_painter->frame_->non_client_view()) {
-      old_solo_painter->frame_->non_client_view()->SchedulePaint();
-    }
-    root->SetProperty(internal::kSoloWindowFramePainterKey, new_solo_painter);
-    if (new_solo_painter && new_solo_painter->frame_ &&
-        new_solo_painter->frame_->non_client_view()) {
-      new_solo_painter->frame_->non_client_view()->SchedulePaint();
-    }
+  bool old_solo_header = root->GetProperty(internal::kSoloWindowHeaderKey);
+  bool new_solo_header = UseSoloWindowHeaderInRoot(root, ignore_window);
+  if (old_solo_header == new_solo_header)
+    return;
+  root->SetProperty(internal::kSoloWindowHeaderKey, new_solo_header);
+  // Invalidate all the window frames in the active workspace. There should
+  // only be a few.
+  std::vector<Window*> windows = GetWindowsForSoloHeaderUpdate(root);
+  for (std::vector<Window*>::const_iterator it = windows.begin();
+       it != windows.end();
+       ++it) {
+    Widget* widget = Widget::GetWidgetForNativeWindow(*it);
+    if (widget && widget->non_client_view())
+      widget->non_client_view()->SchedulePaint();
   }
-}
-
-void FramePainter::UpdateSoloWindowFramePainter(
-    aura::Window* ignorable_window) {
-  UpdateSoloWindowInRoot(window_->GetRootWindow(), ignorable_window);
 }
 
 void FramePainter::SchedulePaintForHeader() {

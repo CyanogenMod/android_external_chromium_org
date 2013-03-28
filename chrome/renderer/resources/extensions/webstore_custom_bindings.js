@@ -2,20 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the webstore API.
+// Custom binding for the webstore API.
 
 var webstoreNatives = requireNative('webstore');
 
 function Installer() {
-  this._pendingInstalls = {};
+  this._pendingInstall = null;
 }
 
 Installer.prototype.install = function(url, onSuccess, onFailure) {
+  if (this._pendingInstall) {
+    throw 'A Chrome Web Store installation is already pending.';
+  }
   var installId = webstoreNatives.Install(url, onSuccess, onFailure);
   if (installId !== undefined) {
-    if (installId in this._pendingInstalls)
-      throw new Error('Duplicate installId ' + installId);
-    this._pendingInstalls[installId] = {
+    this._pendingInstall = {
+      installId: installId,
       onSuccess: onSuccess,
       onFailure: onFailure
     };
@@ -23,8 +25,8 @@ Installer.prototype.install = function(url, onSuccess, onFailure) {
 };
 
 Installer.prototype.onInstallResponse = function(installId, success, error) {
-  var pendingInstall = this._pendingInstalls[installId];
-  if (!pendingInstall) {
+  var pendingInstall = this._pendingInstall;
+  if (!pendingInstall || pendingInstall.installId != installId) {
     // TODO(kalman): should this be an error?
     return;
   }
@@ -35,7 +37,7 @@ Installer.prototype.onInstallResponse = function(installId, success, error) {
     else if (!success && pendingInstall.onFailure)
       pendingInstall.onFailure(error);
   } finally {
-    delete this._pendingInstalls[installId];
+    this._pendingInstall = null;
   }
 };
 
@@ -47,14 +49,14 @@ var chromeWebstore = {
   }
 };
 
-// Called by webstore_bindings.cc.
+// Called by webstore_binding.cc.
 var chromeHiddenWebstore = {
   onInstallResponse: function(installId, success, error) {
     installer.onInstallResponse(installId, success, error);
   }
 };
 
-// These must match the names in InstallWebstoreBindings in
+// These must match the names in InstallWebstorebinding in
 // chrome/renderer/extensions/dispatcher.cc.
 exports.chromeWebstore = chromeWebstore;
 exports.chromeHiddenWebstore = chromeHiddenWebstore;

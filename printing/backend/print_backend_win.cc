@@ -14,32 +14,11 @@
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_hglobal.h"
 #include "printing/backend/print_backend_consts.h"
+#include "printing/backend/printing_info_win.h"
 #include "printing/backend/win_helper.h"
 
+
 namespace {
-
-// This class is designed to work with PRINTER_INFO_X structures
-// and calls GetPrinter internally with correctly allocated buffer.
-template <typename T>
-class PrinterInfo {
- public:
-  bool GetPrinterInfo(HANDLE printer, int level) {
-    DWORD buf_size = 0;
-    GetPrinter(printer, level, NULL, 0, &buf_size);
-    if (buf_size == 0)
-      return false;
-    buffer_.reset(new uint8[buf_size]);
-    memset(buffer_.get(), 0, buf_size);
-    return !!GetPrinter(printer, level, buffer_.get(), buf_size, &buf_size);
-  }
-
-  const T* get() const {
-    return reinterpret_cast<T*>(buffer_.get());
-  }
-
- private:
-  scoped_array<uint8> buffer_;
-};
 
 HRESULT StreamOnHGlobalToString(IStream* stream, std::string* out) {
   DCHECK(stream);
@@ -126,51 +105,41 @@ bool PrintBackendWin::GetPrinterSemanticCapsAndDefaults(
   OpenPrinter(const_cast<LPTSTR>(UTF8ToWide(printer_name).c_str()),
               printer_handle.Receive(), NULL);
   DCHECK(printer_handle);
-  if (!printer_handle.IsValid())
+  if (!printer_handle.IsValid()) {
+    LOG(WARNING) << "Failed to open printer, error = " << GetLastError();
     return false;
+  }
 
-  PrinterInfo<PRINTER_INFO_5> info_5;
-  if (!info_5.GetPrinterInfo(printer_handle, 5))
+  PrinterInfo5 info_5;
+  if (!info_5.Init(printer_handle)) {
     return false;
+  }
+  DCHECK_EQ(info_5.get()->pPrinterName, UTF8ToUTF16(printer_name));
+
+  PrinterSemanticCapsAndDefaults caps;
 
   // Get printer capabilities. For more info see here:
   // http://msdn.microsoft.com/en-us/library/windows/desktop/dd183552(v=vs.85).aspx
-  bool color_supported = (DeviceCapabilities(info_5.get()->pPrinterName,
-                                             info_5.get()->pPortName,
-                                             DC_COLORDEVICE,
-                                             NULL,
-                                             NULL) == 1);
+  caps.color_changeable = (::DeviceCapabilities(info_5.get()->pPrinterName,
+                                                info_5.get()->pPortName,
+                                                DC_COLORDEVICE,
+                                                NULL,
+                                                NULL) == 1);
 
-  bool duplex_supported = (DeviceCapabilities(info_5.get()->pPrinterName,
+  caps.duplex_capable = (::DeviceCapabilities(info_5.get()->pPrinterName,
                                               info_5.get()->pPortName,
                                               DC_DUPLEX,
                                               NULL,
                                               NULL) == 1);
 
-  // PRINTER_INFO_9 retrieves current user settings.
-  PrinterInfo<PRINTER_INFO_9> info_9;
-  if (!info_9.GetPrinterInfo(printer_handle, 9))
-    return false;
-  DEVMODE* devmode = info_9.get()->pDevMode;
+  UserDefaultDevMode user_settings;
 
-  // Sometimes user settings are not available (have not been setted up yet).
-  // Use printer default settings (PRINTER_INFO_8) in this case.
-  PrinterInfo<PRINTER_INFO_8> info_8;
-  if (!devmode) {
-    if (info_8.GetPrinterInfo(printer_handle, 8))
-      devmode = info_8.get()->pDevMode;
-  }
-  if (!devmode)
-    return false;
+  if (user_settings.Init(printer_handle)) {
+    if ((user_settings.get()->dmFields & DM_COLOR) == DM_COLOR)
+      caps.color_default = (user_settings.get()->dmColor == DMCOLOR_COLOR);
 
-  PrinterSemanticCapsAndDefaults caps;
-  caps.color_capable = color_supported;
-  if ((devmode->dmFields & DM_COLOR) == DM_COLOR)
-    caps.color_default = (devmode->dmColor == DMCOLOR_COLOR);
-
-  caps.duplex_capable = duplex_supported;
-  if ((devmode->dmFields & DM_DUPLEX) == DM_DUPLEX) {
-    switch (devmode->dmDuplex) {
+    if ((user_settings.get()->dmFields & DM_DUPLEX) == DM_DUPLEX) {
+      switch (user_settings.get()->dmDuplex) {
       case DMDUP_SIMPLEX:
         caps.duplex_default = SIMPLEX;
         break;
@@ -182,7 +151,12 @@ bool PrintBackendWin::GetPrinterSemanticCapsAndDefaults(
         break;
       default:
         NOTREACHED();
+      }
     }
+  } else {
+    LOG(WARNING) << "Fallback to color/simplex mode.";
+    caps.color_default = caps.color_changeable;
+    caps.duplex_default = SIMPLEX;
   }
 
   *printer_info = caps;

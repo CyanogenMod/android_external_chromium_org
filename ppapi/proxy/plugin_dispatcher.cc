@@ -16,6 +16,7 @@
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/proxy/flash_resource.h"
 #include "ppapi/proxy/flash_clipboard_resource.h"
+#include "ppapi/proxy/flash_file_resource.h"
 #include "ppapi/proxy/gamepad_resource.h"
 #include "ppapi/proxy/interface_list.h"
 #include "ppapi/proxy/interface_proxy.h"
@@ -32,7 +33,7 @@
 #include "ppapi/shared_impl/resource.h"
 
 #if defined(OS_POSIX) && !defined(OS_NACL)
-#include "base/eintr_wrapper.h"
+#include "base/posix/eintr_wrapper.h"
 #include "ipc/ipc_channel_posix.h"
 #endif
 
@@ -50,8 +51,7 @@ DispatcherSet* g_live_dispatchers = NULL;
 }  // namespace
 
 InstanceData::InstanceData()
-    : flash_fullscreen(PP_FALSE),
-      is_request_surrounding_text_pending(false),
+    : is_request_surrounding_text_pending(false),
       should_do_request_surrounding_text(false) {
 }
 
@@ -117,7 +117,7 @@ const void* PluginDispatcher::GetBrowserInterface(const char* interface_name) {
 
 // static
 void PluginDispatcher::LogWithSource(PP_Instance instance,
-                                     PP_LogLevel_Dev level,
+                                     PP_LogLevel level,
                                      const std::string& source,
                                      const std::string& value) {
   if (!g_live_dispatchers || !g_instance_to_dispatcher)
@@ -155,9 +155,11 @@ const void* PluginDispatcher::GetPluginInterface(
 
 bool PluginDispatcher::InitPluginWithChannel(
     PluginDelegate* delegate,
+    base::ProcessId peer_pid,
     const IPC::ChannelHandle& channel_handle,
     bool is_client) {
-  if (!Dispatcher::InitWithChannel(delegate, channel_handle, is_client))
+  if (!Dispatcher::InitWithChannel(delegate, peer_pid, channel_handle,
+                                   is_client))
     return false;
   plugin_delegate_ = delegate;
   plugin_dispatcher_id_ = plugin_delegate_->Register(this);
@@ -192,6 +194,10 @@ bool PluginDispatcher::Send(IPC::Message* msg) {
   if (msg->is_sync()) {
     // Synchronous messages might be re-entrant, so we need to drop the lock.
     ProxyAutoUnlock unlock;
+
+    // TODO(yzshen): Make sending message thread-safe. It may be accessed from
+    // non-main threads. Moreover, since the proxy lock has been released, it
+    // may be accessed by multiple threads at the same time.
     return Dispatcher::Send(msg);
   }
   return Dispatcher::Send(msg);
@@ -339,8 +345,9 @@ void PluginDispatcher::LockedDispatchResourceReply(
   Resource* resource = PpapiGlobals::Get()->GetResourceTracker()->GetResource(
       reply_params.pp_resource());
   if (!resource) {
-    if (reply_params.sequence())
-      NOTREACHED();
+    DLOG_IF(INFO, reply_params.sequence() != 0)
+        << "Pepper resource reply message received but the resource doesn't "
+           "exist (probably has been destroyed).";
     return;
   }
   resource->OnReplyReceived(reply_params, nested_msg);

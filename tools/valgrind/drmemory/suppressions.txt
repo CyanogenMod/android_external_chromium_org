@@ -25,6 +25,18 @@ name=Sophos LEAK
 ...
 sophos*.dll!*
 
+# Reports from Micorosft RDP ActiveX control (mstscax.dll)
+
+GDI USAGE ERROR
+name=crbug.com/177832: mstscax.dll causes "GDI USAGE ERROR" errors.
+...
+mstscax.dll!*
+
+UNADDRESSABLE ACCESS
+name=crbug.com/177832: mstscax.dll causes "UNADDRESSABLE ACCESS" errors.
+...
+mstscax.dll!*
+
 ############################
 # Suppress some false reports due to bugs in Dr.Memory like wrong analysis
 # assumptions or unhandled syscalls
@@ -105,6 +117,13 @@ INVALID HEAP ARGUMENT
 name=http://crbug.com/107567 intentional mismatch in _DebugHeapDelete, no frame
 *!std::numpunct<*>::_Tidy
 *!std::numpunct<*>::~numpunct<*>
+
+# TODO(rbultje): Investigate if code fix is required instead. 
+WARNING
+name=http://crbug.com/223255 - prefetches in vp8
+instruction=prefetch*
+ffmpegsumo.dll!ff_prefetch_mmxext
+ffmpegsumo.dll!vp8_decode_mb_row_no_filter
 
 ############################
 # Intentional errors in Chromium tests (ToolsSanityTests)
@@ -307,13 +326,6 @@ system call NtGdiDeleteObjectApp
 ...
 *!skia::BitmapPlatformDevice::BitmapPlatformDeviceData::ReleaseBitmapDC
 
-GDI USAGE ERROR
-name=http://crbug.com/109963 c
-system call NtGdiDeleteObjectApp
-...
-skia.dll!skia::PlatformBitmap::~PlatformBitmap
-*!skia::PlatformBitmap*
-
 # GDI usage errors in 3rd-party components
 GDI USAGE ERROR
 name=http://crbug.com/119552 a
@@ -391,11 +403,38 @@ KERNEL32.dll!*
 ntdll.dll!*
 ntdll.dll!*
 
+WARNING
+name=Security test (new oveflow)
+MSVCR100D.dll!operator new
+*!operator new
+*!operator new[]
+*!`anonymous namespace'::SecurityTest_NewOverflow_Test::TestBody
+*!testing::internal::HandleExceptionsInMethodIfSupported<testing::Test,void>
+
+WARNING
+name=Security test (calloc overflow)
+*!`anonymous namespace'::CallocReturnsNull
+*!`anonymous namespace'::SecurityTest_CallocOverflow_Test::TestBody
+*!testing::internal::HandleExceptionsInMethodIfSupported<testing::Test,void>
+
 GDI USAGE ERROR
-name=http://crbug.com/160477
-system call NtGdiDeleteObjectApp
-GDI32.dll!DeleteDC
-*!base::win::CreateDCTraits::CloseHandle
-*!base::win::GenericScopedHandle<base::win::CreateDCTraits,base::win::VerifierTraits>::Close
-*!base::win::GenericScopedHandle<base::win::CreateDCTraits,base::win::VerifierTraits>::~GenericScopedHandle<base::win::CreateDCTraits,base::win::VerifierTraits>
-*!remoting::`anonymous namespace'::VideoFrameCapturerWin::~VideoFrameCapturerWin
+name=crbug.com/175512
+...
+USER32.dll!UnregisterClassA
+USER32.dll!UnregisterClassA
+USER32.dll!UnregisterClassA
+USER32.dll!LoadBitmapW
+media.dll!media::*::ScreenCapturerWin::CaptureCursor
+media.dll!media::*::ScreenCapturerWin::CaptureFrame
+media.dll!media::ScreenCaptureDevice::Core::DoCapture
+
+WARNING
+name=http://crbug.com/222628
+...
+v8.dll!v8::internal::CopyBytes<unsigned char>
+v8.dll!v8::internal::Code::CopyFrom
+v8.dll!v8::internal::Heap::CreateCode
+v8.dll!v8::internal::Factory::NewCode
+v8.dll!v8::internal::CodeGenerator::MakeCodeEpilogue
+v8.dll!v8::internal::FullCodeGenerator::MakeCode
+v8.dll!v8::internal::GenerateCode

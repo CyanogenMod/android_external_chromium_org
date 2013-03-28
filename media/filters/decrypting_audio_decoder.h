@@ -7,6 +7,7 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/decryptor.h"
 #include "media/base/demuxer_stream.h"
@@ -24,31 +25,19 @@ class Decryptor;
 // encrypted audio buffers and return decrypted and decompressed audio frames.
 // All public APIs and callbacks are trampolined to the |message_loop_| so
 // that no locks are required for thread safety.
-//
-// TODO(xhwang): For now, DecryptingAudioDecoder relies on the decryptor to do
-// both decryption and audio decoding. Add the path to use the decryptor for
-// decryption only and use other AudioDecoder implementations within
-// DecryptingAudioDecoder for audio decoding.
 class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
  public:
-  // Callback to get a message loop.
-  typedef base::Callback<
-      scoped_refptr<base::MessageLoopProxy>()> MessageLoopFactoryCB;
-  // Callback to notify decryptor creation.
-  typedef base::Callback<void(Decryptor*)> DecryptorNotificationCB;
-  // Callback to request/cancel decryptor creation notification.
-  // Calling this callback with a non-null callback registers decryptor creation
-  // notification. When the decryptor is created, notification will be sent
-  // through the provided callback.
-  // Calling this callback with a null callback cancels previously registered
-  // decryptor creation notification. Any previously provided callback will be
-  // fired immediately with NULL.
-  typedef base::Callback<void(const DecryptorNotificationCB&)>
-      RequestDecryptorNotificationCB;
+  // We do not currently have a way to let the Decryptor choose the output
+  // audio sample format and notify us of its choice. Therefore, we require all
+  // Decryptor implementations to decode audio into a fixed integer sample
+  // format designated by kSupportedBitsPerChannel.
+  // TODO(xhwang): Remove this restriction after http://crbug.com/169105 fixed.
+  static const int kSupportedBitsPerChannel;
 
   DecryptingAudioDecoder(
-      const MessageLoopFactoryCB& message_loop_factory_cb,
-      const RequestDecryptorNotificationCB& request_decryptor_notification_cb);
+      const scoped_refptr<base::MessageLoopProxy>& message_loop,
+      const SetDecryptorReadyCB& set_decryptor_ready_cb);
+  virtual ~DecryptingAudioDecoder();
 
   // AudioDecoder implementation.
   virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
@@ -60,49 +49,36 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   virtual ChannelLayout channel_layout() OVERRIDE;
   virtual int samples_per_second() OVERRIDE;
 
- protected:
-  virtual ~DecryptingAudioDecoder();
-
  private:
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
   // TODO(xhwang): Add a ASCII state diagram in this file after this class
   // stabilizes.
   // TODO(xhwang): Update this diagram for DecryptingAudioDecoder.
-  enum DecoderState {
+  enum State {
     kUninitialized = 0,
     kDecryptorRequested,
     kPendingDecoderInit,
     kIdle,
+    kPendingConfigChange,
     kPendingDemuxerRead,
     kPendingDecode,
     kWaitingForKey,
     kDecodeFinished,
   };
 
-  // Carries out the initialization operation scheduled by Initialize().
-  void DoInitialize(const scoped_refptr<DemuxerStream>& stream,
-                    const PipelineStatusCB& status_cb,
-                    const StatisticsCB& statistics_cb);
-
   // Callback for DecryptorHost::RequestDecryptor().
   void SetDecryptor(Decryptor* decryptor);
 
-  // Callback for Decryptor::InitializeAudioDecoder().
+  // Callback for Decryptor::InitializeAudioDecoder() during initialization.
   void FinishInitialization(bool success);
 
-  // Carries out the buffer reading operation scheduled by Read().
-  void DoRead(const ReadCB& read_cb);
+  // Callback for Decryptor::InitializeAudioDecoder() during config change.
+  void FinishConfigChange(bool success);
 
+  // Reads from the demuxer stream with corresponding callback method.
   void ReadFromDemuxerStream();
-
-  // Callback for DemuxerStream::Read().
   void DecryptAndDecodeBuffer(DemuxerStream::Status status,
                               const scoped_refptr<DecoderBuffer>& buffer);
-
-  // Carries out the buffer decrypting/decoding operation scheduled by
-  // DecryptAndDecodeBuffer().
-  void DoDecryptAndDecodeBuffer(DemuxerStream::Status status,
-                                const scoped_refptr<DecoderBuffer>& buffer);
 
   void DecodePendingBuffer();
 
@@ -111,17 +87,16 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
                     Decryptor::Status status,
                     const Decryptor::AudioBuffers& frames);
 
-  // Carries out the frame delivery operation scheduled by DeliverFrame().
-  void DoDeliverFrame(int buffer_size,
-                      Decryptor::Status status,
-                      const Decryptor::AudioBuffers& frames);
-
-  // Callback for the |decryptor_| to notify the DecryptingAudioDecoder that
-  // a new key has been added.
+  // Callback for the |decryptor_| to notify this object that a new key has been
+  // added.
   void OnKeyAdded();
 
   // Resets decoder and calls |reset_cb_|.
   void DoReset();
+
+  // Updates audio configs from |demuxer_stream_| and resets
+  // |output_timestamp_base_| and |total_samples_decoded_|.
+  void UpdateDecoderConfig();
 
   // Sets timestamp and duration for |queued_audio_frames_| to make sure the
   // renderer always receives continuous frames without gaps and overlaps.
@@ -130,13 +105,11 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   // Converts number of samples to duration.
   base::TimeDelta NumberOfSamplesToDuration(int number_of_samples) const;
 
-  // This is !is_null() iff Initialize() hasn't been called.
-  MessageLoopFactoryCB message_loop_factory_cb_;
-
   scoped_refptr<base::MessageLoopProxy> message_loop_;
+  base::WeakPtrFactory<DecryptingAudioDecoder> weak_factory_;
+  base::WeakPtr<DecryptingAudioDecoder> weak_this_;
 
-  // Current state of the DecryptingAudioDecoder.
-  DecoderState state_;
+  State state_;
 
   PipelineStatusCB init_cb_;
   StatisticsCB statistics_cb_;
@@ -147,7 +120,7 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   scoped_refptr<DemuxerStream> demuxer_stream_;
 
   // Callback to request/cancel decryptor creation notification.
-  RequestDecryptorNotificationCB request_decryptor_notification_cb_;
+  SetDecryptorReadyCB set_decryptor_ready_cb_;
 
   Decryptor* decryptor_;
 
@@ -159,7 +132,7 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   // If this variable is true and kNoKey is returned then we need to try
   // decrypting/decoding again in case the newly added key is the correct
   // decryption key.
-  bool key_added_while_pending_decode_;
+  bool key_added_while_decode_pending_;
 
   Decryptor::AudioBuffers queued_audio_frames_;
 

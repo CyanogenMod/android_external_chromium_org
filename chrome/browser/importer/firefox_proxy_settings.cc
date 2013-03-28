@@ -4,9 +4,9 @@
 
 #include "chrome/browser/importer/firefox_proxy_settings.h"
 
-#include "base/file_path.h"
-#include "base/string_tokenizer.h"
+#include "base/files/file_path.h"
 #include "base/string_util.h"
+#include "base/strings/string_tokenizer.h"
 #include "base/values.h"
 #include "chrome/browser/importer/firefox_importer_utils.h"
 #include "net/proxy/proxy_config.h"
@@ -88,10 +88,10 @@ bool FirefoxProxySettings::GetSettings(FirefoxProxySettings* settings) {
   DCHECK(settings);
   settings->Reset();
 
-  FilePath profile_path = GetFirefoxProfilePath();
+  base::FilePath profile_path = GetFirefoxProfilePath();
   if (profile_path.empty())
     return false;
-  FilePath pref_file = profile_path.AppendASCII(kPrefFileName);
+  base::FilePath pref_file = profile_path.AppendASCII(kPrefFileName);
   return GetSettingsFromFile(pref_file, settings);
 }
 
@@ -126,30 +126,34 @@ bool FirefoxProxySettings::ToProxyConfig(net::ProxyConfig* config) {
       net::ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME;
 
   if (!http_proxy().empty()) {
-    config->proxy_rules().proxy_for_http = net::ProxyServer(
-        net::ProxyServer::SCHEME_HTTP,
-        net::HostPortPair(http_proxy(), http_proxy_port()));
+    config->proxy_rules().proxies_for_http.SetSingleProxyServer(
+        net::ProxyServer(
+            net::ProxyServer::SCHEME_HTTP,
+            net::HostPortPair(http_proxy(), http_proxy_port())));
   }
 
   if (!ftp_proxy().empty()) {
-    config->proxy_rules().proxy_for_ftp = net::ProxyServer(
-        net::ProxyServer::SCHEME_HTTP,
-        net::HostPortPair(ftp_proxy(), ftp_proxy_port()));
+    config->proxy_rules().proxies_for_ftp.SetSingleProxyServer(
+        net::ProxyServer(
+            net::ProxyServer::SCHEME_HTTP,
+            net::HostPortPair(ftp_proxy(), ftp_proxy_port())));
   }
 
   if (!ssl_proxy().empty()) {
-    config->proxy_rules().proxy_for_https = net::ProxyServer(
-        net::ProxyServer::SCHEME_HTTP,
-        net::HostPortPair(ssl_proxy(), ssl_proxy_port()));
+    config->proxy_rules().proxies_for_https.SetSingleProxyServer(
+        net::ProxyServer(
+            net::ProxyServer::SCHEME_HTTP,
+            net::HostPortPair(ssl_proxy(), ssl_proxy_port())));
   }
 
   if (!socks_host().empty()) {
     net::ProxyServer::Scheme proxy_scheme = V5 == socks_version() ?
         net::ProxyServer::SCHEME_SOCKS5 : net::ProxyServer::SCHEME_SOCKS4;
 
-    config->proxy_rules().fallback_proxy = net::ProxyServer(
-        proxy_scheme,
-        net::HostPortPair(socks_host(), socks_port()));
+    config->proxy_rules().fallback_proxies.SetSingleProxyServer(
+        net::ProxyServer(
+            proxy_scheme,
+            net::HostPortPair(socks_host(), socks_port())));
   }
 
   config->proxy_rules().bypass_rules.ParseFromStringUsingSuffixMatching(
@@ -159,7 +163,7 @@ bool FirefoxProxySettings::ToProxyConfig(net::ProxyConfig* config) {
 }
 
 // static
-bool FirefoxProxySettings::GetSettingsFromFile(const FilePath& pref_file,
+bool FirefoxProxySettings::GetSettingsFromFile(const base::FilePath& pref_file,
                                                FirefoxProxySettings* settings) {
   DictionaryValue dictionary;
   if (!ParsePrefFile(pref_file, &dictionary))
@@ -210,7 +214,7 @@ bool FirefoxProxySettings::GetSettingsFromFile(const FilePath& pref_file,
     std::string proxy_bypass;
     if (dictionary.GetStringASCII(kNoProxyListKey, &proxy_bypass) &&
         !proxy_bypass.empty()) {
-      StringTokenizer string_tok(proxy_bypass, ",");
+      base::StringTokenizer string_tok(proxy_bypass, ",");
       while (string_tok.GetNext()) {
         std::string token = string_tok.token();
         TrimWhitespaceASCII(token, TRIM_ALL, &token);

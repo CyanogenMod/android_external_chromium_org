@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "remoting/host/chromoting_host.h"
 #include "remoting/host/ui_strings.h"
 #include "ui/base/gtk/gtk_signal.h"
 
@@ -19,11 +18,10 @@ namespace remoting {
 
 class DisconnectWindowGtk : public DisconnectWindow {
  public:
-  DisconnectWindowGtk();
+  explicit DisconnectWindowGtk(const UiStrings* ui_strings);
   virtual ~DisconnectWindowGtk();
 
-  virtual void Show(ChromotingHost* host,
-                    const DisconnectCallback& disconnect_callback,
+  virtual bool Show(const base::Closure& disconnect_callback,
                     const std::string& username) OVERRIDE;
   virtual void Hide() OVERRIDE;
 
@@ -35,9 +33,9 @@ class DisconnectWindowGtk : public DisconnectWindow {
   CHROMEGTK_CALLBACK_1(DisconnectWindowGtk, gboolean, OnButtonPress,
                        GdkEventButton*);
 
-  void CreateWindow(const UiStrings& ui_strings);
+  void CreateWindow();
 
-  DisconnectCallback disconnect_callback_;
+  base::Closure disconnect_callback_;
   GtkWidget* disconnect_window_;
   GtkWidget* message_;
   GtkWidget* button_;
@@ -47,27 +45,33 @@ class DisconnectWindowGtk : public DisconnectWindow {
   int current_width_;
   int current_height_;
 
+  // Points to the localized strings.
+  const UiStrings* ui_strings_;
+
   DISALLOW_COPY_AND_ASSIGN(DisconnectWindowGtk);
 };
 
-DisconnectWindowGtk::DisconnectWindowGtk()
+DisconnectWindowGtk::DisconnectWindowGtk(const UiStrings* ui_strings)
     : disconnect_window_(NULL),
       current_width_(0),
-      current_height_(0) {
+      current_height_(0),
+      ui_strings_(ui_strings) {
 }
 
 DisconnectWindowGtk::~DisconnectWindowGtk() {
+  Hide();
 }
 
-void DisconnectWindowGtk::CreateWindow(const UiStrings& ui_strings) {
-  if (disconnect_window_) return;
+void DisconnectWindowGtk::CreateWindow() {
+  if (disconnect_window_)
+    return;
 
   disconnect_window_ = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   GtkWindow* window = GTK_WINDOW(disconnect_window_);
 
   g_signal_connect(disconnect_window_, "delete-event",
                    G_CALLBACK(OnDeleteThunk), this);
-  gtk_window_set_title(window, UTF16ToUTF8(ui_strings.product_name).c_str());
+  gtk_window_set_title(window, UTF16ToUTF8(ui_strings_->product_name).c_str());
   gtk_window_set_resizable(window, FALSE);
 
   // Try to keep the window always visible.
@@ -111,7 +115,7 @@ void DisconnectWindowGtk::CreateWindow(const UiStrings& ui_strings) {
   gtk_container_add(GTK_CONTAINER(align), button_row);
 
   button_ = gtk_button_new_with_label(
-      UTF16ToUTF8(ui_strings.disconnect_button_text_plus_shortcut).c_str());
+      UTF16ToUTF8(ui_strings_->disconnect_button_text).c_str());
   gtk_box_pack_end(GTK_BOX(button_row), button_, FALSE, FALSE, 0);
 
   g_signal_connect(button_, "clicked", G_CALLBACK(OnClickedThunk), this);
@@ -129,16 +133,20 @@ void DisconnectWindowGtk::CreateWindow(const UiStrings& ui_strings) {
   gtk_widget_show_all(disconnect_window_);
 }
 
-void DisconnectWindowGtk::Show(ChromotingHost* host,
-                                 const DisconnectCallback& disconnect_callback,
-                                 const std::string& username) {
+bool DisconnectWindowGtk::Show(const base::Closure& disconnect_callback,
+                               const std::string& username) {
+  DCHECK(disconnect_callback_.is_null());
+  DCHECK(!disconnect_callback.is_null());
+  DCHECK(!disconnect_window_);
+
   disconnect_callback_ = disconnect_callback;
-  CreateWindow(host->ui_strings());
+  CreateWindow();
 
   string16 text = ReplaceStringPlaceholders(
-      host->ui_strings().disconnect_message, UTF8ToUTF16(username), NULL);
+      ui_strings_->disconnect_message, UTF8ToUTF16(username), NULL);
   gtk_label_set_text(GTK_LABEL(message_), UTF16ToUTF8(text).c_str());
   gtk_window_present(GTK_WINDOW(disconnect_window_));
+  return true;
 }
 
 void DisconnectWindowGtk::Hide() {
@@ -146,18 +154,16 @@ void DisconnectWindowGtk::Hide() {
     gtk_widget_destroy(disconnect_window_);
     disconnect_window_ = NULL;
   }
+
+  disconnect_callback_.Reset();
 }
 
 void DisconnectWindowGtk::OnClicked(GtkWidget* button) {
-  CHECK(!disconnect_callback_.is_null());
-
   disconnect_callback_.Run();
   Hide();
 }
 
 gboolean DisconnectWindowGtk::OnDelete(GtkWidget* window, GdkEvent* event) {
-  CHECK(!disconnect_callback_.is_null());
-
   disconnect_callback_.Run();
   Hide();
 
@@ -276,8 +282,9 @@ gboolean DisconnectWindowGtk::OnButtonPress(GtkWidget* widget,
   return FALSE;
 }
 
-scoped_ptr<DisconnectWindow> DisconnectWindow::Create() {
-  return scoped_ptr<DisconnectWindow>(new DisconnectWindowGtk());
+scoped_ptr<DisconnectWindow> DisconnectWindow::Create(
+    const UiStrings* ui_strings) {
+  return scoped_ptr<DisconnectWindow>(new DisconnectWindowGtk(ui_strings));
 }
 
 }  // namespace remoting

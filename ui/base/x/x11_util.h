@@ -28,6 +28,7 @@ typedef struct _XDisplay Display;
 typedef unsigned long Cursor;
 typedef struct _XcursorImage XcursorImage;
 typedef struct _XImage XImage;
+typedef struct _XGC *GC;
 
 #if defined(TOOLKIT_GTK)
 typedef struct _GdkDrawable GdkWindow;
@@ -77,6 +78,10 @@ int GetDefaultScreen(Display* display);
 // Returns an X11 Cursor, sharable across the process.
 // |cursor_shape| is an X font cursor shape, see XCreateFontCursor().
 UI_EXPORT ::Cursor GetXCursor(int cursor_shape);
+
+// Resets the cache used by GetXCursor(). Only useful for tests that may delete
+// the display.
+UI_EXPORT void ResetXCursorCache();
 
 #if defined(USE_AURA)
 // Creates a custom X cursor from the image. This takes ownership of image. The
@@ -140,6 +145,9 @@ UI_EXPORT void SetHideTitlebarWhenMaximizedProperty(
     XID window,
     HideTitlebarWhenMaximized property);
 
+// Clears all regions of X11's default root window by filling black pixels.
+UI_EXPORT void ClearX11DefaultRootWindow();
+
 // Return the number of bits-per-pixel for a pixmap of the given depth
 UI_EXPORT int BitsPerPixelForPixmapDepth(Display* display, int depth);
 
@@ -180,7 +188,7 @@ UI_EXPORT bool SetIntArrayProperty(XID window,
 Atom GetAtom(const char* atom_name);
 
 // Get |window|'s parent window, or None if |window| is the root window.
-XID GetParentWindow(XID window);
+UI_EXPORT XID GetParentWindow(XID window);
 
 // Walk up |window|'s hierarchy until we find a direct child of |root|.
 XID GetHighestAncestorWindow(XID window, XID root);
@@ -259,27 +267,37 @@ UI_EXPORT void PutARGBImage(Display* display,
 void FreePicture(Display* display, XID picture);
 void FreePixmap(Display* display, XID pixmap);
 
-// Gets the list of the output displaying device handles via XRandR, and sets to
-// |outputs|.  Returns false if it fails to get the list and |outputs| is
-// cleared.
-UI_EXPORT bool GetOutputDeviceHandles(std::vector<XID>* outputs);
-
 // Gets some useful data from the specified output device, such like
-// manufacturer's ID, serial#, and human readable name. Returns false if it
-// fails to get those data and doesn't touch manufacturer ID/serial#/name.
+// manufacturer's ID, product code, and human readable name. Returns false if it
+// fails to get those data and doesn't touch manufacturer ID/product code/name.
 // NULL can be passed for unwanted output parameters.
 UI_EXPORT bool GetOutputDeviceData(XID output,
                                    uint16* manufacturer_id,
-                                   uint32* serial_number,
+                                   uint16* product_code,
                                    std::string* human_readable_name);
 
-// Gets the names of the all displays physically connected to the system.
-UI_EXPORT std::vector<std::string> GetDisplayNames(
-    const std::vector<XID>& output_id);
+// Gets the overscan flag from |output| and stores to |flag|. Returns true if
+// the flag is found. Otherwise returns false and doesn't touch |flag|. The
+// output will produce overscan if |flag| is set to true, but the output may
+// still produce overscan even though it returns true and |flag| is set to
+// false.
+UI_EXPORT bool GetOutputOverscanFlag(XID output, bool* flag);
 
-// Gets the name of outputs given by |output_id|.
-UI_EXPORT std::vector<std::string> GetOutputNames(
-    const std::vector<XID>& output_id);
+// Parses |prop| as EDID data and stores extracted data into |manufacturer_id|,
+// |product_code|, and |human_readable_name| and returns true. NULL can be
+// passed for unwanted output parameters. This is exported for
+// x11_util_unittest.cc.
+UI_EXPORT bool ParseOutputDeviceData(const unsigned char* prop,
+                                     unsigned long nitems,
+                                     uint16* manufacturer_id,
+                                     uint16* product_code,
+                                     std::string* human_readable_name);
+
+// Parses |prop| as EDID data and stores the overscan flag to |flag|. Returns
+// true if the flag is found. This is exported for x11_util_unittest.cc.
+UI_EXPORT bool ParseOutputOverscanFlag(const unsigned char* prop,
+                                       unsigned long nitems,
+                                       bool* flag);
 
 enum WindowManagerName {
   WM_UNKNOWN,
@@ -290,6 +308,7 @@ enum WindowManagerName {
   WM_ICE_WM,
   WM_KWIN,
   WM_METACITY,
+  WM_MUFFIN,
   WM_MUTTER,
   WM_OPENBOX,
   WM_XFWM4,

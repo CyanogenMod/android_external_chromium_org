@@ -53,6 +53,8 @@
           'installer/util/google_chrome_sxs_distribution.h',
           'installer/util/google_update_constants.cc',
           'installer/util/google_update_constants.h',
+          'installer/util/google_update_experiment_util.cc',
+          'installer/util/google_update_experiment_util.h',
           'installer/util/google_update_settings.cc',
           'installer/util/google_update_settings.h',
           'installer/util/google_update_util.cc',
@@ -107,7 +109,6 @@
             'installer_util_strings',
             '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-            '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
             '<(DEPTH)/chrome/common_constants.gyp:common_constants',
@@ -134,6 +135,8 @@
             'installer/util/compat_checks.h',
             'installer/util/delete_after_reboot_helper.cc',
             'installer/util/delete_after_reboot_helper.h',
+            'installer/util/eula_util.cc',
+            'installer/util/eula_util.h',
             'installer/util/google_chrome_distribution.cc',
             'installer/util/google_chrome_distribution.h',
             'installer/util/html_dialog.h',
@@ -153,6 +156,8 @@
             'installer/util/self_cleaning_temp_dir.h',
             'installer/util/shell_util.cc',
             'installer/util/shell_util.h',
+            'installer/util/user_experiment.cc',
+            'installer/util/user_experiment.h',
           ],
           'conditions': [
             ['component=="shared_library"', {
@@ -162,7 +167,13 @@
               'dependencies': ['<(DEPTH)/content/content.gyp:content_common'],
             }],
           ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         },
+      ],
+    }],
+    ['OS=="win" and target_arch=="ia32"', {
+      'targets': [
         {
           'target_name': 'installer_util_nacl_win64',
           'type': 'static_library',
@@ -194,11 +205,14 @@
           'target_name': 'installer_util',
           'type': 'static_library',
           'dependencies': [
+            '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
             '<(DEPTH)/chrome/common_constants.gyp:common_constants',
           ],
           'sources': [
+            'installer/util/google_update_experiment_util.cc',
+            'installer/util/google_update_experiment_util.h',
             'installer/util/master_preferences.cc',
             'installer/util/master_preferences.h',
             'installer/util/master_preferences_constants.cc',

@@ -39,6 +39,8 @@ class ExtensionActionManager : public ProfileKeyedService,
   ExtensionAction* GetBrowserAction(
       const extensions::Extension& extension) const;
   ExtensionAction* GetScriptBadge(const extensions::Extension& extension) const;
+  ExtensionAction* GetSystemIndicator(
+      const extensions::Extension& extension) const;
 
  private:
   // Implement content::NotificationObserver.
@@ -47,6 +49,7 @@ class ExtensionActionManager : public ProfileKeyedService,
                        const content::NotificationDetails& details) OVERRIDE;
 
   content::NotificationRegistrar registrar_;
+  Profile* profile_;
 
   // Keyed by Extension ID.  These maps are populated lazily when their
   // ExtensionAction is first requested, and the entries are removed when the
@@ -56,8 +59,9 @@ class ExtensionActionManager : public ProfileKeyedService,
   mutable ExtIdToActionMap page_actions_;
   mutable ExtIdToActionMap browser_actions_;
   mutable ExtIdToActionMap script_badges_;
+  mutable ExtIdToActionMap system_indicators_;
 };
 
-}
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_ACTION_MANAGER_H_

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
-#include "base/scoped_temp_dir.h"
+#include "base/files/scoped_temp_dir.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
@@ -14,7 +14,7 @@ class SQLTransactionTest : public testing::Test {
  public:
   SQLTransactionTest() {}
 
-  void SetUp() {
+  virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     ASSERT_TRUE(db_.Open(
         temp_dir_.path().AppendASCII("SQLTransactionTest.db")));
@@ -22,7 +22,7 @@ class SQLTransactionTest : public testing::Test {
     ASSERT_TRUE(db().Execute("CREATE TABLE foo (a, b)"));
   }
 
-  void TearDown() {
+  virtual void TearDown() {
     db_.Close();
   }
 
@@ -36,7 +36,7 @@ class SQLTransactionTest : public testing::Test {
   }
 
  private:
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   sql::Connection db_;
 };
 

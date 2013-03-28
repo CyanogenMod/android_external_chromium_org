@@ -7,13 +7,24 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/string16.h"
 
 // This file contains constants, interfaces, etc. which are common to the
 // browser application and the app mode loader (a.k.a. shim).
 
 namespace app_mode {
+
+// These are keys for an Apple Event ping that the app shim process sends to
+// Chrome to get confirmation that Chrome is alive. The main Chrome process
+// doesn't need to register any handlers for them -- the event is just sent for
+// the empty reply that's automatically returned by the system.
+const AEEventClass kAEChromeAppClass = 'cApp';
+const AEEventID kAEChromeAppPing = 'ping';
+
+// The IPC socket used to communicate between app shims and Chrome will be
+// created under the user data directory with this name.
+extern const char kAppShimSocketName[];
 
 // The key under which the browser's bundle ID will be stored in the
 // app mode launcher bundle's Info.plist.
@@ -32,7 +43,7 @@ extern NSString* const kCrAppModeShortcutURLKey;
 extern NSString* const kCrAppModeUserDataDirKey;
 
 // Key for the app's extension path.
-extern NSString* const kCrAppModeExtensionPathKey;
+extern NSString* const kCrAppModeProfileDirKey;
 
 // When the Chrome browser is run, it stores its location in the defaults
 // system using this key.
@@ -69,15 +80,15 @@ struct ChromeAppModeInfo {
   char** argv;  // Required: v1.0
 
   // Versioned path to the browser which is being loaded.
-  FilePath chrome_versioned_path;  // Required: v1.0
+  base::FilePath chrome_versioned_path;  // Required: v1.0
 
   // Path to Chrome app bundle.
-  FilePath chrome_outer_bundle_path;  // Required: v1.0
+  base::FilePath chrome_outer_bundle_path;  // Required: v1.0
 
   // Information about the App Mode shortcut:
 
   // Path to the App Mode Loader application bundle that launched the process.
-  FilePath app_mode_bundle_path;  // Optional: v1.0
+  base::FilePath app_mode_bundle_path;  // Optional: v1.0
 
   // Short ID string, preferably derived from |app_mode_short_name|. Should be
   // safe for the file system.
@@ -90,10 +101,10 @@ struct ChromeAppModeInfo {
   std::string app_mode_url;  // Required: v1.0
 
   // Path to the app's user data directory.
-  FilePath user_data_dir;
+  base::FilePath user_data_dir;
 
-  // Path to the app's extension.
-  FilePath extension_path;
+  // Directory of the profile associated with the app.
+  base::FilePath profile_dir;
 };
 
 }  // namespace app_mode

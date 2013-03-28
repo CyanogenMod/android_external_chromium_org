@@ -18,13 +18,24 @@ namespace net {
 namespace {
 
 const char* kData[] = {
-    "abc12345678",
-    "987defg",
-    "ghi12345",
-    "987jlkmno",
-    "mno4567890",
-    "789pqrstuvw",
+  "abc12345678",
+  "987defg",
+  "ghi12345",
+  "987jlkmno",
+  "mno4567890",
+  "789pqrstuvw",
 };
+
+const bool kEntropyFlag[] = {
+  false,
+  true,
+  true,
+  false,
+  true,
+  true,
+};
+
+const bool kTestFecEntropy = false;
 
 }  // namespace
 
@@ -33,14 +44,19 @@ class QuicFecGroupTest : public ::testing::Test {
   void RunTest(size_t num_packets, size_t lost_packet, bool out_of_order) {
     size_t max_len = strlen(kData[0]);
     scoped_array<char>redundancy(new char[max_len]);
-    for (size_t i = 0; i < max_len; i++) {
-      // Initialize to the first packet.
-      redundancy[i] = kData[0][i];
-      // XOR in the remaining packets.
-      for (size_t packet = 1; packet < num_packets; packet++) {
+    bool entropy_redundancy = false;
+    for (size_t packet = 0; packet < num_packets; ++packet) {
+      for (size_t i = 0; i < max_len; i++) {
+        if (packet == 0) {
+          // Initialize to the first packet.
+          redundancy[i] = kData[0][i];
+          continue;
+        }
+        // XOR in the remaining packets.
         uint8 byte = i > strlen(kData[packet]) ? 0x00 : kData[packet][i];
         redundancy[i] = redundancy[i] ^ byte;
       }
+      entropy_redundancy = (entropy_redundancy != kEntropyFlag[packet]);
     }
 
     QuicFecGroup group;
@@ -53,12 +69,13 @@ class QuicFecGroupTest : public ::testing::Test {
         if (packet == lost_packet) {
           ASSERT_FALSE(group.IsFinished());
           QuicFecData fec;
-          fec.min_protected_packet_sequence_number = 0;
+          fec.fec_group = 0;
           fec.redundancy = StringPiece(redundancy.get(), strlen(kData[0]));
-          ASSERT_TRUE(group.UpdateFec(num_packets, fec));
+          ASSERT_TRUE(group.UpdateFec(num_packets, entropy_redundancy, fec));
         } else {
           QuicPacketHeader header;
           header.packet_sequence_number = packet;
+          header.entropy_flag = kEntropyFlag[packet];
           ASSERT_TRUE(group.Update(header, kData[packet]));
         }
         ASSERT_TRUE(group.CanRevive() == (packet == num_packets - 1));
@@ -72,6 +89,7 @@ class QuicFecGroupTest : public ::testing::Test {
 
         QuicPacketHeader header;
         header.packet_sequence_number = packet;
+        header.entropy_flag = kEntropyFlag[packet];
         ASSERT_TRUE(group.Update(header, kData[packet]));
         ASSERT_FALSE(group.CanRevive());
       }
@@ -79,10 +97,10 @@ class QuicFecGroupTest : public ::testing::Test {
       ASSERT_FALSE(group.IsFinished());
       // Attempt to revive the missing packet.
       QuicFecData fec;
-      fec.min_protected_packet_sequence_number = 0;
+      fec.fec_group = 0;
       fec.redundancy = StringPiece(redundancy.get(), strlen(kData[0]));
 
-      ASSERT_TRUE(group.UpdateFec(num_packets, fec));
+      ASSERT_TRUE(group.UpdateFec(num_packets, entropy_redundancy, fec));
     }
     QuicPacketHeader header;
     char recovered[kMaxPacketSize];
@@ -94,6 +112,7 @@ class QuicFecGroupTest : public ::testing::Test {
     EXPECT_EQ(lost_packet, header.packet_sequence_number)
         << "Failed to revive packet " << lost_packet << " out of "
         << num_packets;
+    EXPECT_EQ(kEntropyFlag[lost_packet], header.entropy_flag);
     ASSERT_GE(len, strlen(kData[lost_packet])) << "Incorrect length";
     for (size_t i = 0; i < strlen(kData[lost_packet]); i++) {
       EXPECT_EQ(kData[lost_packet][i], recovered[i]);
@@ -134,10 +153,11 @@ TEST_F(QuicFecGroupTest, UpdateFecIfReceivedPacketIsNotCovered) {
   group.Update(header, data1);
 
   QuicFecData fec;
-  fec.min_protected_packet_sequence_number = 1;
+  fec.fec_group = 1;
   fec.redundancy = redundancy;
 
-  ASSERT_FALSE(group.UpdateFec(2, fec));
+  header.packet_sequence_number = 2;
+  ASSERT_FALSE(group.UpdateFec(2, kTestFecEntropy, fec));
 }
 
 TEST_F(QuicFecGroupTest, ProtectsPacketsBefore) {
@@ -182,11 +202,11 @@ TEST_F(QuicFecGroupTest, ProtectsPacketsBeforeWithSeveralPackets) {
 
 TEST_F(QuicFecGroupTest, ProtectsPacketsBeforeWithFecData) {
   QuicFecData fec;
-  fec.min_protected_packet_sequence_number = 2;
+  fec.fec_group = 2;
   fec.redundancy = kData[0];
 
   QuicFecGroup group;
-  ASSERT_TRUE(group.UpdateFec(3, fec));
+  ASSERT_TRUE(group.UpdateFec(3, kTestFecEntropy, fec));
 
   EXPECT_FALSE(group.ProtectsPacketsBefore(1));
   EXPECT_FALSE(group.ProtectsPacketsBefore(2));

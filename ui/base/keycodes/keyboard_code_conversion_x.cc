@@ -336,6 +336,11 @@ KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
     case XK_KP_F4:
       return static_cast<KeyboardCode>(VKEY_F1 + (keysym - XK_KP_F1));
 
+    case XK_guillemotleft:
+    case XK_guillemotright:
+    case XK_degree:
+      return VKEY_OEM_102;  // international backslash key in 102 keyboard.
+
     // When evdev is in use, /usr/share/X11/xkb/symbols/inet maps F13-18 keys
     // to the special XF86XK symbols to support Microsoft Ergonomic keyboards:
     // https://bugs.freedesktop.org/show_bug.cgi?id=5783
@@ -419,7 +424,7 @@ KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
 
     // TODO(sad): some keycodes are still missing.
   }
-  DLOG(WARNING) << "Unknown keysym: " << StringPrintf("0x%x", keysym);
+  DLOG(WARNING) << "Unknown keysym: " << base::StringPrintf("0x%x", keysym);
   return VKEY_UNKNOWN;
 }
 
@@ -701,6 +706,8 @@ int XKeysymForWindowsKeyCode(KeyboardCode keycode, bool shift) {
       return shift ? XK_braceright : XK_bracketright;
     case VKEY_OEM_7:
       return shift ? XK_quotedbl : XK_quoteright;
+    case VKEY_OEM_102:
+      return shift ? XK_guillemotleft : XK_guillemotright;
 
     case VKEY_F1:
     case VKEY_F2:

@@ -49,7 +49,7 @@ typedef pthread_mutex_t* MutexHandle;
 #include "base/debug/alias.h"
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
-#include "base/eintr_wrapper.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/string_piece.h"
 #include "base/synchronization/lock_impl.h"
 #include "base/threading/platform_thread.h"
@@ -853,6 +853,14 @@ void RawLog(int level, const char* message) {
 
 // This was defined at the beginning of this file.
 #undef write
+
+#if defined(OS_WIN)
+std::wstring GetLogFileFullPath() {
+  if (log_file_name)
+    return *log_file_name;
+  return std::wstring();
+}
+#endif
 
 }  // namespace logging
 

@@ -9,6 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/string16.h"
+#include "base/time.h"
 #include "base/timer.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
@@ -58,38 +59,15 @@ class AutocompleteController : public AutocompleteProviderListener {
   // done or the query is Stop()ed.  It is safe to Start() a new query without
   // Stop()ing the previous one.
   //
-  // See AutocompleteInput::desired_tld() for meaning of |desired_tld|.
-  //
-  // |prevent_inline_autocomplete| is true if the generated result set should
-  // not require inline autocomplete for the default match.  This is difficult
-  // to explain in the abstract; the practical use case is that after the user
-  // deletes text in the edit, the HistoryURLProvider should make sure not to
-  // promote a match requiring inline autocomplete too highly.
-  //
-  // |prefer_keyword| should be true when the keyword UI is onscreen; this will
-  // bias the autocomplete result set toward the keyword provider when the input
-  // string is a bare keyword.
-  //
-  // |allow_exact_keyword_match| should be false when triggering keyword mode on
-  // the input string would be surprising or wrong, e.g. when highlighting text
-  // in a page and telling the browser to search for it or navigate to it. This
-  // parameter only applies to substituting keywords.
-
-  // If |matches_requested| is BEST_MATCH or SYNCHRONOUS_MATCHES the controller
-  // asks the providers to only return matches which are synchronously
-  // available, which should mean that all providers will be done immediately.
+  // See AutocompleteInput::AutocompleteInput(...) for more details regarding
+  // |input| params.
   //
   // The controller calls AutocompleteControllerDelegate::OnResultChanged() from
   // inside this call at least once. If matches are available later on that
   // result in changing the result set the delegate is notified again. When the
   // controller is done the notification AUTOCOMPLETE_CONTROLLER_RESULT_READY is
   // sent.
-  void Start(const string16& text,
-             const string16& desired_tld,
-             bool prevent_inline_autocomplete,
-             bool prefer_keyword,
-             bool allow_exact_keyword_match,
-             AutocompleteInput::MatchesRequested matches_requested);
+  void Start(const AutocompleteInput& input);
 
   // Cancels the current query, ensuring there will be no future notifications
   // fired.  If new matches have come in since the most recent notification was
@@ -117,14 +95,6 @@ class AutocompleteController : public AutocompleteProviderListener {
   // the popup to ensure it's not showing an out-of-date query.
   void ExpireCopiedEntries();
 
-  SearchProvider* search_provider() const { return search_provider_; }
-  KeywordProvider* keyword_provider() const { return keyword_provider_; }
-
-  const AutocompleteInput& input() const { return input_; }
-  const AutocompleteResult& result() const { return result_; }
-  bool done() const { return done_; }
-  const ACProviders* providers() const { return &providers_; }
-
   // AutocompleteProviderListener:
   virtual void OnProviderUpdate(bool updated_matches) OVERRIDE;
 
@@ -136,16 +106,53 @@ class AutocompleteController : public AutocompleteProviderListener {
   // provider but not others.
   void AddProvidersInfo(ProvidersInfo* provider_info) const;
 
+  // Called when a new omnibox session starts.
+  // We start a new session when the user first begins modifying the omnibox
+  // content; see |OmniboxEditModel::user_input_in_progress_|.
+  void ResetSession();
+
+  // Constructs the final destination URL for a given match using additional
+  // parameters otherwise not available at initial construction time.  This
+  // method should be called from OmniboxEditModel::OpenMatch() before the user
+  // navigates to the selected match.
+  GURL GetDestinationURL(const AutocompleteMatch& match,
+                         base::TimeDelta query_formulation_time) const;
+
+  SearchProvider* search_provider() const { return search_provider_; }
+  KeywordProvider* keyword_provider() const { return keyword_provider_; }
+
+  const AutocompleteInput& input() const { return input_; }
+  const AutocompleteResult& result() const { return result_; }
+  bool done() const { return done_; }
+  const ACProviders* providers() const { return &providers_; }
+
+  const base::TimeTicks& last_time_default_match_changed() const {
+    return last_time_default_match_changed_;
+  }
+
  private:
   friend class AutocompleteProviderTest;
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest,
                            RedundantKeywordsIgnoredInResult);
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, UpdateAssistedQueryStats);
+  FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, GetDestinationURL);
 
-  // Updates |result_| to reflect the current provider state.  Resets timers and
-  // fires notifications as necessary.  |is_synchronous_pass| is true only when
-  // Start() is calling this to get the synchronous result.
-  void UpdateResult(bool is_synchronous_pass);
+  // Updates |result_| to reflect the current provider state and fires
+  // notifications.  If |regenerate_result| then we clear the result
+  // so when we incorporate the current provider state we end up
+  // implicitly removing all expired matches.  (Normally we allow
+  // matches from the previous result set carry over.  These stale
+  // results may outrank legitimate matches from the current result
+  // set.  Sometimes we just want the current matches; the easier way
+  // to do this is to throw everything out and reconstruct the result
+  // set from the providers' current data.)
+  // If |force_notify_default_match_changed|, we tell NotifyChanged
+  // the default match has changed even if it hasn't.  This is
+  // necessary in some cases; for instance, if the user typed a new
+  // character, the edit model needs to repaint (highlighting changed)
+  // even if the default match didn't change.
+  void UpdateResult(bool regenerate_result,
+                    bool force_notify_default_match_changed);
 
   // Updates |result| to populate each match's |associated_keyword| if that
   // match can show a keyword hint.  |result| should be sorted by
@@ -187,6 +194,18 @@ class AutocompleteController : public AutocompleteProviderListener {
 
   // Data from the autocomplete query.
   AutocompleteResult result_;
+
+  // The most recent time the default match (inline match) changed.  This may
+  // be earlier than the most recent keystroke if the recent keystrokes didn't
+  // change the suggested match in the omnibox.  (For instance, if
+  // a user typed "mail.goog" and the match https://mail.google.com/ was
+  // the destination match ever since the user typed "ma" then this is
+  // the time that URL first appeared as the default match.)  This may
+  // also be more recent than the last keystroke if there was an
+  // asynchronous provider that returned and changed the default
+  // match.  See UpdateResult() for details on when we consider a
+  // match to have changed.
+  base::TimeTicks last_time_default_match_changed_;
 
   // Timer used to remove any matches copied from the last result. When run
   // invokes |ExpireCopiedEntries|.

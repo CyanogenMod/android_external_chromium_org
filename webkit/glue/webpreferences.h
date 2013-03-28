@@ -30,6 +30,13 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   // "Arab" to "My Arabic Font".
   typedef std::map<std::string, string16> ScriptFontFamilyMap;
 
+  enum EditingBehavior {
+    EDITING_BEHAVIOR_MAC,
+    EDITING_BEHAVIOR_WIN,
+    EDITING_BEHAVIOR_UNIX,
+    EDITING_BEHAVIOR_ANDROID
+  };
+
   // The ISO 15924 script code for undetermined script aka Common. It's the
   // default used on WebKit's side to get/set a font setting when no script is
   // specified.
@@ -48,6 +55,7 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   int minimum_logical_font_size;
   std::string default_encoding;
   bool apply_default_device_scale_factor_in_compositor;
+  bool apply_page_scale_factor_in_compositor;
   bool javascript_enabled;
   bool web_security_enabled;
   bool javascript_can_open_windows_automatically;
@@ -66,6 +74,7 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool java_enabled;
   bool allow_scripts_to_close_windows;
   bool uses_page_cache;
+  bool page_cache_supports_plugins;
   bool remote_fonts_enabled;
   bool javascript_can_access_clipboard;
   bool xss_auditor_enabled;
@@ -90,29 +99,29 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool experimental_webgl_enabled;
   bool flash_3d_enabled;
   bool flash_stage3d_enabled;
+  bool flash_stage3d_baseline_enabled;
   bool gl_multisampling_enabled;
   bool privileged_webgl_extensions_enabled;
   bool webgl_errors_to_console_enabled;
-  bool show_composited_layer_borders;
-  bool show_composited_layer_tree;
-  bool show_fps_counter;
   bool accelerated_compositing_for_overflow_scroll_enabled;
+  bool accelerated_compositing_for_scrollable_frames_enabled;
+  bool composited_scrolling_for_frames_enabled;
+  bool mock_scrollbars_enabled;
+  bool threaded_html_parser;
   bool show_paint_rects;
-  bool render_vsync_enabled;
   bool asynchronous_spell_checking_enabled;
   bool unified_textchecker_enabled;
   bool accelerated_compositing_enabled;
   bool force_compositing_mode;
-  bool fixed_position_compositing_enabled;
-  bool accelerated_layers_enabled;
-  bool accelerated_animation_enabled;
-  bool accelerated_video_enabled;
+  bool accelerated_compositing_for_3d_transforms_enabled;
+  bool accelerated_compositing_for_animation_enabled;
+  bool accelerated_compositing_for_video_enabled;
   bool accelerated_2d_canvas_enabled;
-  bool deferred_2d_canvas_enabled;
-  bool accelerated_painting_enabled;
+  int minimum_accelerated_2d_canvas_size;
+  bool antialiased_2d_canvas_disabled;
   bool accelerated_filters_enabled;
   bool gesture_tap_highlight_enabled;
-  bool accelerated_plugins_enabled;
+  bool accelerated_compositing_for_plugins_enabled;
   bool memory_info_enabled;
   bool fullscreen_enabled;
   bool allow_displaying_insecure_content;
@@ -122,19 +131,24 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool enable_scroll_animator;
   bool visual_word_movement_enabled;
   bool css_sticky_position_enabled;
-  bool css_regions_enabled;
   bool css_shaders_enabled;
   bool css_variables_enabled;
+  bool css_grid_layout_enabled;
+  bool touch_enabled;
   bool device_supports_touch;
   bool device_supports_mouse;
-  int default_tile_width;
-  int default_tile_height;
-  int max_untiled_layer_width;
-  int max_untiled_layer_height;
+  bool touch_adjustment_enabled;
+  bool touch_drag_drop_enabled;
   bool fixed_position_creates_stacking_context;
   bool sync_xhr_in_documents_enabled;
   bool deferred_image_decoding_enabled;
+  bool should_respect_image_orientation;
   int number_of_cpu_cores;
+  EditingBehavior editing_behavior;
+  bool supports_multiple_windows;
+  bool viewport_enabled;
+  bool initialize_at_minimum_page_scale;
+  bool smart_insert_delete_enabled;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly
@@ -143,14 +157,13 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   // without raising a DOM security exception.
   bool cookie_enabled;
 
-  bool apply_page_scale_factor_in_compositor;
-
 #if defined(OS_ANDROID)
   bool text_autosizing_enabled;
   float font_scale_factor;
   bool force_enable_zoom;
+  bool double_tap_to_zoom_enabled;
   bool user_gesture_required_for_media_playback;
-  bool supports_multiple_windows;
+  GURL default_video_poster_url;
 #endif
 
   // We try to keep the default values the same as the default values in

@@ -32,9 +32,6 @@ const int kColumnSetId = 0;
 // The width of the left column.
 const int kLeftColumnWidth = 325;
 
-// Heading font size correction.
-const int kHeadingFontSizeDelta = 1;
-
 class BundleInstalledBubble : public views::BubbleDelegateView,
                               public views::ButtonListener {
  public:
@@ -125,21 +122,19 @@ class BundleInstalledBubble : public views::BubbleDelegateView,
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
     views::ImageButton* button = new views::ImageButton(listener);
-    button->SetImage(views::CustomButton::BS_NORMAL,
+    button->SetImage(views::CustomButton::STATE_NORMAL,
                      rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
-    button->SetImage(views::CustomButton::BS_HOT,
+    button->SetImage(views::CustomButton::STATE_HOVERED,
                      rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
-    button->SetImage(views::CustomButton::BS_PUSHED,
+    button->SetImage(views::CustomButton::STATE_PRESSED,
                      rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
     layout->AddView(button);
   }
 
   void AddHeading(GridLayout* layout, const string16& heading) {
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-    gfx::Font bold_font = rb.GetFont(ui::ResourceBundle::BaseFont).DeriveFont(
-        kHeadingFontSizeDelta, gfx::Font::BOLD);
-
-    views::Label* heading_label = new views::Label(heading, bold_font);
+    views::Label* heading_label = new views::Label(
+        heading, rb.GetFont(ui::ResourceBundle::MediumFont));
     heading_label->SetMultiLine(true);
     heading_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     heading_label->SizeToFit(kLeftColumnWidth);

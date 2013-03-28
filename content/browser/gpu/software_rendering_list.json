@@ -38,10 +38,11 @@
 // 16. "gpu_count" is a INT structure (defined below).
 // 17  "cpu_info" is a STRING structure (defined below).
 // 18. "exceptions" is a list of entries.
-// 19. "blacklist" is a list of gpu feature strings, valid values include
+// 19. "features" is a list of gpu feature strings, valid values include
 //     "accelerated_2d_canvas", "accelerated_compositing", "webgl",
 //     "multisampling", "flash_3d", "flash_stage3d", "texture_sharing",
-//     "accelerated_video_decode", "panel_fitting", and "all".
+//     "accelerated_video", "accelerated_video_decode", "panel_fitting",
+//     "force_compositing_mode", and "all".
 //     This field is mandatory.
 // 20. "description" has the description of the entry.
 // 21. "webkit_bugs" is an array of associated webkit bug numbers.
@@ -74,7 +75,7 @@
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "4.3",
+  "version": "5.0",
   "entries": [
     {
       "id": 1,
@@ -85,7 +86,7 @@
       },
       "vendor_id": "0x1002",
       "device_id": ["0x7249"],
-      "blacklist": [
+      "features": [
         "webgl",
         "flash_3d",
         "flash_stage3d"
@@ -102,7 +103,7 @@
         "op": "contains",
         "value": "software"
       },
-      "blacklist": [
+      "features": [
         "accelerated_compositing"
       ]
     },
@@ -114,7 +115,7 @@
       },
       "vendor_id": "0x8086",
       "device_id": ["0x27AE"],
-      "blacklist": [
+      "features": [
         "webgl",
         "flash_3d",
         "flash_stage3d"
@@ -141,7 +142,7 @@
           }
         }
       ],
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -154,7 +155,7 @@
       },
       "vendor_id": "0x10de",
       "device_id": ["0x0324"],
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -167,7 +168,7 @@
       },
       "vendor_id": "0x10de",
       "device_id": ["0x0393"],
-      "blacklist": [
+      "features": [
         "webgl",
         "flash_3d",
         "flash_stage3d"
@@ -194,12 +195,14 @@
           }
         }
       ],
-      "blacklist": [
+      "features": [
+        "accelerated_2d_canvas",
         "accelerated_video",
         "accelerated_video_decode",
         "3d_css",
         "multisampling",
-        "flash_3d"
+        "flash_3d",
+        "force_compositing_mode"
       ]
     },
     {
@@ -218,12 +221,13 @@
         "op": "<",
         "number": "8.741"
       },
-      "blacklist": [
+      "features": [
         "accelerated_video",
         "accelerated_video_decode",
         "3d_css",
         "multisampling",
-        "flash_3d"
+        "flash_3d",
+        "force_compositing_mode"
       ]
     },
     {
@@ -242,12 +246,13 @@
         "op": "<",
         "number": "6.14.12.5721"
       },
-      "blacklist": [
+      "features": [
         "accelerated_video",
         "accelerated_video_decode",
         "3d_css",
         "multisampling",
-        "flash_3d"
+        "flash_3d",
+        "force_compositing_mode"
       ]
     },
     {
@@ -266,12 +271,13 @@
         "op": "<",
         "number": "6.14.10.5294"
       },
-      "blacklist": [
+      "features": [
         "accelerated_video",
         "accelerated_video_decode",
         "3d_css",
         "multisampling",
-        "flash_3d"
+        "flash_3d",
+        "force_compositing_mode"
       ]
     },
     {
@@ -286,14 +292,14 @@
         }
       },
       "vendor_id": "0x1002",
-      "blacklist": [
+      "features": [
         "multisampling"
       ]
     },
     {
       "id": 17,
       "description": "Intel mesa drivers are crash-prone.",
-      "cr_bugs": [76703],
+      "cr_bugs": [76703, 164555],
       "os": {
         "type": "linux"
       },
@@ -307,7 +313,7 @@
           }
         },
         {
-          "device_id": ["0xa001", "0xa002", "0xa011", "0xa012", "0x29a2", "0x2992", "0x2982", "0x2972", "0x2a02", "0x2a12", "0x2a42", "0x2e02", "0x2e12", "0x2e22", "0x2e32", "0x2e42", "0x2e92"],
+          "device_id": ["0xa001", "0xa002", "0xa011", "0xa012", "0x29a2", "0x2992", "0x2982", "0x2972", "0x2a12", "0x2a42", "0x2e02", "0x2e12", "0x2e22", "0x2e32", "0x2e42", "0x2e92"],
           "driver_version": {
             "op": ">",
             "number": "8.0.2"
@@ -319,9 +325,16 @@
             "op": ">=",
             "number": "8.0.2"
           }
+        },
+        {
+          "device_id": ["0x2a02"],
+          "driver_version": {
+            "op": ">=",
+            "number": "9.1"
+          }
         }
       ],
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -334,7 +347,7 @@
       },
       "vendor_id": "0x10de",
       "device_id": ["0x029e"],
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -349,7 +362,7 @@
           "number": "10.5"
         }
       },
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -367,7 +380,7 @@
         "op": "<",
         "number": "7.11"
       },
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -377,7 +390,7 @@
       "os": {
         "type": "linux"
       },
-      "blacklist": [
+      "features": [
         "accelerated_2d_canvas"
       ]
     },
@@ -405,7 +418,7 @@
           }
         }
       ],
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -424,7 +437,7 @@
         "op": "contains",
         "value": "AMD"
       },
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -443,7 +456,7 @@
         "op": "contains",
         "value": "ATI"
       },
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -459,14 +472,14 @@
         "op": "beginwith",
         "value": "nouveau"
       },
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
     {
       "id": 32,
       "description": "Accelerated 2d canvas is disabled on Windows systems with low perf stats.",
-      "cr_bugs": [116350],
+      "cr_bugs": [116350, 151500],
       "os": {
         "type": "win"
       },
@@ -476,13 +489,19 @@
       },
       "exceptions": [
         {
+          "perf_gaming": {
+            "op": ">",
+            "value": "3.5"
+          }
+        },
+        {
           "cpu_info": {
             "op": "contains",
             "value": "Atom"
           }
         }
       ],
-      "blacklist": [
+      "features": [
         "accelerated_2d_canvas"
       ]
     },
@@ -495,7 +514,7 @@
       },
       "vendor_id": "0x8086",
       "device_id": ["0x0152", "0x0156", "0x015a", "0x0162", "0x0166"],
-      "blacklist": [
+      "features": [
           "multisampling"
       ]
     },
@@ -508,7 +527,7 @@
       },
       "vendor_id": "0x5333",
       "device_id": ["0x8811"],
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -519,18 +538,7 @@
       "os": {
         "type": "linux"
       },
-      "blacklist": [
-        "flash_stage3d"
-      ]
-    },
-    {
-      "id": 36,
-      "description": "Stage3D is not supported on ChromeOS.",
-      "cr_bugs": [129848],
-      "os": {
-        "type": "chromeos"
-      },
-      "blacklist": [
+      "features": [
         "flash_stage3d"
       ]
     },
@@ -542,7 +550,7 @@
         "type": "linux"
       },
       "multi_gpu_style": "optimus",
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -559,7 +567,7 @@
       },
       "vendor_id": "0x10de",
       "device_id": ["0x0863"],
-      "blacklist": [
+      "features": [
         "accelerated_2d_canvas"
       ]
     },
@@ -574,7 +582,7 @@
           "number": "5"
         }
       },
-      "blacklist": [
+      "features": [
         "flash_3d"
       ]
     },
@@ -591,7 +599,7 @@
       },
       "vendor_id": "0x1002",
       "device_id": ["0x6760"],
-      "blacklist": [
+      "features": [
         "webgl"
       ]
     },
@@ -607,7 +615,7 @@
         "op": "=",
         "number": "8.15.10.1749"
       },
-      "blacklist": [
+      "features": [
         "texture_sharing"
       ]
     },
@@ -626,7 +634,7 @@
       "vendor_id": "0x8086",
       "device_id": ["0x0166"],
       "multi_gpu_category": "any",
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -642,7 +650,7 @@
         "op": "<",
         "number": "7"
       },
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -655,7 +663,7 @@
       },
       "vendor_id": "0x1002",
       "device_id": ["0x3151"],
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -675,7 +683,7 @@
         "op": "<",
         "number": "295"
       },
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -696,7 +704,7 @@
           }
         }
       ],
-      "blacklist": [
+      "features": [
         "accelerated_video_decode"
       ]
     },
@@ -715,7 +723,7 @@
       "multi_gpu_style": "optimus",
       "vendor_id": "0x10de",
       "device_id": ["0x0fd5"],
-      "blacklist": [
+      "features": [
         "flash_3d",
         "flash_stage3d"
       ]
@@ -731,7 +739,7 @@
         "op": "beginwith",
         "value": "VMware"
       },
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -751,7 +759,7 @@
         "op": "=",
         "number": "6.14.11.9621"
       },
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -771,7 +779,7 @@
         "op": "=",
         "number": "6.14.11.8267"
       },
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -781,36 +789,9 @@
       "cr_bugs": [152096],
       "vendor_id": "0x8086",
       "device_id": ["0x8108", "0x8109"],
-      "blacklist": [
+      "features": [
         "flash_stage3d"
       ]
-    },
-    {
-      "id": 54,
-      "description": "Force to use discrete GPU on older MacBookPro models.",
-      "cr_bugs": [113703],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": ">=",
-          "number": "10.7"
-        }
-      },
-      "machine_model": {
-        "name": {
-          "op": "=",
-          "value": "MacBookPro"
-        },
-        "version": {
-          "op": "<",
-          "number": "8"
-        }
-      },
-      "gpu_count": {
-        "op": "=",
-        "value": "2"
-      },
-      "gpu_switching": "force_discrete"
     },
     {
       "id": 55,
@@ -833,7 +814,7 @@
           }
         }
       ],
-      "blacklist": [
+      "features": [
         "all"
       ]
     },
@@ -849,7 +830,7 @@
         "op": "=",
         "value": "NVIDIA"
       },
-      "blacklist": [
+      "features": [
         "accelerated_video",
         "accelerated_video_decode",
         "flash_3d",
@@ -858,35 +839,18 @@
     },
     {
       "id": 57,
-      "description": "Enable panel fitting capability on ChromeOS only on Ivy Bridge Graphics Controller.",
+      "description": "Enable panel fitting capability on ChromeOS only on IVB and SNB Graphics Controllers.",
       "exceptions": [
         {
           "os": {
             "type": "chromeos"
           },
           "vendor_id": "0x8086",
-          "device_id": ["0x0166"]
+          "device_id": ["0x0106", "0x0116", "0x0166"]
         }
       ],
-      "blacklist": [
+      "features": [
         "panel_fitting"
-      ]
-    },
-    {
-      "id": 58,
-      "description": "Optimus Intel driver version 8.15.10.* has problems sharing textures.",
-      "cr_bugs": [156849],
-      "os": {
-        "type": "win"
-      },
-      "multi_gpu_style": "optimus",
-      "vendor_id": "0x8086",
-      "driver_version": {
-        "op": "=",
-        "number": "8.15.10"
-      },
-      "blacklist": [
-        "texture_sharing"
       ]
     },
     {
@@ -901,32 +865,155 @@
         "op": "=",
         "number": "8.15.11.8593"
       },
-      "blacklist": [
-        "all"
+      "features": [
+        "accelerated_video_decode"
       ]
     },
     {
       "id": 60,
-      "description": "Multisampling is buggy on Mac with NVIDIA gpu.",
+      "description": "Multisampling is buggy on Mac with NVIDIA gpu prior to 10.8.3.",
       "cr_bugs": [137303],
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "number": "10.8.3"
+        }
       },
       "vendor_id": "0x10de",
-      "blacklist": [
+      "features": [
         "multisampling"
       ]
     },
     {
       "id": 61,
-      "description": "Multisampling is buggy on Mac with Intel gpu.",
+      "description": "Multisampling is buggy on Mac with Intel gpu prior to 10.8.3.",
       "cr_bugs": [137303],
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "number": "10.8.3"
+        }
       },
       "vendor_id": "0x8086",
-      "blacklist": [
+      "features": [
         "multisampling"
+      ]
+    },
+    {
+      "id": 62,
+      "description": "Accelerated 2D canvas buggy on old Qualcomm Adreno.",
+      "cr_bugs": [161575],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": {
+        "op": "contains",
+        "value": "Adreno"
+      },
+      "driver_version": {
+        "op": "<",
+        "number": "4.1"
+      },
+      "features": [
+        "accelerated_2d_canvas"
+      ]
+    },
+    {
+      "id": 63,
+      "description": "Multisampling is buggy on Mac with AMD gpu prior to 10.8.3.",
+      "cr_bugs": [162466],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "number": "10.8.3"
+        }
+      },
+      "vendor_id": "0x1002",
+      "features": [
+        "multisampling"
+      ]
+    },
+    {
+      "id": 64,
+      "description": "Hardware video decode is only supported in win7+.",
+      "cr_bugs": [159458],
+      "os": {
+        "type": "win",
+        "version": {
+          "op": "<",
+          "number": "6.1"
+        }
+      },
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 65,
+      "description": "Force compositing mode is unstable in Win Vista.",
+      "cr_bugs": [170421],
+      "os": {
+        "type": "win",
+        "version": {
+          "op": "=",
+          "number": "6.0"
+        }
+      },
+      "features": [
+        "force_compositing_mode"
+      ]
+    },
+    {
+      "id": 66,
+      "description": "Force compositing mode is unstable in MacOSX earlier than 10.8.",
+      "cr_bugs": [174101],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "number": "10.8"
+        }
+      },
+      "features": [
+        "force_compositing_mode"
+      ]
+    },
+    {
+      "id": 67,
+      "description": "Accelerated 2D Canvas is not supported on WinXP.",
+      "cr_bugs": [175149],
+      "os": {
+        "type": "win",
+        "version": {
+          "op": "=",
+          "number": "5"
+        }
+      },
+      "features": [
+        "accelerated_2d_canvas"
+      ]
+    },
+    {
+      "id": 68,
+      "description": "VMware Fusion 4 has corrupt rendering with Win Vista+.",
+      "cr_bugs": [169470],
+      "os": {
+        "type": "win",
+        "version": {
+          "op": ">=",
+          "number": "6.0"
+        }
+      },
+      "vendor_id": "0x15ad",
+      "driver_version": {
+        "op": "<=",
+        "number": "7.14.1.1134"
+      },
+      "features": [
+        "all"
       ]
     }
   ]

@@ -4,7 +4,8 @@
 
 #include "content/public/test/test_browser_context.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/test/null_task_runner.h"
 #include "content/public/test/mock_resource_context.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -13,39 +14,11 @@
 
 namespace {
 
-// A silly class to satisfy net::URLRequestsContextGetter requirement
-// for a task runner. Threading requirements don't matter for this
-// test scaffolding.
-class AnyThreadNonTaskRunner : public base::SingleThreadTaskRunner {
- public:
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE {
-    return true;
-  }
-
-  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
-                               const base::Closure& task,
-                               base::TimeDelta delay) OVERRIDE {
-    NOTREACHED();
-    return false;
-  }
-
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay) OVERRIDE {
-    NOTREACHED();
-    return false;
-  }
-
- private:
-  virtual ~AnyThreadNonTaskRunner() {}
-};
-
 class TestContextURLRequestContextGetter : public net::URLRequestContextGetter {
  public:
   explicit TestContextURLRequestContextGetter(net::URLRequestContext* context)
       : context_(context),
-        any_thread_non_task_runner_(new AnyThreadNonTaskRunner) {
+        null_task_runner_(new base::NullTaskRunner) {
   }
 
   virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE {
@@ -54,14 +27,14 @@ class TestContextURLRequestContextGetter : public net::URLRequestContextGetter {
 
   virtual scoped_refptr<base::SingleThreadTaskRunner>
       GetNetworkTaskRunner() const OVERRIDE {
-    return any_thread_non_task_runner_;
+    return null_task_runner_;
   }
 
  private:
   virtual ~TestContextURLRequestContextGetter() {}
 
   net::URLRequestContext* context_;
-  scoped_refptr<base::SingleThreadTaskRunner> any_thread_non_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> null_task_runner_;
 };
 
 }  // namespace
@@ -75,7 +48,7 @@ TestBrowserContext::TestBrowserContext() {
 TestBrowserContext::~TestBrowserContext() {
 }
 
-FilePath TestBrowserContext::TakePath() {
+base::FilePath TestBrowserContext::TakePath() {
   return browser_context_dir_.Take();
 }
 
@@ -84,7 +57,7 @@ void TestBrowserContext::SetSpecialStoragePolicy(
   special_storage_policy_ = policy;
 }
 
-FilePath TestBrowserContext::GetPath() {
+base::FilePath TestBrowserContext::GetPath() {
   return browser_context_dir_.path();
 }
 
@@ -109,14 +82,6 @@ TestBrowserContext::GetRequestContextForRenderProcess(int renderer_child_id) {
   return NULL;
 }
 
-
-net::URLRequestContextGetter*
-TestBrowserContext::GetRequestContextForStoragePartition(
-    const FilePath& partition_path,
-    bool in_memory) {
-  return NULL;
-}
-
 net::URLRequestContextGetter* TestBrowserContext::GetMediaRequestContext() {
   return NULL;
 }
@@ -129,7 +94,7 @@ TestBrowserContext::GetMediaRequestContextForRenderProcess(
 
 net::URLRequestContextGetter*
 TestBrowserContext::GetMediaRequestContextForStoragePartition(
-    const FilePath& partition_path,
+    const base::FilePath& partition_path,
     bool in_memory) {
   return NULL;
 }

@@ -109,16 +109,16 @@ class GLES2_UTILS_EXPORT GLES2Util {
 
   // Computes the size of an image row including alignment padding
   static bool ComputeImagePaddedRowSize(
-    int width, int format, int type, int unpack_alignment,
-    uint32* padded_row_size);
+      int width, int format, int type, int unpack_alignment,
+      uint32* padded_row_size);
 
   // Computes the size of image data for TexImage2D and TexSubImage2D.
   // Optionally the unpadded and padded row sizes can be returned. If height < 2
   // then the padded_row_size will be the same as the unpadded_row_size since
   // padding is not necessary.
   static bool ComputeImageDataSizes(
-    int width, int height, int format, int type, int unpack_alignment,
-    uint32* size, uint32* unpadded_row_size, uint32* padded_row_size);
+      int width, int height, int format, int type, int unpack_alignment,
+      uint32* size, uint32* unpadded_row_size, uint32* padded_row_size);
 
   static size_t RenderbufferBytesPerPixel(int format);
 
@@ -137,7 +137,8 @@ class GLES2_UTILS_EXPORT GLES2Util {
   static uint32 GetChannelsForFormat(int format);
 
   // Returns a bitmask for the channels the given attachment type needs.
-  static uint32 GetChannelsNeededForAttachmentType(int type);
+  static uint32 GetChannelsNeededForAttachmentType(
+      int type, uint32 max_color_attachments);
 
   static bool IsNPOT(uint32 value) {
     return value > 0 && (value & (value - 1)) != 0;

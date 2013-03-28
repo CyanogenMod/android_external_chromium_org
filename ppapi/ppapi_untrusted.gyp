@@ -20,6 +20,7 @@
         'nso_target': 'libppapi_cpp.so',
         'build_glibc': 1,
         'build_newlib': 1,
+        'build_pnacl_newlib': 1,
         'sources': [
           '<@(cpp_source_files)',
           'cpp/module_embedder.h',
@@ -38,6 +39,7 @@
         'nso_target': 'libppapi_gles2.so',
         'build_glibc': 1,
         'build_newlib': 1,
+        'build_pnacl_newlib': 1,
         'include_dirs': [
           'lib/gl/include',
         ],
@@ -77,14 +79,10 @@
         'link_flags': [
           '-lppapi_cpp',
           '-lppapi',
-          '-lpthread',
+          '-pthread',
         ],
         # TODO(bradchen): get rid of extra_deps64 and extra_deps32
         # once native_client/build/untrusted.gypi no longer needs them.
-        'extra_deps64': [
-          '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/lib64/libppapi_cpp.a',
-          '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/lib64/libppapi.a',
-        ],
         'extra_deps_newlib64': [
           '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/lib64/libppapi_cpp.a',
           '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/lib64/libppapi.a',
@@ -94,28 +92,40 @@
           '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/lib32/libppapi.a',
         ],
         'extra_deps_glibc64': [
-          '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib64/libppapi_cpp.a',
-          '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib64/libppapi.a',
+          '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib64/libppapi_cpp.so',
+          '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib64/libppapi.so',
         ],
         'extra_deps_glibc32': [
-          '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib32/libppapi_cpp.a',
-          '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib32/libppapi.a',
+          '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib32/libppapi_cpp.so',
+          '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib32/libppapi.so',
         ],
         'extra_deps_arm': [
           '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/libarm/libppapi_cpp.a',
           '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/libarm/libppapi.a',
         ],
+        'extra_deps_pnacl': [
+          '<(SHARED_INTERMEDIATE_DIR)/tc_pnacl_newlib/lib/libppapi_cpp.a',
+          '<(SHARED_INTERMEDIATE_DIR)/tc_pnacl_newlib/lib/libppapi.a',
+        ],
         'sources': [
           '<@(test_common_source_files)',
           '<@(test_nacl_source_files)',
         ],
+        'extra_args': [
+          '--strip-all',
+        ],
       },
       'conditions': [
         ['target_arch!="arm"', {
+          # This is user code (vs IRT code), so tls accesses do not
+          # need to be indirect through a function call.
+          # For PNaCl, the -mtls-use-call flag is localized to the
+          # IRT's translation command, so it is unnecessary to
+          # counteract that flag here.
           'variables': {
-            'compile_flags': [
+            'gcc_compile_flags': [
               '-mno-tls-use-call',
-	    ],
+            ],
           },
         }],
         ['target_arch!="arm" and disable_glibc==0', {
@@ -147,10 +157,64 @@
               '--library-path=<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib64',
               '--output=>(nmf_glibc)',
               '--stage-dependencies=<(PRODUCT_DIR)',
-              '--toolchain=glibc',
             ],
+            'msvs_cygwin_shell': 1,
           },
         ],
+        }],
+        # Test PNaCl pre-translated code (pre-translated to save bot time).
+        # We only care about testing that code generation is correct,
+        # and in-browser translation is tested elsewhere.
+        # NOTE: native_client/build/untrusted.gypi dictates that
+        # PNaCl only generate x86-32 and x86-64 on x86 platforms,
+        # or ARM on ARM platforms, not all versions always.
+        # The same goes for the PNaCl shims. So, we have two variations here.
+        ['disable_pnacl==0 and target_arch!="arm"', {
+          'variables': {
+            'build_pnacl_newlib': 1,
+            'nmf_pnacl%': '<(PRODUCT_DIR)/>(nexe_target)_pnacl.nmf',
+          },
+          # Shim is a dependency for the nexe because we pre-translate.
+          'dependencies': [
+            '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:pnacl_irt_shim',
+          ],
+         'actions': [
+            {
+              'action_name': 'Generate PNACL NEWLIB NMF',
+              'inputs': ['>(out_pnacl_newlib_x86_32_nexe)',
+                         '>(out_pnacl_newlib_x86_64_nexe)'],
+              'outputs': ['>(nmf_pnacl)'],
+              'action': [
+                'python',
+                '<(DEPTH)/native_client_sdk/src/tools/create_nmf.py',
+                '>@(_inputs)',
+                '--output=>(nmf_pnacl)',
+              ],
+            },
+          ],
+        }],
+        ['disable_pnacl==0 and target_arch=="arm"', {
+          'variables': {
+            'build_pnacl_newlib': 1,
+            'nmf_pnacl%': '<(PRODUCT_DIR)/>(nexe_target)_pnacl.nmf',
+          },
+          # Shim is a dependency for the nexe because we pre-translate.
+          'dependencies': [
+            '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:pnacl_irt_shim',
+          ],
+          'actions': [
+            {
+              'action_name': 'Generate PNACL NEWLIB NMF',
+              'inputs': ['>(out_pnacl_newlib_arm_nexe)'],
+              'outputs': ['>(nmf_pnacl)'],
+              'action': [
+                'python',
+                '<(DEPTH)/native_client_sdk/src/tools/create_nmf.py',
+                '>@(_inputs)',
+                '--output=>(nmf_pnacl)',
+              ],
+            },
+          ],
         }],
       ],
     },

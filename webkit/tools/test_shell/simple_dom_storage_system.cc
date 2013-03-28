@@ -6,10 +6,10 @@
 
 #include "base/auto_reset.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageArea.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageArea.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebStorageNamespace.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageEventDispatcher.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageNamespace.h"
 #include "webkit/database/database_util.h"
 #include "webkit/dom_storage/dom_storage_area.h"
 #include "webkit/dom_storage/dom_storage_host.h"
@@ -161,7 +161,7 @@ void SimpleDomStorageSystem::AreaImpl::setItem(
   if (!Host())
     return;
 
-  AutoReset<AreaImpl*> auto_reset(&parent_->area_being_processed_, this);
+  base::AutoReset<AreaImpl*> auto_reset(&parent_->area_being_processed_, this);
   NullableString16 unused;
   if (!Host()->SetAreaItem(connection_id_, key, newValue, pageUrl,
                            &unused))
@@ -175,7 +175,7 @@ void SimpleDomStorageSystem::AreaImpl::removeItem(
   if (!Host())
     return;
 
-  AutoReset<AreaImpl*> auto_reset(&parent_->area_being_processed_, this);
+  base::AutoReset<AreaImpl*> auto_reset(&parent_->area_being_processed_, this);
   string16 notused;
   Host()->RemoveAreaItem(connection_id_, key, pageUrl, &notused);
 }
@@ -184,7 +184,7 @@ void SimpleDomStorageSystem::AreaImpl::clear(const WebURL& pageUrl) {
   if (!Host())
     return;
 
-  AutoReset<AreaImpl*> auto_reset(&parent_->area_being_processed_, this);
+  base::AutoReset<AreaImpl*> auto_reset(&parent_->area_being_processed_, this);
   Host()->ClearArea(connection_id_, pageUrl);
 }
 
@@ -194,7 +194,8 @@ SimpleDomStorageSystem* SimpleDomStorageSystem::g_instance_;
 
 SimpleDomStorageSystem::SimpleDomStorageSystem()
     : weak_factory_(this),
-      context_(new DomStorageContext(FilePath(), FilePath(), NULL, NULL)),
+      context_(new DomStorageContext(base::FilePath(), base::FilePath(),
+                                     NULL, NULL)),
       host_(new DomStorageHost(context_)),
       area_being_processed_(NULL),
       next_connection_id_(1) {

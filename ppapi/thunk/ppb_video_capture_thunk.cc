@@ -30,15 +30,35 @@ PP_Bool IsVideoCapture(PP_Resource resource) {
   return PP_FromBool(enter.succeeded());
 }
 
+int32_t EnumerateDevices0_2(PP_Resource video_capture,
+                            PP_Resource* devices,
+                            PP_CompletionCallback callback) {
+  EnterVideoCapture enter(video_capture, callback, true);
+  if (enter.failed())
+    return enter.retval();
+
+  return enter.SetResult(enter.object()->EnumerateDevices0_2(devices,
+                                                             enter.callback()));
+}
+
 int32_t EnumerateDevices(PP_Resource video_capture,
-                         PP_Resource* devices,
+                         PP_ArrayOutput output,
                          PP_CompletionCallback callback) {
   EnterVideoCapture enter(video_capture, callback, true);
   if (enter.failed())
     return enter.retval();
 
-  return enter.SetResult(enter.object()->EnumerateDevices(devices,
+  return enter.SetResult(enter.object()->EnumerateDevices(output,
                                                           enter.callback()));
+}
+
+int32_t MonitorDeviceChange(PP_Resource video_capture,
+                            PP_MonitorDeviceChangeCallback callback,
+                            void* user_data) {
+  EnterVideoCapture enter(video_capture, true);
+  if (enter.failed())
+    return enter.retval();
+  return enter.object()->MonitorDeviceChange(callback, user_data);
 }
 
 int32_t Open(PP_Resource video_capture,
@@ -92,28 +112,22 @@ void Close(PP_Resource video_capture) {
     enter.object()->Close();
 }
 
-int32_t StartCapture0_1(PP_Resource video_capture,
-                        const PP_VideoCaptureDeviceInfo_Dev* requested_info,
-                        uint32_t buffer_count) {
-  EnterVideoCapture enter(video_capture, true);
-  if (enter.failed())
-    return enter.retval();
-
-  return enter.object()->StartCapture0_1(*requested_info, buffer_count);
-}
-
-const PPB_VideoCapture_Dev_0_1 g_ppb_video_capture_0_1_thunk = {
-  &Create,
-  &IsVideoCapture,
-  &StartCapture0_1,
-  &ReuseBuffer,
-  &StopCapture
-};
-
 const PPB_VideoCapture_Dev_0_2 g_ppb_video_capture_0_2_thunk = {
   &Create,
   &IsVideoCapture,
+  &EnumerateDevices0_2,
+  &Open,
+  &StartCapture,
+  &ReuseBuffer,
+  &StopCapture,
+  &Close
+};
+
+const PPB_VideoCapture_Dev_0_3 g_ppb_video_capture_0_3_thunk = {
+  &Create,
+  &IsVideoCapture,
   &EnumerateDevices,
+  &MonitorDeviceChange,
   &Open,
   &StartCapture,
   &ReuseBuffer,
@@ -123,12 +137,12 @@ const PPB_VideoCapture_Dev_0_2 g_ppb_video_capture_0_2_thunk = {
 
 }  // namespace
 
-const PPB_VideoCapture_Dev_0_1* GetPPB_VideoCapture_Dev_0_1_Thunk() {
-  return &g_ppb_video_capture_0_1_thunk;
-}
-
 const PPB_VideoCapture_Dev_0_2* GetPPB_VideoCapture_Dev_0_2_Thunk() {
   return &g_ppb_video_capture_0_2_thunk;
+}
+
+const PPB_VideoCapture_Dev_0_3* GetPPB_VideoCapture_Dev_0_3_Thunk() {
+  return &g_ppb_video_capture_0_3_thunk;
 }
 
 }  // namespace thunk

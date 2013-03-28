@@ -35,18 +35,18 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/sha1.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/sys_byteorder.h"
 #include "chrome/browser/chromeos/web_socket_proxy_helper.h"
 #include "chrome/browser/internal_auth.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/common/constants.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_parse.h"
 #include "net/base/address_list.h"
@@ -54,11 +54,11 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/ssl_config_service.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket.h"
+#include "net/ssl/ssl_config_service.h"
 #include "third_party/libevent/evdns.h"
 #include "third_party/libevent/event.h"
 
@@ -155,7 +155,7 @@ std::string FetchAsciiSnippet(uint8* begin, uint8* end, AsciiFilter filter) {
 
 std::string FetchExtensionIdFromOrigin(const std::string &origin) {
   GURL url(origin);
-  if (url.SchemeIs(chrome::kExtensionScheme))
+  if (url.SchemeIs(extensions::kExtensionScheme))
     return url.host();
   else
     return std::string();
@@ -568,7 +568,7 @@ class SSLChan : public MessageLoopForIO::Watcher {
       OnSocketConnect(result);
   }
 
-  ~SSLChan() {
+  virtual ~SSLChan() {
     phase_ = PHASE_CLOSED;
     write_pipe_controller_.StopWatchingFileDescriptor();
     read_pipe_controller_.StopWatchingFileDescriptor();

@@ -14,7 +14,7 @@
 #  ],
 #
 # Then include this rule file in each of your unittest targets:
-# 
+#
 #    {
 #      'target_name': 'my_unittests',
 #      ...
@@ -30,6 +30,10 @@
 # See src/chrome/test/base/run_all_remoting_unittests.cc for an example.
 
 {
+    'dependencies': [
+      # Used by rule js2unit below.
+      '../v8/tools/gyp/v8.gyp:v8_shell#host',
+    ],
   'rules': [
     {
       'rule_name': 'copyjs',
@@ -56,6 +60,7 @@
         '<(gypv8sh)',
         '<(PRODUCT_DIR)/v8_shell<(EXECUTABLE_SUFFIX)',
         '<(mock_js)',
+        '<(accessibility_audit_js)',
         '<(test_api_js)',
         '<(js2gtest)',
       ],

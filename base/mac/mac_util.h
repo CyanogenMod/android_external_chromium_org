@@ -21,9 +21,10 @@
 class NSImage;
 #endif  // __OBJC__
 
+namespace base {
+
 class FilePath;
 
-namespace base {
 namespace mac {
 
 // Full screen modes, in increasing order of priority.  More permissive modes
@@ -120,6 +121,10 @@ BASE_EXPORT bool WasLaunchedAsLoginOrResumeItem();
 // Returns true if the current process was automatically launched as a
 // 'Login Item' with 'hide on startup' flag. Used to suppress opening windows.
 BASE_EXPORT bool WasLaunchedAsHiddenLoginItem();
+
+// Remove the quarantine xattr from the given file. Returns false if there was
+// an error, or true otherwise.
+BASE_EXPORT bool RemoveQuarantineAttribute(const FilePath& file_path);
 
 // Run-time OS version checks. Use these instead of
 // base::SysInfo::OperatingSystemVersionNumbers. Prefer the "OrEarlier" and

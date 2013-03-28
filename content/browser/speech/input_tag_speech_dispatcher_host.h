@@ -10,6 +10,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/speech_recognition_event_listener.h"
+#include "content/public/common/speech_recognition_result.h"
 #include "net/url_request/url_request_context_getter.h"
 
 struct InputTagSpeechHostMsg_StartRecognition_Params;
@@ -18,7 +19,6 @@ namespace content {
 
 class SpeechRecognitionManager;
 class SpeechRecognitionPreferences;
-struct SpeechRecognitionResult;
 
 // InputTagSpeechDispatcherHost is a delegate for Speech API messages used by
 // RenderMessageFilter. Basically it acts as a proxy, relaying the events coming
@@ -29,6 +29,7 @@ class CONTENT_EXPORT InputTagSpeechDispatcherHost
       public SpeechRecognitionEventListener {
  public:
   InputTagSpeechDispatcherHost(
+      bool guest,
       int render_process_id,
       net::URLRequestContextGetter* url_request_context_getter,
       SpeechRecognitionPreferences* recognition_preferences);
@@ -41,9 +42,9 @@ class CONTENT_EXPORT InputTagSpeechDispatcherHost
   virtual void OnSoundEnd(int session_id) OVERRIDE;
   virtual void OnAudioEnd(int session_id) OVERRIDE;
   virtual void OnRecognitionEnd(int session_id) OVERRIDE;
-  virtual void OnRecognitionResult(
+  virtual void OnRecognitionResults(
       int session_id,
-      const SpeechRecognitionResult& result) OVERRIDE;
+      const SpeechRecognitionResults& results) OVERRIDE;
   virtual void OnRecognitionError(
       int session_id,
       const SpeechRecognitionError& error) OVERRIDE;
@@ -55,9 +56,6 @@ class CONTENT_EXPORT InputTagSpeechDispatcherHost
   virtual bool OnMessageReceived(const IPC::Message& message,
                                  bool* message_was_ok) OVERRIDE;
 
-  // Singleton manager setter useful for tests.
-  static void SetManagerForTests(SpeechRecognitionManager* manager);
-
  private:
   virtual ~InputTagSpeechDispatcherHost();
 
@@ -66,15 +64,18 @@ class CONTENT_EXPORT InputTagSpeechDispatcherHost
   void OnCancelRecognition(int render_view_id, int request_id);
   void OnStopRecording(int render_view_id, int request_id);
 
+  void StartRecognitionOnIO(
+      int render_process_id,
+      int guest_render_view_id,
+      const InputTagSpeechHostMsg_StartRecognition_Params& params);
   // Returns the speech recognition manager to forward events to, creating one
   // if needed.
   SpeechRecognitionManager* manager();
 
+  bool guest_;
   int render_process_id_;
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
   scoped_refptr<SpeechRecognitionPreferences> recognition_preferences_;
-
-  static SpeechRecognitionManager* manager_for_tests_;
 
   DISALLOW_COPY_AND_ASSIGN(InputTagSpeechDispatcherHost);
 };

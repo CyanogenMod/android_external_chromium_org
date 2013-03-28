@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/string16.h"
+#include "chrome/browser/profiles/profile_metrics.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/image/image.h"
@@ -66,7 +67,7 @@ class AvatarMenuModel : public content::NotificationObserver {
   // an item.
   void EditProfile(size_t index);
   // Creates a new profile.
-  void AddNewProfile();
+  void AddNewProfile(ProfileMetrics::ProfileAdd type);
 
   // Gets the number of profiles.
   size_t GetNumberOfItems();
@@ -76,6 +77,9 @@ class AvatarMenuModel : public content::NotificationObserver {
 
   // Gets the an Item at a specified index.
   const Item& GetItemAt(size_t index);
+
+  // Returns true if the add profile link should be shown.
+  bool ShouldShowAddNewProfileLink() const;
 
   // This model is also used for the always-present Mac system menubar. As the
   // last active browser changes, the model needs to update accordingly.

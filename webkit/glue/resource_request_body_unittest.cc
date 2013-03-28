@@ -4,11 +4,17 @@
 
 #include "webkit/glue/resource_request_body.h"
 
-#include "base/file_path.h"
+#include <algorithm>
+
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/message_loop.h"
+#include "base/message_loop_proxy.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/upload_data.h"
+#include "net/base/upload_bytes_element_reader.h"
+#include "net/base/upload_data_stream.h"
+#include "net/base/upload_file_element_reader.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/blob/blob_storage_controller.h"
 
@@ -17,40 +23,76 @@ using webkit_blob::BlobStorageController;
 
 namespace webkit_glue {
 
-TEST(ResourceRequestBodyTest, CreateUploadDataWithoutBlob) {
+namespace {
+
+bool AreElementsEqual(const net::UploadElementReader& reader,
+                      const ResourceRequestBody::Element& element) {
+  switch(element.type()) {
+    case ResourceRequestBody::Element::TYPE_BYTES: {
+      const net::UploadBytesElementReader* bytes_reader =
+          reader.AsBytesReader();
+      return bytes_reader &&
+          element.length() == bytes_reader->length() &&
+          std::equal(element.bytes(), element.bytes() + element.length(),
+                     bytes_reader->bytes());
+    }
+    case ResourceRequestBody::Element::TYPE_FILE: {
+      const net::UploadFileElementReader* file_reader = reader.AsFileReader();
+      return file_reader &&
+          file_reader->path() == element.path() &&
+          file_reader->range_offset() == element.offset() &&
+          file_reader->range_length() == element.length() &&
+          file_reader->expected_modification_time() ==
+          element.expected_modification_time();
+      break;
+    }
+    default:
+      NOTREACHED();
+  }
+  return false;
+}
+
+}  // namespace
+
+TEST(ResourceRequestBodyTest, CreateUploadDataStreamWithoutBlob) {
+  MessageLoop message_loop;
   scoped_refptr<ResourceRequestBody> request_body = new ResourceRequestBody;
 
   const char kData[] = "123";
-  const FilePath::StringType kFilePath = FILE_PATH_LITERAL("abc");
+  const base::FilePath::StringType kFilePath = FILE_PATH_LITERAL("abc");
   const uint64 kFileOffset = 10U;
   const uint64 kFileLength = 100U;
   const base::Time kFileTime = base::Time::FromDoubleT(999);
   const int64 kIdentifier = 12345;
 
   request_body->AppendBytes(kData, arraysize(kData) - 1);
-  request_body->AppendFileRange(FilePath(kFilePath),
+  request_body->AppendFileRange(base::FilePath(kFilePath),
                                 kFileOffset, kFileLength, kFileTime);
   request_body->set_identifier(kIdentifier);
 
-  scoped_refptr<net::UploadData> upload =
-      request_body->ResolveElementsAndCreateUploadData(NULL);
+  scoped_ptr<net::UploadDataStream> upload(
+      request_body->ResolveElementsAndCreateUploadDataStream(
+          NULL, NULL, base::MessageLoopProxy::current()));
 
   EXPECT_EQ(kIdentifier, upload->identifier());
-  ASSERT_EQ(request_body->elements()->size(), upload->elements()->size());
+  ASSERT_EQ(request_body->elements()->size(), upload->element_readers().size());
 
-  const net::UploadElement& e1 = upload->elements()->at(0);
-  EXPECT_EQ(net::UploadElement::TYPE_BYTES, e1.type());
-  EXPECT_EQ(kData, std::string(e1.bytes(), e1.bytes_length()));
+  const net::UploadBytesElementReader* r1 =
+      upload->element_readers()[0]->AsBytesReader();
+  ASSERT_TRUE(r1);
+  EXPECT_EQ(kData, std::string(r1->bytes(), r1->length()));
 
-  const net::UploadElement& e2 = upload->elements()->at(1);
-  EXPECT_EQ(net::UploadElement::TYPE_FILE, e2.type());
-  EXPECT_EQ(kFilePath, e2.file_path().value());
-  EXPECT_EQ(kFileOffset, e2.file_range_offset());
-  EXPECT_EQ(kFileLength, e2.file_range_length());
-  EXPECT_EQ(kFileTime, e2.expected_file_modification_time());
+  const net::UploadFileElementReader* r2 =
+      upload->element_readers()[1]->AsFileReader();
+  ASSERT_TRUE(r2);
+  EXPECT_EQ(kFilePath, r2->path().value());
+  EXPECT_EQ(kFileOffset, r2->range_offset());
+  EXPECT_EQ(kFileLength, r2->range_length());
+  EXPECT_EQ(kFileTime, r2->expected_modification_time());
 }
 
-TEST(ResourceRequestBodyTest, ResolveBlobAndCreateUploadData) {
+TEST(ResourceRequestBodyTest, ResolveBlobAndCreateUploadDataStream) {
+  MessageLoop message_loop;
   // Setup blob data for testing.
   base::Time time1, time2;
   base::Time::FromString("Tue, 15 Nov 1994, 12:45:26 GMT", &time1);
@@ -64,7 +106,7 @@ TEST(ResourceRequestBodyTest, ResolveBlobAndCreateUploadData) {
 
   blob_data->AppendData("BlobData");
   blob_data->AppendFile(
-      FilePath(FILE_PATH_LITERAL("BlobFile.txt")), 0, 20, time1);
+      base::FilePath(FILE_PATH_LITERAL("BlobFile.txt")), 0, 20, time1);
 
   GURL blob_url1("blob://url_1");
   blob_storage_controller.AddFinishedBlob(blob_url1, blob_data);
@@ -76,10 +118,10 @@ TEST(ResourceRequestBodyTest, ResolveBlobAndCreateUploadData) {
   blob_storage_controller.CloneBlob(blob_url3, blob_url2);
 
   // Setup upload data elements for comparison.
-  net::UploadElement blob_element1, blob_element2;
+  ResourceRequestBody::Element blob_element1, blob_element2;
   blob_element1.SetToBytes(
       blob_data->items().at(0).bytes() +
-          static_cast<int>(blob_data->items().at(0).offset()),
+      static_cast<int>(blob_data->items().at(0).offset()),
       static_cast<int>(blob_data->items().at(0).length()));
   blob_element2.SetToFilePathRange(
       blob_data->items().at(1).path(),
@@ -87,133 +129,118 @@ TEST(ResourceRequestBodyTest, ResolveBlobAndCreateUploadData) {
       blob_data->items().at(1).length(),
       blob_data->items().at(1).expected_modification_time());
 
-  net::UploadElement upload_element1, upload_element2;
+  ResourceRequestBody::Element upload_element1, upload_element2;
   upload_element1.SetToBytes("Hello", 5);
   upload_element2.SetToFilePathRange(
-      FilePath(FILE_PATH_LITERAL("foo1.txt")), 0, 20, time2);
+      base::FilePath(FILE_PATH_LITERAL("foo1.txt")), 0, 20, time2);
 
   // Test no blob reference.
   scoped_refptr<ResourceRequestBody> request_body(new ResourceRequestBody());
-  request_body->AppendBytes(
-      upload_element1.bytes(),
-      upload_element1.bytes_length());
-  request_body->AppendFileRange(
-      upload_element2.file_path(),
-      upload_element2.file_range_offset(),
-      upload_element2.file_range_length(),
-      upload_element2.expected_file_modification_time());
+  request_body->AppendBytes(upload_element1.bytes(), upload_element1.length());
+  request_body->AppendFileRange(upload_element2.path(),
+                                upload_element2.offset(),
+                                upload_element2.length(),
+                                upload_element2.expected_modification_time());
 
-  scoped_refptr<net::UploadData> upload =
-      request_body->ResolveElementsAndCreateUploadData(
-          &blob_storage_controller);
+  scoped_ptr<net::UploadDataStream> upload(
+      request_body->ResolveElementsAndCreateUploadDataStream(
+          &blob_storage_controller, NULL, base::MessageLoopProxy::current()));
 
-  ASSERT_EQ(upload->elements()->size(), 2U);
-  EXPECT_TRUE(upload->elements()->at(0) == upload_element1);
-  EXPECT_TRUE(upload->elements()->at(1) == upload_element2);
+  ASSERT_EQ(2U, upload->element_readers().size());
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[0], upload_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[1], upload_element2));
 
   // Test having only one blob reference that refers to empty blob data.
   request_body = new ResourceRequestBody();
   request_body->AppendBlob(blob_url0);
 
-  upload = request_body->ResolveElementsAndCreateUploadData(
-      &blob_storage_controller);
-  ASSERT_EQ(upload->elements()->size(), 0U);
+  upload.reset(request_body->ResolveElementsAndCreateUploadDataStream(
+      &blob_storage_controller, NULL, base::MessageLoopProxy::current()));
+  ASSERT_EQ(0U, upload->element_readers().size());
 
   // Test having only one blob reference.
   request_body = new ResourceRequestBody();
   request_body->AppendBlob(blob_url1);
 
-  upload = request_body->ResolveElementsAndCreateUploadData(
-      &blob_storage_controller);
-  ASSERT_EQ(upload->elements()->size(), 2U);
-  EXPECT_TRUE(upload->elements()->at(0) == blob_element1);
-  EXPECT_TRUE(upload->elements()->at(1) == blob_element2);
+  upload.reset(request_body->ResolveElementsAndCreateUploadDataStream(
+      &blob_storage_controller, NULL, base::MessageLoopProxy::current()));
+  ASSERT_EQ(2U, upload->element_readers().size());
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[0], blob_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[1], blob_element2));
 
   // Test having one blob reference at the beginning.
   request_body = new ResourceRequestBody();
   request_body->AppendBlob(blob_url1);
-  request_body->AppendBytes(
-      upload_element1.bytes(),
-      upload_element1.bytes_length());
-  request_body->AppendFileRange(
-      upload_element2.file_path(),
-      upload_element2.file_range_offset(),
-      upload_element2.file_range_length(),
-      upload_element2.expected_file_modification_time());
+  request_body->AppendBytes(upload_element1.bytes(), upload_element1.length());
+  request_body->AppendFileRange(upload_element2.path(),
+                                upload_element2.offset(),
+                                upload_element2.length(),
+                                upload_element2.expected_modification_time());
 
-  upload = request_body->ResolveElementsAndCreateUploadData(
-      &blob_storage_controller);
-  ASSERT_EQ(upload->elements()->size(), 4U);
-  EXPECT_TRUE(upload->elements()->at(0) == blob_element1);
-  EXPECT_TRUE(upload->elements()->at(1) == blob_element2);
-  EXPECT_TRUE(upload->elements()->at(2) == upload_element1);
-  EXPECT_TRUE(upload->elements()->at(3) == upload_element2);
+  upload.reset(request_body->ResolveElementsAndCreateUploadDataStream(
+      &blob_storage_controller, NULL, base::MessageLoopProxy::current()));
+  ASSERT_EQ(4U, upload->element_readers().size());
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[0], blob_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[1], blob_element2));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[2], upload_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[3], upload_element2));
 
   // Test having one blob reference at the end.
   request_body = new ResourceRequestBody();
-  request_body->AppendBytes(
-      upload_element1.bytes(),
-      upload_element1.bytes_length());
-  request_body->AppendFileRange(
-      upload_element2.file_path(),
-      upload_element2.file_range_offset(),
-      upload_element2.file_range_length(),
-      upload_element2.expected_file_modification_time());
+  request_body->AppendBytes(upload_element1.bytes(), upload_element1.length());
+  request_body->AppendFileRange(upload_element2.path(),
+                                upload_element2.offset(),
+                                upload_element2.length(),
+                                upload_element2.expected_modification_time());
   request_body->AppendBlob(blob_url1);
 
-  upload = request_body->ResolveElementsAndCreateUploadData(
-      &blob_storage_controller);
-  ASSERT_EQ(upload->elements()->size(), 4U);
-  EXPECT_TRUE(upload->elements()->at(0) == upload_element1);
-  EXPECT_TRUE(upload->elements()->at(1) == upload_element2);
-  EXPECT_TRUE(upload->elements()->at(2) == blob_element1);
-  EXPECT_TRUE(upload->elements()->at(3) == blob_element2);
+  upload.reset(request_body->ResolveElementsAndCreateUploadDataStream(
+      &blob_storage_controller, NULL, base::MessageLoopProxy::current()));
+  ASSERT_EQ(4U, upload->element_readers().size());
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[0], upload_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[1], upload_element2));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[2], blob_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[3], blob_element2));
 
   // Test having one blob reference in the middle.
   request_body = new ResourceRequestBody();
-  request_body->AppendBytes(
-      upload_element1.bytes(),
-      upload_element1.bytes_length());
+  request_body->AppendBytes(upload_element1.bytes(), upload_element1.length());
   request_body->AppendBlob(blob_url1);
-  request_body->AppendFileRange(
-      upload_element2.file_path(),
-      upload_element2.file_range_offset(),
-      upload_element2.file_range_length(),
-      upload_element2.expected_file_modification_time());
+  request_body->AppendFileRange(upload_element2.path(),
+                                upload_element2.offset(),
+                                upload_element2.length(),
+                                upload_element2.expected_modification_time());
 
-  upload = request_body->ResolveElementsAndCreateUploadData(
-      &blob_storage_controller);
-  ASSERT_EQ(upload->elements()->size(), 4U);
-  EXPECT_TRUE(upload->elements()->at(0) == upload_element1);
-  EXPECT_TRUE(upload->elements()->at(1) == blob_element1);
-  EXPECT_TRUE(upload->elements()->at(2) == blob_element2);
-  EXPECT_TRUE(upload->elements()->at(3) == upload_element2);
+  upload.reset(request_body->ResolveElementsAndCreateUploadDataStream(
+      &blob_storage_controller, NULL, base::MessageLoopProxy::current()));
+  ASSERT_EQ(4U, upload->element_readers().size());
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[0], upload_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[1], blob_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[2], blob_element2));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[3], upload_element2));
 
   // Test having multiple blob references.
   request_body = new ResourceRequestBody();
   request_body->AppendBlob(blob_url1);
-  request_body->AppendBytes(
-      upload_element1.bytes(),
-      upload_element1.bytes_length());
+  request_body->AppendBytes(upload_element1.bytes(), upload_element1.length());
   request_body->AppendBlob(blob_url2);
   request_body->AppendBlob(blob_url3);
-  request_body->AppendFileRange(
-      upload_element2.file_path(),
-      upload_element2.file_range_offset(),
-      upload_element2.file_range_length(),
-      upload_element2.expected_file_modification_time());
+  request_body->AppendFileRange(upload_element2.path(),
+                                upload_element2.offset(),
+                                upload_element2.length(),
+                                upload_element2.expected_modification_time());
 
-  upload = request_body->ResolveElementsAndCreateUploadData(
-      &blob_storage_controller);
-  ASSERT_EQ(upload->elements()->size(), 8U);
-  EXPECT_TRUE(upload->elements()->at(0) == blob_element1);
-  EXPECT_TRUE(upload->elements()->at(1) == blob_element2);
-  EXPECT_TRUE(upload->elements()->at(2) == upload_element1);
-  EXPECT_TRUE(upload->elements()->at(3) == blob_element1);
-  EXPECT_TRUE(upload->elements()->at(4) == blob_element2);
-  EXPECT_TRUE(upload->elements()->at(5) == blob_element1);
-  EXPECT_TRUE(upload->elements()->at(6) == blob_element2);
-  EXPECT_TRUE(upload->elements()->at(7) == upload_element2);
+  upload.reset(request_body->ResolveElementsAndCreateUploadDataStream(
+      &blob_storage_controller, NULL, base::MessageLoopProxy::current()));
+  ASSERT_EQ(8U, upload->element_readers().size());
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[0], blob_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[1], blob_element2));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[2], upload_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[3], blob_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[4], blob_element2));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[5], blob_element1));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[6], blob_element2));
+  EXPECT_TRUE(AreElementsEqual(*upload->element_readers()[7], upload_element2));
 }
 
 }  // namespace webkit_glue

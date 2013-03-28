@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,9 @@
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
+#include "base/time.h"
 #include "base/values.h"
+#include "sync/base/sync_export.h"
 #include "sync/protocol/sync.pb.h"
 
 namespace sync_pb {
@@ -20,7 +22,7 @@ class ClientToServerMessage;
 
 namespace syncer {
 
-class TrafficRecorder {
+class SYNC_EXPORT_PRIVATE TrafficRecorder {
  public:
   enum TrafficMessageType {
     CLIENT_TO_SERVER_MESSAGE,
@@ -28,7 +30,7 @@ class TrafficRecorder {
     UNKNOWN_MESSAGE_TYPE
   };
 
-  struct TrafficRecord {
+  struct SYNC_EXPORT_PRIVATE TrafficRecord {
     // The serialized message.
     std::string message;
     TrafficMessageType message_type;
@@ -39,14 +41,18 @@ class TrafficRecorder {
 
     TrafficRecord(const std::string& message,
                   TrafficMessageType message_type,
-                  bool truncated);
+                  bool truncated,
+                  base::Time time);
     TrafficRecord();
     ~TrafficRecord();
     DictionaryValue* ToValue() const;
+
+    // Time of record creation.
+    base::Time timestamp;
   };
 
   TrafficRecorder(unsigned int max_messages, unsigned int max_message_size);
-  ~TrafficRecorder();
+  virtual ~TrafficRecorder();
 
   void RecordClientToServerMessage(const sync_pb::ClientToServerMessage& msg);
   void RecordClientToServerResponse(
@@ -61,6 +67,9 @@ class TrafficRecorder {
   void AddTrafficToQueue(TrafficRecord* record);
   void StoreProtoInQueue(const ::google::protobuf::MessageLite& msg,
                          TrafficMessageType type);
+
+  // Method to get record creation time.
+  virtual base::Time GetTime();
 
   // Maximum number of messages stored in the queue.
   unsigned int max_messages_;

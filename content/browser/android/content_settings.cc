@@ -80,6 +80,16 @@ struct ContentSettings::FieldIds {
         GetFieldID(env, clazz, "mSupportMultipleWindows", "Z");
     dom_storage_enabled =
         GetFieldID(env, clazz, "mDomStorageEnabled", "Z");
+    database_enabled =
+        GetFieldID(env, clazz, "mDatabaseEnabled", "Z");
+    use_wide_viewport =
+        GetFieldID(env, clazz, "mUseWideViewport", "Z");
+    load_with_overview_mode =
+        GetFieldID(env, clazz, "mLoadWithOverviewMode", "Z");
+    media_playback_requires_user_gesture =
+        GetFieldID(env, clazz, "mMediaPlaybackRequiresUserGesture", "Z");
+    default_video_poster_url =
+        GetFieldID(env, clazz, "mDefaultVideoPosterURL", kStringClassName);
   }
 
   // Field ids
@@ -104,6 +114,11 @@ struct ContentSettings::FieldIds {
   jfieldID java_script_can_open_windows_automatically;
   jfieldID support_multiple_windows;
   jfieldID dom_storage_enabled;
+  jfieldID database_enabled;
+  jfieldID use_wide_viewport;
+  jfieldID load_with_overview_mode;
+  jfieldID media_playback_requires_user_gesture;
+  jfieldID default_video_poster_url;
 };
 
 ContentSettings::ContentSettings(JNIEnv* env,
@@ -142,8 +157,9 @@ void ContentSettings::SyncFromNativeImpl() {
   RenderViewHost* render_view_host = web_contents()->GetRenderViewHost();
   WebPreferences prefs = render_view_host->GetDelegate()->GetWebkitPrefs();
 
-  // TODO(mnaganov): Hook LayoutAlgorithm.NARROW_COLUMNS up to
-  // prefs.text_autosizing_enabled
+  Java_ContentSettings_setTextAutosizingEnabled(
+      env, obj, prefs.text_autosizing_enabled);
+  CheckException(env);
 
   env->SetIntField(
       obj,
@@ -248,10 +264,42 @@ void ContentSettings::SyncFromNativeImpl() {
   Java_ContentSettings_setPluginsDisabled(env, obj, !prefs.plugins_enabled);
   CheckException(env);
 
+  // We don't need to sync AppCache settings to Java, because there are
+  // no getters for them in the API.
+
   env->SetBooleanField(
       obj,
       field_ids_->dom_storage_enabled,
       prefs.local_storage_enabled);
+  CheckException(env);
+
+  env->SetBooleanField(
+      obj,
+      field_ids_->database_enabled,
+      prefs.databases_enabled);
+  CheckException(env);
+
+  env->SetBooleanField(
+      obj,
+      field_ids_->use_wide_viewport,
+      prefs.viewport_enabled);
+  CheckException(env);
+
+  env->SetBooleanField(
+      obj,
+      field_ids_->load_with_overview_mode,
+      prefs.initialize_at_minimum_page_scale);
+  CheckException(env);
+
+  env->SetBooleanField(
+      obj,
+      field_ids_->media_playback_requires_user_gesture,
+      prefs.user_gesture_required_for_media_playback);
+  CheckException(env);
+
+  str.Reset(
+      ConvertUTF8ToJavaString(env, prefs.default_video_poster_url.spec()));
+  env->SetObjectField(obj, field_ids_->default_video_poster_url, str.obj());
   CheckException(env);
 }
 
@@ -268,12 +316,16 @@ void ContentSettings::SyncToNativeImpl() {
   RenderViewHost* render_view_host = web_contents()->GetRenderViewHost();
   WebPreferences prefs = render_view_host->GetDelegate()->GetWebkitPrefs();
 
-  // TODO(mnaganov): Hook prefs.text_autosizing_enabled up to
-  // LayoutAlgorithm.NARROW_COLUMNS
+  prefs.text_autosizing_enabled =
+      Java_ContentSettings_getTextAutosizingEnabled(env, obj);
 
   int text_size_percent = env->GetIntField(obj, field_ids_->text_size_percent);
-  prefs.font_scale_factor = text_size_percent / 100.0f;
-  prefs.force_enable_zoom = text_size_percent >= 130;
+  if (prefs.text_autosizing_enabled) {
+    prefs.font_scale_factor = text_size_percent / 100.0f;
+    prefs.force_enable_zoom = text_size_percent >= 130;
+  } else {
+    prefs.force_enable_zoom = false;
+  }
 
   ScopedJavaLocalRef<jstring> str(
       env, static_cast<jstring>(
@@ -351,8 +403,30 @@ void ContentSettings::SyncToNativeImpl() {
 
   prefs.plugins_enabled = !Java_ContentSettings_getPluginsDisabled(env, obj);
 
+  prefs.application_cache_enabled =
+      Java_ContentSettings_getAppCacheEnabled(env, obj);
+
   prefs.local_storage_enabled = env->GetBooleanField(
       obj, field_ids_->dom_storage_enabled);
+
+  prefs.databases_enabled = env->GetBooleanField(
+      obj, field_ids_->database_enabled);
+
+  prefs.viewport_enabled = env->GetBooleanField(
+      obj, field_ids_->use_wide_viewport);
+  prefs.double_tap_to_zoom_enabled = prefs.viewport_enabled;
+
+  prefs.initialize_at_minimum_page_scale = env->GetBooleanField(
+      obj, field_ids_->load_with_overview_mode);
+
+  prefs.user_gesture_required_for_media_playback = env->GetBooleanField(
+      obj, field_ids_->media_playback_requires_user_gesture);
+
+  str.Reset(
+      env, static_cast<jstring>(
+          env->GetObjectField(obj, field_ids_->default_video_poster_url)));
+  prefs.default_video_poster_url = str.obj() ?
+      GURL(ConvertJavaStringToUTF8(str)) : GURL();
 
   render_view_host->UpdateWebkitPreferences(prefs);
 }

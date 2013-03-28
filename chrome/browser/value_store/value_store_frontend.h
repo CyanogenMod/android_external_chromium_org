@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -17,6 +16,10 @@
 
 class ValueStore;
 
+namespace base {
+class FilePath;
+}
+
 // A frontend for a LeveldbValueStore, for use on the UI thread.
 class ValueStoreFrontend
     : public base::SupportsWeakPtr<ValueStoreFrontend>,
@@ -24,10 +27,13 @@ class ValueStoreFrontend
  public:
   typedef base::Callback<void(scoped_ptr<base::Value>)> ReadCallback;
 
-  explicit ValueStoreFrontend(const FilePath& db_path);
+  ValueStoreFrontend();
+  explicit ValueStoreFrontend(const base::FilePath& db_path);
   // This variant is useful for testing (using a mock ValueStore).
   explicit ValueStoreFrontend(ValueStore* value_store);
   ~ValueStoreFrontend();
+
+  void Init(const base::FilePath& db_path);
 
   // Retrieves a value from the database asynchronously, passing a copy to
   // |callback| when ready. NULL is passed if no matching entry is found.

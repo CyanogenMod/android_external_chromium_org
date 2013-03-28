@@ -20,7 +20,7 @@
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/page_transition_types.h"
 #include "ui/base/models/simple_menu_model.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class PrintPreviewContextMenuObserver;
 class Profile;
@@ -147,7 +147,6 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
   // SimpleMenuModel::Delegate implementation.
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
   virtual void MenuWillShow(ui::SimpleMenuModel* source) OVERRIDE;
   virtual void MenuClosed(ui::SimpleMenuModel* source) OVERRIDE;
@@ -190,19 +189,21 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
 
  private:
   friend class RenderViewContextMenuTest;
+  friend class RenderViewContextMenuPrefsTest;
 
   static bool IsDevToolsURL(const GURL& url);
   static bool IsInternalResourcesURL(const GURL& url);
   static bool ExtensionContextAndPatternMatch(
       const content::ContextMenuParams& params,
       extensions::MenuItem::ContextList contexts,
-      const URLPatternSet& target_url_patterns);
+      const extensions::URLPatternSet& target_url_patterns);
   static bool MenuItemMatchesParams(
       const content::ContextMenuParams& params,
       const extensions::MenuItem* item);
 
   // Gets the extension (if any) associated with the WebContents that we're in.
   const extensions::Extension* GetExtension() const;
+  void AppendAppModeItems();
   void AppendPlatformAppItems();
   void AppendPopupExtensionItems();
   void AppendPanelItems();
@@ -217,6 +218,7 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
   void AppendPageItems();
   void AppendFrameItems();
   void AppendCopyItem();
+  void AppendPrintItem();
   void AppendEditableItems();
   void AppendSearchProvider();
   void AppendAllExtensionItems();

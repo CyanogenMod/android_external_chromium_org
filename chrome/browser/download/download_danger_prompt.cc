@@ -6,10 +6,8 @@
 
 #include "base/bind.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_item.h"
 #include "grit/generated_resources.h"
@@ -24,7 +22,8 @@ class DownloadDangerPromptImpl
     public TabModalConfirmDialogDelegate {
  public:
   DownloadDangerPromptImpl(content::DownloadItem* item,
-                           TabContents* tab_contents,
+                           content::WebContents* web_contents,
+                           bool show_context,
                            const base::Closure& accepted,
                            const base::Closure& canceled);
   virtual ~DownloadDangerPromptImpl();
@@ -55,6 +54,7 @@ class DownloadDangerPromptImpl
   void PrepareToClose();
 
   content::DownloadItem* download_;
+  bool show_context_;
   base::Closure accepted_;
   base::Closure canceled_;
 
@@ -63,11 +63,13 @@ class DownloadDangerPromptImpl
 
 DownloadDangerPromptImpl::DownloadDangerPromptImpl(
     content::DownloadItem* download,
-    TabContents* tab_contents,
+    content::WebContents* web_contents,
+    bool show_context,
     const base::Closure& accepted,
     const base::Closure& canceled)
-    : TabModalConfirmDialogDelegate(tab_contents->web_contents()),
+    : TabModalConfirmDialogDelegate(web_contents),
       download_(download),
+      show_context_(show_context),
       accepted_(accepted),
       canceled_(canceled) {
   DCHECK(!accepted_.is_null());
@@ -106,11 +108,33 @@ string16 DownloadDangerPromptImpl::GetTitle() {
 }
 
 string16 DownloadDangerPromptImpl::GetMessage() {
-  return l10n_util::GetStringUTF16(IDS_PROMPT_CONFIRM_KEEP_DANGEROUS_DOWNLOAD);
+  if (!show_context_)
+    return l10n_util::GetStringUTF16(
+        IDS_PROMPT_CONFIRM_KEEP_DANGEROUS_DOWNLOAD);
+  switch (download_->GetDangerType()) {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE:
+      return l10n_util::GetStringFUTF16(
+          IDS_PROMPT_DANGEROUS_DOWNLOAD,
+          download_->GetFileNameToReportUser().LossyDisplayName());
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL: // Fall through
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+      return l10n_util::GetStringFUTF16(
+          IDS_PROMPT_MALICIOUS_DOWNLOAD_CONTENT,
+          download_->GetFileNameToReportUser().LossyDisplayName());
+    case content::DOWNLOAD_DANGER_TYPE_UNCOMMON_CONTENT:
+      return l10n_util::GetStringFUTF16(
+          IDS_PROMPT_UNCOMMON_DOWNLOAD_CONTENT,
+          download_->GetFileNameToReportUser().LossyDisplayName());
+    default:
+      NOTREACHED();
+      return string16();
+  }
 }
 
 string16 DownloadDangerPromptImpl::GetAcceptButtonTitle() {
-  return l10n_util::GetStringUTF16(IDS_CONFIRM_DOWNLOAD_AGAIN);
+  return l10n_util::GetStringUTF16(
+      show_context_ ? IDS_CONFIRM_DOWNLOAD : IDS_CONFIRM_DOWNLOAD_AGAIN);
 }
 
 void DownloadDangerPromptImpl::OnAccepted() {
@@ -140,17 +164,18 @@ void DownloadDangerPromptImpl::PrepareToClose() {
   }
 }
 
-} // namespace
+}  // namespace
 
 // static
 DownloadDangerPrompt* DownloadDangerPrompt::Create(
     content::DownloadItem* item,
-    TabContents* tab_contents,
+    content::WebContents* web_contents,
+    bool show_context,
     const base::Closure& accepted,
     const base::Closure& canceled) {
-  DownloadDangerPromptImpl* prompt =
-      new DownloadDangerPromptImpl(item, tab_contents, accepted, canceled);
+  DownloadDangerPromptImpl* prompt = new DownloadDangerPromptImpl(
+      item, web_contents, show_context, accepted, canceled);
   // |prompt| will be deleted when the dialog is done.
-  TabModalConfirmDialog::Create(prompt, tab_contents->web_contents());
+  TabModalConfirmDialog::Create(prompt, web_contents);
   return prompt;
 }

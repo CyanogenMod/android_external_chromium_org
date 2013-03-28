@@ -74,24 +74,12 @@ class Plugin : public pp::InstancePrivate {
   // Gets called by the browser right after New().
   virtual bool Init(uint32_t argc, const char* argn[], const char* argv[]);
 
-  // Handles view changes from the browser.
-  virtual void DidChangeView(const pp::View& view);
-
-  // Handles gaining or losing focus.
-  virtual void DidChangeFocus(bool has_focus);
-
-  // Handles input events delivered from the browser to this plugin element.
-  virtual bool HandleInputEvent(const pp::InputEvent& event);
-
-  // Handles gaining or losing focus.
+  // Handles document load, when the plugin is a MIME type handler.
   virtual bool HandleDocumentLoad(const pp::URLLoader& url_loader);
 
   // Returns a scriptable reference to this plugin element.
   // Called by JavaScript document.getElementById(plugin_id).
   virtual pp::Var GetInstanceObject();
-
-  // Handles postMessage from browser
-  virtual void HandleMessage(const pp::Var& message);
 
   // ----- Plugin interface support.
 
@@ -103,12 +91,7 @@ class Plugin : public pp::InstancePrivate {
   // done.  The module will become ready later, asynchronously.  Other
   // event handlers should block until the module is ready before
   // trying to communicate with it, i.e., until nacl_ready_state is
-  // DONE.  Note, however, we already have another mechanism that
-  // prevents event delivery: StartJSObjectProxy plumbs through
-  // NaClSubprocess to SrpcClient which upcalls
-  // Plugin::StartProxiedExecution, which sets ppapi_proxy_.  And NULL
-  // == ppapi_proxy_ prevents events from being delivered, even if
-  // nacl_ready_state is DONE.
+  // DONE.
   //
   // NB: currently we do not time out, so if the untrusted code
   // does not signal that it is ready, then we will deadlock the main
@@ -244,18 +227,6 @@ class Plugin : public pp::InstancePrivate {
   // Requests a NaCl manifest download from a |url| relative to the page origin.
   void RequestNaClManifest(const nacl::string& url);
 
-  // Start up proxied execution of the browser API.
-  //
-  // NB: this is currently invoked from the main thread.  If we ever
-  // move it off the main thread (eliminate the possibility of a
-  // malicious nexe that isn't linked against / doesn't use our
-  // ppapi_proxy code that blocks the main thread on the RPCs used
-  // here), then we will need to take care to ensure that the error
-  // and crash reporting state machine (see NexeDidCrash comment)
-  // continues to work.
-  bool StartProxiedExecution(NaClSrpcChannel* srpc_channel,
-                             ErrorInfo* error_info);
-
   // Support for property getting.
   typedef void (Plugin::* PropertyGetter)(NaClSrpcArg* prop_value);
   void AddPropertyGet(const nacl::string& prop_name, PropertyGetter getter);
@@ -270,9 +241,6 @@ class Plugin : public pp::InstancePrivate {
   // the size of the file to load.  W3C ProgressEvents specify that unknown
   // sizes return 0.
   static const uint64_t kUnknownBytes = 0;
-
-  // Getter for PPAPI proxy interface.
-  ppapi_proxy::BrowserPpp* ppapi_proxy() const { return ppapi_proxy_; }
 
   // Called back by CallOnMainThread.  Dispatches the first enqueued progress
   // event.
@@ -290,6 +258,11 @@ class Plugin : public pp::InstancePrivate {
   // A helper function that gets the scheme type for |url|. Uses URLUtil_Dev
   // interface which this class has as a member.
   UrlSchemeType GetUrlScheme(const std::string& url);
+
+  // A helper function that indicates if |url| can be requested by the document
+  // under the same-origin policy. Strictly speaking, it may be possible for the
+  // document to request the URL using CORS even if this function returns false.
+  bool DocumentCanRequest(const std::string& url);
 
   // Get the text description of the last error reported by the plugin.
   const nacl::string& last_error_string() const { return last_error_string_; }
@@ -350,6 +323,8 @@ class Plugin : public pp::InstancePrivate {
                             NaClSubprocess* subprocess,
                             const Manifest* manifest,
                             bool should_report_uma,
+                            bool uses_irt,
+                            bool uses_ppapi,
                             ErrorInfo* error_info,
                             pp::CompletionCallback init_done_cb,
                             pp::CompletionCallback crash_cb);
@@ -418,9 +393,6 @@ class Plugin : public pp::InstancePrivate {
                                  FileDownloader*& url_downloader,
                                  PP_CompletionCallback pp_callback);
 
-  // Shuts down the proxy for PPAPI nexes.
-  void ShutdownProxy();  // Nexe shutdown + proxy deletion.
-
   // Copy the main service runtime's most recent NaClLog output to the
   // JavaScript console.  Valid to use only after a crash, e.g., via a
   // detail level LOG_FATAL NaClLog entry.  If the crash was not due
@@ -466,14 +438,19 @@ class Plugin : public pp::InstancePrivate {
   // produced by this plugin.
   nacl::string last_error_string_;
 
-  // A pointer to the browser end of a proxy pattern connecting the
-  // NaCl plugin to the PPAPI .nexe's PPP interface
-  // (InitializeModule, Shutdown, and GetInterface).
-  // TODO(sehr): this should be a scoped_ptr for shutdown.
-  ppapi_proxy::BrowserPpp* ppapi_proxy_;
-
   // PPAPI Dev interfaces are disabled by default.
   bool enable_dev_interfaces_;
+
+  // A flag indicating if the NaCl executable is being loaded from an installed
+  // application.  This flag is used to bucket UMA statistics more precisely to
+  // help determine whether nexe loading problems are caused by networking
+  // issues.  (Installed applications will be loaded from disk.)
+  // Unfortunately, the definition of what it means to be part of an installed
+  // application is a little murky - for example an installed application can
+  // register a mime handler that loads NaCl executables into an arbitrary web
+  // page.  As such, the flag actually means "our best guess, based on the URLs
+  // for NaCl resources that we have seen so far".
+  bool is_installed_;
 
   // If we get a DidChangeView event before the nexe is loaded, we store it and
   // replay it to nexe after it's loaded. We need to replay when this View
@@ -495,14 +472,6 @@ class Plugin : public pp::InstancePrivate {
 
   // Pending progress events.
   std::queue<ProgressEvent*> progress_events_;
-
-  // Adapter class constructors require a reference to 'this', so we can't
-  // contain them directly.
-  nacl::scoped_ptr<pp::Find_Dev> find_adapter_;
-  nacl::scoped_ptr<pp::MouseLock> mouse_lock_adapter_;
-  nacl::scoped_ptr<pp::Printing_Dev> printing_adapter_;
-  nacl::scoped_ptr<pp::Selection_Dev> selection_adapter_;
-  nacl::scoped_ptr<pp::Zoom_Dev> zoom_adapter_;
 
   // Used for NexeFileDidOpenContinuation
   int64_t load_start_;

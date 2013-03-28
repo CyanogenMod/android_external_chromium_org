@@ -5,11 +5,11 @@
 #include "gpu/command_buffer/service/feature_info.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "gpu/command_buffer/common/gl_mock.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_mock.h"
 
 using ::gfx::MockGLInterface;
 using ::testing::_;
@@ -34,13 +34,14 @@ class FeatureInfoTest : public testing::Test {
   }
 
   void SetupInitExpectations(const char* extensions) {
-    SetupInitExpectationsWithVendor(extensions, "", "");
+    SetupInitExpectationsWithVendor(extensions, "", "", "");
   }
 
   void SetupInitExpectationsWithVendor(
-      const char* extensions, const char* vendor, const char* renderer) {
+      const char* extensions, const char* vendor, const char* renderer,
+      const char* version) {
     TestHelper::SetupFeatureInfoInitExpectationsWithVendor(
-        gl_.get(), extensions, vendor, renderer);
+        gl_.get(), extensions, vendor, renderer, version);
   }
 
  protected:
@@ -57,7 +58,7 @@ class FeatureInfoTest : public testing::Test {
   }
 
   scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
-  FeatureInfo::Ref info_;
+  scoped_refptr<FeatureInfo> info_;
 };
 
 namespace {
@@ -77,7 +78,6 @@ TEST_F(FeatureInfoTest, Basic) {
   EXPECT_FALSE(info_->feature_flags().npot_ok);
   EXPECT_FALSE(info_->feature_flags().enable_texture_float_linear);
   EXPECT_FALSE(info_->feature_flags().enable_texture_half_float_linear);
-  EXPECT_FALSE(info_->feature_flags().chromium_webglsl);
   EXPECT_FALSE(info_->feature_flags().oes_egl_image_external);
   EXPECT_FALSE(info_->feature_flags().chromium_stream_texture);
   EXPECT_FALSE(info_->feature_flags().angle_translated_shader_source);
@@ -96,6 +96,7 @@ TEST_F(FeatureInfoTest, Basic) {
   EXPECT_FALSE(info_->workarounds().clear_alpha_in_readpixels);
   EXPECT_EQ(0, info_->workarounds().max_texture_size);
   EXPECT_EQ(0, info_->workarounds().max_cube_map_texture_size);
+  EXPECT_FALSE(info_->workarounds().use_client_side_arrays_for_stream_buffers);
 
   // Test good types.
   {
@@ -199,7 +200,6 @@ TEST_F(FeatureInfoTest, InitializeNoExtensions) {
               HasSubstr("GL_ANGLE_translated_shader_source"));
 
   // Check a couple of random extensions that should not be there.
-  EXPECT_THAT(info_->extensions(), Not(HasSubstr("GL_CHROMIUM_webglsl")));
   EXPECT_THAT(info_->extensions(), Not(HasSubstr("GL_OES_texture_npot")));
   EXPECT_THAT(info_->extensions(),
               Not(HasSubstr("GL_EXT_texture_compression_dxt1")));
@@ -214,7 +214,6 @@ TEST_F(FeatureInfoTest, InitializeNoExtensions) {
   EXPECT_THAT(info_->extensions(),
               Not(HasSubstr("GL_OES_compressed_ETC1_RGB8_texture")));
   EXPECT_FALSE(info_->feature_flags().npot_ok);
-  EXPECT_FALSE(info_->feature_flags().chromium_webglsl);
   EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
       GL_COMPRESSED_RGB_S3TC_DXT1_EXT));
   EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
@@ -677,13 +676,6 @@ TEST_F(FeatureInfoTest, InitializeOES_standard_derivatives) {
       GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES));
 }
 
-TEST_F(FeatureInfoTest, InitializeCHROMIUM_webglsl) {
-  SetupInitExpectations("");
-  info_->Initialize("GL_CHROMIUM_webglsl");
-  EXPECT_THAT(info_->extensions(), HasSubstr("GL_CHROMIUM_webglsl"));
-  EXPECT_TRUE(info_->feature_flags().chromium_webglsl);
-}
-
 TEST_F(FeatureInfoTest, InitializeOES_rgb8_rgba8) {
   SetupInitExpectations("GL_OES_rgb8_rgba8");
   info_->Initialize(NULL);
@@ -807,6 +799,55 @@ TEST_F(FeatureInfoTest, InitializeOES_element_index_uint) {
   EXPECT_THAT(info_->extensions(),
               HasSubstr("GL_OES_element_index_uint"));
   EXPECT_TRUE(info_->validators()->index_type.IsValid(GL_UNSIGNED_INT));
+}
+
+TEST_F(FeatureInfoTest, InitializeARM) {
+  SetupInitExpectationsWithVendor("", "ARM", "MAli-T604", "");
+  info_->Initialize(NULL);
+  EXPECT_TRUE(info_->workarounds().use_client_side_arrays_for_stream_buffers);
+}
+
+TEST_F(FeatureInfoTest, InitializeImagination) {
+  SetupInitExpectationsWithVendor(
+      "", "Imagination Techologies", "PowerVR SGX 540", "");
+  info_->Initialize(NULL);
+  EXPECT_TRUE(info_->workarounds().use_client_side_arrays_for_stream_buffers);
+  EXPECT_FALSE(info_->feature_flags().native_vertex_array_object);
+}
+
+TEST_F(FeatureInfoTest, InitializeARMVAOs) {
+  SetupInitExpectationsWithVendor(
+      "GL_OES_vertex_array_object", "ARM", "MAli-T604", "");
+  info_->Initialize(NULL);
+  EXPECT_TRUE(info_->workarounds().use_client_side_arrays_for_stream_buffers);
+  EXPECT_FALSE(info_->feature_flags().native_vertex_array_object);
+}
+
+TEST_F(FeatureInfoTest, InitializeImaginationVAOs) {
+  SetupInitExpectationsWithVendor(
+      "GL_OES_vertex_array_object",
+      "Imagination Techologies", "PowerVR SGX 540", "");
+  info_->Initialize(NULL);
+  EXPECT_TRUE(info_->workarounds().use_client_side_arrays_for_stream_buffers);
+}
+
+TEST_F(FeatureInfoTest, InitializeSamplersWithARBSamplerObjects) {
+  SetupInitExpectationsWithVendor("GL_ARB_sampler_objects", "", "",
+                                  "OpenGL 3.0");
+  info_->Initialize(NULL);
+  EXPECT_TRUE(info_->feature_flags().enable_samplers);
+}
+
+TEST_F(FeatureInfoTest, InitializeSamplersWithES3) {
+  SetupInitExpectationsWithVendor("", "", "", "OpenGL ES 3.0");
+  info_->Initialize(NULL);
+  EXPECT_TRUE(info_->feature_flags().enable_samplers);
+}
+
+TEST_F(FeatureInfoTest, InitializeWithoutSamplers) {
+  SetupInitExpectationsWithVendor("", "", "", "OpenGL GL 3.0");
+  info_->Initialize(NULL);
+  EXPECT_FALSE(info_->feature_flags().enable_samplers);
 }
 
 }  // namespace gles2

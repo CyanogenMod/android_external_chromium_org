@@ -4,11 +4,11 @@
 
 #include "chrome/browser/chromeos/preferences.h"
 
-#include "chrome/browser/api/prefs/pref_member.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/chromeos/input_method/mock_input_method_manager.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace chromeos {
@@ -54,15 +54,15 @@ class MyMockInputMethodManager : public input_method::MockInputMethodManager {
 }  // anonymous namespace
 
 TEST(PreferencesTest, TestUpdatePrefOnBrowserScreenDetails) {
-  TestingPrefService prefs;
-  Preferences::RegisterUserPrefs(&prefs);
-  DownloadPrefs::RegisterUserPrefs(&prefs);
+  TestingPrefServiceSyncable prefs;
+  Preferences::RegisterUserPrefs(prefs.registry());
+  DownloadPrefs::RegisterUserPrefs(prefs.registry());
 
   StringPrefMember previous;
-  previous.Init(prefs::kLanguagePreviousInputMethod, &prefs, NULL);
+  previous.Init(prefs::kLanguagePreviousInputMethod, &prefs);
   previous.SetValue("KeyboardA");
   StringPrefMember current;
-  current.Init(prefs::kLanguageCurrentInputMethod, &prefs, NULL);
+  current.Init(prefs::kLanguageCurrentInputMethod, &prefs);
   current.SetValue("KeyboardB");
 
   MyMockInputMethodManager mock_manager(&previous, &current);

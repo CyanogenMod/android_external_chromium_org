@@ -5,31 +5,34 @@
 #ifndef CONTENT_PUBLIC_BROWSER_CONTENT_BROWSER_CLIENT_H_
 #define CONTENT_PUBLIC_BROWSER_CONTENT_BROWSER_CLIENT_H_
 
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/memory/linked_ptr.h"
+#include "base/memory/scoped_ptr.h"
 #include "content/public/browser/file_descriptor_info.h"
 #include "content/public/common/socket_permission_request.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/window_container_type.h"
+#include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/url_request/url_request_job_factory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPresenter.h"
+#include "webkit/glue/resource_type.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/posix/global_descriptors.h"
 #endif
 
-
 class CommandLine;
-class FilePath;
 class GURL;
 
-namespace webkit_glue {
-struct WebPreferences;
+namespace base {
+class FilePath;
 }
-
 namespace crypto {
 class CryptoModuleBlockingPasswordDelegate;
 }
@@ -46,7 +49,20 @@ class SSLCertRequestInfo;
 class SSLInfo;
 class URLRequest;
 class URLRequestContext;
+class URLRequestContextGetter;
 class X509Certificate;
+}
+
+namespace sandbox {
+class TargetPolicy;
+}
+
+namespace ui {
+class SelectFilePolicy;
+}
+
+namespace webkit_glue {
+struct WebPreferences;
 }
 
 namespace content {
@@ -64,14 +80,18 @@ class RenderViewHost;
 class RenderViewHostDelegateView;
 class ResourceContext;
 class SiteInstance;
-class SpeechInputManagerDelegate;
 class SpeechRecognitionManagerDelegate;
 class WebContents;
-class WebContentsView;
 class WebContentsViewDelegate;
-class WebUIControllerFactory;
+class WebContentsViewPort;
 struct MainFunctionParams;
 struct ShowDesktopNotificationHostMsgParams;
+
+// A mapping from the scheme name to the protocol handler that services its
+// content.
+typedef std::map<
+  std::string, linked_ptr<net::URLRequestJobFactory::ProtocolHandler> >
+    ProtocolHandlerMap;
 
 // Embedder API (or SPI) for participating in browser logic, to be implemented
 // by the client of the content browser. See ChromeContentBrowserClient for the
@@ -91,11 +111,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual BrowserMainParts* CreateBrowserMainParts(
       const MainFunctionParams& parameters);
 
-  // Allows an embedder to return their own WebContentsView implementation.
+  // Allows an embedder to return their own WebContentsViewPort implementation.
   // Return NULL to let the default one for the platform be created. Otherwise
   // |render_view_host_delegate_view| also needs to be provided, and it is
   // owned by the embedder.
-  virtual WebContentsView* OverrideCreateWebContentsView(
+  virtual WebContentsViewPort* OverrideCreateWebContentsView(
       WebContents* web_contents,
       RenderViewHostDelegateView** render_view_host_delegate_view);
 
@@ -108,6 +128,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Notifies that a new RenderHostView has been created.
   virtual void RenderViewHostCreated(RenderViewHost* render_view_host) {}
 
+  // Notifies that a <webview> guest WebContents has been created.
+  virtual void GuestWebContentsCreated(WebContents* guest_web_contents,
+                                       WebContents* embedder_web_contents) {}
+
   // Notifies that a RenderProcessHost has been created. This is called before
   // the content layer adds its own BrowserMessageFilters, so that the
   // embedder's IPC filters have priority.
@@ -115,10 +139,6 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Notifies that a BrowserChildProcessHost has been created.
   virtual void BrowserChildProcessHostCreated(BrowserChildProcessHost* host) {}
-
-  // Gets the WebUIControllerFactory which will be responsible for generating
-  // WebUIs. Can return NULL if the embedder doesn't need WebUI support.
-  virtual WebUIControllerFactory* GetWebUIControllerFactory();
 
   // Get the effective URL for the given actual URL, to allow an embedder to
   // group different url schemes in the same SiteInstance.
@@ -129,6 +149,28 @@ class CONTENT_EXPORT ContentBrowserClient {
   // rendered by the same process, rather than using process-per-site-instance.
   virtual bool ShouldUseProcessPerSite(BrowserContext* browser_context,
                                        const GURL& effective_url);
+
+  // Returns a list additional WebUI schemes, if any.  These additional schemes
+  // act as aliases to the chrome: scheme.  The additional schemes may or may
+  // not serve specific WebUI pages depending on the particular URLDataSource
+  // and its override of URLDataSource::ShouldServiceRequest.
+  virtual std::vector<std::string> GetAdditionalWebUISchemes();
+
+  // Creates the main net::URLRequestContextGetter. Should only be called once
+  // per ContentBrowserClient object.
+  // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
+  virtual net::URLRequestContextGetter* CreateRequestContext(
+      BrowserContext* browser_context,
+      ProtocolHandlerMap* protocol_handlers);
+
+  // Creates the net::URLRequestContextGetter for a StoragePartition. Should
+  // only be called once per partition_path per ContentBrowserClient object.
+  // TODO(ajwong): Remove once http://crbug.com/159193 is resolved.
+  virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
+      BrowserContext* browser_context,
+      const base::FilePath& partition_path,
+      bool in_memory,
+      ProtocolHandlerMap* protocol_handlers);
 
   // Returns whether a specified URL is handled by the embedder's internal
   // protocol handlers.
@@ -151,10 +193,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Called from a site instance's destructor.
   virtual void SiteInstanceDeleting(SiteInstance* site_instance) {}
 
-  // Returns true if for the navigation from |current_url| to |new_url|,
-  // processes should be swapped (even if we are in a process model that
-  // doesn't usually swap).
-  virtual bool ShouldSwapProcessesForNavigation(const GURL& current_url,
+  // Returns true if for the navigation from |current_url| to |new_url|
+  // in |site_instance|, the process should be swapped (even if we are in a
+  // process model that doesn't usually swap).
+  virtual bool ShouldSwapProcessesForNavigation(SiteInstance* site_instance,
+                                                const GURL& current_url,
                                                 const GURL& new_url);
 
   // Returns true if the given navigation redirect should cause a renderer
@@ -208,21 +251,6 @@ class CONTENT_EXPORT ContentBrowserClient {
                               int render_process_id,
                               int render_view_id,
                               net::CookieOptions* options);
-
-  // Returns whether plug-ins should access locally stored data or whether all
-  // access should be blocked. The default is to allow local data access.
-  // This is called on the IO thread.
-  virtual bool AllowPluginLocalDataAccess(
-      const GURL& document_url,
-      const GURL& plugin_url,
-      content::ResourceContext* context);
-
-  // Returns whether plug-ins should keep locally stored data for the session
-  // only. The default is to store local data permanently.
-  // This is called on the IO thread.
-  virtual bool AllowPluginLocalDataSessionOnly(
-      const GURL& url,
-      content::ResourceContext* context);
 
   // This is called on the IO thread.
   virtual bool AllowSaveLocalState(ResourceContext* context);
@@ -278,26 +306,28 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Allows the embedder to provide a storage parititon configuration for a
   // site. A storage partition configuration includes a domain of the embedder's
   // choice, an optional name within that domain, and whether the partition is
-  // in-memory only. The |partition_domain| is [a-z]* UTF-8 string, specifying
-  // the domain in which partitions live (similar to namespace). Within a
-  // domain, partitions can be uniquely identified by the combination of
-  // |partition_name| and |in_memory| values. When a partition is not to be
-  // persisted, the |in_memory| value must be set to true.
+  // in-memory only.
+  //
+  // If |can_be_default| is false, the caller is telling the embedder that the
+  // |site| is known to not be in the default partition. This is useful in
+  // some shutdown situations where the bookkeeping logic that maps sites to
+  // their partition configuration are no longer valid.
+  //
+  // The |partition_domain| is [a-z]* UTF-8 string, specifying the domain in
+  // which partitions live (similar to namespace). Within a domain, partitions
+  // can be uniquely identified by the combination of |partition_name| and
+  // |in_memory| values. When a partition is not to be persisted, the
+  // |in_memory| value must be set to true.
   virtual void GetStoragePartitionConfigForSite(
       content::BrowserContext* browser_context,
       const GURL& site,
+      bool can_be_default,
       std::string* partition_domain,
       std::string* partition_name,
       bool* in_memory);
 
   // Create and return a new quota permission context.
   virtual QuotaPermissionContext* CreateQuotaPermissionContext();
-
-  // Open the given file in the desktop's default manner.
-  virtual void OpenItem(const FilePath& path) {}
-
-  // Show the given file in a file manager. If possible, select the file.
-  virtual void ShowItemInFolder(const FilePath& path) {}
 
   // Informs the embedder that a certificate error has occured.  If
   // |overridable| is true and if |strict_enforcement| is false, the user
@@ -310,6 +340,7 @@ class CONTENT_EXPORT ContentBrowserClient {
       int cert_error,
       const net::SSLInfo& ssl_info,
       const GURL& request_url,
+      ResourceType::Type resource_type,
       bool overridable,
       bool strict_enforcement,
       const base::Callback<void(bool)>& callback,
@@ -324,17 +355,19 @@ class CONTENT_EXPORT ContentBrowserClient {
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) {}
 
-  // Adds a downloaded client cert. The embedder should ensure that there's
-  // a private key for the cert, displays the cert to the user, and adds it upon
-  // user approval. If the downloaded data could not be interpreted as a valid
-  // certificate, |cert| will be NULL.
-  virtual void AddNewCertificate(
+  // Adds a new installable certificate or private key.
+  // Typically used to install an X.509 user certificate.
+  // Note that it's up to the embedder to verify that the data is
+  // well-formed. |cert_data| will be NULL if file_size is 0.
+  virtual void AddCertificate(
       net::URLRequest* request,
-      net::X509Certificate* cert,
+      net::CertificateMimeType cert_type,
+      const void* cert_data,
+      size_t cert_size,
       int render_process_id,
       int render_view_id) {}
 
-  // Returns a a class to get notifications about media event. The embedder can
+  // Returns a class to get notifications about media event. The embedder can
   // return NULL if they're not interested.
   virtual MediaObserver* GetMediaObserver();
 
@@ -430,7 +463,7 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Returns the default download directory.
   // This can be called on any thread.
-  virtual FilePath GetDefaultDownloadDirectory();
+  virtual base::FilePath GetDefaultDownloadDirectory();
 
   // Returns the default filename used in downloads when we have no idea what
   // else we should do with the file.
@@ -445,17 +478,23 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual content::BrowserPpapiHost* GetExternalBrowserPpapiHost(
       int plugin_child_id);
 
+  // Returns true if the given browser_context and site_url support hosting
+  // BrowserPlugins.
+  virtual bool SupportsBrowserPlugin(BrowserContext* browser_context,
+                                     const GURL& site_url);
+
   // Returns true if renderer processes can use Pepper TCP/UDP sockets from
   // the given origin and connection type.
   virtual bool AllowPepperSocketAPI(BrowserContext* browser_context,
                                     const GURL& url,
                                     const SocketPermissionRequest& params);
 
-  // Returns true if renderer processes can use private Pepper File APIs.
-  virtual bool AllowPepperPrivateFileAPI();
-
   // Returns the directory containing hyphenation dictionaries.
-  virtual FilePath GetHyphenDictionaryDirectory();
+  virtual base::FilePath GetHyphenDictionaryDirectory();
+
+  // Returns an implementation of a file selecition policy. Can return NULL.
+  virtual ui::SelectFilePolicy* CreateSelectFilePolicy(
+      WebContents* web_contents);
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Populates |mappings| with all files that need to be mapped before launching
@@ -469,6 +508,12 @@ class CONTENT_EXPORT ContentBrowserClient {
 #if defined(OS_WIN)
   // Returns the name of the dll that contains cursors and other resources.
   virtual const wchar_t* GetResourceDllName();
+
+  // This is called on the PROCESS_LAUNCHER thread before the renderer process
+  // is launched. It gives the embedder a chance to add loosen the sandbox
+  // policy.
+  virtual void PreSpawnRenderer(sandbox::TargetPolicy* policy,
+                                bool* success) {}
 #endif
 
 #if defined(USE_NSS)

@@ -10,22 +10,22 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/string_util.h"
-#include "base/threading/thread.h"
 #include "base/thread_task_runner_handle.h"
+#include "base/threading/thread.h"
 #include "net/base/cert_verifier.h"
-#include "net/base/host_resolver.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
-#include "net/base/ssl_config_service_defaults.h"
-#include "net/base/transport_security_state.h"
 #include "net/cookies/cookie_monster.h"
+#include "net/dns/host_resolver.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
+#include "net/http/transport_security_state.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_storage.h"
@@ -99,7 +99,7 @@ class BasicNetworkDelegate : public NetworkDelegate {
   }
 
   virtual bool OnCanAccessFile(const net::URLRequest& request,
-                               const FilePath& path) const OVERRIDE {
+                               const base::FilePath& path) const OVERRIDE {
     return true;
   }
 
@@ -196,11 +196,12 @@ URLRequestContext* URLRequestContextBuilder::Build() {
   URLRequestContextStorage* storage = context->storage();
 
   storage->set_http_user_agent_settings(new StaticHttpUserAgentSettings(
-      accept_language_, accept_charset_, user_agent_));
+      accept_language_, user_agent_));
 
   if (!network_delegate_)
     network_delegate_.reset(new BasicNetworkDelegate);
-  storage->set_network_delegate(network_delegate_.release());
+  NetworkDelegate* network_delegate = network_delegate_.release();
+  storage->set_network_delegate(network_delegate);
 
   storage->set_host_resolver(net::HostResolver::CreateDefaultResolver(NULL));
 
@@ -245,8 +246,7 @@ URLRequestContext* URLRequestContextBuilder::Build() {
       context->ssl_config_service();
   network_session_params.http_auth_handler_factory =
       context->http_auth_handler_factory();
-  network_session_params.network_delegate =
-      context->network_delegate();
+  network_session_params.network_delegate = network_delegate;
   network_session_params.http_server_properties =
       context->http_server_properties();
   network_session_params.net_log = context->net_log();

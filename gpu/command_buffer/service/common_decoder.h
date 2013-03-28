@@ -10,6 +10,7 @@
 #include <string>
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/common/buffer.h"
 #include "gpu/command_buffer/service/cmd_parser.h"
 #include "gpu/gpu_export.h"
 
@@ -101,6 +102,7 @@ class GPU_EXPORT CommonDecoder : NON_EXPORTED_BASE(public AsyncAPIInterface) {
   void set_engine(CommandBufferEngine* engine) {
     engine_ = engine;
   }
+  CommandBufferEngine* engine() const { return engine_; }
 
   // Creates a bucket. If the bucket already exists returns that bucket.
   Bucket* CreateBucket(uint32 bucket_id);
@@ -128,6 +130,9 @@ class GPU_EXPORT CommonDecoder : NON_EXPORTED_BASE(public AsyncAPIInterface) {
                       unsigned int size) {
     return static_cast<T>(GetAddressAndCheckSize(shm_id, offset, size));
   }
+
+  // Get the actual shared memory buffer.
+  Buffer GetSharedMemoryBuffer(unsigned int shm_id);
 
  protected:
   // Executes a common command.

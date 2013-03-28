@@ -5,15 +5,15 @@
 #include "chrome/browser/safe_browsing/safe_browsing_store_file.h"
 
 #include "base/bind.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/md5.h"
-#include "base/scoped_temp_dir.h"
 #include "chrome/browser/safe_browsing/safe_browsing_store_unittest_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
 namespace {
 
-const FilePath::CharType kFolderPrefix[] =
+const base::FilePath::CharType kFolderPrefix[] =
     FILE_PATH_LITERAL("SafeBrowsingTestStoreFile");
 
 class SafeBrowsingStoreFileTest : public PlatformTest {
@@ -44,8 +44,8 @@ class SafeBrowsingStoreFileTest : public PlatformTest {
     corruption_detected_ = true;
   }
 
-  ScopedTempDir temp_dir_;
-  FilePath filename_;
+  base::ScopedTempDir temp_dir_;
+  base::FilePath filename_;
   scoped_ptr<SafeBrowsingStoreFile> store_;
   bool corruption_detected_;
 };
@@ -54,7 +54,7 @@ TEST_STORE(SafeBrowsingStoreFileTest, store_.get(), filename_);
 
 // Test that Delete() deletes the temporary store, if present.
 TEST_F(SafeBrowsingStoreFileTest, DeleteTemp) {
-  const FilePath temp_file =
+  const base::FilePath temp_file =
       SafeBrowsingStoreFile::TemporaryFileForFilename(filename_);
 
   EXPECT_FALSE(file_util::PathExists(filename_));

@@ -10,8 +10,8 @@
 #include "ash/shell_delegate.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/time.h"
 #include "base/values.h"
@@ -20,15 +20,16 @@
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/printing/print_preview_tab_controller.h"
+#include "chrome/browser/printing/print_preview_dialog_controller.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/view_type_utils.h"
 #include "chrome/common/automation_id.h"
 #include "chrome/common/extensions/extension.h"
@@ -154,18 +155,21 @@ void DeleteCookieOnIOThread(
 namespace automation_util {
 
 Browser* GetBrowserAt(int index) {
-  if (index < 0 || index >= static_cast<int>(BrowserList::size()))
+  // The automation layer doesn't support non-native desktops.
+  BrowserList* native_list =
+      BrowserList::GetInstance(chrome::HOST_DESKTOP_TYPE_NATIVE);
+  if (index < 0 || index >= static_cast<int>(native_list->size()))
     return NULL;
-  return *(BrowserList::begin() + index);
+  return native_list->get(index);
 }
 
 WebContents* GetWebContentsAt(int browser_index, int tab_index) {
   if (tab_index < 0)
     return NULL;
   Browser* browser = GetBrowserAt(browser_index);
-  if (!browser || tab_index >= browser->tab_count())
+  if (!browser || tab_index >= browser->tab_strip_model()->count())
     return NULL;
-  return chrome::GetWebContentsAt(browser, tab_index);
+  return browser->tab_strip_model()->GetWebContentsAt(tab_index);
 }
 
 #if defined(OS_CHROMEOS)
@@ -205,11 +209,12 @@ Profile* GetCurrentProfileOnChromeOS(std::string* error_message) {
 #endif  // defined(OS_CHROMEOS)
 
 Browser* GetBrowserForTab(WebContents* tab) {
-  BrowserList::const_iterator browser_iter = BrowserList::begin();
-  for (; browser_iter != BrowserList::end(); ++browser_iter) {
-    Browser* browser = *browser_iter;
-    for (int tab_index = 0; tab_index < browser->tab_count(); ++tab_index) {
-      if (chrome::GetWebContentsAt(browser, tab_index) == tab)
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
+    for (int tab_index = 0;
+         tab_index < browser->tab_strip_model()->count();
+         ++tab_index) {
+      if (browser->tab_strip_model()->GetWebContentsAt(tab_index) == tab)
         return browser;
     }
   }
@@ -374,8 +379,6 @@ void SetCookieJSON(AutomationProvider* provider,
   std::string name, value;
   std::string domain;
   std::string path = "/";
-  std::string mac_key;
-  std::string mac_algorithm;
   bool secure = false;
   double expiry = 0;
   bool http_only = false;
@@ -397,11 +400,6 @@ void SetCookieJSON(AutomationProvider* provider,
     reply.SendError("optional 'path' invalid");
     return;
   }
-  // mac_key and mac_algorithm are optional.
-  if (cookie_dict->HasKey("mac_key"))
-    cookie_dict->GetString("mac_key", &mac_key);
-  if (cookie_dict->HasKey("mac_algorithm"))
-    cookie_dict->GetString("mac_algorithm", &mac_algorithm);
   if (cookie_dict->HasKey("secure") &&
       !cookie_dict->GetBoolean("secure", &secure)) {
     reply.SendError("optional 'secure' invalid");
@@ -421,8 +419,7 @@ void SetCookieJSON(AutomationProvider* provider,
 
   scoped_ptr<net::CanonicalCookie> cookie(
       net::CanonicalCookie::Create(
-          GURL(url), name, value, domain, path,
-          mac_key, mac_algorithm, base::Time(),
+          GURL(url), name, value, domain, path, base::Time(),
           base::Time::FromDoubleT(expiry), secure, http_only));
   if (!cookie.get()) {
     reply.SendError("given 'cookie' parameters are invalid");
@@ -462,9 +459,9 @@ bool SendErrorIfModalDialogActive(AutomationProvider* provider,
   return active;
 }
 
-AutomationId GetIdForTab(const TabContents* tab) {
-  SessionTabHelper* session_tab_helper =
-      SessionTabHelper::FromWebContents(tab->web_contents());
+AutomationId GetIdForTab(const WebContents* tab) {
+  const SessionTabHelper* session_tab_helper =
+      SessionTabHelper::FromWebContents(tab);
   return AutomationId(AutomationId::kTypeTab,
                       base::IntToString(session_tab_helper->session_id().id()));
 }
@@ -506,31 +503,32 @@ bool GetTabForId(const AutomationId& id, WebContents** tab) {
   if (id.type() != AutomationId::kTypeTab)
     return false;
 
-  printing::PrintPreviewTabController* preview_controller =
-      printing::PrintPreviewTabController::GetInstance();
-  BrowserList::const_iterator iter = BrowserList::begin();
-  for (; iter != BrowserList::end(); ++iter) {
-    Browser* browser = *iter;
-    for (int tab_index = 0; tab_index < browser->tab_count(); ++tab_index) {
-      TabContents* tab_contents = chrome::GetTabContentsAt(browser, tab_index);
+  printing::PrintPreviewDialogController* preview_controller =
+      printing::PrintPreviewDialogController::GetInstance();
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
+    for (int tab_index = 0;
+         tab_index < browser->tab_strip_model()->count();
+         ++tab_index) {
+      WebContents* web_contents =
+          browser->tab_strip_model()->GetWebContentsAt(tab_index);
       SessionTabHelper* session_tab_helper =
-          SessionTabHelper::FromWebContents(tab_contents->web_contents());
+          SessionTabHelper::FromWebContents(web_contents);
       if (base::IntToString(
               session_tab_helper->session_id().id()) == id.id()) {
-        *tab = tab_contents->web_contents();
+        *tab = web_contents;
         return true;
       }
       if (preview_controller) {
-        TabContents* preview_tab_contents =
-            preview_controller->GetPrintPreviewForTab(tab_contents);
-        if (preview_tab_contents) {
+        WebContents* print_preview_contents =
+            preview_controller->GetPrintPreviewForContents(web_contents);
+        if (print_preview_contents) {
           SessionTabHelper* preview_session_tab_helper =
-              SessionTabHelper::FromWebContents(
-                  preview_tab_contents->web_contents());
+              SessionTabHelper::FromWebContents(print_preview_contents);
           std::string preview_id = base::IntToString(
               preview_session_tab_helper->session_id().id());
           if (preview_id == id.id()) {
-            *tab = preview_tab_contents->web_contents();
+            *tab = print_preview_contents;
             return true;
           }
         }
@@ -595,7 +593,8 @@ bool GetExtensionForId(
     const extensions::Extension** extension) {
   if (id.type() != AutomationId::kTypeExtension)
     return false;
-  ExtensionService* service = profile->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile)->
+      extension_service();
   const extensions::Extension* installed_extension =
       service->GetInstalledExtension(id.id());
   if (installed_extension)

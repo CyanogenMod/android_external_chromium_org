@@ -5,87 +5,113 @@
 #ifndef CC_TEST_ANIMATION_TEST_COMMON_H_
 #define CC_TEST_ANIMATION_TEST_COMMON_H_
 
-#include "cc/active_animation.h"
-#include "cc/animation_curve.h"
-#include "cc/layer_animation_controller.h"
+#include "cc/animation/animation.h"
+#include "cc/animation/animation_curve.h"
+#include "cc/animation/layer_animation_controller.h"
+#include "cc/animation/layer_animation_value_observer.h"
 
 namespace cc {
 class LayerImpl;
 class Layer;
 }
 
-namespace WebKitTests {
+namespace cc {
 
-class FakeFloatAnimationCurve : public cc::FloatAnimationCurve {
-public:
-    FakeFloatAnimationCurve();
-    explicit FakeFloatAnimationCurve(double duration);
-    virtual ~FakeFloatAnimationCurve();
+class FakeFloatAnimationCurve : public FloatAnimationCurve {
+ public:
+  FakeFloatAnimationCurve();
+  explicit FakeFloatAnimationCurve(double duration);
+  virtual ~FakeFloatAnimationCurve();
 
-    virtual double duration() const OVERRIDE;
-    virtual float getValue(double now) const OVERRIDE;
-    virtual scoped_ptr<cc::AnimationCurve> clone() const OVERRIDE;
+  virtual double Duration() const OVERRIDE;
+  virtual float GetValue(double now) const OVERRIDE;
+  virtual scoped_ptr<AnimationCurve> Clone() const OVERRIDE;
 
-private:
-    double m_duration;
+ private:
+  double duration_;
 };
 
-class FakeTransformTransition : public cc::TransformAnimationCurve {
-public:
-    FakeTransformTransition(double duration);
-    virtual ~FakeTransformTransition();
+class FakeTransformTransition : public TransformAnimationCurve {
+ public:
+  FakeTransformTransition(double duration);
+  virtual ~FakeTransformTransition();
 
-    virtual double duration() const OVERRIDE;
-    virtual WebKit::WebTransformationMatrix getValue(double time) const OVERRIDE;
+  virtual double Duration() const OVERRIDE;
+  virtual gfx::Transform GetValue(double time) const OVERRIDE;
 
-    virtual scoped_ptr<cc::AnimationCurve> clone() const OVERRIDE;
+  virtual scoped_ptr<AnimationCurve> Clone() const OVERRIDE;
 
-private:
-    double m_duration;
+ private:
+  double duration_;
 };
 
-class FakeFloatTransition : public cc::FloatAnimationCurve {
-public:
-    FakeFloatTransition(double duration, float from, float to);
-    virtual ~FakeFloatTransition();
+class FakeFloatTransition : public FloatAnimationCurve {
+ public:
+  FakeFloatTransition(double duration, float from, float to);
+  virtual ~FakeFloatTransition();
 
-    virtual double duration() const OVERRIDE;
-    virtual float getValue(double time) const OVERRIDE;
+  virtual double Duration() const OVERRIDE;
+  virtual float GetValue(double time) const OVERRIDE;
 
-    virtual scoped_ptr<cc::AnimationCurve> clone() const OVERRIDE;
+  virtual scoped_ptr<AnimationCurve> Clone() const OVERRIDE;
 
-private:
-    double m_duration;
-    float m_from;
-    float m_to;
+ private:
+  double duration_;
+  float from_;
+  float to_;
 };
 
-class FakeLayerAnimationControllerClient : public cc::LayerAnimationControllerClient {
-public:
-    FakeLayerAnimationControllerClient();
-    virtual ~FakeLayerAnimationControllerClient();
+class FakeLayerAnimationValueObserver : public LayerAnimationValueObserver {
+ public:
+  FakeLayerAnimationValueObserver();
+  virtual ~FakeLayerAnimationValueObserver();
 
-    // LayerAnimationControllerClient implementation
-    virtual int id() const OVERRIDE;
-    virtual void setOpacityFromAnimation(float) OVERRIDE;
-    virtual float opacity() const OVERRIDE;
-    virtual void setTransformFromAnimation(const WebKit::WebTransformationMatrix&) OVERRIDE;
-    virtual const WebKit::WebTransformationMatrix& transform() const OVERRIDE;
+  // LayerAnimationValueObserver implementation
+  virtual void OnOpacityAnimated(float opacity) OVERRIDE;
+  virtual void OnTransformAnimated(const gfx::Transform& transform) OVERRIDE;
+  virtual bool IsActive() const OVERRIDE;
 
-private:
-    float m_opacity;
-    WebKit::WebTransformationMatrix m_transform;
+  float opacity() const  { return opacity_; }
+  const gfx::Transform& transform() const { return transform_; }
+
+ private:
+  float opacity_;
+  gfx::Transform transform_;
 };
 
-int addOpacityTransitionToController(cc::LayerAnimationController&, double duration, float startOpacity, float endOpacity, bool useTimingFunction);
-int addAnimatedTransformToController(cc::LayerAnimationController&, double duration, int deltaX, int deltaY);
+int AddOpacityTransitionToController(LayerAnimationController* controller,
+                                     double duration,
+                                     float start_opacity,
+                                     float end_opacity,
+                                     bool use_timing_function);
 
-int addOpacityTransitionToLayer(cc::Layer&, double duration, float startOpacity, float endOpacity, bool useTimingFunction);
-int addOpacityTransitionToLayer(cc::LayerImpl&, double duration, float startOpacity, float endOpacity, bool useTimingFunction);
+int AddAnimatedTransformToController(LayerAnimationController* controller,
+                                     double duration,
+                                     int delta_x,
+                                     int delta_y);
 
-int addAnimatedTransformToLayer(cc::Layer&, double duration, int deltaX, int deltaY);
-int addAnimatedTransformToLayer(cc::LayerImpl&, double duration, int deltaX, int deltaY);
+int AddOpacityTransitionToLayer(Layer* layer,
+                                double duration,
+                                float start_opacity,
+                                float end_opacity,
+                                bool use_timing_function);
 
-} // namespace WebKitTests
+int AddOpacityTransitionToLayer(LayerImpl* layer,
+                                double duration,
+                                float start_opacity,
+                                float end_opacity,
+                                bool use_timing_function);
+
+int AddAnimatedTransformToLayer(Layer* layer,
+                                double duration,
+                                int delta_x,
+                                int delta_y);
+
+int AddAnimatedTransformToLayer(LayerImpl* layer,
+                                double duration,
+                                int delta_x,
+                                int delta_y);
+
+}  // namespace cc
 
 #endif  // CC_TEST_ANIMATION_TEST_COMMON_H_

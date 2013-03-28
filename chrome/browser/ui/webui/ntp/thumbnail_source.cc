@@ -5,34 +5,60 @@
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 
 #include "base/callback.h"
-#include "base/message_loop.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/message_loop.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/instant_io_context.h"
+#include "chrome/browser/search/instant_service.h"
+#include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/thumbnails/thumbnail_service.h"
 #include "chrome/browser/thumbnails/thumbnail_service_factory.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/gurl.h"
 #include "grit/theme_resources.h"
+#include "net/url_request/url_request.h"
 #include "ui/base/resource/resource_bundle.h"
 
+using content::BrowserThread;
+
+// Set ThumbnailService now as Profile isn't thread safe.
 ThumbnailSource::ThumbnailSource(Profile* profile)
-    : DataSource(chrome::kChromeUIThumbnailHost, MessageLoop::current()),
-      // Set ThumbnailService now as Profile isn't thread safe.
-      thumbnail_service_(ThumbnailServiceFactory::GetForProfile(profile)) {
+    : thumbnail_service_(ThumbnailServiceFactory::GetForProfile(profile)),
+      profile_(profile) {
 }
 
 ThumbnailSource::~ThumbnailSource() {
 }
 
-void ThumbnailSource::StartDataRequest(const std::string& path,
-                                       bool is_incognito,
-                                       int request_id) {
+std::string ThumbnailSource::GetSource() {
+  return chrome::kChromeUIThumbnailHost;
+}
+
+void ThumbnailSource::StartDataRequest(
+    const std::string& raw_path,
+    bool is_incognito,
+    const content::URLDataSource::GotDataCallback& callback) {
+  // Translate to regular path if |raw_path| is of the form
+  // chrome-search://favicon/<id> or chrome-search://thumb/<id>, where <id> is
+  // an integer.
+  std::string path = raw_path;
+  if (BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    std::map<std::string, std::string>::iterator it =
+        id_to_url_map_.find(raw_path);
+    if (it != id_to_url_map_.end()) {
+      path = id_to_url_map_[raw_path];
+      id_to_url_map_.erase(it);
+    }
+  } else if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    path = InstantService::MaybeTranslateInstantPathOnUI(profile_, raw_path);
+  }
+
   scoped_refptr<base::RefCountedMemory> data;
   if (thumbnail_service_->GetPageThumbnail(GURL(path), &data)) {
     // We have the thumbnail.
-    SendResponse(request_id, data.get());
+    callback.Run(data.get());
   } else {
-    SendDefaultThumbnail(request_id);
+    callback.Run(default_thumbnail_);
   }
 }
 
@@ -46,9 +72,27 @@ MessageLoop* ThumbnailSource::MessageLoopForRequestPath(
     const std::string& path) const {
   // TopSites can be accessed from the IO thread.
   return thumbnail_service_.get() ?
-      NULL : DataSource::MessageLoopForRequestPath(path);
+      NULL : content::URLDataSource::MessageLoopForRequestPath(path);
 }
 
-void ThumbnailSource::SendDefaultThumbnail(int request_id) {
-  SendResponse(request_id, default_thumbnail_);
+bool ThumbnailSource::ShouldServiceRequest(
+    const net::URLRequest* request) const {
+  if (request->url().SchemeIs(chrome::kChromeSearchScheme)) {
+    if (InstantService::IsInstantPath(request->url()) &&
+        InstantIOContext::ShouldServiceRequest(request)) {
+      // If this request will be serviced on the IO thread, then do the
+      // translation from raw_path to path here, where we have the |request|
+      // object in-hand, saving the result for later use.
+
+      // Strip leading slash from path.
+      std::string raw_path = request->url().path().substr(1);
+      if (!MessageLoopForRequestPath(raw_path)) {
+        id_to_url_map_[raw_path] =
+            InstantService::MaybeTranslateInstantPathOnIO(request, raw_path);
+      }
+      return true;
+    }
+    return false;
+  }
+  return URLDataSource::ShouldServiceRequest(request);
 }

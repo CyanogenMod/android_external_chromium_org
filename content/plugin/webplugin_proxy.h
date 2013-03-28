@@ -19,17 +19,14 @@
 #include "base/timer.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message.h"
-#include "third_party/skia/include/core/SkRefCnt.h"
+#include "skia/ext/refptr.h"
+#include "third_party/skia/include/core/SkCanvas.h"
 #if defined(USE_X11)
 #include "ui/base/x/x11_util.h"
 #endif
 #include "ui/gl/gpu_preference.h"
 #include "ui/surface/transport_dib.h"
 #include "webkit/plugins/npapi/webplugin.h"
-
-namespace skia {
-class PlatformCanvas;
-}
 
 namespace webkit {
 namespace npapi {
@@ -138,40 +135,7 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
       GetAcceleratedSurface(gfx::GpuPreference gpu_preference) OVERRIDE;
 
   //----------------------------------------------------------------------
-  // Legacy Core Animation plugin implementation rendering directly to screen.
-
-  virtual void BindFakePluginWindowHandle(bool opaque) OVERRIDE;
-
-  // Tell the browser (via the renderer) to invalidate because the
-  // accelerated buffers have changed.
-  virtual void AcceleratedFrameBuffersDidSwap(
-      gfx::PluginWindowHandle window, uint64 surface_id);
-
-  // Tell the renderer and browser to associate the given plugin handle with
-  // |accelerated_surface_identifier|. The geometry is used to resize any
-  // native "window" (which on the Mac is a just a view).
-  // This method is used when IOSurface support is available.
-  virtual void SetAcceleratedSurface(gfx::PluginWindowHandle window,
-                                     const gfx::Size& size,
-                                     uint64 accelerated_surface_identifier);
-
-  // Tell the renderer and browser to associate the given plugin handle with
-  // |dib_handle|. The geometry is used to resize any native "window" (which
-  // on the Mac is just a view).
-  // This method is used when IOSurface support is not available.
-  virtual void SetAcceleratedDIB(
-      gfx::PluginWindowHandle window,
-      const gfx::Size& size,
-      const TransportDIB::Handle& dib_handle);
-
-  // Create/destroy TranportDIBs via messages to the browser process.
-  // These are only used when IOSurface support is not available.
-  virtual void AllocSurfaceDIB(const size_t size,
-                               TransportDIB::Handle* dib_handle);
-  virtual void FreeSurfaceDIB(TransportDIB::Id dib_id);
-
-  //----------------------------------------------------------------------
-  // New accelerated plugin implementation which renders via the compositor.
+  // Accelerated plugin implementation which renders via the compositor.
 
   // Tells the renderer, and from there the GPU process, that the plugin
   // is using accelerated rather than software rendering.
@@ -215,7 +179,7 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
 #if defined(OS_WIN)
   void CreateCanvasFromHandle(const TransportDIB::Handle& dib_handle,
                               const gfx::Rect& window_rect,
-                              SkAutoTUnref<skia::PlatformCanvas>* canvas);
+                              skia::RefPtr<SkCanvas>* canvas);
 #elif defined(OS_MACOSX)
   static void CreateDIBAndCGContextFromHandle(
       const TransportDIB::Handle& dib_handle,
@@ -227,7 +191,7 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
       const TransportDIB::Handle& dib_handle,
       const gfx::Rect& window_rect,
       scoped_refptr<SharedTransportDIB>* dib_out,
-      SkAutoTUnref<skia::PlatformCanvas>* canvas);
+      skia::RefPtr<SkCanvas>* canvas);
 
   static void CreateShmPixmapFromDIB(
       TransportDIB* dib,
@@ -245,8 +209,8 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
     return windowless_contexts_[windowless_buffer_index_].get();
   }
 #else
-  skia::PlatformCanvas* windowless_canvas() const {
-    return windowless_canvases_[windowless_buffer_index_].get();
+  skia::RefPtr<SkCanvas> windowless_canvas() const {
+    return windowless_canvases_[windowless_buffer_index_];
   }
 
 #if defined(USE_X11)
@@ -282,7 +246,7 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
   base::mac::ScopedCFTypeRef<CGContextRef> windowless_contexts_[2];
   scoped_ptr<WebPluginAcceleratedSurfaceProxy> accelerated_surface_;
 #else
-  SkAutoTUnref<skia::PlatformCanvas> windowless_canvases_[2];
+  skia::RefPtr<SkCanvas> windowless_canvases_[2];
 
 #if defined(USE_X11)
   scoped_refptr<SharedTransportDIB> windowless_dibs_[2];

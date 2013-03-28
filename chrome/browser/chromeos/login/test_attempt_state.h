@@ -10,17 +10,18 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 
 namespace chromeos {
 
 class TestAttemptState : public AuthAttemptState {
  public:
-  TestAttemptState(const std::string& username,
-                   const std::string& password,
+  TestAttemptState(const UserCredentials& credentials,
                    const std::string& ascii_hash,
                    const std::string& login_token,
                    const std::string& login_captcha,
+                   const User::UserType user_type,
                    const bool user_is_new);
 
   TestAttemptState(const std::string& username, const std::string& ascii_hash);

@@ -4,9 +4,9 @@
 
 #include "ash/system/tray/tray_item_view.h"
 
-#include "ash/shell.h"
+#include "ash/shelf/shelf_types.h"
 #include "ash/system/tray/system_tray.h"
-#include "ash/wm/shelf_types.h"
+#include "ash/system/tray/system_tray_item.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/compositor/layer.h"
 #include "ui/views/controls/image_view.h"
@@ -23,8 +23,9 @@ const int kTrayItemAnimationDurationMS = 200;
 namespace ash {
 namespace internal {
 
-TrayItemView::TrayItemView()
-    : label_(NULL),
+TrayItemView::TrayItemView(SystemTrayItem* owner)
+    : owner_(owner),
+      label_(NULL),
       image_view_(NULL) {
   SetPaintToLayer(true);
   SetFillsBoundsOpaquely(false);
@@ -77,8 +78,8 @@ int TrayItemView::GetAnimationDurationMS() {
 
 gfx::Size TrayItemView::GetPreferredSize() {
   gfx::Size size = DesiredSize();
-  if (ash::Shell::GetInstance()->system_tray()->shelf_alignment() ==
-      SHELF_ALIGNMENT_BOTTOM)
+  if (owner()->system_tray()->shelf_alignment() == SHELF_ALIGNMENT_BOTTOM ||
+      owner()->system_tray()->shelf_alignment() == SHELF_ALIGNMENT_TOP)
     size.set_height(kTrayIconHeight);
   else
     size.set_width(kTrayIconWidth);
@@ -95,10 +96,10 @@ void TrayItemView::ChildPreferredSizeChanged(views::View* child) {
 
 void TrayItemView::AnimationProgressed(const ui::Animation* animation) {
   gfx::Transform transform;
-  transform.SetScale(animation->GetCurrentValue(),
-                     animation->GetCurrentValue());
-  transform.ConcatTranslate(0, animation->CurrentValueBetween(
+  transform.Translate(0, animation->CurrentValueBetween(
       static_cast<double>(height()) / 2, 0.));
+  transform.Scale(animation->GetCurrentValue(),
+                  animation->GetCurrentValue());
   layer()->SetTransform(transform);
   PreferredSizeChanged();
 }

@@ -199,7 +199,9 @@ bool SequencedWorkerPoolSequencedTaskRunner::PostNonNestableDelayedTask(
     const tracked_objects::Location& from_here,
     const Closure& task,
     TimeDelta delay) {
-  return pool_->PostDelayedSequencedWorkerTask(token_, from_here, task, delay);
+  // There's no way to run nested tasks, so simply forward to
+  // PostDelayedTask.
+  return PostDelayedTask(from_here, task, delay);
 }
 
 // Create a process-wide unique ID to represent this task in trace events. This
@@ -227,17 +229,24 @@ class SequencedWorkerPool::Worker : public SimpleThread {
   // SimpleThread implementation. This actually runs the background thread.
   virtual void Run() OVERRIDE;
 
-  void set_running_sequence(SequenceToken token) {
+  void set_running_task_info(SequenceToken token,
+                             WorkerShutdown shutdown_behavior) {
     running_sequence_ = token;
+    running_shutdown_behavior_ = shutdown_behavior;
   }
 
   SequenceToken running_sequence() const {
     return running_sequence_;
   }
 
+  WorkerShutdown running_shutdown_behavior() const {
+    return running_shutdown_behavior_;
+  }
+
  private:
   scoped_refptr<SequencedWorkerPool> worker_pool_;
   SequenceToken running_sequence_;
+  WorkerShutdown running_shutdown_behavior_;
 
   DISALLOW_COPY_AND_ASSIGN(Worker);
 };
@@ -272,13 +281,13 @@ class SequencedWorkerPool::Inner {
 
   bool IsRunningSequenceOnCurrentThread(SequenceToken sequence_token) const;
 
-  void FlushForTesting();
+  void CleanupForTesting();
 
   void SignalHasWorkForTesting();
 
   int GetWorkSignalCountForTesting() const;
 
-  void Shutdown();
+  void Shutdown(int max_blocking_tasks_after_shutdown);
 
   // Runs the worker loop on the background thread.
   void ThreadLoop(Worker* this_worker);
@@ -290,9 +299,13 @@ class SequencedWorkerPool::Inner {
     GET_WORK_WAIT,
   };
 
-  // Returns whether there are no more pending tasks and all threads
-  // are idle.  Must be called under lock.
-  bool IsIdle() const;
+  enum CleanupState {
+    CLEANUP_REQUESTED,
+    CLEANUP_STARTING,
+    CLEANUP_RUNNING,
+    CLEANUP_FINISHING,
+    CLEANUP_DONE,
+  };
 
   // Called from within the lock, this converts the given token name into a
   // token ID, creating a new one if necessary.
@@ -300,6 +313,11 @@ class SequencedWorkerPool::Inner {
 
   // Called from within the lock, this returns the next sequence task number.
   int64 LockedGetNextSequenceTaskNumber();
+
+  // Called from within the lock, returns the shutdown behavior of the task
+  // running on the currently executing worker thread. If invoked from a thread
+  // that is not one of the workers, returns CONTINUE_ON_SHUTDOWN.
+  WorkerShutdown LockedCurrentThreadShutdownBehavior() const;
 
   // Gets new task. There are 3 cases depending on the return value:
   //
@@ -319,6 +337,8 @@ class SequencedWorkerPool::Inner {
   GetWorkStatus GetWork(SequencedTask* task,
                         TimeDelta* wait_time,
                         std::vector<Closure>* delete_these_outside_lock);
+
+  void HandleCleanup();
 
   // Peforms init and cleanup around running the given task. WillRun...
   // returns the value from PrepareToStartAdditionalThreadIfNecessary.
@@ -375,10 +395,6 @@ class SequencedWorkerPool::Inner {
   ConditionVariable has_work_cv_;
 
   // Condition variable that is waited on by non-worker threads (in
-  // FlushForTesting()) until IsIdle() goes to true.
-  ConditionVariable is_idle_cv_;
-
-  // Condition variable that is waited on by non-worker threads (in
   // Shutdown()) until CanShutdown() goes to true.
   ConditionVariable can_shutdown_cv_;
 
@@ -432,6 +448,15 @@ class SequencedWorkerPool::Inner {
   // allowed, though we may still be running existing tasks.
   bool shutdown_called_;
 
+  // The number of new BLOCK_SHUTDOWN tasks that may be posted after Shudown()
+  // has been called.
+  int max_blocking_tasks_after_shutdown_;
+
+  // State used to cleanup for testing, all guarded by lock_.
+  CleanupState cleanup_state_;
+  size_t cleanup_idlers_;
+  ConditionVariable cleanup_cv_;
+
   TestingObserver* const testing_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(Inner);
@@ -445,7 +470,8 @@ SequencedWorkerPool::Worker::Worker(
     const std::string& prefix)
     : SimpleThread(
           prefix + StringPrintf("Worker%d", thread_number).c_str()),
-      worker_pool_(worker_pool) {
+      worker_pool_(worker_pool),
+      running_shutdown_behavior_(CONTINUE_ON_SHUTDOWN) {
   Start();
 }
 
@@ -474,7 +500,6 @@ SequencedWorkerPool::Inner::Inner(
       last_sequence_number_(0),
       lock_(),
       has_work_cv_(&lock_),
-      is_idle_cv_(&lock_),
       can_shutdown_cv_(&lock_),
       max_threads_(max_threads),
       thread_name_prefix_(thread_name_prefix),
@@ -485,6 +510,10 @@ SequencedWorkerPool::Inner::Inner(
       blocking_shutdown_pending_task_count_(0),
       trace_id_(0),
       shutdown_called_(false),
+      max_blocking_tasks_after_shutdown_(0),
+      cleanup_state_(CLEANUP_DONE),
+      cleanup_idlers_(0),
+      cleanup_cv_(&lock_),
       testing_observer_(observer) {}
 
 SequencedWorkerPool::Inner::~Inner() {
@@ -534,8 +563,17 @@ bool SequencedWorkerPool::Inner::PostTask(
   int create_thread_id = 0;
   {
     AutoLock lock(lock_);
-    if (shutdown_called_)
-      return false;
+    if (shutdown_called_) {
+      if (shutdown_behavior != BLOCK_SHUTDOWN ||
+          LockedCurrentThreadShutdownBehavior() == CONTINUE_ON_SHUTDOWN) {
+        return false;
+      }
+      if (max_blocking_tasks_after_shutdown_ <= 0) {
+        DLOG(WARNING) << "BLOCK_SHUTDOWN task disallowed";
+        return false;
+      }
+      max_blocking_tasks_after_shutdown_ -= 1;
+    }
 
     // The trace_id is used for identifying the task in about:tracing.
     sequenced.trace_id = trace_id_++;
@@ -580,27 +618,38 @@ bool SequencedWorkerPool::Inner::IsRunningSequenceOnCurrentThread(
   return found->second->running_sequence().Equals(sequence_token);
 }
 
-void SequencedWorkerPool::Inner::FlushForTesting() {
+// See https://code.google.com/p/chromium/issues/detail?id=168415
+void SequencedWorkerPool::Inner::CleanupForTesting() {
+  DCHECK(!RunsTasksOnCurrentThread());
+  base::ThreadRestrictions::ScopedAllowWait allow_wait;
   AutoLock lock(lock_);
-  while (!IsIdle())
-    is_idle_cv_.Wait();
+  CHECK_EQ(CLEANUP_DONE, cleanup_state_);
+  if (shutdown_called_)
+    return;
+  if (pending_tasks_.empty() && waiting_thread_count_ == threads_.size())
+    return;
+  cleanup_state_ = CLEANUP_REQUESTED;
+  cleanup_idlers_ = 0;
+  has_work_cv_.Signal();
+  while (cleanup_state_ != CLEANUP_DONE)
+    cleanup_cv_.Wait();
 }
 
 void SequencedWorkerPool::Inner::SignalHasWorkForTesting() {
   SignalHasWork();
 }
 
-void SequencedWorkerPool::Inner::Shutdown() {
-  // Mark us as terminated and go through and drop all tasks that aren't
-  // required to run on shutdown. Since no new tasks will get posted once the
-  // terminated flag is set, this ensures that all remaining tasks are required
-  // for shutdown whenever the termianted_ flag is set.
+void SequencedWorkerPool::Inner::Shutdown(
+    int max_new_blocking_tasks_after_shutdown) {
+  DCHECK_GE(max_new_blocking_tasks_after_shutdown, 0);
   {
     AutoLock lock(lock_);
-
+    // Cleanup and Shutdown should not be called concurrently.
+    CHECK_EQ(CLEANUP_DONE, cleanup_state_);
     if (shutdown_called_)
       return;
     shutdown_called_ = true;
+    max_blocking_tasks_after_shutdown_ = max_new_blocking_tasks_after_shutdown;
 
     // Tickle the threads. This will wake up a waiting one so it will know that
     // it can exit, which in turn will wake up any other waiting ones.
@@ -644,6 +693,8 @@ void SequencedWorkerPool::Inner::ThreadLoop(Worker* this_worker) {
       base::mac::ScopedNSAutoreleasePool autorelease_pool;
 #endif
 
+      HandleCleanup();
+
       // See GetWork for what delete_these_outside_lock is doing.
       SequencedTask task;
       TimeDelta wait_time;
@@ -670,8 +721,8 @@ void SequencedWorkerPool::Inner::ThreadLoop(Worker* this_worker) {
           if (new_thread_id)
             FinishStartingAdditionalThread(new_thread_id);
 
-          this_worker->set_running_sequence(
-              SequenceToken(task.sequence_token_id));
+          this_worker->set_running_task_info(
+              SequenceToken(task.sequence_token_id), task.shutdown_behavior);
 
           tracked_objects::TrackedTime start_time =
               tracked_objects::ThreadData::NowForStartOfRun(task.birth_tally);
@@ -681,26 +732,45 @@ void SequencedWorkerPool::Inner::ThreadLoop(Worker* this_worker) {
           tracked_objects::ThreadData::TallyRunOnNamedThreadIfTracking(task,
               start_time, tracked_objects::ThreadData::NowForEndOfRun());
 
-          this_worker->set_running_sequence(SequenceToken());
-
-          // Make sure our task is erased outside the lock for the same reason
-          // we do this with delete_these_oustide_lock.
+          // Make sure our task is erased outside the lock for the
+          // same reason we do this with delete_these_oustide_lock.
+          // Also, do it before calling set_running_task_info() so
+          // that sequence-checking from within the task's destructor
+          // still works.
           task.task = Closure();
+
+          this_worker->set_running_task_info(
+              SequenceToken(), CONTINUE_ON_SHUTDOWN);
         }
         DidRunWorkerTask(task);  // Must be done inside the lock.
+      } else if (cleanup_state_ == CLEANUP_RUNNING) {
+        switch (status) {
+          case GET_WORK_WAIT: {
+              AutoUnlock unlock(lock_);
+              delete_these_outside_lock.clear();
+            }
+            break;
+          case GET_WORK_NOT_FOUND:
+            CHECK(delete_these_outside_lock.empty());
+            cleanup_state_ = CLEANUP_FINISHING;
+            cleanup_cv_.Broadcast();
+            break;
+          default:
+            NOTREACHED();
+        }
       } else {
         // When we're terminating and there's no more work, we can
-        // shut down.  You can't get more tasks posted once
-        // shutdown_called_ is set. There may be some tasks stuck
-        // behind running ones with the same sequence token, but
-        // additional threads won't help this case.
+        // shut down, other workers can complete any pending or new tasks.
+        // We can get additional tasks posted after shutdown_called_ is set
+        // but only worker threads are allowed to post tasks at that time, and
+        // the workers responsible for posting those tasks will be available
+        // to run them. Also, there may be some tasks stuck behind running
+        // ones with the same sequence token, but additional threads won't
+        // help this case.
         if (shutdown_called_ &&
             blocking_shutdown_pending_task_count_ == 0)
           break;
         waiting_thread_count_++;
-        // This is the only time that IsIdle() can go to true.
-        if (IsIdle())
-          is_idle_cv_.Signal();
 
         switch (status) {
           case GET_WORK_NOT_FOUND:
@@ -725,9 +795,44 @@ void SequencedWorkerPool::Inner::ThreadLoop(Worker* this_worker) {
   can_shutdown_cv_.Signal();
 }
 
-bool SequencedWorkerPool::Inner::IsIdle() const {
+void SequencedWorkerPool::Inner::HandleCleanup() {
   lock_.AssertAcquired();
-  return pending_tasks_.empty() && waiting_thread_count_ == threads_.size();
+  if (cleanup_state_ == CLEANUP_DONE)
+    return;
+  if (cleanup_state_ == CLEANUP_REQUESTED) {
+    // We win, we get to do the cleanup as soon as the others wise up and idle.
+    cleanup_state_ = CLEANUP_STARTING;
+    while (thread_being_created_ ||
+           cleanup_idlers_ != threads_.size() - 1) {
+      has_work_cv_.Signal();
+      cleanup_cv_.Wait();
+    }
+    cleanup_state_ = CLEANUP_RUNNING;
+    return;
+  }
+  if (cleanup_state_ == CLEANUP_STARTING) {
+    // Another worker thread is cleaning up, we idle here until thats done.
+    ++cleanup_idlers_;
+    cleanup_cv_.Broadcast();
+    while (cleanup_state_ != CLEANUP_FINISHING) {
+      cleanup_cv_.Wait();
+    }
+    --cleanup_idlers_;
+    cleanup_cv_.Broadcast();
+    return;
+  }
+  if (cleanup_state_ == CLEANUP_FINISHING) {
+    // We wait for all idlers to wake up prior to being DONE.
+    while (cleanup_idlers_ != 0) {
+      cleanup_cv_.Broadcast();
+      cleanup_cv_.Wait();
+    }
+    if (cleanup_state_ == CLEANUP_FINISHING) {
+      cleanup_state_ = CLEANUP_DONE;
+      cleanup_cv_.Signal();
+    }
+    return;
+  }
 }
 
 int SequencedWorkerPool::Inner::LockedGetNamedTokenID(
@@ -750,6 +855,15 @@ int64 SequencedWorkerPool::Inner::LockedGetNextSequenceTaskNumber() {
   lock_.AssertAcquired();
   // We assume that we never create enough tasks to wrap around.
   return next_sequence_task_number_++;
+}
+
+SequencedWorkerPool::WorkerShutdown
+SequencedWorkerPool::Inner::LockedCurrentThreadShutdownBehavior() const {
+  lock_.AssertAcquired();
+  ThreadMap::const_iterator found = threads_.find(PlatformThread::CurrentId());
+  if (found == threads_.end())
+    return CONTINUE_ON_SHUTDOWN;
+  return found->second->running_shutdown_behavior();
 }
 
 SequencedWorkerPool::Inner::GetWorkStatus SequencedWorkerPool::Inner::GetWork(
@@ -797,13 +911,6 @@ SequencedWorkerPool::Inner::GetWorkStatus SequencedWorkerPool::Inner::GetWork(
       continue;
     }
 
-    if (i->time_to_run > current_time) {
-      // The time to run has not come yet.
-      *wait_time = i->time_to_run - current_time;
-      status = GET_WORK_WAIT;
-      break;
-    }
-
     if (shutdown_called_ && i->shutdown_behavior != BLOCK_SHUTDOWN) {
       // We're shutting down and the task we just found isn't blocking
       // shutdown. Delete it and get more work.
@@ -822,17 +929,30 @@ SequencedWorkerPool::Inner::GetWorkStatus SequencedWorkerPool::Inner::GetWork(
       // happen.
       delete_these_outside_lock->push_back(i->task);
       pending_tasks_.erase(i++);
-    } else {
-      // Found a runnable task.
-      *task = *i;
-      pending_tasks_.erase(i);
-      if (task->shutdown_behavior == BLOCK_SHUTDOWN) {
-        blocking_shutdown_pending_task_count_--;
-      }
+      continue;
+    }
 
-      status = GET_WORK_FOUND;
+    if (i->time_to_run > current_time) {
+      // The time to run has not come yet.
+      *wait_time = i->time_to_run - current_time;
+      status = GET_WORK_WAIT;
+      if (cleanup_state_ == CLEANUP_RUNNING) {
+        // Deferred tasks are deleted when cleaning up, see Inner::ThreadLoop.
+        delete_these_outside_lock->push_back(i->task);
+        pending_tasks_.erase(i);
+      }
       break;
     }
+
+    // Found a runnable task.
+    *task = *i;
+    pending_tasks_.erase(i);
+    if (task->shutdown_behavior == BLOCK_SHUTDOWN) {
+      blocking_shutdown_pending_task_count_--;
+    }
+
+    status = GET_WORK_FOUND;
+    break;
   }
 
   // Track the number of tasks we had to skip over to see if we should be
@@ -927,6 +1047,7 @@ int SequencedWorkerPool::Inner::PrepareToStartAdditionalThreadIfHelpful() {
   // shutdown call.
   if (!shutdown_called_ &&
       !thread_being_created_ &&
+      cleanup_state_ == CLEANUP_DONE &&
       threads_.size() < max_threads_ &&
       waiting_thread_count_ == 0) {
     // We could use an additional thread if there's work to be done.
@@ -1105,16 +1226,16 @@ bool SequencedWorkerPool::IsRunningSequenceOnCurrentThread(
 }
 
 void SequencedWorkerPool::FlushForTesting() {
-  inner_->FlushForTesting();
+  inner_->CleanupForTesting();
 }
 
 void SequencedWorkerPool::SignalHasWorkForTesting() {
   inner_->SignalHasWorkForTesting();
 }
 
-void SequencedWorkerPool::Shutdown() {
+void SequencedWorkerPool::Shutdown(int max_new_blocking_tasks_after_shutdown) {
   DCHECK(constructor_message_loop_->BelongsToCurrentThread());
-  inner_->Shutdown();
+  inner_->Shutdown(max_new_blocking_tasks_after_shutdown);
 }
 
 }  // namespace base

@@ -5,8 +5,13 @@
 #include "ui/gfx/color_analysis.h"
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
+#include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkUnPreMultiply.h"
 #include "ui/gfx/codec/png_codec.h"
 
 namespace {
@@ -14,7 +19,7 @@ namespace {
 // RGBA KMean Constants
 const uint32_t kNumberOfClusters = 4;
 const int kNumberOfIterations = 50;
-const uint32_t kMaxBrightness = 600;
+const uint32_t kMaxBrightness = 665;
 const uint32_t kMinDarkness = 100;
 
 // Background Color Modification Constants
@@ -121,6 +126,17 @@ class KMeanCluster {
   uint32_t weight;
 };
 
+// Un-premultiplies each pixel in |bitmap| into an output |buffer|. Requires
+// approximately 10 microseconds for a 16x16 icon on an Intel Core i5.
+void UnPreMultiply(const SkBitmap& bitmap, uint32_t* buffer, int buffer_size) {
+  SkAutoLockPixels auto_lock(bitmap);
+  uint32_t* in = static_cast<uint32_t*>(bitmap.getPixels());
+  uint32_t* out = buffer;
+  int pixel_count = std::min(bitmap.width() * bitmap.height(), buffer_size);
+  for (int i = 0; i < pixel_count; ++i)
+    *out++ = SkUnPreMultiply::PMColorToColor(*in++);
+}
+
 } // namespace
 
 namespace color_utils {
@@ -131,16 +147,6 @@ KMeanImageSampler::KMeanImageSampler() {
 KMeanImageSampler::~KMeanImageSampler() {
 }
 
-RandomSampler::RandomSampler() {
-}
-
-RandomSampler::~RandomSampler() {
-}
-
-int RandomSampler::GetSample(int width, int height) {
-  return rand();
-}
-
 GridSampler::GridSampler() : calls_(0) {
 }
 
@@ -148,53 +154,71 @@ GridSampler::~GridSampler() {
 }
 
 int GridSampler::GetSample(int width, int height) {
-  calls_++;
-  // We may keep getting called after we've gone of the edge of the grid; in
-  // this case we offset future return values by the number of times we've gone
-  // off the grid.
-  return (width * height * calls_ / kNumberOfClusters) % (width * height) +
-      calls_ / kNumberOfClusters;
+  // Hand-drawn bitmaps often have special outlines or feathering at the edges.
+  // Start our sampling inset from the top and left edges. For example, a 10x10
+  // image with 4 clusters would be sampled like this:
+  // ..........
+  // .0.4.8....
+  // ..........
+  // .1.5.9....
+  // ..........
+  // .2.6......
+  // ..........
+  // .3.7......
+  // ..........
+  const int kPadX = 1;
+  const int kPadY = 1;
+  int x = kPadX +
+      (calls_ / kNumberOfClusters) * ((width - 2 * kPadX) / kNumberOfClusters);
+  int y = kPadY +
+      (calls_ % kNumberOfClusters) * ((height - 2 * kPadY) / kNumberOfClusters);
+  int index = x + (y * width);
+  ++calls_;
+  return index % (width * height);
 }
 
-SkColor CalculateRecommendedBgColorForPNG(
-    scoped_refptr<base::RefCountedMemory> png) {
-  RandomSampler sampler;
-  return CalculateRecommendedBgColorForPNG(png, sampler);
+SkColor FindClosestColor(const uint8_t* image,
+                         int width,
+                         int height,
+                         SkColor color) {
+  uint8_t in_r = SkColorGetR(color);
+  uint8_t in_g = SkColorGetG(color);
+  uint8_t in_b = SkColorGetB(color);
+  // Search using distance-squared to avoid expensive sqrt() operations.
+  int best_distance_squared = kint32max;
+  SkColor best_color = color;
+  const uint8_t* byte = image;
+  for (int i = 0; i < width * height; ++i) {
+    uint8_t b = *(byte++);
+    uint8_t g = *(byte++);
+    uint8_t r = *(byte++);
+    uint8_t a = *(byte++);
+    // Ignore fully transparent pixels.
+    if (a == 0)
+      continue;
+    int distance_squared =
+        (in_b - b) * (in_b - b) +
+        (in_g - g) * (in_g - g) +
+        (in_r - r) * (in_r - r);
+    if (distance_squared < best_distance_squared) {
+      best_distance_squared = distance_squared;
+      best_color = SkColorSetRGB(r, g, b);
+    }
+  }
+  return best_color;
 }
 
-SkColor CalculateKMeanColorOfPNG(scoped_refptr<base::RefCountedMemory> png,
-                                 uint32_t darkness_limit,
-                                 uint32_t brightness_limit) {
-  RandomSampler sampler;
-  return CalculateKMeanColorOfPNG(png, darkness_limit, brightness_limit,
-                                  sampler);
-}
-
-SkColor CalculateRecommendedBgColorForPNG(
-    scoped_refptr<base::RefCountedMemory> png,
-    KMeanImageSampler& sampler) {
-  return CalculateKMeanColorOfPNG(png,
-                                  kMinDarkness,
-                                  kMaxBrightness,
-                                  sampler);
-}
-
-SkColor CalculateKMeanColorOfPNG(scoped_refptr<base::RefCountedMemory> png,
-                                 uint32_t darkness_limit,
-                                 uint32_t brightness_limit,
-                                 KMeanImageSampler& sampler) {
-  int img_width, img_height;
-  std::vector<uint8_t> decoded_data;
+// For a 16x16 icon on an Intel Core i5 this function takes approximately
+// 0.5 ms to run.
+// TODO(port): This code assumes the CPU architecture is little-endian.
+SkColor CalculateKMeanColorOfBuffer(uint8_t* decoded_data,
+                                    int img_width,
+                                    int img_height,
+                                    uint32_t darkness_limit,
+                                    uint32_t brightness_limit,
+                                    KMeanImageSampler* sampler) {
   SkColor color = kDefaultBgColor;
-
-  if (png.get() &&
-      png->size() &&
-      gfx::PNGCodec::Decode(png->front(),
-                            png->size(),
-                            gfx::PNGCodec::FORMAT_BGRA,
-                            &decoded_data,
-                            &img_width,
-                            &img_height)) {
+  if (img_width > 0 && img_height > 0) {
     std::vector<KMeanCluster> clusters;
     clusters.resize(kNumberOfClusters, KMeanCluster());
 
@@ -205,12 +229,17 @@ SkColor CalculateKMeanColorOfPNG(scoped_refptr<base::RefCountedMemory> png,
       // found, destroy this cluster.
       bool color_unique = false;
       for (int i = 0; i < 10; ++i) {
-        int pixel_pos = sampler.GetSample(img_width, img_height) %
+        int pixel_pos = sampler->GetSample(img_width, img_height) %
             (img_width * img_height);
 
         uint8_t b = decoded_data[pixel_pos * 4];
         uint8_t g = decoded_data[pixel_pos * 4 + 1];
         uint8_t r = decoded_data[pixel_pos * 4 + 2];
+        uint8_t a = decoded_data[pixel_pos * 4 + 3];
+        // Skip fully transparent pixels as they usually contain black in their
+        // RGB channels but do not contribute to the visual image.
+        if (a == 0)
+          continue;
 
         // Loop through the previous clusters and check to see if we have seen
         // this color before.
@@ -243,24 +272,26 @@ SkColor CalculateKMeanColorOfPNG(scoped_refptr<base::RefCountedMemory> png,
       }
     }
 
+    // If all pixels in the image are transparent we will have no clusters.
+    if (clusters.empty())
+      return color;
+
     bool convergence = false;
     for (int iteration = 0;
-        iteration < kNumberOfIterations && !convergence && !clusters.empty();
+        iteration < kNumberOfIterations && !convergence;
         ++iteration) {
 
       // Loop through each pixel so we can place it in the appropriate cluster.
-      std::vector<uint8_t>::iterator pixel = decoded_data.begin();
-      while (pixel != decoded_data.end()) {
+      uint8_t* pixel = decoded_data;
+      uint8_t* decoded_data_end = decoded_data + (img_width * img_height * 4);
+      while (pixel < decoded_data_end) {
         uint8_t b = *(pixel++);
-        if (pixel == decoded_data.end())
-          continue;
         uint8_t g = *(pixel++);
-        if (pixel == decoded_data.end())
-          continue;
         uint8_t r = *(pixel++);
-        if (pixel == decoded_data.end())
+        uint8_t a = *(pixel++);
+        // Skip transparent pixels, see above.
+        if (a == 0)
           continue;
-        ++pixel; // Ignore the alpha channel.
 
         uint32_t distance_sqr_to_closest_cluster = UINT_MAX;
         std::vector<KMeanCluster>::iterator closest_cluster = clusters.begin();
@@ -319,7 +350,214 @@ SkColor CalculateKMeanColorOfPNG(scoped_refptr<base::RefCountedMemory> png,
     }
   }
 
+  // Find a color that actually appears in the image (the K-mean cluster center
+  // will not usually be a color that appears in the image).
+  return FindClosestColor(decoded_data, img_width, img_height, color);
+}
+
+SkColor CalculateKMeanColorOfPNG(scoped_refptr<base::RefCountedMemory> png,
+                                 uint32_t darkness_limit,
+                                 uint32_t brightness_limit,
+                                 KMeanImageSampler* sampler) {
+  int img_width = 0;
+  int img_height = 0;
+  std::vector<uint8_t> decoded_data;
+  SkColor color = kDefaultBgColor;
+
+  if (png.get() &&
+      png->size() &&
+      gfx::PNGCodec::Decode(png->front(),
+                            png->size(),
+                            gfx::PNGCodec::FORMAT_BGRA,
+                            &decoded_data,
+                            &img_width,
+                            &img_height)) {
+    return CalculateKMeanColorOfBuffer(&decoded_data[0],
+                                       img_width,
+                                       img_height,
+                                       darkness_limit,
+                                       brightness_limit,
+                                       sampler);
+  }
   return color;
+}
+
+SkColor CalculateKMeanColorOfBitmap(const SkBitmap& bitmap) {
+  // SkBitmap uses pre-multiplied alpha but the KMean clustering function
+  // above uses non-pre-multiplied alpha. Transform the bitmap before we
+  // analyze it because the function reads each pixel multiple times.
+  int pixel_count = bitmap.width() * bitmap.height();
+  scoped_ptr<uint32_t[]> image(new uint32_t[pixel_count]);
+  UnPreMultiply(bitmap, image.get(), pixel_count);
+
+  GridSampler sampler;
+  SkColor color = CalculateKMeanColorOfBuffer(
+      reinterpret_cast<uint8_t*>(image.get()),
+      bitmap.width(),
+      bitmap.height(),
+      kMinDarkness,
+      kMaxBrightness,
+      &sampler);
+  return color;
+}
+
+gfx::Matrix3F ComputeColorCovariance(const SkBitmap& bitmap) {
+  // First need basic stats to normalize each channel separately.
+  SkAutoLockPixels bitmap_lock(bitmap);
+  gfx::Matrix3F covariance = gfx::Matrix3F::Zeros();
+  if (!bitmap.getPixels())
+    return covariance;
+
+  // Assume ARGB_8888 format.
+  DCHECK(bitmap.config() == SkBitmap::kARGB_8888_Config);
+
+  int64_t r_sum = 0;
+  int64_t g_sum = 0;
+  int64_t b_sum = 0;
+  int64_t rr_sum = 0;
+  int64_t gg_sum = 0;
+  int64_t bb_sum = 0;
+  int64_t rg_sum = 0;
+  int64_t rb_sum = 0;
+  int64_t gb_sum = 0;
+
+  for (int y = 0; y < bitmap.height(); ++y) {
+    SkPMColor* current_color = static_cast<uint32_t*>(bitmap.getAddr32(0, y));
+    for (int x = 0; x < bitmap.width(); ++x, ++current_color) {
+      SkColor c = SkUnPreMultiply::PMColorToColor(*current_color);
+      SkColor r = SkColorGetR(c);
+      SkColor g = SkColorGetG(c);
+      SkColor b = SkColorGetB(c);
+
+      r_sum += r;
+      g_sum += g;
+      b_sum += b;
+      rr_sum += r * r;
+      gg_sum += g * g;
+      bb_sum += b * b;
+      rg_sum += r * g;
+      rb_sum += r * b;
+      gb_sum += g * b;
+    }
+  }
+
+  // Covariance (not normalized) is E(X*X.t) - m * m.t and this is how it
+  // is calculated below.
+  // Each row below represents a row of the matrix describing (co)variances
+  // of R, G and B channels with (R, G, B)
+  int pixel_n = bitmap.width() * bitmap.height();
+  covariance.set(
+      (static_cast<double>(rr_sum) / pixel_n -
+       static_cast<double>(r_sum * r_sum) / pixel_n / pixel_n),
+      (static_cast<double>(rg_sum) / pixel_n -
+       static_cast<double>(r_sum * g_sum) / pixel_n / pixel_n),
+      (static_cast<double>(rb_sum) / pixel_n -
+       static_cast<double>(r_sum * b_sum) / pixel_n / pixel_n),
+      (static_cast<double>(rg_sum) / pixel_n -
+       static_cast<double>(r_sum * g_sum) / pixel_n / pixel_n),
+      (static_cast<double>(gg_sum) / pixel_n -
+       static_cast<double>(g_sum * g_sum) / pixel_n / pixel_n),
+      (static_cast<double>(gb_sum) / pixel_n -
+       static_cast<double>(g_sum * b_sum) / pixel_n / pixel_n),
+      (static_cast<double>(rb_sum) / pixel_n -
+       static_cast<double>(r_sum * b_sum) / pixel_n / pixel_n),
+      (static_cast<double>(gb_sum) / pixel_n -
+       static_cast<double>(g_sum * b_sum) / pixel_n / pixel_n),
+      (static_cast<double>(bb_sum) / pixel_n -
+       static_cast<double>(b_sum * b_sum) / pixel_n / pixel_n));
+  return covariance;
+}
+
+bool ApplyColorReduction(const SkBitmap& source_bitmap,
+                         const gfx::Vector3dF& color_transform,
+                         bool fit_to_range,
+                         SkBitmap* target_bitmap) {
+  DCHECK(target_bitmap);
+  SkAutoLockPixels source_lock(source_bitmap);
+  SkAutoLockPixels target_lock(*target_bitmap);
+
+  DCHECK(source_bitmap.getPixels());
+  DCHECK(target_bitmap->getPixels());
+  DCHECK_EQ(SkBitmap::kARGB_8888_Config, source_bitmap.config());
+  DCHECK_EQ(SkBitmap::kA8_Config, target_bitmap->config());
+  DCHECK_EQ(source_bitmap.height(), target_bitmap->height());
+  DCHECK_EQ(source_bitmap.width(), target_bitmap->width());
+  DCHECK(!source_bitmap.empty());
+
+  // Elements of color_transform are explicitly off-loaded to local values for
+  // efficiency reasons. Note that in practice images may correspond to entire
+  // tab captures.
+  float t0 = 0.0;
+  float tr = color_transform.x();
+  float tg = color_transform.y();
+  float tb = color_transform.z();
+
+  if (fit_to_range) {
+    // We will figure out min/max in a preprocessing step and adjust
+    // actual_transform as required.
+    float max_val = std::numeric_limits<float>::min();
+    float min_val = std::numeric_limits<float>::max();
+    for (int y = 0; y < source_bitmap.height(); ++y) {
+      const SkPMColor* source_color_row = static_cast<SkPMColor*>(
+          source_bitmap.getAddr32(0, y));
+      for (int x = 0; x < source_bitmap.width(); ++x) {
+        SkColor c = SkUnPreMultiply::PMColorToColor(source_color_row[x]);
+        float r = SkColorGetR(c);
+        float g = SkColorGetG(c);
+        float b = SkColorGetB(c);
+        float gray_level = tr * r + tg * g + tb * b;
+        max_val = std::max(max_val, gray_level);
+        min_val = std::min(min_val, gray_level);
+      }
+    }
+
+    // Adjust the transform so that the result is scaling.
+    float scale = 0.0;
+    t0 = -min_val;
+    if (max_val > min_val)
+      scale = 255.0 / (max_val - min_val);
+    t0 *= scale;
+    tr *= scale;
+    tg *= scale;
+    tb *= scale;
+  }
+
+  for (int y = 0; y < source_bitmap.height(); ++y) {
+    const SkPMColor* source_color_row = static_cast<SkPMColor*>(
+        source_bitmap.getAddr32(0, y));
+    uint8_t* target_color_row = target_bitmap->getAddr8(0, y);
+    for (int x = 0; x < source_bitmap.width(); ++x) {
+      SkColor c = SkUnPreMultiply::PMColorToColor(source_color_row[x]);
+      float r = SkColorGetR(c);
+      float g = SkColorGetG(c);
+      float b = SkColorGetB(c);
+
+      float gl = t0 + tr * r + tg * g + tb * b;
+      if (gl < 0)
+        gl = 0;
+      if (gl > 0xFF)
+        gl = 0xFF;
+      target_color_row[x] = static_cast<uint8_t>(gl);
+    }
+  }
+
+  return true;
+}
+
+bool ComputePrincipalComponentImage(const SkBitmap& source_bitmap,
+                                    SkBitmap* target_bitmap) {
+  if (!target_bitmap) {
+    NOTREACHED();
+    return false;
+  }
+
+  gfx::Matrix3F covariance = ComputeColorCovariance(source_bitmap);
+  gfx::Matrix3F eigenvectors = gfx::Matrix3F::Zeros();
+  gfx::Vector3dF eigenvals = covariance.SolveEigenproblem(&eigenvectors);
+  gfx::Vector3dF principal = eigenvectors.get_column(0);
+  if (eigenvals == gfx::Vector3dF() || principal == gfx::Vector3dF())
+    return false;  // This may happen for some edge cases.
+  return ApplyColorReduction(source_bitmap, principal, true, target_bitmap);
 }
 
 }  // color_utils

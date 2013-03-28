@@ -7,6 +7,18 @@
 
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 
+namespace browser_window_controller {
+
+enum InstantUIState {
+  kInstantUINone,
+  // Instant suggestions are displayed in a overlay overlapping the tab
+  // contents.
+  kInstantUIOverlay,
+  // Instant suggestions are displayed in the main tab contents.
+  kInstantUIFullPageResults,
+};
+
+}  // namespace browser_window_controller
 
 // Private methods for the |BrowserWindowController|. This category should
 // contain the private methods used by different parts of the BWC; private
@@ -92,13 +104,6 @@
 // sends a message to the renderer to resize.
 - (void)layoutTabContentArea:(NSRect)frame;
 
-// Should we show the normal bookmark bar?
-- (BOOL)shouldShowBookmarkBar;
-
-// Is the current page one for which the bookmark should be shown detached *if*
-// the normal bookmark bar is not shown?
-- (BOOL)shouldShowDetachedBookmarkBar;
-
 // Sets the toolbar's height to a value appropriate for the given compression.
 // Also adjusts the bookmark bar's height by the opposite amount in order to
 // keep the total height of the two views constant.
@@ -147,6 +152,21 @@
 // timers/animation.
 - (void)enableBarVisibilityUpdates;
 - (void)disableBarVisibilityUpdates;
+
+// The opacity for the toolbar divider; 0 means that it shouldn't be shown.
+- (CGFloat)toolbarDividerOpacity;
+
+// This is used to check if either the instant overlay or full page instant
+// search results are currently being displayed.
+- (browser_window_controller::InstantUIState)currentInstantUIState;
+
+// Updates the content offets of the tab strip controller and the overlayable
+// contents controller. This is used to adjust the overlap between those views
+// and the bookmark bar.
+- (void)updateContentOffsets;
+
+// Ensures the z-order of subviews is correct.
+- (void)updateSubviewZOrder:(BOOL)inPresentationMode;
 
 @end  // @interface BrowserWindowController(Private)
 

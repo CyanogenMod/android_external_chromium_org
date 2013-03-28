@@ -20,8 +20,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
 #include "base/version.h"
 #include "content/common/child_process.h"
@@ -37,13 +37,13 @@
 #include "ipc/ipc_channel_handle.h"
 #include "net/base/mime_util.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebDragData.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebDragData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "ui/gfx/blit.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/native_widget_types.h"
@@ -106,7 +106,7 @@ class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
       multibyte_response_expected_(false) {
   }
 
-  ~ResourceClientProxy() {
+  virtual ~ResourceClientProxy() {
   }
 
   void Initialize(unsigned long resource_id, const GURL& url, int notify_id) {
@@ -124,17 +124,17 @@ class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
   }
 
   // PluginResourceClient implementation:
-  void WillSendRequest(const GURL& url, int http_status_code) {
+  virtual void WillSendRequest(const GURL& url, int http_status_code) OVERRIDE {
     DCHECK(channel_ != NULL);
     channel_->Send(new PluginMsg_WillSendRequest(instance_id_, resource_id_,
                                                  url, http_status_code));
   }
 
-  void DidReceiveResponse(const std::string& mime_type,
-                          const std::string& headers,
-                          uint32 expected_length,
-                          uint32 last_modified,
-                          bool request_is_seekable) {
+  virtual void DidReceiveResponse(const std::string& mime_type,
+                                  const std::string& headers,
+                                  uint32 expected_length,
+                                  uint32 last_modified,
+                                  bool request_is_seekable) OVERRIDE {
     DCHECK(channel_ != NULL);
     PluginMsg_DidReceiveResponseParams params;
     params.id = resource_id_;
@@ -149,7 +149,9 @@ class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
     channel_->Send(new PluginMsg_DidReceiveResponse(instance_id_, params));
   }
 
-  void DidReceiveData(const char* buffer, int length, int data_offset) {
+  virtual void DidReceiveData(const char* buffer,
+                              int length,
+                              int data_offset) OVERRIDE {
     DCHECK(channel_ != NULL);
     DCHECK_GT(length, 0);
     std::vector<char> data;
@@ -162,25 +164,25 @@ class ResourceClientProxy : public webkit::npapi::WebPluginResourceClient {
                                                 data, data_offset));
   }
 
-  void DidFinishLoading() {
+  virtual void DidFinishLoading() OVERRIDE {
     DCHECK(channel_ != NULL);
     channel_->Send(new PluginMsg_DidFinishLoading(instance_id_, resource_id_));
     channel_ = NULL;
     MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   }
 
-  void DidFail() {
+  virtual void DidFail() OVERRIDE {
     DCHECK(channel_ != NULL);
     channel_->Send(new PluginMsg_DidFail(instance_id_, resource_id_));
     channel_ = NULL;
     MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   }
 
-  bool IsMultiByteResponseExpected() {
+  virtual bool IsMultiByteResponseExpected() OVERRIDE {
     return multibyte_response_expected_;
   }
 
-  int ResourceId() {
+  virtual int ResourceId() OVERRIDE {
     return resource_id_;
   }
 
@@ -212,6 +214,7 @@ WebPluginDelegateProxy::WebPluginDelegateProxy(
       npobject_(NULL),
       sad_plugin_(NULL),
       invalidate_pending_(false),
+      transparent_(false),
       front_buffer_index_(0),
       page_url_(render_view_->webview()->mainFrame()->document().url()) {
 }
@@ -299,8 +302,9 @@ bool WebPluginDelegateProxy::Initialize(
 #if defined(OS_MACOSX)
     // TODO(shess): Debugging for http://crbug.com/97285 .  See comment
     // in plugin_channel_host.cc.
-    scoped_ptr<AutoReset<bool> > track_nested_removes(new AutoReset<bool>(
-        PluginChannelHost::GetRemoveTrackingFlag(), true));
+    scoped_ptr<base::AutoReset<bool> > track_nested_removes(
+        new base::AutoReset<bool>(PluginChannelHost::GetRemoveTrackingFlag(),
+                                  true));
 #endif
 
     IPC::ChannelHandle channel_handle;
@@ -315,7 +319,7 @@ bool WebPluginDelegateProxy::Initialize(
       // shouldn't happen, since if we got here the plugin should exist) or the
       // plugin crashed on initialization.
       if (!info_.path.empty()) {
-        render_view_->PluginCrashed(info_.path);
+        render_view_->PluginCrashed(info_.path, base::kNullProcessId);
         LOG(ERROR) << "Plug-in crashed on start";
 
         // Return true so that the plugin widget is created and we can paint the
@@ -370,7 +374,7 @@ bool WebPluginDelegateProxy::Initialize(
   plugin_ = plugin;
 
   result = false;
-  Send(new PluginMsg_Init(instance_id_, params, &result));
+  Send(new PluginMsg_Init(instance_id_, params, &transparent_, &result));
 
   if (!result)
     LOG(ERROR) << "PluginMsg_Init returned false";
@@ -458,21 +462,6 @@ bool WebPluginDelegateProxy::OnMessageReceived(const IPC::Message& msg) {
                         OnFocusChanged);
     IPC_MESSAGE_HANDLER(PluginHostMsg_StartIme,
                         OnStartIme);
-    IPC_MESSAGE_HANDLER(PluginHostMsg_BindFakePluginWindowHandle,
-                        OnBindFakePluginWindowHandle);
-    // Used only on 10.6 and later.
-    IPC_MESSAGE_HANDLER(PluginHostMsg_AcceleratedSurfaceSetIOSurface,
-                        OnAcceleratedSurfaceSetIOSurface)
-    // Used on 10.5 and earlier.
-    IPC_MESSAGE_HANDLER(PluginHostMsg_AcceleratedSurfaceSetTransportDIB,
-                        OnAcceleratedSurfaceSetTransportDIB)
-    IPC_MESSAGE_HANDLER(PluginHostMsg_AllocTransportDIB,
-                        OnAcceleratedSurfaceAllocTransportDIB)
-    IPC_MESSAGE_HANDLER(PluginHostMsg_FreeTransportDIB,
-                        OnAcceleratedSurfaceFreeTransportDIB)
-    IPC_MESSAGE_HANDLER(PluginHostMsg_AcceleratedSurfaceBuffersSwapped,
-                        OnAcceleratedSurfaceBuffersSwapped)
-    // Used only on 10.6 and later.
     IPC_MESSAGE_HANDLER(PluginHostMsg_AcceleratedPluginEnabledRendering,
                         OnAcceleratedPluginEnabledRendering)
     IPC_MESSAGE_HANDLER(PluginHostMsg_AcceleratedPluginAllocatedIOSurface,
@@ -498,7 +487,7 @@ void WebPluginDelegateProxy::OnChannelError() {
     plugin_->Invalidate();
   }
   if (!channel_host_->expecting_shutdown())
-    render_view_->PluginCrashed(info_.path);
+    render_view_->PluginCrashed(info_.path, channel_host_->peer_pid());
 
 #if defined(OS_MACOSX) || defined(OS_WIN)
   // Ensure that the renderer doesn't think the plugin still has focus.
@@ -629,7 +618,7 @@ void WebPluginDelegateProxy::ResetWindowlessBitmaps() {
 
 static size_t BitmapSizeForPluginRect(const gfx::Rect& plugin_rect) {
   const size_t stride =
-      skia::PlatformCanvas::StrideForWidth(plugin_rect.width());
+      skia::PlatformCanvasStrideForWidth(plugin_rect.width());
   return stride * plugin_rect.height();
 }
 
@@ -641,8 +630,9 @@ bool WebPluginDelegateProxy::CreateLocalBitmap(
   memory->resize(size);
   if (memory->size() != size)
     return false;
-  canvas->reset(new skia::PlatformCanvas(
-      plugin_rect_.width(), plugin_rect_.height(), true, &((*memory)[0])));
+  canvas->reset(skia::CreatePlatformCanvas(
+      plugin_rect_.width(), plugin_rect_.height(), true, &((*memory)[0]),
+      skia::CRASH_ON_FAILURE));
   return true;
 }
 #endif
@@ -721,7 +711,8 @@ void WebPluginDelegateProxy::Paint(WebKit::WebCanvas* canvas,
   const SkBitmap& bitmap =
       front_buffer_canvas()->getDevice()->accessBitmap(false);
   SkPaint paint;
-  paint.setXfermodeMode(SkXfermode::kSrcATop_Mode);
+  paint.setXfermodeMode(
+      transparent_ ? SkXfermode::kSrcATop_Mode : SkXfermode::kSrc_Mode);
   SkIRect src_rect = gfx::RectToSkIRect(offset_rect);
   canvas->drawBitmapRect(bitmap,
                          &src_rect,
@@ -896,14 +887,6 @@ void WebPluginDelegateProxy::OnSetWindow(gfx::PluginWindowHandle window) {
 void WebPluginDelegateProxy::WillDestroyWindow() {
   DCHECK(window_);
   plugin_->WillDestroyWindow(window_);
-#if defined(OS_MACOSX)
-  if (window_) {
-    // This is actually a "fake" window handle only for the GPU
-    // plugin. Deallocate it on the browser side.
-    if (render_view_)
-      render_view_->DestroyFakePluginWindowHandle(window_);
-  }
-#endif
   window_ = gfx::kNullPluginWindow;
 }
 
@@ -939,10 +922,14 @@ void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
       render_view_->routing_id(),
       params));
 
+  ViewHostMsg_SelectionBounds_Params bounds_params;
+  bounds_params.anchor_rect = bounds_params.focus_rect = caret_rect;
+  bounds_params.anchor_dir = bounds_params.focus_dir =
+      WebKit::WebTextDirectionLeftToRight;
+  bounds_params.is_anchor_first = true;
   render_view_->Send(new ViewHostMsg_SelectionBoundsChanged(
       render_view_->routing_id(),
-      caret_rect, WebKit::WebTextDirectionLeftToRight,
-      caret_rect, WebKit::WebTextDirectionLeftToRight));
+      bounds_params));
 }
 #endif
 
@@ -988,9 +975,7 @@ void WebPluginDelegateProxy::OnGetWindowScriptNPObject(
 void WebPluginDelegateProxy::OnResolveProxy(const GURL& url,
                                             bool* result,
                                             std::string* proxy_list) {
-  *result = false;
-  RenderThreadImpl::current()->Send(
-      new ViewHostMsg_ResolveProxy(url, result, proxy_list));
+  *result = RenderThreadImpl::current()->ResolveProxy(url, proxy_list);
 }
 
 void WebPluginDelegateProxy::OnGetPluginElement(int route_id, bool* success) {
@@ -1039,7 +1024,7 @@ void WebPluginDelegateProxy::CopyFromBackBufferToFrontBuffer(
   // the goal is just to move the raw pixels between two bitmaps with the same
   // pixel format (no compositing, color correction, etc.), it's safe.
   const size_t stride =
-      skia::PlatformCanvas::StrideForWidth(plugin_rect_.width());
+      skia::PlatformCanvasStrideForWidth(plugin_rect_.width());
   const size_t chunk_size = 4 * rect.width();
   DCHECK(back_buffer_dib() != NULL);
   uint8* source_data = static_cast<uint8*>(back_buffer_dib()->memory()) +
@@ -1147,48 +1132,6 @@ void WebPluginDelegateProxy::OnStartIme() {
   if (render_view_)
     render_view_->StartPluginIme();
 }
-
-void WebPluginDelegateProxy::OnBindFakePluginWindowHandle(bool opaque) {
-  BindFakePluginWindowHandle(opaque);
-}
-
-// Synthesize a fake window handle for the plug-in to identify the instance
-// to the browser, allowing mapping to a surface for hardware acceleration
-// of plug-in content. The browser generates the handle which is then set on
-// the plug-in. Returns true if it successfully sets the window handle on the
-// plug-in.
-bool WebPluginDelegateProxy::BindFakePluginWindowHandle(bool opaque) {
-  gfx::PluginWindowHandle fake_window = gfx::kNullPluginWindow;
-  if (render_view_)
-    fake_window = render_view_->AllocateFakePluginWindowHandle(opaque, false);
-  // If we aren't running on 10.6, this allocation will fail.
-  if (!fake_window)
-    return false;
-  OnSetWindow(fake_window);
-  if (!Send(new PluginMsg_SetFakeAcceleratedSurfaceWindowHandle(instance_id_,
-                                                                fake_window))) {
-    return false;
-  }
-
-  // Since this isn't a real window, it doesn't get initial size and location
-  // information the way a real windowed plugin would, so we need to feed it its
-  // starting geometry.
-  webkit::npapi::WebPluginGeometry geom;
-  geom.window = fake_window;
-  geom.window_rect = plugin_rect_;
-  geom.clip_rect = clip_rect_;
-  geom.rects_valid = true;
-  geom.visible = true;
-  render_view_->DidMovePlugin(geom);
-  // Invalidate the plugin region to ensure that the move event actually gets
-  // dispatched (for a plugin on an otherwise static page).
-  render_view_->didInvalidateRect(WebKit::WebRect(plugin_rect_.x(),
-                                                  plugin_rect_.y(),
-                                                  plugin_rect_.width(),
-                                                  plugin_rect_.height()));
-
-  return true;
-}
 #endif
 
 gfx::PluginWindowHandle WebPluginDelegateProxy::GetPluginWindowHandle() {
@@ -1213,47 +1156,6 @@ void WebPluginDelegateProxy::OnDeferResourceLoading(unsigned long resource_id,
 }
 
 #if defined(OS_MACOSX)
-void WebPluginDelegateProxy::OnAcceleratedSurfaceSetIOSurface(
-    gfx::PluginWindowHandle window,
-    int32 width,
-    int32 height,
-    uint64 io_surface_identifier) {
-  if (render_view_)
-    render_view_->AcceleratedSurfaceSetIOSurface(window, width, height,
-                                                 io_surface_identifier);
-}
-
-void WebPluginDelegateProxy::OnAcceleratedSurfaceSetTransportDIB(
-    gfx::PluginWindowHandle window,
-    int32 width,
-    int32 height,
-    TransportDIB::Handle transport_dib) {
-  if (render_view_)
-    render_view_->AcceleratedSurfaceSetTransportDIB(window, width, height,
-                                                    transport_dib);
-}
-
-void WebPluginDelegateProxy::OnAcceleratedSurfaceAllocTransportDIB(
-    size_t size,
-    TransportDIB::Handle* dib_handle) {
-  if (render_view_)
-    *dib_handle = render_view_->AcceleratedSurfaceAllocTransportDIB(size);
-  else
-    *dib_handle = TransportDIB::DefaultHandleValue();
-}
-
-void WebPluginDelegateProxy::OnAcceleratedSurfaceFreeTransportDIB(
-    TransportDIB::Id dib_id) {
-  if (render_view_)
-    render_view_->AcceleratedSurfaceFreeTransportDIB(dib_id);
-}
-
-void WebPluginDelegateProxy::OnAcceleratedSurfaceBuffersSwapped(
-    gfx::PluginWindowHandle window, uint64 surface_handle) {
-  if (render_view_)
-    render_view_->AcceleratedSurfaceBuffersSwapped(window, surface_handle);
-}
-
 void WebPluginDelegateProxy::OnAcceleratedPluginEnabledRendering() {
   uses_compositor_ = true;
   OnSetWindow(gfx::kNullPluginWindow);

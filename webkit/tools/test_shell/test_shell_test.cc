@@ -7,8 +7,8 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
@@ -17,7 +17,7 @@
 #include "webkit/user_agent/user_agent.h"
 #include "webkit/user_agent/user_agent_util.h"
 
-GURL TestShellTest::GetTestURL(const FilePath& test_case_path,
+GURL TestShellTest::GetTestURL(const base::FilePath& test_case_path,
                                const std::string& test_case) {
   return net::FilePathToFileURL(test_case_path.AppendASCII(test_case));
 }
@@ -42,7 +42,7 @@ void TestShellTest::TearDown() {
   test_shell_->DestroyWindow(test_shell_->mainWnd());
 
   // Flush the MessageLoop of any residual tasks.
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 }
 
 void TestShellTest::CreateEmptyWindow() {

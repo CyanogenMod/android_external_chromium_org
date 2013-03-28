@@ -68,7 +68,7 @@ class UsbApiTest : public ExtensionApiTest {
     command_line->AppendSwitch(switches::kEnableExperimentalExtensionApis);
   }
 
-  void SetUpOnMainThread() OVERRIDE {
+  virtual void SetUpOnMainThread() OVERRIDE {
     mock_device_ = new MockUsbDevice();
     extensions::UsbFindDevicesFunction::SetDeviceForTest(mock_device_.get());
   }
@@ -117,3 +117,9 @@ IN_PROC_BROWSER_TEST_F(UsbApiTest, TransferFailure) {
   EXPECT_CALL(*mock_device_, Close(_)).Times(AnyNumber());
   ASSERT_TRUE(RunExtensionTest("usb/transfer_failure"));
 }
+
+IN_PROC_BROWSER_TEST_F(UsbApiTest, InvalidLengthTransfer) {
+  EXPECT_CALL(*mock_device_, Close(_)).Times(AnyNumber());
+  ASSERT_TRUE(RunExtensionTest("usb/invalid_length_transfer"));
+}
+

@@ -53,8 +53,8 @@ const int kShellWindowId_AlwaysOnTopContainer = 7;
 // The container for panel windows.
 const int kShellWindowId_PanelContainer = 8;
 
-// The container for the launcher.
-const int kShellWindowId_LauncherContainer = 9;
+// The container for the shelf.
+const int kShellWindowId_ShelfContainer = 9;
 
 // The container for the app list.
 const int kShellWindowId_AppListContainer = 10;
@@ -93,7 +93,7 @@ const int kShellWindowId_SettingBubbleContainer = 19;
 // region selector for partial screenshots.
 const int kShellWindowId_OverlayContainer = 20;
 
-// ID of the window created by PhantomWindowController.
+// ID of the window created by PhantomWindowController or DragWindowController.
 const int kShellWindowId_PhantomWindow = 21;
 
 // The topmost container, used for power off animation.

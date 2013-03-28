@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the Tab Capture API.
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+// Custom binding for the Tab Capture API.
 
-chromeHidden.registerCustomHook('tabCapture',
-                                function(bindingsAPI, extensionId) {
+var binding = require('binding').Binding.create('tabCapture');
+
+binding.registerCustomHook(function(bindingsAPI, extensionId) {
   var apiFunctions = bindingsAPI.apiFunctions;
 
   apiFunctions.setCustomCallback('capture',
@@ -21,8 +21,10 @@ chromeHidden.registerCustomHook('tabCapture',
       };
 
       var options = {};
-      options.video = response.videoConstraints;
-      options.audio = response.audioConstraints;
+      if (response.audioConstraints)
+        options.audio = response.audioConstraints;
+      if (response.videoConstraints)
+        options.video = response.videoConstraints;
 
       navigator.webkitGetUserMedia(options, successFunc, errorFunc);
     } else {
@@ -31,3 +33,5 @@ chromeHidden.registerCustomHook('tabCapture',
     request.callback = null;
   });
 });
+
+exports.binding = binding.generate();

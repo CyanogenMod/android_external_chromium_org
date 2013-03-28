@@ -10,7 +10,9 @@
 #include <linux/filter.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/prctl.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <ucontext.h>
@@ -18,11 +20,13 @@
 
 #include <vector>
 
+#include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "content/common/sandbox_linux.h"
 #include "content/common/sandbox_seccomp_bpf_linux.h"
 #include "content/public/common/content_switches.h"
+#include "sandbox/linux/services/broker_process.h"
 
 // These are the only architectures supported for now.
 #if defined(__i386__) || defined(__x86_64__) || \
@@ -37,11 +41,39 @@
 using playground2::arch_seccomp_data;
 using playground2::ErrorCode;
 using playground2::Sandbox;
+using sandbox::BrokerProcess;
 
 namespace {
 
+void StartSandboxWithPolicy(Sandbox::EvaluateSyscall syscall_policy,
+                            BrokerProcess* broker_process);
+
+inline bool RunningOnASAN() {
+#if defined(ADDRESS_SANITIZER)
+  return true;
+#else
+  return false;
+#endif
+}
+
 inline bool IsChromeOS() {
 #if defined(OS_CHROMEOS)
+  return true;
+#else
+  return false;
+#endif
+}
+
+inline bool IsArchitectureX86_64() {
+#if defined(__x86_64__)
+  return true;
+#else
+  return false;
+#endif
+}
+
+inline bool IsArchitectureI386() {
+#if defined(__i386__)
   return true;
 #else
   return false;
@@ -80,6 +112,57 @@ intptr_t CrashSIGSYS_Handler(const struct arch_seccomp_data& args, void* aux) {
     _exit(1);
 }
 
+// TODO(jln): rewrite reporting functions.
+intptr_t ReportCloneFailure(const struct arch_seccomp_data& args, void* aux) {
+  // "flags" in the first argument in the kernel's clone().
+  // Mark as volatile to be able to find the value on the stack in a minidump.
+#if !defined(NDEBUG)
+  RAW_LOG(ERROR, __FILE__":**CRASHING**:clone() failure\n");
+#endif
+  volatile uint64_t clone_flags = args.args[0];
+  volatile char* addr;
+  if (IsArchitectureX86_64()) {
+    addr = reinterpret_cast<volatile char*>(clone_flags & 0xFFFFFF);
+    *addr = '\0';
+  }
+  // Hit the NULL page if this fails to fault.
+  addr = reinterpret_cast<volatile char*>(clone_flags & 0xFFF);
+  *addr = '\0';
+  for (;;)
+    _exit(1);
+}
+
+// TODO(jln): rewrite reporting functions.
+intptr_t ReportPrctlFailure(const struct arch_seccomp_data& args,
+                            void* /* aux */) {
+  // Mark as volatile to be able to find the value on the stack in a minidump.
+#if !defined(NDEBUG)
+  RAW_LOG(ERROR, __FILE__":**CRASHING**:prctl() failure\n");
+#endif
+  volatile uint64_t option = args.args[0];
+  volatile char* addr =
+      reinterpret_cast<volatile char*>(option & 0xFFF);
+  *addr = '\0';
+  for (;;)
+    _exit(1);
+}
+
+intptr_t ReportIoctlFailure(const struct arch_seccomp_data& args,
+                            void* /* aux */) {
+  // Make "request" volatile so that we can see it on the stack in a minidump.
+#if !defined(NDEBUG)
+  RAW_LOG(ERROR, __FILE__":**CRASHING**:ioctl() failure\n");
+#endif
+  volatile uint64_t request = args.args[1];
+  volatile char* addr = reinterpret_cast<volatile char*>(request & 0xFFFF);
+  *addr = '\0';
+  // Hit the NULL page if this fails.
+  addr = reinterpret_cast<volatile char*>(request & 0xFFF);
+  *addr = '\0';
+  for (;;)
+    _exit(1);
+}
+
 bool IsAcceleratedVideoDecodeEnabled() {
   // Accelerated video decode is currently enabled on Chrome OS,
   // but not on Linux: crbug.com/137247.
@@ -92,71 +175,27 @@ bool IsAcceleratedVideoDecodeEnabled() {
   return is_enabled;
 }
 
-static const char kDriRcPath[] = "/etc/drirc";
-
-// TODO(jorgelo): limited to /etc/drirc for now, extend this to cover
-// other sandboxed file access cases.
-int OpenWithCache(const char* pathname, int flags) {
-  static int drircfd = -1;
-  static bool do_open = true;
-  int res = -1;
-
-  if (strcmp(pathname, kDriRcPath) == 0 && flags == O_RDONLY) {
-    if (do_open) {
-      drircfd = open(pathname, flags);
-      do_open = false;
-      res = drircfd;
-    } else {
-      // dup() man page:
-      // "After a successful return from one of these system calls,
-      // the old and new file descriptors may be used interchangeably.
-      // They refer to the same open file description and thus share
-      // file offset and file status flags; for example, if the file offset
-      // is modified by using lseek(2) on one of the descriptors,
-      // the offset is also changed for the other."
-      // Since |drircfd| can be dup()'ed and read many times, we need to
-      // lseek() it to the beginning of the file before returning.
-      // We assume the caller will not keep more than one fd open at any
-      // one time. Intel driver code in Mesa that parses /etc/drirc does
-      // open()/read()/close() in the same function.
-      if (drircfd < 0) {
-        errno = ENOENT;
-        return -1;
-      }
-      int newfd = dup(drircfd);
-      if (newfd < 0) {
-        errno = ENOMEM;
-        return -1;
-      }
-      if (lseek(newfd, 0, SEEK_SET) == static_cast<off_t>(-1)) {
-        (void) HANDLE_EINTR(close(newfd));
-        errno = ENOMEM;
-        return -1;
-      }
-      res = newfd;
-    }
-  } else {
-    res = open(pathname, flags);
-  }
-
-  return res;
-}
-
-// We allow the GPU process to open /etc/drirc because it's needed by Mesa.
-// OpenWithCache() has been called before enabling the sandbox, and has cached
-// a file descriptor for /etc/drirc.
 intptr_t GpuOpenSIGSYS_Handler(const struct arch_seccomp_data& args,
-                               void* aux) {
-  uint64_t arg0 = args.args[0];
-  uint64_t arg1 = args.args[1];
-  const char* pathname = reinterpret_cast<const char*>(arg0);
-  int flags = static_cast<int>(arg1);
-
-  if (strcmp(pathname, kDriRcPath) == 0) {
-    int ret = OpenWithCache(pathname, flags);
-    return (ret == -1) ? -errno : ret;
-  } else {
-    return -ENOENT;
+                               void* aux_broker_process) {
+  RAW_CHECK(aux_broker_process);
+  BrokerProcess* broker_process =
+      static_cast<BrokerProcess*>(aux_broker_process);
+  switch(args.nr) {
+    case __NR_open:
+      return broker_process->Open(reinterpret_cast<const char*>(args.args[0]),
+                                  static_cast<int>(args.args[1]));
+    case __NR_openat:
+      // Allow using openat() as open().
+      if (static_cast<int>(args.args[0]) == AT_FDCWD) {
+        return
+            broker_process->Open(reinterpret_cast<const char*>(args.args[1]),
+                                 static_cast<int>(args.args[2]));
+      } else {
+        return -EPERM;
+      }
+    default:
+      RAW_CHECK(false);
+      return -ENOSYS;
   }
 }
 
@@ -560,11 +599,11 @@ bool IsAllowedGetOrModifySocket(int sysno) {
   switch (sysno) {
     case __NR_pipe:
     case __NR_pipe2:
+      return true;
+    default:
 #if defined(__x86_64__) || defined(__arm__)
     case __NR_socketpair:  // We will want to inspect its argument.
 #endif
-      return true;
-    default:
       return false;
   }
 }
@@ -1193,11 +1232,27 @@ bool IsBaselinePolicyWatched(int sysno) {
   }
 }
 
-// x86_64 and ARM for now. Needs to be adapted and tested for i386.
-ErrorCode BaselinePolicy(int sysno) {
+ErrorCode BaselinePolicy(Sandbox *sandbox, int sysno) {
+#if defined(__x86_64__) || defined(__arm__)
+  if (sysno == __NR_socketpair) {
+    // Only allow AF_UNIX, PF_UNIX. Crash if anything else is seen.
+    COMPILE_ASSERT(AF_UNIX == PF_UNIX, af_unix_pf_unix_different);
+    return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL, AF_UNIX,
+                         ErrorCode(ErrorCode::ERR_ALLOWED),
+                         sandbox->Trap(CrashSIGSYS_Handler, NULL));
+  }
+#endif
   if (IsBaselinePolicyAllowed(sysno)) {
     return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
+
+#if defined(__i386__)
+  // socketcall(2) should be tightened.
+  if (IsSocketCall(sysno)) {
+    return ErrorCode(ErrorCode::ERR_ALLOWED);
+  }
+#endif
+
   // TODO(jln): some system calls in those sets are not supposed to
   // return ENOENT. Return the appropriate error.
   if (IsFileSystem(sysno) || IsCurrentDirectory(sysno)) {
@@ -1212,45 +1267,103 @@ ErrorCode BaselinePolicy(int sysno) {
   if (IsBaselinePolicyWatched(sysno)) {
     // Previously unseen syscalls. TODO(jln): some of these should
     // be denied gracefully right away.
-    return Sandbox::Trap(CrashSIGSYS_Handler, NULL);
+    return sandbox->Trap(CrashSIGSYS_Handler, NULL);
   }
   // In any other case crash the program with our SIGSYS handler
-  return Sandbox::Trap(CrashSIGSYS_Handler, NULL);
+  return sandbox->Trap(CrashSIGSYS_Handler, NULL);
 }
 
-// x86_64 only for now. Needs to be adapted and tested for i386/ARM.
-ErrorCode GpuProcessPolicy_x86_64(int sysno, void *) {
+// x86_64/i386 for now. Needs to be adapted and tested for ARM.
+ErrorCode GpuProcessPolicy(Sandbox *sandbox, int sysno,
+                           void *broker_process) {
   switch(sysno) {
     case __NR_ioctl:
+    case __NR_sched_getaffinity:
+    case __NR_sched_setaffinity:
       return ErrorCode(ErrorCode::ERR_ALLOWED);
     case __NR_open:
-      // Accelerated video decode is enabled by default only on Chrome OS.
-      if (IsAcceleratedVideoDecodeEnabled()) {
-        // Accelerated video decode needs to open /dev/dri/card0, and
-        // dup()'ing an already open file descriptor does not work.
-        // Allow open() even though it severely weakens the sandbox,
-        // to test the sandboxing mechanism in general.
-        // TODO(jorgelo): remove this once we solve the libva issue.
-        return ErrorCode(ErrorCode::ERR_ALLOWED);
-      } else {
-        // Hook open() in the GPU process to allow opening /etc/drirc,
-        // needed by Mesa.
-        // The hook needs dup(), lseek(), and close() to be allowed.
-        return Sandbox::Trap(GpuOpenSIGSYS_Handler, NULL);
-      }
+    case __NR_openat:
+        return sandbox->Trap(GpuOpenSIGSYS_Handler, broker_process);
     default:
+#if defined(__x86_64__) || defined(__arm__)
+      if (IsSystemVSharedMemory(sysno))
+        return ErrorCode(EACCES);
+#endif
       if (IsEventFd(sysno))
         return ErrorCode(ErrorCode::ERR_ALLOWED);
 
       // Default on the baseline policy.
-      return BaselinePolicy(sysno);
+      return BaselinePolicy(sandbox, sysno);
   }
 }
 
-ErrorCode RendererOrWorkerProcessPolicy(int sysno, void *) {
+// x86_64/i386 for now. Needs to be adapted and tested for ARM.
+// A GPU broker policy is the same as a GPU policy with open and
+// openat allowed.
+ErrorCode GpuBrokerProcessPolicy(Sandbox *sandbox, int sysno, void *aux) {
+  // "aux" would typically be NULL, when called from
+  // "EnableGpuBrokerPolicyCallBack"
+  switch(sysno) {
+    case __NR_open:
+    case __NR_openat:
+      return ErrorCode(ErrorCode::ERR_ALLOWED);
+    default:
+      return GpuProcessPolicy(sandbox, sysno, aux);
+  }
+}
+
+// Allow clone for threads, crash if anything else is attempted.
+// Don't restrict on ASAN.
+ErrorCode RestrictCloneToThreads(Sandbox *sandbox) {
+  // Glibc's pthread.
+  if (!RunningOnASAN()) {
+    return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL,
+        CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
+        CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS |
+        CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID,
+        ErrorCode(ErrorCode::ERR_ALLOWED),
+        sandbox->Trap(ReportCloneFailure, NULL));
+  } else {
+    return ErrorCode(ErrorCode::ERR_ALLOWED);
+  }
+}
+
+ErrorCode RestrictPrctl(Sandbox *sandbox) {
+  // Allow PR_SET_NAME, PR_SET_DUMPABLE, PR_GET_DUMPABLE. Will need to add
+  // seccomp compositing in the future.
+  // PR_SET_PTRACER is used by breakpad but not needed anymore.
+  return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL,
+                       PR_SET_NAME, ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL,
+                       PR_SET_DUMPABLE, ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL,
+                       PR_GET_DUMPABLE, ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Trap(ReportPrctlFailure, NULL))));
+}
+
+ErrorCode RestrictIoctl(Sandbox *sandbox) {
+  // Allow TCGETS and FIONREAD, trap to ReportIoctlFailure otherwise.
+  return sandbox->Cond(1, ErrorCode::TP_64BIT, ErrorCode::OP_EQUAL, TCGETS,
+                       ErrorCode(ErrorCode::ERR_ALLOWED),
+         sandbox->Cond(1, ErrorCode::TP_64BIT, ErrorCode::OP_EQUAL, FIONREAD,
+                       ErrorCode(ErrorCode::ERR_ALLOWED),
+                       sandbox->Trap(ReportIoctlFailure, NULL)));
+}
+
+ErrorCode RendererOrWorkerProcessPolicy(Sandbox *sandbox, int sysno, void *) {
   switch (sysno) {
-    case __NR_ioctl:  // TODO(jln) investigate legitimate use in the renderer
-                      // and see if alternatives can be used.
+    case __NR_clone:
+      return RestrictCloneToThreads(sandbox);
+    case __NR_ioctl:
+      // Restrict IOCTL on x86_64.
+      if (IsArchitectureX86_64()) {
+        return RestrictIoctl(sandbox);
+      } else {
+        return ErrorCode(ErrorCode::ERR_ALLOWED);
+      }
+    case __NR_prctl:
+      return RestrictPrctl(sandbox);
+    // Allow the system calls below.
     case __NR_fdatasync:
     case __NR_fsync:
 #if defined(__i386__) || defined(__x86_64__)
@@ -1259,6 +1372,7 @@ ErrorCode RendererOrWorkerProcessPolicy(int sysno, void *) {
     case __NR_mremap:   // See crbug.com/149834.
     case __NR_pread64:
     case __NR_pwrite64:
+    case __NR_sched_getaffinity:
     case __NR_sched_get_priority_max:
     case __NR_sched_get_priority_min:
     case __NR_sched_getparam:
@@ -1272,46 +1386,57 @@ ErrorCode RendererOrWorkerProcessPolicy(int sysno, void *) {
     case __NR_prlimit64:
       return ErrorCode(EPERM);  // See crbug.com/160157.
     default:
+      // These need further tightening.
 #if defined(__x86_64__) || defined(__arm__)
       if (IsSystemVSharedMemory(sysno))
         return ErrorCode(ErrorCode::ERR_ALLOWED);
 #endif
+#if defined(__i386__)
+      if (IsSystemVIpc(sysno))
+        return ErrorCode(ErrorCode::ERR_ALLOWED);
+#endif
 
       // Default on the baseline policy.
-      return BaselinePolicy(sysno);
+      return BaselinePolicy(sandbox, sysno);
   }
 }
 
-// x86_64 and ARM for now. Needs to be adapted and tested for i386.
-ErrorCode FlashProcessPolicy(int sysno, void *) {
+ErrorCode FlashProcessPolicy(Sandbox *sandbox, int sysno, void *) {
   switch (sysno) {
+    case __NR_sched_get_priority_max:
+    case __NR_sched_get_priority_min:
     case __NR_sched_getaffinity:
+    case __NR_sched_getparam:
+    case __NR_sched_getscheduler:
     case __NR_sched_setscheduler:
     case __NR_times:
       return ErrorCode(ErrorCode::ERR_ALLOWED);
     case __NR_ioctl:
       return ErrorCode(ENOTTY);  // Flash Access.
     default:
+      // These need further tightening.
 #if defined(__x86_64__) || defined(__arm__)
-      // These are under investigation, and hopefully not here for the long
-      // term.
       if (IsSystemVSharedMemory(sysno))
+        return ErrorCode(ErrorCode::ERR_ALLOWED);
+#endif
+#if defined(__i386__)
+      if (IsSystemVIpc(sysno))
         return ErrorCode(ErrorCode::ERR_ALLOWED);
 #endif
 
       // Default on the baseline policy.
-      return BaselinePolicy(sysno);
+      return BaselinePolicy(sandbox, sysno);
   }
 }
 
-ErrorCode BlacklistDebugAndNumaPolicy(int sysno, void *) {
-  if (!Sandbox::isValidSyscallNumber(sysno)) {
+ErrorCode BlacklistDebugAndNumaPolicy(Sandbox *sandbox, int sysno, void *) {
+  if (!Sandbox::IsValidSyscallNumber(sysno)) {
     // TODO(jln) we should not have to do that in a trivial policy.
     return ErrorCode(ENOSYS);
   }
 
   if (IsDebug(sysno) || IsNuma(sysno))
-    return Sandbox::Trap(CrashSIGSYS_Handler, NULL);
+    return sandbox->Trap(CrashSIGSYS_Handler, NULL);
 
   return ErrorCode(ErrorCode::ERR_ALLOWED);
 }
@@ -1319,8 +1444,8 @@ ErrorCode BlacklistDebugAndNumaPolicy(int sysno, void *) {
 // Allow all syscalls.
 // This will still deny x32 or IA32 calls in 64 bits mode or
 // 64 bits system calls in compatibility mode.
-ErrorCode AllowAllPolicy(int sysno, void *) {
-  if (!Sandbox::isValidSyscallNumber(sysno)) {
+ErrorCode AllowAllPolicy(Sandbox *, int sysno, void *) {
+  if (!Sandbox::IsValidSyscallNumber(sysno)) {
     // TODO(jln) we should not have to do that in a trivial policy.
     return ErrorCode(ENOSYS);
   } else {
@@ -1328,35 +1453,68 @@ ErrorCode AllowAllPolicy(int sysno, void *) {
   }
 }
 
+bool EnableGpuBrokerPolicyCallBack() {
+  StartSandboxWithPolicy(GpuBrokerProcessPolicy, NULL);
+  return true;
+}
+
+// Start a broker process to handle open() inside the sandbox.
+void InitGpuBrokerProcess(BrokerProcess** broker_process) {
+  static const char kDriRcPath[] = "/etc/drirc";
+  static const char kDriCard0Path[] = "/dev/dri/card0";
+
+  CHECK(broker_process);
+  CHECK(*broker_process == NULL);
+
+  std::vector<std::string> read_whitelist;
+  read_whitelist.push_back(kDriCard0Path);
+  read_whitelist.push_back(kDriRcPath);
+  std::vector<std::string> write_whitelist;
+  write_whitelist.push_back(kDriCard0Path);
+
+  *broker_process = new BrokerProcess(read_whitelist, write_whitelist);
+  // Initialize the broker process and give it a sandbox call back.
+  CHECK((*broker_process)->Init(EnableGpuBrokerPolicyCallBack));
+}
+
 // Warms up/preloads resources needed by the policies.
-void WarmupPolicy(Sandbox::EvaluateSyscall policy) {
-#if defined(__x86_64__)
-  if (policy == GpuProcessPolicy_x86_64) {
-    OpenWithCache(kDriRcPath, O_RDONLY);
-    // Accelerated video decode dlopen()'s this shared object
-    // inside the sandbox, so preload it now.
-    // TODO(jorgelo): generalize this to other platforms.
-    if (IsAcceleratedVideoDecodeEnabled()) {
-      const char kI965DrvVideoPath_64[] =
-          "/usr/lib64/va/drivers/i965_drv_video.so";
-      dlopen(kI965DrvVideoPath_64, RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
+// Eventually start a broker process and return it in broker_process.
+void WarmupPolicy(Sandbox::EvaluateSyscall policy,
+                  BrokerProcess** broker_process) {
+  if (policy == GpuProcessPolicy) {
+    if (IsArchitectureX86_64() || IsArchitectureI386()) {
+      // Create a new broker process.
+      InitGpuBrokerProcess(broker_process);
+
+      // Accelerated video decode dlopen()'s a shared object
+      // inside the sandbox, so preload it now.
+      if (IsAcceleratedVideoDecodeEnabled()) {
+        const char* I965DrvVideoPath = NULL;
+
+        if (IsArchitectureX86_64()) {
+          I965DrvVideoPath = "/usr/lib64/va/drivers/i965_drv_video.so";
+        } else if (IsArchitectureI386()) {
+          I965DrvVideoPath = "/usr/lib/va/drivers/i965_drv_video.so";
+        }
+
+        dlopen(I965DrvVideoPath, RTLD_NOW|RTLD_GLOBAL|RTLD_NODELETE);
+      }
     }
   }
-#endif
 }
 
 Sandbox::EvaluateSyscall GetProcessSyscallPolicy(
     const CommandLine& command_line,
     const std::string& process_type) {
-#if defined(__x86_64__) || defined(__arm__)
   if (process_type == switches::kGpuProcess) {
     // On Chrome OS, --enable-gpu-sandbox enables the more restrictive policy.
-    // However, we never enable the more restrictive GPU process policy on ARM.
+    // However, we don't yet enable the more restrictive GPU process policy
+    // on ARM.
     if (IsArchitectureArm() ||
         (IsChromeOS() && !command_line.HasSwitch(switches::kEnableGpuSandbox)))
       return BlacklistDebugAndNumaPolicy;
     else
-      return GpuProcessPolicy_x86_64;
+      return GpuProcessPolicy;
   }
 
   if (process_type == switches::kPpapiPluginProcess) {
@@ -1377,25 +1535,33 @@ Sandbox::EvaluateSyscall GetProcessSyscallPolicy(
   NOTREACHED();
   // This will be our default if we need one.
   return AllowAllPolicy;
-#else
-  // On other architectures (currently IA32),
-  // we only have a small blacklist at the moment.
-  (void) process_type;
-  return BlacklistDebugAndNumaPolicy;
-#endif  // __x86_64__ || __arm__
+}
+
+// broker_process can be NULL if there is no need for one.
+void StartSandboxWithPolicy(Sandbox::EvaluateSyscall syscall_policy,
+                            BrokerProcess* broker_process) {
+  // Starting the sandbox is a one-way operation. The kernel doesn't allow
+  // us to unload a sandbox policy after it has been started. Nonetheless,
+  // in order to make the use of the "Sandbox" object easier, we allow for
+  // the object to be destroyed after the sandbox has been started. Note that
+  // doing so does not stop the sandbox.
+  Sandbox sandbox;
+  sandbox.SetSandboxPolicy(syscall_policy, broker_process);
+  sandbox.StartSandbox();
 }
 
 // Initialize the seccomp-bpf sandbox.
 bool StartBpfSandbox(const CommandLine& command_line,
                      const std::string& process_type) {
-  Sandbox::EvaluateSyscall SyscallPolicy =
+  Sandbox::EvaluateSyscall syscall_policy =
       GetProcessSyscallPolicy(command_line, process_type);
 
-  // Warms up resources needed by the policy we're about to enable.
-  WarmupPolicy(SyscallPolicy);
+  BrokerProcess* broker_process = NULL;
+  // Warm up resources needed by the policy we're about to enable and
+  // eventually start a broker process.
+  WarmupPolicy(syscall_policy, &broker_process);
 
-  Sandbox::setSandboxPolicy(SyscallPolicy, NULL);
-  Sandbox::startSandbox();
+  StartSandboxWithPolicy(syscall_policy, broker_process);
 
   return true;
 }
@@ -1433,8 +1599,13 @@ bool SandboxSeccompBpf::SupportsSandbox() {
 #if defined(SECCOMP_BPF_SANDBOX)
   // TODO(jln): pass the saved proc_fd_ from the LinuxSandbox singleton
   // here.
-  if (Sandbox::supportsSeccompSandbox(-1) ==
-      Sandbox::STATUS_AVAILABLE) {
+  Sandbox::SandboxStatus bpf_sandbox_status =
+      Sandbox::SupportsSeccompSandbox(-1);
+  // Kernel support is what we are interested in here. Other status
+  // such as STATUS_UNAVAILABLE (has threads) still indicate kernel support.
+  // We make this a negative check, since if there is a bug, we would rather
+  // "fail closed" (expect a sandbox to be available and try to start it).
+  if (bpf_sandbox_status != Sandbox::STATUS_UNSUPPORTED) {
     return true;
   }
 #endif
@@ -1446,10 +1617,13 @@ bool SandboxSeccompBpf::StartSandbox(const std::string& process_type) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
   if (IsSeccompBpfDesired() &&  // Global switches policy.
-      // Process-specific policy.
-      ShouldEnableSeccompBpf(process_type) &&
+      ShouldEnableSeccompBpf(process_type) &&  // Process-specific policy.
       SupportsSandbox()) {
-    return StartBpfSandbox(command_line, process_type);
+    // If the kernel supports the sandbox, and if the command line says we
+    // should enable it, enable it or die.
+    bool started_sandbox = StartBpfSandbox(command_line, process_type);
+    CHECK(started_sandbox);
+    return true;
   }
 #endif
   return false;

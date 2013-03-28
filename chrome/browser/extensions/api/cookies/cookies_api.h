@@ -13,6 +13,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
 #include "chrome/common/extensions/api/cookies.h"
@@ -29,10 +31,10 @@ namespace extensions {
 
 // Observes CookieMonster notifications and routes them as events to the
 // extension system.
-class ExtensionCookiesEventRouter : public content::NotificationObserver {
+class CookiesEventRouter : public content::NotificationObserver {
  public:
-  explicit ExtensionCookiesEventRouter(Profile* profile);
-  virtual ~ExtensionCookiesEventRouter();
+  explicit CookiesEventRouter(Profile* profile);
+  virtual ~CookiesEventRouter();
 
  private:
   // content::NotificationObserver implementation.
@@ -55,7 +57,7 @@ class ExtensionCookiesEventRouter : public content::NotificationObserver {
 
   Profile* profile_;
 
-  DISALLOW_COPY_AND_ASSIGN(ExtensionCookiesEventRouter);
+  DISALLOW_COPY_AND_ASSIGN(CookiesEventRouter);
 };
 
 // Serves as a base class for all cookies API functions, and defines some
@@ -85,14 +87,14 @@ class CookiesFunction : public AsyncExtensionFunction {
 };
 
 // Implements the cookies.get() extension function.
-class GetCookieFunction : public CookiesFunction {
+class CookiesGetFunction : public CookiesFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cookies.get")
+  DECLARE_EXTENSION_FUNCTION("cookies.get", COOKIES_GET)
 
-  GetCookieFunction();
+  CookiesGetFunction();
 
  protected:
-  virtual ~GetCookieFunction();
+  virtual ~CookiesGetFunction();
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
@@ -108,14 +110,14 @@ class GetCookieFunction : public CookiesFunction {
 };
 
 // Implements the cookies.getAll() extension function.
-class GetAllCookiesFunction : public CookiesFunction {
+class CookiesGetAllFunction : public CookiesFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cookies.getAll")
+  DECLARE_EXTENSION_FUNCTION("cookies.getAll", COOKIES_GETALL)
 
-  GetAllCookiesFunction();
+  CookiesGetAllFunction();
 
  protected:
-  virtual ~GetAllCookiesFunction();
+  virtual ~CookiesGetAllFunction();
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
@@ -131,14 +133,14 @@ class GetAllCookiesFunction : public CookiesFunction {
 };
 
 // Implements the cookies.set() extension function.
-class SetCookieFunction : public CookiesFunction {
+class CookiesSetFunction : public CookiesFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cookies.set")
+  DECLARE_EXTENSION_FUNCTION("cookies.set", COOKIES_SET)
 
-  SetCookieFunction();
+  CookiesSetFunction();
 
  protected:
-  virtual ~SetCookieFunction();
+  virtual ~CookiesSetFunction();
   virtual bool RunImpl() OVERRIDE;
 
  private:
@@ -154,14 +156,14 @@ class SetCookieFunction : public CookiesFunction {
 };
 
 // Implements the cookies.remove() extension function.
-class RemoveCookieFunction : public CookiesFunction {
+class CookiesRemoveFunction : public CookiesFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cookies.remove")
+  DECLARE_EXTENSION_FUNCTION("cookies.remove", COOKIES_REMOVE)
 
-  RemoveCookieFunction();
+  CookiesRemoveFunction();
 
  protected:
-  virtual ~RemoveCookieFunction();
+  virtual ~CookiesRemoveFunction();
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
@@ -177,17 +179,51 @@ class RemoveCookieFunction : public CookiesFunction {
 };
 
 // Implements the cookies.getAllCookieStores() extension function.
-class GetAllCookieStoresFunction : public CookiesFunction {
+class CookiesGetAllCookieStoresFunction : public CookiesFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("cookies.getAllCookieStores")
+  DECLARE_EXTENSION_FUNCTION("cookies.getAllCookieStores",
+                             COOKIES_GETALLCOOKIESTORES)
 
  protected:
-  virtual ~GetAllCookieStoresFunction() {}
+  virtual ~CookiesGetAllCookieStoresFunction() {}
 
   // ExtensionFunction:
-  // GetAllCookieStoresFunction is sync.
+  // CookiesGetAllCookieStoresFunction is sync.
   virtual void Run() OVERRIDE;
   virtual bool RunImpl() OVERRIDE;
+};
+
+class CookiesAPI : public ProfileKeyedAPI,
+                   public extensions::EventRouter::Observer {
+ public:
+  explicit CookiesAPI(Profile* profile);
+  virtual ~CookiesAPI();
+
+  // ProfileKeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
+
+  // ProfileKeyedAPI implementation.
+  static ProfileKeyedAPIFactory<CookiesAPI>* GetFactoryInstance();
+
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(const extensions::EventListenerInfo& details)
+      OVERRIDE;
+
+ private:
+  friend class ProfileKeyedAPIFactory<CookiesAPI>;
+
+  Profile* profile_;
+
+  // ProfileKeyedAPI implementation.
+  static const char* service_name() {
+    return "CookiesAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
+
+  // Created lazily upon OnListenerAdded.
+  scoped_ptr<CookiesEventRouter> cookies_event_router_;
+
+  DISALLOW_COPY_AND_ASSIGN(CookiesAPI);
 };
 
 }  // namespace extensions

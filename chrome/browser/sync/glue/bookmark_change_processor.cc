@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,14 +9,15 @@
 
 #include "base/location.h"
 #include "base/string16.h"
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -26,7 +27,7 @@
 #include "sync/internal_api/public/write_node.h"
 #include "sync/internal_api/public/write_transaction.h"
 #include "sync/syncable/entry.h"  // TODO(tim): Investigating bug 121587.
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image_util.h"
 
@@ -79,12 +80,11 @@ void BookmarkChangeProcessor::UpdateSyncNodeProperties(
 }
 
 // static
-void BookmarkChangeProcessor::EncodeFavicon(const BookmarkNode* src,
-                                            BookmarkModel* model,
-                                            std::vector<unsigned char>* dst) {
+void BookmarkChangeProcessor::EncodeFavicon(
+    const BookmarkNode* src,
+    BookmarkModel* model,
+    scoped_refptr<base::RefCountedMemory>* dst) {
   const gfx::Image& favicon = model->GetFavicon(src);
-
-  dst->clear();
 
   // Check for empty images.  This can happen if the favicon is
   // still being loaded.
@@ -93,8 +93,7 @@ void BookmarkChangeProcessor::EncodeFavicon(const BookmarkNode* src,
 
   // Re-encode the BookmarkNode's favicon as a PNG, and pass the data to the
   // sync subsystem.
-  if (!gfx::PNGEncodedDataFromImage(favicon, dst))
-    return;
+  *dst = favicon.As1xPNGBytes();
 }
 
 void BookmarkChangeProcessor::RemoveOneSyncNode(
@@ -109,7 +108,7 @@ void BookmarkChangeProcessor::RemoveOneSyncNode(
   DCHECK(!sync_node.HasChildren());
   // Remove association and delete the sync node.
   model_associator_->Disassociate(sync_node.GetId());
-  sync_node.Remove();
+  sync_node.Tombstone();
 }
 
 void BookmarkChangeProcessor::RemoveSyncNodeHierarchy(
@@ -405,7 +404,7 @@ bool BookmarkChangeProcessor::PlaceSyncNode(MoveOrCreate operation,
   if (index == 0) {
     // Insert into first position.
     success = (operation == CREATE) ?
-        dst->InitByCreation(syncer::BOOKMARKS, sync_parent, NULL) :
+        dst->InitBookmarkByCreation(sync_parent, NULL) :
         dst->SetPosition(sync_parent, NULL);
     if (success) {
       DCHECK_EQ(dst->GetParentId(), sync_parent.GetId());
@@ -421,7 +420,7 @@ bool BookmarkChangeProcessor::PlaceSyncNode(MoveOrCreate operation,
       return false;
     }
     success = (operation == CREATE) ?
-        dst->InitByCreation(syncer::BOOKMARKS, sync_parent, &sync_prev) :
+        dst->InitBookmarkByCreation(sync_parent, &sync_prev) :
         dst->SetPosition(sync_parent, &sync_prev);
     if (success) {
       DCHECK_EQ(dst->GetParentId(), sync_parent.GetId());
@@ -571,7 +570,7 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
           // a bookmark that was not fully associated.
           LOG(ERROR) << "Failed to create bookmark node with title "
                      << src.GetTitle() + " and url "
-                     << src.GetURL().possibly_invalid_spec();
+                     << src.GetBookmarkSpecifics().url();
         }
       }
     }
@@ -630,13 +629,14 @@ const BookmarkNode* BookmarkChangeProcessor::CreateOrUpdateBookmarkNode(
     // Handle reparenting and/or repositioning.
     model->Move(dst, parent, index);
 
+    const sync_pb::BookmarkSpecifics& specifics = src->GetBookmarkSpecifics();
     if (!src->GetIsFolder())
-      model->SetURL(dst, src->GetURL());
+      model->SetURL(dst, GURL(specifics.url()));
     model->SetTitle(dst, UTF8ToUTF16(src->GetTitle()));
-    if (src->GetBookmarkSpecifics().has_creation_time_us()) {
+    if (specifics.has_creation_time_us()) {
       model->SetDateAdded(dst,
                           base::Time::FromInternalValue(
-                              src->GetBookmarkSpecifics().creation_time_us()));
+                              specifics.creation_time_us()));
     }
 
     SetBookmarkFavicon(src, dst, model);
@@ -677,13 +677,14 @@ const BookmarkNode* BookmarkChangeProcessor::CreateBookmarkNode(
                             UTF8ToUTF16(sync_node->GetTitle()));
   } else {
     // 'creation_time_us' was added in m24. Assume a time of 0 means now.
-    const int64 create_time_internal =
-        sync_node->GetBookmarkSpecifics().creation_time_us();
+    const sync_pb::BookmarkSpecifics& specifics =
+        sync_node->GetBookmarkSpecifics();
+    const int64 create_time_internal = specifics.creation_time_us();
     base::Time create_time = (create_time_internal == 0) ?
         base::Time::Now() : base::Time::FromInternalValue(create_time_internal);
     node = model->AddURLWithCreationTime(parent, index,
                                          UTF8ToUTF16(sync_node->GetTitle()),
-                                         sync_node->GetURL(), create_time);
+                                         GURL(specifics.url()), create_time);
     if (node)
       SetBookmarkFavicon(sync_node, node, model);
   }
@@ -696,23 +697,35 @@ bool BookmarkChangeProcessor::SetBookmarkFavicon(
     syncer::BaseNode* sync_node,
     const BookmarkNode* bookmark_node,
     BookmarkModel* bookmark_model) {
-  std::vector<unsigned char> icon_bytes_vector;
-  sync_node->GetFaviconBytes(&icon_bytes_vector);
-  if (icon_bytes_vector.empty())
+  const sync_pb::BookmarkSpecifics& specifics =
+      sync_node->GetBookmarkSpecifics();
+  const std::string& icon_bytes_str = specifics.favicon();
+  if (icon_bytes_str.empty())
     return false;
 
-  ApplyBookmarkFavicon(bookmark_node, bookmark_model->profile(),
-                       icon_bytes_vector);
+  scoped_refptr<base::RefCountedString> icon_bytes(
+      new base::RefCountedString());
+  icon_bytes->data().assign(icon_bytes_str);
+  GURL icon_url(specifics.icon_url());
+
+  // Old clients may not be syncing the favicon URL. If the icon URL is not
+  // synced, use the page URL as a fake icon URL as it is guaranteed to be
+  // unique.
+  if (icon_url.is_empty())
+    icon_url = bookmark_node->url();
+
+  ApplyBookmarkFavicon(bookmark_node, bookmark_model->profile(), icon_url,
+                       icon_bytes);
 
   return true;
 }
 
 // static
-// Applies the given favicon bytes vector to the given bookmark node.
 void BookmarkChangeProcessor::ApplyBookmarkFavicon(
     const BookmarkNode* bookmark_node,
     Profile* profile,
-    const std::vector<unsigned char>& icon_bytes_vector) {
+    const GURL& icon_url,
+    const scoped_refptr<base::RefCountedMemory>& bitmap_data) {
   HistoryService* history =
       HistoryServiceFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS);
   FaviconService* favicon_service =
@@ -724,10 +737,9 @@ void BookmarkChangeProcessor::ApplyBookmarkFavicon(
   // overwrite the cached 2x favicon bitmap. Sync favicons are always
   // gfx::kFaviconSize in width and height. Store the favicon into history
   // as such.
-  scoped_refptr<base::RefCountedMemory> bitmap_data(
-      new base::RefCountedBytes(icon_bytes_vector));
   gfx::Size pixel_size(gfx::kFaviconSize, gfx::kFaviconSize);
   favicon_service->MergeFavicon(bookmark_node->url(),
+                                icon_url,
                                 history::FAVICON,
                                 bitmap_data,
                                 pixel_size);
@@ -738,10 +750,16 @@ void BookmarkChangeProcessor::SetSyncNodeFavicon(
     const BookmarkNode* bookmark_node,
     BookmarkModel* model,
     syncer::WriteNode* sync_node) {
-  std::vector<unsigned char> favicon_bytes;
+  scoped_refptr<base::RefCountedMemory> favicon_bytes(NULL);
   EncodeFavicon(bookmark_node, model, &favicon_bytes);
-  if (!favicon_bytes.empty())
-    sync_node->SetFaviconBytes(favicon_bytes);
+  if (favicon_bytes.get() && favicon_bytes->size()) {
+    sync_pb::BookmarkSpecifics updated_specifics(
+        sync_node->GetBookmarkSpecifics());
+    updated_specifics.set_favicon(favicon_bytes->front(),
+                                  favicon_bytes->size());
+    updated_specifics.set_icon_url(bookmark_node->icon_url().spec());
+    sync_node->SetBookmarkSpecifics(updated_specifics);
+  }
 }
 
 }  // namespace browser_sync

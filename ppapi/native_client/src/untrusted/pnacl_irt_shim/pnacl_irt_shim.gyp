@@ -11,9 +11,10 @@
       'target_name': 'pnacl_irt_shim',
       'type': 'none',
       'variables': {
-        'nlib_target': 'pnacl_irt_shim.a',
-        'out_newlib64': '<(PRODUCT_DIR)/libpnacl_irt_shim.a',
-        'out_newlib_arm': '<(PRODUCT_DIR)/libpnacl_irt_shim.a',
+        'nlib_target': 'libpnacl_irt_shim.a',
+        'out_newlib_arm': '<(SHARED_INTERMEDIATE_DIR)/tc_pnacl_translate/lib-arm/libpnacl_irt_shim.a',
+        'out_newlib32': '<(SHARED_INTERMEDIATE_DIR)/tc_pnacl_translate/lib-x86-32/libpnacl_irt_shim.a',
+        'out_newlib64': '<(SHARED_INTERMEDIATE_DIR)/tc_pnacl_translate/lib-x86-64/libpnacl_irt_shim.a',
         'build_glibc': 0,
         'build_newlib': 1,
         'sources': [
@@ -23,6 +24,9 @@
         ],
         'include_dirs': [
           '../../../..',
+        ],
+        'extra_args': [
+          '--strip-debug',
         ],
         'conditions': [
           ['target_arch=="arm"', {

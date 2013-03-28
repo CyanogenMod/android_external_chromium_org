@@ -62,22 +62,49 @@ remoting.HostList = function(table, noHosts, errorMsg, errorButton) {
    * @private
    */
   this.lastError_ = '';
+  /**
+   * @type {remoting.Host?}
+   * @private
+   */
+  this.localHost_ = null;
+  /**
+   * @type {remoting.HostController.State}
+   * @private
+   */
+  this.localHostState_ = remoting.HostController.State.NOT_IMPLEMENTED;
+  /**
+   * @type {number}
+   * @private
+   */
+  this.webappMajorVersion_ = parseInt(chrome.runtime.getManifest().version, 10);
 
   this.errorButton_.addEventListener('click',
                                      this.onErrorClick_.bind(this),
                                      false);
+};
 
+/**
+ * Load the host-list asynchronously from local storage.
+ *
+ * @param {function():void} onDone Completion callback.
+ */
+remoting.HostList.prototype.load = function(onDone) {
   // Load the cache of the last host-list, if present.
-  var cachedStr = /** @type {string} */
-      (window.localStorage.getItem(remoting.HostList.HOSTS_KEY));
-  if (cachedStr) {
-    var cached = jsonParseSafe(cachedStr);
-    if (cached) {
-      this.hosts_ = /** @type {Array} */ cached;
-    } else {
-      console.error('Invalid value for ' + remoting.HostList.HOSTS_KEY);
+  /** @type {remoting.HostList} */
+  var that = this;
+  /** @param {Object.<string>} items */
+  var storeHostList = function(items) {
+    if (items[remoting.HostList.HOSTS_KEY]) {
+      var cached = jsonParseSafe(items[remoting.HostList.HOSTS_KEY]);
+      if (cached) {
+        that.hosts_ = /** @type {Array} */ cached;
+      } else {
+        console.error('Invalid value for ' + remoting.HostList.HOSTS_KEY);
+      }
     }
-  }
+    onDone();
+  };
+  remoting.storage.local.get(remoting.HostList.HOSTS_KEY, storeHostList);
 };
 
 /**
@@ -111,16 +138,15 @@ remoting.HostList.prototype.refresh = function(onDone) {
   var getHosts = function(token) {
     var headers = { 'Authorization': 'OAuth ' + token };
     remoting.xhr.get(
-        'https://www.googleapis.com/chromoting/v1/@me/hosts',
+        remoting.settings.DIRECTORY_API_BASE_URL + '/@me/hosts',
         parseHostListResponse, '', headers);
   };
   /** @param {remoting.Error} error */
   var onError = function(error) {
-    that.hosts_ = [];
     that.lastError_ = error;
     onDone(false);
   };
-  remoting.oauth2.callWithToken(getHosts, onError);
+  remoting.identity.callWithToken(getHosts, onError);
 };
 
 /**
@@ -134,7 +160,6 @@ remoting.HostList.prototype.refresh = function(onDone) {
  * @private
  */
 remoting.HostList.prototype.parseHostListResponse_ = function(onDone, xhr) {
-  this.hosts_ = [];
   this.lastError_ = '';
   try {
     if (xhr.status == 200) {
@@ -165,7 +190,7 @@ remoting.HostList.prototype.parseHostListResponse_ = function(onDone, xhr) {
       // Some other error.
       console.error('Bad status on host list query: ', xhr);
       if (xhr.status == 0) {
-        this.lastError_ = remoting.Error.NO_RESPONSE;
+        this.lastError_ = remoting.Error.NETWORK_FAILURE;
       } else if (xhr.status == 401) {
         this.lastError_ = remoting.Error.AUTHENTICATION_FAILED;
       } else if (xhr.status == 502 || xhr.status == 503) {
@@ -179,18 +204,16 @@ remoting.HostList.prototype.parseHostListResponse_ = function(onDone, xhr) {
     console.error('Error processing response: ', xhr, typed_er);
     this.lastError_ = remoting.Error.UNEXPECTED;
   }
-  window.localStorage.setItem(remoting.HostList.HOSTS_KEY,
-                              JSON.stringify(this.hosts_));
+  this.save_();
   onDone(this.lastError_ == '');
 };
 
 /**
  * Display the list of hosts or error condition.
  *
- * @param {string?} thisHostId The id of this host, or null if not registered.
  * @return {void} Nothing.
  */
-remoting.HostList.prototype.display = function(thisHostId) {
+remoting.HostList.prototype.display = function() {
   this.table_.innerText = '';
   this.errorMsg_.innerText = '';
   this.hostTableEntries_ = [];
@@ -198,23 +221,6 @@ remoting.HostList.prototype.display = function(thisHostId) {
   var noHostsRegistered = (this.hosts_.length == 0);
   this.table_.hidden = noHostsRegistered;
   this.noHosts_.hidden = !noHostsRegistered;
-
-  for (var i = 0; i < this.hosts_.length; ++i) {
-    /** @type {remoting.Host} */
-    var host = this.hosts_[i];
-    // Validate the entry to make sure it has all the fields we expect and is
-    // not the local host (which is displayed separately). NB: if the host has
-    // never sent a heartbeat, then there will be no jabberId.
-    if (host.hostName && host.hostId && host.status && host.publicKey &&
-        host.hostId != thisHostId) {
-      var hostTableEntry = new remoting.HostTableEntry();
-      hostTableEntry.create(host,
-                            this.renameHost.bind(this),
-                            this.deleteHost_.bind(this));
-      this.hostTableEntries_[i] = hostTableEntry;
-      this.table_.appendChild(hostTableEntry.tableRow);
-    }
-  }
 
   if (this.lastError_ != '') {
     l10n.localizeElementFromTag(this.errorMsg_, this.lastError_);
@@ -225,8 +231,46 @@ remoting.HostList.prototype.display = function(thisHostId) {
       l10n.localizeElementFromTag(this.errorButton_,
                                   /*i18n-content*/'RETRY');
     }
+  } else {
+    for (var i = 0; i < this.hosts_.length; ++i) {
+      /** @type {remoting.Host} */
+      var host = this.hosts_[i];
+      // Validate the entry to make sure it has all the fields we expect and is
+      // not the local host (which is displayed separately). NB: if the host has
+      // never sent a heartbeat, then there will be no jabberId.
+      if (host.hostName && host.hostId && host.status && host.publicKey &&
+          (!this.localHost_ || host.hostId != this.localHost_.hostId)) {
+        var hostTableEntry = new remoting.HostTableEntry(
+            host, this.webappMajorVersion_,
+            this.renameHost_.bind(this), this.deleteHost_.bind(this));
+        hostTableEntry.createDom();
+        this.hostTableEntries_[i] = hostTableEntry;
+        this.table_.appendChild(hostTableEntry.tableRow);
+      }
+    }
   }
+
   this.errorMsg_.parentNode.hidden = (this.lastError_ == '');
+
+  // The local host cannot be stopped or started if the host controller is not
+  // implemented for this platform. Additionally, it cannot be started if there
+  // is an error (in many error states, the start operation will fail anyway,
+  // but even if it succeeds, the chance of a related but hard-to-diagnose
+  // future error is high).
+  var state = this.localHostState_;
+  var enabled = (state == remoting.HostController.State.STARTING) ||
+      (state == remoting.HostController.State.STARTED);
+  var canChangeLocalHostState =
+      (state != remoting.HostController.State.NOT_IMPLEMENTED) &&
+      (enabled || this.lastError_ == '');
+
+  remoting.updateModalUi(enabled ? 'enabled' : 'disabled', 'data-daemon-state');
+  var element = document.getElementById('daemon-control');
+  element.hidden = !canChangeLocalHostState;
+  element = document.getElementById('host-list-empty-hosting-supported');
+  element.hidden = !canChangeLocalHostState;
+  element = document.getElementById('host-list-empty-hosting-unsupported');
+  element.hidden = canChangeLocalHostState;
 };
 
 /**
@@ -245,35 +289,19 @@ remoting.HostList.prototype.deleteHost_ = function(hostTableEntry) {
 };
 
 /**
- * Unregister a host.
- * @param {string} hostId The id of the host to be removed.
- * @return {void} Nothing.
- */
-remoting.HostList.unregisterHostById = function(hostId) {
-  /** @param {string} token The OAuth2 token. */
-  var deleteHost = function(token) {
-    var headers = { 'Authorization': 'OAuth ' + token };
-    remoting.xhr.remove(
-        'https://www.googleapis.com/chromoting/v1/@me/hosts/' + hostId,
-        function() {}, '', headers);
-  }
-  remoting.oauth2.callWithToken(deleteHost, remoting.showErrorMessage);
-};
-
-/**
  * Prepare a host for renaming by replacing its name with an edit box.
  * @param {remoting.HostTableEntry} hostTableEntry The host to be renamed.
  * @return {void} Nothing.
+ * @private
  */
-remoting.HostList.prototype.renameHost = function(hostTableEntry) {
+remoting.HostList.prototype.renameHost_ = function(hostTableEntry) {
   for (var i = 0; i < this.hosts_.length; ++i) {
     if (this.hosts_[i].hostId == hostTableEntry.host.hostId) {
       this.hosts_[i].hostName = hostTableEntry.host.hostName;
       break;
     }
   }
-  window.localStorage.setItem(remoting.HostList.HOSTS_KEY,
-                              JSON.stringify(this.hosts_));
+  this.save_();
 
   /** @param {string?} token */
   var renameHost = function(token) {
@@ -283,12 +311,12 @@ remoting.HostList.prototype.renameHost = function(hostTableEntry) {
         'Content-type' : 'application/json; charset=UTF-8'
       };
       var newHostDetails = { data: {
-       hostId: hostTableEntry.host.hostId,
-       hostName: hostTableEntry.host.hostName,
-       publicKey: hostTableEntry.host.publicKey
-        } };
+        hostId: hostTableEntry.host.hostId,
+        hostName: hostTableEntry.host.hostName,
+        publicKey: hostTableEntry.host.publicKey
+      } };
       remoting.xhr.put(
-          'https://www.googleapis.com/chromoting/v1/@me/hosts/' +
+          remoting.settings.DIRECTORY_API_BASE_URL + '/@me/hosts/' +
           hostTableEntry.host.hostId,
           function(xhr) {},
           JSON.stringify(newHostDetails),
@@ -297,20 +325,121 @@ remoting.HostList.prototype.renameHost = function(hostTableEntry) {
       console.error('Could not rename host. Authentication failure.');
     }
   }
-  remoting.oauth2.callWithToken(renameHost, remoting.showErrorMessage);
+  remoting.identity.callWithToken(renameHost, remoting.showErrorMessage);
 };
 
 /**
- * Add a host to the list. This is called when the local host is started to
- * avoid having to refresh the host list and deal with replication delays.
- *
- * @param {remoting.Host} localHost The local Me2Me host.
+ * Unregister a host.
+ * @param {string} hostId The id of the host to be removed.
  * @return {void} Nothing.
  */
-remoting.HostList.prototype.addHost = function(localHost) {
+remoting.HostList.unregisterHostById = function(hostId) {
+  /** @param {string} token The OAuth2 token. */
+  var deleteHost = function(token) {
+    var headers = { 'Authorization': 'OAuth ' + token };
+    remoting.xhr.remove(
+        remoting.settings.DIRECTORY_API_BASE_URL + '/@me/hosts/' + hostId,
+        function() {}, '', headers);
+  }
+  remoting.identity.callWithToken(deleteHost, remoting.showErrorMessage);
+};
+
+/**
+ * Set tool-tips for the 'connect' action. We can't just set this on the
+ * parent element because the button has no tool-tip, and therefore would
+ * inherit connectStr.
+ *
+ * @return {void} Nothing.
+ * @private
+ */
+remoting.HostList.prototype.setTooltips_ = function() {
+  var connectStr = '';
+  if (this.localHost_) {
+    chrome.i18n.getMessage(/*i18n-content*/'TOOLTIP_CONNECT',
+                           this.localHost_.hostName);
+  }
+  document.getElementById('this-host-name').title = connectStr;
+  document.getElementById('this-host-icon').title = connectStr;
+};
+
+/**
+ * Set the state of the local host and localHostId if any.
+ *
+ * @param {remoting.HostController.State} state State of the local host.
+ * @param {string?} hostId ID of the local host, or null.
+ * @return {void} Nothing.
+ */
+remoting.HostList.prototype.setLocalHostStateAndId = function(state, hostId) {
+  this.localHostState_ = state;
+  this.setLocalHost_(hostId ? this.getHostForId(hostId) : null);
+}
+
+/**
+ * Set the host object that corresponds to the local computer, if any.
+ *
+ * @param {remoting.Host?} host The host, or null if not registered.
+ * @return {void} Nothing.
+ * @private
+ */
+remoting.HostList.prototype.setLocalHost_ = function(host) {
+  this.localHost_ = host;
+  this.setTooltips_();
+  /** @type {remoting.HostList} */
+  var that = this;
+  if (host) {
+    /** @param {remoting.HostTableEntry} host */
+    var renameHost = function(host) {
+      that.renameHost_(host);
+      that.setTooltips_();
+    };
+    if (!this.localHostTableEntry_) {
+      /** @type {remoting.HostTableEntry} @private */
+      this.localHostTableEntry_ = new remoting.HostTableEntry(
+          host, this.webappMajorVersion_, renameHost);
+      this.localHostTableEntry_.init(
+          document.getElementById('this-host-connect'),
+          document.getElementById('this-host-warning'),
+          document.getElementById('this-host-name'),
+          document.getElementById('this-host-rename'));
+    } else {
+      // TODO(jamiewalch): This is hack to prevent multiple click handlers being
+      // registered for the same DOM elements if this method is called more than
+      // once. A better solution would be to let HostTable create the daemon row
+      // like it creates the rows for non-local hosts.
+      this.localHostTableEntry_.host = host;
+    }
+  } else {
+    this.localHostTableEntry_ = null;
+  }
+}
+
+/**
+ * Called by the HostControlled after the local host has been started.
+ *
+ * @param {string} hostName Host name.
+ * @param {string} hostId ID of the local host.
+ * @param {string} publicKey Public key.
+ * @return {void} Nothing.
+ */
+remoting.HostList.prototype.onLocalHostStarted = function(
+    hostName, hostId, publicKey) {
+  // Create a dummy remoting.Host instance to represent the local host.
+  // Refreshing the list is no good in general, because the directory
+  // information won't be in sync for several seconds. We don't know the
+  // host JID, but it can be missing from the cache with no ill effects.
+  // It will be refreshed if the user tries to connect to the local host,
+  // and we hope that the directory will have been updated by that point.
+  var localHost = new remoting.Host();
+  localHost.hostName = hostName;
+  // Provide a version number to avoid warning about this dummy host being
+  // out-of-date.
+  localHost.hostVersion = String(this.webappMajorVersion_) + ".x"
+  localHost.hostId = hostId;
+  localHost.publicKey = publicKey;
+  localHost.status = 'ONLINE';
   this.hosts_.push(localHost);
-  window.localStorage.setItem(remoting.HostList.HOSTS_KEY,
-                              JSON.stringify(this.hosts_));
+  this.save_();
+  this.setLocalHost_(localHost);
 };
 
 /**
@@ -323,11 +452,18 @@ remoting.HostList.prototype.onErrorClick_ = function() {
   if (this.lastError_ == remoting.Error.AUTHENTICATION_FAILED) {
     remoting.oauth2.doAuthRedirect();
   } else {
-    this.lastError_ = '';
-    this.display(null);
-    this.refresh(remoting.extractThisHostAndDisplay);
+    this.refresh(remoting.updateLocalHostState);
   }
-}
+};
+
+/**
+ * Save the host list to local storage.
+ */
+remoting.HostList.prototype.save_ = function() {
+  var items = {};
+  items[remoting.HostList.HOSTS_KEY] = JSON.stringify(this.hosts_);
+  remoting.storage.local.set(items);
+};
 
 /**
  * Key name under which Me2Me hosts are cached.

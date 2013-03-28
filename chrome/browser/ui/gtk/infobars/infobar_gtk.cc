@@ -6,15 +6,15 @@
 
 #include "base/debug/trace_event.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_link_button.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/infobars/infobar_container_gtk.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
@@ -50,7 +50,7 @@ const int InfoBar::kDefaultBarTargetHeight = 36;
 // static
 const int InfoBarGtk::kEndOfLabelSpacing = 6;
 
-InfoBarGtk::InfoBarGtk(InfoBarTabHelper* owner, InfoBarDelegate* delegate)
+InfoBarGtk::InfoBarGtk(InfoBarService* owner, InfoBarDelegate* delegate)
     : InfoBar(owner, delegate),
       theme_service_(GtkThemeService::GetFrom(Profile::FromBrowserContext(
           owner->GetWebContents()->GetBrowserContext()))),
@@ -194,15 +194,14 @@ void InfoBarGtk::AddLabelWithInlineLink(const string16& display_text,
 void InfoBarGtk::ShowMenuWithModel(GtkWidget* sender,
                                    MenuGtk::Delegate* delegate,
                                    ui::MenuModel* model) {
-  menu_model_.reset(model);
-  menu_.reset(new MenuGtk(delegate, menu_model_.get()));
+  menu_.reset(new MenuGtk(delegate, model));
   menu_->PopupForWidget(sender, 1, gtk_get_current_event_time());
 }
 
 void InfoBarGtk::GetTopColor(InfoBarDelegate::Type type,
                              double* r, double* g, double* b) {
   SkColor color = theme_service_->UsingNativeTheme() ?
-                  theme_service_->GetColor(ThemeService::COLOR_TOOLBAR) :
+                  theme_service_->GetColor(ThemeProperties::COLOR_TOOLBAR) :
                   GetInfoBarTopColor(type);
   *r = SkColorGetR(color) / 255.0;
   *g = SkColorGetG(color) / 255.0;
@@ -212,7 +211,7 @@ void InfoBarGtk::GetTopColor(InfoBarDelegate::Type type,
 void InfoBarGtk::GetBottomColor(InfoBarDelegate::Type type,
                                 double* r, double* g, double* b) {
   SkColor color = theme_service_->UsingNativeTheme() ?
-                  theme_service_->GetColor(ThemeService::COLOR_TOOLBAR) :
+                  theme_service_->GetColor(ThemeProperties::COLOR_TOOLBAR) :
                   GetInfoBarBottomColor(type);
   *r = SkColorGetR(color) / 255.0;
   *g = SkColorGetG(color) / 255.0;
@@ -290,7 +289,6 @@ void InfoBarGtk::PlatformSpecificOnCloseSoon() {
   // We must close all menus and prevent any signals from being emitted while
   // we are animating the info bar closed.
   menu_.reset();
-  menu_model_.reset();
   signals_.reset();
 }
 

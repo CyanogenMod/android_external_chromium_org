@@ -34,8 +34,8 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
@@ -53,7 +53,7 @@
 #include "net/base/net_util.h"
 #include "net/base/network_delegate.h"
 #include "net/base/static_cookie_policy.h"
-#include "net/base/upload_data.h"
+#include "net/base/upload_data_stream.h"
 #include "net/cookies/cookie_store.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_request_headers.h"
@@ -93,14 +93,14 @@ namespace {
 
 struct TestShellRequestContextParams {
   TestShellRequestContextParams(
-      const FilePath& in_cache_path,
+      const base::FilePath& in_cache_path,
       net::HttpCache::Mode in_cache_mode,
       bool in_no_proxy)
       : cache_path(in_cache_path),
         cache_mode(in_cache_mode),
         no_proxy(in_no_proxy) {}
 
-  FilePath cache_path;
+  base::FilePath cache_path;
   net::HttpCache::Mode cache_mode;
   bool no_proxy;
 };
@@ -177,7 +177,7 @@ class TestShellNetworkDelegate : public net::NetworkDelegate {
     return rv == net::OK;
   }
   virtual bool OnCanAccessFile(const net::URLRequest& request,
-                               const FilePath& path) const OVERRIDE {
+                               const base::FilePath& path) const OVERRIDE {
     return true;
   }
   virtual bool OnCanThrottleRequest(
@@ -201,6 +201,8 @@ TestShellRequestContext* g_request_context = NULL;
 TestShellNetworkDelegate* g_network_delegate = NULL;
 base::Thread* g_cache_thread = NULL;
 
+//-----------------------------------------------------------------------------
+
 struct FileOverHTTPParams {
   FileOverHTTPParams(std::string in_file_path_template, GURL in_http_prefix)
       : file_path_template(in_file_path_template),
@@ -210,7 +212,39 @@ struct FileOverHTTPParams {
   GURL http_prefix;
 };
 
-FileOverHTTPParams* g_file_over_http_params = NULL;
+class FileOverHTTPPathMappings {
+ public:
+  FileOverHTTPPathMappings() : redirections_() {}
+  void AddMapping(std::string file_path_template, GURL http_prefix) {
+    redirections_.push_back(FileOverHTTPParams(file_path_template,
+                                               http_prefix));
+  }
+
+  const FileOverHTTPParams* ParamsForRequest(std::string request,
+                                             std::string::size_type& offset) {
+    std::vector<FileOverHTTPParams>::iterator it;
+    for (it = redirections_.begin(); it != redirections_.end(); ++it) {
+      offset = request.find(it->file_path_template);
+      if (offset != std::string::npos)
+        return &*it;
+    }
+    return 0;
+  }
+
+  const FileOverHTTPParams* ParamsForResponse(std::string response_url) {
+    std::vector<FileOverHTTPParams>::iterator it;
+    for (it = redirections_.begin(); it != redirections_.end(); ++it) {
+      if (response_url.find(it->http_prefix.spec()) == 0)
+        return &*it;
+    }
+    return 0;
+  }
+
+ private:
+  std::vector<FileOverHTTPParams> redirections_;
+};
+
+FileOverHTTPPathMappings* g_file_over_http_mappings = NULL;
 
 //-----------------------------------------------------------------------------
 
@@ -218,7 +252,7 @@ class IOThread : public base::Thread {
  public:
   IOThread() : base::Thread("IOThread") {}
 
-  ~IOThread() {
+  virtual ~IOThread() {
     Stop();
   }
 
@@ -428,17 +462,20 @@ class RequestProxy
     request_->SetExtraRequestHeaders(headers);
     request_->set_load_flags(params->load_flags);
     if (params->request_body) {
-      request_->set_upload(
-          params->request_body->ResolveElementsAndCreateUploadData(
+      request_->set_upload(make_scoped_ptr(
+          params->request_body->ResolveElementsAndCreateUploadDataStream(
               static_cast<TestShellRequestContext*>(g_request_context)->
-                  blob_storage_controller()));
+              blob_storage_controller(),
+              static_cast<TestShellRequestContext*>(g_request_context)->
+              file_system_context(),
+              base::MessageLoopProxy::current())));
     }
     SimpleAppCacheSystem::SetExtraRequestInfo(
         request_.get(), params->appcache_host_id, params->request_type);
 
     download_to_file_ = params->download_to_file;
     if (download_to_file_) {
-      FilePath path;
+      base::FilePath path;
       if (file_util::CreateTemporaryFile(&path)) {
         downloaded_file_ = ShareableFileReference::GetOrCreate(
             path, ShareableFileReference::DELETE_ON_FINAL_RELEASE,
@@ -669,7 +706,7 @@ class RequestProxy
     file_url_prefix_ .clear();
     failed_file_request_status_.reset();
     // Only do this when enabling file-over-http and request is file scheme.
-    if (!g_file_over_http_params || !params->url.SchemeIsFile())
+    if (!g_file_over_http_mappings || !params->url.SchemeIsFile())
       return;
 
     // For file protocol, method must be GET, POST or NULL.
@@ -680,14 +717,17 @@ class RequestProxy
     if (params->method.empty())
       params->method = "GET";
     std::string original_request = params->url.spec();
-    std::string::size_type found =
-        original_request.find(g_file_over_http_params->file_path_template);
-    if (found == std::string::npos)
+
+    std::string::size_type offset = 0;
+    const FileOverHTTPParams* redirection_params =
+        g_file_over_http_mappings->ParamsForRequest(original_request, offset);
+    if (!redirection_params)
       return;
-    found += g_file_over_http_params->file_path_template.size();
-    file_url_prefix_ = original_request.substr(0, found);
-    original_request.replace(0, found,
-        g_file_over_http_params->http_prefix.spec());
+
+    offset += redirection_params->file_path_template.size();
+    file_url_prefix_ = original_request.substr(0, offset);
+    original_request.replace(0, offset,
+        redirection_params->http_prefix.spec());
     params->url = GURL(original_request);
     params->first_party_for_cookies = params->url;
     // For file protocol, nerver use cache.
@@ -699,16 +739,23 @@ class RequestProxy
       ResourceResponseInfo* info) {
     // Only do this when enabling file-over-http and request url
     // matches the http prefix for file-over-http feature.
-    if (!g_file_over_http_params || file_url_prefix_.empty())
+    if (!g_file_over_http_mappings || file_url_prefix_.empty())
       return false;
+
     std::string original_request = request->url().spec();
-    std::string http_prefix = g_file_over_http_params->http_prefix.spec();
-    DCHECK(!original_request.empty() &&
-           StartsWithASCII(original_request, http_prefix, true));
+    DCHECK(!original_request.empty());
+
+    const FileOverHTTPParams* redirection_params =
+        g_file_over_http_mappings->ParamsForResponse(original_request);
+    DCHECK(redirection_params);
+
+    std::string http_prefix = redirection_params->http_prefix.spec();
+    DCHECK(StartsWithASCII(original_request, http_prefix, true));
+
     // Get the File URL.
     original_request.replace(0, http_prefix.size(), file_url_prefix_);
 
-    FilePath file_path;
+    base::FilePath file_path;
     if (!net::FileURLToFilePath(GURL(original_request), &file_path)) {
       NOTREACHED();
     }
@@ -874,13 +921,13 @@ class ResourceLoaderBridgeImpl : public ResourceLoaderBridge {
   // --------------------------------------------------------------------------
   // ResourceLoaderBridge implementation:
 
-  virtual void SetRequestBody(ResourceRequestBody* request_body) {
+  virtual void SetRequestBody(ResourceRequestBody* request_body) OVERRIDE {
     DCHECK(params_.get());
     DCHECK(!params_->request_body);
     params_->request_body = request_body;
   }
 
-  virtual bool Start(Peer* peer) {
+  virtual bool Start(Peer* peer) OVERRIDE {
     DCHECK(!proxy_);
 
     if (!SimpleResourceLoaderBridge::EnsureIOThread())
@@ -894,16 +941,16 @@ class ResourceLoaderBridgeImpl : public ResourceLoaderBridge {
     return true;  // Any errors will be reported asynchronously.
   }
 
-  virtual void Cancel() {
+  virtual void Cancel() OVERRIDE {
     DCHECK(proxy_);
     proxy_->Cancel();
   }
 
-  virtual void SetDefersLoading(bool value) {
+  virtual void SetDefersLoading(bool value) OVERRIDE {
     // TODO(darin): implement me
   }
 
-  virtual void SyncLoad(SyncLoadResponse* response) {
+  virtual void SyncLoad(SyncLoadResponse* response) OVERRIDE {
     DCHECK(!proxy_);
 
     if (!SimpleResourceLoaderBridge::EnsureIOThread())
@@ -918,6 +965,10 @@ class ResourceLoaderBridgeImpl : public ResourceLoaderBridge {
     proxy_->Start(NULL, params_.release());
 
     static_cast<SyncRequestProxy*>(proxy_)->WaitForCompletion();
+  }
+
+  virtual void DidChangePriority(net::RequestPriority new_priority) OVERRIDE {
+    // Not really needed for DRT.
   }
 
  private:
@@ -980,7 +1031,7 @@ class CookieGetter : public base::RefCountedThreadSafe<CookieGetter> {
 
 // static
 void SimpleResourceLoaderBridge::Init(
-    const FilePath& cache_path,
+    const base::FilePath& cache_path,
     net::HttpCache::Mode cache_mode,
     bool no_proxy) {
   // Make sure to stop any existing IO thread since it may be using the
@@ -1012,10 +1063,8 @@ void SimpleResourceLoaderBridge::Shutdown() {
     delete g_request_context_params;
     g_request_context_params = NULL;
 
-    if (g_file_over_http_params) {
-      delete g_file_over_http_params;
-      g_file_over_http_params = NULL;
-    }
+    delete g_file_over_http_mappings;
+    g_file_over_http_mappings = NULL;
   }
 }
 
@@ -1105,8 +1154,9 @@ void SimpleResourceLoaderBridge::AllowFileOverHTTP(
   DCHECK(!file_path_template.empty());
   DCHECK(http_prefix.is_valid() &&
          (http_prefix.SchemeIs("http") || http_prefix.SchemeIs("https")));
-  g_file_over_http_params = new FileOverHTTPParams(file_path_template,
-                                                   http_prefix);
+  if (!g_file_over_http_mappings)
+    g_file_over_http_mappings = new FileOverHTTPPathMappings();
+  g_file_over_http_mappings->AddMapping(file_path_template, http_prefix);
 }
 
 // static

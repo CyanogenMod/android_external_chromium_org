@@ -28,6 +28,7 @@ const int AutocompleteClassifier::kInstantExtendedOmniboxProviders =
     AutocompleteProvider::TYPE_BUILTIN |
     AutocompleteProvider::TYPE_HISTORY_QUICK |
     AutocompleteProvider::TYPE_HISTORY_URL |
+    AutocompleteProvider::TYPE_KEYWORD |
     // TODO: remove TYPE_SEARCH once it's no longer needed to pass
     // the Instant suggestion through via FinalizeInstantQuery.
     AutocompleteProvider::TYPE_SEARCH |
@@ -45,15 +46,15 @@ AutocompleteClassifier::~AutocompleteClassifier() {
 }
 
 void AutocompleteClassifier::Classify(const string16& text,
-                                      const string16& desired_tld,
                                       bool prefer_keyword,
                                       bool allow_exact_keyword_match,
                                       AutocompleteMatch* match,
                                       GURL* alternate_nav_url) {
   DCHECK(!inside_classify_);
-  AutoReset<bool> reset(&inside_classify_, true);
-  controller_->Start(text, desired_tld, true, prefer_keyword,
-                     allow_exact_keyword_match, AutocompleteInput::BEST_MATCH);
+  base::AutoReset<bool> reset(&inside_classify_, true);
+  controller_->Start(AutocompleteInput(
+      text, string16::npos, string16(), GURL(), true, prefer_keyword,
+      allow_exact_keyword_match, AutocompleteInput::BEST_MATCH));
   DCHECK(controller_->done());
   const AutocompleteResult& result = controller_->result();
   if (result.empty()) {

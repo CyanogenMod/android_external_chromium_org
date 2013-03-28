@@ -22,13 +22,15 @@ var BASE_INSTRUCTIONS = {
 var MODIFIER_TO_CLASS = {
   'SHIFT': 'modifier-shift',
   'CTRL': 'modifier-ctrl',
-  'ALT': 'modifier-alt'
+  'ALT': 'modifier-alt',
+  'SEARCH': 'modifier-search'
 };
 
 var IDENTIFIER_TO_CLASS = {
   '2A': 'is-shift',
   '1D': 'is-ctrl',
-  '38': 'is-alt'
+  '38': 'is-alt',
+  'E0 5B': 'is-search'
 };
 
 var LABEL_TO_IDENTIFIER = {
@@ -94,34 +96,97 @@ var KEYCODE_TO_LABEL = {
   222: '\'',
 };
 
-// The labels that close the keyboard overlay when pressed
-var CLOSE_LABELS = [
-  'delete',
-  'end',
-  'esc',
-  'home',
-  'pagedown',
-  'pageup',
-  'switch window',
-];
-
 var keyboardOverlayId = 'en_US';
 var identifierMap = {};
 
 /**
- * Returns layouts data.
- * @return {Object} Keyboard layout data.
+ * Returns the layout name.
+ * @return {string} layout name.
  */
-function getLayouts() {
-  return keyboardOverlayData['layouts'];
+function getLayoutName() {
+  return getKeyboardGlyphData().layoutName;
 }
+
+/**
+ * Returns layout data.
+ * @return {Array} Keyboard layout data.
+ */
+function getLayout() {
+  return keyboardOverlayData['layouts'][getLayoutName()];
+}
+
+// Cache the shortcut data after it is constructed.
+var shortcutDataCache;
 
 /**
  * Returns shortcut data.
  * @return {Object} Keyboard shortcut data.
  */
 function getShortcutData() {
-  return keyboardOverlayData['shortcut'];
+  if (shortcutDataCache)
+    return shortcutDataCache;
+
+  shortcutDataCache = keyboardOverlayData['shortcut'];
+
+  if (!isDisplayRotationEnabled()) {
+    // Rotate screen
+    delete shortcutDataCache['reload<>CTRL<>SHIFT'];
+  }
+  if (!isDisplayUIScalingEnabled()) {
+    // Zoom screen in
+    delete shortcutDataCache['+<>CTRL<>SHIFT'];
+    // Zoom screen out
+    delete shortcutDataCache['-<>CTRL<>SHIFT'];
+    // Reset screen zoom
+    delete shortcutDataCache['0<>CTRL<>SHIFT'];
+  }
+
+  // TODO(mazda): Clean this up and move these out to the data js.
+  var searchModifierAddShortcuts = {
+    '1<>SEARCH': 'keyboardOverlayF1',
+    '2<>SEARCH': 'keyboardOverlayF2',
+    '3<>SEARCH': 'keyboardOverlayF3',
+    '4<>SEARCH': 'keyboardOverlayF4',
+    '5<>SEARCH': 'keyboardOverlayF5',
+    '6<>SEARCH': 'keyboardOverlayF6',
+    '7<>SEARCH': 'keyboardOverlayF7',
+    '8<>SEARCH': 'keyboardOverlayF8',
+    '9<>SEARCH': 'keyboardOverlayF9',
+    '0<>SEARCH': 'keyboardOverlayF10',
+    '-<>SEARCH': 'keyboardOverlayF11',
+    '=<>SEARCH': 'keyboardOverlayF12',
+    'F1<>SEARCH': 'keyboardOverlayF1',
+    'F2<>SEARCH': 'keyboardOverlayF2',
+    'F3<>SEARCH': 'keyboardOverlayF3',
+    'F4<>SEARCH': 'keyboardOverlayF4',
+    'F5<>SEARCH': 'keyboardOverlayF5',
+    'F6<>SEARCH': 'keyboardOverlayF6',
+    'F7<>SEARCH': 'keyboardOverlayF7',
+    'F8<>SEARCH': 'keyboardOverlayF8',
+    'F9<>SEARCH': 'keyboardOverlayF9',
+    'F10<>SEARCH': 'keyboardOverlayF10',
+    'F11<>SEARCH': 'keyboardOverlayF11',
+    'F12<>SEARCH': 'keyboardOverlayF12',
+    'back<>SEARCH': 'keyboardOverlayF1',
+    'forward<>SEARCH': 'keyboardOverlayF2',
+    'reload<>SEARCH': 'keyboardOverlayF3',
+    'maximize<>SEARCH': 'keyboardOverlayF4',
+    'switch window<>SEARCH': 'keyboardOverlayF5',
+    'bright down<>SEARCH': 'keyboardOverlayF6',
+    'bright up<>SEARCH': 'keyboardOverlayF7',
+    'mute<>SEARCH': 'keyboardOverlayF8',
+    'vol. down<>SEARCH': 'keyboardOverlayF9',
+    'vol. up<>SEARCH': 'keyboardOverlayF10',
+    'backspace<>SEARCH': 'keyboardOverlayDelete',
+    'down<>SEARCH': 'keyboardOverlayPageDown',
+    'right<>SEARCH': 'keyboardOverlayEnd',
+    'up<>SEARCH': 'keyboardOverlayPageUp',
+    'left<>SEARCH': 'keyboardOverlayHome',
+    '.<>SEARCH': 'keyboardOverlayInsert'
+  };
+  for (var key in searchModifierAddShortcuts)
+    shortcutDataCache[key] = searchModifierAddShortcuts[key];
+  return shortcutDataCache;
 }
 
 /**
@@ -163,6 +228,8 @@ function hex2char(hex) {
   return result;
 }
 
+var searchIsPressed = false;
+
 /**
  * Returns a list of modifiers from the key event.
  * @param {Event} e The key event.
@@ -177,17 +244,22 @@ function getModifiers(e) {
     16: 'SHIFT',
     17: 'CTRL',
     18: 'ALT',
+    91: 'SEARCH',
   };
   var modifierWithKeyCode = keyCodeToModifier[e.keyCode];
-  var isPressed = {'SHIFT': e.shiftKey, 'CTRL': e.ctrlKey, 'ALT': e.altKey};
-  // if e.keyCode is one of Shift, Ctrl and Alt, isPressed should
-  // be changed because the key currently pressed
-  // does not affect the values of e.shiftKey, e.ctrlKey and e.altKey
+  var isPressed = {
+      'SHIFT': e.shiftKey,
+      'CTRL': e.ctrlKey,
+      'ALT': e.altKey,
+      'SEARCH': searchIsPressed
+  };
   if (modifierWithKeyCode)
     isPressed[modifierWithKeyCode] = isKeyDown;
 
+  searchIsPressed = isPressed['SEARCH'];
+
   // make the result array
-  return ['SHIFT', 'CTRL', 'ALT'].filter(
+  return ['SHIFT', 'CTRL', 'ALT', 'SEARCH'].filter(
       function(modifier) {
         return isPressed[modifier];
       }).sort();
@@ -248,7 +320,8 @@ function getKeyClasses(identifier, modifiers) {
 
   if ((identifier == '2A' && contains(modifiers, 'SHIFT')) ||
       (identifier == '1D' && contains(modifiers, 'CTRL')) ||
-      (identifier == '38' && contains(modifiers, 'ALT'))) {
+      (identifier == '38' && contains(modifiers, 'ALT')) ||
+      (identifier == 'E0 5B' && contains(modifiers, 'SEARCH'))) {
     classes.push('pressed');
     classes.push(IDENTIFIER_TO_CLASS[identifier]);
   }
@@ -369,7 +442,7 @@ function update(modifiers) {
 
   var keyboardGlyphData = getKeyboardGlyphData();
   var shortcutData = getShortcutData();
-  var layout = getLayouts()[keyboardGlyphData.layoutName];
+  var layout = getLayout();
   for (var i = 0; i < layout.length; ++i) {
     var identifier = remapIdentifier(layout[i][0]);
     var keyData = keyboardGlyphData.keys[identifier];
@@ -450,7 +523,7 @@ function initLayout() {
   // Add data for the special key representing a disabled key
   keys['DISABLED'] = {label: 'disabled', format: 'left'};
 
-  var layout = getLayouts()[getKeyboardGlyphData().layoutName];
+  var layout = getLayout();
   var keyboard = document.body;
   var minX = window.innerWidth;
   var maxX = 0;
@@ -539,6 +612,73 @@ function initLayout() {
 }
 
 /**
+ * Returns true if the device has a diamond key.
+ * @return {boolean} Returns true if the device has a diamond key.
+ */
+function hasDiamondKey() {
+  return loadTimeData.getBoolean('keyboardOverlayHasChromeOSDiamondKey');
+}
+
+/**
+ * Returns true if display rotation feature is enabled.
+ * @return {boolean} True if display rotation feature is enabled.
+ */
+function isDisplayRotationEnabled() {
+  return loadTimeData.getBoolean('keyboardOverlayIsDisplayRotationEnabled');
+}
+
+/**
+ * Returns true if display scaling feature is enabled.
+ * @return {boolean} True if display scaling feature is enabled.
+ */
+function isDisplayUIScalingEnabled() {
+  return loadTimeData.getBoolean('keyboardOverlayIsDisplayUIScalingEnabled');
+}
+
+/**
+ * Initializes the layout and the key labels for the keyboard that has a diamond
+ * key.
+ */
+function initDiamondKey() {
+  var newLayoutData = {
+    '1D': [65.0, 287.0, 60.0, 60.0],  // left Ctrl
+    '38': [185.0, 287.0, 60.0, 60.0],  // left Alt
+    'E0 5B': [125.0, 287.0, 60.0, 60.0],  // search
+    '3A': [5.0, 167.0, 105.0, 60.0],  // caps lock
+    '5B': [803.0, 6.0, 72.0, 35.0],  // lock key
+    '5D': [5.0, 287.0, 60.0, 60.0]  // diamond key
+  };
+
+  var layout = getLayout();
+  var powerKeyIndex = -1;
+  var powerKeyId = '00';
+  for (var i = 0; i < layout.length; i++) {
+    var keyId = layout[i][0];
+    if (keyId in newLayoutData) {
+      layout[i] = [keyId].concat(newLayoutData[keyId]);
+      delete newLayoutData[keyId];
+    }
+    if (keyId == powerKeyId)
+      powerKeyIndex = i;
+  }
+  for (var keyId in newLayoutData)
+    layout.push([keyId].concat(newLayoutData[keyId]));
+
+  // Remove the power key.
+  if (powerKeyIndex != -1)
+    layout.splice(powerKeyIndex, 1);
+
+  var keyData = getKeyboardGlyphData()['keys'];
+  var newKeyData = {
+    '3A': {'label': 'caps lock', 'format': 'left'},
+    '5B': {'label': 'lock'},
+    '5D': {'label': 'diamond', 'format': 'left'}
+  };
+  for (var keyId in newKeyData)
+    keyData[keyId] = newKeyData[keyId];
+}
+
+/**
  * A callback function for the onload event of the body element.
  */
 function init() {
@@ -588,6 +728,10 @@ function initKeyboardOverlayId(inputMethodId) {
   while (document.body.firstChild) {
     document.body.removeChild(document.body.firstChild);
   }
+  // We show Japanese layout as-is because the user has chosen the layout
+  // that is quite diffrent from the physical layout that has a diamond key.
+  if (hasDiamondKey() && getLayoutName() != 'J')
+    initDiamondKey();
   initLayout();
   update([]);
   window.webkitRequestAnimationFrame(function() {

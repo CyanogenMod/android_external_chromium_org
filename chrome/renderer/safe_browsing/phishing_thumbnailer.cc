@@ -10,11 +10,11 @@
 #include "content/public/renderer/render_view.h"
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/size.h"
 #include "webkit/glue/webkit_glue.h"
 
@@ -32,10 +32,12 @@ SkBitmap GrabPhishingThumbnail(content::RenderView* render_view,
   }
   WebView* view = render_view->GetWebView();
   base::TimeTicks beginning_time = base::TimeTicks::Now();
-  skia::PlatformCanvas canvas;
-  if (!canvas.initialize(view_size.width(), view_size.height(), true)) {
+  skia::RefPtr<SkCanvas> canvas = skia::AdoptRef(
+      skia::CreatePlatformCanvas(view_size.width(),
+                                 view_size.height(), true, 0,
+                                 skia::RETURN_NULL_ON_FAILURE));
+  if (!canvas)
     return SkBitmap();
-  }
 
   // Make sure we are not using any zoom when we take the snapshot.  We will
   // restore the previous zoom level after the snapshot is taken.
@@ -49,10 +51,10 @@ SkBitmap GrabPhishingThumbnail(content::RenderView* render_view,
   view->mainFrame()->setCanHaveScrollbars(false);  // always hide scrollbars.
   view->resize(view_size);
   view->layout();
-  view->paint(webkit_glue::ToWebCanvas(&canvas),
+  view->paint(webkit_glue::ToWebCanvas(canvas.get()),
               WebRect(0, 0, view_size.width(), view_size.height()));
 
-  SkDevice* device = skia::GetTopDevice(canvas);
+  SkDevice* device = skia::GetTopDevice(*canvas);
 
   // Now resize the thumbnail to the right size.  Note: it is important that we
   // use this resize algorithm here.

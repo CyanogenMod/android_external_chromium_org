@@ -12,9 +12,10 @@
 #include <algorithm>
 
 #include "base/logging.h"
-#include "chrome/browser/api/infobars/infobar_delegate.h"
 #include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/ui/search/instant_overlay_model.h"
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_details.h"
@@ -28,7 +29,8 @@ InfoBarContainer::InfoBarContainer(
     Delegate* delegate,
     chrome::search::SearchModel* search_model)
     : delegate_(delegate),
-      tab_helper_(NULL),
+      infobar_service_(NULL),
+      infobars_shown_(true),
       search_model_(search_model),
       top_arrow_target_height_(InfoBar::kDefaultArrowTargetHeight) {
   if (search_model_)
@@ -42,27 +44,39 @@ InfoBarContainer::~InfoBarContainer() {
     search_model_->RemoveObserver(this);
 }
 
-void InfoBarContainer::ChangeTabContents(InfoBarTabHelper* tab_helper) {
-  registrar_.RemoveAll();
-
-  infobars_shown_time_ = base::TimeTicks();
+void InfoBarContainer::ChangeInfoBarService(InfoBarService* infobar_service) {
+  // We have to call HideAllInfoBars() here and not after the early exit below,
+  // to handle the case we're switching from a tab with visible infobars to one
+  // where the SearchModel directs us to hide infobars.
   HideAllInfoBars();
 
-  tab_helper_ = tab_helper;
-  if (tab_helper_) {
-    content::Source<InfoBarTabHelper> th_source(tab_helper_);
-    registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED,
-                   th_source);
-    registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
-                   th_source);
-    registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REPLACED,
-                   th_source);
+  infobar_service_ = infobar_service;
 
-    for (size_t i = 0; i < tab_helper_->GetInfoBarCount(); ++i) {
+  if (search_model_ && !search_model_->top_bars_visible())
+    return;
+
+  // Note that HideAllInfoBars() sets |infobars_shown_| to false, because that's
+  // what the other, Instant-related callers want; but here we actually
+  // explicitly want to reset this variable to true.  So do that after calling
+  // the function.
+  infobars_shown_ = true;
+  infobars_shown_time_ = base::TimeTicks();
+
+  if (infobar_service_) {
+    content::Source<InfoBarService> source(infobar_service_);
+    registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED,
+                   source);
+    registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
+                   source);
+    registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REPLACED,
+                   source);
+
+    for (size_t i = 0; i < infobar_service_->GetInfoBarCount(); ++i) {
       // As when we removed the infobars above, we prevent callbacks to
       // OnInfoBarAnimated() for each infobar.
       AddInfoBar(
-          tab_helper_->GetInfoBarDelegateAt(i)->CreateInfoBar(tab_helper_),
+          infobar_service_->GetInfoBarDelegateAt(i)->CreateInfoBar(
+              infobar_service_),
           i, false, NO_CALLBACK);
     }
   }
@@ -121,21 +135,23 @@ void InfoBarContainer::RemoveAllInfoBarsForDestruction() {
   // and at worst disastrous to call that.
   delegate_ = NULL;
 
-  // TODO(pkasting): Remove this once TabContents calls CloseSoon().
   for (size_t i = infobars_.size(); i > 0; --i)
     infobars_[i - 1]->CloseSoon();
 
-  ChangeTabContents(NULL);
+  ChangeInfoBarService(NULL);
 }
 
 void InfoBarContainer::Observe(int type,
                                const content::NotificationSource& source,
                                const content::NotificationDetails& details) {
+  // When infobars are hidden, we shouldn't be listening for notifications.
+  DCHECK(infobars_shown_);
+
   switch (type) {
     case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED:
       AddInfoBar(
           content::Details<InfoBarAddedDetails>(details)->CreateInfoBar(
-              tab_helper_),
+              infobar_service_),
           infobars_.size(), true, WANT_CALLBACK);
       break;
 
@@ -149,7 +165,7 @@ void InfoBarContainer::Observe(int type,
     case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REPLACED: {
       InfoBarReplacedDetails* replaced_details =
           content::Details<InfoBarReplacedDetails>(details).ptr();
-      AddInfoBar(replaced_details->second->CreateInfoBar(tab_helper_),
+      AddInfoBar(replaced_details->second->CreateInfoBar(infobar_service_),
           HideInfoBar(replaced_details->first, false), false, WANT_CALLBACK);
       break;
     }
@@ -160,15 +176,19 @@ void InfoBarContainer::Observe(int type,
   }
 }
 
-void InfoBarContainer::ModeChanged(const chrome::search::Mode& old_mode,
-                                   const chrome::search::Mode& new_mode) {
-  // Hide infobars when showing Instant Extended suggestions.
-  if (new_mode.is_search_suggestions()) {
+void InfoBarContainer::ModelChanged(
+    const chrome::search::SearchModel::State& old_state,
+    const chrome::search::SearchModel::State& new_state) {
+  if (!chrome::search::SearchModel::ShouldChangeTopBarsVisibility(old_state,
+                                                                  new_state))
+    return;
+
+  if (new_state.top_bars_visible && !infobars_shown_) {
+    ChangeInfoBarService(infobar_service_);
+    infobars_shown_time_ = base::TimeTicks::Now();
+  } else if (!new_state.top_bars_visible && infobars_shown_) {
     HideAllInfoBars();
     OnInfoBarStateChanged(false);
-  } else {
-    ChangeTabContents(tab_helper_);
-    infobars_shown_time_ = base::TimeTicks::Now();
   }
 }
 
@@ -199,6 +219,9 @@ size_t InfoBarContainer::HideInfoBar(InfoBarDelegate* delegate,
 }
 
 void InfoBarContainer::HideAllInfoBars() {
+  registrar_.RemoveAll();
+
+  infobars_shown_ = false;
   while (!infobars_.empty()) {
     InfoBar* infobar = infobars_.front();
     // Inform the infobar that it's hidden.  If it was already closing, this

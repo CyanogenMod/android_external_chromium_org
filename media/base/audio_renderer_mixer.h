@@ -5,20 +5,19 @@
 #ifndef MEDIA_BASE_AUDIO_RENDERER_MIXER_H_
 #define MEDIA_BASE_AUDIO_RENDERER_MIXER_H_
 
-#include <set>
+#include <list>
 
 #include "base/synchronization/lock.h"
+#include "base/time.h"
+#include "media/base/audio_converter.h"
 #include "media/base/audio_renderer_mixer_input.h"
 #include "media/base/audio_renderer_sink.h"
-#include "media/base/multi_channel_resampler.h"
 
 namespace media {
 
 // Mixes a set of AudioRendererMixerInputs into a single output stream which is
 // funneled into a single shared AudioRendererSink; saving a bundle on renderer
-// side resources.  Resampling is done post-mixing as it is the most expensive
-// process.  If the input sample rate matches the audio hardware sample rate, no
-// resampling is done.
+// side resources.
 class MEDIA_EXPORT AudioRendererMixer
     : NON_EXPORTED_BASE(public AudioRendererSink::RenderCallback) {
  public:
@@ -31,39 +30,34 @@ class MEDIA_EXPORT AudioRendererMixer
   void AddMixerInput(const scoped_refptr<AudioRendererMixerInput>& input);
   void RemoveMixerInput(const scoped_refptr<AudioRendererMixerInput>& input);
 
+  void set_pause_delay_for_testing(base::TimeDelta delay) {
+    pause_delay_ = delay;
+  }
+
  private:
   // AudioRendererSink::RenderCallback implementation.
   virtual int Render(AudioBus* audio_bus,
                      int audio_delay_milliseconds) OVERRIDE;
   virtual void OnRenderError() OVERRIDE;
 
-  // Handles mixing and volume adjustment.  Fully fills |audio_bus| with mixed
-  // audio data.  When resampling is necessary, ProvideInput() will be called
-  // by MultiChannelResampler when more data is necessary.
-  void ProvideInput(AudioBus* audio_bus);
-
   // Output sink for this mixer.
   scoped_refptr<AudioRendererSink> audio_sink_;
 
   // Set of mixer inputs to be mixed by this mixer.  Access is thread-safe
   // through |mixer_inputs_lock_|.
-  typedef std::set< scoped_refptr<AudioRendererMixerInput> >
+  typedef std::list<scoped_refptr<AudioRendererMixerInput> >
       AudioRendererMixerInputSet;
   AudioRendererMixerInputSet mixer_inputs_;
   base::Lock mixer_inputs_lock_;
 
-  // Vector for rendering audio data from each mixer input.
-  scoped_ptr<AudioBus> mixer_input_audio_bus_;
+  // Handles mixing and resampling between input and output parameters.
+  AudioConverter audio_converter_;
 
-  // Handles resampling post-mixing.
-  scoped_ptr<MultiChannelResampler> resampler_;
-
-  // The audio delay in milliseconds received by the last Render() call.
-  int current_audio_delay_milliseconds_;
-
-  // Ratio of input data to output data.  Used to scale audio delay information.
-  double io_ratio_;
-  double input_ms_per_frame_;
+  // Handles physical stream pause when no inputs are playing.  For latency
+  // reasons we don't want to immediately pause the physical stream.
+  base::TimeDelta pause_delay_;
+  base::Time last_play_time_;
+  bool playing_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioRendererMixer);
 };

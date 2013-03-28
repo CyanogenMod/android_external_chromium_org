@@ -2,26 +2,26 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from telemetry import multi_page_benchmark
-from telemetry import util
+from telemetry.core import util
+from telemetry.page import page_benchmark
 
 def _Mean(l):
   return float(sum(l)) / len(l) if len(l) > 0 else 0.0
 
-class Kraken(multi_page_benchmark.MultiPageBenchmark):
+class Kraken(page_benchmark.PageBenchmark):
   def MeasurePage(self, _, tab, results):
     js_is_done = """
 document.title.indexOf("Results") != -1 && document.readyState == "complete"
 """
     def _IsDone():
-      return bool(tab.runtime.Evaluate(js_is_done))
-    util.WaitFor(_IsDone, 300)
+      return bool(tab.EvaluateJavaScript(js_is_done))
+    util.WaitFor(_IsDone, 500, poll_interval=5)
 
     js_get_results = """
 var formElement = document.getElementsByTagName("input")[0];
 decodeURIComponent(formElement.value.split("?")[1]);
 """
-    result_dict = eval(tab.runtime.Evaluate(js_get_results))
+    result_dict = eval(tab.EvaluateJavaScript(js_get_results))
     total = 0
     for key in result_dict:
       if key == 'v':

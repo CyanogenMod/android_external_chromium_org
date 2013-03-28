@@ -32,7 +32,7 @@ namespace content {
 
 HINSTANCE Shell::instance_handle_;
 
-void Shell::PlatformInitialize() {
+void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
   _setmode(_fileno(stdout), _O_BINARY);
   _setmode(_fileno(stderr), _O_BINARY);
   INITCOMMONCONTROLSEX InitCtrlEx;
@@ -201,7 +201,7 @@ LRESULT CALLBACK Shell::WndProc(HWND hwnd, UINT message, WPARAM wParam,
         case IDM_NEW_WINDOW:
           CreateNewWindow(
               shell->web_contents()->GetBrowserContext(),
-              GURL(), NULL, MSG_ROUTING_NONE, NULL);
+              GURL(), NULL, MSG_ROUTING_NONE, gfx::Size());
           break;
         case IDM_CLOSE_WINDOW:
           DestroyWindow(hwnd);

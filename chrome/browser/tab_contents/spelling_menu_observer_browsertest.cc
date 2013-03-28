@@ -6,12 +6,14 @@
 
 #include <vector>
 
+#include "base/command_line.h"
+#include "base/prefs/pref_service.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/spellchecker/spelling_service_client.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/browser/tab_contents/render_view_context_menu_observer.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
@@ -325,6 +327,8 @@ IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest, SeparatorAfterSuggestions) {
       new SpellingMenuObserver(menu.get()));
   menu->SetObserver(observer.get());
   menu->GetPrefs()->SetBoolean(prefs::kSpellCheckUseSpellingService, true);
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  command_line->AppendSwitch(switches::kUseSpellingSuggestions);
 
   // Make sure we can pretend to handle the JSON request.
   menu->CreateRequestContext();
@@ -360,3 +364,101 @@ IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest, SeparatorAfterSuggestions) {
   EXPECT_FALSE(item.enabled);
   EXPECT_FALSE(item.hidden);
 }
+
+// Test that we don't show "No more suggestions from Google" if the spelling
+// service is enabled and that there is only one suggestion.
+IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest,
+                       NoMoreSuggestionsNotDisplayed) {
+  scoped_ptr<MockRenderViewContextMenu> menu(new MockRenderViewContextMenu);
+  scoped_ptr<SpellingMenuObserver> observer(
+      new SpellingMenuObserver(menu.get()));
+  menu->SetObserver(observer.get());
+  menu->GetPrefs()->SetBoolean(prefs::kSpellCheckUseSpellingService, true);
+
+  // Make sure we can pretend to handle the JSON request.
+  menu->CreateRequestContext();
+
+  // Force a non-empty locale so SPELLCHECK is available.
+  menu->GetPrefs()->SetString(prefs::kSpellCheckDictionary, "en");
+  EXPECT_TRUE(SpellingServiceClient::IsAvailable(menu->GetProfile(),
+    SpellingServiceClient::SPELLCHECK));
+
+  content::ContextMenuParams params;
+  params.is_editable = true;
+  params.misspelled_word = ASCIIToUTF16("asdfkj");
+  params.dictionary_suggestions.push_back(ASCIIToUTF16("asdf"));
+  observer->InitMenu(params);
+
+  // The test should see a suggestion (from SpellingService) and a separator
+  // as the first two items, then possibly more (not relevant here).
+  EXPECT_LT(2U, menu->GetMenuSize());
+
+  MockRenderViewContextMenu::MockMenuItem item;
+  menu->GetMenuItem(0, &item);
+  EXPECT_EQ(IDC_SPELLCHECK_SUGGESTION_0, item.command_id);
+  EXPECT_TRUE(item.enabled);
+  EXPECT_FALSE(item.hidden);
+
+  menu->GetMenuItem(1, &item);
+  EXPECT_NE(IDC_CONTENT_CONTEXT_NO_SPELLING_SUGGESTIONS, item.command_id);
+  EXPECT_EQ(-1, item.command_id);
+  EXPECT_FALSE(item.enabled);
+  EXPECT_FALSE(item.hidden);
+}
+
+// Test that "Ask Google For Suggestions" is grayed out when using an
+// off the record profile.
+// TODO(rlp): Include graying out of autocorrect in this test when autocorrect
+// is functional.
+IN_PROC_BROWSER_TEST_F(SpellingMenuObserverTest,
+                       NoSpellingServiceWhenOffTheRecord) {
+  scoped_ptr<MockRenderViewContextMenu> menu(new MockRenderViewContextMenu);
+  menu->GetProfile()->AsTestingProfile()->set_incognito(true);
+  scoped_ptr<SpellingMenuObserver> observer(
+      new SpellingMenuObserver(menu.get()));
+  menu->SetObserver(observer.get());
+
+  // This means spellchecking is allowed. Default is that the service is
+  // contacted but this test makes sure that if profile is incognito, that
+  // is not an option.
+  menu->GetPrefs()->SetBoolean(prefs::kSpellCheckUseSpellingService, true);
+
+  // Force a non-empty locale so SUGGEST normally would be available.
+  menu->GetPrefs()->SetString(prefs::kSpellCheckDictionary, "en");
+  EXPECT_FALSE(SpellingServiceClient::IsAvailable(menu->GetProfile(),
+    SpellingServiceClient::SUGGEST));
+  EXPECT_FALSE(SpellingServiceClient::IsAvailable(menu->GetProfile(),
+    SpellingServiceClient::SPELLCHECK));
+
+  content::ContextMenuParams params;
+  params.is_editable = true;
+  params.misspelled_word = ASCIIToUTF16("sjxdjiiiiii");
+  observer->InitMenu(params);
+
+  // The test should see "No spelling suggestions" (from system checker).
+  // They should not see "No more Google suggestions" (from SpellingService) or
+  // a separator. The next 2 items should be "Add to Dictionary" followed
+  // by "Ask Google for suggestions" which should be disabled.
+  // TODO(rlp): add autocorrect here when it is functional.
+  EXPECT_LT(3U, menu->GetMenuSize());
+
+  MockRenderViewContextMenu::MockMenuItem item;
+  menu->GetMenuItem(0, &item);
+  EXPECT_EQ(IDC_CONTENT_CONTEXT_NO_SPELLING_SUGGESTIONS, item.command_id);
+  EXPECT_FALSE(item.enabled);
+  EXPECT_FALSE(item.hidden);
+
+  menu->GetMenuItem(1, &item);
+  EXPECT_EQ(IDC_SPELLCHECK_ADD_TO_DICTIONARY, item.command_id);
+  EXPECT_TRUE(item.enabled);
+  EXPECT_FALSE(item.hidden);
+
+  menu->GetMenuItem(2, &item);
+  EXPECT_EQ(IDC_CONTENT_CONTEXT_SPELLING_TOGGLE, item.command_id);
+  EXPECT_FALSE(item.enabled);
+  EXPECT_FALSE(item.hidden);
+
+  // Set incognito back to false to allow appropriate test cleanup.
+  menu->GetProfile()->AsTestingProfile()->set_incognito(false);
+}
+

@@ -5,6 +5,7 @@
 #include "content/renderer/media/media_stream_dispatcher.h"
 
 #include "base/logging.h"
+#include "base/message_loop_proxy.h"
 #include "content/common/media/media_stream_messages.h"
 #include "content/renderer/media/media_stream_dispatcher_eventhandler.h"
 #include "content/renderer/render_view_impl.h"
@@ -164,7 +165,7 @@ void MediaStreamDispatcher::RemoveEnumerationRequest(
        it != requests->end(); ++it) {
     if (it->request_id == request_id && it->handler == event_handler) {
       requests->erase(it);
-      if (requests->empty() && !state->cached_devices.get()) {
+      if (requests->empty() && state->cached_devices.get()) {
         // No more request and has a label, try to stop the label
         // and invalidate the state.
         Send(new MediaStreamHostMsg_StopGeneratedStream(
@@ -330,9 +331,9 @@ void MediaStreamDispatcher::OnDeviceOpened(
     if (request.ipc_request == request_id) {
       Stream new_stream;
       new_stream.handler = request.handler;
-      if (IsAudioMediaType(device_info.stream_type)) {
+      if (IsAudioMediaType(device_info.device.type)) {
         new_stream.audio_array.push_back(device_info);
-      } else if (IsVideoMediaType(device_info.stream_type)) {
+      } else if (IsVideoMediaType(device_info.device.type)) {
         new_stream.video_array.push_back(device_info);
       } else {
         NOTREACHED();

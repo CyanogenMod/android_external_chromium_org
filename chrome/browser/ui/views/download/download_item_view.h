@@ -24,8 +24,9 @@
 #include "base/string_util.h"
 #include "base/time.h"
 #include "base/timer.h"
-#include "chrome/browser/common/cancelable_request.h"
+#include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/icon_manager.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "ui/base/animation/animation_delegate.h"
@@ -34,7 +35,6 @@
 #include "ui/views/controls/button/button.h"
 #include "ui/views/view.h"
 
-class BaseDownloadItemModel;
 class DownloadShelfView;
 class DownloadShelfContextMenuView;
 
@@ -59,8 +59,7 @@ class DownloadItemView : public views::ButtonListener,
                          public ui::AnimationDelegate {
  public:
   DownloadItemView(content::DownloadItem* download,
-                   DownloadShelfView* parent,
-                   BaseDownloadItemModel* model);
+                   DownloadShelfView* parent);
   virtual ~DownloadItemView();
 
   // Timer callback for handling animations
@@ -69,10 +68,10 @@ class DownloadItemView : public views::ButtonListener,
   void StopDownloadProgress();
 
   // IconManager::Client interface.
-  void OnExtractIconComplete(IconManager::Handle handle, gfx::Image* icon);
+  void OnExtractIconComplete(gfx::Image* icon);
 
   // Returns the DownloadItem model object belonging to this item.
-  content::DownloadItem* download() const { return download_; }
+  content::DownloadItem* download() { return model_.download(); }
 
   // DownloadItem::Observer methods
   virtual void OnDownloadUpdated(content::DownloadItem* download) OVERRIDE;
@@ -95,7 +94,7 @@ class DownloadItemView : public views::ButtonListener,
   virtual void OnThemeChanged() OVERRIDE;
 
   // Overridden from ui::EventHandler:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // Overridden from views::ContextMenuController.
   virtual void ShowContextMenuForView(View* source,
@@ -233,11 +232,8 @@ class DownloadItemView : public views::ButtonListener,
   // The warning icon showns for dangerous downloads.
   const gfx::ImageSkia* warning_icon_;
 
-  // The model we query for display information
-  content::DownloadItem* download_;
-
-  // Our parent view that owns us.
-  DownloadShelfView* parent_;
+  // The download shelf that owns us.
+  DownloadShelfView* shelf_;
 
   // Elements of our particular download
   string16 status_text_;
@@ -281,12 +277,10 @@ class DownloadItemView : public views::ButtonListener,
   gfx::Point drag_start_point_;
 
   // For canceling an in progress icon request.
-  CancelableRequestConsumerT<int, 0> icon_consumer_;
+  CancelableTaskTracker cancelable_task_tracker_;
 
-  // A model class to control the status text we display and the cancel
-  // behavior.
-  // This class owns the pointer.
-  scoped_ptr<BaseDownloadItemModel> model_;
+  // A model class to control the status text we display.
+  DownloadItemModel model_;
 
   // Hover animations for our body and drop buttons.
   scoped_ptr<ui::SlideAnimation> body_hover_animation_;
@@ -330,7 +324,7 @@ class DownloadItemView : public views::ButtonListener,
   // The icon loaded in the download shelf is based on the file path of the
   // item.  Store the path used, so that we can detect a change in the path
   // and reload the icon.
-  FilePath last_download_item_path_;
+  base::FilePath last_download_item_path_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadItemView);
 };

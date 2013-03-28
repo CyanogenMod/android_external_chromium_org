@@ -12,51 +12,90 @@ namespace WebKit {
 class WebIDBCallbacks;
 class WebIDBDatabaseCallbacks;
 class WebString;
-class WebIDBTransaction;
 }
 
 namespace content {
 
 class RendererWebIDBDatabaseImpl : public WebKit::WebIDBDatabase {
  public:
-  explicit RendererWebIDBDatabaseImpl(int32 idb_database_id);
+  explicit RendererWebIDBDatabaseImpl(int32 ipc_database_id,
+                                      int32 ipc_database_callbacks_id);
   virtual ~RendererWebIDBDatabaseImpl();
 
-  // TODO(alecflett): Remove this when it is removed from webkit:
-  // https://bugs.webkit.org/show_bug.cgi?id=98085
-  static const long long AutogenerateObjectStoreId = -1;
-
   // WebKit::WebIDBDatabase
-  virtual WebKit::WebIDBMetadata metadata() const;
-  virtual WebKit::WebIDBObjectStore* createObjectStore(
+  virtual void createObjectStore(
+      long long transaction_id,
       long long objectstore_id,
       const WebKit::WebString& name,
       const WebKit::WebIDBKeyPath& key_path,
-      bool auto_increment,
-      const WebKit::WebIDBTransaction& transaction,
-      WebKit::WebExceptionCode& ec);
+      bool auto_increment);
   virtual void deleteObjectStore(
-      const WebKit::WebString& name,
-      const WebKit::WebIDBTransaction& transaction,
-      WebKit::WebExceptionCode& ec);
-  virtual void deleteObjectStore(
-      long long object_store_id,
-      const WebKit::WebIDBTransaction& transaction,
-      WebKit::WebExceptionCode& ec);
-  virtual void setVersion(
-      const WebKit::WebString& version, WebKit::WebIDBCallbacks* callbacks,
-      WebKit::WebExceptionCode& ec);
-  virtual WebKit::WebIDBTransaction* transaction(
-      const WebKit::WebDOMStringList& names,
-      unsigned short mode,
-      WebKit::WebExceptionCode& ec);
-  virtual WebKit::WebIDBTransaction* transaction(
-      const WebKit::WebVector<long long>& objectStoreIds,
+      long long transaction_id,
+      long long object_store_id);
+  virtual void createTransaction(
+      long long transaction_id,
+      WebKit::WebIDBDatabaseCallbacks* callbacks,
+      const WebKit::WebVector<long long>& scope,
       unsigned short mode);
   virtual void close();
+  virtual void get(long long transactionId,
+                   long long objectStoreId,
+                   long long indexId,
+                   const WebKit::WebIDBKeyRange&,
+                   bool keyOnly,
+                   WebKit::WebIDBCallbacks*);
+  virtual void put(long long transactionId,
+                   long long objectStoreId,
+                   const WebKit::WebData& value,
+                   const WebKit::WebIDBKey&,
+                   PutMode,
+                   WebKit::WebIDBCallbacks*,
+                   const WebKit::WebVector<long long>& indexIds,
+                   const WebKit::WebVector<WebIndexKeys>&);
+  virtual void setIndexKeys(long long transactionId,
+                            long long objectStoreId,
+                            const WebKit::WebIDBKey&,
+                            const WebKit::WebVector<long long>& indexIds,
+                            const WebKit::WebVector<WebIndexKeys>&);
+  virtual void setIndexesReady(long long transactionId,
+                               long long objectStoreId,
+                               const WebKit::WebVector<long long>& indexIds);
+  virtual void openCursor(long long transactionId,
+                          long long objectStoreId,
+                          long long indexId,
+                          const WebKit::WebIDBKeyRange&,
+                          unsigned short direction,
+                          bool keyOnly,
+                          TaskType,
+                          WebKit::WebIDBCallbacks*);
+  virtual void count(long long transactionId,
+                     long long objectStoreId,
+                     long long indexId,
+                     const WebKit::WebIDBKeyRange&,
+                     WebKit::WebIDBCallbacks*);
+  virtual void deleteRange(long long transactionId,
+                           long long objectStoreId,
+                           const WebKit::WebIDBKeyRange&,
+                           WebKit::WebIDBCallbacks*);
+  virtual void clear(long long transactionId,
+                     long long objectStoreId,
+                     WebKit::WebIDBCallbacks*);
+  virtual void createIndex(long long transactionId,
+                           long long objectStoreId,
+                           long long indexId,
+                           const WebKit::WebString& name,
+                           const WebKit::WebIDBKeyPath&,
+                           bool unique,
+                           bool multiEntry);
+  virtual void deleteIndex(long long transactionId, long
+                           long objectStoreId,
+                           long long indexId);
+  virtual void abort(long long transaction_id);
+  virtual void commit(long long transaction_id);
 
  private:
-  int32 idb_database_id_;
+  int32 ipc_database_id_;
+  int32 ipc_database_callbacks_id_;
 };
 
 }  // namespace content

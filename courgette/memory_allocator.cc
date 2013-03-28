@@ -9,7 +9,7 @@
 #include "base/file_util.h"
 #include "base/stringprintf.h"
 
-#ifdef OS_WIN
+#if defined(OS_WIN)
 
 namespace courgette {
 
@@ -31,7 +31,7 @@ void TempFile::Close() {
 
 bool TempFile::Create() {
   DCHECK(file_ == base::kInvalidPlatformFileValue);
-  FilePath path;
+  base::FilePath path;
   if (!file_util::CreateTemporaryFile(&path))
     return false;
 

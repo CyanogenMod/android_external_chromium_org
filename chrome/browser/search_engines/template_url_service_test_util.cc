@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/google/google_url_tracker.h"
@@ -17,11 +16,17 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/automation/value_conversion_util.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/google/google_util_chromeos.h"
+#endif
 
 using content::BrowserThread;
 
@@ -47,35 +52,6 @@ static void WaitForThreadToProcessRequests(BrowserThread::ID identifier) {
 
 }  // namespace
 
-// Subclass the TestingProfile so that it can return a WebDataService.
-class TemplateURLServiceTestingProfile : public TestingProfile {
- public:
-  TemplateURLServiceTestingProfile()
-      : TestingProfile(),
-        db_thread_(BrowserThread::DB),
-        io_thread_(BrowserThread::IO) {
-  }
-
-  void SetUp();
-  void TearDown();
-
-  // Starts the I/O thread. This isn't done automatically because not every test
-  // needs this.
-  void StartIOThread() {
-    io_thread_.StartIOThread();
-  }
-
-  static scoped_refptr<RefcountedProfileKeyedService>
-      GetWebDataServiceForTemplateURLServiceTestingProfile(Profile* profile);
-
- private:
-  scoped_refptr<WebDataService> service_;
-  ScopedTempDir temp_dir_;
-  content::TestBrowserThread db_thread_;
-  content::TestBrowserThread io_thread_;
-};
-
-
 // Trivial subclass of TemplateURLService that records the last invocation of
 // SetKeywordSearchTermsForURL.
 class TestingTemplateURLService : public TemplateURLService {
@@ -97,7 +73,7 @@ class TestingTemplateURLService : public TemplateURLService {
  protected:
   virtual void SetKeywordSearchTermsForURL(const TemplateURL* t_url,
                                            const GURL& url,
-                                           const string16& term) {
+                                           const string16& term) OVERRIDE {
     search_term_ = term;
   }
 
@@ -107,21 +83,40 @@ class TestingTemplateURLService : public TemplateURLService {
   DISALLOW_COPY_AND_ASSIGN(TestingTemplateURLService);
 };
 
-void TemplateURLServiceTestingProfile::SetUp() {
-  db_thread_.Start();
-
-  // Make unique temp directory.
-  ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-
-  FilePath path = temp_dir_.path().AppendASCII("TestDataService.db");
-  service_ = new WebDataService;
-  ASSERT_TRUE(service_->InitWithPath(path));
+TemplateURLServiceTestUtil::TemplateURLServiceTestUtil()
+    : ui_thread_(BrowserThread::UI, &message_loop_),
+      db_thread_(BrowserThread::DB),
+      io_thread_(BrowserThread::IO),
+      changed_count_(0) {
 }
 
-void TemplateURLServiceTestingProfile::TearDown() {
-  // Clear the request context so it will get deleted. This should be done
-  // before shutting down the I/O thread to avoid memory leaks.
-  ResetRequestContext();
+TemplateURLServiceTestUtil::~TemplateURLServiceTestUtil() {
+}
+
+void TemplateURLServiceTestUtil::SetUp() {
+  // Make unique temp directory.
+  ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+  profile_.reset(new TestingProfile(temp_dir_.path()));
+  db_thread_.Start();
+  profile_->CreateWebDataService();
+
+  TemplateURLService* service = static_cast<TemplateURLService*>(
+      TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+          profile_.get(), TestingTemplateURLService::Build));
+  service->AddObserver(this);
+
+#if defined(OS_CHROMEOS)
+  google_util::chromeos::ClearBrandForCurrentSession();
+#endif
+}
+
+void TemplateURLServiceTestUtil::TearDown() {
+  if (profile_.get()) {
+    // Clear the request context so it will get deleted. This should be done
+    // before shutting down the I/O thread to avoid memory leaks.
+    profile_->ResetRequestContext();
+    profile_.reset();
+  }
 
   // Wait for the delete of the request context to happen.
   if (io_thread_.IsRunning())
@@ -130,11 +125,6 @@ void TemplateURLServiceTestingProfile::TearDown() {
   // The I/O thread must be shutdown before the DB thread.
   io_thread_.Stop();
 
-  // Clean up the test directory.
-  if (service_.get()) {
-    service_->ShutdownOnUIThread();
-    service_ = NULL;
-  }
   // Note that we must ensure the DB thread is stopped after WDS
   // shutdown (so it can commit pending transactions) but before
   // deleting the test profile directory, otherwise we may not be
@@ -145,47 +135,14 @@ void TemplateURLServiceTestingProfile::TearDown() {
   BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
       base::Bind(&base::WaitableEvent::Signal, base::Unretained(&done)));
   done.Wait();
+  MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  MessageLoop::current()->Run();
   db_thread_.Stop();
-}
 
-scoped_refptr<RefcountedProfileKeyedService>
-TemplateURLServiceTestingProfile::
-    GetWebDataServiceForTemplateURLServiceTestingProfile(Profile* profile) {
-  TemplateURLServiceTestingProfile* test_profile =
-      reinterpret_cast<TemplateURLServiceTestingProfile*>(profile);
-  return test_profile->service_;
-}
-
-TemplateURLServiceTestUtil::TemplateURLServiceTestUtil()
-    : ui_thread_(BrowserThread::UI, &message_loop_),
-      changed_count_(0) {
-}
-
-TemplateURLServiceTestUtil::~TemplateURLServiceTestUtil() {
-}
-
-void TemplateURLServiceTestUtil::SetUp() {
-  profile_.reset(new TemplateURLServiceTestingProfile());
-  WebDataServiceFactory::GetInstance()->SetTestingFactory(
-      profile_.get(), TemplateURLServiceTestingProfile::
-          GetWebDataServiceForTemplateURLServiceTestingProfile);
-
-  profile_->SetUp();
-  TemplateURLService* service = static_cast<TemplateURLService*>(
-      TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-          profile_.get(), TestingTemplateURLService::Build));
-  service->AddObserver(this);
-}
-
-void TemplateURLServiceTestUtil::TearDown() {
-  if (profile_.get()) {
-    profile_->TearDown();
-    profile_.reset();
-  }
   UIThreadSearchTermsData::SetGoogleBaseURL(std::string());
 
   // Flush the message loop to make application verifiers happy.
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
 }
 
 void TemplateURLServiceTestUtil::OnTemplateURLServiceChanged() {
@@ -220,8 +177,9 @@ void TemplateURLServiceTestUtil::ChangeModelToLoadState() {
   model()->ChangeToLoadedState();
   // Initialize the web data service so that the database gets updated with
   // any changes made.
-  model()->service_ = WebDataServiceFactory::GetForProfile(
-      profile_.get(), Profile::EXPLICIT_ACCESS);
+
+  model()->service_ = WebDataService::FromBrowserContext(profile_.get());
+  BlockTillServiceProcessesRequests();
 }
 
 void TemplateURLServiceTestUtil::ClearModel() {
@@ -262,8 +220,10 @@ void TemplateURLServiceTestUtil::SetManagedDefaultSearchPreferences(
     const std::string& search_url,
     const std::string& suggest_url,
     const std::string& icon_url,
-    const std::string& encodings) {
-  TestingPrefService* pref_service = profile_->GetTestingPrefService();
+    const std::string& encodings,
+    const std::string& alternate_url,
+    const std::string& search_terms_replacement_key) {
+  TestingPrefServiceSyncable* pref_service = profile_->GetTestingPrefService();
   pref_service->SetManagedPref(prefs::kDefaultSearchProviderEnabled,
                                Value::CreateBooleanValue(enabled));
   pref_service->SetManagedPref(prefs::kDefaultSearchProviderName,
@@ -278,13 +238,19 @@ void TemplateURLServiceTestUtil::SetManagedDefaultSearchPreferences(
                                Value::CreateStringValue(icon_url));
   pref_service->SetManagedPref(prefs::kDefaultSearchProviderEncodings,
                                Value::CreateStringValue(encodings));
+  pref_service->SetManagedPref(prefs::kDefaultSearchProviderAlternateURLs,
+      alternate_url.empty() ? new base::ListValue() :
+          CreateListValueFrom(alternate_url));
+  pref_service->SetManagedPref(
+      prefs::kDefaultSearchProviderSearchTermsReplacementKey,
+      Value::CreateStringValue(search_terms_replacement_key));
   model()->Observe(chrome::NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
                    content::NotificationService::AllSources(),
                    content::NotificationService::NoDetails());
 }
 
 void TemplateURLServiceTestUtil::RemoveManagedDefaultSearchPreferences() {
-  TestingPrefService* pref_service = profile_->GetTestingPrefService();
+  TestingPrefServiceSyncable* pref_service = profile_->GetTestingPrefService();
   pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderEnabled);
   pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderName);
   pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderKeyword);
@@ -292,6 +258,9 @@ void TemplateURLServiceTestUtil::RemoveManagedDefaultSearchPreferences() {
   pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderSuggestURL);
   pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderIconURL);
   pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderEncodings);
+  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderAlternateURLs);
+  pref_service->RemoveManagedPref(
+      prefs::kDefaultSearchProviderSearchTermsReplacementKey);
   pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderID);
   pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderPrepopulateID);
   model()->Observe(chrome::NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
@@ -308,9 +277,9 @@ TestingProfile* TemplateURLServiceTestUtil::profile() const {
 }
 
 void TemplateURLServiceTestUtil::StartIOThread() {
-  profile_->StartIOThread();
+  io_thread_.StartIOThread();
 }
 
 void TemplateURLServiceTestUtil::PumpLoop() {
-  message_loop_.RunAllPending();
+  message_loop_.RunUntilIdle();
 }

@@ -12,12 +12,12 @@ namespace gpu {
 GLContextVirtual::GLContextVirtual(
     gfx::GLShareGroup* share_group,
     gfx::GLContext* shared_context,
-    gles2::GLES2Decoder* decoder)
+    base::WeakPtr<gles2::GLES2Decoder> decoder)
   : GLContext(share_group),
     shared_context_(shared_context),
     display_(NULL),
-    state_restorer_(new GLStateRestorerImpl(decoder)) {
-  shared_context_->SetupForVirtualization();
+    state_restorer_(new GLStateRestorerImpl(decoder)),
+    decoder_(decoder) {
 }
 
 gfx::Display* GLContextVirtual::display() {
@@ -28,24 +28,47 @@ bool GLContextVirtual::Initialize(
     gfx::GLSurface* compatible_surface, gfx::GpuPreference gpu_preference) {
   display_ = static_cast<gfx::Display*>(compatible_surface->GetDisplay());
 
+  if (!shared_context_->MakeCurrent(compatible_surface))
+    return false;
+
+  shared_context_->SetupForVirtualization();
+
+  shared_context_->ReleaseCurrent(compatible_surface);
   return true;
 }
 
 void GLContextVirtual::Destroy() {
-}
-
-bool GLContextVirtual::MakeCurrent(gfx::GLSurface* surface) {
-  shared_context_->MakeVirtuallyCurrent(this, surface);
-  return true;
-}
-
-void GLContextVirtual::ReleaseCurrent(gfx::GLSurface* surface) {
+  shared_context_->OnDestroyVirtualContext(this);
   shared_context_ = NULL;
   display_ = NULL;
 }
 
-bool GLContextVirtual::IsCurrent(gfx::GLSurface* surface) {
+bool GLContextVirtual::MakeCurrent(gfx::GLSurface* surface) {
+  if (decoder_.get())
+    shared_context_->MakeVirtuallyCurrent(this, surface);
+  else
+    shared_context_->MakeCurrent(surface);
   return true;
+}
+
+void GLContextVirtual::ReleaseCurrent(gfx::GLSurface* surface) {
+  if (IsCurrent(surface))
+    shared_context_->ReleaseCurrent(surface);
+}
+
+bool GLContextVirtual::IsCurrent(gfx::GLSurface* surface) {
+  bool context_current = shared_context_->IsCurrent(NULL);
+  if (!context_current)
+    return false;
+
+  if (!surface)
+    return true;
+
+  gfx::GLSurface* current_surface = gfx::GLSurface::GetCurrent();
+  return surface->GetBackingFrameBufferObject() ||
+      surface->IsOffscreen() ||
+      (current_surface &&
+       current_surface->GetHandle() == surface->GetHandle());
 }
 
 void* GLContextVirtual::GetHandle() {

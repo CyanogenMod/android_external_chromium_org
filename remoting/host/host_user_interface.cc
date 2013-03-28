@@ -13,11 +13,12 @@ namespace remoting {
 
 HostUserInterface::HostUserInterface(
     scoped_refptr<base::SingleThreadTaskRunner> network_task_runner,
-    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner)
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
+    const UiStrings& ui_strings)
     : host_(NULL),
       network_task_runner_(network_task_runner),
       ui_task_runner_(ui_task_runner),
-      is_monitoring_local_inputs_(false),
+      ui_strings_(ui_strings),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       weak_ptr_(weak_factory_.GetWeakPtr()) {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
@@ -26,15 +27,13 @@ HostUserInterface::HostUserInterface(
 HostUserInterface::~HostUserInterface() {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
-  MonitorLocalInputs(false);
-  ShowDisconnectWindow(false, std::string());
+  disconnect_window_->Hide();
 }
 
 void HostUserInterface::Init() {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
-  disconnect_window_ = DisconnectWindow::Create();
-  local_input_monitor_ = LocalInputMonitor::Create();
+  disconnect_window_ = DisconnectWindow::Create(&ui_strings());
 }
 
 void HostUserInterface::Start(ChromotingHost* host,
@@ -83,8 +82,7 @@ void HostUserInterface::OnShutdown() {
 void HostUserInterface::OnDisconnectCallback() {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
-  MonitorLocalInputs(false);
-  ShowDisconnectWindow(false, std::string());
+  disconnect_window_->Hide();
   DisconnectSession();
 }
 
@@ -106,42 +104,19 @@ void HostUserInterface::ProcessOnClientAuthenticated(
     const std::string& username) {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
-  MonitorLocalInputs(true);
-  ShowDisconnectWindow(true, username);
+  if (!disconnect_window_->Show(
+          base::Bind(&HostUserInterface::OnDisconnectCallback, weak_ptr_),
+          username)) {
+    LOG(ERROR) << "Failed to show the disconnect window.";
+    DisconnectSession();
+    return;
+  }
 }
 
 void HostUserInterface::ProcessOnClientDisconnected() {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
 
-  MonitorLocalInputs(false);
-  ShowDisconnectWindow(false, std::string());
-}
-
-void HostUserInterface::MonitorLocalInputs(bool enable) {
-  DCHECK(ui_task_runner_->BelongsToCurrentThread());
-
-  if (enable != is_monitoring_local_inputs_) {
-    if (enable) {
-      local_input_monitor_->Start(host_, disconnect_callback_);
-    } else {
-      local_input_monitor_->Stop();
-    }
-    is_monitoring_local_inputs_ = enable;
-  }
-}
-
-void HostUserInterface::ShowDisconnectWindow(bool show,
-                                             const std::string& username) {
-  DCHECK(ui_task_runner_->BelongsToCurrentThread());
-
-  if (show) {
-    disconnect_window_->Show(
-        host_,
-        base::Bind(&HostUserInterface::OnDisconnectCallback, weak_ptr_),
-        username);
-  } else {
-    disconnect_window_->Hide();
-  }
+  disconnect_window_->Hide();
 }
 
 }  // namespace remoting

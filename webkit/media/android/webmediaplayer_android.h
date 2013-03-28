@@ -8,28 +8,44 @@
 #include <jni.h>
 
 #include "base/basictypes.h"
-#include "base/message_loop.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop.h"
 #include "base/time.h"
+#include "cc/layers/video_frame_provider.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayer.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebVideoFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+
+namespace WebKit {
+class WebVideoFrame;
+}
+
+namespace webkit {
+class WebLayerImpl;
+}
 
 namespace webkit_media {
 
 class StreamTextureFactory;
 class StreamTextureProxy;
 class WebMediaPlayerManagerAndroid;
+class WebVideoFrameImpl;
 
 // An abstract class that serves as the common base class for implementing
 // WebKit::WebMediaPlayer on Android.
 class WebMediaPlayerAndroid
     : public WebKit::WebMediaPlayer,
+#ifdef REMOVE_WEBVIDEOFRAME
+      public cc::VideoFrameProvider,
+#endif
       public MessageLoop::DestructionObserver {
  public:
   // Resource loading.
   virtual void load(const WebKit::WebURL& url, CORSMode cors_mode);
+  virtual void load(const WebKit::WebURL& url,
+                    WebKit::WebMediaSource* media_source,
+                    CORSMode cors_mode);
   virtual void cancelLoad();
 
   // Playback controls.
@@ -87,6 +103,7 @@ class WebMediaPlayerAndroid
   virtual unsigned audioDecodedByteCount() const;
   virtual unsigned videoDecodedByteCount() const;
 
+#ifndef REMOVE_WEBVIDEOFRAME
   // Methods called from VideoLayerChromium. These methods are running on the
   // compositor thread.
   virtual WebKit::WebVideoFrame* getCurrentFrame();
@@ -95,6 +112,15 @@ class WebMediaPlayerAndroid
   // This gets called both on compositor and main thread to set the callback
   // target when a frame is produced.
   virtual void setStreamTextureClient(WebKit::WebStreamTextureClient* client);
+#else
+  // cc::VideoFrameProvider implementation. These methods are running on the
+  // compositor thread.
+  virtual void SetVideoFrameProviderClient(
+      cc::VideoFrameProvider::Client* client) OVERRIDE;
+  virtual scoped_refptr<media::VideoFrame> GetCurrentFrame() OVERRIDE;
+  virtual void PutCurrentFrame(const scoped_refptr<media::VideoFrame>& frame)
+      OVERRIDE;
+#endif
 
   // Media player callback handlers.
   virtual void OnMediaPrepared(base::TimeDelta duration);
@@ -120,6 +146,9 @@ class WebMediaPlayerAndroid
 
   // Method inherited from DestructionObserver.
   virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
+
+  // Detach the player from its manager.
+  void Detach();
 
  protected:
   // Construct a WebMediaPlayerAndroid object with reference to the
@@ -171,6 +200,9 @@ class WebMediaPlayerAndroid
 
   WebMediaPlayerManagerAndroid* manager() const { return manager_; }
 
+  // Request external surface for out-of-band composition.
+  virtual void RequestExternalSurface() = 0;
+
  private:
   void ReallocateVideoFrame();
 
@@ -182,8 +214,8 @@ class WebMediaPlayerAndroid
   // Size of the video.
   WebKit::WebSize natural_size_;
 
-  // The video frame object used for renderering by WebKit.
-  scoped_ptr<WebKit::WebVideoFrame> video_frame_;
+  // The video frame object used for rendering by the compositor.
+  scoped_refptr<media::VideoFrame> current_frame_;
 
   // Message loop for main renderer thread.
   MessageLoop* main_loop_;
@@ -225,12 +257,24 @@ class WebMediaPlayerAndroid
   // Whether media player needs to re-establish the surface texture peer.
   bool needs_establish_peer_;
 
+  // Whether the video size info is available.
+  bool has_size_info_;
+
   // Object for allocating stream textures.
   scoped_ptr<StreamTextureFactory> stream_texture_factory_;
 
   // Object for calling back the compositor thread to repaint the video when a
   // frame available. It should be initialized on the compositor thread.
   scoped_ptr<StreamTextureProxy> stream_texture_proxy_;
+
+  // Whether media player needs external surface.
+  bool needs_external_surface_;
+
+  // A pointer back to the compositor to inform it about state changes. This is
+  // not NULL while the compositor is actively using this webmediaplayer.
+  cc::VideoFrameProvider::Client* video_frame_provider_client_;
+
+  scoped_ptr<webkit::WebLayerImpl> video_weblayer_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerAndroid);
 };

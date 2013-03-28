@@ -19,7 +19,9 @@ class WebContents;
 // integrating the spelling service of Google to Chrome.
 class SpellingBubbleModel : public ConfirmBubbleModel {
  public:
-  SpellingBubbleModel(Profile* profile, content::WebContents* web_contents);
+  SpellingBubbleModel(Profile* profile,
+                      content::WebContents* web_contents,
+                      bool include_autocorrect);
   virtual ~SpellingBubbleModel();
 
   // ConfirmBubbleModel implementation.
@@ -33,8 +35,12 @@ class SpellingBubbleModel : public ConfirmBubbleModel {
   virtual void LinkClicked() OVERRIDE;
 
  private:
+  // Set the profile preferences to enable or disable the feature.
+  void SetPref(bool enabled);
+
   Profile* profile_;
   content::WebContents* web_contents_;
+  bool include_autocorrect_;
 
   DISALLOW_COPY_AND_ASSIGN(SpellingBubbleModel);
 };

@@ -9,9 +9,9 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/metrics/histogram.h"
 #include "base/i18n/time_formatting.h"
-#include "base/string_number_conversions.h"
+#include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browsing_data/browsing_data_cookie_helper.h"
@@ -24,7 +24,7 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
 #include "chrome/browser/ui/website_settings/website_settings_infobar_delegate.h"
@@ -39,9 +39,9 @@
 #include "grit/generated_resources.h"
 #include "net/base/cert_status_flags.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "net/base/ssl_cipher_suite_names.h"
-#include "net/base/ssl_connection_status_flags.h"
 #include "net/base/x509_certificate.h"
+#include "net/ssl/ssl_cipher_suite_names.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -68,14 +68,14 @@ WebsiteSettings::WebsiteSettings(
     WebsiteSettingsUI* ui,
     Profile* profile,
     TabSpecificContentSettings* tab_specific_content_settings,
-    InfoBarTabHelper* infobar_tab_helper,
+    InfoBarService* infobar_service,
     const GURL& url,
     const content::SSLStatus& ssl,
     content::CertStore* cert_store)
     : TabSpecificContentSettings::SiteDataObserver(
           tab_specific_content_settings),
       ui_(ui),
-      infobar_helper_(infobar_tab_helper),
+      infobar_service_(infobar_service),
       show_info_bar_(false),
       site_url_(url),
       site_identity_status_(SITE_IDENTITY_STATUS_UNKNOWN),
@@ -133,48 +133,68 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
     case CONTENT_SETTINGS_TYPE_POPUPS:
     case CONTENT_SETTINGS_TYPE_FULLSCREEN:
     case CONTENT_SETTINGS_TYPE_MOUSELOCK:
-    case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
       primary_pattern = ContentSettingsPattern::FromURL(site_url_);
       secondary_pattern = ContentSettingsPattern::Wildcard();
       break;
+    case CONTENT_SETTINGS_TYPE_MEDIASTREAM: {
+      // We need to use the same same patterns as other places like infobar code
+      // to override the existing rule instead of creating the new one.
+      primary_pattern = ContentSettingsPattern::FromURLNoWildcard(site_url_);
+      secondary_pattern = ContentSettingsPattern::Wildcard();
+      // Set permission for both microphone and camera.
+      content_settings_->SetContentSetting(
+          primary_pattern, secondary_pattern,
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, "", setting);
+
+      content_settings_->SetContentSetting(
+          primary_pattern, secondary_pattern,
+          CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, "", setting);
+      break;
+    }
     default:
       NOTREACHED() << "ContentSettingsType " << type << "is not supported.";
       break;
   }
 
-  // Permission settings are specified via rules. There exists always at least
-  // one rule for the default setting. Get the rule that currently defines
-  // the permission for the given permission |type|. Then test whether the
-  // existing rule is more specific than the rule we are about to create. If
-  // the existing rule is more specific, than change the existing rule instead
-  // of creating a new rule that would be hidden behind the existing rule.
-  content_settings::SettingInfo info;
-  scoped_ptr<Value> v(content_settings_->GetWebsiteSetting(
-      site_url_, site_url_, type, "", &info));
-  DCHECK(info.source == content_settings::SETTING_SOURCE_USER);
-  ContentSettingsPattern::Relation r1 =
-      info.primary_pattern.Compare(primary_pattern);
-  DCHECK(r1 != ContentSettingsPattern::DISJOINT_ORDER_POST &&
-         r1 != ContentSettingsPattern::DISJOINT_ORDER_PRE);
-  if (r1 == ContentSettingsPattern::PREDECESSOR) {
-    primary_pattern = info.primary_pattern;
-  } else if (r1 == ContentSettingsPattern::IDENTITY) {
-    ContentSettingsPattern::Relation r2 =
-        info.secondary_pattern.Compare(secondary_pattern);
-    DCHECK(r2 != ContentSettingsPattern::DISJOINT_ORDER_POST &&
-           r2 != ContentSettingsPattern::DISJOINT_ORDER_PRE);
-    if (r2 == ContentSettingsPattern::PREDECESSOR)
-      secondary_pattern = info.secondary_pattern;
+  if (type != CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
+    // Permission settings are specified via rules. There exists always at least
+    // one rule for the default setting. Get the rule that currently defines
+    // the permission for the given permission |type|. Then test whether the
+    // existing rule is more specific than the rule we are about to create. If
+    // the existing rule is more specific, than change the existing rule instead
+    // of creating a new rule that would be hidden behind the existing rule.
+    // This is not a concern for CONTENT_SETTINGS_TYPE_MEDIASTREAM since users
+    // can not create media settings exceptions by hand.
+    content_settings::SettingInfo info;
+    scoped_ptr<Value> v(content_settings_->GetWebsiteSetting(
+        site_url_, site_url_, type, "", &info));
+    DCHECK(info.source == content_settings::SETTING_SOURCE_USER);
+    ContentSettingsPattern::Relation r1 =
+        info.primary_pattern.Compare(primary_pattern);
+    DCHECK(r1 != ContentSettingsPattern::DISJOINT_ORDER_POST &&
+           r1 != ContentSettingsPattern::DISJOINT_ORDER_PRE);
+    if (r1 == ContentSettingsPattern::PREDECESSOR) {
+      primary_pattern = info.primary_pattern;
+    } else if (r1 == ContentSettingsPattern::IDENTITY) {
+      ContentSettingsPattern::Relation r2 =
+          info.secondary_pattern.Compare(secondary_pattern);
+      DCHECK(r2 != ContentSettingsPattern::DISJOINT_ORDER_POST &&
+             r2 != ContentSettingsPattern::DISJOINT_ORDER_PRE);
+      if (r2 == ContentSettingsPattern::PREDECESSOR)
+        secondary_pattern = info.secondary_pattern;
+    }
+
+    Value* value = NULL;
+    if (setting != CONTENT_SETTING_DEFAULT)
+      value = Value::CreateIntegerValue(setting);
+    content_settings_->SetWebsiteSetting(
+        primary_pattern, secondary_pattern, type, "", value);
   }
 
-  Value* value = NULL;
-  if (setting != CONTENT_SETTING_DEFAULT)
-    value = Value::CreateIntegerValue(setting);
-  content_settings_->SetWebsiteSetting(
-      primary_pattern, secondary_pattern, type, "", value);
   show_info_bar_ = true;
 
-// TODO(markusheintz): This is a temporary hack to fix issue: http://crbug.com/144203.
+// TODO(markusheintz): This is a temporary hack to fix issue:
+// http://crbug.com/144203.
 #if defined(OS_MACOSX)
   // Refresh the UI to reflect the new setting.
   PresentSitePermissions();
@@ -200,10 +220,8 @@ void WebsiteSettings::OnSiteDataAccessed() {
 }
 
 void WebsiteSettings::OnUIClosing() {
-  if (show_info_bar_) {
-    infobar_helper_->AddInfoBar(
-        new WebsiteSettingsInfobarDelegate(infobar_helper_));
-  }
+  if (show_info_bar_)
+    WebsiteSettingsInfobarDelegate::Create(infobar_service_);
 }
 
 void WebsiteSettings::Init(Profile* profile,
@@ -281,11 +299,6 @@ void WebsiteSettings::Init(Profile* profile,
           UTF8ToUTF16(cert->subject().organization_names[0]),
           locality,
           UTF8ToUTF16(cert->issuer().GetDisplayName())));
-    } else if (ssl.cert_status & net::CERT_STATUS_IS_DNSSEC) {
-      // DNSSEC authenticated page.
-      site_identity_status_ = SITE_IDENTITY_STATUS_DNSSEC_CERT;
-      site_identity_details_.assign(l10n_util::GetStringFUTF16(
-          IDS_PAGE_INFO_SECURITY_TAB_SECURE_IDENTITY, UTF8ToUTF16("DNSSEC")));
     } else {
       // Non-EV OK HTTPS page.
       site_identity_status_ = SITE_IDENTITY_STATUS_CERT;
@@ -399,20 +412,6 @@ void WebsiteSettings::Init(Profile* profile,
         IDS_PAGE_INFO_SECURITY_TAB_ENCRYPTION_DETAILS,
         ASCIIToUTF16(cipher), ASCIIToUTF16(mac), ASCIIToUTF16(key_exchange));
 
-    site_connection_details_ += ASCIIToUTF16("\n\n");
-    uint8 compression_id =
-        net::SSLConnectionStatusToCompression(ssl.connection_status);
-    if (compression_id) {
-      const char* compression;
-      net::SSLCompressionToString(&compression, compression_id);
-      site_connection_details_ += l10n_util::GetStringFUTF16(
-          IDS_PAGE_INFO_SECURITY_TAB_COMPRESSION_DETAILS,
-          ASCIIToUTF16(compression));
-    } else {
-      site_connection_details_ += l10n_util::GetStringUTF16(
-          IDS_PAGE_INFO_SECURITY_TAB_NO_COMPRESSION);
-    }
-
     if (did_fallback) {
       // For now, only SSLv3 fallback will trigger a warning icon.
       if (site_connection_status_ < SITE_CONNECTION_STATUS_MIXED_CONTENT)
@@ -451,30 +450,40 @@ void WebsiteSettings::PresentSitePermissions() {
     permission_info.type = kPermissionType[i];
 
     content_settings::SettingInfo info;
-    scoped_ptr<Value> value(content_settings_->GetWebsiteSetting(
-        site_url_, site_url_, permission_info.type, "", &info));
-    DCHECK(value.get());
-    // The values for default settings of the CONTENT_SETTINGS_TYPE_MEDIASTREAM
-    // are of type integer, while the values for exceptions are of type
-    // dictionary. Content settings exceptions of type
-    // CONTENT_SETTINGS_TYPE_MEDIASTREAM can only be set in order to allow the
-    // use of a specific camera and/or microphone for a certain website. This
-    // means if the value is of type dictionary then the url has the permission
-    // to use a specific camera and/or microphone.
-    if (value->GetType() == Value::TYPE_INTEGER) {
-      permission_info.setting =
-          content_settings::ValueToContentSetting(value.get());
-    } else if (value->GetType() == Value::TYPE_DICTIONARY &&
-               permission_info.type == CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
-      permission_info.setting = CONTENT_SETTING_ALLOW;
+    if (permission_info.type == CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
+      scoped_ptr<base::Value> mic_value(content_settings_->GetWebsiteSetting(
+          site_url_, site_url_, CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
+          "", &info));
+      ContentSetting mic_setting =
+          content_settings::ValueToContentSetting(mic_value.get());
+
+      scoped_ptr<base::Value> camera_value(content_settings_->GetWebsiteSetting(
+          site_url_, site_url_, CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
+          "", &info));
+      ContentSetting camera_setting =
+          content_settings::ValueToContentSetting(camera_value.get());
+
+      if (mic_setting != camera_setting || mic_setting == CONTENT_SETTING_ASK)
+        permission_info.setting = CONTENT_SETTING_DEFAULT;
+      else
+        permission_info.setting = mic_setting;
     } else {
-      NOTREACHED();
+      scoped_ptr<Value> value(content_settings_->GetWebsiteSetting(
+          site_url_, site_url_, permission_info.type, "", &info));
+      DCHECK(value.get());
+      if (value->GetType() == Value::TYPE_INTEGER) {
+        permission_info.setting =
+            content_settings::ValueToContentSetting(value.get());
+      } else {
+        NOTREACHED();
+      }
     }
 
     permission_info.source = info.source;
 
     if (info.primary_pattern == ContentSettingsPattern::Wildcard() &&
-        info.secondary_pattern == ContentSettingsPattern::Wildcard()) {
+        info.secondary_pattern == ContentSettingsPattern::Wildcard() &&
+        permission_info.type != CONTENT_SETTINGS_TYPE_MEDIASTREAM) {
       permission_info.default_setting = permission_info.setting;
       permission_info.setting = CONTENT_SETTING_DEFAULT;
     } else {

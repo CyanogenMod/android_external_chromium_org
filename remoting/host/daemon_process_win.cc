@@ -7,9 +7,11 @@
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/process.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time.h"
 #include "base/timer.h"
@@ -21,8 +23,9 @@
 #include "remoting/host/chromoting_messages.h"
 #include "remoting/host/desktop_session_win.h"
 #include "remoting/host/host_exit_codes.h"
-#include "remoting/host/ipc_consts.h"
-#include "remoting/host/win/host_service.h"
+#include "remoting/host/host_main.h"
+#include "remoting/host/ipc_constants.h"
+#include "remoting/host/screen_resolution.h"
 #include "remoting/host/win/launch_process_with_token.h"
 #include "remoting/host/win/unprivileged_process_delegate.h"
 #include "remoting/host/win/worker_process_launcher.h"
@@ -32,7 +35,11 @@ using base::TimeDelta;
 
 namespace remoting {
 
-class WtsConsoleMonitor;
+class WtsTerminalMonitor;
+
+// The command line parameters that should be copied from the service's command
+// line to the host process.
+const char* kCopiedSwitchNames[] = { switches::kV, switches::kVModule };
 
 class DaemonProcessWin : public DaemonProcess {
  public:
@@ -58,7 +65,11 @@ class DaemonProcessWin : public DaemonProcess {
 
   // DaemonProcess implementation.
   virtual scoped_ptr<DesktopSession> DoCreateDesktopSession(
-      int terminal_id) OVERRIDE;
+      int terminal_id,
+      const ScreenResolution& resolution,
+      bool virtual_terminal) OVERRIDE;
+  virtual void DoCrashNetworkProcess(
+      const tracked_objects::Location& location) OVERRIDE;
   virtual void LaunchNetworkProcess() OVERRIDE;
 
  private:
@@ -108,15 +119,20 @@ bool DaemonProcessWin::OnDesktopSessionAgentAttached(
     base::ProcessHandle desktop_process,
     IPC::PlatformFileForTransit desktop_pipe) {
   // Prepare |desktop_process| handle for sending over to the network process.
-  // |desktop_pipe| is a handle in the desktop process. It will be duplicated
-  // by the network process directly from the desktop process.
-  IPC::PlatformFileForTransit desktop_process_for_transit =
-      IPC::GetFileHandleForProcess(desktop_process, network_process_, false);
-  if (desktop_process_for_transit == IPC::InvalidPlatformFileForTransit()) {
-    LOG(ERROR) << "Failed to duplicate the desktop process handle";
+  base::ProcessHandle desktop_process_for_transit;
+  if (!DuplicateHandle(GetCurrentProcess(),
+                       desktop_process,
+                       network_process_,
+                       &desktop_process_for_transit,
+                       0,
+                       FALSE,
+                       DUPLICATE_SAME_ACCESS)) {
+    LOG_GETLASTERROR(ERROR) << "Failed to duplicate the desktop process handle";
     return false;
   }
 
+  // |desktop_pipe| is a handle in the desktop process. It will be duplicated
+  // by the network process directly from the desktop process.
   SendToNetwork(new ChromotingDaemonNetworkMsg_DesktopAttached(
       terminal_id, desktop_process_for_transit, desktop_pipe));
   return true;
@@ -130,12 +146,25 @@ void DaemonProcessWin::DoStop() {
 }
 
 scoped_ptr<DesktopSession> DaemonProcessWin::DoCreateDesktopSession(
-    int terminal_id) {
+    int terminal_id,
+    const ScreenResolution& resolution,
+    bool virtual_terminal) {
   DCHECK(caller_task_runner()->BelongsToCurrentThread());
 
-  return scoped_ptr<DesktopSession>(new DesktopSessionWin(
-      caller_task_runner(), io_task_runner(), this, terminal_id,
-      HostService::GetInstance()));
+  if (virtual_terminal) {
+    return DesktopSessionWin::CreateForVirtualTerminal(
+        caller_task_runner(), io_task_runner(), this, terminal_id, resolution);
+  } else {
+    return DesktopSessionWin::CreateForConsole(
+        caller_task_runner(), io_task_runner(), this, terminal_id, resolution);
+  }
+}
+
+void DaemonProcessWin::DoCrashNetworkProcess(
+    const tracked_objects::Location& location) {
+  DCHECK(caller_task_runner()->BelongsToCurrentThread());
+
+  network_launcher_->Crash(location);
 }
 
 void DaemonProcessWin::LaunchNetworkProcess() {
@@ -143,15 +172,21 @@ void DaemonProcessWin::LaunchNetworkProcess() {
   DCHECK(!network_launcher_);
 
   // Construct the host binary name.
-  FilePath host_binary;
+  base::FilePath host_binary;
   if (!GetInstalledBinaryPath(kHostBinaryName, &host_binary)) {
     Stop();
     return;
   }
 
+  scoped_ptr<CommandLine> target(new CommandLine(host_binary));
+  target->AppendSwitchASCII(kProcessTypeSwitchName, kProcessTypeHost);
+  target->CopySwitchesFrom(*CommandLine::ForCurrentProcess(),
+                           kCopiedSwitchNames,
+                           arraysize(kCopiedSwitchNames));
+
   scoped_ptr<UnprivilegedProcessDelegate> delegate(
       new UnprivilegedProcessDelegate(caller_task_runner(), io_task_runner(),
-                                      host_binary));
+                                      target.Pass()));
   network_launcher_.reset(new WorkerProcessLauncher(
       caller_task_runner(), delegate.Pass(), this));
 }

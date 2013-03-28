@@ -11,9 +11,14 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/utility_process_host.h"
+
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace content {
 class BrowserChildProcessHostImpl;
@@ -23,16 +28,17 @@ class CONTENT_EXPORT UtilityProcessHostImpl
       public BrowserChildProcessHostDelegate {
  public:
   UtilityProcessHostImpl(UtilityProcessHostClient* client,
-                         BrowserThread::ID client_thread_id);
+                         base::SequencedTaskRunner* client_task_runner);
   virtual ~UtilityProcessHostImpl();
 
   // UtilityProcessHost implementation:
   virtual bool Send(IPC::Message* message) OVERRIDE;
   virtual bool StartBatchMode() OVERRIDE;
   virtual void EndBatchMode() OVERRIDE;
-  virtual void SetExposedDir(const FilePath& dir) OVERRIDE;
+  virtual void SetExposedDir(const base::FilePath& dir) OVERRIDE;
   virtual void DisableSandbox() OVERRIDE;
   virtual void EnableZygote() OVERRIDE;
+  virtual const ChildProcessData& GetData() OVERRIDE;
 #if defined(OS_POSIX)
   virtual void SetEnv(const base::EnvironmentVector& env) OVERRIDE;
 #endif
@@ -50,12 +56,12 @@ class CONTENT_EXPORT UtilityProcessHostImpl
 
   // A pointer to our client interface, who will be informed of progress.
   scoped_refptr<UtilityProcessHostClient> client_;
-  BrowserThread::ID client_thread_id_;
+  scoped_refptr<base::SequencedTaskRunner> client_task_runner_;
   // True when running in batch mode, i.e., StartBatchMode() has been called
   // and the utility process will run until EndBatchMode().
   bool is_batch_mode_;
 
-  FilePath exposed_dir_;
+  base::FilePath exposed_dir_;
 
   // Whether to pass switches::kNoSandbox to the child.
   bool no_sandbox_;

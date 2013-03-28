@@ -27,7 +27,7 @@
 #if defined(OS_MACOSX)
 #include "base/message_pump_mac.h"
 #endif
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !defined(OS_IOS)
 #include "base/message_pump_libevent.h"
 #endif
 #if defined(OS_ANDROID)
@@ -142,7 +142,7 @@ MessageLoop::MessageLoop(Type type)
       exception_restoration_(false),
       message_histogram_(NULL),
       run_loop_(NULL),
-#ifdef OS_WIN
+#if defined(OS_WIN)
       os_modal_loop_(false),
 #endif  // OS_WIN
       next_sequence_num_(0) {
@@ -157,6 +157,9 @@ MessageLoop::MessageLoop(Type type)
 #if defined(OS_WIN)
 #define MESSAGE_PUMP_UI new base::MessagePumpForUI()
 #define MESSAGE_PUMP_IO new base::MessagePumpForIO()
+#elif defined(OS_IOS)
+#define MESSAGE_PUMP_UI base::MessagePumpMac::Create()
+#define MESSAGE_PUMP_IO new base::MessagePumpIOSForIO()
 #elif defined(OS_MACOSX)
 #define MESSAGE_PUMP_UI base::MessagePumpMac::Create()
 #define MESSAGE_PUMP_IO new base::MessagePumpLibevent()
@@ -248,9 +251,12 @@ void MessageLoop::EnableHistogrammer(bool enable) {
 }
 
 // static
-void MessageLoop::InitMessagePumpForUIFactory(MessagePumpFactory* factory) {
-  DCHECK(!message_pump_for_ui_factory_);
+bool MessageLoop::InitMessagePumpForUIFactory(MessagePumpFactory* factory) {
+  if (message_pump_for_ui_factory_)
+    return false;
+
   message_pump_for_ui_factory_ = factory;
+  return true;
 }
 
 void MessageLoop::AddDestructionObserver(
@@ -466,10 +472,10 @@ void MessageLoop::RunTask(const PendingTask& pending_task) {
       tracked_objects::ThreadData::NowForStartOfRun(pending_task.birth_tally);
 
   FOR_EACH_OBSERVER(TaskObserver, task_observers_,
-                    WillProcessTask(pending_task.time_posted));
+                    WillProcessTask(pending_task));
   pending_task.task.Run();
   FOR_EACH_OBSERVER(TaskObserver, task_observers_,
-                    DidProcessTask(pending_task.time_posted));
+                    DidProcessTask(pending_task));
 
   tracked_objects::ThreadData::TallyRunOnNamedThreadIfTracking(pending_task,
       start_time, tracked_objects::ThreadData::NowForEndOfRun());
@@ -776,6 +782,21 @@ bool MessageLoopForIO::WaitForIOCompletion(DWORD timeout, IOHandler* filter) {
   return pump_io()->WaitForIOCompletion(timeout, filter);
 }
 
+#elif defined(OS_IOS)
+
+bool MessageLoopForIO::WatchFileDescriptor(int fd,
+                                           bool persistent,
+                                           Mode mode,
+                                           FileDescriptorWatcher *controller,
+                                           Watcher *delegate) {
+  return pump_io()->WatchFileDescriptor(
+      fd,
+      persistent,
+      mode,
+      controller,
+      delegate);
+}
+
 #elif defined(OS_POSIX) && !defined(OS_NACL)
 
 bool MessageLoopForIO::WatchFileDescriptor(int fd,
@@ -786,7 +807,7 @@ bool MessageLoopForIO::WatchFileDescriptor(int fd,
   return pump_libevent()->WatchFileDescriptor(
       fd,
       persistent,
-      static_cast<base::MessagePumpLibevent::Mode>(mode),
+      mode,
       controller,
       delegate);
 }

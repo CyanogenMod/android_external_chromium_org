@@ -10,14 +10,18 @@
 
 #include "base/at_exit.h"
 #include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/logging.h"
-#include "base/stringize_macros.h"
+#include "base/strings/stringize_macros.h"
 #include "net/socket/ssl_server_socket.h"
 #include "remoting/base/plugin_thread_task_runner.h"
 #include "remoting/host/plugin/constants.h"
 #include "remoting/host/plugin/host_log_handler.h"
 #include "remoting/host/plugin/host_plugin_utils.h"
 #include "remoting/host/plugin/host_script_object.h"
+#if defined(OS_WIN)
+#include "ui/base/win/dpi.h"
+#endif
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/npfunctions.h"
 #include "third_party/npapi/bindings/npruntime.h"
@@ -67,13 +71,26 @@ class HostNPPlugin : public remoting::PluginThreadTaskRunner::Delegate {
   HostNPPlugin(NPP instance, uint16 mode)
       : instance_(instance),
         scriptable_object_(NULL) {
+    plugin_task_runner_ = new remoting::PluginThreadTaskRunner(this);
+    plugin_auto_task_runner_ =
+        new remoting::AutoThreadTaskRunner(
+            plugin_task_runner_,
+            base::Bind(&remoting::PluginThreadTaskRunner::Quit,
+                       plugin_task_runner_));
   }
 
-  ~HostNPPlugin() {
+  virtual ~HostNPPlugin() {
     if (scriptable_object_) {
+      DCHECK_EQ(scriptable_object_->referenceCount, 1UL);
       g_npnetscape_funcs->releaseobject(scriptable_object_);
       scriptable_object_ = NULL;
     }
+
+    // Process tasks on |plugin_task_runner_| until all references to
+    // |plugin_auto_task_runner_| have been dropped. This requires that the
+    // browser has dropped any script object references - see above.
+    plugin_auto_task_runner_ = NULL;
+    plugin_task_runner_->DetachAndRunShutdownLoop();
   }
 
   bool Init(int16 argc, char** argn, char** argv, NPSavedData* saved) {
@@ -206,7 +223,8 @@ class HostNPPlugin : public remoting::PluginThreadTaskRunner::Delegate {
 
     object->_class = aClass;
     object->referenceCount = 1;
-    object->scriptable_object = new HostNPScriptObject(npp, object, plugin);
+    object->scriptable_object =
+        new HostNPScriptObject(npp, object, plugin->plugin_auto_task_runner_);
     return object;
   }
 
@@ -330,6 +348,9 @@ class HostNPPlugin : public remoting::PluginThreadTaskRunner::Delegate {
   NPP instance_;
   NPObject* scriptable_object_;
 
+  scoped_refptr<remoting::PluginThreadTaskRunner> plugin_task_runner_;
+  scoped_refptr<remoting::AutoThreadTaskRunner> plugin_auto_task_runner_;
+
   std::map<uint32_t, DelayedTask> timers_;
   base::Lock timers_lock_;
 };
@@ -433,12 +454,9 @@ NPError SetWindow(NPP instance, NPWindow* pNPWindow) {
 }  // namespace
 
 #if defined(OS_WIN)
-HMODULE g_hModule = NULL;
-
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
   switch (dwReason) {
     case DLL_PROCESS_ATTACH:
-      g_hModule = hModule;
       DisableThreadLibraryCalls(hModule);
       break;
     case DLL_PROCESS_DETACH:
@@ -486,6 +504,13 @@ EXPORT NPError API_CALL NP_Initialize(NPNetscapeFuncs* npnetscape_funcs
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   NP_GetEntryPoints(nppfuncs);
 #endif
+  // Init an empty command line for common objects that use it.
+  CommandLine::Init(0, NULL);
+
+#if defined(OS_WIN)
+  ui::EnableHighDPISupport();
+#endif
+
   return NPERR_NO_ERROR;
 }
 

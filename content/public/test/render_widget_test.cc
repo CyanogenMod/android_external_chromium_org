@@ -5,15 +5,15 @@
 #include "content/public/test/render_widget_test.h"
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/stringprintf.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/render_view_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/size.h"
@@ -43,15 +43,15 @@ void RenderWidgetTest::ResizeAndPaint(const gfx::Size& page_size,
           page_size.width() * page_size.height() * kNumBytesPerPixel,
           ++g_sequence_num));
 
-  // Go ahead and map the DIB into memory, so that we can use it below
-  // to fill tmp_bitmap.  Note that we need to do this before calling
-  // OnMsgPaintAtSize, or the last reference to the shared memory will
-  // be closed and the handle will no longer be valid.
+  // Go ahead and map the DIB into memory, so that we can use it below to fill
+  // tmp_bitmap.  Note that we need to do this before calling OnPaintAtSize, or
+  // the last reference to the shared memory will  be closed and the handle will
+  // no longer be valid.
   scoped_ptr<TransportDIB> mapped_pixels(TransportDIB::Map(pixels->handle()));
 
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(view_);
-  impl->OnMsgPaintAtSize(pixels->handle(), g_sequence_num, page_size,
-                         desired_size);
+  impl->OnPaintAtSize(pixels->handle(), g_sequence_num, page_size,
+                      desired_size);
   ProcessPendingMessages();
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_PaintAtSize_ACK::ID);
@@ -74,7 +74,7 @@ void RenderWidgetTest::ResizeAndPaint(const gfx::Size& page_size,
 void RenderWidgetTest::TestResizeAndPaint() {
   // Hello World message is only visible if the view size is at least
   // kTextPositionX x kTextPositionY
-  LoadHTML(StringPrintf(
+  LoadHTML(base::StringPrintf(
       "<html><body><div style='position: absolute; top: %d; left: "
       "%d; background-color: red;'>Hello World</div></body></html>",
       kTextPositionY, kTextPositionX).c_str());
@@ -131,7 +131,7 @@ bool RenderWidgetTest::ImageContainsColor(const SkBitmap& bitmap,
 }
 
 void RenderWidgetTest::OutputBitmapToFile(const SkBitmap& bitmap,
-                                          const FilePath& file_path) {
+                                          const base::FilePath& file_path) {
   scoped_refptr<base::RefCountedBytes> bitmap_data(new base::RefCountedBytes());
   SkAutoLockPixels lock(bitmap);
   ASSERT_TRUE(gfx::JPEGCodec::Encode(

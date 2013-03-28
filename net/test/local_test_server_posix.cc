@@ -70,8 +70,12 @@ bool ReadData(int fd, ssize_t bytes_max, uint8* buffer,
 
     int rv = HANDLE_EINTR(poll(poll_fds, 1,
                                remaining_time->InMilliseconds()));
-    if (rv != 1) {
-      PLOG(ERROR) << "poll() failed for child file descriptor";
+    if (rv == 0) {
+      LOG(ERROR) << "poll() timed out; bytes_read=" << bytes_read;
+      return false;
+    } else if (rv < 0) {
+      PLOG(ERROR) << "poll() failed for child file descriptor; bytes_read="
+                  << bytes_read;
       return false;
     }
 
@@ -94,7 +98,7 @@ bool ReadData(int fd, ssize_t bytes_max, uint8* buffer,
 
 namespace net {
 
-bool LocalTestServer::LaunchPython(const FilePath& testserver_path) {
+bool LocalTestServer::LaunchPython(const base::FilePath& testserver_path) {
   // Log is useful in the event you want to run a nearby script (e.g. a test) in
   // the same environment as the TestServer.
   VLOG(1) << "LaunchPython called with PYTHONPATH = " << getenv(kPythonPathEnv);
@@ -131,6 +135,10 @@ bool LocalTestServer::LaunchPython(const FilePath& testserver_path) {
 
   // Launch a new testserver process.
   base::LaunchOptions options;
+
+  // TODO(phajdan.jr): Remove after fixing http://crbug.com/96594 .
+  options.debug = true;
+
   options.fds_to_remap = &map_write_fd;
   if (!base::LaunchProcess(python_command, options, &process_handle_)) {
     LOG(ERROR) << "Failed to launch " << python_command.GetCommandLineString();

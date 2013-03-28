@@ -5,9 +5,10 @@
 #define ASH_SYSTEM_NETWORK_NETWORK_LIST_DETAILED_VIEW_BASE_H
 
 #include "ash/system/chromeos/network/network_detailed_view.h"
-#include "ash/system/tray/tray_views.h"
+#include "ash/system/tray/view_click_listener.h"
 #include "ash/system/user/login_status.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/views/controls/button/button.h"
 
 namespace views {
 class BubbleDelegateView;
@@ -18,6 +19,10 @@ namespace ash {
 struct NetworkIconInfo;
 
 namespace internal {
+
+class HoverHighlightView;
+class TrayPopupLabelButton;
+
 namespace tray {
 
 // Base class for the NetworkListDetailedView and VpnListDetailedView.
@@ -25,49 +30,66 @@ class NetworkListDetailedViewBase : public NetworkDetailedView,
                                     public views::ButtonListener,
                                     public ViewClickListener {
  public:
-  NetworkListDetailedViewBase(user::LoginStatus login, int header_string_id);
+  NetworkListDetailedViewBase(SystemTrayItem* owner,
+                              user::LoginStatus login,
+                              int header_string_id);
   virtual ~NetworkListDetailedViewBase();
 
-  // Overridden from NetworkDetailedView:
+  // Overridden from NetworkDetailedView.
   virtual void Init() OVERRIDE;
   virtual NetworkDetailedView::DetailedViewType GetViewType() const OVERRIDE;
-  virtual void Update() OVERRIDE;
+  virtual void ManagerChanged() OVERRIDE;
+  virtual void NetworkListChanged() OVERRIDE;
+  virtual void NetworkServiceChanged(
+      const chromeos::NetworkState* network) OVERRIDE;
 
  protected:
   void AppendInfoButtonToHeader();
   void UpdateSettingButton();
-  void ClearNetworkScrollWithEmptyNetworkList();
   void RefreshNetworkScrollWithUpdatedNetworkData();
   user::LoginStatus login() const { return login_; }
   bool IsNetworkListEmpty() const;
+  bool CreateOrUpdateInfoLabel(
+      int index, const string16& text, views::Label** label);
+  bool UpdateNetworkChild(int index, const NetworkIconInfo* info);
+
+  const std::vector<NetworkIconInfo>& network_list() const {
+    return network_list_;
+  }
 
   // Overridden from ButtonListener.
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
   // Overridden from ViewClickListener.
-  virtual void ClickedOn(views::View* sender) OVERRIDE;
+  virtual void OnViewClicked(views::View* sender) OVERRIDE;
 
  private:
+  typedef std::map<views::View*, std::string> NetworkMap;
+  typedef std::map<std::string, HoverHighlightView*> ServicePathMap;
+
   virtual void AppendHeaderButtons() = 0;
   virtual void UpdateHeaderButtons() = 0;
   virtual void AppendNetworkEntries() = 0;
   virtual void GetAvailableNetworkList(std::vector<NetworkIconInfo>* list) = 0;
-  virtual void RefreshNetworkScrollWithEmptyNetworkList() = 0;
   virtual void UpdateNetworkEntries() = 0;
-  virtual void AppendCustomButtonsToBottomRow(
-      TrayPopupTextButtonContainer* bottom_row) = 0;
+  virtual void AppendCustomButtonsToBottomRow(views::View* bottom_row) = 0;
   virtual void UpdateNetworkExtra() = 0;
   virtual void CustomButtonPressed(views::Button* sender,
       const ui::Event& event) = 0;
   // Returns true if custom link is clicked on.
   virtual bool CustomLinkClickedOn(views::View* sender) = 0;
+  // Returns true if the scroll list needs to be relayed out.
+  virtual bool UpdateNetworkListEntries(
+      std::set<std::string>* new_service_paths) = 0;
 
+  void Update();
   void CreateItems();
-  void UpdateAvailableNetworkList();
   void AppendHeaderEntry(int header_string_id);
   void AppendNetworkExtra();
-  void RefreshNetworkScrollWithUpdatedNetworkList();
+  void UpdateAvailableNetworkList();
+  bool OrderChild(views::View* view, int index);
+  void RefreshNetworkList();
   // Adds a settings entry when logged in, and an entry for changing proxy
   // settings otherwise.
   void CreateSettingsEntry();
@@ -79,11 +101,11 @@ class NetworkListDetailedViewBase : public NetworkDetailedView,
   user::LoginStatus login_;
   std::vector<NetworkIconInfo> network_list_;
   int header_string_id_;
-  std::map<views::View*, std::string> network_map_;
-  std::map<std::string, HoverHighlightView*> service_path_map_;
+  NetworkMap network_map_;
+  ServicePathMap service_path_map_;
   TrayPopupHeaderButton* info_icon_;
-  TrayPopupTextButton* settings_;
-  TrayPopupTextButton* proxy_settings_;
+  TrayPopupLabelButton* settings_;
+  TrayPopupLabelButton* proxy_settings_;
   views::BubbleDelegateView* info_bubble_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkListDetailedViewBase);

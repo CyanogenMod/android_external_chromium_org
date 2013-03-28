@@ -32,9 +32,6 @@ class ChromeRenderViewHostObserver : public content::RenderViewHostObserver {
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
-   // Does extension-specific initialization when a new RenderViewHost is
-   // created.
-  void InitRenderViewHostForExtensions();
    // Does extension-specific initialization when a new renderer process is
    // created by a RenderViewHost.
   void InitRenderViewForExtensions();
@@ -42,7 +39,7 @@ class ChromeRenderViewHostObserver : public content::RenderViewHostObserver {
   const extensions::Extension* GetExtension();
   // Cleans up when a RenderViewHost is removed, or on destruction.
   void RemoveRenderViewHostForExtensions(content::RenderViewHost* rvh);
-  void OnFocusedEditableNodeTouched();
+  void OnFocusedNodeTouched(bool editable);
 
   Profile* profile_;
   chrome_browser_net::Predictor* predictor_;

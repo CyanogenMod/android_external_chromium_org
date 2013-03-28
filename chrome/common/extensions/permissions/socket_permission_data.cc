@@ -9,9 +9,12 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "chrome/common/extensions/permissions/api_permission.h"
+#include "chrome/common/extensions/permissions/socket_permission.h"
 #include "googleurl/src/url_canon.h"
 
 namespace {
@@ -27,7 +30,7 @@ const char kTCPConnect[] = "tcp-connect";
 const char kTCPListen[] = "tcp-listen";
 const char kUDPBind[] = "udp-bind";
 const char kUDPSendTo[] = "udp-send-to";
-const int kAnyPort = 0;
+const int kWildcardPortNumber = 0;
 const int kInvalidPort = -1;
 
 SocketPermissionRequest::OperationType StringToType(const std::string& s) {
@@ -105,7 +108,14 @@ bool SocketPermissionData::operator==(const SocketPermissionData& rhs) const {
          (pattern_.port == rhs.pattern_.port);
 }
 
-bool SocketPermissionData::Match(SocketPermissionRequest request) const {
+bool SocketPermissionData::Check(
+    const APIPermission::CheckParam* param) const {
+  if (!param)
+    return false;
+  const SocketPermission::CheckParam& specific_param =
+      *static_cast<const SocketPermission::CheckParam*>(param);
+  const SocketPermissionRequest &request = specific_param.request;
+
   if (pattern_.type != request.type)
     return false;
 
@@ -137,17 +147,51 @@ bool SocketPermissionData::Match(SocketPermissionRequest request) const {
     }
   }
 
-  if (pattern_.port != request.port && pattern_.port != kAnyPort)
+  if (pattern_.port != request.port && pattern_.port != kWildcardPortNumber)
     return false;
 
   return true;
+}
+
+scoped_ptr<base::Value> SocketPermissionData::ToValue() const {
+  return scoped_ptr<base::Value>(new base::StringValue(GetAsString()));
+}
+
+bool SocketPermissionData::FromValue(const base::Value* value) {
+  std::string spec;
+  if (!value->GetAsString(&spec))
+    return false;
+
+  return Parse(spec);
+}
+
+SocketPermissionData::HostType SocketPermissionData::GetHostType() const {
+  return pattern_.host.empty() ? SocketPermissionData::ANY_HOST :
+         match_subdomains_     ? SocketPermissionData::HOSTS_IN_DOMAINS :
+                                 SocketPermissionData::SPECIFIC_HOSTS;
+}
+
+const std::string SocketPermissionData::GetHost() const {
+  return pattern_.host;
+}
+
+content::SocketPermissionRequest& SocketPermissionData::pattern() {
+  // Clear the spec because the caller could mutate |this|.
+  spec_.clear();
+  return pattern_;
+}
+
+bool& SocketPermissionData::match_subdomains() {
+  // Clear the spec because the caller could mutate |this|.
+  spec_.clear();
+  return match_subdomains_;
 }
 
 bool SocketPermissionData::Parse(const std::string& permission) {
   do {
     pattern_.host.clear();
     match_subdomains_ = true;
-    pattern_.port = kAnyPort;
+    pattern_.port = kWildcardPortNumber;
     spec_.clear();
 
     std::vector<std::string> tokens;
@@ -199,16 +243,6 @@ bool SocketPermissionData::Parse(const std::string& permission) {
   return false;
 }
 
-SocketPermissionData::HostType SocketPermissionData::GetHostType() const {
-  return pattern_.host.empty() ? SocketPermissionData::ANY_HOST :
-         match_subdomains_     ? SocketPermissionData::HOSTS_IN_DOMAINS :
-                                 SocketPermissionData::SPECIFIC_HOSTS;
-}
-
-const std::string SocketPermissionData::GetHost() const {
-  return pattern_.host;
-}
-
 const std::string& SocketPermissionData::GetAsString() const {
   if (!spec_.empty())
     return spec_;
@@ -224,7 +258,7 @@ const std::string& SocketPermissionData::GetAsString() const {
      spec_.append(1, kColon).append(pattern_.host);
   }
 
-  if (pattern_.port == kAnyPort)
+  if (pattern_.port == kWildcardPortNumber)
     spec_.append(1, kColon).append(kWildcard);
   else
     spec_.append(1, kColon).append(base::IntToString(pattern_.port));

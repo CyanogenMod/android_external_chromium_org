@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,28 +22,29 @@
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/debugger/devtools_window.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/instant/instant_controller.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
+#include "chrome/browser/printing/background_printing_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/view_type_utils.h"
+#include "chrome/common/chrome_process_type.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
@@ -58,8 +59,10 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/process_type.h"
+#include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "net/proxy/proxy_resolver_v8.h"
 #include "third_party/sqlite/sqlite3.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -90,7 +93,7 @@ int GetMessagePrefixID(bool is_app,
                        bool is_extension,
                        bool is_incognito,
                        bool is_prerender,
-                       bool is_instant_preview,
+                       bool is_instant_overlay,
                        bool is_background) {
   if (is_app) {
     if (is_background) {
@@ -107,8 +110,8 @@ int GetMessagePrefixID(bool is_app,
       return IDS_TASK_MANAGER_EXTENSION_PREFIX;
   } else if (is_prerender) {
     return IDS_TASK_MANAGER_PRERENDER_PREFIX;
-  } else if (is_instant_preview) {
-    return IDS_TASK_MANAGER_INSTANT_PREVIEW_PREFIX;
+  } else if (is_instant_overlay) {
+    return IDS_TASK_MANAGER_INSTANT_OVERLAY_PREFIX;
   } else {
     return IDS_TASK_MANAGER_TAB_PREFIX;
   }
@@ -147,6 +150,33 @@ string16 GetTitleFromWebContents(WebContents* web_contents) {
   return title;
 }
 
+bool IsContentsPrerendering(WebContents* web_contents) {
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  prerender::PrerenderManager* prerender_manager =
+      prerender::PrerenderManagerFactory::GetForProfile(profile);
+  return prerender_manager &&
+         prerender_manager->IsWebContentsPrerendering(web_contents, NULL);
+}
+
+bool IsContentsInstant(WebContents* web_contents) {
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    if (it->instant_controller() &&
+        it->instant_controller()->instant()->
+            GetOverlayContents() == web_contents) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool IsContentsBackgroundPrinted(WebContents* web_contents) {
+  printing::BackgroundPrintingManager* printing_manager =
+      g_browser_process->background_printing_manager();
+  return printing_manager->HasPrintPreviewDialog(web_contents);
+}
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -154,7 +184,8 @@ string16 GetTitleFromWebContents(WebContents* web_contents) {
 ////////////////////////////////////////////////////////////////////////////////
 TaskManagerRendererResource::TaskManagerRendererResource(
     base::ProcessHandle process, content::RenderViewHost* render_view_host)
-    : process_(process),
+    : content::RenderViewHostObserver(render_view_host),
+      process_(process),
       render_view_host_(render_view_host),
       pending_stats_update_(false),
       fps_(0.0f),
@@ -263,6 +294,13 @@ bool TaskManagerRendererResource::SupportNetworkUsage() const {
   return true;
 }
 
+void TaskManagerRendererResource::RenderViewHostDestroyed(
+    content::RenderViewHost* render_view_host) {
+  // We should never get here.  We should get deleted first.
+  // Use this CHECK to help diagnose http://crbug.com/165138.
+  CHECK(false);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // TaskManagerTabContentsResource class
 ////////////////////////////////////////////////////////////////////////////////
@@ -271,24 +309,16 @@ bool TaskManagerRendererResource::SupportNetworkUsage() const {
 gfx::ImageSkia* TaskManagerTabContentsResource::prerender_icon_ = NULL;
 
 TaskManagerTabContentsResource::TaskManagerTabContentsResource(
-    TabContents* tab_contents)
+    WebContents* web_contents)
     : TaskManagerRendererResource(
-          tab_contents->web_contents()->GetRenderProcessHost()->GetHandle(),
-          tab_contents->web_contents()->GetRenderViewHost()),
-      tab_contents_(tab_contents),
-      is_instant_preview_(false) {
+          web_contents->GetRenderProcessHost()->GetHandle(),
+          web_contents->GetRenderViewHost()),
+      web_contents_(web_contents),
+      profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())),
+      is_instant_overlay_(IsContentsInstant(web_contents)) {
   if (!prerender_icon_) {
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     prerender_icon_ = rb.GetImageSkiaNamed(IDR_PRERENDER);
-  }
-  for (BrowserList::const_iterator i = BrowserList::begin();
-       i != BrowserList::end(); ++i) {
-    if ((*i)->instant_controller()->instant() &&
-        (*i)->instant_controller()->instant()->GetPreviewContents() ==
-            tab_contents_) {
-      is_instant_preview_ = true;
-      break;
-    }
   }
 }
 
@@ -296,22 +326,12 @@ TaskManagerTabContentsResource::~TaskManagerTabContentsResource() {
 }
 
 void TaskManagerTabContentsResource::InstantCommitted() {
-  DCHECK(is_instant_preview_);
-  is_instant_preview_ = false;
-}
-
-bool TaskManagerTabContentsResource::IsPrerendering() const {
-  prerender::PrerenderManager* prerender_manager =
-      prerender::PrerenderManagerFactory::GetForProfile(
-          tab_contents_->profile());
-  return prerender_manager &&
-         prerender_manager->IsWebContentsPrerendering(
-             tab_contents_->web_contents(), NULL);
+  DCHECK(is_instant_overlay_);
+  is_instant_overlay_ = false;
 }
 
 bool TaskManagerTabContentsResource::HostsExtension() const {
-  return tab_contents_->web_contents()->GetURL().SchemeIs(
-      chrome::kExtensionScheme);
+  return web_contents_->GetURL().SchemeIs(extensions::kExtensionScheme);
 }
 
 TaskManager::Resource::Type TaskManagerTabContentsResource::GetType() const {
@@ -320,50 +340,47 @@ TaskManager::Resource::Type TaskManagerTabContentsResource::GetType() const {
 
 string16 TaskManagerTabContentsResource::GetTitle() const {
   // Fall back on the URL if there's no title.
-  WebContents* contents = tab_contents_->web_contents();
-  GURL url = contents->GetURL();
-  string16 tab_title = GetTitleFromWebContents(contents);
+  GURL url = web_contents_->GetURL();
+  string16 tab_title = GetTitleFromWebContents(web_contents_);
 
   // Only classify as an app if the URL is an app and the tab is hosting an
   // extension process.  (It's possible to be showing the URL from before it
   // was installed as an app.)
-  ExtensionService* extension_service =
-      tab_contents_->profile()->GetExtensionService();
+  ExtensionService* extension_service = profile_->GetExtensionService();
   extensions::ProcessMap* process_map = extension_service->process_map();
   bool is_app = extension_service->IsInstalledApp(url) &&
-      process_map->Contains(contents->GetRenderProcessHost()->GetID());
+      process_map->Contains(web_contents_->GetRenderProcessHost()->GetID());
 
   int message_id = GetMessagePrefixID(
       is_app,
       HostsExtension(),
-      tab_contents_->profile()->IsOffTheRecord(),
-      IsPrerendering(),
-      is_instant_preview_,
+      profile_->IsOffTheRecord(),
+      IsContentsPrerendering(web_contents_),
+      is_instant_overlay_,
       false);
   return l10n_util::GetStringFUTF16(message_id, tab_title);
 }
 
 string16 TaskManagerTabContentsResource::GetProfileName() const {
-  return GetProfileNameFromInfoCache(tab_contents_->profile());
+  return GetProfileNameFromInfoCache(profile_);
 }
 
 gfx::ImageSkia TaskManagerTabContentsResource::GetIcon() const {
-  if (IsPrerendering())
+  if (IsContentsPrerendering(web_contents_))
     return *prerender_icon_;
-  return FaviconTabHelper::FromWebContents(tab_contents_->web_contents())->
+  return FaviconTabHelper::FromWebContents(web_contents_)->
       GetFavicon().AsImageSkia();
 }
 
 WebContents* TaskManagerTabContentsResource::GetWebContents() const {
-  return tab_contents_->web_contents();
+  return web_contents_;
 }
 
 const Extension* TaskManagerTabContentsResource::GetExtension() const {
   if (HostsExtension()) {
-    ExtensionService* extension_service =
-        tab_contents_->profile()->GetExtensionService();
+    ExtensionService* extension_service = profile_->GetExtensionService();
     return extension_service->extensions()->GetByID(
-        tab_contents_->web_contents()->GetURL().host());
+        web_contents_->GetURL().host());
   }
 
   return NULL;
@@ -397,9 +414,8 @@ TaskManager::Resource* TaskManagerTabContentsResourceProvider::GetResource(
   if (origin_pid)
     return NULL;
 
-  TabContents* tab_contents = TabContents::FromWebContents(web_contents);
-  std::map<TabContents*, TaskManagerTabContentsResource*>::iterator
-      res_iter = resources_.find(tab_contents);
+  std::map<WebContents*, TaskManagerTabContentsResource*>::iterator
+      res_iter = resources_.find(web_contents);
   if (res_iter == resources_.end()) {
     // Can happen if the tab was closed while a network request was being
     // performed.
@@ -412,11 +428,46 @@ void TaskManagerTabContentsResourceProvider::StartUpdating() {
   DCHECK(!updating_);
   updating_ = true;
 
-  // Add all the existing TabContentses.
-  for (TabContentsIterator iterator; !iterator.done(); ++iterator)
+  // The contents that are tracked by this resource provider are those that
+  // are tab contents (WebContents serving as a tab in a Browser), Instant
+  // pages, prerender pages, and background printed pages.
+
+  // Add all the existing WebContentses.
+  for (TabContentsIterator iterator; !iterator.done(); iterator.Next())
     Add(*iterator);
 
-  // Then we register for notifications to get new tabs.
+  // Add all the Instant pages.
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    if (it->instant_controller() &&
+        it->instant_controller()->instant()->GetOverlayContents()) {
+      Add(it->instant_controller()->instant()->GetOverlayContents());
+    }
+  }
+
+  // Add all the prerender pages.
+  std::vector<Profile*> profiles(
+      g_browser_process->profile_manager()->GetLoadedProfiles());
+  for (size_t i = 0; i < profiles.size(); ++i) {
+    prerender::PrerenderManager* prerender_manager =
+        prerender::PrerenderManagerFactory::GetForProfile(profiles[i]);
+    if (prerender_manager) {
+      const std::vector<content::WebContents*> contentses =
+          prerender_manager->GetAllPrerenderingContents();
+      for (size_t j = 0; j < contentses.size(); ++j)
+        Add(contentses[j]);
+    }
+  }
+
+  // Add all the pages being background printed.
+  printing::BackgroundPrintingManager* printing_manager =
+      g_browser_process->background_printing_manager();
+  for (printing::BackgroundPrintingManager::WebContentsSet::iterator i =
+           printing_manager->begin();
+       i != printing_manager->end(); ++i) {
+    Add(*i);
+  }
+
+  // Then we register for notifications to get new web contents.
   registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_CONNECTED,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
@@ -431,7 +482,7 @@ void TaskManagerTabContentsResourceProvider::StopUpdating() {
   DCHECK(updating_);
   updating_ = false;
 
-  // Then we unregister for notifications to get new tabs.
+  // Then we unregister for notifications to get new web contents.
   registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_CONNECTED,
       content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
@@ -448,40 +499,48 @@ void TaskManagerTabContentsResourceProvider::StopUpdating() {
 }
 
 void TaskManagerTabContentsResourceProvider::AddToTaskManager(
-    TabContents* tab_contents) {
+    WebContents* web_contents) {
   TaskManagerTabContentsResource* resource =
-      new TaskManagerTabContentsResource(tab_contents);
-  resources_[tab_contents] = resource;
+      new TaskManagerTabContentsResource(web_contents);
+  resources_[web_contents] = resource;
   task_manager_->AddResource(resource);
 }
 
-void TaskManagerTabContentsResourceProvider::Add(TabContents* tab_contents) {
+void TaskManagerTabContentsResourceProvider::Add(WebContents* web_contents) {
   if (!updating_)
     return;
 
-  // Don't add dead tabs or tabs that haven't yet connected.
-  if (!tab_contents->web_contents()->GetRenderProcessHost()->GetHandle() ||
-      !tab_contents->web_contents()->WillNotifyDisconnection()) {
+  // The contents that are tracked by this resource provider are those that
+  // are tab contents (WebContents serving as a tab in a Browser), Instant
+  // pages, prerender pages, and background printed pages.
+  if (!chrome::FindBrowserWithWebContents(web_contents) &&
+      !IsContentsPrerendering(web_contents) &&
+      !IsContentsInstant(web_contents) &&
+      !IsContentsBackgroundPrinted(web_contents)) {
     return;
   }
 
-  std::map<TabContents*, TaskManagerTabContentsResource*>::const_iterator
-      iter = resources_.find(tab_contents);
-  if (iter != resources_.end()) {
+  // Don't add dead tabs or tabs that haven't yet connected.
+  if (!web_contents->GetRenderProcessHost()->GetHandle() ||
+      !web_contents->WillNotifyDisconnection()) {
+    return;
+  }
+
+  if (resources_.count(web_contents)) {
     // The case may happen that we have added a WebContents as part of the
     // iteration performed during StartUpdating() call but the notification that
     // it has connected was not fired yet. So when the notification happens, we
     // already know about this tab and just ignore it.
     return;
   }
-  AddToTaskManager(tab_contents);
+  AddToTaskManager(web_contents);
 }
 
-void TaskManagerTabContentsResourceProvider::Remove(TabContents* tab_contents) {
+void TaskManagerTabContentsResourceProvider::Remove(WebContents* web_contents) {
   if (!updating_)
     return;
-  std::map<TabContents*, TaskManagerTabContentsResource*>::iterator
-      iter = resources_.find(tab_contents);
+  std::map<WebContents*, TaskManagerTabContentsResource*>::iterator
+      iter = resources_.find(web_contents);
   if (iter == resources_.end()) {
     // Since WebContents are destroyed asynchronously (see TabContentsCollector
     // in navigation_controller.cc), we can be notified of a tab being removed
@@ -499,38 +558,36 @@ void TaskManagerTabContentsResourceProvider::Remove(TabContents* tab_contents) {
   delete resource;
 }
 
-void TaskManagerTabContentsResourceProvider::Update(TabContents* tab_contents) {
+void TaskManagerTabContentsResourceProvider::InstantCommitted(
+    WebContents* web_contents) {
   if (!updating_)
     return;
-  std::map<TabContents*, TaskManagerTabContentsResource*>::iterator
-      iter = resources_.find(tab_contents);
+  std::map<WebContents*, TaskManagerTabContentsResource*>::iterator
+      iter = resources_.find(web_contents);
   DCHECK(iter != resources_.end());
   if (iter != resources_.end())
     iter->second->InstantCommitted();
 }
 
-void TaskManagerTabContentsResourceProvider::Observe(int type,
+void TaskManagerTabContentsResourceProvider::Observe(
+    int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  TabContents* tab_contents;
-  tab_contents = TabContents::FromWebContents(
-      content::Source<WebContents>(source).ptr());
-  // A background page does not have a TabContents.
-  if (!tab_contents)
-    return;
+  WebContents* web_contents = content::Source<WebContents>(source).ptr();
+
   switch (type) {
     case content::NOTIFICATION_WEB_CONTENTS_CONNECTED:
-      Add(tab_contents);
+      Add(web_contents);
       break;
     case content::NOTIFICATION_WEB_CONTENTS_SWAPPED:
-      Remove(tab_contents);
-      Add(tab_contents);
+      Remove(web_contents);
+      Add(web_contents);
       break;
     case content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED:
-      Remove(tab_contents);
+      Remove(web_contents);
       break;
     case chrome::NOTIFICATION_INSTANT_COMMITTED:
-      Update(tab_contents);
+      InstantCommitted(web_contents);
       break;
     default:
       NOTREACHED() << "Unexpected notification.";
@@ -990,11 +1047,11 @@ void TaskManagerBackgroundContentsResourceProvider::Observe(
 gfx::ImageSkia* TaskManagerChildProcessResource::default_icon_ = NULL;
 
 TaskManagerChildProcessResource::TaskManagerChildProcessResource(
-    content::ProcessType type,
+    int process_type,
     const string16& name,
     base::ProcessHandle handle,
     int unique_process_id)
-    : type_(type),
+    : process_type_(process_type),
       name_(name),
       handle_(handle),
       unique_process_id_(unique_process_id),
@@ -1039,24 +1096,24 @@ int TaskManagerChildProcessResource::GetUniqueChildProcessId() const {
 TaskManager::Resource::Type TaskManagerChildProcessResource::GetType() const {
   // Translate types to TaskManager::ResourceType, since ChildProcessData's type
   // is not available for all TaskManager resources.
-  switch (type_) {
+  switch (process_type_) {
     case content::PROCESS_TYPE_PLUGIN:
     case content::PROCESS_TYPE_PPAPI_PLUGIN:
     case content::PROCESS_TYPE_PPAPI_BROKER:
       return TaskManager::Resource::PLUGIN;
-    case content::PROCESS_TYPE_NACL_LOADER:
-    case content::PROCESS_TYPE_NACL_BROKER:
-      return TaskManager::Resource::NACL;
     case content::PROCESS_TYPE_UTILITY:
       return TaskManager::Resource::UTILITY;
-    case content::PROCESS_TYPE_PROFILE_IMPORT:
-      return TaskManager::Resource::PROFILE_IMPORT;
     case content::PROCESS_TYPE_ZYGOTE:
       return TaskManager::Resource::ZYGOTE;
     case content::PROCESS_TYPE_SANDBOX_HELPER:
       return TaskManager::Resource::SANDBOX_HELPER;
     case content::PROCESS_TYPE_GPU:
       return TaskManager::Resource::GPU;
+    case PROCESS_TYPE_PROFILE_IMPORT:
+      return TaskManager::Resource::PROFILE_IMPORT;
+    case PROCESS_TYPE_NACL_LOADER:
+    case PROCESS_TYPE_NACL_BROKER:
+      return TaskManager::Resource::NACL;
     default:
       return TaskManager::Resource::UNKNOWN;
   }
@@ -1073,7 +1130,7 @@ void TaskManagerChildProcessResource::SetSupportNetworkUsage() {
 string16 TaskManagerChildProcessResource::GetLocalizedTitle() const {
   string16 title = name_;
   if (title.empty()) {
-    switch (type_) {
+    switch (process_type_) {
       case content::PROCESS_TYPE_PLUGIN:
       case content::PROCESS_TYPE_PPAPI_PLUGIN:
       case content::PROCESS_TYPE_PPAPI_BROKER:
@@ -1091,30 +1148,23 @@ string16 TaskManagerChildProcessResource::GetLocalizedTitle() const {
   // or Arabic word for "plugin".
   base::i18n::AdjustStringForLocaleDirection(&title);
 
-  switch (type_) {
+  switch (process_type_) {
     case content::PROCESS_TYPE_UTILITY:
       return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_UTILITY_PREFIX);
-
-    case content::PROCESS_TYPE_PROFILE_IMPORT:
-      return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_UTILITY_PREFIX);
-
     case content::PROCESS_TYPE_GPU:
       return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_GPU_PREFIX);
-
-    case content::PROCESS_TYPE_NACL_BROKER:
-      return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_NACL_BROKER_PREFIX);
-
     case content::PROCESS_TYPE_PLUGIN:
     case content::PROCESS_TYPE_PPAPI_PLUGIN:
       return l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_PLUGIN_PREFIX, title);
-
     case content::PROCESS_TYPE_PPAPI_BROKER:
       return l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_PLUGIN_BROKER_PREFIX,
                                         title);
-
-    case content::PROCESS_TYPE_NACL_LOADER:
+    case PROCESS_TYPE_PROFILE_IMPORT:
+      return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_UTILITY_PREFIX);
+    case PROCESS_TYPE_NACL_BROKER:
+      return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_NACL_BROKER_PREFIX);
+    case PROCESS_TYPE_NACL_LOADER:
       return l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_NACL_PREFIX, title);
-
     // These types don't need display names or get them from elsewhere.
     case content::PROCESS_TYPE_BROWSER:
     case content::PROCESS_TYPE_RENDERER:
@@ -1127,7 +1177,6 @@ string16 TaskManagerChildProcessResource::GetLocalizedTitle() const {
     case content::PROCESS_TYPE_WORKER:
       NOTREACHED() << "Workers are not handled by this provider.";
       break;
-
     case content::PROCESS_TYPE_UNKNOWN:
       NOTREACHED() << "Need localized name for child process type.";
   }
@@ -1164,83 +1213,53 @@ void TaskManagerChildProcessResourceProvider::StartUpdating() {
   DCHECK(!updating_);
   updating_ = true;
 
-  // Register for notifications to get new child processes.
-  registrar_.Add(this, content::NOTIFICATION_CHILD_PROCESS_HOST_CONNECTED,
-                 content::NotificationService::AllBrowserContextsAndSources());
-  registrar_.Add(this, content::NOTIFICATION_CHILD_PROCESS_HOST_DISCONNECTED,
-                 content::NotificationService::AllBrowserContextsAndSources());
-
   // Get the existing child processes.
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(
           &TaskManagerChildProcessResourceProvider::RetrieveChildProcessData,
           this));
+
+  BrowserChildProcessObserver::Add(this);
 }
 
 void TaskManagerChildProcessResourceProvider::StopUpdating() {
   DCHECK(updating_);
   updating_ = false;
 
-  // Unregister for notifications to get new plugin processes.
-  registrar_.Remove(
-      this, content::NOTIFICATION_CHILD_PROCESS_HOST_CONNECTED,
-      content::NotificationService::AllBrowserContextsAndSources());
-  registrar_.Remove(
-      this,
-      content::NOTIFICATION_CHILD_PROCESS_HOST_DISCONNECTED,
-      content::NotificationService::AllBrowserContextsAndSources());
-
   // Delete all the resources.
   STLDeleteContainerPairSecondPointers(resources_.begin(), resources_.end());
 
   resources_.clear();
   pid_to_resources_.clear();
+
+  BrowserChildProcessObserver::Remove(this);
 }
 
-void TaskManagerChildProcessResourceProvider::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  content::ChildProcessData data =
-      *content::Details<content::ChildProcessData>(details).ptr();
-  switch (type) {
-    case content::NOTIFICATION_CHILD_PROCESS_HOST_CONNECTED:
-      Add(data);
-      break;
-    case content::NOTIFICATION_CHILD_PROCESS_HOST_DISCONNECTED:
-      Remove(data);
-      break;
-    default:
-      NOTREACHED() << "Unexpected notification.";
-      return;
-  }
-}
+void TaskManagerChildProcessResourceProvider::BrowserChildProcessHostConnected(
+    const content::ChildProcessData& data) {
+  DCHECK(updating_);
 
-void TaskManagerChildProcessResourceProvider::Add(
-    const content::ChildProcessData& child_process_data) {
-  if (!updating_)
-    return;
   // Workers are handled by TaskManagerWorkerResourceProvider.
-  if (child_process_data.type == content::PROCESS_TYPE_WORKER)
+  if (data.process_type == content::PROCESS_TYPE_WORKER)
     return;
-  if (resources_.count(child_process_data.handle)) {
+  if (resources_.count(data.handle)) {
     // The case may happen that we have added a child_process_info as part of
     // the iteration performed during StartUpdating() call but the notification
     // that it has connected was not fired yet. So when the notification
     // happens, we already know about this plugin and just ignore it.
     return;
   }
-  AddToTaskManager(child_process_data);
+  AddToTaskManager(data);
 }
 
-void TaskManagerChildProcessResourceProvider::Remove(
-    const content::ChildProcessData& child_process_data) {
-  if (!updating_)
+void TaskManagerChildProcessResourceProvider::
+BrowserChildProcessHostDisconnected(const content::ChildProcessData& data) {
+  DCHECK(updating_);
+
+  if (data.process_type == content::PROCESS_TYPE_WORKER)
     return;
-  if (child_process_data.type == content::PROCESS_TYPE_WORKER)
-    return;
-  ChildProcessMap::iterator iter = resources_.find(child_process_data.handle);
+  ChildProcessMap::iterator iter = resources_.find(data.handle);
   if (iter == resources_.end()) {
     // ChildProcessData disconnection notifications are asynchronous, so we
     // might be notified for a plugin we don't know anything about (if it was
@@ -1267,7 +1286,7 @@ void TaskManagerChildProcessResourceProvider::AddToTaskManager(
     const content::ChildProcessData& child_process_data) {
   TaskManagerChildProcessResource* resource =
       new TaskManagerChildProcessResource(
-          child_process_data.type,
+          child_process_data.process_type,
           child_process_data.name,
           child_process_data.handle,
           child_process_data.id);
@@ -1282,6 +1301,8 @@ void TaskManagerChildProcessResourceProvider::RetrieveChildProcessData() {
   for (BrowserChildProcessHostIterator iter; !iter.Done(); ++iter) {
     // Only add processes which are already started, since we need their handle.
     if (iter.GetData().handle == base::kNullProcessHandle)
+      continue;
+    if (iter.GetData().process_type == content::PROCESS_TYPE_WORKER)
       continue;
     child_processes.push_back(iter.GetData());
   }
@@ -1298,7 +1319,7 @@ void TaskManagerChildProcessResourceProvider::RetrieveChildProcessData() {
 void TaskManagerChildProcessResourceProvider::ChildProcessDataRetreived(
     const std::vector<content::ChildProcessData>& child_processes) {
   for (size_t i = 0; i < child_processes.size(); ++i)
-    Add(child_processes[i]);
+    AddToTaskManager(child_processes[i]);
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_TASK_MANAGER_CHILD_PROCESSES_DATA_READY,
@@ -1517,11 +1538,17 @@ void TaskManagerExtensionProcessResourceProvider::Observe(
 
 bool TaskManagerExtensionProcessResourceProvider::
     IsHandledByThisProvider(content::RenderViewHost* render_view_host) {
+  WebContents* web_contents = WebContents::FromRenderViewHost(render_view_host);
+  // Don't add WebContents that belong to a guest (those are handled by
+  // TaskManagerGuestResourceProvider). Otherwise they will be added twice, and
+  // in this case they will have the app's name as a title (due to the
+  // TaskManagerExtensionProcessResource constructor).
+  if (web_contents->GetRenderProcessHost()->IsGuest())
+    return false;
+  chrome::ViewType view_type = chrome::GetViewType(web_contents);
   // Don't add WebContents (those are handled by
   // TaskManagerTabContentsResourceProvider) or background contents (handled
   // by TaskManagerBackgroundResourceProvider).
-  WebContents* web_contents = WebContents::FromRenderViewHost(render_view_host);
-  chrome::ViewType view_type = chrome::GetViewType(web_contents);
 #if defined(USE_ASH)
   return (view_type != chrome::VIEW_TYPE_TAB_CONTENTS &&
           view_type != chrome::VIEW_TYPE_BACKGROUND_CONTENTS);
@@ -1580,7 +1607,8 @@ TaskManagerBrowserProcessResource::TaskManagerBrowserProcessResource()
     HICON icon = GetAppIcon();
     if (icon) {
       scoped_ptr<SkBitmap> bitmap(IconUtil::CreateSkBitmapFromHICON(icon));
-      default_icon_ = new gfx::ImageSkia(*bitmap);
+      default_icon_ = new gfx::ImageSkia(
+          gfx::ImageSkiaRep(*bitmap, ui::SCALE_FACTOR_100P));
     }
   }
 #elif defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -1599,6 +1627,7 @@ TaskManagerBrowserProcessResource::TaskManagerBrowserProcessResource()
   // TODO(port): Port icon code.
   NOTIMPLEMENTED();
 #endif  // defined(OS_WIN)
+  default_icon_->MakeThreadSafe();
 }
 
 TaskManagerBrowserProcessResource::~TaskManagerBrowserProcessResource() {
@@ -1660,15 +1689,11 @@ bool TaskManagerBrowserProcessResource::ReportsV8MemoryStats() const {
 }
 
 size_t TaskManagerBrowserProcessResource::GetV8MemoryAllocated() const {
-  v8::HeapStatistics stats;
-  v8::V8::GetHeapStatistics(&stats);
-  return stats.total_heap_size();
+  return net::ProxyResolverV8::GetTotalHeapSize();
 }
 
 size_t TaskManagerBrowserProcessResource::GetV8MemoryUsed() const {
-  v8::HeapStatistics stats;
-  v8::V8::GetHeapStatistics(&stats);
-  return stats.used_heap_size();
+  return net::ProxyResolverV8::GetUsedHeapSize();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1801,14 +1826,15 @@ void TaskManagerGuestResourceProvider::StartUpdating() {
   for (RenderProcessHost::iterator i(
            RenderProcessHost::AllHostsIterator());
        !i.IsAtEnd(); i.Advance()) {
-    RenderProcessHost* host = i.GetCurrentValue();
-    if (host->IsGuest()) {
-      RenderProcessHost::RenderWidgetHostsIterator iter =
-          host->GetRenderWidgetHostsIterator();
-      for (; !iter.IsAtEnd(); iter.Advance()) {
-        const RenderWidgetHost* widget = iter.GetCurrentValue();
-        Add(RenderViewHost::From(
-                const_cast<RenderWidgetHost*>(widget)));
+    RenderProcessHost::RenderWidgetHostsIterator iter =
+        i.GetCurrentValue()->GetRenderWidgetHostsIterator();
+    for (; !iter.IsAtEnd(); iter.Advance()) {
+      const RenderWidgetHost* widget = iter.GetCurrentValue();
+      if (widget->IsRenderView()) {
+        RenderViewHost* rvh =
+            RenderViewHost::From(const_cast<RenderWidgetHost*>(widget));
+        if (rvh->IsSubframe())
+          Add(rvh);
       }
     }
   }
@@ -1863,7 +1889,7 @@ void TaskManagerGuestResourceProvider::Observe(int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   WebContents* web_contents = content::Source<WebContents>(source).ptr();
-  if (!web_contents || !web_contents->GetRenderProcessHost()->IsGuest())
+  if (!web_contents || !web_contents->GetRenderViewHost()->IsSubframe())
     return;
 
   switch (type) {

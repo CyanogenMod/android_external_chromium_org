@@ -20,11 +20,10 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/auth.h"
-#include "net/base/host_resolver.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "net/base/ssl_cert_request_info.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_auth_controller.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
@@ -39,7 +38,10 @@
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/tcp_client_socket.h"
 #include "net/socket_stream/socket_stream_metrics.h"
+#include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_info.h"
 #include "net/url_request/url_request.h"
+#include "net/url_request/url_request_context.h"
 
 static const int kMaxPendingSendAllowed = 32768;  // 32 kilobytes.
 static const int kReadBufferSize = 4096;
@@ -1143,9 +1145,10 @@ GURL SocketStream::ProxyAuthOrigin() const {
 }
 
 int SocketStream::HandleCertificateRequest(int result, SSLConfig* ssl_config) {
-  if (ssl_config->send_client_cert)
+  if (ssl_config->send_client_cert) {
     // We already have performed SSL client authentication once and failed.
     return result;
+  }
 
   DCHECK(socket_.get());
   scoped_refptr<SSLCertRequestInfo> cert_request_info = new SSLCertRequestInfo;
@@ -1160,25 +1163,28 @@ int SocketStream::HandleCertificateRequest(int result, SSLConfig* ssl_config) {
   if (!session.get())
     return result;
 
+  // If the user selected one of the certificates in client_certs or declined
+  // to provide one for this server before, use the past decision
+  // automatically.
   scoped_refptr<X509Certificate> client_cert;
-  bool found_cached_cert = session->ssl_client_auth_cache()->Lookup(
-      cert_request_info->host_and_port, &client_cert);
-  if (!found_cached_cert)
+  if (!session->ssl_client_auth_cache()->Lookup(
+          cert_request_info->host_and_port, &client_cert)) {
     return result;
-  if (!client_cert)
-    return result;
-
-  const std::vector<scoped_refptr<X509Certificate> >& client_certs =
-      cert_request_info->client_certs;
-  bool cert_still_valid = false;
-  for (size_t i = 0; i < client_certs.size(); ++i) {
-    if (client_cert->Equals(client_certs[i])) {
-      cert_still_valid = true;
-      break;
-    }
   }
-  if (!cert_still_valid)
+
+  // Note: |client_cert| may be NULL, indicating that the caller
+  // wishes to proceed anonymously (eg: continue the handshake
+  // without sending a client cert)
+  //
+  // Check that the certificate selected is still a certificate the server
+  // is likely to accept, based on the criteria supplied in the
+  // CertificateRequest message.
+  const std::vector<std::string>& cert_authorities =
+      cert_request_info->cert_authorities;
+  if (client_cert && !cert_authorities.empty() &&
+      !client_cert->IsIssuedByEncoded(cert_authorities)) {
     return result;
+  }
 
   ssl_config->send_client_cert = true;
   ssl_config->client_cert = client_cert;
@@ -1260,12 +1266,11 @@ int SocketStream::HandleCertificateError(int result) {
 
   TransportSecurityState::DomainState domain_state;
   DCHECK(context_);
-  const bool fatal =
-      context_->transport_security_state() &&
-      context_->transport_security_state()->GetDomainState(
-          url_.host(),
+  const bool fatal = context_->transport_security_state() &&
+      context_->transport_security_state()->GetDomainState(url_.host(),
           SSLConfigService::IsSNIAvailable(context_->ssl_config_service()),
-          &domain_state);
+          &domain_state) &&
+      domain_state.ShouldSSLErrorsBeFatal();
 
   delegate_->OnSSLCertificateError(this, ssl_info, fatal);
   return ERR_IO_PENDING;

@@ -7,13 +7,16 @@
 
 #include "chrome/browser/ui/views/tabs/tab_strip_types.h"
 
-class BaseTab;
 class GURL;
+class Tab;
 class TabStrip;
-class TabStripSelectionModel;
 
 namespace gfx {
 class Point;
+}
+
+namespace ui {
+class ListSelectionModel;
 }
 
 // Model/Controller for the TabStrip.
@@ -23,7 +26,7 @@ class TabStripController {
   virtual ~TabStripController() {}
 
   // Returns the selection model of the tabstrip.
-  virtual const TabStripSelectionModel& GetSelectionModel() = 0;
+  virtual const ui::ListSelectionModel& GetSelectionModel() = 0;
 
   // Returns the number of tabs in the model.
   virtual int GetCount() const = 0;
@@ -63,7 +66,7 @@ class TabStripController {
   virtual void CloseTab(int index, CloseTabSource source) = 0;
 
   // Shows a context menu for the tab at the specified point in screen coords.
-  virtual void ShowContextMenuForTab(BaseTab* tab, const gfx::Point& p) = 0;
+  virtual void ShowContextMenuForTab(Tab* tab, const gfx::Point& p) = 0;
 
   // Updates the loading animations of all the tabs.
   virtual void UpdateLoadingAnimations() = 0;

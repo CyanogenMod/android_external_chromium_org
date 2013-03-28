@@ -10,9 +10,9 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/api/sync/profile_sync_service_observer.h"
 #include "chrome/browser/sync/backend_migrator.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/sync/retry_verifier.h"
 #include "sync/internal_api/public/base/model_type.h"
 
@@ -255,6 +255,9 @@ class ProfileSyncServiceHarness
 
     // The sync client needs a passphrase in order to decrypt data.
     SET_PASSPHRASE_FAILED,
+
+    // The sync client's credentials were rejected.
+    CREDENTIALS_REJECTED,
 
     // The sync client cannot reach the server.
     SERVER_UNREACHABLE,

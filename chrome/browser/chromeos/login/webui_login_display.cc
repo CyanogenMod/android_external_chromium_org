@@ -4,7 +4,9 @@
 
 #include "chrome/browser/chromeos/login/webui_login_display.h"
 
+#include "ash/wm/user_activity_detector.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/xkeyboard.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
@@ -20,11 +22,21 @@
 
 namespace chromeos {
 
+namespace {
+
+const int kPasswordClearTimeoutSec = 60;
+
+}
+
 // WebUILoginDisplay, public: --------------------------------------------------
 
 WebUILoginDisplay::~WebUILoginDisplay() {
   if (webui_handler_)
     webui_handler_->ResetSigninScreenHandlerDelegate();
+  ash::UserActivityDetector* activity_detector = ash::Shell::GetInstance()->
+      user_activity_detector();
+  if (activity_detector->HasObserver(this))
+    activity_detector->RemoveObserver(this);
 }
 
 // LoginDisplay implementation: ------------------------------------------------
@@ -47,6 +59,11 @@ void WebUILoginDisplay::Init(const UserList& users,
   show_guest_ = show_guest;
   show_users_ = show_users;
   show_new_user_ = show_new_user;
+
+  ash::UserActivityDetector* activity_detector = ash::Shell::GetInstance()->
+      user_activity_detector();
+  if (!activity_detector->HasObserver(this))
+    activity_detector->AddObserver(this);
 }
 
 void WebUILoginDisplay::OnPreferencesChanged() {
@@ -137,7 +154,7 @@ void WebUILoginDisplay::ShowError(int error_msg_id,
       error_msg_id != IDS_LOGIN_ERROR_OWNER_REQUIRED) {
     // Display a warning if Caps Lock is on.
     input_method::InputMethodManager* ime_manager =
-        input_method::InputMethodManager::GetInstance();
+        input_method::GetInputMethodManager();
     if (ime_manager->GetXKeyboard()->CapsLockIsEnabled()) {
       // TODO(ivankr): use a format string instead of concatenation.
       error_text += "\n" +
@@ -168,9 +185,26 @@ void WebUILoginDisplay::ShowError(int error_msg_id,
   accessibility::MaybeSpeak(error_text);
 }
 
+void WebUILoginDisplay::ShowErrorScreen(LoginDisplay::SigninError error_id) {
+  VLOG(1) << "Show error screen, error_id: " << error_id;
+  if (!webui_handler_)
+    return;
+  webui_handler_->ShowErrorScreen(error_id);
+}
+
 void WebUILoginDisplay::ShowGaiaPasswordChanged(const std::string& username) {
   if (webui_handler_)
     webui_handler_->ShowGaiaPasswordChanged(username);
+}
+
+void WebUILoginDisplay::ShowPasswordChangedDialog(bool show_password_error) {
+  if (webui_handler_)
+    webui_handler_->ShowPasswordChangedDialog(show_password_error);
+}
+
+void WebUILoginDisplay::ShowSigninUI(const std::string& email) {
+  if (webui_handler_)
+    webui_handler_->ShowSigninUI(email);
 }
 
 // WebUILoginDisplay, NativeWindowDelegate implementation: ---------------------
@@ -179,34 +213,10 @@ gfx::NativeWindow WebUILoginDisplay::GetNativeWindow() const {
 }
 
 // WebUILoginDisplay, SigninScreenHandlerDelegate implementation: --------------
-void WebUILoginDisplay::CompleteLogin(const std::string& username,
-                                      const std::string& password) {
+void WebUILoginDisplay::CancelPasswordChangedFlow() {
   DCHECK(delegate_);
   if (delegate_)
-    delegate_->CompleteLogin(username, password);
-}
-
-void WebUILoginDisplay::Login(const std::string& username,
-                              const std::string& password) {
-  DCHECK(delegate_);
-  if (delegate_)
-    delegate_->Login(username, password);
-}
-
-void WebUILoginDisplay::LoginAsDemoUser() {
-  DCHECK(delegate_);
-  if (delegate_)
-    delegate_->LoginAsDemoUser();
-}
-
-void WebUILoginDisplay::LoginAsGuest() {
-  DCHECK(delegate_);
-  if (delegate_)
-    delegate_->LoginAsGuest();
-}
-
-void WebUILoginDisplay::Signout() {
-  delegate_->Signout();
+    delegate_->CancelPasswordChangedFlow();
 }
 
 void WebUILoginDisplay::CreateAccount() {
@@ -215,16 +225,70 @@ void WebUILoginDisplay::CreateAccount() {
     delegate_->CreateAccount();
 }
 
+void WebUILoginDisplay::CompleteLogin(const UserCredentials& credentials) {
+  DCHECK(delegate_);
+  if (delegate_)
+    delegate_->CompleteLogin(credentials);
+}
+
+void WebUILoginDisplay::Login(const UserCredentials& credentials) {
+  DCHECK(delegate_);
+  if (delegate_)
+    delegate_->Login(credentials);
+}
+
+void WebUILoginDisplay::LoginAsRetailModeUser() {
+  DCHECK(delegate_);
+  if (delegate_)
+    delegate_->LoginAsRetailModeUser();
+}
+
+void WebUILoginDisplay::LoginAsGuest() {
+  DCHECK(delegate_);
+  if (delegate_)
+    delegate_->LoginAsGuest();
+}
+
+void WebUILoginDisplay::LoginAsPublicAccount(const std::string& username) {
+  DCHECK(delegate_);
+  if (delegate_)
+    delegate_->LoginAsPublicAccount(username);
+}
+
+void WebUILoginDisplay::MigrateUserData(const std::string& old_password) {
+  DCHECK(delegate_);
+  if (delegate_)
+    delegate_->MigrateUserData(old_password);
+}
+
+void WebUILoginDisplay::CreateLocallyManagedUser(const string16& display_name,
+                                                 const std::string password) {
+  DCHECK(delegate_);
+  if (delegate_)
+    delegate_->CreateLocallyManagedUser(display_name, password);
+}
+
 void WebUILoginDisplay::LoadWallpaper(const std::string& username) {
   WallpaperManager::Get()->SetUserWallpaper(username);
 }
 
 void WebUILoginDisplay::LoadSigninWallpaper() {
-  WallpaperManager::Get()->SetSigninWallpaper();
+  WallpaperManager::Get()->SetDefaultWallpaper();
+}
+
+void WebUILoginDisplay::OnSigninScreenReady() {
+  if (delegate_)
+    delegate_->OnSigninScreenReady();
 }
 
 void WebUILoginDisplay::RemoveUser(const std::string& username) {
   UserManager::Get()->RemoveUser(username, this);
+}
+
+void WebUILoginDisplay::ResyncUserData() {
+  DCHECK(delegate_);
+  if (delegate_)
+    delegate_->ResyncUserData();
 }
 
 void WebUILoginDisplay::ShowEnterpriseEnrollmentScreen() {
@@ -235,6 +299,11 @@ void WebUILoginDisplay::ShowEnterpriseEnrollmentScreen() {
 void WebUILoginDisplay::ShowResetScreen() {
   if (delegate_)
     delegate_->OnStartDeviceReset();
+}
+
+void WebUILoginDisplay::ShowWrongHWIDScreen() {
+  if (delegate_)
+    delegate_->ShowWrongHWIDScreen();
 }
 
 void WebUILoginDisplay::SetWebUIHandler(
@@ -268,6 +337,30 @@ bool WebUILoginDisplay::IsShowNewUser() const {
 void WebUILoginDisplay::SetDisplayEmail(const std::string& email) {
   if (delegate_)
     delegate_->SetDisplayEmail(email);
+}
+
+void WebUILoginDisplay::Signout() {
+  delegate_->Signout();
+}
+
+void WebUILoginDisplay::OnUserActivity() {
+  if (!password_clear_timer_.IsRunning())
+    StartPasswordClearTimer();
+  password_clear_timer_.Reset();
+  if (delegate_)
+    delegate_->ResetPublicSessionAutoLoginTimer();
+}
+
+void WebUILoginDisplay::StartPasswordClearTimer() {
+  DCHECK(!password_clear_timer_.IsRunning());
+  password_clear_timer_.Start(FROM_HERE,
+      base::TimeDelta::FromSeconds(kPasswordClearTimeoutSec), this,
+      &WebUILoginDisplay::OnPasswordClearTimerExpired);
+}
+
+void WebUILoginDisplay::OnPasswordClearTimerExpired() {
+  if (webui_handler_)
+    webui_handler_->ClearUserPodPassword();
 }
 
 }  // namespace chromeos

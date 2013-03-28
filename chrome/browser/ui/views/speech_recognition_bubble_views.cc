@@ -126,7 +126,7 @@ void SpeechRecognitionBubbleView::OnWidgetActivationChanged(
 
 gfx::Rect SpeechRecognitionBubbleView::GetAnchorRect() {
   gfx::Rect container_rect;
-  web_contents_->GetContainerBounds(&container_rect);
+  web_contents_->GetView()->GetContainerBounds(&container_rect);
   gfx::Rect anchor(element_rect_);
   anchor.Offset(container_rect.OffsetFromOrigin());
   if (!container_rect.Intersects(anchor))
@@ -357,17 +357,32 @@ SpeechRecognitionBubbleImpl::~SpeechRecognitionBubbleImpl() {
 
 void SpeechRecognitionBubbleImpl::Show() {
   if (!bubble_) {
+    views::View* icon = NULL;
+
     // Anchor to the location icon view, in case |element_rect| is offscreen.
-    Browser* browser = browser::FindBrowserWithWebContents(GetWebContents());
-    BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
-    views::View* icon = browser_view->GetLocationBarView() ?
-        browser_view->GetLocationBarView()->location_icon_view() : NULL;
+    WebContents* web_contents = GetWebContents();
+    Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
+    if (browser) {
+      BrowserView* browser_view =
+          BrowserView::GetBrowserViewForBrowser(browser);
+      icon = browser_view->GetLocationBarView() ?
+          browser_view->GetLocationBarView()->location_icon_view() : NULL;
+    }
+
     bubble_ = new SpeechRecognitionBubbleView(delegate_, icon, element_rect_,
-                                              GetWebContents());
+                                              web_contents);
+
+    if (!icon) {
+      // We dont't have an icon to attach to. Manually specify the web contents
+      // window as the parent.
+      bubble_->set_parent_window(
+          web_contents->GetView()->GetTopLevelNativeWindow());
+    }
+
     views::BubbleDelegateView::CreateBubble(bubble_);
     UpdateLayout();
   }
-  bubble_->Show();
+  bubble_->GetWidget()->Show();
 }
 
 void SpeechRecognitionBubbleImpl::Hide() {

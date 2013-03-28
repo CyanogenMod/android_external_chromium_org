@@ -5,19 +5,21 @@
 #ifndef CHROME_BROWSER_GOOGLE_GOOGLE_URL_TRACKER_INFOBAR_DELEGATE_H_
 #define CHROME_BROWSER_GOOGLE_GOOGLE_URL_TRACKER_INFOBAR_DELEGATE_H_
 
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "googleurl/src/gurl.h"
 
 class GoogleURLTracker;
-class InfoBarTabHelper;
 
 // This infobar is shown by the GoogleURLTracker when the Google base URL has
 // changed.
 class GoogleURLTrackerInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  GoogleURLTrackerInfoBarDelegate(InfoBarTabHelper* infobar_helper,
-                                  GoogleURLTracker* google_url_tracker,
-                                  const GURL& search_url);
+  // Creates a Google URL tracker delegate and adds it to |infobar_service|.
+  // Returns the delegate if it was successfully added.
+  static GoogleURLTrackerInfoBarDelegate* Create(
+      InfoBarService* infobar_service,
+      GoogleURLTracker* google_url_tracker,
+      const GURL& search_url);
 
   // ConfirmInfoBarDelegate:
   virtual bool Accept() OVERRIDE;
@@ -38,6 +40,9 @@ class GoogleURLTrackerInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual void Close(bool redo_search);
 
  protected:
+  GoogleURLTrackerInfoBarDelegate(InfoBarService* infobar_service,
+                                  GoogleURLTracker* google_url_tracker,
+                                  const GURL& search_url);
   virtual ~GoogleURLTrackerInfoBarDelegate();
 
  private:

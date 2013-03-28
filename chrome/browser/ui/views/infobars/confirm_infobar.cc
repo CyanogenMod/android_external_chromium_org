@@ -5,9 +5,8 @@
 #include "chrome/browser/ui/views/infobars/confirm_infobar.h"
 
 #include "base/logging.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/event_disposition.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
@@ -15,12 +14,12 @@
 // ConfirmInfoBarDelegate -----------------------------------------------------
 
 InfoBar* ConfirmInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
-  return new ConfirmInfoBar(static_cast<InfoBarTabHelper*>(owner), this);
+  return new ConfirmInfoBar(owner, this);
 }
 
 // ConfirmInfoBar -------------------------------------------------------------
 
-ConfirmInfoBar::ConfirmInfoBar(InfoBarTabHelper* owner,
+ConfirmInfoBar::ConfirmInfoBar(InfoBarService* owner,
                                ConfirmInfoBarDelegate* delegate)
     : InfoBarView(owner, delegate),
       label_(NULL),
@@ -129,8 +128,7 @@ void ConfirmInfoBar::LinkClicked(views::Link* source, int event_flags) {
     return;  // We're closing; don't call anything, it might access the owner.
   DCHECK(link_ != NULL);
   DCHECK_EQ(link_, source);
-  if (GetDelegate()->LinkClicked(
-      chrome::DispositionFromEventFlags(event_flags)))
+  if (GetDelegate()->LinkClicked(ui::DispositionFromEventFlags(event_flags)))
     RemoveSelf();
 }
 

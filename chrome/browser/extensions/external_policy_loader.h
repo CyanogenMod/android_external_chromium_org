@@ -5,15 +5,19 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTERNAL_POLICY_LOADER_H_
 #define CHROME_BROWSER_EXTENSIONS_EXTERNAL_POLICY_LOADER_H_
 
-#include "chrome/browser/extensions/external_loader.h"
+#include <string>
 
 #include "base/compiler_specific.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/extensions/external_loader.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
 class Profile;
+
+namespace base {
+class DictionaryValue;
+}
 
 namespace extensions {
 
@@ -22,8 +26,7 @@ namespace extensions {
 // registered.
 class ExternalPolicyLoader
     : public ExternalLoader,
-      public content::NotificationObserver,
-      public PrefObserver {
+      public content::NotificationObserver {
  public:
   explicit ExternalPolicyLoader(Profile* profile);
 
@@ -32,9 +35,10 @@ class ExternalPolicyLoader
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // PrefObserver implementation
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
+  // Adds an extension to be updated to the pref dictionary.
+  static void AddExtension(base::DictionaryValue* dict,
+                           const std::string& extension_id,
+                           const std::string& update_url);
 
  protected:
   virtual void StartLoading() OVERRIDE;

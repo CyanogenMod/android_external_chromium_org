@@ -101,7 +101,7 @@ def GetRowDigest(rowdata, key):
   return sha1.hexdigest()[0:8]
 
 
-def WriteJson(filename, data, keys):
+def WriteJson(filename, data, keys, calculate_sha1=True):
   """Write a list of |keys| in |data| to the file specified in |filename|."""
   try:
     file = open(filename, 'w')
@@ -112,14 +112,23 @@ def WriteJson(filename, data, keys):
   jsondata = []
   for key in keys:
     rowdata = GetRowData(data, key)
-    # Include an updated checksum.
-    rowdata.append('"sha1": "%s"' % GetRowDigest(rowdata, key))
+    if calculate_sha1:
+      # Include an updated checksum.
+      rowdata.append('"sha1": "%s"' % GetRowDigest(rowdata, key))
+    else:
+      if 'sha1' in data[key]:
+        rowdata.append('"sha1": "%s"' % (data[key]['sha1']))
     jsondata.append('"%s": {%s}' % (key, ', '.join(rowdata)))
   jsondata.append('"load": true')
   jsontext = '{%s\n}' % ',\n '.join(jsondata)
   file.write(jsontext + '\n')
   file.close()
   return True
+
+
+def FloatIsInt(f):
+  epsilon = 1.0e-10
+  return abs(f - int(f)) <= epsilon
 
 
 last_key_printed = None
@@ -301,15 +310,31 @@ def Main(args):
         regress = improve
         improve = temp
       else:
-        assert(better != 'higher')
+        # Sometimes values are equal, e.g., when they are both 0,
+        # 'better' may still be set to 'higher'.
+        assert(better != 'higher' or
+               perf[key]['regress'] == perf[key]['improve'])
         better = 'lower'
 
+    # If both were ints keep as int, otherwise use the float version.
+    originally_ints = False
+    if FloatIsInt(regress) and FloatIsInt(improve):
+      originally_ints = True
+
     if better == 'higher':
-      regress = int(math.floor(regress - abs(regress*tolerance)))
-      improve = int(math.ceil(improve + abs(improve*tolerance)))
+      if originally_ints:
+        regress = int(math.floor(regress - abs(regress*tolerance)))
+        improve = int(math.ceil(improve + abs(improve*tolerance)))
+      else:
+        regress = regress - abs(regress*tolerance)
+        improve = improve + abs(improve*tolerance)
     else:
-      improve = int(math.floor(improve - abs(improve*tolerance)))
-      regress = int(math.ceil(regress + abs(regress*tolerance)))
+      if originally_ints:
+        improve = int(math.floor(improve - abs(improve*tolerance)))
+        regress = int(math.ceil(regress + abs(regress*tolerance)))
+      else:
+        improve = improve - abs(improve*tolerance)
+        regress = regress + abs(regress*tolerance)
 
     # Calculate the new checksum to test if this is the only thing that may have
     # changed.

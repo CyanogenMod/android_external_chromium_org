@@ -24,7 +24,7 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/chrome_notification_types.h"
-#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
@@ -58,11 +58,6 @@ void BookmarkBubbleGtk::BubbleClosing(BubbleGtk* bubble,
     remove_bookmark_ = newly_bookmarked_;
     apply_edits_ = false;
   }
-
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_BOOKMARK_BUBBLE_HIDDEN,
-      content::Source<Profile>(profile_->GetOriginalProfile()),
-      content::NotificationService::NoDetails());
 }
 
 void BookmarkBubbleGtk::Observe(int type,
@@ -159,14 +154,10 @@ BookmarkBubbleGtk::BookmarkBubbleGtk(GtkWidget* anchor,
   // We want the focus to start on the entry, not on the remove button.
   gtk_container_set_focus_child(GTK_CONTAINER(content), table);
 
-  BubbleGtk::ArrowLocationGtk arrow_location =
-      base::i18n::IsRTL() ?
-      BubbleGtk::ARROW_LOCATION_TOP_LEFT :
-      BubbleGtk::ARROW_LOCATION_TOP_RIGHT;
   bubble_ = BubbleGtk::Show(anchor_,
                             NULL,
                             content,
-                            arrow_location,
+                            BubbleGtk::ANCHOR_TOP_RIGHT,
                             BubbleGtk::MATCH_SYSTEM_THEME |
                                 BubbleGtk::POPUP_WINDOW |
                                 BubbleGtk::GRAB_INPUT,
@@ -326,5 +317,5 @@ void BookmarkBubbleGtk::InitFolderComboModel() {
   }
 
   gtk_combo_box_set_active(GTK_COMBO_BOX(folder_combo_),
-                           folder_combo_model_->node_parent_index());
+                           folder_combo_model_->GetDefaultIndex());
 }

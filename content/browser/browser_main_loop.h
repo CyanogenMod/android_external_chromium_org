@@ -26,6 +26,7 @@ class NetworkChangeNotifier;
 }
 
 namespace content {
+class AudioMirroringManager;
 class BrowserMainParts;
 class BrowserOnlineStateObserver;
 class BrowserShutdownImpl;
@@ -48,6 +49,7 @@ class DeviceMonitorMac;
 // All functions are to be called only on the UI thread unless otherwise noted.
 class BrowserMainLoop {
  public:
+  class MemoryObserver;
   explicit BrowserMainLoop(const MainFunctionParams& parameters);
   virtual ~BrowserMainLoop();
 
@@ -71,6 +73,7 @@ class BrowserMainLoop {
 
   // Can be called on any thread.
   static media::AudioManager* GetAudioManager();
+  static AudioMirroringManager* GetAudioMirroringManager();
   static MediaStreamManager* GetMediaStreamManager();
 
  private:
@@ -95,6 +98,7 @@ class BrowserMainLoop {
   scoped_ptr<HighResolutionTimerManager> hi_res_timer_manager_;
   scoped_ptr<net::NetworkChangeNotifier> network_change_notifier_;
   scoped_ptr<media::AudioManager> audio_manager_;
+  scoped_ptr<AudioMirroringManager> audio_mirroring_manager_;
   scoped_ptr<MediaStreamManager> media_stream_manager_;
   // Per-process listener for online state changes.
   scoped_ptr<BrowserOnlineStateObserver> online_state_observer_;
@@ -128,6 +132,7 @@ class BrowserMainLoop {
   scoped_ptr<BrowserProcessSubThread> process_launcher_thread_;
   scoped_ptr<BrowserProcessSubThread> cache_thread_;
   scoped_ptr<BrowserProcessSubThread> io_thread_;
+  scoped_ptr<MemoryObserver> memory_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserMainLoop);
 };

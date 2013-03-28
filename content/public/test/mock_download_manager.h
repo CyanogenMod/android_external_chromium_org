@@ -5,12 +5,16 @@
 #ifndef CONTENT_PUBLIC_BROWSER_DOWNLOAD_MOCK_DOWNLOAD_MANAGER_H_
 #define CONTENT_PUBLIC_BROWSER_DOWNLOAD_MOCK_DOWNLOAD_MANAGER_H_
 
+#include <vector>
+
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_save_info.h"
 #include "content/public/browser/download_url_parameters.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+class DownloadRequestHandle;
 
 namespace content {
 
@@ -19,6 +23,42 @@ void PrintTo(const DownloadRequestHandle& params, std::ostream* os);
 
 class MockDownloadManager : public DownloadManager {
  public:
+  // Structure to make it possible to match more than 10 arguments on
+  // CreateDownloadItem.
+  struct CreateDownloadItemAdapter {
+    base::FilePath current_path;
+    base::FilePath target_path;
+    std::vector<GURL> url_chain;
+    GURL referrer_url;
+    base::Time start_time;
+    base::Time end_time;
+    int64 received_bytes;
+    int64 total_bytes;
+    DownloadItem::DownloadState state;
+    DownloadDangerType danger_type;
+    DownloadInterruptReason interrupt_reason;
+    bool opened;
+
+    CreateDownloadItemAdapter(
+      const base::FilePath& current_path,
+      const base::FilePath& target_path,
+      const std::vector<GURL>& url_chain,
+      const GURL& referrer_url,
+      const base::Time& start_time,
+      const base::Time& end_time,
+      int64 received_bytes,
+      int64 total_bytes,
+      DownloadItem::DownloadState state,
+      DownloadDangerType danger_type,
+      DownloadInterruptReason interrupt_reason,
+      bool opened);
+    // Required by clang compiler.
+    CreateDownloadItemAdapter(const CreateDownloadItemAdapter& rhs);
+    ~CreateDownloadItemAdapter();
+
+    bool operator==(const CreateDownloadItemAdapter& rhs);
+  };
+
   MockDownloadManager();
 
   // DownloadManager:
@@ -46,8 +86,25 @@ class MockDownloadManager : public DownloadManager {
   }
   MOCK_METHOD1(AddObserver, void(Observer* observer));
   MOCK_METHOD1(RemoveObserver, void(Observer* observer));
-  MOCK_METHOD1(OnPersistentStoreQueryComplete, void(
-      std::vector<DownloadPersistentStoreInfo>* entries));
+
+  // Redirects to mock method to get around gmock 10 argument limit.
+  virtual DownloadItem* CreateDownloadItem(
+      const base::FilePath& current_path,
+      const base::FilePath& target_path,
+      const std::vector<GURL>& url_chain,
+      const GURL& referrer_url,
+      const base::Time& start_time,
+      const base::Time& end_time,
+      int64 received_bytes,
+      int64 total_bytes,
+      DownloadItem::DownloadState state,
+      DownloadDangerType danger_type,
+      DownloadInterruptReason interrupt_reason,
+      bool opened) OVERRIDE;
+
+  MOCK_METHOD1(MockCreateDownloadItem,
+               DownloadItem*(CreateDownloadItemAdapter adapter));
+
   MOCK_METHOD2(OnItemAddedToPersistentStore, void(int32 download_id,
                                                   int64 db_handle));
   MOCK_CONST_METHOD0(InProgressCount, int());

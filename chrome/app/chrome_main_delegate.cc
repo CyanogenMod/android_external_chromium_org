@@ -17,6 +17,7 @@
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/diagnostics/diagnostics_main.h"
+#include "chrome/browser/policy/policy_path_parser.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
@@ -32,7 +33,6 @@
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_paths.h"
-#include "content/public/common/content_switches.h"
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_WIN)
@@ -40,9 +40,6 @@
 #include <atlbase.h>
 #include <malloc.h>
 #include "base/string_util.h"
-#include "base/win/registry.h"
-#include "chrome/browser/policy/policy_path_parser.h"
-#include "policy/policy_constants.h"
 #include "sandbox/win/src/sandbox.h"
 #include "tools/memory_watcher/memory_watcher.h"
 #include "ui/base/resource/resource_bundle_win.h"
@@ -77,12 +74,6 @@
 
 #if defined(OS_ANDROID)
 #include "chrome/common/descriptors_android.h"
-#endif
-
-#if defined(TOOLKIT_GTK)
-#include <gdk/gdk.h>
-#include <glib.h>
-#include <gtk/gtk.h>
 #endif
 
 #if defined(USE_X11)
@@ -129,56 +120,6 @@ bool HasDeprecatedArguments(const std::wstring& command_line) {
   StringToLowerASCII(&command_line_lower);
   std::wstring::size_type pos = command_line_lower.find(kChromeHtml);
   return (pos != std::wstring::npos);
-}
-
-// Checks if the registry key exists in the given hive and expands any
-// variables in the string.
-bool LoadUserDataDirPolicyFromRegistry(HKEY hive,
-                                       const std::wstring& key_name,
-                                       FilePath* user_data_dir) {
-  std::wstring value;
-
-  base::win::RegKey policy_key(hive,
-                               policy::kRegistryMandatorySubKey,
-                               KEY_READ);
-  if (policy_key.ReadValue(key_name.c_str(), &value) == ERROR_SUCCESS) {
-    *user_data_dir = FilePath(policy::path_parser::ExpandPathVariables(value));
-    return true;
-  }
-  return false;
-}
-
-void CheckUserDataDirPolicy(FilePath* user_data_dir) {
-  DCHECK(user_data_dir);
-  // We are running as Chrome Frame if we were invoked with user-data-dir,
-  // chrome-frame, and automation-channel switches.
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  const bool is_chrome_frame =
-      !user_data_dir->empty() &&
-      command_line->HasSwitch(switches::kChromeFrame) &&
-      command_line->HasSwitch(switches::kAutomationClientChannelID);
-
-  // In the case of Chrome Frame, the last path component of the user-data-dir
-  // provided on the command line must be preserved since it is specific to
-  // CF's host.
-  FilePath cf_host_dir;
-  if (is_chrome_frame)
-    cf_host_dir = user_data_dir->BaseName();
-
-  // Policy from the HKLM hive has precedence over HKCU so if we have one here
-  // we don't have to try to load HKCU.
-  const char* key_name_ascii = (is_chrome_frame ? policy::key::kGCFUserDataDir :
-                                policy::key::kUserDataDir);
-  std::wstring key_name(ASCIIToWide(key_name_ascii));
-  if (LoadUserDataDirPolicyFromRegistry(HKEY_LOCAL_MACHINE, key_name,
-                                        user_data_dir) ||
-      LoadUserDataDirPolicyFromRegistry(HKEY_CURRENT_USER, key_name,
-                                        user_data_dir)) {
-    // A Group Policy value was loaded.  Append the Chrome Frame host directory
-    // if relevant.
-    if (is_chrome_frame)
-      *user_data_dir = user_data_dir->Append(cf_host_dir);
-  }
 }
 
 // If we try to access a path that is not currently available, we want the call
@@ -341,7 +282,7 @@ bool HandleVersionSwitches(const CommandLine& command_line) {
 void HandleHelpSwitches(const CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kHelp) ||
       command_line.HasSwitch(switches::kHelpShort)) {
-    FilePath binary(command_line.argv()[0]);
+    base::FilePath binary(command_line.argv()[0]);
     execlp("man", "man", binary.BaseName().value().c_str(), NULL);
     PLOG(FATAL) << "execlp failed";
   }
@@ -494,7 +435,7 @@ void ChromeMainDelegate::InitMacCrashReporter(const CommandLine& command_line,
         << "Helper application requires --type.";
 
     // In addition, some helper flavors only work with certain process types.
-    FilePath executable;
+    base::FilePath executable;
     if (PathService::Get(base::FILE_EXE, &executable) &&
         executable.value().size() >= 3) {
       std::string last_three =
@@ -547,10 +488,10 @@ void ChromeMainDelegate::PreSandboxStartup() {
 #endif
 
   // Notice a user data directory override if any
-  FilePath user_data_dir =
+  base::FilePath user_data_dir =
       command_line.GetSwitchValuePath(switches::kUserDataDir);
 #if defined(OS_MACOSX) || defined(OS_WIN)
-  CheckUserDataDirPolicy(&user_data_dir);
+  policy::path_parser::CheckUserDataDirPolicy(&user_data_dir);
 #endif
   if (!user_data_dir.empty()) {
     CHECK(PathService::OverrideAndCreateIfNeeded(
@@ -614,6 +555,7 @@ void ChromeMainDelegate::PreSandboxStartup() {
 
     int extra_pak_keys[] = {
       kAndroidChromePakDescriptor,
+      kAndroidChrome100PercentPakDescriptor,
       kAndroidUIResourcesPakDescriptor,
     };
     for (size_t i = 0; i < arraysize(extra_pak_keys); ++i) {
@@ -628,6 +570,11 @@ void ChromeMainDelegate::PreSandboxStartup() {
 #else
     const std::string loaded_locale =
         ResourceBundle::InitSharedInstanceWithLocale(locale, NULL);
+
+    base::FilePath resources_pack_path;
+    PathService::Get(chrome::FILE_RESOURCES_PACK, &resources_pack_path);
+    ResourceBundle::GetSharedInstance().AddDataPackFromPath(
+        resources_pack_path, ui::SCALE_FACTOR_NONE);
 #endif
     CHECK(!loaded_locale.empty()) << "Locale could not be found for " <<
         locale;
@@ -645,16 +592,7 @@ void ChromeMainDelegate::PreSandboxStartup() {
   // need to call InitCrashReporter() in RunZygote().
   if (!process_type.empty() && process_type != switches::kZygoteProcess) {
 #if defined(OS_ANDROID)
-    // On Android we need to provide a FD to the file where the minidump is
-    // generated as the renderer and browser run with different UIDs
-    // (preventing the browser from inspecting the renderer process).
-    int minidump_fd = base::GlobalDescriptors::GetInstance()->
-        MaybeGet(kAndroidMinidumpDescriptor);
-    if (minidump_fd == base::kInvalidPlatformFileValue) {
-      NOTREACHED() << "Could not find minidump FD, crash reporting disabled.";
-    } else {
-      InitNonBrowserCrashReporterForAndroid(minidump_fd);
-    }
+    InitNonBrowserCrashReporterForAndroid();
 #else
     InitCrashReporter();
 #endif

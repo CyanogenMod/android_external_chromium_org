@@ -8,9 +8,9 @@
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
@@ -26,12 +26,8 @@ namespace {
 const char kOmniboxTrialName[] = "PrerenderFromOmnibox";
 int g_omnibox_trial_default_group_number = kint32min;
 
-const char kSpeculativePrefetchingTrialName[] = "SpeculativePrefetching";
-int g_speculative_prefetching_learning_group = kint32min;
-int g_speculative_prefetching_prefetching_group = kint32min;
-
 const char kLocalPredictorTrialName[] = "PrerenderLocalPredictor";
-int g_local_predictor_default_group_number = kint32min;
+const char kLocalPredictorEnabledGroup[] = "Enabled";
 
 void SetupPrefetchFieldTrial() {
   chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
@@ -45,7 +41,7 @@ void SetupPrefetchFieldTrial() {
   scoped_refptr<FieldTrial> trial(
       FieldTrialList::FactoryGetFieldTrial(
           "Prefetch", divisor, "ContentPrefetchPrefetchOff",
-          2013, 6, 30, NULL));
+          2013, 12, 31, NULL));
   const int kPrefetchOnGroup = trial->AppendGroup("ContentPrefetchPrefetchOn",
                                                   prefetch_probability);
   PrerenderManager::SetIsPrefetchEnabled(trial->group() == kPrefetchOnGroup);
@@ -76,10 +72,10 @@ void SetupPrerenderFieldTrial() {
         release_experiment_no_use_probability == divisor,
         release_experiment_probabilities_must_equal_divisor);
 
-    control_probability = release_experiment_15min_ttl_probability;
+    control_probability = release_control_probability;
     experiment_multi_prerender_probability =
         release_experiment_multi_prerender_probability;
-    experiment_15min_ttl_probability = release_control_probability;
+    experiment_15min_ttl_probability = release_experiment_15min_ttl_probability;
     experiment_no_use_probability = release_experiment_no_use_probability;
   } else {
     // In testing channels, use more experiments and a larger control group to
@@ -96,10 +92,10 @@ void SetupPrerenderFieldTrial() {
                    dev_experiment_no_use_probability == divisor,
                    dev_experiment_probabilities_must_equal_divisor);
 
-    control_probability = dev_experiment_15min_ttl_probability;
+    control_probability = dev_control_probability;
     experiment_multi_prerender_probability =
         dev_experiment_multi_prerender_probability;
-    experiment_15min_ttl_probability = dev_control_probability;
+    experiment_15min_ttl_probability = dev_experiment_15min_ttl_probability;
     experiment_no_use_probability = dev_experiment_no_use_probability;
   }
 
@@ -107,7 +103,7 @@ void SetupPrerenderFieldTrial() {
   scoped_refptr<FieldTrial> trial(
       FieldTrialList::FactoryGetFieldTrial(
           "Prerender", divisor, "PrerenderEnabled",
-          2013, 6, 30, &prerender_enabled_group));
+          2013, 12, 31, &prerender_enabled_group));
   const int control_group =
       trial->AppendGroup("PrerenderControl",
                          control_probability);
@@ -145,8 +141,6 @@ void SetupPrerenderFieldTrial() {
 }  // end namespace
 
 void ConfigureOmniboxPrerender();
-void ConfigureSpeculativePrefetching();
-void ConfigureLocalPredictor();
 
 void ConfigurePrefetchAndPrerender(const CommandLine& command_line) {
   enum PrerenderOption {
@@ -202,13 +196,7 @@ void ConfigurePrefetchAndPrerender(const CommandLine& command_line) {
       NOTREACHED();
   }
 
-  UMA_HISTOGRAM_ENUMERATION("Prerender.Sessions",
-                            PrerenderManager::GetMode(),
-                            PrerenderManager::PRERENDER_MODE_MAX);
-
   ConfigureOmniboxPrerender();
-  ConfigureSpeculativePrefetching();
-  ConfigureLocalPredictor();
 }
 
 void ConfigureOmniboxPrerender() {
@@ -224,7 +212,7 @@ void ConfigureOmniboxPrerender() {
   scoped_refptr<FieldTrial> omnibox_prerender_trial(
       FieldTrialList::FactoryGetFieldTrial(
           kOmniboxTrialName, kDivisor, "OmniboxPrerenderEnabled",
-          2012, 12, 30, &g_omnibox_trial_default_group_number));
+          2013, 12, 31, &g_omnibox_trial_default_group_number));
   omnibox_prerender_trial->AppendGroup("OmniboxPrerenderDisabled",
                                        kDisabledProbability);
 }
@@ -257,107 +245,9 @@ bool IsOmniboxEnabled(Profile* profile) {
          group == g_omnibox_trial_default_group_number;
 }
 
-void ConfigureSpeculativePrefetching() {
-  // Field trial to see if we're enabled.
-  const FieldTrial::Probability kDivisor = 100;
-
-  FieldTrial::Probability kLearningProbability = 0;
-  FieldTrial::Probability kPrefetchingProbability = 0;
-
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  switch (channel) {
-    case chrome::VersionInfo::CHANNEL_CANARY:
-    case chrome::VersionInfo::CHANNEL_DEV:
-      kLearningProbability = 90;
-      kPrefetchingProbability = 1;
-      break;
-
-    case chrome::VersionInfo::CHANNEL_BETA:
-      kLearningProbability = 5;
-      break;
-
-    case chrome::VersionInfo::CHANNEL_STABLE:
-    case chrome::VersionInfo::CHANNEL_UNKNOWN:
-      break;
-  }
-
-  scoped_refptr<FieldTrial> speculative_prefetching_trial(
-      FieldTrialList::FactoryGetFieldTrial(
-          kSpeculativePrefetchingTrialName,
-          kDivisor,
-          "Disabled",
-          2012, 12, 30,
-          NULL));
-
-  if (kLearningProbability > 0) {
-    g_speculative_prefetching_learning_group =
-        speculative_prefetching_trial->AppendGroup("Learning",
-                                                   kLearningProbability);
-  }
-  if (kPrefetchingProbability > 0) {
-    g_speculative_prefetching_prefetching_group =
-        speculative_prefetching_trial->AppendGroup("Prefetching",
-                                                   kPrefetchingProbability);
-  }
-}
-
-bool IsSpeculativeResourcePrefetchingLearningEnabled(Profile* profile) {
-  if (!profile || profile->IsOffTheRecord())
-    return false;
-
-  // Override any field trial groups if the user has set a command line flag.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSpeculativeResourcePrefetching)) {
-    const std::string switch_value =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            switches::kSpeculativeResourcePrefetching);
-
-    return switch_value == switches::kSpeculativeResourcePrefetchingLearning;
-  }
-
-  const int group = FieldTrialList::FindValue(
-      kSpeculativePrefetchingTrialName);
-  return group == g_speculative_prefetching_learning_group;
-}
-
-bool IsSpeculativeResourcePrefetchingEnabled(Profile* profile) {
-  if (!profile)
-    return false;
-
-  // Check if the user has set a command line flag.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSpeculativeResourcePrefetching)) {
-    const std::string switch_value =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            switches::kSpeculativeResourcePrefetching);
-    return switch_value == switches::kSpeculativeResourcePrefetchingEnabled;
-  }
-
-  const int group = FieldTrialList::FindValue(
-      kSpeculativePrefetchingTrialName);
-  return group == g_speculative_prefetching_prefetching_group;
-}
-
-void ConfigureLocalPredictor() {
-  const FieldTrial::Probability kDivisor = 100;
-
-  FieldTrial::Probability kEnableProbability = 90;
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  if (channel == chrome::VersionInfo::CHANNEL_STABLE ||
-      channel == chrome::VersionInfo::CHANNEL_BETA) {
-    kEnableProbability = 1;
-  }
-  scoped_refptr<FieldTrial> local_predictor_trial(
-      FieldTrialList::FactoryGetFieldTrial(
-          kLocalPredictorTrialName, kDivisor, "Disabled",
-          2013, 12, 31, &g_local_predictor_default_group_number));
-  local_predictor_trial->AppendGroup("Enabled", kEnableProbability);
-}
-
 bool IsLocalPredictorEnabled() {
-  const int group = FieldTrialList::FindValue(kLocalPredictorTrialName);
-  return (group != FieldTrial::kNotFinalized &&
-          group != g_omnibox_trial_default_group_number);
+  return base::FieldTrialList::FindFullName(kLocalPredictorTrialName) ==
+      kLocalPredictorEnabledGroup;
 }
 
 }  // namespace prerender

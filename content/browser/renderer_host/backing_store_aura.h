@@ -48,7 +48,7 @@ class BackingStoreAura : public BackingStore {
       bool* scheduled_completion_callback) OVERRIDE;
   virtual bool CopyFromBackingStore(const gfx::Rect& rect,
                                     skia::PlatformBitmap* output) OVERRIDE;
-  virtual void ScrollBackingStore(int dx, int dy,
+  virtual void ScrollBackingStore(const gfx::Vector2d& delta,
                                   const gfx::Rect& clip_rect,
                                   const gfx::Size& view_size) OVERRIDE;
 
@@ -56,7 +56,7 @@ class BackingStoreAura : public BackingStore {
   SkBitmap bitmap_;
 
   scoped_ptr<SkCanvas> canvas_;
-  int device_scale_factor_;
+  float device_scale_factor_;
 
   DISALLOW_COPY_AND_ASSIGN(BackingStoreAura);
 };

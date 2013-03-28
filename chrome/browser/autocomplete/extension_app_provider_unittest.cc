@@ -7,7 +7,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/extension_app_provider.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/test/base/testing_profile.h"
@@ -86,8 +86,9 @@ void ExtensionAppProviderTest::RunTest(
     int num_cases) {
   ACMatches matches;
   for (int i = 0; i < num_cases; ++i) {
-    AutocompleteInput input(keyword_cases[i].input, string16(), true,
-                            false, true, AutocompleteInput::ALL_MATCHES);
+    AutocompleteInput input(keyword_cases[i].input, string16::npos, string16(),
+                            GURL(), true, false, true,
+                            AutocompleteInput::ALL_MATCHES);
     app_provider_->Start(input, false);
     EXPECT_TRUE(app_provider_->done());
     matches = app_provider_->matches();
@@ -135,8 +136,9 @@ TEST_F(ExtensionAppProviderTest, CreateMatchSanitize) {
     { "Test\r\t\nTest", "TestTest" },
   };
 
-  AutocompleteInput input(ASCIIToUTF16("Test"), string16(),
-                          true, true, true, AutocompleteInput::BEST_MATCH);
+  AutocompleteInput input(ASCIIToUTF16("Test"), string16::npos, string16(),
+                          GURL(), true, true, true,
+                          AutocompleteInput::BEST_MATCH);
   string16 url(ASCIIToUTF16("http://example.com"));
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
     ExtensionAppProvider::ExtensionApp extension_app =
@@ -149,4 +151,3 @@ TEST_F(ExtensionAppProviderTest, CreateMatchSanitize) {
     EXPECT_EQ(ASCIIToUTF16(cases[i].match_contents), match.contents);
   }
 }
-

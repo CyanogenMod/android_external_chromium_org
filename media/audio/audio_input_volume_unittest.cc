@@ -13,6 +13,7 @@
 
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
+#include "media/audio/win/core_audio_util_win.h"
 #endif
 
 namespace media {
@@ -32,7 +33,7 @@ class AudioInputVolumeTest : public ::testing::Test {
     // TODO(henrika): add support for volume control on Windows XP as well.
     // For now, we might as well signal false already here to avoid running
     // these tests on Windows XP.
-    if (!media::IsWASAPISupported())
+    if (!CoreAudioUtil::IsSupported())
       return false;
 #endif
     if (!audio_manager_.get())
@@ -50,29 +51,10 @@ class AudioInputVolumeTest : public ::testing::Test {
   }
 
   AudioInputStream* CreateAndOpenStream(const std::string& device_id) {
-    AudioParameters::Format format = AudioParameters::AUDIO_PCM_LOW_LATENCY;
-    ChannelLayout channel_layout =
-        media::GetAudioInputHardwareChannelLayout(device_id);
-    int bits_per_sample = 16;
-    int sample_rate =
-        static_cast<int>(media::GetAudioInputHardwareSampleRate(device_id));
-    int samples_per_packet = 0;
-#if defined(OS_MACOSX)
-    samples_per_packet = (sample_rate / 100);
-#elif defined(OS_LINUX) || defined(OS_OPENBSD)
-    samples_per_packet = (sample_rate / 100);
-#elif defined(OS_WIN)
-    if (sample_rate == 44100)
-      samples_per_packet = 448;
-    else
-      samples_per_packet = (sample_rate / 100);
-#else
-#error Unsupported platform
-#endif
+    const AudioParameters& params =
+        audio_manager_->GetInputStreamParameters(device_id);
     AudioInputStream* ais = audio_manager_->MakeAudioInputStream(
-        AudioParameters(format, channel_layout, sample_rate, bits_per_sample,
-                        samples_per_packet),
-        device_id);
+        params, device_id);
     EXPECT_TRUE(NULL != ais);
 
 #if defined(OS_LINUX) || defined(OS_OPENBSD)

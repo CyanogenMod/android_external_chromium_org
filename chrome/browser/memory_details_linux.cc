@@ -17,6 +17,8 @@
 #include "chrome/common/chrome_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/process_type.h"
+#include "grit/chromium_strings.h"
+#include "ui/base/l10n/l10n_util.h"
 
 using base::ProcessEntry;
 using content::BrowserThread;
@@ -49,7 +51,7 @@ static const char kBrowserPrettyNames[][10] = {
 static const struct {
   const char process_name[16];
   BrowserType browser;
-  } kBrowserBinaryNames[] = {
+} kBrowserBinaryNames[] = {
   { "firefox", FIREFOX },
   { "firefox-3.5", FIREFOX },
   { "firefox-3.0", FIREFOX },
@@ -118,9 +120,9 @@ static ProcessData GetProcessDataMemoryInformation(
     pmi.num_processes = 1;
 
     if (pmi.pid == base::GetCurrentProcId())
-      pmi.type = content::PROCESS_TYPE_BROWSER;
+      pmi.process_type = content::PROCESS_TYPE_BROWSER;
     else
-      pmi.type = content::PROCESS_TYPE_UNKNOWN;
+      pmi.process_type = content::PROCESS_TYPE_UNKNOWN;
 
     base::ProcessMetrics* metrics =
         base::ProcessMetrics::CreateProcessMetrics(*iter);
@@ -192,7 +194,7 @@ void MemoryDetails::CollectProcessData(
 
   ProcessData current_browser =
       GetProcessDataMemoryInformation(GetAllChildren(process_map, getpid()));
-  current_browser.name = WideToUTF16(chrome::kBrowserAppName);
+  current_browser.name = l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME);
   current_browser.process_name = ASCIIToUTF16("chrome");
 
   for (std::vector<ProcessMemoryInformation>::iterator
@@ -204,7 +206,7 @@ void MemoryDetails::CollectProcessData(
       if (child_info[child].pid != i->pid)
         continue;
       i->titles = child_info[child].titles;
-      i->type = child_info[child].type;
+      i->process_type = child_info[child].process_type;
       break;
     }
   }

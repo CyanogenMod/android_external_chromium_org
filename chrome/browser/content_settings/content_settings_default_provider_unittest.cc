@@ -4,12 +4,12 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "base/prefs/pref_service.h"
+#include "base/prefs/testing_pref_service.h"
 #include "chrome/browser/content_settings/content_settings_default_provider.h"
 #include "chrome/browser/content_settings/content_settings_mock_observer.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
@@ -24,7 +24,7 @@ class DefaultProviderTest : public testing::Test {
       : ui_thread_(BrowserThread::UI, &message_loop_),
         provider_(profile_.GetPrefs(), false) {
   }
-  ~DefaultProviderTest() {
+  virtual ~DefaultProviderTest() {
     provider_.ShutdownOnUIThread();
   }
 
@@ -256,57 +256,4 @@ TEST_F(DefaultProviderTest, OffTheRecord) {
                               std::string(),
                               true));
   otr_provider.ShutdownOnUIThread();
-}
-
-TEST_F(DefaultProviderTest, MigrateDefaultGeolocationContentSettingAfterSync) {
-  EXPECT_EQ(CONTENT_SETTING_ASK,
-            GetContentSetting(&provider_,
-                              GURL(),
-                              GURL(),
-                              CONTENT_SETTINGS_TYPE_GEOLOCATION,
-                              std::string(),
-                              false));
-
-  content_settings::MockObserver mock_observer;
-  EXPECT_CALL(mock_observer,
-              OnContentSettingChanged(
-                  _, _, CONTENT_SETTINGS_TYPE_GEOLOCATION, ""));
-  provider_.AddObserver(&mock_observer);
-
-  // Set obsolete preference and test if it is migrated correctly. This can
-  // happen when an old version of chrome syncs the obsolete default geolocation
-  // preference.
-  PrefService* prefs = profile_.GetPrefs();
-  prefs->SetInteger(prefs::kGeolocationDefaultContentSetting,
-                    CONTENT_SETTING_ALLOW);
-
-  EXPECT_EQ(CONTENT_SETTING_ALLOW,
-            GetContentSetting(&provider_,
-                              GURL(),
-                              GURL(),
-                              CONTENT_SETTINGS_TYPE_GEOLOCATION,
-                              std::string(),
-                              false));
-}
-
-TEST_F(DefaultProviderTest, MigrateDefaultGeolocationContentSettingAtStartup) {
-  TestingProfile profile;
-  TestingPrefService* prefs = profile.GetTestingPrefService();
-
-  // Set obsolete preference and test if it is migrated correctly.
-  prefs->SetInteger(prefs::kGeolocationDefaultContentSetting,
-                    CONTENT_SETTING_ALLOW);
-  // Create a new |DefaultProvider| to test whether the obsolete default
-  // geolocation setting is correctly migrated. The migrated settings should be
-  // available right after creation of the provider.
-  content_settings::DefaultProvider provider(prefs, false);
-
-  EXPECT_EQ(CONTENT_SETTING_ALLOW,
-            GetContentSetting(&provider,
-                              GURL(),
-                              GURL(),
-                              CONTENT_SETTINGS_TYPE_GEOLOCATION,
-                              std::string(),
-                              false));
-  provider.ShutdownOnUIThread();
 }

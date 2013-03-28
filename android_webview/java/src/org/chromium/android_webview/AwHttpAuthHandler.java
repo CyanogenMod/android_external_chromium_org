@@ -11,22 +11,39 @@ import org.chromium.base.JNINamespace;
 public class AwHttpAuthHandler {
 
     private int mNativeAwHttpAuthHandler;
+    private final boolean mFirstAttempt;
 
     public void proceed(String username, String password) {
-        nativeProceed(mNativeAwHttpAuthHandler, username, password);
+        if (mNativeAwHttpAuthHandler != 0) {
+            nativeProceed(mNativeAwHttpAuthHandler, username, password);
+            mNativeAwHttpAuthHandler = 0;
+        }
     }
 
     public void cancel() {
-        nativeCancel(mNativeAwHttpAuthHandler);
+        if (mNativeAwHttpAuthHandler != 0) {
+            nativeCancel(mNativeAwHttpAuthHandler);
+            mNativeAwHttpAuthHandler = 0;
+        }
+    }
+
+    public boolean isFirstAttempt() {
+         return mFirstAttempt;
     }
 
     @CalledByNative
-    public static AwHttpAuthHandler create(int nativeAwAuthHandler) {
-        return new AwHttpAuthHandler(nativeAwAuthHandler);
+    public static AwHttpAuthHandler create(int nativeAwAuthHandler, boolean firstAttempt) {
+        return new AwHttpAuthHandler(nativeAwAuthHandler, firstAttempt);
     }
 
-    private AwHttpAuthHandler(int nativeAwHttpAuthHandler) {
+    private AwHttpAuthHandler(int nativeAwHttpAuthHandler, boolean firstAttempt) {
         mNativeAwHttpAuthHandler = nativeAwHttpAuthHandler;
+        mFirstAttempt = firstAttempt;
+    }
+
+    @CalledByNative
+    void handlerDestroyed() {
+        mNativeAwHttpAuthHandler = 0;
     }
 
     private native void nativeProceed(int nativeAwHttpAuthHandler,

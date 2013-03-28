@@ -10,12 +10,16 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "chrome/browser/google_apis/auth_service_interface.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
-#include "chrome/browser/google_apis/operations_base.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
 class Profile;
+
+namespace net {
+class URLRequestContextGetter;
+}
 
 namespace google_apis {
 
@@ -26,38 +30,28 @@ class AuthServiceObserver;
 // It integrates specific service integration with OAuth2 stack
 // (TokenService) and provides OAuth2 token refresh infrastructure.
 // All public functions must be called on UI thread.
-class AuthService : public content::NotificationObserver {
+class AuthService : public AuthServiceInterface,
+                    public content::NotificationObserver {
  public:
-  explicit AuthService(const std::vector<std::string>& scopes);
+  // |url_request_context_getter| is used to perform authentication with
+  // URLFetcher.
+  //
+  // |scopes| specifies OAuth2 scopes.
+  AuthService(net::URLRequestContextGetter* url_request_context_getter,
+              const std::vector<std::string>& scopes);
   virtual ~AuthService();
 
-  // Adds and removes the observer. AddObserver() should be called before
-  // Initialize() as it can change the refresh token.
-  void AddObserver(AuthServiceObserver* observer);
-  void RemoveObserver(AuthServiceObserver* observer);
-
-  // Initializes the auth service. Starts TokenService to retrieve the
-  // refresh token.
-  void Initialize(Profile* profile);
-
-  // Starts fetching OAuth2 auth token from the refresh token for |scopes_|.
-  void StartAuthentication(OperationRegistry* registry,
-                           const AuthStatusCallback& callback);
-
-  // True if an OAuth2 access token is retrieved and believed to be fresh.
-  // The access token is used to access the Drive server.
-  bool HasAccessToken() const { return !access_token_.empty(); }
-
-  // True if an OAuth2 refresh token is present. Its absence means that user
-  // is not properly authenticated.
-  // The refresh token is used to get the access token.
-  bool HasRefreshToken() const { return !refresh_token_.empty(); }
-
-  // Returns OAuth2 access token.
-  const std::string& access_token() const { return access_token_; }
-
-  // Clears OAuth2 access token.
-  void ClearAccessToken() { access_token_.clear(); }
+  // Overriden from AuthServiceInterface:
+  virtual void AddObserver(AuthServiceObserver* observer) OVERRIDE;
+  virtual void RemoveObserver(AuthServiceObserver* observer) OVERRIDE;
+  virtual void Initialize(Profile* profile) OVERRIDE;
+  virtual void StartAuthentication(OperationRegistry* registry,
+                                   const AuthStatusCallback& callback) OVERRIDE;
+  virtual bool HasAccessToken() const OVERRIDE;
+  virtual bool HasRefreshToken() const OVERRIDE;
+  virtual const std::string& access_token() const OVERRIDE;
+  virtual void ClearAccessToken() OVERRIDE;
+  virtual void ClearRefreshToken() OVERRIDE;
 
   // Overridden from content::NotificationObserver:
   virtual void Observe(int type,
@@ -75,16 +69,13 @@ class AuthService : public content::NotificationObserver {
   static bool CanAuthenticate(Profile* profile);
 
  private:
-  // Helper function for StartAuthentication() call.
-  void StartAuthenticationOnUIThread(OperationRegistry* registry,
-                                     const AuthStatusCallback& callback);
-
   // Callback for AuthOperation (InternalAuthStatusCallback).
   void OnAuthCompleted(const AuthStatusCallback& callback,
                        GDataErrorCode error,
                        const std::string& access_token);
 
   Profile* profile_;
+  net::URLRequestContextGetter* url_request_context_getter_;  // Not owned.
   std::string refresh_token_;
   std::string access_token_;
   std::vector<std::string> scopes_;

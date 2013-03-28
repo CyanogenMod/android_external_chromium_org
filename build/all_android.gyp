@@ -22,6 +22,10 @@
         'android_builder_tests',
         '../android_webview/android_webview.gyp:android_webview_apk',
         '../chrome/chrome.gyp:chromium_testshell',
+        # TODO(nyquist) This should instead by a target for sync when all of
+        # the sync-related code for Android has been upstreamed.
+        # See http://crbug.com/159203
+        '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_javalib',
       ],
     }, # target_name: All
     {
@@ -39,22 +43,25 @@
         '../android_webview/android_webview.gyp:android_webview_unittests',
         '../base/android/jni_generator/jni_generator.gyp:jni_generator_tests',
         '../base/base.gyp:base_unittests',
+        '../cc/cc_tests.gyp:cc_perftests_apk',
         '../cc/cc_tests.gyp:cc_unittests',
         '../chrome/chrome.gyp:unit_tests',
+        '../components/components.gyp:components_unittests',
+        '../content/content.gyp:content_browsertests',
         '../content/content.gyp:content_shell_test_apk',
         '../content/content.gyp:content_unittests',
+        '../gpu/gpu.gyp:gl_tests',
         '../gpu/gpu.gyp:gpu_unittests',
         '../ipc/ipc.gyp:ipc_tests',
         '../media/media.gyp:media_unittests',
         '../net/net.gyp:net_unittests',
+        '../sandbox/sandbox.gyp:sandbox_linux_unittests',
         '../sql/sql.gyp:sql_unittests',
         '../sync/sync.gyp:sync_unit_tests',
         '../third_party/WebKit/Source/WebKit/chromium/All.gyp:*',
+        '../tools/android/android_tools.gyp:android_tools',
         '../tools/android/device_stats_monitor/device_stats_monitor.gyp:device_stats_monitor',
-        '../tools/android/fake_dns/fake_dns.gyp:fake_dns',
         '../tools/android/findbugs_plugin/findbugs_plugin.gyp:findbugs_plugin_test',
-        '../tools/android/forwarder2/forwarder.gyp:forwarder2',
-        '../tools/android/md5sum/md5sum.gyp:md5sum',
         '../ui/ui.gyp:ui_unittests',
         # Required by ui_unittests.
         # TODO(wangxianzhu): It'd better let ui_unittests depend on it, but
@@ -86,11 +93,15 @@
             '../base/base.gyp:base_unittests_apk',
             '../cc/cc_tests.gyp:cc_unittests_apk',
             '../chrome/chrome.gyp:unit_tests_apk',
+            '../components/components.gyp:components_unittests_apk',
+            '../content/content.gyp:content_browsertests_apk',
             '../content/content.gyp:content_unittests_apk',
+            '../gpu/gpu.gyp:gl_tests_apk',
             '../gpu/gpu.gyp:gpu_unittests_apk',
             '../ipc/ipc.gyp:ipc_tests_apk',
             '../media/media.gyp:media_unittests_apk',
             '../net/net.gyp:net_unittests_apk',
+            '../sandbox/sandbox.gyp:sandbox_linux_jni_unittests_apk',
             '../sql/sql.gyp:sql_unittests_apk',
             '../sync/sync.gyp:sync_unit_tests_apk',
             '../ui/ui.gyp:ui_unittests_apk',
@@ -116,7 +127,6 @@
       'target_name': 'android_in_progress',
       'type': 'none',
       'dependencies': [
-        '../content/content.gyp:content_browsertests',
       ],
     },
   ],  # targets

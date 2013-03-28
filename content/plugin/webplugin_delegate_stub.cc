@@ -21,6 +21,7 @@
 #include "skia/ext/platform_device.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
+#include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 #include "webkit/glue/webcursor.h"
 
@@ -130,10 +131,6 @@ bool WebPluginDelegateStub::OnMessageReceived(const IPC::Message& msg) {
                         OnHandleURLRequestReply)
     IPC_MESSAGE_HANDLER(PluginMsg_HTTPRangeRequestReply,
                         OnHTTPRangeRequestReply)
-#if defined(OS_MACOSX)
-    IPC_MESSAGE_HANDLER(PluginMsg_SetFakeAcceleratedSurfaceWindowHandle,
-                        OnSetFakeAcceleratedSurfaceWindowHandle)
-#endif
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -149,10 +146,12 @@ bool WebPluginDelegateStub::Send(IPC::Message* msg) {
 }
 
 void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
+                                   bool* transparent,
                                    bool* result) {
   page_url_ = params.page_url;
   GetContentClient()->SetActiveURL(page_url_);
 
+  *transparent = false;
   *result = false;
   if (params.arg_names.size() != params.arg_values.size()) {
     NOTREACHED();
@@ -160,7 +159,7 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
   }
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  FilePath path =
+  base::FilePath path =
       command_line.GetSwitchValuePath(switches::kPluginPath);
 
   webplugin_ = new WebPluginProxy(
@@ -176,6 +175,7 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
                                     arg_values,
                                     webplugin_,
                                     params.load_manually);
+    *transparent = delegate_->instance()->transparent();
   }
 }
 
@@ -392,12 +392,5 @@ void WebPluginDelegateStub::OnHTTPRangeRequestReply(
       delegate_->CreateSeekableResourceClient(resource_id, range_request_id);
   webplugin_->OnResourceCreated(resource_id, resource_client);
 }
-
-#if defined(OS_MACOSX)
-void WebPluginDelegateStub::OnSetFakeAcceleratedSurfaceWindowHandle(
-    gfx::PluginWindowHandle window) {
-  delegate_->set_windowed_handle(window);
-}
-#endif
 
 }  // namespace content

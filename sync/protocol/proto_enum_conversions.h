@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,8 @@
 
 // Keep this file in sync with the .proto files in this directory.
 
+#include "sync/base/sync_export.h"
+#include "sync/protocol/client_debug_info.pb.h"
 #include "sync/protocol/session_specifics.pb.h"
 #include "sync/protocol/sync.pb.h"
 
@@ -18,25 +20,27 @@ namespace syncer {
 // The returned strings (which don't have to be freed) are in ASCII.
 // The result of passing in an invalid enum value is undefined.
 
-const char* GetBrowserTypeString(
+SYNC_EXPORT_PRIVATE const char* GetBrowserTypeString(
     sync_pb::SessionWindow::BrowserType browser_type);
 
-const char* GetPageTransitionString(
+SYNC_EXPORT_PRIVATE const char* GetPageTransitionString(
     sync_pb::SyncEnums::PageTransition page_transition);
 
-const char* GetPageTransitionRedirectTypeString(
+SYNC_EXPORT_PRIVATE const char* GetPageTransitionRedirectTypeString(
     sync_pb::SyncEnums::PageTransitionRedirectType
         redirect_type);
 
-const char* GetUpdatesSourceString(
+SYNC_EXPORT const char* GetUpdatesSourceString(
     sync_pb::GetUpdatesCallerInfo::GetUpdatesSource updates_source);
 
-const char* GetResponseTypeString(
+SYNC_EXPORT_PRIVATE const char* GetResponseTypeString(
     sync_pb::CommitResponse::ResponseType response_type);
 
-const char* GetErrorTypeString(sync_pb::SyncEnums::ErrorType error_type);
+SYNC_EXPORT_PRIVATE const char* GetErrorTypeString(
+    sync_pb::SyncEnums::ErrorType error_type);
 
-const char* GetActionString(sync_pb::SyncEnums::Action action);
+SYNC_EXPORT_PRIVATE const char* GetActionString(
+    sync_pb::SyncEnums::Action action);
 
 const char* GetDeviceTypeString(
     sync_pb::SyncEnums::DeviceType device_type);
@@ -46,6 +50,9 @@ const char* GetFaviconTypeString(
 
 const char* PassphraseTypeString(
     sync_pb::NigoriSpecifics::PassphraseType type);
+
+const char* SingletonEventTypeString(
+    sync_pb::DebugEventInfo::SingletonEventType type);
 
 }  // namespace syncer
 

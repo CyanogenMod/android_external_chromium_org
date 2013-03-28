@@ -5,11 +5,9 @@
 #ifndef CHROME_BROWSER_UI_ASH_APP_LIST_APP_LIST_CONTROLLER_ASH_H_
 #define CHROME_BROWSER_UI_ASH_APP_LIST_APP_LIST_CONTROLLER_ASH_H_
 
-#include <string>
-
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/ui/app_list/app_list_controller.h"
+#include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 
 class AppListControllerDelegateAsh : public AppListControllerDelegate {
  public:
@@ -18,19 +16,21 @@ class AppListControllerDelegateAsh : public AppListControllerDelegate {
 
  private:
   // AppListControllerDelegate overrides:
-  virtual void CloseView() OVERRIDE;
+  virtual void DismissView() OVERRIDE;
+  virtual gfx::NativeWindow GetAppListWindow() OVERRIDE;
   virtual bool IsAppPinned(const std::string& extension_id) OVERRIDE;
   virtual void PinApp(const std::string& extension_id) OVERRIDE;
   virtual void UnpinApp(const std::string& extension_id) OVERRIDE;
   virtual bool CanPin() OVERRIDE;
   virtual bool CanShowCreateShortcutsDialog() OVERRIDE;
-  virtual void CreateNewWindow(bool incognito) OVERRIDE;
+  virtual void CreateNewWindow(Profile* profile, bool incognito) OVERRIDE;
   virtual void ActivateApp(Profile* profile,
-                           const std::string& extension_id,
+                           const extensions::Extension* extension,
                            int event_flags) OVERRIDE;
   virtual void LaunchApp(Profile* profile,
-                         const std::string& extension_id,
+                         const extensions::Extension* extension,
                          int event_flags) OVERRIDE;
+  virtual bool ShouldShowUserIcon() OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(AppListControllerDelegateAsh);
 };

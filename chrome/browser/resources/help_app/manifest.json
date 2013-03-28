@@ -8,6 +8,7 @@
   "permissions": [
     "tabs",
     "https://support.google.com/chromeos/*/*",
+    "https://gweb-gettingstartedguide.appspot.com/*",
     "chromeosInfoPrivate"
   ],
   "content_scripts": [
@@ -18,6 +19,10 @@
       "all_frames": true
     }
   ],
+  "background": {
+    "persistent": false,
+    "scripts": ["javascript/gsg/background.js"]
+  },
   "manifest_version": 2,
-  "content_security_policy": "default-src 'self'; script-src 'self' https://ssl.google-analytics.com; object-src 'none'; img-src 'self' http://www.google-analytics.com; frame-src https://support.google.com; connect-src https://support.google.com; style-src 'self' 'unsafe-inline'"
+  "content_security_policy": "default-src 'self'; script-src 'self' https://ssl.google-analytics.com; object-src 'none'; img-src 'self' http://www.google-analytics.com; frame-src https://support.google.com https://gweb-gettingstartedguide.appspot.com https://gsg-qa.appspot.com; connect-src https://support.google.com https://gweb-gettingstartedguide.appspot.com; style-src 'self' 'unsafe-inline'"
 }

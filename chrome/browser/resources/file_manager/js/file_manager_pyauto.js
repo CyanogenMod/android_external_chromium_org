@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * pyautoAPI object provides a set of functions used by PyAuto tests
  * to drive the file manager.
@@ -14,7 +16,7 @@
 var pyautoAPI = {
   /**
    * Add the item with given name to the current selection.
-   * @param {string} name Name of the item to add to selection
+   * @param {string} name Name of the item to add to selection.
    */
   addItemToSelection: function(name) {
     var entryExists = false;
@@ -28,7 +30,7 @@ var pyautoAPI = {
         break;
       }
     }
-    this.sendValue_(entryExists);
+    pyautoAPI.sendValue_(entryExists);
   },
 
   /**
@@ -41,7 +43,7 @@ var pyautoAPI = {
     for (var i = 0; i < dm.length; i++) {
       list.push(dm.item(i).name);
     }
-    this.sendJSONValue_(list);
+    pyautoAPI.sendJSONValue_(list);
   },
 
   /**
@@ -56,7 +58,7 @@ var pyautoAPI = {
     } else {
       throw new Error('Cannot save an item in this dialog type.');
     }
-    this.sendDone_();
+    pyautoAPI.sendDone_();
   },
 
   /**
@@ -72,7 +74,7 @@ var pyautoAPI = {
       default:
         throw new Error('Cannot open an item in this dialog type.');
     }
-    this.sendDone_();
+    pyautoAPI.sendDone_();
   },
 
   /**
@@ -89,7 +91,7 @@ var pyautoAPI = {
       default:
         throw new Error('Cannot execute a task in this dialog type.');
     }
-    this.sendDone_();
+    pyautoAPI.sendDone_();
   },
 
   /**
@@ -107,16 +109,16 @@ var pyautoAPI = {
    * Copy selected items to clipboard.
    */
   copyItems: function() {
-    this.executeClipboardCommand_('copy');
-    this.sendDone_();
+    pyautoAPI.executeClipboardCommand_('copy');
+    pyautoAPI.sendDone_();
   },
 
   /**
    * Cut selected items to clipboard.
    */
   cutItems: function() {
-    this.executeClipboardCommand_('cut');
-    this.sendDone_();
+    pyautoAPI.executeClipboardCommand_('cut');
+    pyautoAPI.sendDone_();
   },
 
   /**
@@ -126,11 +128,11 @@ var pyautoAPI = {
     var dm = fileManager.directoryModel_;
     var onRescan = function() {
       dm.removeEventListener('rescan-completed', onRescan);
-      this.sendDone_();
-    }.bind(this);
+      pyautoAPI.sendDone_();
+    };
 
     dm.addEventListener('rescan-completed', onRescan);
-    this.executeClipboardCommand_('paste');
+    pyautoAPI.executeClipboardCommand_('paste');
   },
 
   /**
@@ -139,8 +141,8 @@ var pyautoAPI = {
    */
   renameItem: function(name) {
     var entry = fileManager.getSelection().entries[0];
-    fileManager.directoryModel_.renameEntry(entry, name, this.sendDone_,
-        this.sendDone_);
+    fileManager.directoryModel_.renameEntry(entry, name, pyautoAPI.sendDone_,
+        pyautoAPI.sendDone_);
   },
 
   /**
@@ -150,8 +152,8 @@ var pyautoAPI = {
     var dm = fileManager.directoryModel_;
     var onRescan = function() {
       dm.removeEventListener('rescan-completed', onRescan);
-      this.sendDone_();
-    }.bind(this);
+      pyautoAPI.sendDone_();
+    };
 
     dm.addEventListener('rescan-completed', onRescan);
     fileManager.deleteSelection();
@@ -165,8 +167,8 @@ var pyautoAPI = {
     var dm = fileManager.directoryModel_;
     var onRescan = function() {
       dm.removeEventListener('rescan-completed', onRescan);
-      this.sendDone_();
-    }.bind(this);
+      pyautoAPI.sendDone_();
+    };
 
     dm.addEventListener('rescan-completed', onRescan);
     fileManager.directoryModel_.createDirectory(name, function() {});
@@ -185,8 +187,8 @@ var pyautoAPI = {
 
     var onChanged = function() {
       dm.removeEventListener('directory-changed', onChanged);
-      this.sendDone_();
-    }.bind(this);
+      pyautoAPI.sendDone_();
+    };
 
     dm.addEventListener('directory-changed', onChanged);
     dm.changeDirectory(path);
@@ -196,7 +198,7 @@ var pyautoAPI = {
    * Get the absolute path of current directory.
    */
   currentDirectory: function() {
-    this.sendValue_(fileManager.getCurrentDirectory());
+    pyautoAPI.sendValue_(fileManager.getCurrentDirectory());
   },
 
   /**
@@ -205,8 +207,8 @@ var pyautoAPI = {
   getSelectedDirectorySizeStats: function() {
     var directoryURL = fileManager.getSelection().entries[0].toURL();
     chrome.fileBrowserPrivate.getSizeStats(directoryURL, function(stats) {
-      this.sendJSONValue_(stats);
-    }.bind(this));
+      pyautoAPI.sendJSONValue_(stats);
+    });
   },
 
   /**
@@ -218,7 +220,7 @@ var pyautoAPI = {
     var initialized = fileManager &&
         fileManager.workerInitialized_ &&
         fileManager.getCurrentDirectory();
-    this.sendValue_(!!initialized);
+    pyautoAPI.sendValue_(!!initialized);
   },
 
   /**

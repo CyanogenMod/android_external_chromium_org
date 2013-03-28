@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "google/cacheinvalidation/include/types.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/invalidation.h"
 #include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/notifier/invalidation_util.h"
@@ -27,10 +28,10 @@ typedef std::map<invalidation::ObjectId,
 // Converts between ObjectIdInvalidationMaps and ObjectIdSets.
 ObjectIdSet ObjectIdInvalidationMapToSet(
     const ObjectIdInvalidationMap& invalidation_map);
-ObjectIdInvalidationMap ObjectIdSetToInvalidationMap(
+SYNC_EXPORT ObjectIdInvalidationMap ObjectIdSetToInvalidationMap(
     const ObjectIdSet& ids, const std::string& payload);
 
-bool ObjectIdInvalidationMapEquals(
+SYNC_EXPORT bool ObjectIdInvalidationMapEquals(
     const ObjectIdInvalidationMap& invalidation_map1,
     const ObjectIdInvalidationMap& invalidation_map2);
 
@@ -41,10 +42,12 @@ bool ObjectIdInvalidationMapFromValue(const base::ListValue& value,
                                ObjectIdInvalidationMap* out);
 
 // Converts between ObjectIdInvalidationMaps and ModelTypeInvalidationMaps.
-ModelTypeInvalidationMap ObjectIdInvalidationMapToModelTypeInvalidationMap(
-    const ObjectIdInvalidationMap& invalidation_map);
-ObjectIdInvalidationMap ModelTypeInvalidationMapToObjectIdInvalidationMap(
-    const ModelTypeInvalidationMap& invalidation_map);
+SYNC_EXPORT_PRIVATE ModelTypeInvalidationMap
+    ObjectIdInvalidationMapToModelTypeInvalidationMap(
+        const ObjectIdInvalidationMap& invalidation_map);
+SYNC_EXPORT ObjectIdInvalidationMap
+    ModelTypeInvalidationMapToObjectIdInvalidationMap(
+        const ModelTypeInvalidationMap& invalidation_map);
 
 }  // namespace syncer
 

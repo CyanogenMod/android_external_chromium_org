@@ -8,7 +8,7 @@
 #include "base/callback.h"
 #include "chrome/browser/automation/automation_provider_observers.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/automation_events.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -72,16 +72,15 @@ IN_PROC_BROWSER_TEST_F(AutomationMiscBrowserTest, ProcessMouseEvent) {
       .Times(2);
 
   content::RenderViewHost* view =
-      chrome::GetActiveWebContents(browser())->GetRenderViewHost();
-  ASSERT_TRUE(content::ExecuteJavaScript(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost();
+  ASSERT_TRUE(content::ExecuteScript(
       view,
-      L"",
-      L"window.didClick = false;"
-      L"document.body.innerHTML ="
-      L"    '<a style=\\'position:absolute; left:0; top:0\\'>link</a>';"
-      L"document.querySelector('a').addEventListener('click', function() {"
-      L"  window.didClick = true;"
-      L"}, true);"));
+      "window.didClick = false;"
+      "document.body.innerHTML ="
+      "    '<a style=\\'position:absolute; left:0; top:0\\'>link</a>';"
+      "document.querySelector('a').addEventListener('click', function() {"
+      "  window.didClick = true;"
+      "}, true);"));
   AutomationMouseEvent automation_event;
   automation_event.location_script_chain.push_back(
       ScriptEvaluationRequest("{'x': 5, 'y': 10}", ""));
@@ -98,10 +97,9 @@ IN_PROC_BROWSER_TEST_F(AutomationMiscBrowserTest, ProcessMouseEvent) {
       mock.error_callback());
 
   bool did_click = false;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
       view,
-      L"",
-      L"window.domAutomationController.send(window.didClick);",
+      "window.domAutomationController.send(window.didClick);",
       &did_click));
   EXPECT_TRUE(did_click);
 }

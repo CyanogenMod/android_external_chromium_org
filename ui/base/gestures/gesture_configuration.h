@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,12 +16,28 @@ namespace ui {
 
 class UI_EXPORT GestureConfiguration {
  public:
+  // Number of parameters in the array of parameters for the fling acceleration
+  // curve.
+  static const int NumAccelParams = 4;
+
   // Ordered alphabetically ignoring underscores, to align with the
   // associated list of prefs in gesture_prefs_aura.cc.
   static int default_radius() {
     return default_radius_;
   }
   static void set_default_radius(int radius) { default_radius_ = radius; }
+  static int fling_max_cancel_to_down_time_in_ms() {
+    return fling_max_cancel_to_down_time_in_ms_;
+  }
+  static void set_fling_max_cancel_to_down_time_in_ms(int val) {
+    fling_max_cancel_to_down_time_in_ms_ = val;
+  }
+  static int fling_max_tap_gap_time_in_ms() {
+    return fling_max_tap_gap_time_in_ms_;
+  }
+  static void set_fling_max_tap_gap_time_in_ms(int val) {
+    fling_max_tap_gap_time_in_ms_ = val;
+  }
   static double long_press_time_in_seconds() {
     return long_press_time_in_seconds_;
   }
@@ -109,6 +125,18 @@ class UI_EXPORT GestureConfiguration {
   static void set_min_scroll_delta_squared(double val) {
     min_scroll_delta_squared_ = val;
   }
+  static int min_scroll_successive_velocity_events() {
+    return min_scroll_successive_velocity_events_;
+  }
+  static void set_min_scroll_successive_velocity_events(int val) {
+    min_scroll_successive_velocity_events_ = val;
+  }
+  static float min_scroll_velocity() {
+    return min_scroll_velocity_;
+  }
+  static void set_min_scroll_velocity(float val) {
+    min_scroll_velocity_ = val;
+  }
   static double min_swipe_speed() {
     return min_swipe_speed_;
   }
@@ -139,11 +167,23 @@ class UI_EXPORT GestureConfiguration {
   static void set_rail_start_proportion(double val) {
     rail_start_proportion_ = val;
   }
-  static double touchscreen_fling_acceleration_adjustment() {
-    return touchscreen_fling_acceleration_adjustment_;
+  static void set_fling_acceleration_curve_coefficients(int i, float val) {
+    fling_acceleration_curve_coefficients_[i] = val;
   }
-  static void set_touchscreen_fling_acceleration_adjustment(double val) {
-    touchscreen_fling_acceleration_adjustment_ = val;
+  static float fling_acceleration_curve_coefficients(int i) {
+    return fling_acceleration_curve_coefficients_[i];
+  }
+  static float fling_velocity_cap() {
+    return fling_velocity_cap_;
+  }
+  static void set_fling_velocity_cap(float val) {
+    fling_velocity_cap_ = val;
+  }
+  static int tab_scrub_activation_delay_in_ms() {
+    return tab_scrub_activation_delay_in_ms_;
+  }
+  static void set_tab_scrub_activation_delay_in_ms(int val) {
+    tab_scrub_activation_delay_in_ms_ = val;
   }
 
  private:
@@ -164,6 +204,14 @@ class UI_EXPORT GestureConfiguration {
   // forming an ET_GESTURE_TAP event.
   static int max_radius_;
 
+  // Maximum time between a GestureFlingCancel and a mousedown such that the
+  // mousedown is considered associated with the cancel event.
+  static int fling_max_cancel_to_down_time_in_ms_;
+
+  // Maxium time between a mousedown/mouseup pair that is considered to be a
+  // suppressable tap.
+  static int fling_max_tap_gap_time_in_ms_;
+
   static double long_press_time_in_seconds_;
   static double semi_long_press_time_in_seconds_;
   static double max_seconds_between_double_click_;
@@ -177,12 +225,17 @@ class UI_EXPORT GestureConfiguration {
   static double min_pinch_update_distance_in_pixels_;
   static double min_rail_break_velocity_;
   static double min_scroll_delta_squared_;
+  // TODO(rjkroege): Expose these in chrome://gesture
+  static int min_scroll_successive_velocity_events_;
+  static float min_scroll_velocity_;
   static double min_swipe_speed_;
   static double min_touch_down_duration_in_seconds_for_click_;
   static int points_buffered_for_velocity_;
   static double rail_break_proportion_;
   static double rail_start_proportion_;
-  static double touchscreen_fling_acceleration_adjustment_;
+  static float fling_acceleration_curve_coefficients_[NumAccelParams];
+  static float fling_velocity_cap_;
+  static int tab_scrub_activation_delay_in_ms_;
 
   DISALLOW_COPY_AND_ASSIGN(GestureConfiguration);
 };

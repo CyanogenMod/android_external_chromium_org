@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,9 +15,12 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/requirements_checker.h"
+#include "chrome/common/extensions/api/plugins/plugins_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/common/extensions/manifest.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/id_util.h"
 #include "sync/api/string_ordinal.h"
 
 using content::BrowserThread;
@@ -34,7 +37,7 @@ class SimpleExtensionLoadPrompt : public ExtensionInstallPrompt::Delegate {
   SimpleExtensionLoadPrompt(Profile* profile,
                             base::WeakPtr<ExtensionService> extension_service,
                             const Extension* extension);
-  ~SimpleExtensionLoadPrompt();
+  virtual ~SimpleExtensionLoadPrompt();
 
   void ShowPrompt();
 
@@ -69,7 +72,7 @@ void SimpleExtensionLoadPrompt::ShowPrompt() {
 void SimpleExtensionLoadPrompt::InstallUIProceed() {
   if (service_weak_.get()) {
     extensions::PermissionsUpdater perms_updater(service_weak_->profile());
-    perms_updater.GrantActivePermissions(extension_, false);
+    perms_updater.GrantActivePermissions(extension_);
     service_weak_->OnExtensionInstalled(
         extension_,
         syncer::StringOrdinal(),
@@ -98,7 +101,8 @@ UnpackedInstaller::UnpackedInstaller(ExtensionService* extension_service)
     : service_weak_(extension_service->AsWeakPtr()),
       prompt_for_plugins_(true),
       requirements_checker_(new RequirementsChecker()),
-      require_modern_manifest_version_(true) {
+      require_modern_manifest_version_(true),
+      launch_on_load_(false) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -107,14 +111,15 @@ UnpackedInstaller::~UnpackedInstaller() {
         BrowserThread::CurrentlyOn(BrowserThread::FILE));
 }
 
-void UnpackedInstaller::Load(const FilePath& path_in) {
+void UnpackedInstaller::Load(const base::FilePath& path_in) {
   DCHECK(extension_path_.empty());
   extension_path_ = path_in;
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
       base::Bind(&UnpackedInstaller::GetAbsolutePath, this));
 }
 
-void UnpackedInstaller::LoadFromCommandLine(const FilePath& path_in) {
+void UnpackedInstaller::LoadFromCommandLine(const base::FilePath& path_in,
+                                            bool launch_on_load) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(extension_path_.empty());
 
@@ -135,7 +140,7 @@ void UnpackedInstaller::LoadFromCommandLine(const FilePath& path_in) {
   std::string error;
   extension_ = extension_file_util::LoadExtension(
       extension_path_,
-      Extension::LOAD,
+      Manifest::COMMAND_LINE,
       GetFlags(),
       &error);
 
@@ -143,6 +148,8 @@ void UnpackedInstaller::LoadFromCommandLine(const FilePath& path_in) {
     ReportExtensionLoadError(error);
     return;
   }
+
+  launch_on_load_ = launch_on_load;
 
   CheckRequirements();
 }
@@ -167,9 +174,9 @@ void UnpackedInstaller::OnRequirementsChecked(
 }
 
 int UnpackedInstaller::GetFlags() {
-  std::string id = Extension::GenerateIdForPath(extension_path_);
+  std::string id = id_util::GenerateIdForPath(extension_path_);
   bool allow_file_access =
-      Extension::ShouldAlwaysAllowFileAccess(Extension::LOAD);
+      Manifest::ShouldAlwaysAllowFileAccess(Manifest::UNPACKED);
   if (service_weak_->extension_prefs()->HasAllowFileAccessSetting(id))
     allow_file_access = service_weak_->extension_prefs()->AllowFileAccess(id);
 
@@ -220,7 +227,7 @@ void UnpackedInstaller::LoadWithFileAccess(int flags) {
   std::string error;
   extension_ = extension_file_util::LoadExtension(
       extension_path_,
-      Extension::LOAD,
+      Manifest::UNPACKED,
       flags,
       &error);
 
@@ -251,7 +258,7 @@ void UnpackedInstaller::OnLoaded() {
       service_weak_->disabled_extensions();
   if (service_weak_->show_extensions_prompts() &&
       prompt_for_plugins_ &&
-      !extension_->plugins().empty() &&
+      PluginInfo::HasPlugins(extension_) &&
       !disabled_extensions->Contains(extension_->id())) {
     SimpleExtensionLoadPrompt* prompt = new SimpleExtensionLoadPrompt(
         service_weak_->profile(),
@@ -262,7 +269,11 @@ void UnpackedInstaller::OnLoaded() {
   }
 
   PermissionsUpdater perms_updater(service_weak_->profile());
-  perms_updater.GrantActivePermissions(extension_, false);
+  perms_updater.GrantActivePermissions(extension_);
+
+  if (launch_on_load_)
+    service_weak_->ScheduleLaunchOnLoad(extension_->id());
+
   service_weak_->OnExtensionInstalled(extension_,
                                       syncer::StringOrdinal(),
                                       false /* no requirement errors */,

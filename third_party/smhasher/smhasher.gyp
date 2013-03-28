@@ -20,5 +20,17 @@
         'src/PMurHash.c',
       ],
     },
+    {
+      'target_name': 'cityhash',
+      'type': 'static_library',
+      'sources': [
+        'src/City.cpp',
+        'src/City.h',
+      ],
+      # TODO(jschuh): http://code.google.com/p/smhasher/issues/detail?id=19
+      'msvs_disabled_warnings': [
+        4267,
+      ],
+    },
   ],
 }

@@ -10,15 +10,15 @@ import os
 import sys
 
 from pylib import android_commands
-from pylib import apk_info
 from pylib import constants
-from pylib import test_options_parser
+from pylib.utils import apk_helper
+from pylib.utils import test_options_parser
 
 
 def _InstallApk(args):
-  apk_path, apk_package, device = args
+  apk_path, apk_package, keep_data, device = args
   result = android_commands.AndroidCommands(device=device).ManagedInstall(
-      apk_path, False, apk_package)
+      apk_path, keep_data, apk_package)
   print '-----  Installed on %s  -----' % device
   print result
 
@@ -36,12 +36,13 @@ def main(argv):
     raise Exception('Error: no connected devices')
 
   if not options.apk_package:
-    options.apk_package = apk_info.GetPackageNameForApk(options.apk)
+    options.apk_package = apk_helper.GetPackageName(options.apk)
 
   pool = multiprocessing.Pool(len(devices))
   # Send a tuple (apk_path, apk_package, device) per device.
   pool.map(_InstallApk, zip([options.apk] * len(devices),
                             [options.apk_package] * len(devices),
+                            [options.keep_data] * len(devices),
                             devices))
 
 

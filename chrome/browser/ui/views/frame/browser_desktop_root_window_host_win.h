@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_DESKTOP_ROOT_WINDOW_HOST_WIN_H_
 #define CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_DESKTOP_ROOT_WINDOW_HOST_WIN_H_
 
-#include "ui/views/widget/desktop_root_window_host_win.h"
+#include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
 #include "chrome/browser/ui/views/frame/browser_desktop_root_window_host.h"
 #include "chrome/browser/ui/views/frame/minimize_button_metrics_win.h"
 
@@ -14,6 +14,7 @@ class BrowserView;
 
 namespace views {
 class DesktopNativeWidgetAura;
+class NativeMenuWin;
 }
 
 class BrowserDesktopRootWindowHostWin : public BrowserDesktopRootWindowHost,
@@ -28,9 +29,12 @@ class BrowserDesktopRootWindowHostWin : public BrowserDesktopRootWindowHost,
   virtual ~BrowserDesktopRootWindowHostWin();
 
  private:
+  views::NativeMenuWin* GetSystemMenu();
+
   // Overridden from BrowserDesktopRootWindowHost:
   virtual DesktopRootWindowHost* AsDesktopRootWindowHost() OVERRIDE;
   virtual int GetMinimizeButtonOffset() const OVERRIDE;
+  virtual bool UsesNativeSystemMenu() const OVERRIDE;
 
   // Overridden from DesktopRootWindowHostWin:
   virtual int GetInitialShowState() const OVERRIDE;
@@ -44,6 +48,7 @@ class BrowserDesktopRootWindowHostWin : public BrowserDesktopRootWindowHost,
                              WPARAM w_param,
                              LPARAM l_param) OVERRIDE;
   virtual bool IsUsingCustomFrame() const OVERRIDE;
+  virtual bool ShouldUseNativeFrame() OVERRIDE;
 
   void UpdateDWMFrame();
 
@@ -51,6 +56,9 @@ class BrowserDesktopRootWindowHostWin : public BrowserDesktopRootWindowHost,
   BrowserFrame* browser_frame_;
 
   MinimizeButtonMetrics minimize_button_metrics_;
+
+  // The wrapped system menu itself.
+  scoped_ptr<views::NativeMenuWin> system_menu_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserDesktopRootWindowHostWin);
 };

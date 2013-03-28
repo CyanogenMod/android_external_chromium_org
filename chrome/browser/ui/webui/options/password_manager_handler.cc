@@ -5,11 +5,11 @@
 #include "chrome/browser/ui/webui/options/password_manager_handler.h"
 
 #include "base/bind.h"
-#include "base/string_number_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
@@ -74,7 +74,10 @@ void PasswordManagerHandler::InitializeHandler() {
     return;
 
   show_passwords_.Init(prefs::kPasswordManagerAllowShowPasswords,
-                       Profile::FromWebUI(web_ui())->GetPrefs(), this);
+                       Profile::FromWebUI(web_ui())->GetPrefs(),
+                       base::Bind(&PasswordManagerHandler::UpdatePasswordLists,
+                                  base::Unretained(this),
+                                  static_cast<base::ListValue*>(NULL)));
   // We should not cache web_ui()->GetProfile(). See crosbug.com/6304.
   PasswordStore* store = GetPasswordStore();
   if (store)
@@ -104,15 +107,8 @@ void PasswordManagerHandler::OnLoginsChanged() {
 }
 
 PasswordStore* PasswordManagerHandler::GetPasswordStore() {
-  return PasswordStoreFactory::GetForProfile(
-      Profile::FromWebUI(web_ui()),
-      Profile::EXPLICIT_ACCESS);
-}
-
-void PasswordManagerHandler::OnPreferenceChanged(PrefServiceBase* service,
-                                                 const std::string& pref_name) {
-  DCHECK_EQ(std::string(prefs::kPasswordManagerAllowShowPasswords), pref_name);
-  UpdatePasswordLists(NULL);
+  return PasswordStoreFactory::GetForProfile(Profile::FromWebUI(web_ui()),
+                                             Profile::EXPLICIT_ACCESS);
 }
 
 void PasswordManagerHandler::UpdatePasswordLists(const ListValue* args) {
@@ -242,6 +238,13 @@ void PasswordManagerHandler::PasswordListPopulater::
   page_->SetPasswordList();
 }
 
+void PasswordManagerHandler::PasswordListPopulater::OnGetPasswordStoreResults(
+    const std::vector<content::PasswordForm*>& results) {
+  // TODO(kaiwang): Implement when I refactor
+  // PasswordStore::GetAutofillableLogins and PasswordStore::GetBlacklistLogins.
+  NOTIMPLEMENTED();
+}
+
 PasswordManagerHandler::PasswordExceptionListPopulater::
     PasswordExceptionListPopulater(PasswordManagerHandler* page)
         : ListPopulater(page) {
@@ -269,6 +272,14 @@ void PasswordManagerHandler::PasswordExceptionListPopulater::
   page_->password_exception_list_.insert(page_->password_exception_list_.end(),
                                          result.begin(), result.end());
   page_->SetPasswordExceptionList();
+}
+
+void PasswordManagerHandler::PasswordExceptionListPopulater::
+    OnGetPasswordStoreResults(
+        const std::vector<content::PasswordForm*>& results) {
+  // TODO(kaiwang): Implement when I refactor
+  // PasswordStore::GetAutofillableLogins and PasswordStore::GetBlacklistLogins.
+  NOTIMPLEMENTED();
 }
 
 }  // namespace options

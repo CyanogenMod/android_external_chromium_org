@@ -27,14 +27,17 @@ ChromotingClient::ChromotingClient(
     ClientContext* client_context,
     protocol::ConnectionToHost* connection,
     ClientUserInterface* user_interface,
-    RectangleUpdateDecoder* rectangle_decoder,
+    scoped_refptr<FrameConsumerProxy> frame_consumer,
     scoped_ptr<AudioPlayer> audio_player)
     : config_(config),
       task_runner_(client_context->main_task_runner()),
       connection_(connection),
       user_interface_(user_interface),
-      rectangle_decoder_(rectangle_decoder),
       weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+  rectangle_decoder_ =
+      new RectangleUpdateDecoder(client_context->main_task_runner(),
+                                 client_context->decode_task_runner(),
+                                 frame_consumer);
   audio_decode_scheduler_.reset(new AudioDecodeScheduler(
       client_context->main_task_runner(),
       client_context->audio_decode_task_runner(),
@@ -51,8 +54,8 @@ void ChromotingClient::Start(
 
   scoped_ptr<protocol::Authenticator> authenticator(
       protocol::NegotiatingAuthenticator::CreateForClient(
-          config_.authentication_tag,
-          config_.shared_secret, config_.authentication_methods));
+          config_.authentication_tag, config_.fetch_secret_callback,
+          config_.authentication_methods));
 
   // Create a WeakPtr to ourself for to use for all posted tasks.
   weak_ptr_ = weak_factory_.GetWeakPtr();
@@ -69,6 +72,10 @@ void ChromotingClient::Stop(const base::Closure& shutdown_task) {
 
   connection_->Disconnect(base::Bind(&ChromotingClient::OnDisconnected,
                                      weak_ptr_, shutdown_task));
+}
+
+FrameProducer* ChromotingClient::GetFrameProducer() {
+  return rectangle_decoder_;
 }
 
 void ChromotingClient::OnDisconnected(const base::Closure& shutdown_task) {

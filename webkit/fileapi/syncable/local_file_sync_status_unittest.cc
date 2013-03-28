@@ -8,7 +8,9 @@
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace fileapi {
+using fileapi::FileSystemURL;
+
+namespace sync_file_system {
 
 namespace {
 
@@ -20,7 +22,7 @@ const char kOther1[] = "filesystem:http://foo.com/test/dir b";
 const char kOther2[] = "filesystem:http://foo.com/temporary/dir a";
 
 FileSystemURL URL(const char* spec) {
-  return FileSystemURL(GURL(spec));
+  return FileSystemURL::CreateForTest((GURL(spec)));
 }
 
 }  // namespace
@@ -38,6 +40,20 @@ TEST(LocalFileSyncStatusTest, WritingSimple) {
   EXPECT_FALSE(status.IsWriting(URL(kOther1)));
   EXPECT_FALSE(status.IsWriting(URL(kOther2)));
 
+  // Adding writers doesn't change the entry's writability.
+  EXPECT_TRUE(status.IsWritable(URL(kFile)));
+  EXPECT_TRUE(status.IsWritable(URL(kParent)));
+  EXPECT_TRUE(status.IsWritable(URL(kChild)));
+  EXPECT_TRUE(status.IsWritable(URL(kOther1)));
+  EXPECT_TRUE(status.IsWritable(URL(kOther2)));
+
+  // Adding writers makes the entry non-syncable.
+  EXPECT_FALSE(status.IsSyncable(URL(kFile)));
+  EXPECT_FALSE(status.IsSyncable(URL(kParent)));
+  EXPECT_FALSE(status.IsSyncable(URL(kChild)));
+  EXPECT_TRUE(status.IsSyncable(URL(kOther1)));
+  EXPECT_TRUE(status.IsSyncable(URL(kOther2)));
+
   status.EndWriting(URL(kFile));
 
   EXPECT_FALSE(status.IsWriting(URL(kFile)));
@@ -47,6 +63,7 @@ TEST(LocalFileSyncStatusTest, WritingSimple) {
 
 TEST(LocalFileSyncStatusTest, SyncingSimple) {
   LocalFileSyncStatus status;
+
   status.StartSyncing(URL(kFile));
 
   EXPECT_FALSE(status.IsWritable(URL(kFile)));
@@ -55,6 +72,13 @@ TEST(LocalFileSyncStatusTest, SyncingSimple) {
   EXPECT_TRUE(status.IsWritable(URL(kOther1)));
   EXPECT_TRUE(status.IsWritable(URL(kOther2)));
 
+  // New sync cannot be started for entries that are already in syncing.
+  EXPECT_FALSE(status.IsSyncable(URL(kFile)));
+  EXPECT_FALSE(status.IsSyncable(URL(kParent)));
+  EXPECT_FALSE(status.IsSyncable(URL(kChild)));
+  EXPECT_TRUE(status.IsSyncable(URL(kOther1)));
+  EXPECT_TRUE(status.IsSyncable(URL(kOther2)));
+
   status.EndSyncing(URL(kFile));
 
   EXPECT_TRUE(status.IsWritable(URL(kFile)));
@@ -62,4 +86,4 @@ TEST(LocalFileSyncStatusTest, SyncingSimple) {
   EXPECT_TRUE(status.IsWritable(URL(kChild)));
 }
 
-}  // namespace fileapi
+}  // namespace sync_file_system

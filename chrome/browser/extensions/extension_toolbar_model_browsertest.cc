@@ -4,6 +4,7 @@
 
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -28,24 +29,27 @@ class ExtensionToolbarModelTest : public ExtensionBrowserTest,
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
-    ExtensionService* service = browser()->profile()->GetExtensionService();
+    ExtensionService* service = extensions::ExtensionSystem::Get(
+        browser()->profile())->extension_service();
     model_ = service->toolbar_model();
     model_->AddObserver(this);
   }
 
-  virtual void CleanUpOnMainThread() {
+  virtual void CleanUpOnMainThread() OVERRIDE {
     model_->RemoveObserver(this);
   }
 
-  virtual void BrowserActionAdded(const Extension* extension, int index) {
+  virtual void BrowserActionAdded(const Extension* extension,
+                                  int index) OVERRIDE {
     inserted_count_++;
   }
 
-  virtual void BrowserActionRemoved(const Extension* extension) {
+  virtual void BrowserActionRemoved(const Extension* extension) OVERRIDE {
     removed_count_++;
   }
 
-  virtual void BrowserActionMoved(const Extension* extension, int index) {
+  virtual void BrowserActionMoved(const Extension* extension,
+                                  int index) OVERRIDE {
     moved_count_++;
   }
 
@@ -112,7 +116,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionToolbarModelTest, ReorderAndReinsert) {
       switches::kEnableExperimentalExtensionApis);
 
   // Load an extension with a browser action.
-  FilePath extension_a_path(test_data_dir_.AppendASCII("api_test")
+  base::FilePath extension_a_path(test_data_dir_.AppendASCII("api_test")
                                           .AppendASCII("browser_action")
                                           .AppendASCII("basics"));
   ASSERT_TRUE(LoadExtension(extension_a_path));
@@ -126,7 +130,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionToolbarModelTest, ReorderAndReinsert) {
                extensionA->name().c_str());
 
   // Load another extension with a browser action.
-  FilePath extension_b_path(test_data_dir_.AppendASCII("api_test")
+  base::FilePath extension_b_path(test_data_dir_.AppendASCII("api_test")
                                           .AppendASCII("browser_action")
                                           .AppendASCII("popup"));
   ASSERT_TRUE(LoadExtension(extension_b_path));
@@ -139,7 +143,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionToolbarModelTest, ReorderAndReinsert) {
   EXPECT_STREQ("Popup tester", extensionB->name().c_str());
 
   // Load yet another extension with a browser action.
-  FilePath extension_c_path(test_data_dir_.AppendASCII("api_test")
+  base::FilePath extension_c_path(test_data_dir_.AppendASCII("api_test")
                                           .AppendASCII("browser_action")
                                           .AppendASCII("remove_popup"));
   ASSERT_TRUE(LoadExtension(extension_c_path));
@@ -229,4 +233,117 @@ IN_PROC_BROWSER_TEST_F(ExtensionToolbarModelTest, ReorderAndReinsert) {
   EXPECT_EQ(2u, model_->toolbar_items().size());
   // Make sure it gets its old spot in the list (at the very end).
   ASSERT_STREQ(idC.c_str(), ExtensionAt(1)->id().c_str());
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionToolbarModelTest, UnloadAndDisableMultiple) {
+  // Load three extensions with browser action.
+  base::FilePath extension_a_path(test_data_dir_.AppendASCII("api_test")
+                                                .AppendASCII("browser_action")
+                                                .AppendASCII("basics"));
+  ASSERT_TRUE(LoadExtension(extension_a_path));
+  base::FilePath extension_b_path(test_data_dir_.AppendASCII("api_test")
+                                                .AppendASCII("browser_action")
+                                                .AppendASCII("popup"));
+  ASSERT_TRUE(LoadExtension(extension_b_path));
+  base::FilePath extension_c_path(test_data_dir_.AppendASCII("api_test")
+                                                .AppendASCII("browser_action")
+                                                .AppendASCII("remove_popup"));
+  ASSERT_TRUE(LoadExtension(extension_c_path));
+
+  // Verify we got the three we asked for and that they are ordered as: A, B, C.
+  const Extension* extensionA = ExtensionAt(0);
+  const Extension* extensionB = ExtensionAt(1);
+  const Extension* extensionC = ExtensionAt(2);
+  std::string idA = extensionA->id();
+  std::string idB = extensionB->id();
+  std::string idC = extensionC->id();
+  EXPECT_STREQ("A browser action with no icon that makes the page red",
+               extensionA->name().c_str());
+  EXPECT_STREQ("Popup tester", extensionB->name().c_str());
+  EXPECT_STREQ("A page action which removes a popup.",
+               extensionC->name().c_str());
+
+  // Unload B, then C, then A.
+  UnloadExtension(idB);
+  UnloadExtension(idC);
+  UnloadExtension(idA);
+
+  // Load C, then A, then B.
+  ASSERT_TRUE(LoadExtension(extension_c_path));
+  ASSERT_TRUE(LoadExtension(extension_a_path));
+  ASSERT_TRUE(LoadExtension(extension_b_path));
+  EXPECT_EQ(0, moved_count_);
+
+  extensionA = ExtensionAt(0);
+  extensionB = ExtensionAt(1);
+  extensionC = ExtensionAt(2);
+
+  // Make sure we get the order we started with (A, B, C).
+  EXPECT_STREQ(idA.c_str(), extensionA->id().c_str());
+  EXPECT_STREQ(idB.c_str(), extensionB->id().c_str());
+  EXPECT_STREQ(idC.c_str(), extensionC->id().c_str());
+
+  // Put C in the middle and A to the end.
+  model_->MoveBrowserAction(extensionC, 1);
+  model_->MoveBrowserAction(extensionA, 2);
+
+  // Make sure we get this order (C, B, A).
+  EXPECT_STREQ(idC.c_str(), ExtensionAt(0)->id().c_str());
+  EXPECT_STREQ(idB.c_str(), ExtensionAt(1)->id().c_str());
+  EXPECT_STREQ(idA.c_str(), ExtensionAt(2)->id().c_str());
+
+  // Disable B, then C, then A.
+  DisableExtension(idB);
+  DisableExtension(idC);
+  DisableExtension(idA);
+
+  // Enable C, then A, then B.
+  EnableExtension(idA);
+  EnableExtension(idB);
+  EnableExtension(idC);
+
+  // Make sure we get the order we started with.
+  EXPECT_STREQ(idC.c_str(), ExtensionAt(0)->id().c_str());
+  EXPECT_STREQ(idB.c_str(), ExtensionAt(1)->id().c_str());
+  EXPECT_STREQ(idA.c_str(), ExtensionAt(2)->id().c_str());
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionToolbarModelTest, Uninstall) {
+  // Load two extensions with browser action.
+  base::FilePath extension_a_path(test_data_dir_.AppendASCII("api_test")
+                                                .AppendASCII("browser_action")
+                                                .AppendASCII("basics"));
+  ASSERT_TRUE(LoadExtension(extension_a_path));
+  base::FilePath extension_b_path(test_data_dir_.AppendASCII("api_test")
+                                                .AppendASCII("browser_action")
+                                                .AppendASCII("popup"));
+  ASSERT_TRUE(LoadExtension(extension_b_path));
+
+  // Verify we got what we came for.
+  const Extension* extensionA = ExtensionAt(0);
+  const Extension* extensionB = ExtensionAt(1);
+  std::string idA = extensionA->id();
+  std::string idB = extensionB->id();
+  EXPECT_STREQ("A browser action with no icon that makes the page red",
+               extensionA->name().c_str());
+  EXPECT_STREQ("Popup tester", extensionB->name().c_str());
+
+  // Order is now A, B. Make B first.
+  model_->MoveBrowserAction(extensionB, 0);
+
+  // Order is now B, A. Uninstall Extension B.
+  UninstallExtension(idB);
+
+  // List contains only A now. Validate that.
+  EXPECT_STREQ(idA.c_str(), ExtensionAt(0)->id().c_str());
+  EXPECT_EQ(1u, model_->toolbar_items().size());
+
+  // Load Extension B again.
+  ASSERT_TRUE(LoadExtension(extension_b_path));
+  EXPECT_EQ(2u, model_->toolbar_items().size());
+
+  // Make sure Extension B is _not_ first (should have been forgotten at
+  // uninstall time).
+  EXPECT_STREQ(idA.c_str(), ExtensionAt(0)->id().c_str());
+  EXPECT_STREQ(idB.c_str(), ExtensionAt(1)->id().c_str());
 }

@@ -11,11 +11,11 @@
 #include "base/memory/ref_counted.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_resource.h"
-#include "ppapi/shared_impl/api_id.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/shared_impl/resource_tracker.h"
+#include "ppapi/shared_impl/singleton_resource_id.h"
 #include "ppapi/shared_impl/tracked_callback.h"
 #include "ppapi/thunk/ppapi_thunk_export.h"
 #include "ppapi/thunk/ppb_instance_api.h"
@@ -48,9 +48,13 @@ PPAPI_THUNK_EXPORT void AssertLockHeld();
 
 // This helps us define our RAII Enter classes easily. To make an RAII class
 // which locks the proxy lock on construction and unlocks on destruction,
-// inherit from |LockOnEntry<true>|. For cases where you don't want to lock,
-// inherit from |LockOnEntry<false>|. This allows us to share more code between
-// Enter* and Enter*NoLock classes.
+// inherit from |LockOnEntry<true>| before all other base classes. This ensures
+// that the lock is acquired before any other base class's constructor can run,
+// and that the lock is only released after all other destructors have run.
+// (This order of initialization is guaranteed by C++98/C++11 12.6.2.10).
+//
+// For cases where you don't want to lock, inherit from |LockOnEntry<false>|.
+// This allows us to share more code between Enter* and Enter*NoLock classes.
 template <bool lock_on_entry>
 struct LockOnEntry;
 
@@ -84,7 +88,10 @@ class PPAPI_THUNK_EXPORT EnterBase {
  public:
   EnterBase();
   explicit EnterBase(PP_Resource resource);
+  EnterBase(PP_Instance instance, SingletonResourceID resource_id);
   EnterBase(PP_Resource resource, const PP_CompletionCallback& callback);
+  EnterBase(PP_Instance instance, SingletonResourceID resource_id,
+            const PP_CompletionCallback& callback);
   virtual ~EnterBase();
 
   // Sets the result for calls that use a completion callback. It handles making
@@ -113,6 +120,11 @@ class PPAPI_THUNK_EXPORT EnterBase {
   // code be in the non-templatized base keeps us from having to instantiate
   // it in every template.
   static Resource* GetResource(PP_Resource resource);
+
+  // Helper function to return a Resource from a PP_Instance and singleton
+  // resource identifier.
+  static Resource* GetSingletonResource(PP_Instance instance,
+                                        SingletonResourceID resource_id);
 
   void ClearCallback();
 
@@ -161,8 +173,9 @@ class PPAPI_THUNK_EXPORT EnterBase {
 // EnterResource ---------------------------------------------------------------
 
 template<typename ResourceT, bool lock_on_entry = true>
-class EnterResource : public subtle::EnterBase,
-                      public subtle::LockOnEntry<lock_on_entry> {
+class EnterResource
+    : public subtle::LockOnEntry<lock_on_entry>,  // Must be first; see above.
+      public subtle::EnterBase {
  public:
   EnterResource(PP_Resource resource, bool report_error)
       : EnterBase(resource) {
@@ -213,10 +226,10 @@ class EnterResourceNoLock : public EnterResource<ResourceT, false> {
 // EnterInstance ---------------------------------------------------------------
 
 class PPAPI_THUNK_EXPORT EnterInstance
-    : public subtle::EnterBase,
-      public subtle::LockOnEntry<true> {
+    : public subtle::LockOnEntry<true>,  // Must be first; see above.
+      public subtle::EnterBase {
  public:
-  EnterInstance(PP_Instance instance);
+  explicit EnterInstance(PP_Instance instance);
   EnterInstance(PP_Instance instance,
                 const PP_CompletionCallback& callback);
   ~EnterInstance();
@@ -224,17 +237,17 @@ class PPAPI_THUNK_EXPORT EnterInstance
   bool succeeded() const { return !!functions_; }
   bool failed() const { return !functions_; }
 
-  PPB_Instance_API* functions() { return functions_; }
+  PPB_Instance_API* functions() const { return functions_; }
 
  private:
   PPB_Instance_API* functions_;
 };
 
 class PPAPI_THUNK_EXPORT EnterInstanceNoLock
-    : public subtle::EnterBase,
-      public subtle::LockOnEntry<false> {
+    : public subtle::LockOnEntry<false>,  // Must be first; see above.
+      public subtle::EnterBase {
  public:
-  EnterInstanceNoLock(PP_Instance instance);
+  explicit EnterInstanceNoLock(PP_Instance instance);
   EnterInstanceNoLock(PP_Instance instance,
                       const PP_CompletionCallback& callback);
   ~EnterInstanceNoLock();
@@ -245,13 +258,54 @@ class PPAPI_THUNK_EXPORT EnterInstanceNoLock
   PPB_Instance_API* functions_;
 };
 
+// EnterInstanceAPI ------------------------------------------------------------
+
+template<typename ApiT, bool lock_on_entry = true>
+class EnterInstanceAPI
+    : public subtle::LockOnEntry<lock_on_entry>,  // Must be first; see above
+      public subtle::EnterBase {
+ public:
+  explicit EnterInstanceAPI(PP_Instance instance)
+      : EnterBase(instance, ApiT::kSingletonResourceID),
+        functions_(NULL) {
+    if (resource_)
+      functions_ = resource_->GetAs<ApiT>();
+    SetStateForFunctionError(instance, functions_, true);
+  }
+  EnterInstanceAPI(PP_Instance instance,
+                   const PP_CompletionCallback& callback)
+      : EnterBase(instance, ApiT::kSingletonResourceID, callback),
+        functions_(NULL) {
+    if (resource_)
+      functions_ = resource_->GetAs<ApiT>();
+    SetStateForFunctionError(instance, functions_, true);
+  }
+  ~EnterInstanceAPI() {}
+
+  bool succeeded() const { return !!functions_; }
+  bool failed() const { return !functions_; }
+
+  ApiT* functions() const { return functions_; }
+
+ private:
+  ApiT* functions_;
+};
+
+template<typename ApiT>
+class EnterInstanceAPINoLock : public EnterInstanceAPI<ApiT, false> {
+ public:
+  explicit EnterInstanceAPINoLock(PP_Instance instance)
+      : EnterInstanceAPI<ApiT, false>(instance) {
+  }
+};
+
 // EnterResourceCreation -------------------------------------------------------
 
 class PPAPI_THUNK_EXPORT EnterResourceCreation
-    : public subtle::EnterBase,
-      public subtle::LockOnEntry<true> {
+    : public subtle::LockOnEntry<true>,  // Must be first; see above.
+      public subtle::EnterBase {
  public:
-  EnterResourceCreation(PP_Instance instance);
+  explicit EnterResourceCreation(PP_Instance instance);
   ~EnterResourceCreation();
 
   ResourceCreationAPI* functions() { return functions_; }
@@ -261,10 +315,10 @@ class PPAPI_THUNK_EXPORT EnterResourceCreation
 };
 
 class PPAPI_THUNK_EXPORT EnterResourceCreationNoLock
-    : public subtle::EnterBase,
-      public subtle::LockOnEntry<false> {
+    : public subtle::LockOnEntry<false>,  // Must be first; see above.
+      public subtle::EnterBase {
  public:
-  EnterResourceCreationNoLock(PP_Instance instance);
+  explicit EnterResourceCreationNoLock(PP_Instance instance);
   ~EnterResourceCreationNoLock();
 
   ResourceCreationAPI* functions() { return functions_; }

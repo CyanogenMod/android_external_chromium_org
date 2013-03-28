@@ -1,16 +1,18 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "sync/syncable/syncable_util.h"
 
+#include "base/base64.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/sha1.h"
 #include "sync/syncable/directory.h"
 #include "sync/syncable/entry.h"
 #include "sync/syncable/mutable_entry.h"
 #include "sync/syncable/syncable_id.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 
 namespace syncer {
 namespace syncable {
@@ -76,14 +78,14 @@ void ChangeEntryIDAndUpdateChildren(
   // order.  Do this by reinserting into the linked list; the first
   // step in PutPredecessor is to Unlink from the existing order, which
   // will overwrite the stale Id value from the adjacent nodes.
-  if (entry->Get(PREV_ID) == entry->Get(NEXT_ID) &&
-      entry->Get(PREV_ID) == old_id) {
+  if (entry->GetPredecessorId() == entry->GetSuccessorId() &&
+      entry->GetPredecessorId() == old_id) {
     // We just need a shallow update to |entry|'s fields since it is already
     // self looped.
     entry->Put(NEXT_ID, new_id);
     entry->Put(PREV_ID, new_id);
   } else {
-    entry->PutPredecessor(entry->Get(PREV_ID));
+    entry->PutPredecessor(entry->GetPredecessorId());
   }
 }
 
@@ -100,6 +102,21 @@ bool SyncAssert(bool condition,
     return false;
   }
   return true;
+}
+
+std::string GenerateSyncableHash(
+    ModelType model_type, const std::string& client_tag) {
+  // Blank PB with just the field in it has termination symbol,
+  // handy for delimiter.
+  sync_pb::EntitySpecifics serialized_type;
+  AddDefaultFieldValue(model_type, &serialized_type);
+  std::string hash_input;
+  serialized_type.AppendToString(&hash_input);
+  hash_input.append(client_tag);
+
+  std::string encode_output;
+  CHECK(base::Base64Encode(base::SHA1HashString(hash_input), &encode_output));
+  return encode_output;
 }
 
 }  // namespace syncable

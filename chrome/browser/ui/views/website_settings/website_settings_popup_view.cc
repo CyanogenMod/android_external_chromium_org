@@ -4,13 +4,12 @@
 
 #include "chrome/browser/ui/views/website_settings/website_settings_popup_view.h"
 
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/views/collected_cookies_views.h"
 #include "chrome/browser/ui/views/website_settings/permission_selector_view.h"
 #include "chrome/browser/ui/website_settings/website_settings.h"
@@ -181,11 +180,11 @@ PopupHeaderView::PopupHeaderView(views::ButtonListener* close_button_listener)
   views::ImageButton* close_button =
       new views::ImageButton(close_button_listener);
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  close_button->SetImage(views::CustomButton::BS_NORMAL,
+  close_button->SetImage(views::CustomButton::STATE_NORMAL,
                          rb.GetImageNamed(IDR_CLOSE_BAR).ToImageSkia());
-  close_button->SetImage(views::CustomButton::BS_HOT,
+  close_button->SetImage(views::CustomButton::STATE_HOVERED,
                          rb.GetImageNamed(IDR_CLOSE_BAR_H).ToImageSkia());
-  close_button->SetImage(views::CustomButton::BS_PUSHED,
+  close_button->SetImage(views::CustomButton::STATE_PRESSED,
                          rb.GetImageNamed(IDR_CLOSE_BAR_P).ToImageSkia());
   layout->AddView(close_button, 1, 1, views::GridLayout::TRAILING,
                   views::GridLayout::LEADING);
@@ -241,8 +240,7 @@ InternalPageInfoPopupView::InternalPageInfoPopupView(views::View* anchor_view)
   label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   AddChildView(label);
 
-  views::BubbleDelegateView::CreateBubble(this);
-  Show();
+  views::BubbleDelegateView::CreateBubble(this)->Show();
   SizeToContents();
 }
 
@@ -259,26 +257,26 @@ WebsiteSettingsPopupView::~WebsiteSettingsPopupView() {
 // static
 void WebsiteSettingsPopupView::ShowPopup(views::View* anchor_view,
                                          Profile* profile,
-                                         TabContents* tab_contents,
+                                         content::WebContents* web_contents,
                                          const GURL& url,
                                          const content::SSLStatus& ssl,
                                          Browser* browser) {
   if (InternalChromePage(url))
     new InternalPageInfoPopupView(anchor_view);
   else
-    new WebsiteSettingsPopupView(anchor_view, profile, tab_contents, url, ssl,
+    new WebsiteSettingsPopupView(anchor_view, profile, web_contents, url, ssl,
                                  browser);
 }
 
 WebsiteSettingsPopupView::WebsiteSettingsPopupView(
     views::View* anchor_view,
     Profile* profile,
-    TabContents* tab_contents,
+    content::WebContents* web_contents,
     const GURL& url,
     const content::SSLStatus& ssl,
     Browser* browser)
     : BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_LEFT),
-      tab_contents_(tab_contents),
+      web_contents_(web_contents),
       browser_(browser),
       header_(NULL),
       tabbed_pane_(NULL),
@@ -323,31 +321,28 @@ WebsiteSettingsPopupView::WebsiteSettingsPopupView(
   tabbed_pane_->AddTabAtIndex(
       TAB_ID_PERMISSIONS,
       l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_TAB_LABEL_PERMISSIONS),
-      CreatePermissionsTab(),
-      true);
+      CreatePermissionsTab());
   connection_tab_ = CreateConnectionTab();
   tabbed_pane_->AddTabAtIndex(
       TAB_ID_CONNECTION,
       l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_TAB_LABEL_CONNECTION),
-      connection_tab_,
-      true);
+      connection_tab_);
   DCHECK_EQ(tabbed_pane_->GetTabCount(), NUM_TAB_IDS);
   tabbed_pane_->set_listener(this);
 
   set_margins(gfx::Insets(kPopupMarginTop, kPopupMarginLeft,
                           kPopupMarginBottom, kPopupMarginRight));
 
-  views::BubbleDelegateView::CreateBubble(this);
-  this->Show();
+  views::BubbleDelegateView::CreateBubble(this)->Show();
   SizeToContents();
 
   TabSpecificContentSettings* content_settings =
-      TabSpecificContentSettings::FromWebContents(tab_contents->web_contents());
-  InfoBarTabHelper* infobar_tab_helper =
-      InfoBarTabHelper::FromWebContents(tab_contents->web_contents());
+      TabSpecificContentSettings::FromWebContents(web_contents);
+  InfoBarService* infobar_service =
+      InfoBarService::FromWebContents(web_contents);
   presenter_.reset(new WebsiteSettings(this, profile,
                                        content_settings,
-                                       infobar_tab_helper,
+                                       infobar_service,
                                        url,
                                        ssl,
                                        content::CertStore::GetInstance()));
@@ -356,12 +351,11 @@ WebsiteSettingsPopupView::WebsiteSettingsPopupView(
 void WebsiteSettingsPopupView::OnPermissionChanged(
     PermissionSelectorView* permission_selector) {
   DCHECK(permission_selector);
-  presenter_->OnSitePermissionChanged(
-      permission_selector->GetPermissionType(),
-      permission_selector->GetSelectedSetting());
+  presenter_->OnSitePermissionChanged(permission_selector->type(),
+                                      permission_selector->current_setting());
 }
 
-void WebsiteSettingsPopupView::OnWidgetClosing(views::Widget* widget) {
+void WebsiteSettingsPopupView::OnWidgetDestroying(views::Widget* widget) {
   presenter_->OnUIClosing();
 }
 
@@ -377,11 +371,11 @@ void WebsiteSettingsPopupView::LinkClicked(views::Link* source,
     // Count how often the Collected Cookies dialog is opened.
     content::RecordAction(
         content::UserMetricsAction("WebsiteSettings_CookiesDialogOpened"));
-    new CollectedCookiesViews(tab_contents_->web_contents());
+    new CollectedCookiesViews(web_contents_);
   } else if (source == certificate_dialog_link_) {
     gfx::NativeWindow parent =
         anchor_view() ? anchor_view()->GetWidget()->GetNativeWindow() : NULL;
-    ShowCertificateViewerByID(tab_contents_->web_contents(), parent, cert_id_);
+    ShowCertificateViewerByID(web_contents_, parent, cert_id_);
   } else if (source == help_center_link_) {
     browser_->OpenURL(content::OpenURLParams(
         GURL(chrome::kPageInfoHelpCenterURL),
@@ -493,6 +487,7 @@ void WebsiteSettingsPopupView::SetPermissionInfo(
        ++permission) {
     layout->StartRow(1, content_column);
     PermissionSelectorView* selector = new PermissionSelectorView(
+        web_contents_ ? web_contents_->GetURL() : GURL::EmptyGURL(),
         permission->type,
         permission->default_setting,
         permission->setting,
@@ -515,7 +510,6 @@ void WebsiteSettingsPopupView::SetIdentityInfo(
   SkColor text_color = SK_ColorBLACK;
   switch (identity_info.identity_status) {
     case WebsiteSettings::SITE_IDENTITY_STATUS_CERT:
-    case WebsiteSettings::SITE_IDENTITY_STATUS_DNSSEC_CERT:
     case WebsiteSettings::SITE_IDENTITY_STATUS_EV_CERT:
       identity_status_text =
           l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_IDENTITY_VERIFIED);

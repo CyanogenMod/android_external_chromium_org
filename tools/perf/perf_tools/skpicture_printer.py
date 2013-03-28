@@ -1,16 +1,14 @@
-#!/usr/bin/env python
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import os
-import re
 
-from telemetry import multi_page_benchmark
+from telemetry.page import page_benchmark
 
 _JS = 'chrome.gpuBenchmarking.printToSkPicture("{0}");'
 
-class SkPicturePrinter(multi_page_benchmark.MultiPageBenchmark):
-  def AddOptions(self, parser):
+class SkPicturePrinter(page_benchmark.PageBenchmark):
+  def AddCommandLineOptions(self, parser):
     parser.add_option('-o', '--outdir', help='Output directory')
 
   def CustomizeBrowserOptions(self, options):
@@ -18,13 +16,10 @@ class SkPicturePrinter(multi_page_benchmark.MultiPageBenchmark):
                                        '--no-sandbox'])
 
   def MeasurePage(self, page, tab, results):
-    # Derive output path from the URL. The pattern just replaces all special
-    # characters in the url with underscore.
-    outpath = re.sub('://|[.~!*\:@&=+$,/?%#]', '_', page.url)
     if self.options.outdir is not None:
-      outpath = os.path.join(self.options.outdir, outpath)
+      outpath = os.path.join(self.options.outdir, page.url_as_file_safe_name)
     outpath = os.path.abspath(outpath)
     # Replace win32 path separator char '\' with '\\'.
     js = _JS.format(outpath.replace('\\', '\\\\'))
-    tab.runtime.Evaluate(js)
+    tab.EvaluateJavaScript(js)
     results.Add('output_path', 'path', outpath)

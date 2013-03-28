@@ -5,12 +5,25 @@
 """Generic utilities for all python scripts."""
 
 import atexit
+import httplib
 import os
 import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import urlparse
+
+
+def GetPlatformName():
+  """Return a string to be used in paths for the platform."""
+  if IsWindows():
+    return 'win'
+  if IsMac():
+    return 'mac'
+  if IsLinux():
+    return 'linux'
+  raise NotImplementedError('Unknown platform "%s".' % sys.platform)
 
 
 def IsWindows():
@@ -109,6 +122,30 @@ def RunCommand(cmd, cwd=None):
   Returns:
     The exit code of the command.
   """
-  process = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr, cwd=cwd)
+  process = subprocess.Popen(cmd, cwd=cwd)
   process.wait()
   return process.returncode
+
+
+def DoesUrlExist(url):
+  """Determines whether a resource exists at the given URL.
+
+  Args:
+    url: URL to be verified.
+
+  Returns:
+    True if url exists, otherwise False.
+  """
+  parsed = urlparse.urlparse(url)
+  try:
+    conn = httplib.HTTPConnection(parsed.netloc)
+    conn.request('HEAD', parsed.path)
+    response = conn.getresponse()
+  except (socket.gaierror, socket.error):
+    return False
+  finally:
+    conn.close()
+  # Follow both permanent (301) and temporary (302) redirects.
+  if response.status == 302 or response.status == 301:
+    return DoesUrlExist(response.getheader('location'))
+  return response.status == 200

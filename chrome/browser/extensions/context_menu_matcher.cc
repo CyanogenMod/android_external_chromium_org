@@ -6,9 +6,11 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/context_menu_matcher.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/common/context_menu_params.h"
 #include "ui/gfx/favicon_size.h"
+#include "ui/gfx/image/image.h"
 
 namespace extensions {
 
@@ -28,7 +30,8 @@ void ContextMenuMatcher::AppendExtensionItems(const std::string& extension_id,
                                               const string16& selection_text,
                                               int* index)
 {
-  ExtensionService* service = profile_->GetExtensionService();
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
   MenuManager* manager = service->menu_manager();
   const Extension* extension = service->GetExtensionById(extension_id, false);
   DCHECK_GE(*index, 0);
@@ -50,9 +53,7 @@ void ContextMenuMatcher::AppendExtensionItems(const std::string& extension_id,
 
   // If this is the first extension-provided menu item, and there are other
   // items in the menu, and the last item is not a separator add a separator.
-  if (*index == 0 && menu_model_->GetItemCount() &&
-      menu_model_->GetTypeAt(menu_model_->GetItemCount() - 1) !=
-          ui::MenuModel::TYPE_SEPARATOR)
+  if (*index == 0 && menu_model_->GetItemCount())
     menu_model_->AddSeparator(ui::NORMAL_SEPARATOR);
 
   // Extensions (other than platform apps) are only allowed one top-level slot
@@ -115,7 +116,8 @@ bool ContextMenuMatcher::IsCommandIdEnabled(int command_id) const {
 void ContextMenuMatcher::ExecuteCommand(int command_id,
     content::WebContents* web_contents,
     const content::ContextMenuParams& params) {
-  MenuManager* manager = profile_->GetExtensionService()->menu_manager();
+  MenuManager* manager = extensions::ExtensionSystem::Get(profile_)->
+      extension_service()->menu_manager();
   MenuItem* item = GetExtensionMenuItem(command_id);
   if (!item)
     return;
@@ -189,22 +191,20 @@ void ContextMenuMatcher::RecursivelyAppendExtensionItems(
         radio_group_id++;
 
         // Auto-append a separator if needed.
-        if (last_type != MenuItem::SEPARATOR)
-          menu_model->AddSeparator(ui::NORMAL_SEPARATOR);
+        menu_model->AddSeparator(ui::NORMAL_SEPARATOR);
       }
 
       menu_model->AddRadioItem(menu_id, title, radio_group_id);
     } else if (item->type() == MenuItem::SEPARATOR) {
-      if (i != items.begin() && last_type != MenuItem::SEPARATOR) {
-        menu_model->AddSeparator(ui::NORMAL_SEPARATOR);
-      }
+      menu_model->AddSeparator(ui::NORMAL_SEPARATOR);
     }
     last_type = item->type();
   }
 }
 
 MenuItem* ContextMenuMatcher::GetExtensionMenuItem(int id) const {
-  MenuManager* manager = profile_->GetExtensionService()->menu_manager();
+  MenuManager* manager = extensions::ExtensionSystem::Get(profile_)->
+      extension_service()->menu_manager();
   std::map<int, MenuItem::Id>::const_iterator i =
       extension_item_map_.find(id);
   if (i != extension_item_map_.end()) {
@@ -216,7 +216,8 @@ MenuItem* ContextMenuMatcher::GetExtensionMenuItem(int id) const {
 }
 
 void ContextMenuMatcher::SetExtensionIcon(const std::string& extension_id) {
-  ExtensionService* service = profile_->GetExtensionService();
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile_)->extension_service();
   MenuManager* menu_manager = service->menu_manager();
 
   int index = menu_model_->GetItemCount() - 1;
@@ -226,7 +227,7 @@ void ContextMenuMatcher::SetExtensionIcon(const std::string& extension_id) {
   DCHECK(icon.width() == gfx::kFaviconSize);
   DCHECK(icon.height() == gfx::kFaviconSize);
 
-  menu_model_->SetIcon(index, gfx::Image(icon));
+  menu_model_->SetIcon(index, gfx::Image::CreateFrom1xBitmap(icon));
 }
 
 }  // namespace extensions

@@ -13,6 +13,7 @@
 #include "base/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_log.h"
+#include "net/base/request_priority.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_request_headers.h"
@@ -57,7 +58,8 @@ class HttpCache::Transaction : public HttpTransaction {
     UPDATE          = READ_META | WRITE,  // READ_WRITE & ~READ_DATA
   };
 
-  Transaction(HttpCache* cache,
+  Transaction(RequestPriority priority,
+              HttpCache* cache,
               HttpTransactionDelegate* transaction_delegate,
               InfiniteCacheTransaction* infinite_cache_transaction);
   virtual ~Transaction();
@@ -104,8 +106,9 @@ class HttpCache::Transaction : public HttpTransaction {
   const BoundNetLog& net_log() const;
 
   // HttpTransaction methods:
-  virtual int Start(const HttpRequestInfo*, const CompletionCallback&,
-                    const BoundNetLog&) OVERRIDE;
+  virtual int Start(const HttpRequestInfo* request_info,
+                    const CompletionCallback& callback,
+                    const BoundNetLog& net_log) OVERRIDE;
   virtual int RestartIgnoringLastError(
       const CompletionCallback& callback) OVERRIDE;
   virtual int RestartWithCertificate(
@@ -122,6 +125,9 @@ class HttpCache::Transaction : public HttpTransaction {
   virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
   virtual LoadState GetLoadState() const OVERRIDE;
   virtual UploadProgress GetUploadProgress(void) const OVERRIDE;
+  virtual bool GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE;
+  virtual void SetPriority(RequestPriority priority) OVERRIDE;
 
  private:
   static const size_t kNumValidationHeaders = 2;
@@ -152,6 +158,7 @@ class HttpCache::Transaction : public HttpTransaction {
     STATE_DOOM_ENTRY_COMPLETE,
     STATE_ADD_TO_ENTRY,
     STATE_ADD_TO_ENTRY_COMPLETE,
+    STATE_ADD_TO_ENTRY_COMPLETE_AFTER_DELAY,
     STATE_START_PARTIAL_CACHE_VALIDATION,
     STATE_COMPLETE_PARTIAL_CACHE_VALIDATION,
     STATE_UPDATE_CACHED_RESPONSE,
@@ -181,6 +188,8 @@ class HttpCache::Transaction : public HttpTransaction {
   // cover relatively common use cases being measured and considered for
   // optimization. Many use cases that are more complex or uncommon are binned
   // as PATTERN_NOT_COVERED, and details are not reported.
+  // NOTE: This enumeration is used in histograms, so please do not add entries
+  // in the middle.
   enum TransactionPattern {
     PATTERN_UNDEFINED,
     PATTERN_NOT_COVERED,
@@ -188,6 +197,8 @@ class HttpCache::Transaction : public HttpTransaction {
     PATTERN_ENTRY_USED,
     PATTERN_ENTRY_VALIDATED,
     PATTERN_ENTRY_UPDATED,
+    PATTERN_ENTRY_CANT_CONDITIONALIZE,
+    PATTERN_MAX,
   };
 
   // This is a helper function used to trigger a completion callback.  It may
@@ -219,6 +230,7 @@ class HttpCache::Transaction : public HttpTransaction {
   int DoDoomEntryComplete(int result);
   int DoAddToEntry();
   int DoAddToEntryComplete(int result);
+  int DoAddToEntryCompleteAfterDelay(int result);
   int DoStartPartialCacheValidation();
   int DoCompletePartialCacheValidation(int result);
   int DoUpdateCachedResponse();
@@ -301,6 +313,9 @@ class HttpCache::Transaction : public HttpTransaction {
   // satisfiable).
   void FailRangeRequest();
 
+  // Setups the transaction for reading from the cache entry.
+  int SetupEntryForRead();
+
   // Reads data from the network.
   int ReadFromNetwork(IOBuffer* data, int data_len);
 
@@ -367,8 +382,13 @@ class HttpCache::Transaction : public HttpTransaction {
   // Returns |return_value|.
   int ResetCacheIOStart(int return_value);
 
+  void ScheduleDelayedLoop(base::TimeDelta delay, int result);
+  void RunDelayedLoop(base::TimeTicks delay_start_time,
+                      base::TimeDelta intended_delay, int result);
+
   State next_state_;
   const HttpRequestInfo* request_;
+  RequestPriority priority_;
   BoundNetLog net_log_;
   scoped_ptr<HttpRequestInfo> custom_request_;
   HttpRequestHeaders request_headers_copy_;
@@ -395,6 +415,8 @@ class HttpCache::Transaction : public HttpTransaction {
   bool handling_206_;  // We must deal with this 206 response.
   bool cache_pending_;  // We are waiting for the HttpCache.
   bool done_reading_;
+  bool vary_mismatch_;  // The request doesn't match the stored vary data.
+  bool couldnt_conditionalize_request_;
   scoped_refptr<IOBuffer> read_buf_;
   int io_buf_len_;
   int read_offset_;
@@ -407,8 +429,6 @@ class HttpCache::Transaction : public HttpTransaction {
 
   // Members used to track data for histograms.
   TransactionPattern transaction_pattern_;
-  int bytes_read_from_cache_;
-  int bytes_read_from_network_;
   base::TimeTicks entry_lock_waiting_since_;
   base::TimeTicks first_cache_access_since_;
   base::TimeTicks send_request_since_;
@@ -418,12 +438,15 @@ class HttpCache::Transaction : public HttpTransaction {
   // if no cache IO action is currently in progress.
   base::TimeTicks cache_io_start_;
 
+  // For OpenEntry and CreateEntry, if sensitivity analysis would mandate
+  // a delay on return, we must defer that delay until AddToEntry has been
+  // called, to avoid a race condition on the address returned.
+  base::TimeDelta deferred_cache_sensitivity_delay_;
+  bool defer_cache_sensitivity_delay_;
+
   // For sensitivity analysis, the simulated increase in cache service times,
   // in percent.
   int sensitivity_analysis_percent_increase_;
-
-  void RunDelayedLoop(base::TimeTicks delay_start_time,
-                      base::TimeDelta intended_delay, int result);
 
   HttpTransactionDelegate* transaction_delegate_;
 };

@@ -19,27 +19,6 @@ template class RectBase<RectF, PointF, SizeF, InsetsF, Vector2dF, float>;
 typedef class RectBase<RectF, PointF, SizeF, InsetsF, Vector2dF,
                        float> RectBaseT;
 
-RectF::RectF() : RectBaseT(gfx::SizeF()) {
-}
-
-RectF::RectF(float width, float height)
-    : RectBaseT(gfx::SizeF(width, height)) {
-}
-
-RectF::RectF(float x, float y, float width, float height)
-    : RectBaseT(gfx::PointF(x, y), gfx::SizeF(width, height)) {
-}
-
-RectF::RectF(const gfx::SizeF& size)
-    : RectBaseT(size) {
-}
-
-RectF::RectF(const gfx::PointF& origin, const gfx::SizeF& size)
-    : RectBaseT(origin, size) {
-}
-
-RectF::~RectF() {}
-
 bool RectF::IsExpressibleAsRect() const {
   return IsExpressibleAsInt(x()) && IsExpressibleAsInt(y()) &&
       IsExpressibleAsInt(width()) && IsExpressibleAsInt(height()) &&
@@ -50,18 +29,6 @@ std::string RectF::ToString() const {
   return base::StringPrintf("%s %s",
                             origin().ToString().c_str(),
                             size().ToString().c_str());
-}
-
-RectF operator+(const RectF& lhs, const Vector2dF& rhs) {
-  RectF result(lhs);
-  result += rhs;
-  return result;
-}
-
-RectF operator-(const RectF& lhs, const Vector2dF& rhs) {
-  RectF result(lhs);
-  result -= rhs;
-  return result;
 }
 
 RectF IntersectRects(const RectF& a, const RectF& b) {
@@ -79,12 +46,6 @@ RectF UnionRects(const RectF& a, const RectF& b) {
 RectF SubtractRects(const RectF& a, const RectF& b) {
   RectF result = a;
   result.Subtract(b);
-  return result;
-}
-
-RectF ScaleRect(const RectF& r, float x_scale, float y_scale) {
-  RectF result = r;
-  result.Scale(x_scale, y_scale);
   return result;
 }
 

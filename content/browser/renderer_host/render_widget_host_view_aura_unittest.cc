@@ -12,14 +12,17 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
+#include "ipc/ipc_test_sink.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
 #include "ui/aura/test/aura_test_helper.h"
+#include "ui/aura/test/test_screen.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/events/event.h"
+#include "ui/base/events/event_utils.h"
 #include "ui/base/ui_base_types.h"
 
 namespace content {
@@ -45,7 +48,7 @@ class TestWindowObserver : public aura::WindowObserver {
   bool destroyed() const { return destroyed_; }
 
   // aura::WindowObserver overrides:
-  virtual void OnWindowDestroyed(aura::Window* window) {
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {
     CHECK_EQ(window, window_);
     destroyed_ = true;
     window_ = NULL;
@@ -72,16 +75,32 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
     browser_context_.reset(new TestBrowserContext);
     MockRenderProcessHost* process_host =
         new MockRenderProcessHost(browser_context_.get());
+
+    sink_ = &process_host->sink();
+
+    parent_host_ = new RenderWidgetHostImpl(
+        &delegate_, process_host, MSG_ROUTING_NONE);
+    parent_view_ = static_cast<RenderWidgetHostViewAura*>(
+        RenderWidgetHostView::CreateViewForWidget(parent_host_));
+    parent_view_->InitAsChild(NULL);
+    parent_view_->GetNativeView()->SetDefaultParentByRootWindow(
+        aura_test_helper_->root_window(), gfx::Rect());
+
     widget_host_ = new RenderWidgetHostImpl(
         &delegate_, process_host, MSG_ROUTING_NONE);
+    widget_host_->Init();
     view_ = static_cast<RenderWidgetHostViewAura*>(
         RenderWidgetHostView::CreateViewForWidget(widget_host_));
   }
 
   virtual void TearDown() {
+    sink_ = NULL;
     if (view_)
       view_->Destroy();
     delete widget_host_;
+
+    parent_view_->Destroy();
+    delete parent_host_;
 
     browser_context_.reset();
     aura_test_helper_->TearDown();
@@ -98,8 +117,15 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
 
   // Tests should set these to NULL if they've already triggered their
   // destruction.
+  RenderWidgetHostImpl* parent_host_;
+  RenderWidgetHostViewAura* parent_view_;
+
+  // Tests should set these to NULL if they've already triggered their
+  // destruction.
   RenderWidgetHostImpl* widget_host_;
   RenderWidgetHostViewAura* view_;
+
+  IPC::TestSink* sink_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAuraTest);
@@ -110,7 +136,7 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
 // Checks that a fullscreen view has the correct show-state and receives the
 // focus.
 TEST_F(RenderWidgetHostViewAuraTest, FocusFullscreen) {
-  view_->InitAsFullscreen(NULL);
+  view_->InitAsFullscreen(parent_view_);
   aura::Window* window = view_->GetNativeView();
   ASSERT_TRUE(window != NULL);
   EXPECT_EQ(ui::SHOW_STATE_FULLSCREEN,
@@ -121,12 +147,12 @@ TEST_F(RenderWidgetHostViewAuraTest, FocusFullscreen) {
 
   // Check that we'll also say it's okay to activate the window when there's an
   // ActivationClient defined.
-  EXPECT_TRUE(view_->ShouldActivate(NULL));
+  EXPECT_TRUE(view_->ShouldActivate());
 }
 
 // Checks that a fullscreen view is destroyed when it loses the focus.
 TEST_F(RenderWidgetHostViewAuraTest, DestroyFullscreenOnBlur) {
-  view_->InitAsFullscreen(NULL);
+  view_->InitAsFullscreen(parent_view_);
   aura::Window* window = view_->GetNativeView();
   ASSERT_TRUE(window != NULL);
   ASSERT_TRUE(window->HasFocus());
@@ -156,26 +182,35 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   widget_host_->OnMessageReceived(ViewHostMsg_HasTouchEventHandlers(0, false));
   EXPECT_FALSE(widget_host_->ShouldForwardTouchEvent());
 
-  ui::TouchEvent press(ui::ET_TOUCH_PRESSED, gfx::Point(30, 30), 0,
-      base::Time::NowFromSystemTime() - base::Time());
-  ui::TouchEvent move(ui::ET_TOUCH_MOVED, gfx::Point(20, 20), 0,
-      base::Time::NowFromSystemTime() - base::Time());
-  ui::TouchEvent release(ui::ET_TOUCH_RELEASED, gfx::Point(20, 20), 0,
-      base::Time::NowFromSystemTime() - base::Time());
+  ui::TouchEvent press(ui::ET_TOUCH_PRESSED,
+                       gfx::Point(30, 30),
+                       0,
+                       ui::EventTimeForNow());
+  ui::TouchEvent move(ui::ET_TOUCH_MOVED,
+                      gfx::Point(20, 20),
+                      0,
+                      ui::EventTimeForNow());
+  ui::TouchEvent release(ui::ET_TOUCH_RELEASED,
+                         gfx::Point(20, 20),
+                         0,
+                         ui::EventTimeForNow());
 
-  EXPECT_EQ(ui::ER_UNHANDLED, view_->OnTouchEvent(&press));
+  view_->OnTouchEvent(&press);
+  EXPECT_FALSE(press.handled());
   EXPECT_EQ(WebKit::WebInputEvent::TouchStart, view_->touch_event_.type);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(WebKit::WebTouchPoint::StatePressed,
             view_->touch_event_.touches[0].state);
 
-  EXPECT_EQ(ui::ER_UNHANDLED, view_->OnTouchEvent(&move));
+  view_->OnTouchEvent(&move);
+  EXPECT_FALSE(move.handled());
   EXPECT_EQ(WebKit::WebInputEvent::TouchMove, view_->touch_event_.type);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(WebKit::WebTouchPoint::StateMoved,
             view_->touch_event_.touches[0].state);
 
-  EXPECT_EQ(ui::ER_UNHANDLED, view_->OnTouchEvent(&release));
+  view_->OnTouchEvent(&release);
+  EXPECT_FALSE(release.handled());
   EXPECT_EQ(WebKit::WebInputEvent::TouchEnd, view_->touch_event_.type);
   EXPECT_EQ(0U, view_->touch_event_.touchesLength);
 
@@ -185,24 +220,28 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   widget_host_->OnMessageReceived(ViewHostMsg_HasTouchEventHandlers(0, true));
   EXPECT_TRUE(widget_host_->ShouldForwardTouchEvent());
 
-  EXPECT_EQ(ui::ER_CONSUMED, view_->OnTouchEvent(&press));
+  view_->OnTouchEvent(&press);
+  EXPECT_TRUE(press.stopped_propagation());
   EXPECT_EQ(WebKit::WebInputEvent::TouchStart, view_->touch_event_.type);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(WebKit::WebTouchPoint::StatePressed,
             view_->touch_event_.touches[0].state);
 
-  EXPECT_EQ(ui::ER_CONSUMED, view_->OnTouchEvent(&move));
+  view_->OnTouchEvent(&move);
+  EXPECT_TRUE(move.stopped_propagation());
   EXPECT_EQ(WebKit::WebInputEvent::TouchMove, view_->touch_event_.type);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(WebKit::WebTouchPoint::StateMoved,
             view_->touch_event_.touches[0].state);
 
-  EXPECT_EQ(ui::ER_CONSUMED, view_->OnTouchEvent(&release));
+  view_->OnTouchEvent(&release);
+  EXPECT_TRUE(release.stopped_propagation());
   EXPECT_EQ(WebKit::WebInputEvent::TouchEnd, view_->touch_event_.type);
   EXPECT_EQ(0U, view_->touch_event_.touchesLength);
 
   // Now start a touch event, and remove the event-handlers before the release.
-  EXPECT_EQ(ui::ER_CONSUMED, view_->OnTouchEvent(&press));
+  view_->OnTouchEvent(&press);
+  EXPECT_TRUE(press.stopped_propagation());
   EXPECT_EQ(WebKit::WebInputEvent::TouchStart, view_->touch_event_.type);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(WebKit::WebTouchPoint::StatePressed,
@@ -211,13 +250,19 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventState) {
   widget_host_->OnMessageReceived(ViewHostMsg_HasTouchEventHandlers(0, false));
   EXPECT_FALSE(widget_host_->ShouldForwardTouchEvent());
 
-  EXPECT_EQ(ui::ER_UNHANDLED, view_->OnTouchEvent(&move));
+  ui::TouchEvent move2(ui::ET_TOUCH_MOVED, gfx::Point(20, 20), 0,
+      base::Time::NowFromSystemTime() - base::Time());
+  view_->OnTouchEvent(&move2);
+  EXPECT_FALSE(move2.handled());
   EXPECT_EQ(WebKit::WebInputEvent::TouchMove, view_->touch_event_.type);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(WebKit::WebTouchPoint::StateMoved,
             view_->touch_event_.touches[0].state);
 
-  EXPECT_EQ(ui::ER_UNHANDLED, view_->OnTouchEvent(&release));
+  ui::TouchEvent release2(ui::ET_TOUCH_RELEASED, gfx::Point(20, 20), 0,
+      base::Time::NowFromSystemTime() - base::Time());
+  view_->OnTouchEvent(&release2);
+  EXPECT_FALSE(release2.handled());
   EXPECT_EQ(WebKit::WebInputEvent::TouchEnd, view_->touch_event_.type);
   EXPECT_EQ(0U, view_->touch_event_.touchesLength);
 }
@@ -231,20 +276,28 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventSyncAsync) {
   widget_host_->OnMessageReceived(ViewHostMsg_HasTouchEventHandlers(0, true));
   EXPECT_TRUE(widget_host_->ShouldForwardTouchEvent());
 
-  ui::TouchEvent press(ui::ET_TOUCH_PRESSED, gfx::Point(30, 30), 0,
-      base::Time::NowFromSystemTime() - base::Time());
-  ui::TouchEvent move(ui::ET_TOUCH_MOVED, gfx::Point(20, 20), 0,
-      base::Time::NowFromSystemTime() - base::Time());
-  ui::TouchEvent release(ui::ET_TOUCH_RELEASED, gfx::Point(20, 20), 0,
-      base::Time::NowFromSystemTime() - base::Time());
+  ui::TouchEvent press(ui::ET_TOUCH_PRESSED,
+                       gfx::Point(30, 30),
+                       0,
+                       ui::EventTimeForNow());
+  ui::TouchEvent move(ui::ET_TOUCH_MOVED,
+                      gfx::Point(20, 20),
+                      0,
+                      ui::EventTimeForNow());
+  ui::TouchEvent release(ui::ET_TOUCH_RELEASED,
+                         gfx::Point(20, 20),
+                         0,
+                         ui::EventTimeForNow());
 
-  EXPECT_EQ(ui::ER_CONSUMED, view_->OnTouchEvent(&press));
+  view_->OnTouchEvent(&press);
+  EXPECT_TRUE(press.stopped_propagation());
   EXPECT_EQ(WebKit::WebInputEvent::TouchStart, view_->touch_event_.type);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(WebKit::WebTouchPoint::StatePressed,
             view_->touch_event_.touches[0].state);
 
-  EXPECT_EQ(ui::ER_CONSUMED, view_->OnTouchEvent(&move));
+  view_->OnTouchEvent(&move);
+  EXPECT_TRUE(move.stopped_propagation());
   EXPECT_EQ(WebKit::WebInputEvent::TouchMove, view_->touch_event_.type);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(WebKit::WebTouchPoint::StateMoved,
@@ -252,15 +305,84 @@ TEST_F(RenderWidgetHostViewAuraTest, TouchEventSyncAsync) {
 
   // Send the same move event. Since the point hasn't moved, it won't affect the
   // queue. However, the view should consume the event.
-  EXPECT_EQ(ui::ER_CONSUMED, view_->OnTouchEvent(&move));
+  view_->OnTouchEvent(&move);
+  EXPECT_TRUE(move.stopped_propagation());
   EXPECT_EQ(WebKit::WebInputEvent::TouchMove, view_->touch_event_.type);
   EXPECT_EQ(1U, view_->touch_event_.touchesLength);
   EXPECT_EQ(WebKit::WebTouchPoint::StateMoved,
             view_->touch_event_.touches[0].state);
 
-  EXPECT_EQ(ui::ER_CONSUMED, view_->OnTouchEvent(&release));
+  view_->OnTouchEvent(&release);
+  EXPECT_TRUE(release.stopped_propagation());
   EXPECT_EQ(WebKit::WebInputEvent::TouchEnd, view_->touch_event_.type);
   EXPECT_EQ(0U, view_->touch_event_.touchesLength);
+}
+
+TEST_F(RenderWidgetHostViewAuraTest, PhysicalBackingSizeWithScale) {
+  view_->InitAsChild(NULL);
+  view_->GetNativeView()->SetDefaultParentByRootWindow(
+      parent_view_->GetNativeView()->GetRootWindow(), gfx::Rect());
+  sink_->ClearMessages();
+  view_->SetSize(gfx::Size(100, 100));
+  EXPECT_EQ("100x100", view_->GetPhysicalBackingSize().ToString());
+  EXPECT_EQ(1u, sink_->message_count());
+  EXPECT_EQ(ViewMsg_Resize::ID, sink_->GetMessageAt(0)->type());
+  {
+    const IPC::Message* msg = sink_->GetMessageAt(0);
+    EXPECT_EQ(ViewMsg_Resize::ID, msg->type());
+    ViewMsg_Resize::Param params;
+    ViewMsg_Resize::Read(msg, &params);
+    EXPECT_EQ("100x100", params.a.ToString());  // dip size
+    EXPECT_EQ("100x100", params.b.ToString());  // backing size
+  }
+
+  widget_host_->ResetSizeAndRepaintPendingFlags();
+  sink_->ClearMessages();
+
+  aura_test_helper_->test_screen()->SetDeviceScaleFactor(2.0f);
+  EXPECT_EQ("200x200", view_->GetPhysicalBackingSize().ToString());
+  // Extra ScreenInfoChanged message for |parent_view_|.
+  EXPECT_EQ(3u, sink_->message_count());
+  EXPECT_EQ(ViewMsg_ScreenInfoChanged::ID, sink_->GetMessageAt(0)->type());
+  {
+    const IPC::Message* msg = sink_->GetMessageAt(1);
+    EXPECT_EQ(ViewMsg_ScreenInfoChanged::ID, msg->type());
+    ViewMsg_ScreenInfoChanged::Param params;
+    ViewMsg_ScreenInfoChanged::Read(msg, &params);
+    EXPECT_EQ(2.0f, params.a.deviceScaleFactor);
+  }
+  {
+    const IPC::Message* msg = sink_->GetMessageAt(2);
+    EXPECT_EQ(ViewMsg_Resize::ID, msg->type());
+    ViewMsg_Resize::Param params;
+    ViewMsg_Resize::Read(msg, &params);
+    EXPECT_EQ("100x100", params.a.ToString());  // dip size
+    EXPECT_EQ("200x200", params.b.ToString());  // backing size
+  }
+
+  widget_host_->ResetSizeAndRepaintPendingFlags();
+  sink_->ClearMessages();
+
+  aura_test_helper_->test_screen()->SetDeviceScaleFactor(1.0f);
+  // Extra ScreenInfoChanged message for |parent_view_|.
+  EXPECT_EQ(3u, sink_->message_count());
+  EXPECT_EQ("100x100", view_->GetPhysicalBackingSize().ToString());
+  EXPECT_EQ(ViewMsg_ScreenInfoChanged::ID, sink_->GetMessageAt(0)->type());
+  {
+    const IPC::Message* msg = sink_->GetMessageAt(1);
+    EXPECT_EQ(ViewMsg_ScreenInfoChanged::ID, msg->type());
+    ViewMsg_ScreenInfoChanged::Param params;
+    ViewMsg_ScreenInfoChanged::Read(msg, &params);
+    EXPECT_EQ(1.0f, params.a.deviceScaleFactor);
+  }
+  {
+    const IPC::Message* msg = sink_->GetMessageAt(2);
+    EXPECT_EQ(ViewMsg_Resize::ID, msg->type());
+    ViewMsg_Resize::Param params;
+    ViewMsg_Resize::Read(msg, &params);
+    EXPECT_EQ("100x100", params.a.ToString());  // dip size
+    EXPECT_EQ("100x100", params.b.ToString());  // backing size
+  }
 }
 
 }  // namespace content

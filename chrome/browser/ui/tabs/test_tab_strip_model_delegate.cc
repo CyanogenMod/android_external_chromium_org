@@ -4,6 +4,9 @@
 
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
 
+#include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/ui/tab_contents/core_tab_helper.h"
+
 TestTabStripModelDelegate::TestTabStripModelDelegate() {
 }
 
@@ -19,6 +22,14 @@ Browser* TestTabStripModelDelegate::CreateNewStripWithContents(
     const DockInfo& dock_info,
     bool maximize) {
   return NULL;
+}
+
+void TestTabStripModelDelegate::WillAddWebContents(
+    content::WebContents* contents) {
+  // Required to determine reloadability of tabs.
+  CoreTabHelper::CreateForWebContents(contents);
+  // Required to determine if tabs are app tabs.
+  extensions::TabHelper::CreateForWebContents(contents);
 }
 
 int TestTabStripModelDelegate::GetDragActions() const {
@@ -44,8 +55,9 @@ bool TestTabStripModelDelegate::RunUnloadListenerBeforeClosing(
   return true;
 }
 
-bool TestTabStripModelDelegate::CanRestoreTab() {
-  return false;
+TabStripModelDelegate::RestoreTabType
+TestTabStripModelDelegate::GetRestoreTabType() {
+  return TabStripModelDelegate::RESTORE_NONE;
 }
 
 void TestTabStripModelDelegate::RestoreTab() {

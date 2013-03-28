@@ -8,8 +8,21 @@
 
 namespace ui {
 
+namespace {
+int g_custom_event_types = ET_LAST;
+}  // namespace
+
 bool EventCanceledDefaultHandling(const Event& event) {
   return event.phase() == EP_POSTTARGET && event.result() != ER_UNHANDLED;
+}
+
+int RegisterCustomEventType() {
+  return ++g_custom_event_types;
+}
+
+base::TimeDelta EventTimeForNow() {
+  return base::TimeDelta::FromInternalValue(
+      base::TimeTicks::Now().ToInternalValue());
 }
 
 }  // namespace ui

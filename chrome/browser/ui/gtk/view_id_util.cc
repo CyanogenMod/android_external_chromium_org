@@ -80,20 +80,17 @@ const char* GetNameFromID(ViewID id) {
     case VIEW_ID_STAR_BUTTON:
       return "chrome-toolbar-star-button";
 
-    case VIEW_ID_LOCATION_BAR:
-      return "chrome-location-bar";
-
     case VIEW_ID_ACTION_BOX_BUTTON:
       return "chrome-action-box-button";
 
     case VIEW_ID_BROWSER_ACTION_TOOLBAR:
       return "chrome-toolbar-browser-actions-container";
 
+    case VIEW_ID_OMNIBOX:
+      return "chrome-omnibox";
+
     case VIEW_ID_APP_MENU:
       return "chrome-app-menu";
-
-    case VIEW_ID_AUTOCOMPLETE:
-      return "chrome-autocomplete-edit";
 
     case VIEW_ID_BOOKMARK_BAR:
       return "chrome-bookmark-bar";
@@ -112,6 +109,9 @@ const char* GetNameFromID(ViewID id) {
 
     case VIEW_ID_ZOOM_BUTTON:
       return "chrome-zoom-button";
+
+    case VIEW_ID_SCRIPT_BUBBLE:
+      return "chrome-script-bubble-button";
 
     // These are never hit because the tab container uses the delegate to
     // set its ID.

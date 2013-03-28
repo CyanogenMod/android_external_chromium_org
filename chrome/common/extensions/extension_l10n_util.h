@@ -11,10 +11,9 @@
 #include <string>
 #include <vector>
 
-class FilePath;
-
 namespace base {
 class DictionaryValue;
+class FilePath;
 }
 
 namespace extensions {
@@ -36,7 +35,7 @@ std::string GetDefaultLocaleFromManifest(const base::DictionaryValue& manifest,
 
 // Returns true iff the extension was localized, and the current locale
 // doesn't match the locale written into info.extension_manifest.
-bool ShouldRelocalizeManifest(const extensions::ExtensionInfo& info);
+bool ShouldRelocalizeManifest(const base::DictionaryValue* manifest);
 
 // Localize extension name, description, browser_action and other fields
 // in the manifest.
@@ -46,7 +45,7 @@ bool LocalizeManifest(const extensions::MessageBundle& messages,
 
 // Load message catalogs, localize manifest and attach message bundle to the
 // extension.
-bool LocalizeExtension(const FilePath& extension_path,
+bool LocalizeExtension(const base::FilePath& extension_path,
                        base::DictionaryValue* manifest,
                        std::string* error);
 
@@ -56,7 +55,7 @@ bool LocalizeExtension(const FilePath& extension_path,
 // error with locale_name.
 // If file name starts with . return true (helps testing extensions under svn).
 bool AddLocale(const std::set<std::string>& chrome_locales,
-               const FilePath& locale_folder,
+               const base::FilePath& locale_folder,
                const std::string& locale_name,
                std::set<std::string>* valid_locales,
                std::string* error);
@@ -82,7 +81,7 @@ void GetAllFallbackLocales(const std::string& application_locale,
 // 4. Intersect both lists, and add intersection to the extension.
 // Returns false if any of supplied locales don't match chrome list of locales.
 // Fills out error with offending locale name.
-bool GetValidLocales(const FilePath& locale_path,
+bool GetValidLocales(const base::FilePath& locale_path,
                      std::set<std::string>* locales,
                      std::string* error);
 
@@ -92,7 +91,7 @@ bool GetValidLocales(const FilePath& locale_path,
 // Returns message bundle if it can load default locale messages file, and all
 // messages are valid, else returns NULL and sets error.
 extensions::MessageBundle* LoadMessageCatalogs(
-    const FilePath& locale_path,
+    const base::FilePath& locale_path,
     const std::string& default_locale,
     const std::string& app_locale,
     const std::set<std::string>& valid_locales,
@@ -103,8 +102,8 @@ extensions::MessageBundle* LoadMessageCatalogs(
 // |locales_path| is extension_id/_locales
 // |locale_path| is extension_id/_locales/xx
 // |all_locales| is a set of all valid Chrome locales.
-bool ShouldSkipValidation(const FilePath& locales_path,
-                          const FilePath& locale_path,
+bool ShouldSkipValidation(const base::FilePath& locales_path,
+                          const base::FilePath& locale_path,
                           const std::set<std::string>& all_locales);
 
 // Sets the process locale for the duration of the current scope, then reverts

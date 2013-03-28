@@ -1,5 +1,5 @@
 # Please include joth@ and (joi@ or erikwright@) on the review for any changes
-# to DEPS files under android_webview/ 
+# to DEPS files under android_webview/
 
 # Do not add any includes under chrome/ anywhere in android_webview.
 
@@ -8,10 +8,11 @@ include_rules = [
   "-android_webview/lib",
 
   "!chrome/browser/component",
-  "+content/components",
   "+content/public/common",
   "+jni",
   "+net",
+  "+skia",
+  "+third_party/skia/include",
   "+ui/android",
   "+ui/base",
   "+webkit",

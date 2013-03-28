@@ -11,28 +11,28 @@
 #include <sys/wait.h>
 
 #include "base/command_line.h"
-#include "ipc/ipc_switches.h"
-#include "content/public/common/sandbox_linux.h"
-#include "base/process_util.h"
-#include "content/public/common/result_codes.h"
-#include "ipc/ipc_channel.h"
 #include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/linux_util.h"
-#include "base/eintr_wrapper.h"
 #include "base/logging.h"
 #include "base/pickle.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/posix/global_descriptors.h"
-#include "base/posix/unix_domain_socket.h"
-#include "content/common/set_process_title.h"
+#include "base/posix/unix_domain_socket_linux.h"
+#include "base/process_util.h"
 #include "content/common/sandbox_linux.h"
+#include "content/common/set_process_title.h"
 #include "content/common/zygote_commands_linux.h"
 #include "content/public/common/content_descriptors.h"
+#include "content/public/common/result_codes.h"
+#include "content/public/common/sandbox_linux.h"
 #include "content/public/common/zygote_fork_delegate_linux.h"
+#include "ipc/ipc_channel.h"
+#include "ipc/ipc_switches.h"
 
 #if defined(CHROMIUM_SELINUX)
-#include <selinux/selinux.h>
 #include <selinux/context.h>
+#include <selinux/selinux.h>
 #endif
 
 // See http://code.google.com/p/chromium/wiki/LinuxZygote
@@ -204,9 +204,11 @@ void Zygote::HandleReapRequest(int fd,
 void Zygote::HandleGetTerminationStatus(int fd,
                                         const Pickle& pickle,
                                         PickleIterator iter) {
+  bool known_dead;
   base::ProcessHandle child;
 
-  if (!pickle.ReadInt(&iter, &child)) {
+  if (!pickle.ReadBool(&iter, &known_dead) ||
+      !pickle.ReadInt(&iter, &child)) {
     LOG(WARNING) << "Error parsing GetTerminationStatus request "
                  << "from browser";
     return;
@@ -217,7 +219,20 @@ void Zygote::HandleGetTerminationStatus(int fd,
   if (UsingSUIDSandbox())
     child = real_pids_to_sandbox_pids[child];
   if (child) {
-    status = base::GetTerminationStatus(child, &exit_code);
+    if (known_dead) {
+      // If we know that the process is already dead and the kernel is cleaning
+      // it up, we do want to wait until it becomes a zombie and not risk
+      // returning eroneously that it is still running. However, we do not
+      // want to risk a bug where we're told a process is dead when it's not.
+      // By sending SIGKILL, we make sure that WaitForTerminationStatus will
+      // return quickly even in this case.
+      if (kill(child, SIGKILL)) {
+        PLOG(ERROR) << "kill (" << child << ")";
+      }
+      status = base::WaitForTerminationStatus(child, &exit_code);
+    } else {
+      status = base::GetTerminationStatus(child, &exit_code);
+    }
   } else {
     // Assume that if we can't find the child in the sandbox, then
     // it terminated normally.

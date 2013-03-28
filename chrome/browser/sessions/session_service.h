@@ -10,21 +10,22 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/memory/scoped_vector.h"
 #include "base/time.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/sessions/base_session_service.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list_observer.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/ui_base_types.h"
 
 class Profile;
 class SessionCommand;
-class TabContents;
 struct SessionTab;
 struct SessionWindow;
 
@@ -68,7 +69,7 @@ class SessionService : public BaseSessionService,
   // Creates a SessionService for the specified profile.
   explicit SessionService(Profile* profile);
   // For testing.
-  explicit SessionService(const FilePath& save_path);
+  explicit SessionService(const base::FilePath& save_path);
 
   virtual ~SessionService();
 
@@ -164,7 +165,7 @@ class SessionService : public BaseSessionService,
 
   // Notification that a tab has restored its entries or a closed tab is being
   // reused.
-  void TabRestored(TabContents* tab, bool pinned);
+  void TabRestored(content::WebContents* tab, bool pinned);
 
   // Sets the index of the selected entry in the navigation controller for the
   // specified tab.
@@ -180,25 +181,16 @@ class SessionService : public BaseSessionService,
                                const SessionID& tab_id,
                                const std::string& user_agent_override);
 
-  // Callback from GetSavedSession of GetLastSession.
-  //
-  // The contents of the supplied vector are deleted after the callback is
-  // notified. To take ownership of the vector clear it before returning.
-  //
-  // The session ID is the id of the window that was last active.
-  typedef base::Callback<void(Handle,
-                              std::vector<SessionWindow*>*,
-                              SessionID::id_type)> SessionCallback;
+  // Callback from GetLastSession.
+  // The second parameter is the id of the window that was last active.
+  typedef base::Callback<void(ScopedVector<SessionWindow>, SessionID::id_type)>
+      SessionCallback;
 
   // Fetches the contents of the last session, notifying the callback when
   // done. If the callback is supplied an empty vector of SessionWindows
   // it means the session could not be restored.
-  //
-  // The created request does NOT directly invoke the callback, rather the
-  // callback invokes OnGotSessionCommands from which we map the
-  // SessionCommands to browser state, then notify the callback.
-  Handle GetLastSession(CancelableRequestConsumerBase* consumer,
-                        const SessionCallback& callback);
+  CancelableTaskTracker::TaskId GetLastSession(const SessionCallback& callback,
+                                               CancelableTaskTracker* tracker);
 
   // Overridden from BaseSessionService because we want some UMA reporting on
   // session update activities.
@@ -208,6 +200,7 @@ class SessionService : public BaseSessionService,
   // Allow tests to access our innards for testing purposes.
   FRIEND_TEST_ALL_PREFIXES(SessionServiceTest, RestoreActivation1);
   FRIEND_TEST_ALL_PREFIXES(SessionServiceTest, RestoreActivation2);
+  FRIEND_TEST_ALL_PREFIXES(NoStartupWindowTest, DontInitSessionServiceForApps);
 
   typedef std::map<SessionID::id_type, std::pair<int, int> > IdToRange;
   typedef std::map<SessionID::id_type, SessionTab*> IdToSessionTab;
@@ -224,6 +217,10 @@ class SessionService : public BaseSessionService,
   };
 
   void Init();
+
+  // Returns true if we have scheduled any commands, or any scheduled commands
+  // have been saved.
+  bool processed_any_commands();
 
   // Implementation of RestoreIfNecessary. If |browser| is non-null and we need
   // to restore, the tabs are added to it, otherwise a new browser is created.
@@ -279,11 +276,9 @@ class SessionService : public BaseSessionService,
 
   SessionCommand* CreateSetActiveWindowCommand(const SessionID& window_id);
 
-  // Callback from the backend for getting the commands from the save file.
-  // Converts the commands in SessionWindows and notifies the real callback.
-  void OnGotSessionCommands(
-      Handle handle,
-      scoped_refptr<InternalGetCommandsRequest> request);
+  // Converts |commands| to SessionWindows and notifies the callback.
+  void OnGotSessionCommands(const SessionCallback& callback,
+                            ScopedVector<SessionCommand> commands);
 
   // Converts the commands into SessionWindows. On return any valid
   // windows are added to valid_windows. It is up to the caller to delete
@@ -352,7 +347,7 @@ class SessionService : public BaseSessionService,
   // indices that were written.
   void BuildCommandsForTab(
       const SessionID& window_id,
-      TabContents* tab,
+      content::WebContents* tab,
       int index_in_window,
       bool is_pinned,
       std::vector<SessionCommand*>* commands,
@@ -423,7 +418,7 @@ class SessionService : public BaseSessionService,
     return !has_open_trackable_browsers_ &&
         (!browser_defaults::kBrowserAliveWithNoWindows ||
          force_browser_not_alive_with_no_windows_ ||
-         BrowserList::size() > 1);
+         chrome::GetTotalBrowserCount() > 1);
   }
 
   // Call when certain session relevant notifications

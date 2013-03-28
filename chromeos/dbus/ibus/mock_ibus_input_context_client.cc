@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <string>
 #include "chromeos/dbus/ibus/mock_ibus_input_context_client.h"
 
 namespace chromeos {
@@ -10,6 +9,7 @@ namespace chromeos {
 MockIBusInputContextClient::MockIBusInputContextClient()
     : initialize_call_count_(0),
       is_initialized_(false),
+      is_xkb_layout_(false),
       reset_object_proxy_call_caount_(0),
       set_capabilities_call_count_(0),
       focus_in_call_count_(0),
@@ -28,6 +28,17 @@ void MockIBusInputContextClient::Initialize(
   is_initialized_ = true;
 }
 
+void MockIBusInputContextClient::SetInputContextHandler(
+    IBusInputContextHandlerInterface* handler) {
+}
+
+void MockIBusInputContextClient::SetSetCursorLocationHandler(
+    const SetCursorLocationHandler& set_cursor_location_handler) {
+}
+
+void MockIBusInputContextClient::UnsetSetCursorLocationHandler() {
+}
+
 void MockIBusInputContextClient::ResetObjectProxy() {
   reset_object_proxy_call_caount_++;
   is_initialized_ = false;
@@ -38,41 +49,6 @@ bool MockIBusInputContextClient::IsObjectProxyReady() const {
     return true;
   else
     return false;
-}
-
-void MockIBusInputContextClient::SetCommitTextHandler(
-    const CommitTextHandler& commit_text_handler) {
-}
-
-void MockIBusInputContextClient::SetForwardKeyEventHandler(
-    const ForwardKeyEventHandler& forward_key_event_handler) {
-}
-
-void MockIBusInputContextClient::SetUpdatePreeditTextHandler(
-    const UpdatePreeditTextHandler& update_preedit_text_handler) {
-}
-
-void MockIBusInputContextClient::SetShowPreeditTextHandler(
-    const ShowPreeditTextHandler& show_preedit_text_handler) {
-}
-
-void MockIBusInputContextClient::SetHidePreeditTextHandler(
-    const HidePreeditTextHandler& hide_preedit_text_handler) {
-}
-
-void MockIBusInputContextClient::UnsetCommitTextHandler() {
-}
-
-void MockIBusInputContextClient::UnsetForwardKeyEventHandler() {
-}
-
-void MockIBusInputContextClient::UnsetUpdatePreeditTextHandler() {
-}
-
-void MockIBusInputContextClient::UnsetShowPreeditTextHandler() {
-}
-
-void MockIBusInputContextClient::UnsetHidePreeditTextHandler() {
 }
 
 void MockIBusInputContextClient::SetCapabilities(uint32 capabilities) {
@@ -92,7 +68,8 @@ void MockIBusInputContextClient::Reset() {
 }
 
 void MockIBusInputContextClient::SetCursorLocation(
-    int32 x, int32 y, int32 w, int32 h) {
+    const ibus::Rect& cursor_location,
+    const ibus::Rect& composition_head) {
   set_cursor_location_call_count_++;
 }
 
@@ -120,6 +97,14 @@ void MockIBusInputContextClient::SetSurroundingText(
 void MockIBusInputContextClient::PropertyActivate(
     const std::string& key,
     ibus::IBusPropertyState state) {
+}
+
+bool MockIBusInputContextClient::IsXKBLayout() {
+  return is_xkb_layout_;
+}
+
+void MockIBusInputContextClient::SetIsXKBLayout(bool is_xkb_layout) {
+  is_xkb_layout_ = is_xkb_layout;
 }
 
 }  // namespace chromeos

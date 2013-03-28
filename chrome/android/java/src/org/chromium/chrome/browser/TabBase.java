@@ -7,17 +7,13 @@ package org.chromium.chrome.browser;
 import android.content.Context;
 import android.text.TextUtils;
 
-import org.chromium.chrome.browser.ChromeWebContentsDelegateAndroid;
-import org.chromium.chrome.browser.ContentViewUtil;
+import org.chromium.base.ObserverList;
 import org.chromium.content.browser.ContentView;
-import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.common.CleanupReference;
 import org.chromium.ui.gfx.NativeWindow;
 
-import java.util.ArrayList;
 import java.util.List;
-
 
 /**
  * The basic Java representation of a tab.  Contains and manages a {@link ContentView}.
@@ -27,7 +23,7 @@ public class TabBase {
     private ContentView mContentView;
     private ChromeWebContentsDelegateAndroid mWebContentsDelegate;
     private int mNativeTabBaseAndroidImpl;
-    private List<TabObserver> mObservers = new ArrayList<TabObserver>();
+    private ObserverList<TabObserver> mObservers = new ObserverList<TabObserver>();
 
     private CleanupReference mCleanupReference;
 
@@ -45,9 +41,9 @@ public class TabBase {
     }
 
     /**
-     * @param context           The Context the view is running in.
-     * @param nativeWebContents A native pointer to the WebContents this tab represents.
-     * @param window            The NativeWindow should represent this tab.
+     * @param context              The Context the view is running in.
+     * @param nativeWebContentsPtr A native pointer to the WebContents this tab represents.
+     * @param window               The NativeWindow should represent this tab.
      */
     public TabBase(Context context, int nativeWebContentsPtr, NativeWindow window) {
         mWindow = window;
@@ -74,6 +70,9 @@ public class TabBase {
      * be used.
      */
     public void destroy() {
+        for (TabObserver observer : mObservers) {
+            observer.onCloseTab(TabBase.this);
+        }
         destroyContentView();
         if (mNativeTabBaseAndroidImpl != 0) {
             mCleanupReference.cleanupNow();
@@ -85,14 +84,14 @@ public class TabBase {
      * @param observer The {@link TabObserver} that should be notified of changes.
      */
     public void addObserver(TabObserver observer) {
-        mObservers.add(observer);
+        mObservers.addObserver(observer);
     }
 
     /**
      * @param observer The {@link TabObserver} that should no longer be notified of changes.
      */
     public void removeObserver(TabObserver observer) {
-        mObservers.remove(observer);
+        mObservers.removeObserver(observer);
     }
 
     /**
@@ -154,18 +153,19 @@ public class TabBase {
         }
     }
 
-    private class TabBaseChromeWebContentsDelegateAndroid extends ChromeWebContentsDelegateAndroid {
+    private class TabBaseChromeWebContentsDelegateAndroid
+            extends ChromeWebContentsDelegateAndroid {
         @Override
         public void onLoadProgressChanged(int progress) {
-            for (int i = 0; i < mObservers.size(); ++i) {
-                mObservers.get(i).onLoadProgressChanged(TabBase.this, progress);
+            for (TabObserver observer : mObservers) {
+                observer.onLoadProgressChanged(TabBase.this, progress);
             }
         }
 
         @Override
         public void onUpdateUrl(String url) {
-            for (int i = 0; i < mObservers.size(); ++i) {
-                mObservers.get(i).onUpdateUrl(TabBase.this, url);
+            for (TabObserver observer : mObservers) {
+                observer.onUpdateUrl(TabBase.this, url);
             }
         }
 

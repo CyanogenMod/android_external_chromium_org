@@ -6,9 +6,11 @@
 
 #include <string>
 
-#include "base/string_number_conversions.h"
+#include "base/lazy_instance.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/key_identifier_conversion_views.h"
 #include "chrome/browser/ui/top_level_widget.h"
 #include "chrome/common/chrome_notification_types.h"
@@ -37,7 +39,6 @@ const char kUnknownOrUnsupportedKeyIdentiferError[] = "Unknown or unsupported "
 const char kUnsupportedModifier[] = "Unsupported modifier.";
 const char kNoValidRecipientError[] = "No valid recipient for event.";
 const char kKeyEventUnprocessedError[] = "Event was not handled.";
-const char kInvalidHeight[] = "Invalid height.";
 
 ui::EventType GetTypeFromString(const std::string& type) {
   if (type == kKeyDown) {
@@ -123,12 +124,32 @@ bool SendKeyboardEventInputFunction::RunImpl() {
   views::InputMethod* ime = widget->GetInputMethod();
   if (ime) {
     ime->DispatchKeyEvent(event);
-  } else if (!widget->OnKeyEvent(event)) {
-    error_ = kKeyEventUnprocessedError;
-    return false;
+  } else {
+    widget->OnKeyEvent(&event);
+    if (event.handled()) {
+      error_ = kKeyEventUnprocessedError;
+      return false;
+    }
   }
 
   return true;
+}
+
+InputAPI::InputAPI(Profile* profile) {
+  ExtensionFunctionRegistry* registry =
+      ExtensionFunctionRegistry::GetInstance();
+  registry->RegisterFunction<SendKeyboardEventInputFunction>();
+}
+
+InputAPI::~InputAPI() {
+}
+
+static base::LazyInstance<ProfileKeyedAPIFactory<InputAPI> >
+g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+ProfileKeyedAPIFactory<InputAPI>* InputAPI::GetFactoryInstance() {
+  return &g_factory.Get();
 }
 
 }  // namespace extensions

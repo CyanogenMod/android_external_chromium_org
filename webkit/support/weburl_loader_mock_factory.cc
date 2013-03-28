@@ -6,12 +6,15 @@
 
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
+#include "webkit/support/webkit_support.h"
 #include "webkit/support/weburl_loader_mock.h"
 
+using WebKit::WebCache;
 using WebKit::WebData;
 using WebKit::WebString;
 using WebKit::WebURL;
@@ -22,7 +25,7 @@ using WebKit::WebURLResponse;
 
 struct WebURLLoaderMockFactory::ResponseInfo {
   WebKit::WebURLResponse response;
-  FilePath file_path;
+  base::FilePath file_path;
 };
 
 WebURLLoaderMockFactory::WebURLLoaderMockFactory() {}
@@ -38,12 +41,13 @@ void WebURLLoaderMockFactory::RegisterURL(const WebURL& url,
 #if defined(OS_POSIX)
     // TODO(jcivelli): On Linux, UTF8 might not be correct.
     response_info.file_path =
-        FilePath(static_cast<std::string>(file_path.utf8()));
+        base::FilePath(static_cast<std::string>(file_path.utf8()));
 #elif defined(OS_WIN)
     response_info.file_path =
-        FilePath(std::wstring(file_path.data(), file_path.length()));
+        base::FilePath(std::wstring(file_path.data(), file_path.length()));
 #endif
-    DCHECK(file_util::PathExists(response_info.file_path));
+    DCHECK(file_util::PathExists(response_info.file_path))
+        << response_info.file_path.MaybeAsASCII() << " does not exist.";
   }
 
   DCHECK(url_to_reponse_info_.find(url) == url_to_reponse_info_.end());
@@ -72,6 +76,7 @@ void WebURLLoaderMockFactory::UnregisterURL(const WebKit::WebURL& url) {
 void WebURLLoaderMockFactory::UnregisterAllURLs() {
   url_to_reponse_info_.clear();
   url_to_error_info_.clear();
+  WebCache::clear();
 }
 
 void WebURLLoaderMockFactory::ServeAsynchronousRequests() {
@@ -102,6 +107,7 @@ void WebURLLoaderMockFactory::ServeAsynchronousRequests() {
     // The loader might have already been removed.
     pending_loaders_.erase(loader);
   }
+  webkit_support::RunAllPendingMessages();
 }
 
 WebKit::WebURLRequest
@@ -170,7 +176,7 @@ bool WebURLLoaderMockFactory::IsPending(WebURLLoaderMock* loader) {
 }
 
 // static
-bool WebURLLoaderMockFactory::ReadFile(const FilePath& file_path,
+bool WebURLLoaderMockFactory::ReadFile(const base::FilePath& file_path,
                                        WebData* data) {
   int64 file_size = 0;
   if (!file_util::GetFileSize(file_path, &file_size))

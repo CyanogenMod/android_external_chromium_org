@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/common/constants.h"
 
 using WebKit::WebSecurityOrigin;
 using extensions::Extension;
@@ -62,8 +63,8 @@ bool ExtensionSet::InsertAll(const ExtensionSet& extensions) {
   return size() != before;
 }
 
-void ExtensionSet::Remove(const std::string& id) {
-  extensions_.erase(id);
+bool ExtensionSet::Remove(const std::string& id) {
+  return extensions_.erase(id) > 0;
 }
 
 void ExtensionSet::Clear() {
@@ -74,7 +75,7 @@ std::string ExtensionSet::GetExtensionOrAppIDByURL(
     const ExtensionURLInfo& info) const {
   DCHECK(!info.origin().isNull());
 
-  if (info.url().SchemeIs(chrome::kExtensionScheme))
+  if (info.url().SchemeIs(extensions::kExtensionScheme))
     return info.origin().isUnique() ? "" : info.url().host();
 
   const Extension* extension = GetExtensionOrAppByURL(info);
@@ -94,7 +95,7 @@ const Extension* ExtensionSet::GetExtensionOrAppByURL(
   if (!info.origin().isNull() && info.origin().isUnique())
     return NULL;
 
-  if (info.url().SchemeIs(chrome::kExtensionScheme))
+  if (info.url().SchemeIs(extensions::kExtensionScheme))
     return GetByID(info.url().host());
 
   return GetHostedAppByURL(info);
@@ -112,7 +113,7 @@ const Extension* ExtensionSet::GetHostedAppByURL(
 }
 
 const Extension* ExtensionSet::GetHostedAppByOverlappingWebExtent(
-    const URLPatternSet& extent) const {
+    const extensions::URLPatternSet& extent) const {
   for (ExtensionMap::const_iterator iter = extensions_.begin();
        iter != extensions_.end(); ++iter) {
     if (iter->second->web_extent().OverlapsWith(extent))
@@ -136,17 +137,26 @@ const Extension* ExtensionSet::GetByID(const std::string& id) const {
     return NULL;
 }
 
+std::set<std::string> ExtensionSet::GetIDs() const {
+  std::set<std::string> ids;
+  for (ExtensionMap::const_iterator it = extensions_.begin();
+       it != extensions_.end(); ++it) {
+    ids.insert(it->first);
+  }
+  return ids;
+}
+
 bool ExtensionSet::ExtensionBindingsAllowed(
     const ExtensionURLInfo& info) const {
   if (info.origin().isUnique() || IsSandboxedPage(info))
     return false;
 
-  if (info.url().SchemeIs(chrome::kExtensionScheme))
+  if (info.url().SchemeIs(extensions::kExtensionScheme))
     return true;
 
   ExtensionMap::const_iterator i = extensions_.begin();
   for (; i != extensions_.end(); ++i) {
-    if (i->second->location() == Extension::COMPONENT &&
+    if (i->second->location() == extensions::Manifest::COMPONENT &&
         i->second->web_extent().MatchesURL(info.url()))
       return true;
   }
@@ -155,10 +165,7 @@ bool ExtensionSet::ExtensionBindingsAllowed(
 }
 
 bool ExtensionSet::IsSandboxedPage(const ExtensionURLInfo& info) const {
-  if (info.origin().isUnique())
-    return true;
-
-  if (info.url().SchemeIs(chrome::kExtensionScheme)) {
+  if (info.url().SchemeIs(extensions::kExtensionScheme)) {
     const Extension* extension = GetByID(info.url().host());
     if (extension) {
       return extension->IsSandboxedPage(info.url().path());

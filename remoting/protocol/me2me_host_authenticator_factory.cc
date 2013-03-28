@@ -6,7 +6,7 @@
 
 #include "base/base64.h"
 #include "base/string_util.h"
-#include "crypto/rsa_private_key.h"
+#include "remoting/base/rsa_key_pair.h"
 #include "remoting/protocol/channel_authenticator.h"
 #include "remoting/protocol/negotiating_authenticator.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
@@ -34,9 +34,11 @@ class RejectingAuthenticator : public Authenticator {
     return INVALID_CREDENTIALS;
   }
 
-  virtual void ProcessMessage(const buzz::XmlElement* message) OVERRIDE {
+  virtual void ProcessMessage(const buzz::XmlElement* message,
+                              const base::Closure& resume_callback) OVERRIDE {
     DCHECK_EQ(state_, WAITING_MESSAGE);
     state_ = REJECTED;
+    resume_callback.Run();
   }
 
   virtual scoped_ptr<buzz::XmlElement> GetNextMessage() OVERRIDE {
@@ -58,10 +60,10 @@ class RejectingAuthenticator : public Authenticator {
 
 Me2MeHostAuthenticatorFactory::Me2MeHostAuthenticatorFactory(
     const std::string& local_cert,
-    const crypto::RSAPrivateKey& local_private_key,
+    scoped_refptr<RsaKeyPair> key_pair,
     const SharedSecretHash& shared_secret_hash)
     : local_cert_(local_cert),
-      local_private_key_(local_private_key.Copy()),
+      key_pair_(key_pair),
       shared_secret_hash_(shared_secret_hash) {
 }
 
@@ -90,7 +92,7 @@ scoped_ptr<Authenticator> Me2MeHostAuthenticatorFactory::CreateAuthenticator(
   }
 
   return NegotiatingAuthenticator::CreateForHost(
-      local_cert_, *local_private_key_, shared_secret_hash_.value,
+      local_cert_, key_pair_, shared_secret_hash_.value,
       shared_secret_hash_.hash_function);
 }
 

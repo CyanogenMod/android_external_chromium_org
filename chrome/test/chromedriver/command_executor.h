@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "chrome/test/chromedriver/status.h"
+#include "chrome/test/chromedriver/chrome/status.h"
 
 namespace base {
 class DictionaryValue;
@@ -21,6 +21,8 @@ class Value;
 class CommandExecutor {
  public:
   virtual ~CommandExecutor() {}
+
+  virtual void Init() = 0;
 
   // Executes a command synchronously. This function must be thread safe.
   virtual void ExecuteCommand(const std::string& name,

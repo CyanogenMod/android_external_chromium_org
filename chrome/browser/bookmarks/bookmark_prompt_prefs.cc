@@ -4,26 +4,11 @@
 
 #include "chrome/browser/bookmarks/bookmark_prompt_prefs.h"
 
-#include "base/metrics/field_trial.h"
-#include "base/prefs/public/pref_service_base.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 
-namespace {
-
-// This function checks field trial "BookmarkPrompt" managed by
-// VariationsService.
-bool IsBookmarkFieldTrialActive() {
-  base::FieldTrial* trial = base::FieldTrialList::Find("BookmarkPrompt");
-  if (!trial) {
-    DVLOG(1) << "BookmarkPrompt field trial was not found.";
-    return false;
-  }
-  return trial->group_name() == "V1";
-}
-
-}  // namespace
-
-BookmarkPromptPrefs::BookmarkPromptPrefs(PrefServiceBase* user_prefs)
+BookmarkPromptPrefs::BookmarkPromptPrefs(PrefService* user_prefs)
     : prefs_(user_prefs) {
 }
 
@@ -44,16 +29,15 @@ void BookmarkPromptPrefs::IncrementPromptImpressionCount() {
 }
 
 bool BookmarkPromptPrefs::IsBookmarkPromptEnabled() const {
-  return prefs_->GetBoolean(prefs::kBookmarkPromptEnabled) &&
-         IsBookmarkFieldTrialActive();
+  return prefs_->GetBoolean(prefs::kBookmarkPromptEnabled);
 }
 
 // static
-void BookmarkPromptPrefs::RegisterUserPrefs(PrefServiceBase* user_prefs) {
+void BookmarkPromptPrefs::RegisterUserPrefs(PrefRegistrySyncable* registry) {
   // We always register preferences without checking FieldTrial, because
   // we may not receive field trial list from the server yet.
-  user_prefs->RegisterBooleanPref(prefs::kBookmarkPromptEnabled, true,
-                                  PrefServiceBase::UNSYNCABLE_PREF);
-  user_prefs->RegisterIntegerPref(prefs::kBookmarkPromptImpressionCount, 0,
-                                  PrefServiceBase::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kBookmarkPromptEnabled, true,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kBookmarkPromptImpressionCount, 0,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
 }

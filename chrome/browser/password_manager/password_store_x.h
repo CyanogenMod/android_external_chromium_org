@@ -13,6 +13,7 @@
 
 class LoginDatabase;
 class PrefService;
+class PrefRegistrySyncable;
 class Profile;
 
 // PasswordStoreX is used on Linux and other non-Windows, non-Mac OS X
@@ -56,7 +57,7 @@ class PasswordStoreX : public PasswordStoreDefault {
 
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
   // Registers the pref setting used for the methods below.
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
   // Returns true if passwords have been tagged with the local profile id.
   static bool PasswordsUseLocalProfileId(PrefService* prefs);
@@ -80,8 +81,9 @@ class PasswordStoreX : public PasswordStoreDefault {
       const content::PasswordForm& form) OVERRIDE;
   virtual void RemoveLoginsCreatedBetweenImpl(
       const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
-  virtual void GetLoginsImpl(GetLoginsRequest* request,
-                             const content::PasswordForm& form) OVERRIDE;
+  virtual void GetLoginsImpl(
+      const content::PasswordForm& form,
+      const ConsumerCallbackRunner& callback_runner) OVERRIDE;
   virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request) OVERRIDE;
   virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request) OVERRIDE;
   virtual bool FillAutofillableLogins(

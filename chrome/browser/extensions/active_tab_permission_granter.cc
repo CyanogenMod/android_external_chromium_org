@@ -8,7 +8,6 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -42,7 +41,7 @@ void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
   if (IsGranted(extension))
     return;
 
-  URLPattern pattern(UserScript::kValidUserScriptSchemes);
+  URLPattern pattern(UserScript::ValidUserScriptSchemes());
   if (pattern.Parse(web_contents()->GetURL().spec()) !=
           URLPattern::PARSE_SUCCESS) {
     // Pattern parsing could fail if this is an unsupported URL e.g. chrome://.

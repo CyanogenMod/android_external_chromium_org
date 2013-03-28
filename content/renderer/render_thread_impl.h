@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/observer_list.h"
+#include "base/string16.h"
 #include "base/timer.h"
 #include "build/build_config.h"
 #include "content/common/child_process.h"
@@ -21,10 +22,12 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "ui/gfx/native_widget_types.h"
 
+class GrContext;
 class SkBitmap;
 struct ViewMsg_New_Params;
 
 namespace WebKit {
+class WebGraphicsContext3D;
 class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
 }
@@ -40,12 +43,26 @@ class ScopedCOMInitializer;
 #endif
 }
 
+namespace cc {
+class ContextProvider;
+}
+
 namespace IPC {
 class ForwardingMessageFilter;
 }
 
+namespace media {
+class AudioHardwareConfig;
+}
+
 namespace v8 {
 class Extension;
+}
+
+namespace webkit {
+namespace gpu {
+class GrContextForWebGraphicsContext3D;
+}
 }
 
 namespace content {
@@ -54,15 +71,17 @@ class AppCacheDispatcher;
 class AudioInputMessageFilter;
 class AudioMessageFilter;
 class AudioRendererMixerManager;
-class CompositorThread;
+class ContextProviderCommandBuffer;
 class DBMessageFilter;
 class DevToolsAgentFilter;
 class DomStorageDispatcher;
 class GpuChannelHost;
 class IndexedDBDispatcher;
+class InputHandlerManager;
 class MediaStreamCenter;
 class MediaStreamDependencyFactory;
 class P2PSocketDispatcher;
+class PeerConnectionTracker;
 class RendererWebKitPlatformSupportImpl;
 class RenderProcessObserver;
 class VideoCaptureImplManager;
@@ -116,8 +135,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual void WidgetRestored() OVERRIDE;
   virtual void EnsureWebKitInitialized() OVERRIDE;
   virtual void RecordUserMetrics(const std::string& action) OVERRIDE;
-  virtual base::SharedMemoryHandle HostAllocateSharedMemoryBuffer(
-      uint32 buffer_size) OVERRIDE;
+  virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
+      size_t buffer_size) OVERRIDE;
   virtual void RegisterExtension(v8::Extension* extension) OVERRIDE;
   virtual void ScheduleIdleHandler(int64 initial_delay_ms) OVERRIDE;
   virtual void IdleHandler() OVERRIDE;
@@ -126,6 +145,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       int64 idle_notification_delay_in_ms) OVERRIDE;
   virtual void ToggleWebKitSharedTimer(bool suspend) OVERRIDE;
   virtual void UpdateHistograms(int sequence_number) OVERRIDE;
+  virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
 #if defined(OS_WIN)
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
   virtual void ReleaseCachedFonts() OVERRIDE;
@@ -141,7 +161,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
   virtual base::WaitableEvent* GetShutDownEvent() OVERRIDE;
   virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(
-      uint32 size) OVERRIDE;
+      size_t size) OVERRIDE;
   virtual int32 CreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params) OVERRIDE;
@@ -166,13 +186,42 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void DoNotSuspendWebKitSharedTimer();
   void DoNotNotifyWebKitOfModalLoop();
 
+  // True if focus changes should be send via IPC to the browser.
+  bool should_send_focus_ipcs() const {
+    return should_send_focus_ipcs_;
+  }
+  void set_should_send_focus_ipcs(bool send) {
+    should_send_focus_ipcs_ = send;
+  }
+
+  // True if RenderWidgets should report the newly requested size back to
+  // WebKit without waiting for the browser to acknowledge the size.
+  bool short_circuit_size_updates() const {
+    return short_circuit_size_updates_;
+  }
+  void set_short_circuit_size_updates(bool short_circuit) {
+    short_circuit_size_updates_ = short_circuit;
+  }
+
+  // True if we should never display error pages in response to a failed load.
+  bool skip_error_pages() const {
+    return skip_error_pages_;
+  }
+  void set_skip_error_pages(bool skip) {
+    skip_error_pages_ = skip;
+  }
+
   IPC::ForwardingMessageFilter* compositor_output_surface_filter() const {
     return compositor_output_surface_filter_.get();
   }
 
+  InputHandlerManager* input_handler_manager() const {
+    return input_handler_manager_.get();
+  }
+
   // Will be NULL if threaded compositing has not been enabled.
-  CompositorThread* compositor_thread() const {
-    return compositor_thread_.get();
+  scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy() const {
+    return compositor_message_loop_proxy_;
   }
 
   AppCacheDispatcher* appcache_dispatcher() const {
@@ -192,7 +241,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   }
 
 
-
   // Creates the embedder implementation of WebMediaStreamCenter.
   // The resulting object is owned by WebKit and deleted by WebKit at tear-down.
   WebKit::WebMediaStreamCenter* CreateMediaStreamCenter(
@@ -200,6 +248,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   // Returns a factory used for creating RTC PeerConnection objects.
   MediaStreamDependencyFactory* GetMediaStreamDependencyFactory();
+
+  PeerConnectionTracker* peer_connection_tracker() {
+    return peer_connection_tracker_.get();
+  }
 
   // Current P2PSocketDispatcher. Set to NULL if P2P API is disabled.
   P2PSocketDispatcher* p2p_socket_dispatcher() {
@@ -234,10 +286,24 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // Handle loss of the shared GpuVDAContext3D context above.
   static void OnGpuVDAContextLoss();
 
+  scoped_refptr<ContextProviderCommandBuffer>
+      OffscreenContextProviderForMainThread();
+  scoped_refptr<ContextProviderCommandBuffer>
+      OffscreenContextProviderForCompositorThread();
+
   // AudioRendererMixerManager instance which manages renderer side mixer
   // instances shared based on configured audio parameters.  Lazily created on
   // first call.
   AudioRendererMixerManager* GetAudioRendererMixerManager();
+
+  // AudioHardwareConfig contains audio hardware configuration for
+  // renderer side clients.  Creation requires a synchronous IPC call so it is
+  // lazily created on the first call.
+  media::AudioHardwareConfig* GetAudioHardwareConfig();
+
+#if defined(OS_WIN)
+  void PreCacheFontCharacters(const LOGFONT& log_font, const string16& str);
+#endif
 
   // For producing custom V8 histograms. Custom histograms are produced if all
   // RenderViews share the same host, and the host is in the pre-specified set
@@ -285,20 +351,28 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
     return &histogram_customizer_;
   }
 
+  void SetFlingCurveParameters(const std::vector<float>& new_touchpad,
+                               const std::vector<float>& new_touchscreen);
+
  private:
   virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
 
   void Init();
 
-  void OnSetZoomLevelForCurrentURL(const std::string& host, double zoom_level);
+  void OnSetZoomLevelForCurrentURL(const std::string& scheme,
+                                   const std::string& host,
+                                   double zoom_level);
   void OnCreateNewView(const ViewMsg_New_Params& params);
   void OnTransferBitmap(const SkBitmap& bitmap, int resource_id);
   void OnPurgePluginListCache(bool reload_pages);
   void OnNetworkStateChanged(bool online);
   void OnGetAccessibilityTree();
   void OnTempCrashWithData(const GURL& data);
+  void OnSetWebKitSharedTimersSuspended(bool suspend);
 
   void IdleHandlerInForegroundTab();
+
+  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateOffscreenContext3d();
 
   // These objects live solely on the render thread.
   scoped_ptr<AppCacheDispatcher> appcache_dispatcher_;
@@ -307,7 +381,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_ptr<RendererWebKitPlatformSupportImpl> webkit_platform_support_;
 
   // Used on the render thread and deleted by WebKit at shutdown.
-  MediaStreamCenter* media_stream_center_;
+  WebKit::WebMediaStreamCenter* media_stream_center_;
 
   // Used on the renderer and IPC threads.
   scoped_refptr<DBMessageFilter> db_message_filter_;
@@ -316,6 +390,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;
 
   scoped_ptr<MediaStreamDependencyFactory> media_stream_factory_;
+
+  // This is used to communicate to the browser process the status
+  // of all the peer connections created in the renderer.
+  scoped_ptr<PeerConnectionTracker> peer_connection_tracker_;
 
   // Dispatches all P2P sockets.
   scoped_refptr<P2PSocketDispatcher> p2p_socket_dispatcher_;
@@ -346,6 +424,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   bool suspend_webkit_shared_timer_;
   bool notify_webkit_of_modal_loop_;
 
+  // The following flags are used to control layout test specific behavior.
+  bool should_send_focus_ipcs_;
+  bool short_circuit_size_updates_;
+  bool skip_error_pages_;
+
   // Timer that periodically calls IdleHandler.
   base::RepeatingTimer<RenderThreadImpl> idle_timer_;
 
@@ -355,9 +438,21 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // A lazily initiated thread on which file operations are run.
   scoped_ptr<base::Thread> file_thread_;
 
-  bool compositor_initialized_;
-  scoped_ptr<CompositorThread> compositor_thread_;
+  // May be null if overridden by ContentRendererClient.
+  scoped_ptr<base::Thread> compositor_thread_;
+
+  // Will point to appropriate MessageLoopProxy after initialization,
+  // regardless of whether |compositor_thread_| is overriden.
+  scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy_;
+
+  scoped_ptr<InputHandlerManager> input_handler_manager_;
   scoped_refptr<IPC::ForwardingMessageFilter> compositor_output_surface_filter_;
+
+  class RendererContextProviderCommandBuffer;
+  scoped_refptr<RendererContextProviderCommandBuffer>
+      shared_contexts_main_thread_;
+  scoped_refptr<RendererContextProviderCommandBuffer>
+      shared_contexts_compositor_thread_;
 
   ObserverList<RenderProcessObserver> observers_;
 
@@ -366,6 +461,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> gpu_vda_context3d_;
 
   scoped_ptr<AudioRendererMixerManager> audio_renderer_mixer_manager_;
+  scoped_ptr<media::AudioHardwareConfig> audio_hardware_config_;
 
   HistogramCustomizer histogram_customizer_;
 

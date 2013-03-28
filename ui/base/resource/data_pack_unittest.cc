@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_piece.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/data_pack.h"
@@ -22,9 +22,9 @@ extern const char kSamplePakContents[];
 extern const size_t kSamplePakSize;
 
 TEST(DataPackTest, LoadFromPath) {
-  ScopedTempDir dir;
+  base::ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
-  FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
+  base::FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
 
   // Dump contents into the pak file.
   ASSERT_EQ(file_util::WriteFile(data_path, kSamplePakContents, kSamplePakSize),
@@ -54,9 +54,9 @@ TEST(DataPackTest, LoadFromPath) {
 }
 
 TEST(DataPackTest, LoadFromFile) {
-  ScopedTempDir dir;
+  base::ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
-  FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
+  base::FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
 
   // Dump contents into the pak file.
   ASSERT_EQ(file_util::WriteFile(data_path, kSamplePakContents, kSamplePakSize),
@@ -101,7 +101,7 @@ INSTANTIATE_TEST_CASE_P(WriteUTF16, DataPackTest, ::testing::Values(
     DataPack::UTF16));
 
 TEST(DataPackTest, LoadFileWithTruncatedHeader) {
-  FilePath data_path;
+  base::FilePath data_path;
   PathService::Get(base::DIR_SOURCE_ROOT, &data_path);
   data_path = data_path.Append(FILE_PATH_LITERAL(
       "ui/base/test/data/data_pack_unittest/truncated-header.pak"));
@@ -111,9 +111,9 @@ TEST(DataPackTest, LoadFileWithTruncatedHeader) {
 }
 
 TEST_P(DataPackTest, Write) {
-  ScopedTempDir dir;
+  base::ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
-  FilePath file = dir.path().Append(FILE_PATH_LITERAL("data.pak"));
+  base::FilePath file = dir.path().Append(FILE_PATH_LITERAL("data.pak"));
 
   std::string one("one");
   std::string two("two");

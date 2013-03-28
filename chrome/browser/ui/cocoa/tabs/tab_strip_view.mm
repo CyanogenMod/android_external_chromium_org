@@ -9,10 +9,16 @@
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #include "chrome/browser/themes/theme_service.h"
-#import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
+#import "chrome/browser/ui/cocoa/new_tab_button.h"
+#import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
+#import "chrome/browser/ui/cocoa/tabs/tab_view.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
+#include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
+#include "ui/base/l10n/l10n_util_mac.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 @implementation TabStripView
 
@@ -22,6 +28,10 @@
 - (id)initWithFrame:(NSRect)frame {
   self = [super initWithFrame:frame];
   if (self) {
+    newTabButton_.reset([[NewTabButton alloc] initWithFrame:
+        NSMakeRect(295, 0, 40, 27)]);
+    [newTabButton_ setToolTip:l10n_util::GetNSString(IDS_TOOLTIP_NEW_TAB)];
+
     // Set lastMouseUp_ = -1000.0 so that timestamp-lastMouseUp_ is big unless
     // lastMouseUp_ has been reset.
     lastMouseUp_ = -1000.0;
@@ -32,34 +42,45 @@
   return self;
 }
 
-// Draw bottom border (a dark border and light highlight). Each tab is
-// responsible for mimicking this bottom border, unless it's the selected
-// tab.
-- (void)drawBorder:(NSRect)bounds {
-  const CGFloat lineWidth = [self cr_lineWidth];
-  NSRect borderRect, contentRect;
-
-  borderRect = bounds;
-  borderRect.origin.y = lineWidth;
-  borderRect.size.height = lineWidth;
-
-  CGFloat borderAlpha = 0.2 / [self cr_lineWidth];
-  [[NSColor colorWithCalibratedWhite:0.0 alpha:borderAlpha] set];
-  NSRectFillUsingOperation(borderRect, NSCompositeSourceOver);
-  NSDivideRect(bounds, &borderRect, &contentRect, lineWidth, NSMinYEdge);
-
+// Draw bottom border bitmap. Each tab is responsible for mimicking this bottom
+// border, unless it's the selected tab.
+- (void)drawBorder:(NSRect)dirtyRect {
   ThemeService* themeProvider =
       static_cast<ThemeService*>([[self window] themeProvider]);
   if (!themeProvider)
     return;
 
-  NSColor* bezelColor = themeProvider->GetNSColor(
-      themeProvider->UsingDefaultTheme() ?
-          ThemeService::COLOR_TOOLBAR_BEZEL :
-          ThemeService::COLOR_TOOLBAR, true);
-  [bezelColor set];
-  NSRectFill(borderRect);
-  NSRectFillUsingOperation(borderRect, NSCompositeSourceOver);
+  // First draw the toolbar bitmap, so that theme colors can shine through.
+  CGFloat backgroundHeight = 2 * [self cr_lineWidth];
+  if (NSMinY(dirtyRect) < backgroundHeight) {
+    gfx::ScopedNSGraphicsContextSaveGState scopedGState;
+    NSGraphicsContext *context = [NSGraphicsContext currentContext];
+    [context setPatternPhase:[[self window] themePatternPhase]];
+
+    // Themes don't have an inactive image so only look for one if there's no
+    // theme.
+    bool active = [[self window] isKeyWindow] || [[self window] isMainWindow] ||
+                  !themeProvider->UsingDefaultTheme();
+    int resource_id = active ? IDR_THEME_TOOLBAR : IDR_THEME_TOOLBAR_INACTIVE;
+    [themeProvider->GetNSImageColorNamed(resource_id, true) set];
+    NSRectFill(
+        NSMakeRect(NSMinX(dirtyRect), 0, NSWidth(dirtyRect), backgroundHeight));
+  }
+
+  // Draw the border bitmap, which is partially transparent.
+  NSImage* image = themeProvider->GetNSImageNamed(IDR_TOOLBAR_SHADE_TOP, true);
+  if (NSMinY(dirtyRect) >= [image size].height)
+    return;
+
+  NSRect borderRect = dirtyRect;
+  borderRect.size.height = [image size].height;
+  borderRect.origin.y = 0;
+
+  BOOL focused = [[self window] isKeyWindow] || [[self window] isMainWindow];
+  NSDrawThreePartImage(borderRect, nil, image, nil, /*vertical=*/ NO,
+                       NSCompositeSourceOver,
+                       focused ?  1.0 : tabs::kImageNoFocusAlpha,
+                       /*flipped=*/ NO);
 }
 
 - (void)drawRect:(NSRect)rect {
@@ -243,7 +264,7 @@
 }
 
 - (void)setNewTabButton:(NewTabButton*)button {
-  newTabButton_ = button;
+  newTabButton_.reset([button retain]);
 }
 
 - (void)setController:(TabStripController*)controller {

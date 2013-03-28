@@ -47,28 +47,14 @@ enum {
 
 // Called when the window is about to close. Perform the self-destruction
 // sequence by getting rid of the shell and removing it and the window from
-// the various global lists. Instead of doing it here, however, we fire off
-// a delayed call to |-cleanup:| to allow everything to get off the stack
-// before we go deleting objects. By returning YES, we allow the window to be
+// the various global lists. By returning YES, we allow the window to be
 // removed from the screen.
 - (BOOL)windowShouldClose:(id)window {
   [window autorelease];
-
-  // Clean ourselves up and do the work after clearing the stack of anything
-  // that might have the shell on it.
-  [self performSelectorOnMainThread:@selector(cleanup:)
-                         withObject:window
-                      waitUntilDone:NO];
+  delete shell_;
+  [self release];
 
   return YES;
-}
-
-// Does the work of removing the window from our various bookkeeping lists
-// and gets rid of the shell.
-- (void)cleanup:(id)window {
-  delete shell_;
-
-  [self release];
 }
 
 - (void)performAction:(id)sender {
@@ -137,7 +123,7 @@ void MakeShellButton(NSRect* rect,
 
 namespace content {
 
-void Shell::PlatformInitialize() {
+void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
 }
 
 void Shell::PlatformCleanUp() {
@@ -180,9 +166,9 @@ void Shell::PlatformCreateWindow(int width, int height) {
                           NSResizableWindowMask;
   CrShellWindow* window =
       [[CrShellWindow alloc] initWithContentRect:content_rect
-                styleMask:style_mask
-                  backing:NSBackingStoreBuffered
-                    defer:NO];
+                                       styleMask:style_mask
+                                         backing:NSBackingStoreBuffered
+                                           defer:NO];
   window_ = window;
   [window setShell:this];
   [window_ setTitle:kWindowTitle];

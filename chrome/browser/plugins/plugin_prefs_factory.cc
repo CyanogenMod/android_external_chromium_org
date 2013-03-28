@@ -5,13 +5,14 @@
 #include "chrome/browser/plugins/plugin_prefs_factory.h"
 
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 
 // static
 PluginPrefsFactory* PluginPrefsFactory::GetInstance() {
@@ -47,29 +48,33 @@ PluginPrefsFactory::BuildServiceInstanceFor(Profile* profile) const {
   return plugin_prefs;
 }
 
-void PluginPrefsFactory::RegisterUserPrefs(PrefService* prefs) {
-  FilePath internal_dir;
+void PluginPrefsFactory::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  base::FilePath internal_dir;
   PathService::Get(chrome::DIR_INTERNAL_PLUGINS, &internal_dir);
-  prefs->RegisterFilePathPref(prefs::kPluginsLastInternalDirectory,
-                              internal_dir,
-                              PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kPluginsEnabledInternalPDF,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kPluginsEnabledNaCl,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kPluginsMigratedToPepperFlash,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kPluginsPluginsList,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kPluginsDisabledPlugins,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kPluginsDisabledPluginsExceptions,
-                          PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterListPref(prefs::kPluginsEnabledPlugins,
-                          PrefService::UNSYNCABLE_PREF);
+  registry->RegisterFilePathPref(prefs::kPluginsLastInternalDirectory,
+                                 internal_dir,
+                                 PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kPluginsEnabledInternalPDF,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kPluginsEnabledNaCl,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kPluginsMigratedToPepperFlash,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kPluginsRemovedOldComponentPepperFlashSettings,
+      false,
+      PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kPluginsPluginsList,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kPluginsDisabledPlugins,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kPluginsDisabledPluginsExceptions,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kPluginsEnabledPlugins,
+                             PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 bool PluginPrefsFactory::ServiceRedirectedInIncognito() const {

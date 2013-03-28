@@ -10,7 +10,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
@@ -23,6 +22,7 @@ class AutocompleteResult;
 namespace base {
 class DictionaryValue;
 class ListValue;
+class RefCountedMemory;
 }
 
 #if defined(OS_CHROMEOS)
@@ -39,6 +39,9 @@ namespace options {
 class OptionsPageUIHandler : public content::WebUIMessageHandler,
                              public content::NotificationObserver {
  public:
+  // Key for identifying the Settings App localized_strings in loadTimeData.
+  static const char kSettingsAppKey[];
+
   OptionsPageUIHandler();
   virtual ~OptionsPageUIHandler();
 
@@ -77,8 +80,13 @@ class OptionsPageUIHandler : public content::WebUIMessageHandler,
     const char* name;
     // The .grd ID for the resource (IDS_*).
     int id;
+    // The .grd ID of the string to replace $1 in |id|'s string. If zero or
+    // omitted (default initialized), no substitution is attempted.
+    int substitution_id;
   };
-  // A helper for simplifying the process of registering strings in WebUI.
+
+  // A helper to simplify string registration in WebUI for strings which do not
+  // change at runtime and optionally contain a single substitution.
   static void RegisterStrings(base::DictionaryValue* localized_strings,
                               const OptionsStringResource* resources,
                               size_t length);

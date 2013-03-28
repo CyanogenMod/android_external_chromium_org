@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/url_database.h"
@@ -41,15 +41,15 @@ class URLDatabaseTest : public testing::Test,
 
  protected:
   // Provided for URL/VisitDatabase.
-  virtual sql::Connection& GetDB() {
+  virtual sql::Connection& GetDB() OVERRIDE {
     return db_;
   }
 
  private:
   // Test setup.
-  void SetUp() {
+  virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    FilePath db_file = temp_dir_.path().AppendASCII("URLTest.db");
+    base::FilePath db_file = temp_dir_.path().AppendASCII("URLTest.db");
 
     EXPECT_TRUE(db_.Open(db_file));
 
@@ -59,11 +59,11 @@ class URLDatabaseTest : public testing::Test,
     InitKeywordSearchTermsTable();
     CreateKeywordSearchTermsIndices();
   }
-  void TearDown() {
+  virtual void TearDown() {
     db_.Close();
   }
 
-  ScopedTempDir temp_dir_;
+  base::ScopedTempDir temp_dir_;
   sql::Connection db_;
 };
 

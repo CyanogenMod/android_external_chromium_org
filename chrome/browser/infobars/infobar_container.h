@@ -10,14 +10,14 @@
 #include "base/compiler_specific.h"
 #include "base/time.h"
 #include "chrome/browser/ui/search/search_model_observer.h"
-#include "chrome/browser/ui/search/search_types.h"
+#include "chrome/common/search_types.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "third_party/skia/include/core/SkColor.h"
 
 class InfoBar;
 class InfoBarDelegate;
-class InfoBarTabHelper;
+class InfoBarService;
 
 namespace chrome {
 namespace search {
@@ -33,16 +33,23 @@ class SearchModel;
 // Platforms need to subclass this to implement a few platform-specific
 // functions, which are pure virtual here.
 //
-// This class also observes changes to the SearchModel mode. If the user changes
-// into suggestions mode, it hides all the infobars temporarily.  When the user
-// changes back out of suggestions mode, it reshows any infobars, and starts a
-// 50 ms window during which any attempts to re-hide any infobars are handled
-// without animation.  This prevents glitchy-looking behavior when the user
-// navigates following a mode change, which otherwise would re-show the infobars
-// only to instantly animate them closed.  The window is canceled if a tab
-// change occurs.
+// This class also observes changes to the SearchModel modes.  It hides infobars
+// temporarily if the user changes into |SEARCH_SUGGESTIONS| mode (refer to
+// chrome::search::Mode in chrome/common/search_types.h for all search modes)
+// when on a :
+// - |DEFAULT| page: when Instant overlay is ready;
+// - |NTP| or |SEARCH_RESULTS| page: immediately;
+//   TODO(kuan): this scenario requires more complex synchronization with
+//   renderer SearchBoxAPI and will be implemented as the next step;
+//   for now, hiding is immediate.
+// When the user changes back out of |SEARCH_SUGGESTIONS| mode, it reshows any
+// infobars, and starts a 50 ms window during which any attempts to re-hide any
+// infobars are handled without animation.  This prevents glitchy-looking
+// behavior when the user navigates following a mode change, which otherwise
+// would re-show the infobars only to instantly animate them closed.  The window
+// to re-hide infobars without animation is canceled if a tab change occurs.
 class InfoBarContainer : public content::NotificationObserver,
-                         public chrome::search::SearchModelObserver  {
+                         public chrome::search::SearchModelObserver {
  public:
   class Delegate {
    public:
@@ -67,10 +74,11 @@ class InfoBarContainer : public content::NotificationObserver,
                    chrome::search::SearchModel* search_model);
   virtual ~InfoBarContainer();
 
-  // Changes the InfoBarTabHelper for which this container is showing
+  // Changes the InfoBarService for which this container is showing
   // infobars.  This will remove all current infobars from the container, add
-  // the infobars from |contents|, and show them all.  |contents| may be NULL.
-  void ChangeTabContents(InfoBarTabHelper* tab_helper);
+  // the infobars from |infobar_service|, and show them all.  |infobar_service|
+  // may be NULL.
+  void ChangeInfoBarService(InfoBarService* infobar_service);
 
   // Returns the amount by which to overlap the toolbar above, and, when
   // |total_height| is non-NULL, set it to the height of the InfoBarContainer
@@ -122,11 +130,12 @@ class InfoBarContainer : public content::NotificationObserver,
                        const content::NotificationDetails& details) OVERRIDE;
 
   // chrome::search::SearchModelObserver:
-  virtual void ModeChanged(const chrome::search::Mode& old_mode,
-                           const chrome::search::Mode& new_mode) OVERRIDE;
+  virtual void ModelChanged(
+      const chrome::search::SearchModel::State& old_state,
+      const chrome::search::SearchModel::State& new_state) OVERRIDE;
 
   // Hides an InfoBar for the specified delegate, in response to a notification
-  // from the selected InfoBarTabHelper.  The InfoBar's disappearance will be
+  // from the selected InfoBarService.  The InfoBar's disappearance will be
   // animated if |use_animation| is true and it has been more than 50ms since
   // infobars were reshown due to an Instant Extended mode change. The InfoBar
   // will call back to RemoveInfoBar() to remove itself once it's hidden (which
@@ -153,8 +162,11 @@ class InfoBarContainer : public content::NotificationObserver,
 
   content::NotificationRegistrar registrar_;
   Delegate* delegate_;
-  InfoBarTabHelper* tab_helper_;
+  InfoBarService* infobar_service_;
   InfoBars infobars_;
+
+  // Tracks whether infobars in the container are shown or hidden.
+  bool infobars_shown_;
 
   // Tracks the most recent time infobars were re-shown after being hidden due
   // to Instant Extended's ModeChanged.

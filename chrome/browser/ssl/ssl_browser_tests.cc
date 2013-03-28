@@ -4,21 +4,20 @@
 
 #include "base/command_line.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/constrained_window_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/web_contents_modal_dialog_manager.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -55,7 +54,8 @@ using content::NavigationEntry;
 using content::SSLStatus;
 using content::WebContents;
 
-const FilePath::CharType kDocRoot[] = FILE_PATH_LITERAL("chrome/test/data");
+const base::FilePath::CharType kDocRoot[] =
+    FILE_PATH_LITERAL("chrome/test/data");
 
 namespace {
 
@@ -72,7 +72,7 @@ class ProvisionalLoadWaiter : public content::WebContentsObserver {
     content::RunMessageLoop();
   }
 
-  void DidFailProvisionalLoad(
+  virtual void DidFailProvisionalLoad(
       int64 frame_id,
       bool is_main_frame,
       const GURL& validated_url,
@@ -96,18 +96,18 @@ class SSLUITest : public InProcessBrowserTest {
   SSLUITest()
       : https_server_(net::TestServer::TYPE_HTTPS,
                       SSLOptions(SSLOptions::CERT_OK),
-                      FilePath(kDocRoot)),
+                      base::FilePath(kDocRoot)),
         https_server_expired_(net::TestServer::TYPE_HTTPS,
                               SSLOptions(SSLOptions::CERT_EXPIRED),
-                              FilePath(kDocRoot)),
+                              base::FilePath(kDocRoot)),
         https_server_mismatched_(net::TestServer::TYPE_HTTPS,
                                  SSLOptions(SSLOptions::CERT_MISMATCHED_NAME),
-                                 FilePath(kDocRoot)),
+                                 base::FilePath(kDocRoot)),
         wss_server_expired_(net::TestServer::TYPE_WSS,
                             SSLOptions(SSLOptions::CERT_EXPIRED),
                             net::GetWebSocketTestDataDirectory()) {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     // Browser will both run and display insecure content.
     command_line->AppendSwitch(switches::kAllowRunningInsecureContent);
     // Use process-per-site so that navigating to a same-site page in a
@@ -181,9 +181,9 @@ class SSLUITest : public InProcessBrowserTest {
 
     while (base::Time::Now() < timeToQuit) {
       bool workerFinished = false;
-      ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-          tab->GetRenderViewHost(), std::wstring(),
-          L"window.domAutomationController.send(IsWorkerFinished());",
+      ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+          tab,
+          "window.domAutomationController.send(IsWorkerFinished());",
           &workerFinished));
 
       if (workerFinished)
@@ -198,9 +198,9 @@ class SSLUITest : public InProcessBrowserTest {
     }
 
     bool actuallyLoadedContent = false;
-    ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-        tab->GetRenderViewHost(), std::wstring(),
-        L"window.domAutomationController.send(IsContentLoaded());",
+    ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+        tab,
+        "window.domAutomationController.send(IsContentLoaded());",
         &actuallyLoadedContent));
     EXPECT_EQ(expectLoaded, actuallyLoadedContent);
   }
@@ -215,9 +215,10 @@ class SSLUITest : public InProcessBrowserTest {
     observer.Wait();
   }
 
-  size_t GetConstrainedWindowCount() const {
-    return ConstrainedWindowTabHelper::FromWebContents(
-        chrome::GetActiveWebContents(browser()))->constrained_window_count();
+  bool IsShowingWebContentsModalDialog() const {
+    return WebContentsModalDialogManager::FromWebContents(
+        browser()->tab_strip_model()->GetActiveWebContents())->
+            IsShowingDialog();
   }
 
   static bool GetFilePathWithHostAndPortReplacement(
@@ -311,7 +312,7 @@ class SSLUITestBlock : public SSLUITest {
   SSLUITestBlock() : SSLUITest() {}
 
   // Browser will neither run nor display insecure content.
-  virtual void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(switches::kNoDisplayingInsecureContent);
   }
 };
@@ -333,7 +334,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTP) {
   ui_test_utils::NavigateToURL(browser(),
                                test_server()->GetURL("files/ssl/google.html"));
 
-  CheckUnauthenticatedState(chrome::GetActiveWebContents(browser()));
+  CheckUnauthenticatedState(
+      browser()->tab_strip_model()->GetActiveWebContents());
 }
 
 // Visits a page over http which includes broken https resources (status should
@@ -353,7 +355,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPWithBrokenHTTPSResource) {
   ui_test_utils::NavigateToURL(
       browser(), test_server()->GetURL(replacement_path));
 
-  CheckUnauthenticatedState(chrome::GetActiveWebContents(browser()));
+  CheckUnauthenticatedState(
+      browser()->tab_strip_model()->GetActiveWebContents());
 }
 
 // http://crbug.com/91745
@@ -370,7 +373,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestOKHTTPS) {
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL("files/ssl/google.html"));
 
-  CheckAuthenticatedState(chrome::GetActiveWebContents(browser()), false);
+  CheckAuthenticatedState(
+      browser()->tab_strip_model()->GetActiveWebContents(), false);
 }
 
 // Visits a page with https error and proceed:
@@ -380,7 +384,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPSExpiredCertAndProceed) {
   ui_test_utils::NavigateToURL(browser(),
       https_server_expired_.GetURL("files/ssl/google.html"));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   CheckAuthenticationBrokenState(tab, net::CERT_STATUS_DATE_INVALID, false,
                                  true);  // Interstitial showing
 
@@ -401,7 +405,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPSExpiredCertAndDontProceed) {
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL("files/ssl/google.html"));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   NavigationEntry* entry = tab->GetController().GetActiveEntry();
   ASSERT_TRUE(entry);
 
@@ -445,7 +449,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest,
   // First navigate to an HTTP page.
   ui_test_utils::NavigateToURL(browser(),
       test_server()->GetURL("files/ssl/google.html"));
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   NavigationEntry* entry = tab->GetController().GetActiveEntry();
   ASSERT_TRUE(entry);
 
@@ -467,7 +471,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITest,
       tab->GetRenderViewHost()));
 
   // We should be back at the original good page.
-  EXPECT_FALSE(chrome::GetActiveWebContents(browser())->GetInterstitialPage());
+  EXPECT_FALSE(browser()->tab_strip_model()->GetActiveWebContents()->
+                   GetInterstitialPage());
   CheckUnauthenticatedState(tab);
 }
 
@@ -481,7 +486,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest,
   // First navigate to an HTTP page.
   ui_test_utils::NavigateToURL(browser(),
       test_server()->GetURL("files/ssl/google.html"));
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   NavigationEntry* entry = tab->GetController().GetActiveEntry();
   ASSERT_TRUE(entry);
 
@@ -495,7 +500,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITest,
   tab->GetController().GoToOffset(-1);
 
   // We should be back at the original good page.
-  EXPECT_FALSE(chrome::GetActiveWebContents(browser())->GetInterstitialPage());
+  EXPECT_FALSE(browser()->tab_strip_model()->GetActiveWebContents()->
+                   GetInterstitialPage());
   CheckUnauthenticatedState(tab);
 }
 
@@ -507,7 +513,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPSExpiredCertAndGoForward) {
   // First navigate to two HTTP pages.
   ui_test_utils::NavigateToURL(browser(),
       test_server()->GetURL("files/ssl/google.html"));
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   NavigationEntry* entry1 = tab->GetController().GetActiveEntry();
   ASSERT_TRUE(entry1);
   ui_test_utils::NavigateToURL(browser(),
@@ -543,7 +549,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPSExpiredCertAndGoForward) {
   }
 
   // We should be showing the second good page.
-  EXPECT_FALSE(chrome::GetActiveWebContents(browser())->GetInterstitialPage());
+  EXPECT_FALSE(browser()->tab_strip_model()->GetActiveWebContents()->
+                   GetInterstitialPage());
   CheckUnauthenticatedState(tab);
   EXPECT_FALSE(tab->GetController().CanGoForward());
   NavigationEntry* entry4 = tab->GetController().GetActiveEntry();
@@ -553,27 +560,33 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestHTTPSExpiredCertAndGoForward) {
 // Visit a HTTP page which request WSS connection to a server providing invalid
 // certificate. Close the page while WSS connection waits for SSLManager's
 // response from UI thread.
-IN_PROC_BROWSER_TEST_F(SSLUITest, TestWSSInvalidCertAndClose) {
+// Disabled on Windows because it was flaking on XP Tests (1). crbug.com/165258
+#if defined(OS_WIN)
+#define MAYBE_TestWSSInvalidCertAndClose DISABLED_TestWSSInvalidCertAndClose
+#else
+#define MAYBE_TestWSSInvalidCertAndClose TestWSSInvalidCertAndClose
+#endif
+IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestWSSInvalidCertAndClose) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(wss_server_expired_.Start());
 
   // Setup page title observer.
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   content::TitleWatcher watcher(tab, ASCIIToUTF16("PASS"));
   watcher.AlsoWaitForTitle(ASCIIToUTF16("FAIL"));
 
   // Create GURLs to test pages.
-  std::string masterUrlPath = StringPrintf("%s?%d",
+  std::string masterUrlPath = base::StringPrintf("%s?%d",
       test_server()->GetURL("files/ssl/wss_close.html").spec().c_str(),
       wss_server_expired_.host_port_pair().port());
   GURL masterUrl(masterUrlPath);
-  std::string slaveUrlPath = StringPrintf("%s?%d",
+  std::string slaveUrlPath = base::StringPrintf("%s?%d",
       test_server()->GetURL("files/ssl/wss_close_slave.html").spec().c_str(),
       wss_server_expired_.host_port_pair().port());
   GURL slaveUrl(slaveUrlPath);
 
   // Create tabs and visit pages which keep on creating wss connections.
-  TabContents* tabs[16];
+  WebContents* tabs[16];
   for (int i = 0; i < 16; ++i) {
     tabs[i] = chrome::AddSelectedTabWithURL(browser(), slaveUrl,
                                             content::PAGE_TRANSITION_LINK);
@@ -588,8 +601,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestWSSInvalidCertAndClose) {
 
   // Close tabs which contains the test page.
   for (int i = 0; i < 16; ++i)
-    chrome::CloseWebContents(browser(), tabs[i]->web_contents());
-  chrome::CloseWebContents(browser(), tab);
+    chrome::CloseWebContents(browser(), tabs[i], false);
+  chrome::CloseWebContents(browser(), tab, false);
 }
 
 // Visit a HTTPS page and proceeds despite an invalid certificate. The page
@@ -600,7 +613,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestWSSInvalidCertAndGoForward) {
   ASSERT_TRUE(wss_server_expired_.Start());
 
   // Setup page title observer.
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   content::TitleWatcher watcher(tab, ASCIIToUTF16("PASS"));
   watcher.AlsoWaitForTitle(ASCIIToUTF16("FAIL"));
 
@@ -641,7 +654,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestWSSClientCert) {
   net::NSSCertDatabase* cert_db = net::NSSCertDatabase::GetInstance();
   scoped_refptr<net::CryptoModule> crypt_module = cert_db->GetPublicModule();
   std::string pkcs12_data;
-  FilePath cert_path = net::GetTestCertsDirectory().Append(
+  base::FilePath cert_path = net::GetTestCertsDirectory().Append(
       FILE_PATH_LITERAL("websocket_client_cert.p12"));
   EXPECT_TRUE(file_util::ReadFileToString(cert_path, &pkcs12_data));
   EXPECT_EQ(net::OK, cert_db->ImportFromPKCS12(crypt_module,
@@ -653,7 +666,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestWSSClientCert) {
   // Start WebSocket test server with TLS and client cert authentication.
   net::TestServer::SSLOptions options(net::TestServer::SSLOptions::CERT_OK);
   options.request_client_certificate = true;
-  FilePath ca_path = net::GetTestCertsDirectory().Append(
+  base::FilePath ca_path = net::GetTestCertsDirectory().Append(
       FILE_PATH_LITERAL("websocket_cacert.pem"));
   options.client_authorities.push_back(ca_path);
   net::TestServer wss_server(net::TestServer::TYPE_WSS,
@@ -667,7 +680,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestWSSClientCert) {
       replacements);
 
   // Setup page title observer.
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   content::TitleWatcher watcher(tab, ASCIIToUTF16("PASS"));
   watcher.AlsoWaitForTitle(ASCIIToUTF16("FAIL"));
 
@@ -711,15 +724,15 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestHTTPSErrorWithNoNavEntry) {
   ASSERT_TRUE(https_server_expired_.Start());
 
   GURL url = https_server_expired_.GetURL("files/ssl/google.htm");
-  TabContents* tab2 = chrome::AddSelectedTabWithURL(
+  WebContents* tab2 = chrome::AddSelectedTabWithURL(
       browser(), url, content::PAGE_TRANSITION_TYPED);
-  content::WaitForLoadStop(tab2->web_contents());
+  content::WaitForLoadStop(tab2);
 
   // Verify our assumption that there was no prior navigation.
   EXPECT_FALSE(chrome::CanGoBack(browser()));
 
   // We should have an interstitial page showing.
-  ASSERT_TRUE(tab2->web_contents()->GetInterstitialPage());
+  ASSERT_TRUE(tab2->GetInterstitialPage());
 }
 
 IN_PROC_BROWSER_TEST_F(SSLUITest, TestBadHTTPSDownload) {
@@ -728,7 +741,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestBadHTTPSDownload) {
   GURL url_non_dangerous = test_server()->GetURL("");
   GURL url_dangerous = https_server_expired_.GetURL(
       "files/downloads/dangerous/dangerous.exe");
-  ScopedTempDir downloads_directory_;
+  base::ScopedTempDir downloads_directory_;
 
   // Need empty temp dir to avoid having Chrome ask us for a new filename
   // when we've downloaded dangerous.exe one hundred times.
@@ -761,7 +774,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestBadHTTPSDownload) {
 
   // Proceed through the SSL interstitial. This doesn't use
   // |ProceedThroughInterstitial| since no page load will commit.
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(tab != NULL);
   ASSERT_TRUE(tab->GetInterstitialPage() != NULL);
   {
@@ -809,7 +822,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestDisplaysInsecureContent) {
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
 
-  CheckAuthenticatedState(chrome::GetActiveWebContents(browser()), true);
+  CheckAuthenticatedState(
+      browser()->tab_strip_model()->GetActiveWebContents(), true);
 }
 
 // Visits a page that runs insecure content and tries to suppress the insecure
@@ -823,8 +837,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITest,
   ui_test_utils::NavigateToURL(browser(), https_server_.GetURL(
       "files/ssl/page_runs_insecure_content.html"));
 
-  CheckAuthenticationBrokenState(chrome::GetActiveWebContents(browser()), 0,
-                                 true, false);
+  CheckAuthenticationBrokenState(
+      browser()->tab_strip_model()->GetActiveWebContents(), 0, true, false);
 }
 
 // Visits a page with unsafe content and make sure that:
@@ -842,7 +856,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestUnsafeContents) {
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   // When the bad content is filtered, the state is expected to be
   // authenticated.
   CheckAuthenticatedState(tab, false);
@@ -850,23 +864,25 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestUnsafeContents) {
   // Because of cross-frame scripting restrictions, we cannot access the iframe
   // content.  So to know if the frame was loaded, we just check if a popup was
   // opened (the iframe content opens one).
-  // Note: because of bug 1115868, no constrained window is opened right now.
-  //       Once the bug is fixed, this will do the real check.
-  EXPECT_EQ(0U, GetConstrainedWindowCount());
+  // Note: because of bug 1115868, no web contents modal dialog is opened right
+  //       now.  Once the bug is fixed, this will do the real check.
+  EXPECT_FALSE(IsShowingWebContentsModalDialog());
 
   int img_width;
-  EXPECT_TRUE(content::ExecuteJavaScriptAndExtractInt(
-      tab->GetRenderViewHost(), std::wstring(),
-      L"window.domAutomationController.send(ImageWidth());", &img_width));
+  EXPECT_TRUE(content::ExecuteScriptAndExtractInt(
+      tab,
+      "window.domAutomationController.send(ImageWidth());",
+      &img_width));
   // In order to check that the image was not loaded, we check its width.
   // The actual image (Google logo) is 114 pixels wide, we assume the broken
   // image is less than 100.
   EXPECT_LT(img_width, 100);
 
   bool js_result = false;
-  EXPECT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), std::wstring(),
-      L"window.domAutomationController.send(IsFooSet());", &js_result));
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "window.domAutomationController.send(IsFooSet());",
+      &js_result));
   EXPECT_FALSE(js_result);
 }
 
@@ -884,13 +900,14 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestDisplaysInsecureContentLoadedFromJS) {
   ui_test_utils::NavigateToURL(browser(), https_server_.GetURL(
       replacement_path));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   CheckAuthenticatedState(tab, false);
 
   // Load the insecure image.
   bool js_result = false;
-  EXPECT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), std::wstring(), L"loadBadImage();",
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "loadBadImage();",
       &js_result));
   EXPECT_TRUE(js_result);
 
@@ -908,10 +925,10 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestDisplaysInsecureContentTwoTabs) {
   ui_test_utils::NavigateToURL(browser(),
       https_server_.GetURL("files/ssl/blank_page.html"));
 
-  TabContents* tab1 = chrome::GetActiveTabContents(browser());
+  WebContents* tab1 = browser()->tab_strip_model()->GetActiveWebContents();
 
   // This tab should be fine.
-  CheckAuthenticatedState(tab1->web_contents(), false);
+  CheckAuthenticatedState(tab1, false);
 
   // Create a new tab.
   std::string replacement_path;
@@ -929,14 +946,14 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestDisplaysInsecureContentTwoTabs) {
       content::NOTIFICATION_LOAD_STOP,
       content::NotificationService::AllSources());
   chrome::Navigate(&params);
-  TabContents* tab2 = params.target_contents;
+  WebContents* tab2 = params.target_contents;
   observer.Wait();
 
   // The new tab has insecure content.
-  CheckAuthenticatedState(tab2->web_contents(), true);
+  CheckAuthenticatedState(tab2, true);
 
   // The original tab should not be contaminated.
-  CheckAuthenticatedState(tab1->web_contents(), false);
+  CheckAuthenticatedState(tab1, false);
 }
 
 // Visits two pages from the same origin: one that runs insecure content and one
@@ -949,10 +966,10 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRunsInsecureContentTwoTabs) {
   ui_test_utils::NavigateToURL(browser(),
       https_server_.GetURL("files/ssl/blank_page.html"));
 
-  TabContents* tab1 = chrome::GetActiveTabContents(browser());
+  WebContents* tab1 = browser()->tab_strip_model()->GetActiveWebContents();
 
   // This tab should be fine.
-  CheckAuthenticatedState(tab1->web_contents(), false);
+  CheckAuthenticatedState(tab1, false);
 
   std::string replacement_path;
   ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
@@ -971,19 +988,19 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRunsInsecureContentTwoTabs) {
       content::NOTIFICATION_LOAD_STOP,
       content::NotificationService::AllSources());
   chrome::Navigate(&params);
-  TabContents* tab2 = params.target_contents;
+  WebContents* tab2 = params.target_contents;
   observer.Wait();
 
   // Both tabs should have the same process.
-  EXPECT_EQ(tab1->web_contents()->GetRenderProcessHost(),
-            tab2->web_contents()->GetRenderProcessHost());
+  EXPECT_EQ(tab1->GetRenderProcessHost(),
+            tab2->GetRenderProcessHost());
 
   // The new tab has insecure content.
-  CheckAuthenticationBrokenState(tab2->web_contents(), 0, true, false);
+  CheckAuthenticationBrokenState(tab2, 0, true, false);
 
   // Which means the origin for the first tab has also been contaminated with
   // insecure content.
-  CheckAuthenticationBrokenState(tab1->web_contents(), 0, true, false);
+  CheckAuthenticationBrokenState(tab1, 0, true, false);
 }
 
 // Visits a page with an image over http.  Visits another page over https
@@ -1002,7 +1019,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestDisplaysCachedInsecureContent) {
   // Load original page over HTTP.
   const GURL url_http = test_server()->GetURL(replacement_path);
   ui_test_utils::NavigateToURL(browser(), url_http);
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   CheckUnauthenticatedState(tab);
 
   // Load again but over SSL.  It should be marked as displaying insecure
@@ -1036,7 +1053,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestRunsCachedInsecureContent) {
   // Load original page over HTTP.
   const GURL url_http = test_server()->GetURL(replacement_path);
   ui_test_utils::NavigateToURL(browser(), url_http);
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   CheckUnauthenticatedState(tab);
 
   // Load again but over SSL.  It should be marked as displaying insecure
@@ -1058,7 +1075,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestCNInvalidStickiness) {
       https_server_mismatched_.GetURL("files/ssl/google.html"));
 
   // We get an interstitial page as a result.
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   CheckAuthenticationBrokenState(tab, net::CERT_STATUS_COMMON_NAME_INVALID,
                                  false, true);  // Interstitial showing.
   ProceedThroughInterstitial(tab);
@@ -1096,7 +1113,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRefNavigation) {
   ui_test_utils::NavigateToURL(browser(),
       https_server_expired_.GetURL("files/ssl/page_with_refs.html"));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   CheckAuthenticationBrokenState(tab, net::CERT_STATUS_DATE_INVALID, false,
                                  true);  // Interstitial showing.
 
@@ -1131,17 +1148,17 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestCloseTabWithUnsafePopup) {
   ui_test_utils::NavigateToURL(browser(),
                                test_server()->GetURL(replacement_path));
 
-  WebContents* tab1 = chrome::GetActiveWebContents(browser());
+  WebContents* tab1 = browser()->tab_strip_model()->GetActiveWebContents();
   // It is probably overkill to add a notification for a popup-opening, let's
   // just poll.
   for (int i = 0; i < 10; i++) {
-    if (GetConstrainedWindowCount() > 0)
+    if (IsShowingWebContentsModalDialog())
       break;
     MessageLoop::current()->PostDelayedTask(
         FROM_HERE, MessageLoop::QuitClosure(), base::TimeDelta::FromSeconds(1));
     content::RunMessageLoop();
   }
-  ASSERT_EQ(1U, GetConstrainedWindowCount());
+  ASSERT_TRUE(IsShowingWebContentsModalDialog());
 
   // Let's add another tab to make sure the browser does not exit when we close
   // the first tab.
@@ -1153,7 +1170,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestCloseTabWithUnsafePopup) {
   observer.Wait();
 
   // Close the first tab.
-  chrome::CloseWebContents(browser(), tab1);
+  chrome::CloseWebContents(browser(), tab1, false);
 }
 
 // Visit a page over bad https that is a redirect to a page with good https.
@@ -1166,7 +1183,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectBadToGoodHTTPS) {
 
   ui_test_utils::NavigateToURL(browser(), GURL(url1.spec() + url2.spec()));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
 
   CheckAuthenticationBrokenState(tab, net::CERT_STATUS_DATE_INVALID, false,
                                  true);  // Interstitial showing.
@@ -1186,7 +1203,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectGoodToBadHTTPS) {
   GURL url2 = https_server_expired_.GetURL("files/ssl/google.html");
   ui_test_utils::NavigateToURL(browser(), GURL(url1.spec() + url2.spec()));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   CheckAuthenticationBrokenState(tab, net::CERT_STATUS_DATE_INVALID, false,
                                  true);  // Interstitial showing.
 
@@ -1201,7 +1218,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectHTTPToGoodHTTPS) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(https_server_.Start());
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
 
   // HTTP redirects to good HTTPS.
   GURL http_url = test_server()->GetURL("server-redirect?");
@@ -1218,7 +1235,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectHTTPToBadHTTPS) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(https_server_expired_.Start());
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
 
   GURL http_url = test_server()->GetURL("server-redirect?");
   GURL bad_https_url =
@@ -1245,18 +1262,21 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectHTTPSToHTTP) {
 
   ui_test_utils::NavigateToURL(browser(),
                                GURL(https_url.spec() + http_url.spec()));
-  CheckUnauthenticatedState(chrome::GetActiveWebContents(browser()));
+  CheckUnauthenticatedState(
+      browser()->tab_strip_model()->GetActiveWebContents());
 }
 
 // Visits a page to which we could not connect (bad port) over http and https
 // and make sure the security style is correct.
 IN_PROC_BROWSER_TEST_F(SSLUITest, TestConnectToBadPort) {
   ui_test_utils::NavigateToURL(browser(), GURL("http://localhost:17"));
-  CheckUnauthenticatedState(chrome::GetActiveWebContents(browser()));
+  CheckUnauthenticatedState(
+      browser()->tab_strip_model()->GetActiveWebContents());
 
   // Same thing over HTTPS.
   ui_test_utils::NavigateToURL(browser(), GURL("https://localhost:17"));
-  CheckUnauthenticatedState(chrome::GetActiveWebContents(browser()));
+  CheckUnauthenticatedState(
+      browser()->tab_strip_model()->GetActiveWebContents());
 }
 
 //
@@ -1279,7 +1299,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestGoodFrameNavigation) {
                               https_server_expired_,
                               &top_frame_path));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(top_frame_path));
 
@@ -1291,9 +1311,9 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestGoodFrameNavigation) {
     content::WindowedNotificationObserver observer(
         content::NOTIFICATION_LOAD_STOP,
         content::Source<NavigationController>(&tab->GetController()));
-    EXPECT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-        tab->GetRenderViewHost(), std::wstring(),
-        L"window.domAutomationController.send(clickLink('goodHTTPSLink'));",
+    EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+        tab,
+        "window.domAutomationController.send(clickLink('goodHTTPSLink'));",
         &success));
     ASSERT_TRUE(success);
     observer.Wait();
@@ -1307,9 +1327,9 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestGoodFrameNavigation) {
     content::WindowedNotificationObserver observer(
         content::NOTIFICATION_LOAD_STOP,
         content::Source<NavigationController>(&tab->GetController()));
-    EXPECT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-        tab->GetRenderViewHost(), std::wstring(),
-        L"window.domAutomationController.send(clickLink('badHTTPSLink'));",
+    EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+        tab,
+        "window.domAutomationController.send(clickLink('badHTTPSLink'));",
         &success));
     ASSERT_TRUE(success);
     observer.Wait();
@@ -1320,11 +1340,13 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestGoodFrameNavigation) {
 
   // And the frame should be blocked.
   bool is_content_evil = true;
-  std::wstring content_frame_xpath(L"html/frameset/frame[2]");
-  std::wstring is_evil_js(L"window.domAutomationController.send("
-                          L"document.getElementById('evilDiv') != null);");
-  EXPECT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), content_frame_xpath, is_evil_js,
+  std::string content_frame_xpath("html/frameset/frame[2]");
+  std::string is_evil_js("window.domAutomationController.send("
+                         "document.getElementById('evilDiv') != null);");
+  EXPECT_TRUE(content::ExecuteScriptInFrameAndExtractBool(
+      tab,
+      content_frame_xpath,
+      is_evil_js,
       &is_content_evil));
   EXPECT_FALSE(is_content_evil);
 
@@ -1343,9 +1365,9 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestGoodFrameNavigation) {
     content::WindowedNotificationObserver observer(
         content::NOTIFICATION_LOAD_STOP,
         content::Source<NavigationController>(&tab->GetController()));
-    EXPECT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-        tab->GetRenderViewHost(), std::wstring(),
-        L"window.domAutomationController.send(clickLink('HTTPLink'));",
+    EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+        tab,
+        "window.domAutomationController.send(clickLink('HTTPLink'));",
         &success));
     ASSERT_TRUE(success);
     observer.Wait();
@@ -1377,7 +1399,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestBadFrameNavigation) {
                               https_server_expired_,
                               &top_frame_path));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   ui_test_utils::NavigateToURL(browser(),
                                https_server_expired_.GetURL(top_frame_path));
   CheckAuthenticationBrokenState(tab, net::CERT_STATUS_DATE_INVALID, false,
@@ -1390,9 +1412,9 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestBadFrameNavigation) {
   content::WindowedNotificationObserver observer(
         content::NOTIFICATION_LOAD_STOP,
         content::Source<NavigationController>(&tab->GetController()));
-  EXPECT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), std::wstring(),
-      L"window.domAutomationController.send(clickLink('goodHTTPSLink'));",
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      tab,
+      "window.domAutomationController.send(clickLink('goodHTTPSLink'));",
       &success));
   ASSERT_TRUE(success);
   observer.Wait();
@@ -1416,7 +1438,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestUnauthenticatedFrameNavigation) {
                               https_server_expired_,
                               &top_frame_path));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   ui_test_utils::NavigateToURL(browser(),
                                test_server()->GetURL(top_frame_path));
   CheckUnauthenticatedState(tab);
@@ -1427,9 +1449,9 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestUnauthenticatedFrameNavigation) {
     content::WindowedNotificationObserver observer(
         content::NOTIFICATION_LOAD_STOP,
         content::Source<NavigationController>(&tab->GetController()));
-    EXPECT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-        tab->GetRenderViewHost(), std::wstring(),
-        L"window.domAutomationController.send(clickLink('goodHTTPSLink'));",
+    EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+        tab,
+        "window.domAutomationController.send(clickLink('goodHTTPSLink'));",
         &success));
     ASSERT_TRUE(success);
     observer.Wait();
@@ -1444,9 +1466,9 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestUnauthenticatedFrameNavigation) {
     content::WindowedNotificationObserver observer(
         content::NOTIFICATION_LOAD_STOP,
         content::Source<NavigationController>(&tab->GetController()));
-    EXPECT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-        tab->GetRenderViewHost(), std::wstring(),
-        L"window.domAutomationController.send(clickLink('badHTTPSLink'));",
+    EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+        tab,
+        "window.domAutomationController.send(clickLink('badHTTPSLink'));",
         &success));
     ASSERT_TRUE(success);
     observer.Wait();
@@ -1457,11 +1479,13 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestUnauthenticatedFrameNavigation) {
 
   // And the frame should have been blocked (see bug #2316).
   bool is_content_evil = true;
-  std::wstring content_frame_xpath(L"html/frameset/frame[2]");
-  std::wstring is_evil_js(L"window.domAutomationController.send("
-                          L"document.getElementById('evilDiv') != null);");
-  EXPECT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      tab->GetRenderViewHost(), content_frame_xpath, is_evil_js,
+  std::string content_frame_xpath("html/frameset/frame[2]");
+  std::string is_evil_js("window.domAutomationController.send("
+                         "document.getElementById('evilDiv') != null);");
+  EXPECT_TRUE(content::ExecuteScriptInFrameAndExtractBool(
+      tab,
+      content_frame_xpath,
+      is_evil_js,
       &is_content_evil));
   EXPECT_FALSE(is_content_evil);
 }
@@ -1477,7 +1501,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestUnsafeContentsInWorkerFiltered) {
                                           &page_with_unsafe_worker_path));
   ui_test_utils::NavigateToURL(browser(), https_server_.GetURL(
       page_with_unsafe_worker_path));
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   // Expect Worker not to load insecure content.
   CheckWorkerLoadResult(tab, false);
   // The bad content is filtered, expect the state to be authenticated.
@@ -1492,7 +1516,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestUnsafeContentsInWorker) {
   // the user approves the bad certificate.
   ui_test_utils::NavigateToURL(browser(),
       https_server_expired_.GetURL("files/ssl/blank_page.html"));
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   CheckAuthenticationBrokenState(tab, net::CERT_STATUS_DATE_INVALID, false,
                                  true);  // Interstitial showing
   ProceedThroughInterstitial(tab);
@@ -1527,7 +1551,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITestBlock, TestBlockDisplayingInsecureImage) {
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
 
-  CheckAuthenticatedState(chrome::GetActiveWebContents(browser()), false);
+  CheckAuthenticatedState(
+      browser()->tab_strip_model()->GetActiveWebContents(), false);
 }
 
 // Test that when the browser blocks displaying insecure content (iframes), the
@@ -1546,7 +1571,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITestBlock, TestBlockDisplayingInsecureIframe) {
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
 
-  CheckAuthenticatedState(chrome::GetActiveWebContents(browser()), false);
+  CheckAuthenticatedState(
+      browser()->tab_strip_model()->GetActiveWebContents(), false);
 }
 
 
@@ -1566,7 +1592,8 @@ IN_PROC_BROWSER_TEST_F(SSLUITestBlock, TestBlockRunningInsecureContent) {
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
 
-  CheckAuthenticatedState(chrome::GetActiveWebContents(browser()), false);
+  CheckAuthenticatedState(
+      browser()->tab_strip_model()->GetActiveWebContents(), false);
 }
 
 // Visit a page and establish a WebSocket connection over bad https with
@@ -1577,7 +1604,7 @@ IN_PROC_BROWSER_TEST_F(SSLUITestIgnoreCertErrors, TestWSS) {
   ASSERT_TRUE(wss_server_expired_.Start());
 
   // Setup page title observer.
-  WebContents* tab = chrome::GetActiveWebContents(browser());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
   content::TitleWatcher watcher(tab, ASCIIToUTF16("PASS"));
   watcher.AlsoWaitForTitle(ASCIIToUTF16("FAIL"));
 

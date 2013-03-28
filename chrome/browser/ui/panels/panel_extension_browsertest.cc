@@ -6,7 +6,7 @@
 #include "base/path_service.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/extensions/extension_apitest.h"
+#include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
@@ -90,17 +90,26 @@ IN_PROC_BROWSER_TEST_F(PanelExtensionBrowserTest, PanelAppIcon) {
   EXPECT_EQ(panel::kPanelAppIconSize, app_icon.height());
 
   // Then verify on the native panel level.
+#if !defined(OS_WIN) || !defined(USE_AURA)
   scoped_ptr<NativePanelTesting> native_panel_testing(
       CreateNativePanelTesting(panel));
   EXPECT_TRUE(native_panel_testing->VerifyAppIcon());
+#endif
 
   panel->Close();
 }
 
 // Tests that icon loading might not be completed when the panel is closed.
 // (crbug.com/151484)
+//
+// TODO(linux_aura) http://crbug.com/163931
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
+#define MAYBE_ClosePanelBeforeIconLoadingCompleted DISABLED_ClosePanelBeforeIconLoadingCompleted
+#else
+#define MAYBE_ClosePanelBeforeIconLoadingCompleted ClosePanelBeforeIconLoadingCompleted
+#endif
 IN_PROC_BROWSER_TEST_F(PanelExtensionBrowserTest,
-                       ClosePanelBeforeIconLoadingCompleted) {
+                       MAYBE_ClosePanelBeforeIconLoadingCompleted) {
   const Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("test_extension"));
   Panel* panel = CreatePanelFromExtension(extension);
@@ -144,47 +153,91 @@ IN_PROC_BROWSER_TEST_F(PanelExtensionBrowserTest, BasicContextMenu) {
   ASSERT_TRUE(web_contents);
 
   WebKit::WebContextMenuData data;
-  content::ContextMenuParams params(data);
-  params.page_url = web_contents->GetURL();
-
-  // Ensure context menu isn't swallowed by WebContentsDelegate (the panel).
-  EXPECT_FALSE(web_contents->GetDelegate()->HandleContextMenu(params));
 
   // Verify basic menu contents. The basic extension does not add any
   // context menu items so the panel's menu should include only the
   // developer tools.
-  scoped_ptr<PanelContextMenu> menu;
-  menu.reset(new PanelContextMenu(web_contents, params));
-  menu->Init();
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_INSPECTELEMENT));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_UNDO));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_PASTE));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPY));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_BACK));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_SAVE_PAGE));
+  {
+    content::ContextMenuParams params(data);
+    params.page_url = web_contents->GetURL();
+    // Ensure context menu isn't swallowed by WebContentsDelegate (the panel).
+    EXPECT_FALSE(web_contents->GetDelegate()->HandleContextMenu(params));
+
+    scoped_ptr<PanelContextMenu> menu(
+        new PanelContextMenu(web_contents, params));
+    menu->Init();
+
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_INSPECTELEMENT));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_UNDO));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_PASTE));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPY));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_BACK));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_SAVE_PAGE));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPYLINKLOCATION));
+  }
 
   // Verify expected menu contents for editable item.
-  params.is_editable = true;
-  menu.reset(new PanelContextMenu(web_contents, params));
-  menu->Init();
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_INSPECTELEMENT));
-  EXPECT_TRUE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_UNDO));
-  EXPECT_TRUE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_PASTE));
-  EXPECT_TRUE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPY));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_BACK));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_SAVE_PAGE));
+  {
+    content::ContextMenuParams params(data);
+    params.is_editable = true;
+    params.page_url = web_contents->GetURL();
+    // Ensure context menu isn't swallowed by WebContentsDelegate (the panel).
+    EXPECT_FALSE(web_contents->GetDelegate()->HandleContextMenu(params));
+
+    scoped_ptr<PanelContextMenu> menu(
+        new PanelContextMenu(web_contents, params));
+    menu->Init();
+
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_INSPECTELEMENT));
+    EXPECT_TRUE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_UNDO));
+    EXPECT_TRUE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_PASTE));
+    EXPECT_TRUE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPY));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_BACK));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_SAVE_PAGE));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPYLINKLOCATION));
+  }
 
   // Verify expected menu contents for text selection.
-  params.is_editable = false;
-  params.selection_text = ASCIIToUTF16("Select me");
-  menu.reset(new PanelContextMenu(web_contents, params));
-  menu->Init();
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_INSPECTELEMENT));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_UNDO));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_PASTE));
-  EXPECT_TRUE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPY));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_BACK));
-  EXPECT_FALSE(menu->HasCommandWithId(IDC_SAVE_PAGE));
+  {
+    content::ContextMenuParams params(data);
+    params.page_url = web_contents->GetURL();
+    params.selection_text = ASCIIToUTF16("Select me");
+    // Ensure context menu isn't swallowed by WebContentsDelegate (the panel).
+    EXPECT_FALSE(web_contents->GetDelegate()->HandleContextMenu(params));
+
+    scoped_ptr<PanelContextMenu> menu(
+        new PanelContextMenu(web_contents, params));
+    menu->Init();
+
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_INSPECTELEMENT));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_UNDO));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_PASTE));
+    EXPECT_TRUE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPY));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_BACK));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_SAVE_PAGE));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPYLINKLOCATION));
+  }
+
+  // Verify expected menu contexts for a link.
+  {
+    content::ContextMenuParams params(data);
+    params.page_url = web_contents->GetURL();
+    params.unfiltered_link_url = GURL("http://google.com/");
+    // Ensure context menu isn't swallowed by WebContentsDelegate (the panel).
+    EXPECT_FALSE(web_contents->GetDelegate()->HandleContextMenu(params));
+
+    scoped_ptr<PanelContextMenu> menu(
+        new PanelContextMenu(web_contents, params));
+    menu->Init();
+
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_INSPECTELEMENT));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_UNDO));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_PASTE));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPY));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_BACK));
+    EXPECT_FALSE(menu->HasCommandWithId(IDC_SAVE_PAGE));
+    EXPECT_TRUE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPYLINKLOCATION));
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PanelExtensionBrowserTest, CustomContextMenu) {
@@ -223,35 +276,13 @@ IN_PROC_BROWSER_TEST_F(PanelExtensionBrowserTest, CustomContextMenu) {
   EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPY));
   EXPECT_FALSE(menu->HasCommandWithId(IDC_BACK));
   EXPECT_FALSE(menu->HasCommandWithId(IDC_SAVE_PAGE));
+  EXPECT_FALSE(menu->HasCommandWithId(IDC_CONTENT_CONTEXT_COPYLINKLOCATION));
 
   // Execute the extension's custom menu item and wait for the extension's
   // script to tell us its onclick fired.
   ExtensionTestMessageListener onclick_listener("clicked", false);
   int command_id = IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST;
   ASSERT_TRUE(menu->IsCommandIdEnabled(command_id));
-  menu->ExecuteCommand(command_id);
+  menu->ExecuteCommand(command_id, 0);
   EXPECT_TRUE(onclick_listener.WaitUntilSatisfied());
-}
-
-class PanelExtensionApiTest : public ExtensionApiTest {
- protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    ExtensionApiTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnablePanels);
-  }
-};
-
-#if defined(OS_LINUX) || defined(USE_AURA)
-// Focus test fails if there is no window manager on Linux.
-// Aura panels have different behavior that do not apply to this test.
-#define MAYBE_FocusChangeEventOnMinimize DISABLED_FocusChangeEventOnMinimize
-#else
-#define MAYBE_FocusChangeEventOnMinimize FocusChangeEventOnMinimize
-#endif
-IN_PROC_BROWSER_TEST_F(PanelExtensionApiTest,
-                       MAYBE_FocusChangeEventOnMinimize) {
-  // This is needed so the subsequently created panels can be activated.
-  // On a Mac, it transforms background-only test process into foreground one.
-  ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
-  ASSERT_TRUE(RunExtensionTest("panels/focus_change_on_minimize")) << message_;
 }

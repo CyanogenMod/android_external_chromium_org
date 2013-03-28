@@ -39,6 +39,8 @@ class ShellWindowRegistry : public ProfileKeyedService,
    public:
     // Called just after a shell window was added.
     virtual void OnShellWindowAdded(ShellWindow* shell_window) = 0;
+    // Called when the window icon changes.
+    virtual void OnShellWindowIconChanged(ShellWindow* shell_window) = 0;
     // Called just after a shell window was removed.
     virtual void OnShellWindowRemoved(ShellWindow* shell_window) = 0;
 
@@ -58,6 +60,7 @@ class ShellWindowRegistry : public ProfileKeyedService,
   static ShellWindowRegistry* Get(Profile* profile);
 
   void AddShellWindow(ShellWindow* shell_window);
+  void ShellWindowIconChanged(ShellWindow* shell_window);
   void RemoveShellWindow(ShellWindow* shell_window);
 
   void AddObserver(Observer* observer);
@@ -75,11 +78,21 @@ class ShellWindowRegistry : public ProfileKeyedService,
   // open. If there is a window for the given app that is active, that one will
   // be returned, otherwise an arbitrary window will be returned.
   ShellWindow* GetCurrentShellWindowForApp(const std::string& app_id) const;
+  // Returns an app window for the given app and window key, or NULL if no shell
+  // window with the key are open. If there is a window for the given app and
+  // key that is active, that one will be returned, otherwise an arbitrary
+  // window will be returned.
+  ShellWindow* GetShellWindowForAppAndKey(const std::string& app_id,
+                                          const std::string& window_key) const;
 
   // Returns whether a ShellWindow's ID was last known to have a DevToolsAgent
   // attached to it, which should be restored during a reload of a corresponding
   // newly created |render_view_host|.
   bool HadDevToolsAttached(content::RenderViewHost* render_view_host) const;
+
+  // Returns the shell window for |window|, looking in all profiles.
+  static ShellWindow* GetShellWindowForNativeWindowAnyProfile(
+      gfx::NativeWindow window);
 
  protected:
   // content::NotificationObserver:
@@ -102,7 +115,6 @@ class ShellWindowRegistry : public ProfileKeyedService,
     // ProfileKeyedServiceFactory
     virtual ProfileKeyedService* BuildServiceInstanceFor(
         Profile* profile) const OVERRIDE;
-    virtual bool ServiceHasOwnInstanceInIncognito() const OVERRIDE;
     virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
     virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
   };

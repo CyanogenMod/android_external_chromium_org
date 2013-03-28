@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -12,7 +12,8 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 
 namespace syncer {
@@ -35,7 +36,7 @@ class Directory;
 class DirectoryBackingStore;
 }
 
-class InternalComponentsFactory {
+class SYNC_EXPORT InternalComponentsFactory {
  public:
   enum EncryptionMethod {
     ENCRYPTION_LEGACY,
@@ -75,12 +76,13 @@ class InternalComponentsFactory {
       ThrottledDataTypeTracker* throttled_data_type_tracker,
       const std::vector<SyncEngineEventListener*>& listeners,
       sessions::DebugInfoGetter* debug_info_getter,
-      TrafficRecorder* traffic_recorder) = 0;
+      TrafficRecorder* traffic_recorder,
+      const std::string& invalidator_client_id) = 0;
 
   virtual scoped_ptr<syncable::DirectoryBackingStore>
   BuildDirectoryBackingStore(
       const std::string& dir_name,
-      const FilePath& backing_filepath) = 0;
+      const base::FilePath& backing_filepath) = 0;
 
   // Returns the Switches struct that this object is using as configuration, if
   // the implementation is making use of one.

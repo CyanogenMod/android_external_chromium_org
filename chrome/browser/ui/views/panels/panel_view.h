@@ -8,8 +8,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/panels/native_panel.h"
 #include "ui/base/animation/animation_delegate.h"
+#include "ui/views/focus/widget_focus_manager.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
+
+#if defined(OS_WIN)
+#include "ui/base/win/hwnd_subclass.h"
+#endif
 
 class Panel;
 class PanelBoundsAnimation;
@@ -23,6 +28,10 @@ class WebView;
 class PanelView : public NativePanel,
                   public views::WidgetObserver,
                   public views::WidgetDelegateView,
+                  public views::WidgetFocusChangeListener,
+#if defined(OS_WIN)
+                  public ui::HWNDMessageFilter,
+#endif
                   public ui::AnimationDelegate {
  public:
   // The size of inside area used for mouse resizing.
@@ -42,10 +51,9 @@ class PanelView : public NativePanel,
   virtual void DeactivatePanel() OVERRIDE;
   virtual bool IsPanelActive() const OVERRIDE;
   virtual void PreventActivationByOS(bool prevent_activation) OVERRIDE;
-  virtual gfx::NativeWindow GetNativePanelHandle() OVERRIDE;
+  virtual gfx::NativeWindow GetNativePanelWindow() OVERRIDE;
   virtual void UpdatePanelTitleBar() OVERRIDE;
   virtual void UpdatePanelLoadingAnimations(bool should_animate) OVERRIDE;
-  virtual void NotifyPanelOnUserChangedTheme() OVERRIDE;
   virtual void PanelWebContentsFocused(content::WebContents* contents) OVERRIDE;
   virtual void PanelCut() OVERRIDE;
   virtual void PanelCopy() OVERRIDE;
@@ -59,6 +67,7 @@ class PanelView : public NativePanel,
   virtual void SetPanelAlwaysOnTop(bool on_top) OVERRIDE;
   virtual void EnableResizeByMouse(bool enable) OVERRIDE;
   virtual void UpdatePanelMinimizeRestoreButtonVisibility() OVERRIDE;
+  virtual void SetWindowCornerStyle(panel::CornerStyle corner_style) OVERRIDE;
   virtual void PanelExpansionStateChanging(
       Panel::ExpansionState old_state,
       Panel::ExpansionState new_state) OVERRIDE;
@@ -69,7 +78,13 @@ class PanelView : public NativePanel,
   virtual gfx::Size ContentSizeFromWindowSize(
       const gfx::Size& window_size) const OVERRIDE;
   virtual int TitleOnlyHeight() const OVERRIDE;
+  virtual void MinimizePanelBySystem() OVERRIDE;
+  virtual bool IsPanelMinimizedBySystem() const OVERRIDE;
   virtual NativePanelTesting* CreateNativePanelTesting() OVERRIDE;
+
+  // Overridden from views::View:
+  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual gfx::Size GetMaximumSize() OVERRIDE;
 
   // Return true if the mouse event is handled.
   // |mouse_location| is in screen coordinate system.
@@ -92,7 +107,6 @@ class PanelView : public NativePanel,
   bool force_to_paint_as_inactive() const {
     return force_to_paint_as_inactive_;
   }
-
  private:
   enum MouseDraggingState {
     NO_DRAGGING,
@@ -121,13 +135,27 @@ class PanelView : public NativePanel,
 
   // Overridden from views::View:
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
-  virtual gfx::Size GetMaximumSize() OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
 
   // Overridden from views::WidgetObserver:
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
   virtual void OnWidgetActivationChanged(views::Widget* widget,
                                          bool active) OVERRIDE;
+  virtual void OnWidgetBoundsChanged(views::Widget* widget,
+                                     const gfx::Rect& new_bounds) OVERRIDE;
+
+  // Overridden from views::WidgetFocusChangeListener:
+  virtual void OnNativeFocusChange(gfx::NativeView focused_before,
+                                   gfx::NativeView focused_now) OVERRIDE;
+
+  // Overridden from ui::HWNDMessageFilter:
+#if defined(OS_WIN)
+  virtual bool FilterMessage(HWND hwnd,
+                             UINT message,
+                             WPARAM w_param,
+                             LPARAM l_param,
+                             LRESULT* l_result) OVERRIDE;
+#endif
 
   // Overridden from AnimationDelegate:
   virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
@@ -145,7 +173,7 @@ class PanelView : public NativePanel,
   // window height limitation.
   void SetWidgetBounds(const gfx::Rect& new_bounds);
 
-#if defined(OS_WIN) && !defined(USE_ASH) && !defined(USE_AURA)
+#if defined(OS_WIN)
   // Sets |attribute_value_to_set| and/or clears |attribute_value_to_reset| for
   // the attibute denoted by |attribute_index|. This is used to update the style
   // or extended style for the native window.
@@ -162,6 +190,9 @@ class PanelView : public NativePanel,
   // See widget.h.
   views::Widget* window_;
 
+  // Close gets called more than once, so use this to do one-time clean up once.
+  bool window_closed_;
+
   // The view hosting the web contents. Will be destroyed when child views
   // of this class are destroyed.
   views::WebView* web_view_;
@@ -171,6 +202,22 @@ class PanelView : public NativePanel,
 
   // Is the panel receiving the focus?
   bool focused_;
+
+  // True if the user is resizing the panel.
+  bool user_resizing_;
+
+#if defined(OS_WIN)
+  // True if the user is resizing the interior edge of a stack.
+  bool user_resizing_interior_stacked_panel_edge_;
+
+  // The original full size of the resizing panel before the resizing states.
+  gfx::Size original_full_size_of_resizing_panel_;
+
+  // The original full size of the panel below the resizing panel before the
+  // resizing starts.
+  gfx::Size original_full_size_of_panel_below_resizing_panel_;
+#endif
+
 
   // Is the mouse button currently down?
   bool mouse_pressed_;
@@ -199,7 +246,7 @@ class PanelView : public NativePanel,
   // be restored properly when a drag ends.
   views::View* old_focused_view_;
 
-#if defined(OS_WIN) && !defined(USE_ASH) && !defined(USE_AURA)
+#if defined(OS_WIN)
   // Used to provide custom taskbar thumbnail for Windows 7 and later.
   scoped_ptr<TaskbarWindowThumbnailerWin> thumbnailer_;
 #endif

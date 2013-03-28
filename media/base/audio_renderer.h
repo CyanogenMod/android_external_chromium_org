@@ -5,8 +5,6 @@
 #ifndef MEDIA_BASE_AUDIO_RENDERER_H_
 #define MEDIA_BASE_AUDIO_RENDERER_H_
 
-#include <list>
-
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
@@ -15,20 +13,19 @@
 
 namespace media {
 
-class AudioDecoder;
 class DemuxerStream;
 
-class MEDIA_EXPORT AudioRenderer
-    : public base::RefCountedThreadSafe<AudioRenderer> {
+class MEDIA_EXPORT AudioRenderer {
  public:
-  typedef std::list<scoped_refptr<AudioDecoder> > AudioDecoderList;
-
   // First parameter is the current time that has been rendered.
   // Second parameter is the maximum time value that the clock cannot exceed.
   typedef base::Callback<void(base::TimeDelta, base::TimeDelta)> TimeCB;
 
-  // Initialize a AudioRenderer with the given AudioDecoder, executing the
-  // |init_cb| upon completion.
+  AudioRenderer();
+  virtual ~AudioRenderer();
+
+  // Initialize an AudioRenderer with |stream|, executing |init_cb| upon
+  // completion.
   //
   // |statistics_cb| is executed periodically with audio rendering stats.
   //
@@ -47,7 +44,6 @@ class MEDIA_EXPORT AudioRenderer
   //
   // |error_cb| is executed if an error was encountered.
   virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
-                          const AudioDecoderList& decoders,
                           const PipelineStatusCB& init_cb,
                           const StatisticsCB& statistics_cb,
                           const base::Closure& underflow_cb,
@@ -89,12 +85,6 @@ class MEDIA_EXPORT AudioRenderer
   // |buffer_more_audio| is set to true if you want to increase the size of the
   // decoded audio buffer.
   virtual void ResumeAfterUnderflow(bool buffer_more_audio) = 0;
-
- protected:
-  friend class base::RefCountedThreadSafe<AudioRenderer>;
-
-  AudioRenderer();
-  virtual ~AudioRenderer();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AudioRenderer);

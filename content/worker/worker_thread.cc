@@ -16,8 +16,9 @@
 #include "content/worker/websharedworker_stub.h"
 #include "content/worker/worker_webkitplatformsupport_impl.h"
 #include "ipc/ipc_sync_channel.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebBlobRegistry.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebBlobRegistry.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "webkit/glue/webkit_glue.h"
@@ -31,10 +32,13 @@ static base::LazyInstance<base::ThreadLocalPointer<WorkerThread> > lazy_tls =
 
 WorkerThread::WorkerThread() {
   lazy_tls.Pointer()->Set(this);
-  webkit_platform_support_.reset(new WorkerWebKitPlatformSupportImpl);
+  webkit_platform_support_.reset(
+      new WorkerWebKitPlatformSupportImpl(thread_safe_sender()));
   WebKit::initialize(webkit_platform_support_.get());
+  WebKit::setIDBFactory(
+      webkit_platform_support_.get()->idbFactory());
 
-  appcache_dispatcher_.reset(new content::AppCacheDispatcher(this));
+  appcache_dispatcher_.reset(new AppCacheDispatcher(this));
 
   web_database_observer_impl_.reset(
       new WebDatabaseObserverImpl(sync_message_filter()));
@@ -42,7 +46,7 @@ WorkerThread::WorkerThread() {
   db_message_filter_ = new DBMessageFilter();
   channel()->AddFilter(db_message_filter_.get());
 
-  indexed_db_message_filter_ = new content::IndexedDBMessageFilter;
+  indexed_db_message_filter_ = new IndexedDBMessageFilter;
   channel()->AddFilter(indexed_db_message_filter_.get());
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();

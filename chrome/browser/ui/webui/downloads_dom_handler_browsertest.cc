@@ -3,17 +3,17 @@
 // found in the LICENSE file.
 
 #include "base/auto_reset.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
-#include "base/scoped_temp_dir.h"
+#include "base/prefs/pref_service.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/history/download_row.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/webui/downloads_dom_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/public/browser/download_persistent_store_info.h"
 #include "content/public/browser/web_contents.h"
 
 namespace {
@@ -62,14 +62,14 @@ class MockDownloadsDOMHandler : public DownloadsDOMHandler {
   void WaitForDownloadsList() {
     if (downloads_list_.get())
       return;
-    AutoReset<bool> reset_waiting(&waiting_list_, true);
+    base::AutoReset<bool> reset_waiting(&waiting_list_, true);
     content::RunMessageLoop();
   }
 
   void WaitForDownloadUpdated() {
     if (download_updated_.get())
       return;
-    AutoReset<bool> reset_waiting(&waiting_updated_, true);
+    base::AutoReset<bool> reset_waiting(&waiting_updated_, true);
     content::RunMessageLoop();
   }
 
@@ -77,11 +77,11 @@ class MockDownloadsDOMHandler : public DownloadsDOMHandler {
   void reset_download_updated() { download_updated_.reset(); }
 
  protected:
-  virtual content::WebContents* GetWebUIWebContents() {
+  virtual content::WebContents* GetWebUIWebContents() OVERRIDE {
     return NULL;
   }
 
-  virtual void CallDownloadsList(const base::ListValue& downloads) {
+  virtual void CallDownloadsList(const base::ListValue& downloads) OVERRIDE {
     downloads_list_.reset(downloads.DeepCopy());
     if (waiting_list_) {
       content::BrowserThread::PostTask(
@@ -89,7 +89,7 @@ class MockDownloadsDOMHandler : public DownloadsDOMHandler {
     }
   }
 
-  virtual void CallDownloadUpdated(const base::ListValue& download) {
+  virtual void CallDownloadUpdated(const base::ListValue& download) OVERRIDE {
     download_updated_.reset(download.DeepCopy());
     if (waiting_updated_) {
       content::BrowserThread::PostTask(
@@ -127,7 +127,7 @@ class DownloadsDOMHandlerTest : public InProcessBrowserTest {
   }
 
  private:
-  ScopedTempDir downloads_directory_;
+  base::ScopedTempDir downloads_directory_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadsDOMHandlerTest);
 };
@@ -140,23 +140,22 @@ IN_PROC_BROWSER_TEST_F(DownloadsDOMHandlerTest,
   MockDownloadsDOMHandler mddh(download_manager());
 
   GURL url = test_server()->GetURL("files/downloads/image.jpg");
+  std::vector<GURL> url_chain;
+  url_chain.push_back(url);
   base::Time current(base::Time::Now());
-  content::DownloadPersistentStoreInfo population_entries[] = {
-    content::DownloadPersistentStoreInfo(
-        FilePath(FILE_PATH_LITERAL("/path/to/file")),
-        url,
-        GURL(""),
-        current - base::TimeDelta::FromMinutes(5),
-        current,
-        128,
-        128,
-        content::DownloadItem::COMPLETE,
-        1,
-        false),
-  };
-  std::vector<content::DownloadPersistentStoreInfo> entries(
-      population_entries, population_entries + arraysize(population_entries));
-  download_manager()->OnPersistentStoreQueryComplete(&entries);
+  download_manager()->CreateDownloadItem(
+      base::FilePath(FILE_PATH_LITERAL("/path/to/file")),
+      base::FilePath(FILE_PATH_LITERAL("/path/to/file")),
+      url_chain,
+      GURL(""),
+      current,
+      current,
+      128,
+      128,
+      content::DownloadItem::COMPLETE,
+      content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
+      content::DOWNLOAD_INTERRUPT_REASON_NONE,
+      false);
 
   mddh.WaitForDownloadsList();
   ASSERT_EQ(1, static_cast<int>(mddh.downloads_list()->GetSize()));

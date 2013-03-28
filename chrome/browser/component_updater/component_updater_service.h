@@ -11,14 +11,13 @@
 #include "base/version.h"
 #include "googleurl/src/gurl.h"
 
-class FilePath;
-
 namespace net {
 class URLRequestContextGetter;
 }
 
 namespace base {
 class DictionaryValue;
+class FilePath;
 }
 
 // Component specific installers must derive from this class and implement
@@ -36,7 +35,7 @@ class ComponentInstaller {
   // json dictionary and |unpack_path| contains the temporary directory
   // with all the unpacked CRX files.
   virtual bool Install(base::DictionaryValue* manifest,
-                       const FilePath& unpack_path) = 0;
+                       const base::FilePath& unpack_path) = 0;
 
  protected:
   virtual ~ComponentInstaller() {}
@@ -47,11 +46,23 @@ class ComponentInstaller {
 // Only |name| is optional. |pk_hash| is the SHA256 hash of the component's
 // public key. If the component is to be installed then version should be
 // "0" or "0.0", else it should be the current version.
+// |source| is by default pointing to BANDAID but if needed it can be made
+// to point to the webstore (CWS_PUBLIC) or to the webstore sandbox. It is
+// important to note that the BANDAID source if active throught the day
+// can pre-empt updates from the other sources down the list.
 struct CrxComponent {
+  // Specifies the source url for manifest check.
+  enum UrlSource {
+    BANDAID,
+    CWS_PUBLIC,
+    CWS_SANDBOX
+  };
+
   std::vector<uint8> pk_hash;
   ComponentInstaller* installer;
   Version version;
   std::string name;
+  UrlSource source;
   CrxComponent();
   ~CrxComponent();
 };
@@ -76,6 +87,7 @@ class ComponentUpdateService {
   enum Status {
     kOk,
     kReplaced,
+    kInProgress,
     kError
   };
   // Controls the component updater behavior.
@@ -97,10 +109,13 @@ class ComponentUpdateService {
     virtual int NextCheckDelay() = 0;
     // Delay in seconds from each task step. Used to smooth out CPU/IO usage.
     virtual int StepDelay() = 0;
-    // Minimun delta time in seconds before checking again the same component.
+    // Minimum delta time in seconds before checking again the same component.
     virtual int MinimumReCheckWait() = 0;
+    // Minimum delta time in seconds before an on-demand check is allowed
+    // for the same component.
+    virtual int OnDemandDelay() = 0;
     // The url that is going to be used update checks over Omaha protocol.
-    virtual GURL UpdateUrl() = 0;
+    virtual GURL UpdateUrl(CrxComponent::UrlSource source) = 0;
     // Parameters added to each url request. It can be null if none are needed.
     virtual const char* ExtraRequestParams() = 0;
     // How big each update request can be. Don't go above 2000.
@@ -127,6 +142,17 @@ class ComponentUpdateService {
   // before calling Start().
   virtual Status RegisterComponent(const CrxComponent& component) = 0;
 
+  // Ask the component updater to do an update check for a previously
+  // registered component, soon. If an update or check is already in progress,
+  // returns |kInProgress|. The same component cannot be checked repeatedly
+  // in a short interval either (returns |kError| if so).
+  // There is no guarantee that the item will actually be updated,
+  // since another item may be chosen to be updated. Since there is
+  // no time guarantee, there is no notification if the item is not updated.
+  // However, the ComponentInstaller should know if an update succeeded
+  // via the Install() hook.
+  virtual Status CheckForUpdateSoon(const CrxComponent& component) = 0;
+
   virtual ~ComponentUpdateService() {}
 };
 
@@ -136,4 +162,3 @@ ComponentUpdateService* ComponentUpdateServiceFactory(
     ComponentUpdateService::Configurator* config);
 
 #endif  // CHROME_BROWSER_COMPONENT_UPDATER_COMPONENT_UPDATER_SERVICE_H_
-

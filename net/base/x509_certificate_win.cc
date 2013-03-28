@@ -10,7 +10,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
 #include "base/sha1.h"
-#include "base/string_tokenizer.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "crypto/capi_util.h"
@@ -120,6 +119,27 @@ X509Certificate::OSCertHandles ParsePKCS7(const char* data, size_t length) {
   CertCloseStore(out_store, CERT_CLOSE_STORE_CHECK_FLAG);
 
   return results;
+}
+
+// Given a CERT_NAME_BLOB, returns true if it appears in a given list,
+// formatted as a vector of strings holding DER-encoded X.509
+// DistinguishedName entries.
+bool IsCertNameBlobInIssuerList(
+    CERT_NAME_BLOB* name_blob,
+    const std::vector<std::string>& issuer_names) {
+  for (std::vector<std::string>::const_iterator it = issuer_names.begin();
+       it != issuer_names.end(); ++it) {
+    CERT_NAME_BLOB issuer_blob;
+    issuer_blob.pbData =
+        reinterpret_cast<BYTE*>(const_cast<char*>(it->data()));
+    issuer_blob.cbData = static_cast<DWORD>(it->length());
+
+    BOOL rb = CertCompareCertificateName(
+        X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, &issuer_blob, name_blob);
+    if (rb)
+      return true;
+  }
+  return false;
 }
 
 }  // namespace
@@ -460,6 +480,26 @@ void X509Certificate::GetPublicKeyInfo(OSCertHandle cert_handle,
       *type = kPublicKeyTypeECDH;
       break;
   }
+}
+
+bool X509Certificate::IsIssuedByEncoded(
+    const std::vector<std::string>& valid_issuers) {
+
+  // If the certificate's issuer in the list?
+  if (IsCertNameBlobInIssuerList(&cert_handle_->pCertInfo->Issuer,
+                                 valid_issuers)) {
+    return true;
+  }
+  // Otherwise, is any of the intermediate CA subjects in the list?
+  for (OSCertHandles::iterator it = intermediate_ca_certs_.begin();
+       it != intermediate_ca_certs_.end(); ++it) {
+    if (IsCertNameBlobInIssuerList(&(*it)->pCertInfo->Issuer,
+                                   valid_issuers)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 }  // namespace net

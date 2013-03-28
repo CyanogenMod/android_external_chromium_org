@@ -13,11 +13,11 @@
 #include "base/time.h"
 #include "base/timer.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/host_resolver.h"
-#include "net/base/single_request_host_resolver.h"
+#include "net/dns/host_resolver.h"
+#include "net/dns/single_request_host_resolver.h"
+#include "net/socket/client_socket_pool.h"
 #include "net/socket/client_socket_pool_base.h"
 #include "net/socket/client_socket_pool_histograms.h"
-#include "net/socket/client_socket_pool.h"
 
 namespace net {
 
@@ -120,12 +120,6 @@ class NET_EXPORT_PRIVATE TransportConnectJob : public ConnectJob {
   AddressList addresses_;
   State next_state_;
 
-  // The time Connect() was called.
-  base::TimeTicks start_time_;
-
-  // The time the connect was started (after DNS finished).
-  base::TimeTicks connect_start_time_;
-
   scoped_ptr<StreamSocket> transport_socket_;
 
   scoped_ptr<StreamSocket> fallback_transport_socket_;
@@ -164,7 +158,7 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool : public ClientSocketPool {
   virtual void ReleaseSocket(const std::string& group_name,
                              StreamSocket* socket,
                              int id) OVERRIDE;
-  virtual void Flush() OVERRIDE;
+  virtual void FlushWithError(int error) OVERRIDE;
   virtual bool IsStalled() const OVERRIDE;
   virtual void CloseIdleSockets() OVERRIDE;
   virtual int IdleSocketCount() const OVERRIDE;

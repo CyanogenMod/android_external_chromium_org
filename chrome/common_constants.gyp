@@ -28,6 +28,8 @@
       'common/env_vars.h',
       'common/net/test_server_locations.cc',
       'common/net/test_server_locations.h',
+      'common/pref_font_script_names-inl.h',
+      'common/pref_font_webkit_names.h',
       'common/pref_names.cc',
       'common/pref_names.h',
     ],
@@ -65,6 +67,15 @@
         '../base/base.gyp:base',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
       ],
+      'target_conditions': [
+        ['OS=="ios"', {
+          # iOS needs chrome_paths_mac, which is excluded by filename rules;
+          # re-add it in target_conditionals so it's after that exclusion.
+          'sources/': [
+            ['include', '^common/chrome_paths_mac\\.mm$'],
+          ],
+        }],
+      ],
       'conditions': [
         ['toolkit_uses_gtk == 1', {
           'dependencies': ['../build/linux/system.gyp:gtk'],
@@ -73,7 +84,7 @@
     },
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'common_constants_win64',

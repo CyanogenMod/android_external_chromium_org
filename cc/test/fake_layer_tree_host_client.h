@@ -1,36 +1,60 @@
 // Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #ifndef CC_TEST_FAKE_LAYER_TREE_HOST_CLIENT_H_
 #define CC_TEST_FAKE_LAYER_TREE_HOST_CLIENT_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "cc/input_handler.h"
-#include "cc/layer_tree_host.h"
-#include "cc/test/compositor_fake_web_graphics_context_3d.h"
-#include "cc/test/fake_web_compositor_output_surface.h"
+#include "cc/input/input_handler.h"
+#include "cc/test/fake_context_provider.h"
+#include "cc/test/fake_output_surface.h"
+#include "cc/trees/layer_tree_host.h"
 
 namespace cc {
 
-class FakeLayerImplTreeHostClient : public LayerTreeHostClient {
-public:
-    virtual void willBeginFrame() OVERRIDE { }
-    virtual void didBeginFrame() OVERRIDE { }
-    virtual void animate(double monotonicFrameBeginTime) OVERRIDE { }
-    virtual void layout() OVERRIDE { }
-    virtual void applyScrollAndScale(gfx::Vector2d scrollDelta, float pageScale) OVERRIDE { }
+class FakeLayerTreeHostClient : public LayerTreeHostClient {
+ public:
+  enum RendererOptions {
+    DIRECT_3D,
+    DIRECT_SOFTWARE,
+    DELEGATED_3D,
+    DELEGATED_SOFTWARE
+  };
+  FakeLayerTreeHostClient(RendererOptions options);
+  virtual ~FakeLayerTreeHostClient();
 
-    virtual scoped_ptr<WebKit::WebCompositorOutputSurface> createOutputSurface() OVERRIDE;
-    virtual void didRecreateOutputSurface(bool success) OVERRIDE { }
-    virtual scoped_ptr<InputHandler> createInputHandler() OVERRIDE;
-    virtual void willCommit() OVERRIDE { }
-    virtual void didCommit() OVERRIDE { }
-    virtual void didCommitAndDrawFrame() OVERRIDE { }
-    virtual void didCompleteSwapBuffers() OVERRIDE { }
+  virtual void WillBeginFrame() OVERRIDE {}
+  virtual void DidBeginFrame() OVERRIDE {}
+  virtual void Animate(double frame_begin_time) OVERRIDE {}
+  virtual void Layout() OVERRIDE {}
+  virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
+                                   float page_scale) OVERRIDE {}
 
-    // Used only in the single-threaded path.
-    virtual void scheduleComposite() OVERRIDE { }
+  virtual scoped_ptr<OutputSurface> CreateOutputSurface() OVERRIDE;
+  virtual void DidRecreateOutputSurface(bool success) OVERRIDE {}
+  virtual scoped_ptr<InputHandler> CreateInputHandler() OVERRIDE;
+  virtual void WillCommit() OVERRIDE {}
+  virtual void DidCommit() OVERRIDE {}
+  virtual void DidCommitAndDrawFrame() OVERRIDE {}
+  virtual void DidCompleteSwapBuffers() OVERRIDE {}
+
+  // Used only in the single-threaded path.
+  virtual void ScheduleComposite() OVERRIDE {}
+
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForMainThread() OVERRIDE;
+  virtual scoped_refptr<cc::ContextProvider>
+      OffscreenContextProviderForCompositorThread() OVERRIDE;
+
+ private:
+  bool use_software_rendering_;
+  bool use_delegating_renderer_;
+
+  scoped_refptr<FakeContextProvider> main_thread_contexts_;
+  scoped_refptr<FakeContextProvider> compositor_thread_contexts_;
 };
 
-}
+}  // namespace cc
+
 #endif  // CC_TEST_FAKE_LAYER_TREE_HOST_CLIENT_H_

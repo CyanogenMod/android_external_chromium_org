@@ -9,12 +9,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/threading/non_thread_safe.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/host_resolver.h"
 #include "net/base/net_export.h"
-#include "net/base/ssl_client_auth_cache.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_stream_factory.h"
+#include "net/quic/quic_stream_factory.h"
 #include "net/spdy/spdy_session_pool.h"
+#include "net/ssl/ssl_client_auth_cache.h"
 
 namespace base {
 class Value;
@@ -35,6 +36,8 @@ class NetLog;
 class NetworkDelegate;
 class ServerBoundCertService;
 class ProxyService;
+class QuicClock;
+class QuicCryptoClientStreamFactory;
 class SOCKSClientSocketPool;
 class SSLClientSocketPool;
 class SSLConfigService;
@@ -67,7 +70,24 @@ class NET_EXPORT HttpNetworkSession
     bool http_pipelining_enabled;
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
+    size_t max_spdy_sessions_per_domain;
+    bool force_spdy_single_domain;
+    bool enable_spdy_ip_pooling;
+    bool enable_spdy_credential_frames;
+    bool enable_spdy_compression;
+    bool enable_spdy_ping_based_connection_checking;
+    NextProto spdy_default_protocol;
+    size_t spdy_stream_initial_recv_window_size;
+    size_t spdy_initial_max_concurrent_streams;
+    size_t spdy_max_concurrent_streams_limit;
+    SpdySessionPool::TimeFunc time_func;
     std::string trusted_spdy_proxy;
+    bool enable_quic;
+    uint16 origin_port_to_force_quic_on;
+    QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
+    QuicRandom* quic_random;
+    bool enable_user_alternate_protocol_ports;
+    QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory;
   };
 
   enum SocketPoolType {
@@ -103,6 +123,7 @@ class NET_EXPORT HttpNetworkSession
   ProxyService* proxy_service() { return proxy_service_; }
   SSLConfigService* ssl_config_service() { return ssl_config_service_; }
   SpdySessionPool* spdy_session_pool() { return &spdy_session_pool_; }
+  QuicStreamFactory* quic_stream_factory() { return &quic_stream_factory_; }
   HttpAuthHandlerFactory* http_auth_handler_factory() {
     return http_auth_handler_factory_;
   }
@@ -126,6 +147,10 @@ class NET_EXPORT HttpNetworkSession
   // Creates a Value summary of the state of the SPDY sessions. The caller is
   // responsible for deleting the returned value.
   base::Value* SpdySessionPoolInfoToValue() const;
+
+  // Creates a Value summary of the state of the QUIC sessions and
+  // configuration. The caller is responsible for deleting the returned value.
+  base::Value* QuicInfoToValue() const;
 
   void CloseAllConnections();
   void CloseIdleConnections();
@@ -162,6 +187,7 @@ class NET_EXPORT HttpNetworkSession
   SSLClientAuthCache ssl_client_auth_cache_;
   scoped_ptr<ClientSocketPoolManager> normal_socket_pool_manager_;
   scoped_ptr<ClientSocketPoolManager> websocket_socket_pool_manager_;
+  QuicStreamFactory quic_stream_factory_;
   SpdySessionPool spdy_session_pool_;
   scoped_ptr<HttpStreamFactory> http_stream_factory_;
   std::set<HttpResponseBodyDrainer*> response_drainers_;

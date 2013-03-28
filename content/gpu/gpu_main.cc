@@ -34,9 +34,10 @@
 #include "base/win/scoped_com_initializer.h"
 #include "content/common/gpu/media/dxva_video_decode_accelerator.h"
 #include "sandbox/win/src/sandbox.h"
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
+#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
+#include "content/common/gpu/media/exynos_video_decode_accelerator.h"
 #include "content/common/gpu/media/omx_video_decode_accelerator.h"
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
+#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
 #include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
 #endif
 
@@ -172,14 +173,12 @@ int GpuMain(const MainFunctionParams& parameters) {
   bool initialized_gl_context = false;
   // Load and initialize the GL implementation and locate the GL entry points.
   if (gfx::GLSurface::InitializeOneOff()) {
-    if (!command_line.HasSwitch(switches::kSkipGpuFullInfoCollection)) {
-      if (!gpu_info_collector::CollectGraphicsInfo(&gpu_info))
-        VLOG(1) << "gpu_info_collector::CollectGraphicsInfo failed";
-      GetContentClient()->SetGpuInfo(gpu_info);
+    if (!gpu_info_collector::CollectContextGraphicsInfo(&gpu_info))
+      VLOG(1) << "gpu_info_collector::CollectGraphicsInfo failed";
+    GetContentClient()->SetGpuInfo(gpu_info);
 
-      // We know that CollectGraphicsInfo will initialize a GLContext.
-      initialized_gl_context = true;
-    }
+    // We know that CollectGraphicsInfo will initialize a GLContext.
+    initialized_gl_context = true;
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
     if (gpu_info.gpu.vendor_id == 0x10de &&  // NVIDIA
@@ -232,7 +231,11 @@ int GpuMain(const MainFunctionParams& parameters) {
 #endif
 
     if (do_init_sandbox) {
+      if (watchdog_thread.get())
+        watchdog_thread->Stop();
       gpu_info.sandboxed = InitializeSandbox();
+      if (watchdog_thread.get())
+        watchdog_thread->Start();
     }
   }
 #endif
@@ -320,9 +323,12 @@ void WarmUpSandbox(const GPUInfo& gpu_info,
     (void) ret;
   }
 
-#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
-  OmxVideoDecodeAccelerator::PreSandboxInitialization();
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
+#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseExynosVda))
+    ExynosVideoDecodeAccelerator::PreSandboxInitialization();
+  else
+    OmxVideoDecodeAccelerator::PreSandboxInitialization();
+#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
   VaapiVideoDecodeAccelerator::PreSandboxInitialization();
 #endif
 

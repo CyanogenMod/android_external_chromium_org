@@ -11,7 +11,7 @@
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -67,9 +67,6 @@ void HistoryProvider::DeleteMatchFromMatches(const AutocompleteMatch& match) {
 bool HistoryProvider::FixupUserInput(AutocompleteInput* input) {
   const string16& input_text = input->text();
   // Fixup and canonicalize user input.
-  // NOTE: This purposefully doesn't take input.desired_tld() into account; if
-  // it did, then holding "ctrl" would change all the results from the provider,
-  // not just the What You Typed Result.
   const GURL canonical_gurl(URLFixerUpper::FixupURL(UTF16ToUTF8(input_text),
                                                     std::string()));
   std::string canonical_gurl_str(canonical_gurl.possibly_invalid_spec());
@@ -134,7 +131,7 @@ bool HistoryProvider::FixupUserInput(AutocompleteInput* input) {
 
   url_parse::Parsed parts;
   URLFixerUpper::SegmentURL(output, &parts);
-  input->UpdateText(output, parts);
+  input->UpdateText(output, string16::npos, parts);
   return !output.empty();
 }
 

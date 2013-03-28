@@ -10,7 +10,8 @@ import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Pair;
 
 import org.chromium.android_webview.AwContents;
-import org.chromium.android_webview.CookieManager;
+import org.chromium.android_webview.AwCookieManager;
+import org.chromium.android_webview.test.util.JSUtils;
 import org.chromium.base.test.util.Feature;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
@@ -28,9 +29,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Tests for the CookieManager.
  */
-public class CookieManagerTest extends AndroidWebViewTestBase {
+public class CookieManagerTest extends AwTestBase {
 
-    private CookieManager mCookieManager;
+    private AwCookieManager mCookieManager;
     private TestAwContentsClient mContentsClient;
     private AwContents mAwContents;
 
@@ -38,7 +39,7 @@ public class CookieManagerTest extends AndroidWebViewTestBase {
     protected void setUp() throws Exception {
         super.setUp();
 
-        mCookieManager = new CookieManager();
+        mCookieManager = new AwCookieManager();
         mContentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
                 createAwTestContainerViewOnMainSync(mContentsClient);
@@ -50,11 +51,11 @@ public class CookieManagerTest extends AndroidWebViewTestBase {
     @SmallTest
     @Feature({"AndroidWebView", "Privacy"})
     public void testAllowFileSchemeCookies() throws Throwable {
-        assertFalse(CookieManager.allowFileSchemeCookies());
-        CookieManager.setAcceptFileSchemeCookies(true);
-        assertTrue(CookieManager.allowFileSchemeCookies());
-        CookieManager.setAcceptFileSchemeCookies(false);
-        assertFalse(CookieManager.allowFileSchemeCookies());
+        assertFalse(mCookieManager.allowFileSchemeCookies());
+        mCookieManager.setAcceptFileSchemeCookies(true);
+        assertTrue(mCookieManager.allowFileSchemeCookies());
+        mCookieManager.setAcceptFileSchemeCookies(false);
+        assertFalse(mCookieManager.allowFileSchemeCookies());
     }
 
     @MediumTest
@@ -114,23 +115,13 @@ public class CookieManagerTest extends AndroidWebViewTestBase {
 
     private void setCookie(final String name, final String value)
             throws Throwable {
-        OnEvaluateJavaScriptResultHelper onEvaluateJavaScriptResultHelper =
-                mContentsClient.getOnEvaluateJavaScriptResultHelper();
-        int currentCallCount = onEvaluateJavaScriptResultHelper.getCallCount();
-        final AtomicInteger requestId = new AtomicInteger();
-        runTestOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                requestId.set(mAwContents.getContentViewCore().evaluateJavaScript(
-                        "var expirationDate = new Date();" +
-                        "expirationDate.setDate(expirationDate.getDate() + 5);" +
-                        "document.cookie='" + name + "=" + value +
-                                "; expires=' + expirationDate.toUTCString();"));
-            }
-        });
-        onEvaluateJavaScriptResultHelper.waitForCallback(currentCallCount);
-        assertEquals("Response ID mismatch when evaluating JavaScript.",
-                requestId.get(), onEvaluateJavaScriptResultHelper.getId());
+        JSUtils.executeJavaScriptAndWaitForResult(
+                this, mAwContents,
+                mContentsClient.getOnEvaluateJavaScriptResultHelper(),
+                "var expirationDate = new Date();" +
+                "expirationDate.setDate(expirationDate.getDate() + 5);" +
+                "document.cookie='" + name + "=" + value +
+                        "; expires=' + expirationDate.toUTCString();");
     }
 
     private void waitForCookie(final String url) throws InterruptedException {
@@ -161,6 +152,7 @@ public class CookieManagerTest extends AndroidWebViewTestBase {
 
         // first there should be no cookie stored
         mCookieManager.removeAllCookie();
+        mCookieManager.flushCookieStore();
         assertFalse(mCookieManager.hasCookies());
 
         String url = "http://www.example.com";

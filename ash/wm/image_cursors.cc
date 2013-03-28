@@ -5,8 +5,10 @@
 #include "ash/wm/image_cursors.h"
 
 #include "base/logging.h"
+#include "base/string16.h"
 #include "ui/base/cursor/cursor_loader.h"
 #include "ui/base/cursor/cursor.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/point.h"
 #include "grit/ash_resources.h"
 #include "grit/ui_resources.h"
@@ -33,9 +35,9 @@ struct CursorData {
 const CursorData kImageCursors[] = {
   {ui::kCursorNull, IDR_AURA_CURSOR_PTR, {4, 4}, {8, 9}},
   {ui::kCursorPointer, IDR_AURA_CURSOR_PTR, {4, 4}, {8, 9}},
-  {ui::kCursorNoDrop, IDR_AURA_CURSOR_NO_DROP, {4, 4}, {8, 9}},
-  {ui::kCursorNotAllowed, IDR_AURA_CURSOR_NO_DROP, {4, 4}, {8, 9}},
-  {ui::kCursorCopy, IDR_AURA_CURSOR_COPY, {4, 4}, {8, 9}},
+  {ui::kCursorNoDrop, IDR_AURA_CURSOR_NO_DROP, {9, 9}, {18, 18}},
+  {ui::kCursorNotAllowed, IDR_AURA_CURSOR_NO_DROP, {9, 9}, {18, 18}},
+  {ui::kCursorCopy, IDR_AURA_CURSOR_COPY, {9, 9}, {18, 18}},
   {ui::kCursorHand, IDR_AURA_CURSOR_HAND, {9, 4}, {19, 8}},
   {ui::kCursorMove, IDR_AURA_CURSOR_MOVE, {11, 11}, {23, 23}},
   {ui::kCursorNorthEastResize, IDR_AURA_CURSOR_NORTH_EAST_RESIZE,
@@ -88,24 +90,28 @@ ImageCursors::ImageCursors() {
 ImageCursors::~ImageCursors() {
 }
 
-float ImageCursors::GetDeviceScaleFactor() const {
+gfx::Display ImageCursors::GetDisplay() const {
   if (!cursor_loader_.get()) {
     NOTREACHED();
-    // Returning 1.0f on release build as it's not serious enough to crash
+    // Returning default on release build as it's not serious enough to crash
     // even if this ever happens.
-    return 1.0f;
+    return gfx::Display();
   }
-  return cursor_loader_->device_scale_factor();
+  return cursor_loader_->display();
 }
 
-bool ImageCursors::SetDeviceScaleFactor(float device_scale_factor) {
-  if (!cursor_loader_.get())
+bool ImageCursors::SetDisplay(const gfx::Display& display) {
+  float device_scale_factor = display.device_scale_factor();
+  if (!cursor_loader_.get()) {
     cursor_loader_.reset(ui::CursorLoader::Create());
-  else if (GetDeviceScaleFactor() == device_scale_factor)
+  } else if (cursor_loader_->display().rotation() == display.rotation() &&
+             cursor_loader_->display().device_scale_factor() ==
+             device_scale_factor) {
     return false;
+  }
 
   cursor_loader_->UnloadAll();
-  cursor_loader_->set_device_scale_factor(device_scale_factor);
+  cursor_loader_->set_display(display);
 
   for (size_t i = 0; i < arraysize(kImageCursors); ++i) {
     const HotPoint& hot = device_scale_factor == 1.0f ?
@@ -127,6 +133,10 @@ bool ImageCursors::SetDeviceScaleFactor(float device_scale_factor) {
 
 void ImageCursors::SetPlatformCursor(gfx::NativeCursor* cursor) {
   cursor_loader_->SetPlatformCursor(cursor);
+}
+
+void ImageCursors::SetCursorResourceModule(const string16& module_name) {
+  cursor_loader_->SetCursorResourceModule(module_name);
 }
 
 }  // namespace ash

@@ -6,11 +6,11 @@
 #include "crypto/nss_util_internal.h"
 
 #include <nss.h>
+#include <pk11pub.h>
 #include <plarena.h>
 #include <prerror.h>
 #include <prinit.h>
 #include <prtime.h>
-#include <pk11pub.h>
 #include <secmod.h>
 
 #if defined(OS_LINUX)
@@ -23,14 +23,16 @@
 
 #include <vector>
 
+#include "base/debug/alias.h"
 #include "base/environment.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/histogram.h"
 #include "base/native_library.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
@@ -60,7 +62,7 @@ const char kChapsModuleName[] = "Chaps";
 const char kChapsPath[] = "libchaps.so";
 
 // Fake certificate authority database used for testing.
-static const FilePath::CharType kReadOnlyCertDB[] =
+static const base::FilePath::CharType kReadOnlyCertDB[] =
     FILE_PATH_LITERAL("/etc/fake_root_ca/nssdb");
 #endif  // defined(OS_CHROMEOS)
 
@@ -71,14 +73,14 @@ std::string GetNSSErrorMessage() {
     PRInt32 copied = PR_GetErrorText(error_text.get());
     result = std::string(error_text.get(), copied);
   } else {
-    result = StringPrintf("NSS error code: %d", PR_GetError());
+    result = base::StringPrintf("NSS error code: %d", PR_GetError());
   }
   return result;
 }
 
 #if defined(USE_NSS)
-FilePath GetDefaultConfigDirectory() {
-  FilePath dir = file_util::GetHomeDir();
+base::FilePath GetDefaultConfigDirectory() {
+  base::FilePath dir = file_util::GetHomeDir();
   if (dir.empty()) {
     LOG(ERROR) << "Failed to get home directory.";
     return dir;
@@ -106,9 +108,9 @@ unsigned char kSupplementalUserKeyId[] = {
 // by the local Google Accounts server mock we use when testing our login code.
 // If this directory is not present, NSS_Init() will fail.  It is up to the
 // caller to failover to NSS_NoDB_Init() at that point.
-FilePath GetInitialConfigDirectory() {
+base::FilePath GetInitialConfigDirectory() {
 #if defined(OS_CHROMEOS)
-  return FilePath(kReadOnlyCertDB);
+  return base::FilePath(kReadOnlyCertDB);
 #else
   return GetDefaultConfigDirectory();
 #endif  // defined(OS_CHROMEOS)
@@ -159,7 +161,7 @@ char* PKCS11PasswordFunc(PK11SlotInfo* slot, PRBool retry, void* arg) {
 //
 // Because this function sets an environment variable it must be run before we
 // go multi-threaded.
-void UseLocalCacheOfNSSDatabaseIfNFS(const FilePath& database_dir) {
+void UseLocalCacheOfNSSDatabaseIfNFS(const base::FilePath& database_dir) {
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
   struct statfs buf;
   if (statfs(database_dir.value().c_str(), &buf) == 0) {
@@ -222,7 +224,19 @@ base::LazyInstance<NSPRInitSingleton>::Leaky
 // This is a LazyInstance so that it will be deleted automatically when the
 // unittest exits.  NSSInitSingleton is a LeakySingleton, so it would not be
 // deleted if it were a regular member.
-base::LazyInstance<ScopedTempDir> g_test_nss_db_dir = LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<base::ScopedTempDir> g_test_nss_db_dir =
+    LAZY_INSTANCE_INITIALIZER;
+
+// Force a crash with error info on NSS_NoDB_Init failure.
+void CrashOnNSSInitFailure() {
+  int nss_error = PR_GetError();
+  int os_error = PR_GetOSError();
+  base::debug::Alias(&nss_error);
+  base::debug::Alias(&os_error);
+  LOG(ERROR) << "Error initializing NSS without a persistent database: "
+             << GetNSSErrorMessage();
+  LOG(FATAL) << "nss_error=" << nss_error << ", os_error=" << os_error;
+}
 
 class NSSInitSingleton {
  public:
@@ -415,6 +429,7 @@ class NSSInitSingleton {
         tpm_slot_(NULL),
         root_(NULL),
         chromeos_user_logged_in_(false) {
+    base::TimeTicks start_time = base::TimeTicks::Now();
     EnsureNSPRInit();
 
     // We *must* have NSS >= 3.12.3.  See bug 26448.
@@ -449,15 +464,15 @@ class NSSInitSingleton {
     if (nodb_init) {
       status = NSS_NoDB_Init(NULL);
       if (status != SECSuccess) {
-        LOG(ERROR) << "Error initializing NSS without a persistent "
-                      "database: " << GetNSSErrorMessage();
+        CrashOnNSSInitFailure();
+        return;
       }
 #if defined(OS_IOS)
       root_ = InitDefaultRootCerts();
 #endif  // defined(OS_IOS)
     } else {
 #if defined(USE_NSS)
-      FilePath database_dir = GetInitialConfigDirectory();
+      base::FilePath database_dir = GetInitialConfigDirectory();
       if (!database_dir.empty()) {
         // This duplicates the work which should have been done in
         // EarlySetupForNSSInit. However, this function is idempotent so
@@ -467,7 +482,7 @@ class NSSInitSingleton {
         // Initialize with a persistent database (likely, ~/.pki/nssdb).
         // Use "sql:" which can be shared by multiple processes safely.
         std::string nss_config_dir =
-            StringPrintf("sql:%s", database_dir.value().c_str());
+            base::StringPrintf("sql:%s", database_dir.value().c_str());
 #if defined(OS_CHROMEOS)
         status = NSS_Init(nss_config_dir.c_str());
 #else
@@ -483,8 +498,7 @@ class NSSInitSingleton {
         VLOG(1) << "Initializing NSS without a persistent database.";
         status = NSS_NoDB_Init(NULL);
         if (status != SECSuccess) {
-          LOG(ERROR) << "Error initializing NSS without a persistent "
-                        "database: " << GetNSSErrorMessage();
+          CrashOnNSSInitFailure();
           return;
         }
       }
@@ -504,13 +518,22 @@ class NSSInitSingleton {
       }
 
       root_ = InitDefaultRootCerts();
-
-      // MD5 certificate signatures are disabled by default in NSS 3.14.
-      // Enable MD5 certificate signatures until we figure out how to deal
-      // with the weak certificate signature unit tests.
-      NSS_SetAlgorithmPolicy(SEC_OID_MD5, NSS_USE_ALG_IN_CERT_SIGNATURE, 0);
 #endif  // defined(USE_NSS)
     }
+
+    // Disable MD5 certificate signatures. (They are disabled by default in
+    // NSS 3.14.)
+    NSS_SetAlgorithmPolicy(SEC_OID_MD5, 0, NSS_USE_ALG_IN_CERT_SIGNATURE);
+    NSS_SetAlgorithmPolicy(SEC_OID_PKCS1_MD5_WITH_RSA_ENCRYPTION,
+                           0, NSS_USE_ALG_IN_CERT_SIGNATURE);
+
+    // The UMA bit is conditionally set for this histogram in
+    // chrome/common/startup_metric_utils.cc .
+    HISTOGRAM_CUSTOM_TIMES("Startup.SlowStartupNSSInit",
+                           base::TimeTicks::Now() - start_time,
+                           base::TimeDelta::FromMilliseconds(10),
+                           base::TimeDelta::FromHours(1),
+                           50);
   }
 
   // NOTE(willchan): We don't actually execute this code since we leak NSS to
@@ -563,7 +586,7 @@ class NSSInitSingleton {
   SECMODModule* LoadModule(const char* name,
                            const char* library_path,
                            const char* params) {
-    std::string modparams = StringPrintf(
+    std::string modparams = base::StringPrintf(
         "name=\"%s\" library=\"%s\" %s",
         name, library_path, params ? params : "");
 
@@ -582,11 +605,11 @@ class NSSInitSingleton {
   }
 #endif
 
-  static PK11SlotInfo* OpenUserDB(const FilePath& path,
+  static PK11SlotInfo* OpenUserDB(const base::FilePath& path,
                                   const char* description) {
     const std::string modspec =
-        StringPrintf("configDir='sql:%s' tokenDescription='%s'",
-                     path.value().c_str(), description);
+        base::StringPrintf("configDir='sql:%s' tokenDescription='%s'",
+                           path.value().c_str(), description);
     PK11SlotInfo* db_slot = SECMOD_OpenUserDB(modspec.c_str());
     if (db_slot) {
       if (PK11_NeedUserInit(db_slot))
@@ -627,7 +650,7 @@ base::LazyInstance<NSSInitSingleton>::Leaky
 
 #if defined(USE_NSS)
 void EarlySetupForNSSInit() {
-  FilePath database_dir = GetInitialConfigDirectory();
+  base::FilePath database_dir = GetInitialConfigDirectory();
   if (!database_dir.empty())
     UseLocalCacheOfNSSDatabaseIfNFS(database_dir);
 }
@@ -635,6 +658,17 @@ void EarlySetupForNSSInit() {
 
 void EnsureNSPRInit() {
   g_nspr_singleton.Get();
+}
+
+void InitNSSSafely() {
+  // We might fork, but we haven't loaded any security modules.
+  DisableNSSForkCheck();
+  // If we're sandboxed, we shouldn't be able to open user security modules,
+  // but it's more correct to tell NSS to not even try.
+  // Loading user security modules would have security implications.
+  ForceNSSNoDBInit();
+  // Initialize NSS.
+  EnsureNSSInit();
 }
 
 void EnsureNSSInit() {
@@ -658,21 +692,21 @@ void LoadNSSLibraries() {
   // Some NSS libraries are linked dynamically so load them here.
 #if defined(USE_NSS)
   // Try to search for multiple directories to load the libraries.
-  std::vector<FilePath> paths;
+  std::vector<base::FilePath> paths;
 
   // Use relative path to Search PATH for the library files.
-  paths.push_back(FilePath());
+  paths.push_back(base::FilePath());
 
   // For Debian derivatives NSS libraries are located here.
-  paths.push_back(FilePath("/usr/lib/nss"));
+  paths.push_back(base::FilePath("/usr/lib/nss"));
 
   // Ubuntu 11.10 (Oneiric) places the libraries here.
 #if defined(ARCH_CPU_X86_64)
-  paths.push_back(FilePath("/usr/lib/x86_64-linux-gnu/nss"));
+  paths.push_back(base::FilePath("/usr/lib/x86_64-linux-gnu/nss"));
 #elif defined(ARCH_CPU_X86)
-  paths.push_back(FilePath("/usr/lib/i386-linux-gnu/nss"));
+  paths.push_back(base::FilePath("/usr/lib/i386-linux-gnu/nss"));
 #elif defined(ARCH_CPU_ARMEL)
-  paths.push_back(FilePath("/usr/lib/arm-linux-gnueabi/nss"));
+  paths.push_back(base::FilePath("/usr/lib/arm-linux-gnueabi/nss"));
 #endif
 
   // A list of library files to load.
@@ -685,7 +719,7 @@ void LoadNSSLibraries() {
   size_t loaded = 0;
   for (size_t i = 0; i < libs.size(); ++i) {
     for (size_t j = 0; j < paths.size(); ++j) {
-      FilePath path = paths[j].Append(libs[i]);
+      base::FilePath path = paths[j].Append(libs[i]);
       base::NativeLibrary lib = base::LoadNativeLibrary(path, NULL);
       if (lib) {
         ++loaded;

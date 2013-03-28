@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef NDEBUG
+#define _USE_MATH_DEFINES // For VC++ to get M_PI. This has to be first.
 
 #include "ui/compositor/debug_utils.h"
 
+#include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -22,9 +23,10 @@ namespace ui {
 
 namespace {
 
-void PrintLayerHierarchyImp(const Layer* layer, int indent,
-                            gfx::Point mouse_location) {
-  std::wostringstream buf;
+void PrintLayerHierarchyImp(const Layer* layer,
+                            int indent,
+                            gfx::Point mouse_location,
+                            std::wostringstream* out) {
   std::string indent_str(indent, ' ');
   std::string content_indent_str(indent+1, ' ');
 
@@ -32,79 +34,73 @@ void PrintLayerHierarchyImp(const Layer* layer, int indent,
   bool mouse_inside_layer_bounds = layer->bounds().Contains(mouse_location);
   mouse_location.Offset(-layer->bounds().x(), -layer->bounds().y());
 
-  buf << UTF8ToWide(indent_str);
+  *out << UTF8ToWide(indent_str);
   if (mouse_inside_layer_bounds)
-    buf << L'*';
+    *out << L'*';
   else
-    buf << L' ';
+    *out << L' ';
 
-  buf << UTF8ToWide(layer->name()) << L' ' << layer;
+  *out << UTF8ToWide(layer->name()) << L' ' << layer;
 
   switch (layer->type()) {
     case ui::LAYER_NOT_DRAWN:
-      buf << L" not_drawn";
+      *out << L" not_drawn";
       break;
     case ui::LAYER_TEXTURED:
-      buf << L" textured";
+      *out << L" textured";
       if (layer->fills_bounds_opaquely())
-        buf << L" opaque";
+        *out << L" opaque";
       break;
     case ui::LAYER_SOLID_COLOR:
-      buf << L" solid";
+      *out << L" solid";
       break;
   }
 
   if (!layer->visible())
-    buf << L" !visible";
+    *out << L" !visible";
 
-  buf << L'\n' << UTF8ToWide(content_indent_str);
-  buf << L"bounds: " << layer->bounds().x() << L',' << layer->bounds().y();
-  buf << L' ' << layer->bounds().width() << L'x' << layer->bounds().height();
+  std::string property_indent_str(indent+3, ' ');
+  *out << L'\n' << UTF8ToWide(property_indent_str);
+  *out << L"bounds: " << layer->bounds().x() << L',' << layer->bounds().y();
+  *out << L' ' << layer->bounds().width() << L'x' << layer->bounds().height();
 
   if (layer->opacity() != 1.0f) {
-    buf << L'\n' << UTF8ToWide(content_indent_str);
-    buf << L"opacity: " << std::setprecision(2) << layer->opacity();
+    *out << L'\n' << UTF8ToWide(property_indent_str);
+    *out << L"opacity: " << std::setprecision(2) << layer->opacity();
   }
 
-  if (layer->transform().HasChange()) {
-    gfx::Point translation;
-    float rotation;
-    gfx::Point3F scale;
-    if (ui::InterpolatedTransform::FactorTRS(layer->transform(),
-                                             &translation,
-                                             &rotation,
-                                             &scale)) {
-      if (!translation.IsOrigin()) {
-        buf << L'\n' << UTF8ToWide(content_indent_str);
-        buf << L"translation: " << translation.x() << L", " << translation.y();
-      }
+  gfx::DecomposedTransform decomp;
+  if (!layer->transform().IsIdentity() &&
+      gfx::DecomposeTransform(&decomp, layer->transform())) {
+    *out << L'\n' << UTF8ToWide(property_indent_str);
+    *out << L"translation: " << std::fixed << decomp.translate[0];
+    *out << L", " << decomp.translate[1];
 
-      if (fabs(rotation) > 1e-5) {
-        buf << L'\n' << UTF8ToWide(content_indent_str);
-        buf << L"rotation: " << std::setprecision(4) << rotation;
-      }
+    *out << L'\n' << UTF8ToWide(property_indent_str);
+    *out << L"rotation: ";
+    *out << std::acos(decomp.quaternion[3]) * 360.0 / M_PI;
 
-      if (!gfx::ToFlooredPoint(scale.AsPointF()).IsOrigin()) {
-        buf << L'\n' << UTF8ToWide(content_indent_str);
-        buf << std::setprecision(4);
-        buf << L"scale: " << scale.x() << L", " << scale.y();
-      }
-    }
+    *out << L'\n' << UTF8ToWide(property_indent_str);
+    *out << L"scale: " << decomp.scale[0];
+    *out << L", " << decomp.scale[1];
   }
 
-  VLOG(1) << buf.str();
-  std::cout << buf.str() << std::endl;
+  *out << L'\n';
 
-  for (size_t i = 0, count = layer->children().size(); i < count; ++i)
-    PrintLayerHierarchyImp(layer->children()[i], indent + 3, mouse_location);
+  for (size_t i = 0, count = layer->children().size(); i < count; ++i) {
+    PrintLayerHierarchyImp(
+        layer->children()[i], indent + 3, mouse_location, out);
+  }
 }
 
 }  // namespace
 
 void PrintLayerHierarchy(const Layer* layer, gfx::Point mouse_location) {
-  PrintLayerHierarchyImp(layer, 0, mouse_location);
+  std::wostringstream out;
+  out << L"Layer hierarchy:\n";
+  PrintLayerHierarchyImp(layer, 0, mouse_location, &out);
+  // Error so logs can be collected from end-users.
+  LOG(ERROR) << out.str();
 }
 
 } // namespace ui
-
-#endif // NDEBUG

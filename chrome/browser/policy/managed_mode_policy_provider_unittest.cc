@@ -50,7 +50,9 @@ class TestHarness : public PolicyProviderTestHarness {
 
 TestHarness::TestHarness()
     : PolicyProviderTestHarness(POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER),
-      pref_store_(new TestingPrefStore) {}
+      pref_store_(new TestingPrefStore) {
+  pref_store_->SetInitializationCompleted();
+}
 
 TestHarness::~TestHarness() {}
 
@@ -123,7 +125,9 @@ class ManagedModePolicyProviderAPITest : public PolicyTestBase {
  protected:
   ManagedModePolicyProviderAPITest()
       : pref_store_(new TestingPrefStore),
-        provider_(pref_store_) {}
+        provider_(pref_store_) {
+    pref_store_->SetInitializationCompleted();
+  }
   virtual ~ManagedModePolicyProviderAPITest() {}
 
   virtual void SetUp() OVERRIDE {
@@ -157,8 +161,8 @@ TEST_F(ManagedModePolicyProviderAPITest, SetPolicy) {
                                   provider_.GetPolicy(kPolicyKey)));
 
   PolicyBundle expected_bundle;
-  PolicyMap* policy_map =
-      &expected_bundle.Get(POLICY_DOMAIN_CHROME, std::string());
+  PolicyMap* policy_map = &expected_bundle.Get(
+      PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()));
   policy_map->Set(kPolicyKey, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
                   policy_value.DeepCopy());
   EXPECT_TRUE(provider_.policies().Equals(expected_bundle));

@@ -9,20 +9,16 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/views/frame/native_browser_frame.h"
 #include "ui/views/context_menu_controller.h"
-#include "ui/views/widget/desktop_native_widget_aura.h"
+#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 
 class BrowserDesktopRootWindowHost;
 class BrowserFrame;
 class BrowserView;
 
-namespace ash {
-namespace internal {
+namespace views {
+namespace corewm {
 class VisibilityController;
 }
-}
-
-namespace views {
-class MenuRunner;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -43,11 +39,12 @@ class DesktopBrowserFrameAura : public views::DesktopNativeWidgetAura,
   // Overridden from views::DesktopNativeWidgetAura:
   virtual void InitNativeWidget(
       const views::Widget::InitParams& params) OVERRIDE;
+  virtual void OnWindowDestroying() OVERRIDE;
 
   // Overridden from NativeBrowserFrame:
   virtual views::NativeWidget* AsNativeWidget() OVERRIDE;
   virtual const views::NativeWidget* AsNativeWidget() const OVERRIDE;
-  virtual void InitSystemContextMenu() OVERRIDE;
+  virtual bool UsesNativeSystemMenu() const OVERRIDE;
   virtual int GetMinimizeButtonOffset() const OVERRIDE;
   virtual void TabStripDisplayModeChanged() OVERRIDE;
 
@@ -61,10 +58,7 @@ class DesktopBrowserFrameAura : public views::DesktopNativeWidgetAura,
   // Owned by the RootWindow.
   BrowserDesktopRootWindowHost* browser_desktop_root_window_host_;
 
-  // System menu.
-  scoped_ptr<views::MenuRunner> menu_runner_;
-
-  scoped_ptr<ash::internal::VisibilityController> visibility_controller_;
+  scoped_ptr<views::corewm::VisibilityController> visibility_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopBrowserFrameAura);
 };

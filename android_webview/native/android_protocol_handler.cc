@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// URL request job for reading from resources and assets.
-
 #include "android_webview/native/android_protocol_handler.h"
 
+#include "android_webview/browser/net/android_stream_reader_url_request_job.h"
+#include "android_webview/browser/net/aw_url_request_job_factory.h"
 #include "android_webview/common/url_constants.h"
-#include "android_webview/native/android_stream_reader_url_request_job.h"
+#include "android_webview/native/input_stream_impl.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_helper.h"
 #include "base/android/jni_string.h"
@@ -20,9 +20,11 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/http/http_util.h"
+#include "net/url_request/protocol_intercept_job_factory.h"
 #include "net/url_request/url_request.h"
-#include "net/url_request/url_request_job_factory.h"
 
+using android_webview::InputStream;
+using android_webview::InputStreamImpl;
 using base::android::AttachCurrentThread;
 using base::android::ClearException;
 using base::android::ConvertUTF8ToJavaString;
@@ -42,43 +44,58 @@ void ResetResourceContext(JavaObjectWeakGlobalRef* ref) {
   g_resource_context = ref;
 }
 
+void* kPreviouslyFailedKey = &kPreviouslyFailedKey;
+
+void MarkRequestAsFailed(net::URLRequest* request) {
+  request->SetUserData(kPreviouslyFailedKey,
+                       new base::SupportsUserData::Data());
+}
+
+bool HasRequestPreviouslyFailed(net::URLRequest* request) {
+  return request->GetUserData(kPreviouslyFailedKey) != NULL;
+}
+
 class AndroidStreamReaderURLRequestJobDelegateImpl
     : public AndroidStreamReaderURLRequestJob::Delegate {
  public:
   AndroidStreamReaderURLRequestJobDelegateImpl();
 
-  virtual ScopedJavaLocalRef<jobject> OpenInputStream(
+  virtual scoped_ptr<InputStream> OpenInputStream(
       JNIEnv* env,
-      net::URLRequest* request) OVERRIDE;
+      const GURL& url) OVERRIDE;
+
+  virtual void OnInputStreamOpenFailed(net::URLRequest* request,
+                                       bool* restart) OVERRIDE;
 
   virtual bool GetMimeType(JNIEnv* env,
                            net::URLRequest* request,
-                           jobject stream,
+                           InputStream* stream,
                            std::string* mime_type) OVERRIDE;
 
   virtual bool GetCharset(JNIEnv* env,
                           net::URLRequest* request,
-                          jobject stream,
+                          InputStream* stream,
                           std::string* charset) OVERRIDE;
 
   virtual ~AndroidStreamReaderURLRequestJobDelegateImpl();
 };
 
-class AssetFileProtocolInterceptor :
-      public net::URLRequestJobFactory::Interceptor {
+class AndroidProtocolHandlerBase :
+    public net::URLRequestJobFactory::ProtocolHandler {
  public:
-  AssetFileProtocolInterceptor();
-  virtual ~AssetFileProtocolInterceptor() OVERRIDE;
-  virtual net::URLRequestJob* MaybeIntercept(
+  virtual net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate) const OVERRIDE;
-  virtual net::URLRequestJob* MaybeInterceptRedirect(
-      const GURL& location,
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE;
-  virtual net::URLRequestJob* MaybeInterceptResponse(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE;
+
+  virtual bool CanHandleRequest(const net::URLRequest* request) const = 0;
+};
+
+class AssetFileProtocolHandler : public AndroidProtocolHandlerBase {
+ public:
+  AssetFileProtocolHandler();
+
+  virtual ~AssetFileProtocolHandler() OVERRIDE;
+  virtual bool CanHandleRequest(const net::URLRequest* request) const OVERRIDE;
 
  private:
   // file:///android_asset/
@@ -88,21 +105,10 @@ class AssetFileProtocolInterceptor :
 };
 
 // Protocol handler for content:// scheme requests.
-class ContentSchemeProtocolHandler :
-    public net::URLRequestJobFactory::ProtocolHandler {
+class ContentSchemeProtocolHandler : public AndroidProtocolHandlerBase {
  public:
-  ContentSchemeProtocolHandler() {}
-
-  virtual net::URLRequestJob* MaybeCreateJob(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
-  DCHECK(request->url().SchemeIs(android_webview::kContentScheme));
-  return new AndroidStreamReaderURLRequestJob(
-      request,
-      network_delegate,
-      scoped_ptr<AndroidStreamReaderURLRequestJob::Delegate>(
-          new AndroidStreamReaderURLRequestJobDelegateImpl()));
-  }
+  ContentSchemeProtocolHandler();
+  virtual bool CanHandleRequest(const net::URLRequest* request) const OVERRIDE;
 };
 
 static ScopedJavaLocalRef<jobject> GetResourceContext(JNIEnv* env) {
@@ -116,58 +122,66 @@ static ScopedJavaLocalRef<jobject> GetResourceContext(JNIEnv* env) {
   return context;
 }
 
+// AndroidStreamReaderURLRequestJobDelegateImpl -------------------------------
+
 AndroidStreamReaderURLRequestJobDelegateImpl::
-AndroidStreamReaderURLRequestJobDelegateImpl() {
-}
+    AndroidStreamReaderURLRequestJobDelegateImpl() {}
 
 AndroidStreamReaderURLRequestJobDelegateImpl::
 ~AndroidStreamReaderURLRequestJobDelegateImpl() {
 }
 
-ScopedJavaLocalRef<jobject>
+scoped_ptr<InputStream>
 AndroidStreamReaderURLRequestJobDelegateImpl::OpenInputStream(
-    JNIEnv* env, net::URLRequest* request) {
-  DCHECK(request);
+    JNIEnv* env, const GURL& url) {
+  DCHECK(url.is_valid());
   DCHECK(env);
 
   // Open the input stream.
-  ScopedJavaLocalRef<jstring> url =
-      ConvertUTF8ToJavaString(env, request->url().spec());
+  ScopedJavaLocalRef<jstring> jurl =
+      ConvertUTF8ToJavaString(env, url.spec());
   ScopedJavaLocalRef<jobject> stream =
       android_webview::Java_AndroidProtocolHandler_open(
           env,
           GetResourceContext(env).obj(),
-          url.obj());
+          jurl.obj());
 
   // Check and clear pending exceptions.
   if (ClearException(env) || stream.is_null()) {
     DLOG(ERROR) << "Unable to open input stream for Android URL";
-    return ScopedJavaLocalRef<jobject>(env, NULL);
+    return scoped_ptr<InputStream>();
   }
-  return stream;
+  return make_scoped_ptr<InputStream>(new InputStreamImpl(stream));
+}
+
+void AndroidStreamReaderURLRequestJobDelegateImpl::OnInputStreamOpenFailed(
+    net::URLRequest* request,
+    bool* restart) {
+  DCHECK(!HasRequestPreviouslyFailed(request));
+  MarkRequestAsFailed(request);
+  *restart = true;
 }
 
 bool AndroidStreamReaderURLRequestJobDelegateImpl::GetMimeType(
     JNIEnv* env,
     net::URLRequest* request,
-    jobject stream,
+    android_webview::InputStream* stream,
     std::string* mime_type) {
   DCHECK(env);
   DCHECK(request);
   DCHECK(mime_type);
 
-  if (!stream)
-    return false;
-
   // Query the mime type from the Java side. It is possible for the query to
   // fail, as the mime type cannot be determined for all supported schemes.
   ScopedJavaLocalRef<jstring> url =
       ConvertUTF8ToJavaString(env, request->url().spec());
+  const InputStreamImpl* stream_impl =
+      InputStreamImpl::FromInputStream(stream);
   ScopedJavaLocalRef<jstring> returned_type =
       android_webview::Java_AndroidProtocolHandler_getMimeType(
           env,
           GetResourceContext(env).obj(),
-          stream, url.obj());
+          stream_impl->jobj(), url.obj());
   if (ClearException(env) || returned_type.is_null())
     return false;
 
@@ -178,13 +192,43 @@ bool AndroidStreamReaderURLRequestJobDelegateImpl::GetMimeType(
 bool AndroidStreamReaderURLRequestJobDelegateImpl::GetCharset(
     JNIEnv* env,
     net::URLRequest* request,
-    jobject stream,
+    android_webview::InputStream* stream,
     std::string* charset) {
   // TODO: We should probably be getting this from the managed side.
   return false;
 }
 
-AssetFileProtocolInterceptor::AssetFileProtocolInterceptor()
+// AndroidProtocolHandlerBase -------------------------------------------------
+
+net::URLRequestJob* AndroidProtocolHandlerBase::MaybeCreateJob(
+    net::URLRequest* request,
+    net::NetworkDelegate* network_delegate) const {
+  if (!CanHandleRequest(request)) return NULL;
+
+  // For WebViewClassic compatibility this job can only accept URLs that can be
+  // opened. URLs that cannot be opened should be resolved by the next handler.
+  //
+  // If a request is initially handled here but the job fails due to it being
+  // unable to open the InputStream for that request the request is marked as
+  // previously failed and restarted.
+  // Restarting a request involves creating a new job for that request. This
+  // handler will ignore requests know to have previously failed to 1) prevent
+  // an infinite loop, 2) ensure that the next handler in line gets the
+  // opportunity to create a job for the request.
+  if (HasRequestPreviouslyFailed(request)) return NULL;
+
+  scoped_ptr<AndroidStreamReaderURLRequestJobDelegateImpl> reader_delegate(
+      new AndroidStreamReaderURLRequestJobDelegateImpl());
+
+  return new AndroidStreamReaderURLRequestJob(
+      request,
+      network_delegate,
+      reader_delegate.PassAs<AndroidStreamReaderURLRequestJob::Delegate>());
+}
+
+// AssetFileProtocolHandler ---------------------------------------------------
+
+AssetFileProtocolHandler::AssetFileProtocolHandler()
     : asset_prefix_(std::string(chrome::kFileScheme) +
                     std::string(content::kStandardSchemeSeparator) +
                     android_webview::kAndroidAssetPath),
@@ -193,37 +237,31 @@ AssetFileProtocolInterceptor::AssetFileProtocolInterceptor()
                        android_webview::kAndroidResourcePath) {
 }
 
-AssetFileProtocolInterceptor::~AssetFileProtocolInterceptor() {
+AssetFileProtocolHandler::~AssetFileProtocolHandler() {
 }
 
-net::URLRequestJob* AssetFileProtocolInterceptor::MaybeIntercept(
-    net::URLRequest* request, net::NetworkDelegate* network_delegate) const {
-  if (!request->url().SchemeIsFile()) return NULL;
+bool AssetFileProtocolHandler::CanHandleRequest(
+    const net::URLRequest* request) const {
+  if (!request->url().SchemeIsFile())
+    return false;
 
   const std::string& url = request->url().spec();
   if (!StartsWithASCII(url, asset_prefix_, /*case_sensitive=*/ true) &&
-      !StartsWithASCII(url, resource_prefix_,  /*case_sensitive=*/ true)) {
-    return NULL;
+      !StartsWithASCII(url, resource_prefix_, /*case_sensitive=*/ true)) {
+    return false;
   }
 
-  return new AndroidStreamReaderURLRequestJob(
-      request,
-      network_delegate,
-      scoped_ptr<AndroidStreamReaderURLRequestJob::Delegate>(
-          new AndroidStreamReaderURLRequestJobDelegateImpl()));
+  return true;
 }
 
-net::URLRequestJob* AssetFileProtocolInterceptor::MaybeInterceptRedirect(
-    const GURL& location,
-    net::URLRequest* request,
-    net::NetworkDelegate* network_delegate) const {
-  return NULL;
+// ContentSchemeProtocolHandler -----------------------------------------------
+
+ContentSchemeProtocolHandler::ContentSchemeProtocolHandler() {
 }
 
-net::URLRequestJob* AssetFileProtocolInterceptor::MaybeInterceptResponse(
-    net::URLRequest* request,
-    net::NetworkDelegate* network_delegate) const {
-  return NULL;
+bool ContentSchemeProtocolHandler::CanHandleRequest(
+    const net::URLRequest* request) const {
+  return request->url().SchemeIs(android_webview::kContentScheme);
 }
 
 }  // namespace
@@ -235,18 +273,17 @@ bool RegisterAndroidProtocolHandler(JNIEnv* env) {
 }
 
 // static
-void RegisterAndroidProtocolsOnIOThread(
-    net::URLRequestContext* context,
-    net::URLRequestJobFactory* job_factory) {
-  // Register content://. Note that even though a scheme is
-  // registered here, it cannot be used by child processes until access to it is
-  // granted via ChildProcessSecurityPolicy::GrantScheme(). This is done in
-  // AwContentBrowserClient.
-  // The job factory takes ownership of the handler.
-  job_factory->SetProtocolHandler(android_webview::kContentScheme,
-                                  new ContentSchemeProtocolHandler());
-  // The job factory takes ownership of the interceptor.
-  job_factory->AddInterceptor(new AssetFileProtocolInterceptor());
+scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
+CreateContentSchemeProtocolHandler() {
+  return make_scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
+      new ContentSchemeProtocolHandler());
+}
+
+// static
+scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
+CreateAssetFileProtocolHandler() {
+  return make_scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
+      new AssetFileProtocolHandler());
 }
 
 // Set a context object to be used for resolving resource queries. This can

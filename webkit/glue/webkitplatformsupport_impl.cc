@@ -4,16 +4,13 @@
 
 #include "webkit/glue/webkitplatformsupport_impl.h"
 
-#if defined(OS_LINUX)
-#include <malloc.h>
-#endif
-
 #include <math.h>
 
 #include <vector>
 
+#include "base/allocator/allocator_extension.h"
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
+#include "base/memory/discardable_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
@@ -31,20 +28,24 @@
 #include "grit/webkit_chromium_resources.h"
 #include "grit/webkit_resources.h"
 #include "grit/webkit_strings.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebCookie.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebDiscardableMemory.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGestureCurve.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebPluginListBuilder.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginListBuilder.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCookie.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "ui/base/layout.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/compositor_bindings/web_compositor_support_impl.h"
-#include "webkit/glue/touch_fling_platform_gesture_curve.h"
+#include "webkit/glue/fling_curve_configuration.h"
+#include "webkit/glue/touch_fling_gesture_curve.h"
+#include "webkit/glue/web_discardable_memory_impl.h"
+#include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/websocketstreamhandle_impl.h"
 #include "webkit/glue/webthread_impl.h"
 #include "webkit/glue/weburlloader_impl.h"
@@ -56,10 +57,6 @@
 
 #if defined(OS_ANDROID)
 #include "webkit/glue/fling_animator_impl_android.h"
-#endif
-
-#if defined(OS_LINUX)
-#include "v8/include/v8.h"
 #endif
 
 using WebKit::WebAudioBus;
@@ -152,6 +149,84 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_ROLE_LINK;
     case WebLocalizedString::AXListMarkerText:
       return IDS_AX_ROLE_LIST_MARKER;
+    case WebLocalizedString::AXMediaDefault:
+      return IDS_AX_MEDIA_DEFAULT;
+    case WebLocalizedString::AXMediaAudioElement:
+      return IDS_AX_MEDIA_AUDIO_ELEMENT;
+    case WebLocalizedString::AXMediaVideoElement:
+      return IDS_AX_MEDIA_VIDEO_ELEMENT;
+    case WebLocalizedString::AXMediaMuteButton:
+      return IDS_AX_MEDIA_MUTE_BUTTON;
+    case WebLocalizedString::AXMediaUnMuteButton:
+      return IDS_AX_MEDIA_UNMUTE_BUTTON;
+    case WebLocalizedString::AXMediaPlayButton:
+      return IDS_AX_MEDIA_PLAY_BUTTON;
+    case WebLocalizedString::AXMediaPauseButton:
+      return IDS_AX_MEDIA_PAUSE_BUTTON;
+    case WebLocalizedString::AXMediaSlider:
+      return IDS_AX_MEDIA_SLIDER;
+    case WebLocalizedString::AXMediaSliderThumb:
+      return IDS_AX_MEDIA_SLIDER_THUMB;
+    case WebLocalizedString::AXMediaRewindButton:
+      return IDS_AX_MEDIA_REWIND_BUTTON;
+    case WebLocalizedString::AXMediaReturnToRealTime:
+      return IDS_AX_MEDIA_RETURN_TO_REALTIME_BUTTON;
+    case WebLocalizedString::AXMediaCurrentTimeDisplay:
+      return IDS_AX_MEDIA_CURRENT_TIME_DISPLAY;
+    case WebLocalizedString::AXMediaTimeRemainingDisplay:
+      return IDS_AX_MEDIA_TIME_REMAINING_DISPLAY;
+    case WebLocalizedString::AXMediaStatusDisplay:
+      return IDS_AX_MEDIA_STATUS_DISPLAY;
+    case WebLocalizedString::AXMediaEnterFullscreenButton:
+      return IDS_AX_MEDIA_ENTER_FULL_SCREEN_BUTTON;
+    case WebLocalizedString::AXMediaExitFullscreenButton:
+      return IDS_AX_MEDIA_EXIT_FULL_SCREEN_BUTTON;
+  case WebLocalizedString::AXMediaSeekForwardButton:
+    return IDS_AX_MEDIA_SEEK_FORWARD_BUTTON;
+    case WebLocalizedString::AXMediaSeekBackButton:
+      return IDS_AX_MEDIA_SEEK_BACK_BUTTON;
+    case WebLocalizedString::AXMediaShowClosedCaptionsButton:
+      return IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_BUTTON;
+    case WebLocalizedString::AXMediaHideClosedCaptionsButton:
+      return IDS_AX_MEDIA_HIDE_CLOSED_CAPTIONS_BUTTON;
+    case WebLocalizedString::AXMediaAudioElementHelp:
+      return IDS_AX_MEDIA_AUDIO_ELEMENT_HELP;
+    case WebLocalizedString::AXMediaVideoElementHelp:
+      return IDS_AX_MEDIA_VIDEO_ELEMENT_HELP;
+    case WebLocalizedString::AXMediaMuteButtonHelp:
+      return IDS_AX_MEDIA_MUTE_BUTTON_HELP;
+    case WebLocalizedString::AXMediaUnMuteButtonHelp:
+      return IDS_AX_MEDIA_UNMUTE_BUTTON_HELP;
+    case WebLocalizedString::AXMediaPlayButtonHelp:
+      return IDS_AX_MEDIA_PLAY_BUTTON_HELP;
+    case WebLocalizedString::AXMediaPauseButtonHelp:
+      return IDS_AX_MEDIA_PAUSE_BUTTON_HELP;
+    case WebLocalizedString::AXMediaSliderHelp:
+      return IDS_AX_MEDIA_SLIDER_HELP;
+    case WebLocalizedString::AXMediaSliderThumbHelp:
+      return IDS_AX_MEDIA_SLIDER_THUMB_HELP;
+    case WebLocalizedString::AXMediaRewindButtonHelp:
+      return IDS_AX_MEDIA_REWIND_BUTTON_HELP;
+    case WebLocalizedString::AXMediaReturnToRealTimeHelp:
+      return IDS_AX_MEDIA_RETURN_TO_REALTIME_BUTTON_HELP;
+    case WebLocalizedString::AXMediaCurrentTimeDisplayHelp:
+      return IDS_AX_MEDIA_CURRENT_TIME_DISPLAY_HELP;
+    case WebLocalizedString::AXMediaTimeRemainingDisplayHelp:
+      return IDS_AX_MEDIA_TIME_REMAINING_DISPLAY_HELP;
+    case WebLocalizedString::AXMediaStatusDisplayHelp:
+      return IDS_AX_MEDIA_STATUS_DISPLAY_HELP;
+    case WebLocalizedString::AXMediaEnterFullscreenButtonHelp:
+      return IDS_AX_MEDIA_ENTER_FULL_SCREEN_BUTTON_HELP;
+    case WebLocalizedString::AXMediaExitFullscreenButtonHelp:
+      return IDS_AX_MEDIA_EXIT_FULL_SCREEN_BUTTON_HELP;
+  case WebLocalizedString::AXMediaSeekForwardButtonHelp:
+    return IDS_AX_MEDIA_SEEK_FORWARD_BUTTON_HELP;
+    case WebLocalizedString::AXMediaSeekBackButtonHelp:
+      return IDS_AX_MEDIA_SEEK_BACK_BUTTON_HELP;
+    case WebLocalizedString::AXMediaShowClosedCaptionsButtonHelp:
+      return IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_BUTTON_HELP;
+    case WebLocalizedString::AXMediaHideClosedCaptionsButtonHelp:
+      return IDS_AX_MEDIA_HIDE_CLOSED_CAPTIONS_BUTTON_HELP;
     case WebLocalizedString::AXMillisecondFieldText:
       return IDS_AX_MILLISECOND_FIELD_TEXT;
     case WebLocalizedString::AXMinuteFieldText:
@@ -232,6 +307,10 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_THIS_MONTH_LABEL;
     case WebLocalizedString::ThisWeekButtonLabel:
       return IDS_FORM_THIS_WEEK_LABEL;
+    case WebLocalizedString::ValidationBadInputForDateTime:
+      return IDS_FORM_VALIDATION_BAD_INPUT_DATETIME;
+    case WebLocalizedString::ValidationBadInputForNumber:
+      return IDS_FORM_VALIDATION_BAD_INPUT_NUMBER;
     case WebLocalizedString::ValidationPatternMismatch:
       return IDS_FORM_VALIDATION_PATTERN_MISMATCH;
     case WebLocalizedString::ValidationRangeOverflow:
@@ -280,12 +359,20 @@ WebKitPlatformSupportImpl::WebKitPlatformSupportImpl()
     : main_loop_(MessageLoop::current()),
       shared_timer_func_(NULL),
       shared_timer_fire_time_(0.0),
+      shared_timer_fire_time_was_set_while_suspended_(false),
       shared_timer_suspended_(0),
       current_thread_slot_(&DestroyCurrentThread),
-      compositor_support_(new webkit::WebCompositorSupportImpl) {
+      compositor_support_(new webkit::WebCompositorSupportImpl),
+      fling_curve_configuration_(new FlingCurveConfiguration) {
 }
 
 WebKitPlatformSupportImpl::~WebKitPlatformSupportImpl() {
+}
+
+void WebKitPlatformSupportImpl::SetFlingCurveParameters(
+    const std::vector<float>& new_touchpad,
+    const std::vector<float>& new_touchscreen) {
+  fling_curve_configuration_->SetCurveParameters(new_touchpad, new_touchscreen);
 }
 
 WebThemeEngine* WebKitPlatformSupportImpl::themeEngine() {
@@ -342,9 +429,9 @@ void WebKitPlatformSupportImpl::histogramCustomCounts(
     const char* name, int sample, int min, int max, int bucket_count) {
   // Copied from histogram macro, but without the static variable caching
   // the histogram because name is dynamic.
-  base::Histogram* counter =
+  base::HistogramBase* counter =
       base::Histogram::FactoryGet(name, min, max, bucket_count,
-          base::Histogram::kUmaTargetedHistogramFlag);
+          base::HistogramBase::kUmaTargetedHistogramFlag);
   DCHECK_EQ(name, counter->histogram_name());
   counter->Add(sample);
 }
@@ -353,9 +440,9 @@ void WebKitPlatformSupportImpl::histogramEnumeration(
     const char* name, int sample, int boundary_value) {
   // Copied from histogram macro, but without the static variable caching
   // the histogram because name is dynamic.
-  base::Histogram* counter =
+  base::HistogramBase* counter =
       base::LinearHistogram::FactoryGet(name, 1, boundary_value,
-          boundary_value + 1, base::Histogram::kUmaTargetedHistogramFlag);
+          boundary_value + 1, base::HistogramBase::kUmaTargetedHistogramFlag);
   DCHECK_EQ(name, counter->histogram_name());
   counter->Add(sample);
 }
@@ -365,7 +452,22 @@ const unsigned char* WebKitPlatformSupportImpl::getTraceCategoryEnabledFlag(
   return TRACE_EVENT_API_GET_CATEGORY_ENABLED(category_name);
 }
 
-int WebKitPlatformSupportImpl::addTraceEvent(
+long* WebKitPlatformSupportImpl::getTraceSamplingState(
+    const unsigned thread_bucket) {
+  switch(thread_bucket) {
+  case 0:
+    return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(0));
+  case 1:
+    return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(1));
+  case 2:
+    return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(2));
+  default:
+    NOTREACHED() << "Unknown thread bucket type.";
+  }
+  return NULL;
+}
+
+void WebKitPlatformSupportImpl::addTraceEvent(
     char phase,
     const unsigned char* category_enabled,
     const char* name,
@@ -374,14 +476,12 @@ int WebKitPlatformSupportImpl::addTraceEvent(
     const char** arg_names,
     const unsigned char* arg_types,
     const unsigned long long* arg_values,
-    int threshold_begin_id,
-    long long threshold,
     unsigned char flags) {
-  return TRACE_EVENT_API_ADD_TRACE_EVENT(phase, category_enabled, name, id,
-                                         num_args, arg_names, arg_types,
-                                         arg_values, threshold_begin_id,
-                                         threshold, flags);
+  TRACE_EVENT_API_ADD_TRACE_EVENT(phase, category_enabled, name, id,
+                                  num_args, arg_names, arg_types,
+                                  arg_values, flags);
 }
+
 
 namespace {
 
@@ -445,16 +545,6 @@ struct DataResource {
 const DataResource kDataResources[] = {
   { "missingImage", IDR_BROKENIMAGE, ui::SCALE_FACTOR_100P },
   { "missingImage@2x", IDR_BROKENIMAGE, ui::SCALE_FACTOR_200P },
-  { "mediaPause", IDR_MEDIA_PAUSE_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaPlay", IDR_MEDIA_PLAY_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaPlayDisabled",
-    IDR_MEDIA_PLAY_BUTTON_DISABLED, ui::SCALE_FACTOR_100P },
-  { "mediaSoundDisabled", IDR_MEDIA_SOUND_DISABLED, ui::SCALE_FACTOR_100P },
-  { "mediaSoundFull", IDR_MEDIA_SOUND_FULL_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaSoundNone", IDR_MEDIA_SOUND_NONE_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaSliderThumb", IDR_MEDIA_SLIDER_THUMB, ui::SCALE_FACTOR_100P },
-  { "mediaVolumeSliderThumb",
-    IDR_MEDIA_VOLUME_SLIDER_THUMB, ui::SCALE_FACTOR_100P },
   { "mediaplayerPause", IDR_MEDIAPLAYER_PAUSE_BUTTON, ui::SCALE_FACTOR_100P },
   { "mediaplayerPauseHover",
     IDR_MEDIAPLAYER_PAUSE_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
@@ -648,8 +738,10 @@ void WebKitPlatformSupportImpl::setSharedTimerFiredFunction(void (*func)()) {
 void WebKitPlatformSupportImpl::setSharedTimerFireInterval(
     double interval_seconds) {
   shared_timer_fire_time_ = interval_seconds + monotonicallyIncreasingTime();
-  if (shared_timer_suspended_)
+  if (shared_timer_suspended_) {
+    shared_timer_fire_time_was_set_while_suspended_ = true;
     return;
+  }
 
   // By converting between double and int64 representation, we run the risk
   // of losing precision due to rounding errors. Performing computations in
@@ -753,31 +845,6 @@ static scoped_ptr<base::ProcessMetrics> CurrentProcessMetrics() {
 #endif
 }
 
-#if defined(OS_LINUX) || defined(OS_ANDROID)
-static size_t memoryUsageMB() {
-  struct mallinfo minfo = mallinfo();
-  uint64_t mem_usage =
-#if defined(USE_TCMALLOC)
-      minfo.uordblks
-#else
-      (minfo.hblkhd + minfo.arena)
-#endif
-      >> 20;
-
-  v8::HeapStatistics stat;
-  v8::V8::GetHeapStatistics(&stat);
-  return mem_usage + (static_cast<uint64_t>(stat.total_heap_size()) >> 20);
-}
-#elif defined(OS_MACOSX)
-static size_t memoryUsageMB() {
-  return CurrentProcessMetrics()->GetWorkingSetSize() >> 20;
-}
-#else
-static size_t memoryUsageMB() {
-  return CurrentProcessMetrics()->GetPagefileUsage() >> 20;
-}
-#endif
-
 static size_t getMemoryUsageMB(bool bypass_cache) {
   size_t current_mem_usage = 0;
   MemoryUsageCache* mem_usage_cache_singleton = MemoryUsageCache::GetInstance();
@@ -785,7 +852,7 @@ static size_t getMemoryUsageMB(bool bypass_cache) {
       mem_usage_cache_singleton->IsCachedValueValid(&current_mem_usage))
     return current_mem_usage;
 
-  current_mem_usage = memoryUsageMB();
+  current_mem_usage = MemoryUsageKB() >> 10;
   mem_usage_cache_singleton->SetMemoryValue(current_mem_usage);
   return current_mem_usage;
 }
@@ -827,13 +894,20 @@ bool WebKitPlatformSupportImpl::processMemorySizesInBytes(
   return CurrentProcessMetrics()->GetMemoryBytes(private_bytes, shared_bytes);
 }
 
+bool WebKitPlatformSupportImpl::memoryAllocatorWasteInBytes(size_t* size) {
+  return base::allocator::GetAllocatorWasteSize(size);
+}
+
 void WebKitPlatformSupportImpl::SuspendSharedTimer() {
   ++shared_timer_suspended_;
 }
 
 void WebKitPlatformSupportImpl::ResumeSharedTimer() {
   // The shared timer may have fired or been adjusted while we were suspended.
-  if (--shared_timer_suspended_ == 0 && !shared_timer_.IsRunning()) {
+  if (--shared_timer_suspended_ == 0 &&
+      (!shared_timer_.IsRunning() ||
+       shared_timer_fire_time_was_set_while_suspended_)) {
+    shared_timer_fire_time_was_set_while_suspended_ = false;
     setSharedTimerFireInterval(
         shared_timer_fire_time_ - monotonicallyIncreasingTime());
   }
@@ -858,21 +932,34 @@ void WebKitPlatformSupportImpl::didStopWorkerRunLoop(
   worker_task_runner->OnWorkerRunLoopStopped(runLoop);
 }
 
-#if defined(OS_ANDROID)
-WebKit::WebFlingAnimator* WebKitPlatformSupportImpl::createFlingAnimator() {
-  return new FlingAnimatorImpl();
-}
-#endif
-
 WebKit::WebGestureCurve* WebKitPlatformSupportImpl::createFlingAnimationCurve(
     int device_source,
     const WebKit::WebFloatPoint& velocity,
     const WebKit::WebSize& cumulative_scroll) {
-  if (device_source == WebKit::WebGestureEvent::Touchscreen)
-    return TouchFlingGestureCurve::CreateForTouchScreen(velocity,
-                                                        cumulative_scroll);
 
-  return TouchFlingGestureCurve::CreateForTouchPad(velocity, cumulative_scroll);
+#if defined(OS_ANDROID)
+  return FlingAnimatorImpl::CreateAndroidGestureCurve(velocity,
+                                                      cumulative_scroll);
+#endif
+
+  if (device_source == WebKit::WebGestureEvent::Touchscreen)
+    return fling_curve_configuration_->CreateForTouchScreen(velocity,
+                                                            cumulative_scroll);
+
+  return fling_curve_configuration_->CreateForTouchPad(velocity,
+                                                       cumulative_scroll);
 }
+
+WebKit::WebDiscardableMemory*
+    WebKitPlatformSupportImpl::allocateAndLockDiscardableMemory(size_t bytes) {
+  if (!base::DiscardableMemory::Supported())
+    return NULL;
+  scoped_ptr<WebDiscardableMemoryImpl> discardable(
+      new WebDiscardableMemoryImpl());
+  if (discardable->InitializeAndLock(bytes))
+    return discardable.release();
+  return NULL;
+}
+
 
 }  // namespace webkit_glue

@@ -5,12 +5,12 @@
 #include "net/base/x509_certificate.h"
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
 #include "base/sha1.h"
 #include "base/string_number_conversions.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "crypto/rsa_private_key.h"
 #include "net/base/asn1_util.h"
 #include "net/base/cert_test_util.h"
@@ -314,7 +314,7 @@ TEST(X509CertificateTest, ThawteCertParsing) {
 // one AVA per RDN, but some CAs place all AVAs within a single RDN.
 // This is a regression test for http://crbug.com/101009
 TEST(X509CertificateTest, MultivalueRDN) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> multivalue_rdn_cert =
       ImportCertFromFile(certs_dir, "multivalue_rdn.pem");
@@ -338,7 +338,7 @@ TEST(X509CertificateTest, MultivalueRDN) {
 // such as '=' or '"', are not escaped when parsed as individual components.
 // This is a regression test for http://crbug.com/102839
 TEST(X509CertificateTest, UnescapedSpecialCharacters) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> unescaped_cert =
       ImportCertFromFile(certs_dir, "unescaped.pem");
@@ -388,7 +388,7 @@ TEST(X509CertificateTest, SerialNumbers) {
 }
 
 TEST(X509CertificateTest, CAFingerprints) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> server_cert =
       ImportCertFromFile(certs_dir, "salesforce_com_test.pem");
@@ -442,7 +442,7 @@ TEST(X509CertificateTest, CAFingerprints) {
 }
 
 TEST(X509CertificateTest, ParseSubjectAltNames) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   scoped_refptr<X509Certificate> san_cert =
       ImportCertFromFile(certs_dir, "subjectAltName_sanity_check.pem");
@@ -480,7 +480,7 @@ TEST(X509CertificateTest, ParseSubjectAltNames) {
 }
 
 TEST(X509CertificateTest, ExtractSPKIFromDERCert) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
   scoped_refptr<X509Certificate> cert =
       ImportCertFromFile(certs_dir, "nist.der");
   ASSERT_NE(static_cast<X509Certificate*>(NULL), cert);
@@ -500,7 +500,7 @@ TEST(X509CertificateTest, ExtractSPKIFromDERCert) {
 }
 
 TEST(X509CertificateTest, ExtractCRLURLsFromDERCert) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
   scoped_refptr<X509Certificate> cert =
       ImportCertFromFile(certs_dir, "nist.der");
   ASSERT_NE(static_cast<X509Certificate*>(NULL), cert);
@@ -681,55 +681,105 @@ TEST(X509CertificateTest, IntermediateCertificates) {
   X509Certificate::FreeOSCertHandle(google_handle);
 }
 
-#if !defined(OS_IOS)
-// TODO(ios): Not yet implemented on iOS.
-#if defined(OS_MACOSX)
-TEST(X509CertificateTest, IsIssuedBy) {
-  FilePath certs_dir = GetTestCertsDirectory();
+TEST(X509CertificateTest, IsIssuedByEncoded) {
+  base::FilePath certs_dir = GetTestCertsDirectory();
 
   // Test a client certificate from MIT.
   scoped_refptr<X509Certificate> mit_davidben_cert(
       ImportCertFromFile(certs_dir, "mit.davidben.der"));
   ASSERT_NE(static_cast<X509Certificate*>(NULL), mit_davidben_cert);
 
-  CertPrincipal mit_issuer;
-  mit_issuer.country_name = "US";
-  mit_issuer.state_or_province_name = "Massachusetts";
-  mit_issuer.organization_names.push_back(
-      "Massachusetts Institute of Technology");
-  mit_issuer.organization_unit_names.push_back("Client CA v1");
+  std::string mit_issuer(reinterpret_cast<const char*>(MITDN),
+                         sizeof(MITDN));
 
-  // IsIssuedBy should return true even if it cannot build a chain
-  // with that principal.
-  std::vector<CertPrincipal> mit_issuers(1, mit_issuer);
-  EXPECT_TRUE(mit_davidben_cert->IsIssuedBy(mit_issuers));
+  // Test a certificate from Google, issued by Thawte
+  scoped_refptr<X509Certificate> google_cert(
+      ImportCertFromFile(certs_dir, "google.single.der"));
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), google_cert);
 
-  // Test a client certificate from FOAF.ME.
-  scoped_refptr<X509Certificate> foaf_me_chromium_test_cert(
-      ImportCertFromFile(certs_dir, "foaf.me.chromium-test-cert.der"));
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), foaf_me_chromium_test_cert);
+  std::string thawte_issuer(reinterpret_cast<const char*>(ThawteDN),
+                            sizeof(ThawteDN));
 
-  CertPrincipal foaf_issuer;
-  foaf_issuer.common_name = "FOAF.ME";
-  foaf_issuer.locality_name = "Wimbledon";
-  foaf_issuer.state_or_province_name = "LONDON";
-  foaf_issuer.country_name = "GB";
-  foaf_issuer.organization_names.push_back("FOAF.ME");
+  // Check that the David Ben certificate is issued by MIT, but not
+  // by Thawte.
+  std::vector<std::string> issuers;
+  issuers.clear();
+  issuers.push_back(mit_issuer);
+  EXPECT_TRUE(mit_davidben_cert->IsIssuedByEncoded(issuers));
+  EXPECT_FALSE(google_cert->IsIssuedByEncoded(issuers));
 
-  std::vector<CertPrincipal> foaf_issuers(1, foaf_issuer);
-  EXPECT_TRUE(foaf_me_chromium_test_cert->IsIssuedBy(foaf_issuers));
+  // Check that the Google certificate is issued by Thawte and not
+  // by MIT.
+  issuers.clear();
+  issuers.push_back(thawte_issuer);
+  EXPECT_FALSE(mit_davidben_cert->IsIssuedByEncoded(issuers));
+  EXPECT_TRUE(google_cert->IsIssuedByEncoded(issuers));
 
-  // And test some combinations and mismatches.
-  std::vector<CertPrincipal> both_issuers;
-  both_issuers.push_back(mit_issuer);
-  both_issuers.push_back(foaf_issuer);
-  EXPECT_TRUE(foaf_me_chromium_test_cert->IsIssuedBy(both_issuers));
-  EXPECT_TRUE(mit_davidben_cert->IsIssuedBy(both_issuers));
-  EXPECT_FALSE(foaf_me_chromium_test_cert->IsIssuedBy(mit_issuers));
-  EXPECT_FALSE(mit_davidben_cert->IsIssuedBy(foaf_issuers));
+  // Check that they both pass when given a list of the two issuers.
+  issuers.clear();
+  issuers.push_back(mit_issuer);
+  issuers.push_back(thawte_issuer);
+  EXPECT_TRUE(mit_davidben_cert->IsIssuedByEncoded(issuers));
+  EXPECT_TRUE(google_cert->IsIssuedByEncoded(issuers));
 }
-#endif  // defined(OS_MACOSX)
-#endif  // !defined(OS_IOS)
+
+TEST(X509CertificateTest, IsIssuedByEncodedWithIntermediates) {
+  base::FilePath certs_dir = GetTestCertsDirectory();
+
+  scoped_refptr<X509Certificate> server_cert =
+      ImportCertFromFile(certs_dir, "www_us_army_mil_cert.der");
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), server_cert);
+
+  // The intermediate CA certificate's policyConstraints extension has a
+  // requireExplicitPolicy field with SkipCerts=0.
+  scoped_refptr<X509Certificate> intermediate_cert =
+      ImportCertFromFile(certs_dir, "dod_ca_17_cert.der");
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate_cert);
+
+  std::string dod_ca_17_issuer(reinterpret_cast<const char*>(DodCA17DN),
+                               sizeof(DodCA17DN));
+
+  scoped_refptr<X509Certificate> root_cert =
+      ImportCertFromFile(certs_dir, "dod_root_ca_2_cert.der");
+
+  std::string dod_root_ca_2_issuer(
+      reinterpret_cast<const char*>(DodRootCA2DN), sizeof(DodRootCA2DN));
+
+  X509Certificate::OSCertHandles intermediates;
+  intermediates.push_back(intermediate_cert->os_cert_handle());
+  scoped_refptr<X509Certificate> cert_chain =
+      X509Certificate::CreateFromHandle(server_cert->os_cert_handle(),
+                                        intermediates);
+
+  std::vector<std::string> issuers;
+
+  // Check that the chain is issued by DOD CA-17.
+  issuers.clear();
+  issuers.push_back(dod_ca_17_issuer);
+  EXPECT_TRUE(cert_chain->IsIssuedByEncoded(issuers));
+
+  // Check that the chain is also issued by DoD Root CA 2.
+  issuers.clear();
+  issuers.push_back(dod_root_ca_2_issuer);
+  EXPECT_TRUE(cert_chain->IsIssuedByEncoded(issuers));
+
+  // Check that the chain is issued by either one of the two DOD issuers.
+  issuers.clear();
+  issuers.push_back(dod_ca_17_issuer);
+  issuers.push_back(dod_root_ca_2_issuer);
+  EXPECT_TRUE(cert_chain->IsIssuedByEncoded(issuers));
+
+  // Check that an empty issuers list returns false.
+  issuers.clear();
+  EXPECT_FALSE(cert_chain->IsIssuedByEncoded(issuers));
+
+  // Check that the chain is not issued by MIT
+  std::string mit_issuer(reinterpret_cast<const char*>(MITDN),
+                         sizeof(MITDN));
+  issuers.clear();
+  issuers.push_back(mit_issuer);
+  EXPECT_FALSE(cert_chain->IsIssuedByEncoded(issuers));
+}
 
 #if !defined(OS_IOS)  // TODO(ios): Unable to create certificates.
 #if defined(USE_NSS) || defined(OS_WIN) || defined(OS_MACOSX)
@@ -871,7 +921,7 @@ class X509CertificateParseTest
 };
 
 TEST_P(X509CertificateParseTest, CanParseFormat) {
-  FilePath certs_dir = GetTestCertsDirectory();
+  base::FilePath certs_dir = GetTestCertsDirectory();
   CertificateList certs = CreateCertificateListFromFile(
       certs_dir, test_data_.file_name, test_data_.format);
   ASSERT_FALSE(certs.empty());

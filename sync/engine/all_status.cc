@@ -14,7 +14,6 @@
 namespace syncer {
 
 AllStatus::AllStatus() {
-  status_.initial_sync_ended = true;
   status_.notifications_enabled = false;
   status_.cryptographer_ready = false;
   status_.crypto_has_pending_keys = false;
@@ -32,7 +31,6 @@ SyncStatus AllStatus::CreateBlankStatus() const {
   status.hierarchy_conflicts = 0;
   status.server_conflicts = 0;
   status.committed_count = 0;
-  status.initial_sync_ended = false;
   status.updates_available = 0;
   return status;
 }
@@ -52,11 +50,13 @@ SyncStatus AllStatus::CalcSyncing(const SyncEngineEvent &event) const {
     status.syncing = false;
   }
 
-  status.initial_sync_ended |= snapshot.is_share_usable();
-
   status.updates_available += snapshot.num_server_changes_remaining();
   status.sync_protocol_error =
       snapshot.model_neutral_state().sync_protocol_error;
+
+  status.num_entries_by_type = snapshot.num_entries_by_type();
+  status.num_to_delete_entries_by_type =
+      snapshot.num_to_delete_entries_by_type();
 
   // Accumulate update count only once per session to avoid double-counting.
   if (event.what_happened == SyncEngineEvent::SYNC_CYCLE_ENDED) {
@@ -107,6 +107,9 @@ void AllStatus::OnSyncEngineEvent(const SyncEngineEvent& event) {
       status_ = CreateBlankStatus();
       status_.sync_protocol_error =
           event.snapshot.model_neutral_state().sync_protocol_error;
+      break;
+    case SyncEngineEvent::RETRY_TIME_CHANGED:
+      status_.retry_time = event.retry_time;
       break;
     default:
       LOG(ERROR) << "Unrecognized Syncer Event: " << event.what_happened;
@@ -164,9 +167,15 @@ void AllStatus::SetKeystoreMigrationTime(const base::Time& migration_time) {
   status_.keystore_migration_time = migration_time;
 }
 
-void AllStatus::SetUniqueId(const std::string& guid) {
+void AllStatus::SetSyncId(const std::string& sync_id) {
   ScopedStatusLock lock(this);
-  status_.unique_id = guid;
+  status_.sync_id = sync_id;
+}
+
+void AllStatus::SetInvalidatorClientId(
+    const std::string& invalidator_client_id) {
+  ScopedStatusLock lock(this);
+  status_.invalidator_client_id = invalidator_client_id;
 }
 
 void AllStatus::IncrementNudgeCounter(NudgeSource source) {

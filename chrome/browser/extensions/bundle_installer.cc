@@ -22,7 +22,6 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -51,8 +50,8 @@ scoped_refptr<Extension> CreateDummyExtension(const BundleInstaller::Item& item,
   CHECK(!item.localized_name.empty());
 
   std::string error;
-  return Extension::Create(FilePath(),
-                           Extension::INTERNAL,
+  return Extension::Create(base::FilePath(),
+                           Manifest::INTERNAL,
                            *manifest,
                            Extension::NO_FLAGS,
                            item.id,
@@ -107,6 +106,7 @@ BundleInstaller::BundleInstaller(Browser* browser,
                                  const BundleInstaller::ItemList& items)
     : approved_(false),
       browser_(browser),
+      host_desktop_type_(browser->host_desktop_type()),
       profile_(browser->profile()),
       delegate_(NULL) {
   BrowserList::AddObserver(this);
@@ -272,7 +272,7 @@ void BundleInstaller::ShowPrompt() {
     if (!browser) {
       // The browser that we got initially could have gone away during our
       // thread hopping.
-      browser = chrome::FindLastActiveWithProfile(profile_);
+      browser = chrome::FindLastActiveWithProfile(profile_, host_desktop_type_);
     }
     content::WebContents* web_contents = NULL;
     if (browser)

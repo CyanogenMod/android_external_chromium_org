@@ -20,7 +20,7 @@ BaseScrollBarThumb::BaseScrollBarThumb(BaseScrollBar* scroll_bar)
     : scroll_bar_(scroll_bar),
       drag_start_position_(-1),
       mouse_offset_(-1),
-      state_(CustomButton::BS_NORMAL) {
+      state_(CustomButton::STATE_NORMAL) {
 }
 
 BaseScrollBarThumb::~BaseScrollBarThumb() {
@@ -66,17 +66,17 @@ int BaseScrollBarThumb::GetPosition() const {
 }
 
 void BaseScrollBarThumb::OnMouseEntered(const ui::MouseEvent& event) {
-  SetState(CustomButton::BS_HOT);
+  SetState(CustomButton::STATE_HOVERED);
 }
 
 void BaseScrollBarThumb::OnMouseExited(const ui::MouseEvent& event) {
-  SetState(CustomButton::BS_NORMAL);
+  SetState(CustomButton::STATE_NORMAL);
 }
 
 bool BaseScrollBarThumb::OnMousePressed(const ui::MouseEvent& event) {
   mouse_offset_ = scroll_bar_->IsHorizontal() ? event.x() : event.y();
   drag_start_position_ = GetPosition();
-  SetState(CustomButton::BS_PUSHED);
+  SetState(CustomButton::STATE_PRESSED);
   return true;
 }
 
@@ -99,6 +99,8 @@ bool BaseScrollBarThumb::OnMouseDragged(const ui::MouseEvent& event) {
   }
   if (scroll_bar_->IsHorizontal()) {
     int thumb_x = event.x() - mouse_offset_;
+    if (base::i18n::IsRTL())
+      thumb_x *= -1;
     scroll_bar_->ScrollToThumbPosition(GetPosition() + thumb_x, false);
   } else {
     int thumb_y = event.y() - mouse_offset_;
@@ -108,11 +110,12 @@ bool BaseScrollBarThumb::OnMouseDragged(const ui::MouseEvent& event) {
 }
 
 void BaseScrollBarThumb::OnMouseReleased(const ui::MouseEvent& event) {
-  OnMouseCaptureLost();
+  SetState(HitTestPoint(event.location()) ?
+           CustomButton::STATE_HOVERED : CustomButton::STATE_NORMAL);
 }
 
 void BaseScrollBarThumb::OnMouseCaptureLost() {
-  SetState(CustomButton::BS_HOT);
+  SetState(CustomButton::STATE_HOVERED);
 }
 
 CustomButton::ButtonState BaseScrollBarThumb::GetState() const {
@@ -120,7 +123,12 @@ CustomButton::ButtonState BaseScrollBarThumb::GetState() const {
 }
 
 void BaseScrollBarThumb::SetState(CustomButton::ButtonState state) {
+  if (state_ == state)
+    return;
+
+  CustomButton::ButtonState old_state = state_;
   state_ = state;
+  scroll_bar_->OnThumbStateChanged(old_state, state);
   SchedulePaint();
 }
 

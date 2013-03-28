@@ -6,11 +6,11 @@ package org.chromium.content.browser.test.util;
 
 import android.graphics.Rect;
 import android.test.ActivityInstrumentationTestCase2;
-import android.test.InstrumentationTestCase;
 import android.util.JsonReader;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.util.concurrent.TimeoutException;
 
 import junit.framework.Assert;
 
@@ -24,8 +24,9 @@ public class DOMUtils {
     /**
      * Returns the rect boundaries for a node by its id.
      */
-    public static Rect getNodeBounds(InstrumentationTestCase test, final ContentView view,
-            TestCallbackHelperContainer viewClient, String nodeId) throws Throwable {
+    public static Rect getNodeBounds(
+            final ContentView view, TestCallbackHelperContainer viewClient, String nodeId)
+            throws InterruptedException, TimeoutException {
         StringBuilder sb = new StringBuilder();
         sb.append("(function() {");
         sb.append("  var node = document.getElementById('" + nodeId + "');");
@@ -41,8 +42,8 @@ public class DOMUtils {
         sb.append("  return [ x, y, width, height ];");
         sb.append("})();");
 
-        String jsonText = JavaScriptUtils.executeJavaScriptAndWaitForResult(test, view, viewClient,
-                sb.toString());
+        String jsonText = JavaScriptUtils.executeJavaScriptAndWaitForResult(
+                view, viewClient, sb.toString());
 
         Assert.assertFalse("Failed to retrieve bounds for " + nodeId,
                 jsonText.trim().equalsIgnoreCase("null"));
@@ -57,10 +58,28 @@ public class DOMUtils {
             }
             jsonReader.endArray();
             Assert.assertEquals("Invalid bounds returned.", 4, i);
+
+            jsonReader.close();
         } catch (IOException exception) {
             Assert.fail("Failed to evaluate JavaScript: " + jsonText + "\n" + exception);
         }
+
         return new Rect(bounds[0], bounds[1], bounds[0] + bounds[2], bounds[1] + bounds[3]);
+    }
+
+    /**
+     * Focus a DOM node by its id.
+     */
+    public static void focusNode(ActivityInstrumentationTestCase2 activityTestCase,
+            final ContentView view, TestCallbackHelperContainer viewClient, String nodeId)
+            throws InterruptedException, TimeoutException {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(function() {");
+        sb.append("  var node = document.getElementById('" + nodeId + "');");
+        sb.append("  if (node) node.focus();");
+        sb.append("})();");
+
+        JavaScriptUtils.executeJavaScriptAndWaitForResult(view, viewClient, sb.toString());
     }
 
     /**
@@ -68,18 +87,10 @@ public class DOMUtils {
      */
     public static void clickNode(ActivityInstrumentationTestCase2 activityTestCase,
             final ContentView view, TestCallbackHelperContainer viewClient, String nodeId)
-            throws Throwable {
-        Rect bounds = getNodeBounds(activityTestCase, view, viewClient, nodeId);
-        Assert.assertNotNull("Failed to get DOM element bounds of '" + nodeId + "'.'", bounds);
-
-        // TODO(leandrogracia): make this use view.getScale() once the correct value is available.
-        // WARNING: this will only work with a viewport fixed scale value of 1.0.
-        float scale = getDevicePixelRatio(activityTestCase, view, viewClient);
-        int clickX = (int)(bounds.exactCenterX() * scale + 0.5);
-        int clickY = (int)(bounds.exactCenterY() * scale + 0.5);
-
+            throws InterruptedException, TimeoutException {
+        int[] clickTarget = getClickTargetForNode(view, viewClient, nodeId);
         TouchCommon touchCommon = new TouchCommon(activityTestCase);
-        touchCommon.singleClickView(view, clickX, clickY);
+        touchCommon.singleClickView(view, clickTarget[0], clickTarget[1]);
     }
 
     /**
@@ -87,34 +98,66 @@ public class DOMUtils {
      */
     public static void longPressNode(ActivityInstrumentationTestCase2 activityTestCase,
             final ContentView view, TestCallbackHelperContainer viewClient, String nodeId)
-            throws Throwable {
-        Rect bounds = getNodeBounds(activityTestCase, view, viewClient, nodeId);
-        Assert.assertNotNull("Failed to get DOM element bounds of '" + nodeId + "'.'", bounds);
-
-        // TODO(leandrogracia): make this use view.getScale() once the correct value is available.
-        // WARNING: this will only work with a viewport fixed scale value of 1.0.
-        float scale = getDevicePixelRatio(activityTestCase, view, viewClient);
-        int clickX = (int)(bounds.exactCenterX() * scale + 0.5);
-        int clickY = (int)(bounds.exactCenterY() * scale + 0.5);
-
+            throws InterruptedException, TimeoutException {
+        int[] clickTarget = getClickTargetForNode(view, viewClient, nodeId);
         TouchCommon touchCommon = new TouchCommon(activityTestCase);
-        touchCommon.longPressView(view, clickX, clickY);
+        touchCommon.longPressView(view, clickTarget[0], clickTarget[1]);
     }
 
     /**
      * Scrolls the view to ensure that the required DOM node is visible.
      */
-    public static void scrollNodeIntoView(InstrumentationTestCase test, final ContentView view,
-            TestCallbackHelperContainer viewClient, String nodeId) throws Throwable {
-        JavaScriptUtils.executeJavaScriptAndWaitForResult(test, view, viewClient,
+    public static void scrollNodeIntoView(final ContentView view,
+            TestCallbackHelperContainer viewClient, String nodeId)
+            throws InterruptedException, TimeoutException {
+        JavaScriptUtils.executeJavaScriptAndWaitForResult(view, viewClient,
                 "document.getElementById('" + nodeId + "').scrollIntoView()");
     }
 
-    // This is a temporary workaround to make clickNode and longPressNode work under fixed viewport
-    // scale settings of 1.0 until the new compositor correctly provides the ContentView page scale.
-    private static float getDevicePixelRatio(InstrumentationTestCase test, final ContentView view,
-            TestCallbackHelperContainer viewClient) throws Throwable {
-        return Float.valueOf(JavaScriptUtils.executeJavaScriptAndWaitForResult(test, view,
-                viewClient, "window.devicePixelRatio"));
+    /**
+     * Returns the contents of the node by its id.
+     */
+    public static String getNodeContents(final ContentView view,
+            TestCallbackHelperContainer viewClient, String nodeId)
+            throws InterruptedException, TimeoutException {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(function() {");
+        sb.append("  var node = document.getElementById('" + nodeId + "');");
+        sb.append("  if (!node) return null;");
+        sb.append("  return [ node.textContent ];");
+        sb.append("})();");
+
+        String jsonText = JavaScriptUtils.executeJavaScriptAndWaitForResult(
+                view, viewClient, sb.toString());
+        Assert.assertFalse("Failed to retrieve contents for " + nodeId,
+                jsonText.trim().equalsIgnoreCase("null"));
+
+        JsonReader jsonReader = new JsonReader(new StringReader(jsonText));
+        String contents = null;
+        try {
+            jsonReader.beginArray();
+            if (jsonReader.hasNext()) contents = jsonReader.nextString();
+            jsonReader.endArray();
+            Assert.assertNotNull("Invalid contents returned.", contents);
+
+            jsonReader.close();
+        } catch (IOException exception) {
+            Assert.fail("Failed to evaluate JavaScript: " + jsonText + "\n" + exception);
+        }
+        return contents;
+    }
+
+    /**
+     * Returns click targets for a given DOM node.
+     */
+    private static int[] getClickTargetForNode(final ContentView view,
+            TestCallbackHelperContainer viewClient, String nodeName)
+            throws InterruptedException, TimeoutException {
+        Rect bounds = getNodeBounds(view, viewClient, nodeName);
+        Assert.assertNotNull("Failed to get DOM element bounds of '" + nodeName + "'.", bounds);
+
+        int clickX = (int) view.getRenderCoordinates().fromLocalCssToPix(bounds.exactCenterX());
+        int clickY = (int) view.getRenderCoordinates().fromLocalCssToPix(bounds.exactCenterY());
+        return new int[] { clickX, clickY };
     }
 }

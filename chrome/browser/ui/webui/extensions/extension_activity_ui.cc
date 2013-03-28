@@ -7,13 +7,11 @@
 #include "base/bind.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#include "chrome/browser/ui/webui/shared_resources_data_source.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -24,8 +22,8 @@ ExtensionActivityUI::ExtensionActivityUI(content::WebUI* web_ui)
   web_ui->OverrideTitle(l10n_util::GetStringUTF16(
       IDS_EXTENSION_ACTIVITY_TITLE));
 
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIExtensionActivityHost);
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIExtensionActivityHost);
 
   // Localized strings.
   source->AddLocalizedString("extensionActivity", IDS_EXTENSION_ACTIVITY_TITLE);
@@ -35,17 +33,16 @@ ExtensionActivityUI::ExtensionActivityUI(content::WebUI* web_ui)
                              IDS_EXTENSION_ACTIVITY_API_BLOCK);
   source->AddLocalizedString("extensionActivityContentScript",
                              IDS_EXTENSION_ACTIVITY_CONTENT_SCRIPT);
-  source->set_use_json_js_format_v2();
-  source->set_json_path("strings.js");
+  source->AddLocalizedString("extensionActivityEventDispatch",
+                             IDS_EXTENSION_ACTIVITY_EVENT_DISPATCH);
+  source->SetUseJsonJSFormatV2();
+  source->SetJsonPath("strings.js");
 
   // Resources.
-  source->add_resource_path("extension_activity.js", IDR_EXTENSION_ACTIVITY_JS);
-  source->set_default_resource(IDR_EXTENSION_ACTIVITY_HTML);
-
-  Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, source);
-  ChromeURLDataManager::AddDataSource(profile, new SharedResourcesDataSource());
-
+  source->AddResourcePath("extension_activity.js", IDR_EXTENSION_ACTIVITY_JS);
+  source->SetDefaultResource(IDR_EXTENSION_ACTIVITY_HTML);
+  profile_ = Profile::FromWebUI(web_ui);
+  content::WebUIDataSource::Add(profile_, source);
   // Callback handlers.
   web_ui->RegisterMessageCallback("requestExtensionData",
       base::Bind(&ExtensionActivityUI::HandleRequestExtensionData,
@@ -54,7 +51,8 @@ ExtensionActivityUI::ExtensionActivityUI(content::WebUI* web_ui)
 
 ExtensionActivityUI::~ExtensionActivityUI() {
   if (extension_)
-    extensions::ActivityLog::GetInstance()->RemoveObserver(extension_, this);
+    extensions::ActivityLog::GetInstance(profile_)->RemoveObserver(
+        extension_, this);
 }
 
 void ExtensionActivityUI::HandleRequestExtensionData(
@@ -65,8 +63,7 @@ void ExtensionActivityUI::HandleRequestExtensionData(
   if (!args->GetString(0, &extension_id))
     return;
 
-  ExtensionService* extension_service = Profile::FromWebUI(web_ui())->
-      GetExtensionService();
+  ExtensionService* extension_service = profile_->GetExtensionService();
   extension_ = extension_service->GetExtensionById(extension_id, false);
   if (!extension_)
     return;
@@ -90,15 +87,27 @@ void ExtensionActivityUI::HandleRequestExtensionData(
   web_ui()->CallJavascriptFunction("extension_activity.handleExtensionData",
                                    result);
 
-  extensions::ActivityLog::GetInstance()->AddObserver(extension_, this);
+  extensions::ActivityLog* activity_log =
+      extensions::ActivityLog::GetInstance(profile_);
+  activity_log->GetActions(
+      extension_->id(),
+      0,  // today
+      base::Bind(&ExtensionActivityUI::FetchPreviousExtensionActivity,
+                 base::Unretained(this)));
+  activity_log->AddObserver(extension_, this);
+}
+
+void ExtensionActivityUI::FetchPreviousExtensionActivity(
+    scoped_ptr<std::vector<scoped_refptr<extensions::Action> > > actions) {
+  // TODO(felt): Implement this to display previous activity.
 }
 
 void ExtensionActivityUI::OnExtensionActivity(
       const extensions::Extension* extension,
       extensions::ActivityLog::Activity activity,
-      const std::vector<std::string>& messages) {
+      const std::string& message) {
   scoped_ptr<ListValue> messages_list(new ListValue());
-  messages_list->AppendStrings(messages);
+  messages_list->AppendString(message);
 
   DictionaryValue result;
   result.SetInteger("activity", activity);

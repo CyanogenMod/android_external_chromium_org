@@ -5,10 +5,11 @@
 #include "ui/views/controls/button/label_button_border.h"
 
 #include "base/logging.h"
+#include "grit/ui_resources.h"
 #include "ui/base/animation/animation.h"
-#include "ui/base/native_theme/native_theme.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
+#include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/native_theme_delegate.h"
 
@@ -16,23 +17,27 @@ namespace views {
 
 namespace {
 
-// Preferred padding between content and edge.
-static const int kPreferredPaddingHorizontal = 6;
-static const int kPreferredPaddingVertical = 5;
+// The button image IDs and focused images IDs used in lieu of a focus border.
+const int kNormalImages[] = IMAGE_GRID(IDR_BUTTON_NORMAL);
+const int kHoveredImages[] = IMAGE_GRID(IDR_BUTTON_HOVER);
+const int kPressedImages[] = IMAGE_GRID(IDR_BUTTON_PRESSED);
+const int kFocusedNormalImages[] = IMAGE_GRID(IDR_BUTTON_FOCUSED_NORMAL);
+const int kFocusedHoveredImages[] = IMAGE_GRID(IDR_BUTTON_FOCUSED_HOVER);
+const int kFocusedPressedImages[] = IMAGE_GRID(IDR_BUTTON_FOCUSED_PRESSED);
 
-// Preferred padding between content and edge for NativeTheme border.
-static const int kPreferredNativeThemePaddingHorizontal = 12;
-static const int kPreferredNativeThemePaddingVertical = 5;
+// The text-button hot and pushed image IDs; normal is unadorned by default.
+const int kTextHoveredImages[] = IMAGE_GRID(IDR_TEXTBUTTON_HOVER);
+const int kTextPressedImages[] = IMAGE_GRID(IDR_TEXTBUTTON_PRESSED);
 
-views::CustomButton::ButtonState GetButtonState(ui::NativeTheme::State state) {
+Button::ButtonState GetButtonState(ui::NativeTheme::State state) {
   switch(state) {
-    case ui::NativeTheme::kDisabled: return views::CustomButton::BS_DISABLED;
-    case ui::NativeTheme::kHovered:  return views::CustomButton::BS_HOT;
-    case ui::NativeTheme::kNormal:   return views::CustomButton::BS_NORMAL;
-    case ui::NativeTheme::kPressed:  return views::CustomButton::BS_PUSHED;
+    case ui::NativeTheme::kDisabled: return Button::STATE_DISABLED;
+    case ui::NativeTheme::kHovered:  return Button::STATE_HOVERED;
+    case ui::NativeTheme::kNormal:   return Button::STATE_NORMAL;
+    case ui::NativeTheme::kPressed:  return Button::STATE_PRESSED;
     case ui::NativeTheme::kMaxState: NOTREACHED() << "Unknown state: " << state;
   }
-  return views::CustomButton::BS_NORMAL;
+  return Button::STATE_NORMAL;
 }
 
 // A helper function to paint the native theme or images as appropriate.
@@ -43,22 +48,48 @@ void PaintHelper(LabelButtonBorder* border,
                  ui::NativeTheme::State state,
                  const gfx::Rect& rect,
                  const ui::NativeTheme::ExtraParams& extra) {
-  if (border->native_theme())
+  if (border->style() == Button::STYLE_NATIVE_TEXTBUTTON) {
     theme->Paint(canvas->sk_canvas(), part, state, rect, extra);
-  else
-    border->GetImages(GetButtonState(state))->Paint(canvas, rect.size());
+  } else {
+    Painter* painter =
+        border->GetPainter(extra.button.is_focused, GetButtonState(state));
+    // Paint any corresponding unfocused painter if there is no focused painter.
+    if (!painter && extra.button.is_focused)
+      painter = border->GetPainter(false, GetButtonState(state));
+    if (painter)
+      painter->Paint(canvas, rect.size());
+  }
 }
 
 }  // namespace
 
-LabelButtonBorder::LabelButtonBorder() : native_theme_(false) {
-  SetImages(CustomButton::BS_HOT, BorderImages(BorderImages::kHot));
-  SetImages(CustomButton::BS_PUSHED, BorderImages(BorderImages::kPushed));
+LabelButtonBorder::LabelButtonBorder(Button::ButtonStyle style)
+    : style_(style) {
+  if (style == Button::STYLE_BUTTON) {
+    SetPainter(false, Button::STATE_NORMAL,
+               Painter::CreateImageGridPainter(kNormalImages));
+    SetPainter(false, Button::STATE_HOVERED,
+               Painter::CreateImageGridPainter(kHoveredImages));
+    SetPainter(false, Button::STATE_PRESSED,
+               Painter::CreateImageGridPainter(kPressedImages));
+    SetPainter(true, Button::STATE_NORMAL,
+               Painter::CreateImageGridPainter(kFocusedNormalImages));
+    SetPainter(true, Button::STATE_HOVERED,
+               Painter::CreateImageGridPainter(kFocusedHoveredImages));
+    SetPainter(true, Button::STATE_PRESSED,
+               Painter::CreateImageGridPainter(kFocusedPressedImages));
+  } else if (style == Button::STYLE_TEXTBUTTON) {
+    SetPainter(false, Button::STATE_HOVERED,
+               Painter::CreateImageGridPainter(kTextHoveredImages));
+    SetPainter(false, Button::STATE_PRESSED,
+               Painter::CreateImageGridPainter(kTextPressedImages));
+  }
 }
 
 LabelButtonBorder::~LabelButtonBorder() {}
 
 void LabelButtonBorder::Paint(const View& view, gfx::Canvas* canvas) {
+  DCHECK(view.GetClassName() == LabelButton::kViewClassName);
   const NativeThemeDelegate* native_theme_delegate =
       static_cast<const LabelButton*>(&view);
   ui::NativeTheme::Part part = native_theme_delegate->GetThemePart();
@@ -85,29 +116,32 @@ void LabelButtonBorder::Paint(const View& view, gfx::Canvas* canvas) {
   }
 
   // Draw the Views focus border for the native theme style.
-  if (native_theme() && view.focus_border() && extra.button.is_focused)
+  if (style() == Button::STYLE_NATIVE_TEXTBUTTON &&
+      view.focus_border() && extra.button.is_focused)
     view.focus_border()->Paint(view, canvas);
 }
 
-void LabelButtonBorder::GetInsets(gfx::Insets* insets) const {
-  if (native_theme()) {
-    insets->Set(kPreferredNativeThemePaddingVertical,
-                kPreferredNativeThemePaddingHorizontal,
-                kPreferredNativeThemePaddingVertical,
-                kPreferredNativeThemePaddingHorizontal);
-  } else {
-    insets->Set(kPreferredPaddingVertical, kPreferredPaddingHorizontal,
-                kPreferredPaddingVertical, kPreferredPaddingHorizontal);
-  }
+gfx::Insets LabelButtonBorder::GetInsets() const {
+  // Return the style-specific insets between button contents and edges.
+  if (style() == Button::STYLE_BUTTON)
+    return gfx::Insets(9, 13, 9, 13);
+  if (style() == Button::STYLE_TEXTBUTTON)
+    return gfx::Insets(5, 6, 5, 6);
+  if (style() == Button::STYLE_NATIVE_TEXTBUTTON)
+    return gfx::Insets(5, 12, 5, 12);
+  NOTREACHED();
+  return gfx::Insets();
 }
 
-BorderImages* LabelButtonBorder::GetImages(CustomButton::ButtonState state) {
-  return &images_[state];
+Painter* LabelButtonBorder::GetPainter(bool focused,
+                                       Button::ButtonState state) {
+  return painters_[focused ? 1 : 0][state].get();
 }
 
-void LabelButtonBorder::SetImages(CustomButton::ButtonState state,
-                                  const BorderImages& set) {
-  images_[state] = set;
+void LabelButtonBorder::SetPainter(bool focused,
+                                   Button::ButtonState state,
+                                   Painter* painter) {
+  painters_[focused ? 1 : 0][state].reset(painter);
 }
 
 }  // namespace views

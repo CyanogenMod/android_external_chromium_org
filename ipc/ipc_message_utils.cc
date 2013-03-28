@@ -4,7 +4,7 @@
 
 #include "ipc/ipc_message_utils.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/nullable_string16.h"
@@ -16,6 +16,8 @@
 
 #if defined(OS_POSIX)
 #include "ipc/file_descriptor_set_posix.h"
+#elif defined(OS_WIN)
+#include <tchar.h>
 #endif
 
 namespace IPC {
@@ -37,11 +39,12 @@ void LogBytes(const std::vector<CharType>& data, std::string* out) {
     if (isprint(data[i]))
       out->push_back(data[i]);
     else
-      out->append(StringPrintf("[%02X]", static_cast<unsigned char>(data[i])));
+      out->append(
+          base::StringPrintf("[%02X]", static_cast<unsigned char>(data[i])));
   }
   if (data.size() > kMaxBytesToLog) {
     out->append(
-        StringPrintf(" and %u more bytes",
+        base::StringPrintf(" and %u more bytes",
                      static_cast<unsigned>(data.size() - kMaxBytesToLog)));
   }
 #endif
@@ -101,28 +104,18 @@ void WriteValue(Message* m, const Value* value, int recursion) {
 
       WriteParam(m, static_cast<int>(dict->size()));
 
-      for (DictionaryValue::key_iterator it = dict->begin_keys();
-           it != dict->end_keys(); ++it) {
-        const Value* subval;
-        if (dict->GetWithoutPathExpansion(*it, &subval)) {
-          WriteParam(m, *it);
-          WriteValue(m, subval, recursion + 1);
-        } else {
-          NOTREACHED() << "DictionaryValue iterators are filthy liars.";
-        }
+      for (DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
+        WriteParam(m, it.key());
+        WriteValue(m, &it.value(), recursion + 1);
       }
       break;
     }
     case Value::TYPE_LIST: {
       const ListValue* list = static_cast<const ListValue*>(value);
       WriteParam(m, static_cast<int>(list->GetSize()));
-      for (size_t i = 0; i < list->GetSize(); ++i) {
-        const Value* subval;
-        if (list->Get(i, &subval)) {
-          WriteValue(m, subval, recursion + 1);
-        } else {
-          NOTREACHED() << "ListValue::GetSize is a filthy liar.";
-        }
+      for (ListValue::const_iterator it = list->begin(); it != list->end();
+           ++it) {
+        WriteValue(m, *it, recursion + 1);
       }
       break;
     }
@@ -186,28 +179,28 @@ bool ReadValue(const Message* m, PickleIterator* iter, Value** value,
       bool val;
       if (!ReadParam(m, iter, &val))
         return false;
-      *value = Value::CreateBooleanValue(val);
+      *value = new base::FundamentalValue(val);
       break;
     }
     case Value::TYPE_INTEGER: {
       int val;
       if (!ReadParam(m, iter, &val))
         return false;
-      *value = Value::CreateIntegerValue(val);
+      *value = new base::FundamentalValue(val);
       break;
     }
     case Value::TYPE_DOUBLE: {
       double val;
       if (!ReadParam(m, iter, &val))
         return false;
-      *value = Value::CreateDoubleValue(val);
+      *value = new base::FundamentalValue(val);
       break;
     }
     case Value::TYPE_STRING: {
       std::string val;
       if (!ReadParam(m, iter, &val))
         return false;
-      *value = Value::CreateStringValue(val);
+      *value = new base::StringValue(val);
       break;
     }
     case Value::TYPE_BINARY: {
@@ -252,23 +245,6 @@ LogData::LogData()
 }
 
 LogData::~LogData() {
-}
-
-MessageIterator::MessageIterator(const Message& m) : iter_(m) {
-}
-
-int MessageIterator::NextInt() const {
-  int val = -1;
-  if (!iter_.ReadInt(&val))
-    NOTREACHED();
-  return val;
-}
-
-const std::string MessageIterator::NextString() const {
-  std::string val;
-  if (!iter_.ReadString(&val))
-    NOTREACHED();
-  return val;
 }
 
 void ParamTraits<bool>::Log(const param_type& p, std::string* l) {
@@ -334,7 +310,7 @@ bool ParamTraits<float>::Read(const Message* m, PickleIterator* iter,
 }
 
 void ParamTraits<float>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("%e", p));
+  l->append(base::StringPrintf("%e", p));
 }
 
 void ParamTraits<double>::Write(Message* m, const param_type& p) {
@@ -355,7 +331,7 @@ bool ParamTraits<double>::Read(const Message* m, PickleIterator* iter,
 }
 
 void ParamTraits<double>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("%e", p));
+  l->append(base::StringPrintf("%e", p));
 }
 
 
@@ -428,8 +404,11 @@ void ParamTraits<std::vector<unsigned char> >::Log(const param_type& p,
 
 void ParamTraits<std::vector<bool> >::Write(Message* m, const param_type& p) {
   WriteParam(m, static_cast<int>(p.size()));
+  // Cast to bool below is required because libc++'s
+  // vector<bool>::const_reference is different from bool, and we want to avoid
+  // writing an extra specialization of ParamTraits for it.
   for (size_t i = 0; i < p.size(); i++)
-    WriteParam(m, p[i]);
+    WriteParam(m, static_cast<bool>(p[i]));
 }
 
 bool ParamTraits<std::vector<bool> >::Read(const Message* m,
@@ -453,7 +432,7 @@ void ParamTraits<std::vector<bool> >::Log(const param_type& p, std::string* l) {
   for (size_t i = 0; i < p.size(); ++i) {
     if (i != 0)
       l->push_back(' ');
-    LogParam((p[i]), l);
+    LogParam(static_cast<bool>(p[i]), l);
   }
 }
 
@@ -506,29 +485,25 @@ bool ParamTraits<base::FileDescriptor>::Read(const Message* m,
 void ParamTraits<base::FileDescriptor>::Log(const param_type& p,
                                             std::string* l) {
   if (p.auto_close) {
-    l->append(StringPrintf("FD(%d auto-close)", p.fd));
+    l->append(base::StringPrintf("FD(%d auto-close)", p.fd));
   } else {
-    l->append(StringPrintf("FD(%d)", p.fd));
+    l->append(base::StringPrintf("FD(%d)", p.fd));
   }
 }
 #endif  // defined(OS_POSIX)
 
-void ParamTraits<FilePath>::Write(Message* m, const param_type& p) {
-  ParamTraits<FilePath::StringType>::Write(m, p.value());
+void ParamTraits<base::FilePath>::Write(Message* m, const param_type& p) {
+  p.WriteToPickle(m);
 }
 
-bool ParamTraits<FilePath>::Read(const Message* m,
-                                 PickleIterator* iter,
-                                 param_type* r) {
-  FilePath::StringType value;
-  if (!ParamTraits<FilePath::StringType>::Read(m, iter, &value))
-    return false;
-  *r = FilePath(value);
-  return true;
+bool ParamTraits<base::FilePath>::Read(const Message* m,
+                                       PickleIterator* iter,
+                                       param_type* r) {
+  return r->ReadFromPickle(iter);
 }
 
-void ParamTraits<FilePath>::Log(const param_type& p, std::string* l) {
-  ParamTraits<FilePath::StringType>::Log(p.value(), l);
+void ParamTraits<base::FilePath>::Log(const param_type& p, std::string* l) {
+  ParamTraits<base::FilePath::StringType>::Log(p.value(), l);
 }
 
 void ParamTraits<ListValue>::Write(Message* m, const param_type& p) {
@@ -697,7 +672,7 @@ bool ParamTraits<IPC::ChannelHandle>::Read(const Message* m,
 
 void ParamTraits<IPC::ChannelHandle>::Log(const param_type& p,
                                           std::string* l) {
-  l->append(StringPrintf("ChannelHandle(%s", p.name.c_str()));
+  l->append(base::StringPrintf("ChannelHandle(%s", p.name.c_str()));
 #if defined(OS_POSIX)
   l->append(", ");
   ParamTraits<base::FileDescriptor>::Log(p.socket, l);
@@ -713,6 +688,7 @@ void ParamTraits<LogData>::Write(Message* m, const param_type& p) {
   WriteParam(m, p.sent);
   WriteParam(m, p.receive);
   WriteParam(m, p.dispatch);
+  WriteParam(m, p.message_name);
   WriteParam(m, p.params);
 }
 
@@ -727,6 +703,7 @@ bool ParamTraits<LogData>::Read(const Message* m,
       ReadParam(m, iter, &r->sent) &&
       ReadParam(m, iter, &r->receive) &&
       ReadParam(m, iter, &r->dispatch) &&
+      ReadParam(m, iter, &r->message_name) &&
       ReadParam(m, iter, &r->params);
 }
 
@@ -780,22 +757,22 @@ void ParamTraits<Message>::Log(const Message& p, std::string* l) {
 
 #if defined(OS_WIN)
 // Note that HWNDs/HANDLE/HCURSOR/HACCEL etc are always 32 bits, even on 64
-// bit systems.
+// bit systems. That's why we use the Windows macros to convert to 32 bits.
 void ParamTraits<HANDLE>::Write(Message* m, const param_type& p) {
-  m->WriteUInt32(reinterpret_cast<uint32>(p));
+  m->WriteInt(HandleToLong(p));
 }
 
 bool ParamTraits<HANDLE>::Read(const Message* m, PickleIterator* iter,
                                param_type* r) {
-  uint32 temp;
-  if (!m->ReadUInt32(iter, &temp))
+  int32 temp;
+  if (!m->ReadInt(iter, &temp))
     return false;
-  *r = reinterpret_cast<HANDLE>(temp);
+  *r = LongToHandle(temp);
   return true;
 }
 
 void ParamTraits<HANDLE>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("0x%X", p));
+  l->append(base::StringPrintf("0x%X", p));
 }
 
 void ParamTraits<LOGFONT>::Write(Message* m, const param_type& p) {
@@ -806,19 +783,20 @@ bool ParamTraits<LOGFONT>::Read(const Message* m, PickleIterator* iter,
                                 param_type* r) {
   const char *data;
   int data_size = 0;
-  bool result = m->ReadData(iter, &data, &data_size);
-  if (result && data_size == sizeof(LOGFONT)) {
-    memcpy(r, data, sizeof(LOGFONT));
-  } else {
-    result = false;
-    NOTREACHED();
+  if (m->ReadData(iter, &data, &data_size) && data_size == sizeof(LOGFONT)) {
+    const LOGFONT *font = reinterpret_cast<LOGFONT*>(const_cast<char*>(data));
+    if (_tcsnlen(font->lfFaceName, LF_FACESIZE) < LF_FACESIZE) {
+      memcpy(r, data, sizeof(LOGFONT));
+      return true;
+    }
   }
 
-  return result;
+  NOTREACHED();
+  return false;
 }
 
 void ParamTraits<LOGFONT>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("<LOGFONT>"));
+  l->append(base::StringPrintf("<LOGFONT>"));
 }
 
 void ParamTraits<MSG>::Write(Message* m, const param_type& p) {

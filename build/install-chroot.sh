@@ -392,12 +392,16 @@ if [ -d /media ] &&
     sudo sh -c 'cat >>/etc/schroot/mount-'"${target}"
 fi
 
-# Share /dev/shm and possibly /run/shm
+# Share /dev/shm, /run and /run/shm.
 grep -qs '^/dev/shm' /etc/schroot/mount-"${target}" ||
   echo '/dev/shm /dev/shm none rw,bind 0 0' |
     sudo sh -c 'cat >>/etc/schroot/mount-'"${target}"
-if [ -d "/var/lib/chroot/${target}/run" ] &&
-   ! grep -qs '^/run/shm' /etc/schroot/mount-"${target}"; then
+if [ ! -d "/var/lib/chroot/${target}/run" ] &&
+   ! grep -qs '^/run' /etc/schroot/mount-"${target}"; then
+  echo '/run /run none rw,bind 0 0' |
+    sudo sh -c 'cat >>/etc/schroot/mount-'"${target}"
+fi
+if ! grep -qs '^/run/shm' /etc/schroot/mount-"${target}"; then
   { [ -d /run ] && echo '/run/shm /run/shm none rw,bind 0 0' ||
                    echo '/dev/shm /run/shm none rw,bind 0 0'; } |
     sudo sh -c 'cat >>/etc/schroot/mount-'"${target}"
@@ -583,9 +587,12 @@ sudo "/usr/local/bin/${target%bit}" dpkg --assert-multi-arch >&/dev/null &&
   sudo sed -i 's/ / [arch=amd64,i386] /' \
               "/var/lib/chroot/${target}/etc/apt/sources.list"
   [ -d /var/lib/chroot/${target}/etc/dpkg/dpkg.cfg.d/ ] &&
-  echo foreign-architecture \
-       $([ "${arch}" = "32bit" ] && echo amd64 || echo i386) |
-    sudo sh -c "cat >'/var/lib/chroot/${target}/etc/dpkg/dpkg.cfg.d/multiarch'"
+  sudo "/usr/local/bin/${target%bit}" dpkg --add-architecture \
+      $([ "${arch}" = "32bit" ] && echo amd64 || echo i386) >&/dev/null ||
+    echo foreign-architecture \
+        $([ "${arch}" = "32bit" ] && echo amd64 || echo i386) |
+      sudo sh -c \
+        "cat >'/var/lib/chroot/${target}/etc/dpkg/dpkg.cfg.d/multiarch'"
 }
 
 # Configure "sudo" package
@@ -769,7 +776,7 @@ if [ ! -h "${HOME}/chroot" ] &&
 fi
 
 # Clean up package files
-sudo schroot -c /usr/local/bin/"${target%bit}" -p -- apt-get clean
+sudo schroot -c "${target%bit}" -p -- apt-get clean
 sudo apt-get clean
 
 trap '' INT TERM QUIT HUP

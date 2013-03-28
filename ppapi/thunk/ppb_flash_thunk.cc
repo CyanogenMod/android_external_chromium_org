@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/logging.h"
 #include "ppapi/c/pp_array_output.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_flash.h"
@@ -9,9 +10,9 @@
 #include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
-#include "ppapi/thunk/ppb_flash_api.h"
 #include "ppapi/thunk/ppb_flash_functions_api.h"
 #include "ppapi/thunk/ppb_instance_api.h"
+#include "ppapi/thunk/ppb_video_capture_api.h"
 #include "ppapi/thunk/thunk.h"
 
 namespace ppapi {
@@ -20,15 +21,15 @@ namespace thunk {
 namespace {
 
 void SetInstanceAlwaysOnTop(PP_Instance instance, PP_Bool on_top) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return;
-  enter.functions()->GetFlashAPI()->SetInstanceAlwaysOnTop(instance, on_top);
+  enter.functions()->SetInstanceAlwaysOnTop(instance, on_top);
 }
 
 PP_Bool DrawGlyphs(PP_Instance instance,
                    PP_Resource pp_image_data,
-                   const PP_FontDescription_Dev* font_desc,
+                   const PP_BrowserFont_Trusted_Description* font_desc,
                    uint32_t color,
                    const PP_Point* position,
                    const PP_Rect* clip,
@@ -37,19 +38,19 @@ PP_Bool DrawGlyphs(PP_Instance instance,
                    uint32_t glyph_count,
                    const uint16_t glyph_indices[],
                    const PP_Point glyph_advances[]) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return PP_FALSE;
-  return enter.functions()->GetFlashAPI()->DrawGlyphs(
+  return enter.functions()->DrawGlyphs(
       instance, pp_image_data, font_desc, color, position, clip, transformation,
       allow_subpixel_aa, glyph_count, glyph_indices, glyph_advances);
 }
 
 PP_Var GetProxyForURL(PP_Instance instance, const char* url) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return PP_MakeUndefined();
-  return enter.functions()->GetFlashAPI()->GetProxyForURL(instance, url);
+  return enter.functions()->GetProxyForURL(instance, url);
 }
 
 int32_t Navigate(PP_Resource request_id,
@@ -59,38 +60,36 @@ int32_t Navigate(PP_Resource request_id,
   // To work around this, use the PP_Instance from the resource.
   PP_Instance instance;
   {
-    thunk::EnterResource<thunk::PPB_URLRequestInfo_API> enter(request_id, true);
+    EnterResource<PPB_URLRequestInfo_API> enter(request_id, true);
     if (enter.failed())
       return PP_ERROR_BADRESOURCE;
     instance = enter.resource()->pp_instance();
   }
 
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return PP_ERROR_BADARGUMENT;
-  return enter.functions()->GetFlashAPI()->Navigate(instance, request_id,
-                                                    target, from_user_action);
+  return enter.functions()->Navigate(instance, request_id, target,
+                                     from_user_action);
 }
 
 void RunMessageLoop(PP_Instance instance) {
-  EnterInstance enter(instance);
-  if (enter.failed())
-    return;
-  enter.functions()->GetFlashAPI()->RunMessageLoop(instance);
+  // Deprecated.
+  NOTREACHED();
+  return;
 }
 
 void QuitMessageLoop(PP_Instance instance) {
-  EnterInstance enter(instance);
-  if (enter.failed())
-    return;
-  enter.functions()->GetFlashAPI()->QuitMessageLoop(instance);
+  // Deprecated.
+  NOTREACHED();
+  return;
 }
 
 double GetLocalTimeZoneOffset(PP_Instance instance, PP_Time t) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return 0.0;
-  return enter.functions()->GetFlashAPI()->GetLocalTimeZoneOffset(instance, t);
+  return enter.functions()->GetLocalTimeZoneOffset(instance, t);
 }
 
 PP_Var GetCommandLineArgs(PP_Module /* pp_module */) {
@@ -107,10 +106,10 @@ void PreLoadFontWin(const void* logfontw) {
 }
 
 PP_Bool IsRectTopmost(PP_Instance instance, const PP_Rect* rect) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return PP_FALSE;
-  return enter.functions()->GetFlashAPI()->IsRectTopmost(instance, rect);
+  return enter.functions()->IsRectTopmost(instance, rect);
 }
 
 int32_t InvokePrinting(PP_Instance instance) {
@@ -119,118 +118,48 @@ int32_t InvokePrinting(PP_Instance instance) {
 }
 
 void UpdateActivity(PP_Instance instance) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return;
-  enter.functions()->GetFlashAPI()->UpdateActivity(instance);
+  enter.functions()->UpdateActivity(instance);
 }
 
 PP_Var GetDeviceID(PP_Instance instance) {
-  EnterInstance enter(instance);
-  if (enter.failed())
-    return PP_MakeUndefined();
-  return enter.functions()->GetFlashAPI()->GetDeviceID(instance);
+  // Deprecated.
+  NOTREACHED();
+  return PP_MakeUndefined();
 }
 
 int32_t GetSettingInt(PP_Instance instance, PP_FlashSetting setting) {
-  EnterInstance enter(instance);
-  if (enter.failed())
-    return -1;
-  return enter.functions()->GetFlashAPI()->GetSettingInt(instance, setting);
+  // Deprecated.
+  NOTREACHED();
+  return -1;
 }
 
 PP_Var GetSetting(PP_Instance instance, PP_FlashSetting setting) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return PP_MakeUndefined();
-  return enter.functions()->GetFlashAPI()->GetSetting(instance, setting);
+  return enter.functions()->GetSetting(instance, setting);
 }
 
 PP_Bool SetCrashData(PP_Instance instance,
                      PP_FlashCrashKey key,
                      PP_Var value) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return PP_FALSE;
-  return enter.functions()->GetFlashAPI()->SetCrashData(instance, key, value);
+  return enter.functions()->SetCrashData(instance, key, value);
 }
 
 int32_t EnumerateVideoCaptureDevices(PP_Instance instance,
                                      PP_Resource video_capture,
                                      PP_ArrayOutput devices) {
-  EnterInstance enter(instance);
-  if (enter.succeeded()) {
-    PPB_Flash_Functions_API* api =
-        enter.functions()->GetFlashFunctionsAPI(instance);
-    if (api) {
-      return api->EnumerateVideoCaptureDevices(instance, video_capture,
-                                               devices);
-    } else {
-      return PP_ERROR_NOINTERFACE;
-    }
-  }
-  return PP_ERROR_BADRESOURCE;
+  EnterResource<PPB_VideoCapture_API> enter(video_capture, true);
+  if (enter.failed())
+    return enter.retval();
+  return enter.object()->EnumerateDevicesSync(devices);
 }
-
-const PPB_Flash_12_0 g_ppb_flash_12_0_thunk = {
-  &SetInstanceAlwaysOnTop,
-  &DrawGlyphs,
-  &GetProxyForURL,
-  &Navigate,
-  &RunMessageLoop,
-  &QuitMessageLoop,
-  &GetLocalTimeZoneOffset,
-  &GetCommandLineArgs,
-  &PreLoadFontWin
-};
-
-const PPB_Flash_12_1 g_ppb_flash_12_1_thunk = {
-  &SetInstanceAlwaysOnTop,
-  &DrawGlyphs,
-  &GetProxyForURL,
-  &Navigate,
-  &RunMessageLoop,
-  &QuitMessageLoop,
-  &GetLocalTimeZoneOffset,
-  &GetCommandLineArgs,
-  &PreLoadFontWin,
-  &IsRectTopmost,
-  &InvokePrinting,
-  &UpdateActivity
-};
-
-const PPB_Flash_12_2 g_ppb_flash_12_2_thunk = {
-  &SetInstanceAlwaysOnTop,
-  &DrawGlyphs,
-  &GetProxyForURL,
-  &Navigate,
-  &RunMessageLoop,
-  &QuitMessageLoop,
-  &GetLocalTimeZoneOffset,
-  &GetCommandLineArgs,
-  &PreLoadFontWin,
-  &IsRectTopmost,
-  &InvokePrinting,
-  &UpdateActivity,
-  &GetDeviceID
-};
-
-const PPB_Flash_12_3 g_ppb_flash_12_3_thunk = {
-  &SetInstanceAlwaysOnTop,
-  &DrawGlyphs,
-  &GetProxyForURL,
-  &Navigate,
-  &RunMessageLoop,
-  &QuitMessageLoop,
-  &GetLocalTimeZoneOffset,
-  &GetCommandLineArgs,
-  &PreLoadFontWin,
-  &IsRectTopmost,
-  &InvokePrinting,
-  &UpdateActivity,
-  &GetDeviceID,
-  &GetSettingInt
-};
 
 const PPB_Flash_12_4 g_ppb_flash_12_4_thunk = {
   &SetInstanceAlwaysOnTop,
@@ -289,23 +218,22 @@ const PPB_Flash_12_6 g_ppb_flash_12_6_thunk = {
   &EnumerateVideoCaptureDevices
 };
 
+const PPB_Flash_13_0 g_ppb_flash_13_0_thunk = {
+  &SetInstanceAlwaysOnTop,
+  &DrawGlyphs,
+  &GetProxyForURL,
+  &Navigate,
+  &GetLocalTimeZoneOffset,
+  &GetCommandLineArgs,
+  &PreLoadFontWin,
+  &IsRectTopmost,
+  &UpdateActivity,
+  &GetSetting,
+  &SetCrashData,
+  &EnumerateVideoCaptureDevices
+};
+
 }  // namespace
-
-const PPB_Flash_12_0* GetPPB_Flash_12_0_Thunk() {
-  return &g_ppb_flash_12_0_thunk;
-}
-
-const PPB_Flash_12_1* GetPPB_Flash_12_1_Thunk() {
-  return &g_ppb_flash_12_1_thunk;
-}
-
-const PPB_Flash_12_2* GetPPB_Flash_12_2_Thunk() {
-  return &g_ppb_flash_12_2_thunk;
-}
-
-const PPB_Flash_12_3* GetPPB_Flash_12_3_Thunk() {
-  return &g_ppb_flash_12_3_thunk;
-}
 
 const PPB_Flash_12_4* GetPPB_Flash_12_4_Thunk() {
   return &g_ppb_flash_12_4_thunk;
@@ -317,6 +245,10 @@ const PPB_Flash_12_5* GetPPB_Flash_12_5_Thunk() {
 
 const PPB_Flash_12_6* GetPPB_Flash_12_6_Thunk() {
   return &g_ppb_flash_12_6_thunk;
+}
+
+const PPB_Flash_13_0* GetPPB_Flash_13_0_Thunk() {
+  return &g_ppb_flash_13_0_thunk;
 }
 
 }  // namespace thunk

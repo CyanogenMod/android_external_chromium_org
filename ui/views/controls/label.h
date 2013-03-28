@@ -6,6 +6,7 @@
 #define UI_VIEWS_CONTROLS_LABEL_H_
 
 #include <string>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
@@ -26,6 +27,9 @@ namespace views {
 /////////////////////////////////////////////////////////////////////////////
 class VIEWS_EXPORT Label : public View {
  public:
+  // Internal class name.
+  static const char kViewClassName[];
+
   // The following enum is used to indicate whether using the Chrome UI's
   // directionality as the label's directionality, or auto-detecting the label's
   // directionality.
@@ -77,6 +81,7 @@ class VIEWS_EXPORT Label : public View {
   // Sets the background color.  This won't be explicitly drawn, but the label
   // will force the text color to be readable over it.
   void SetBackgroundColor(SkColor color);
+  SkColor background_color() const { return background_color_; }
 
   // Enables a drop shadow underneath the text.
   void SetShadowColors(SkColor enabled_color, SkColor disabled_color);
@@ -217,6 +222,10 @@ class VIEWS_EXPORT Label : public View {
   // Updates any colors that have not been explicitly set from the theme.
   void UpdateColorsFromTheme(const ui::NativeTheme* theme);
 
+  // Resets |cached_heights_| and |cached_heights_cursor_| and mark
+  // |text_size_valid_| as false.
+  void ResetCachedSize();
+
   string16 text_;
   gfx::Font font_;
   SkColor requested_enabled_color_;
@@ -258,6 +267,10 @@ class VIEWS_EXPORT Label : public View {
 
   // Should a shadow be drawn behind the text?
   bool has_shadow_;
+
+  // The cached heights to avoid recalculation in GetHeightForWidth().
+  std::vector<gfx::Size> cached_heights_;
+  int cached_heights_cursor_;
 
   DISALLOW_COPY_AND_ASSIGN(Label);
 };

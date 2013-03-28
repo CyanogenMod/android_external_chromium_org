@@ -8,16 +8,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/time.h"
-#include "chrome/test/base/testing_profile.h"
 #include "chrome/browser/chromeos/contacts/contact.pb.h"
 #include "chrome/browser/chromeos/contacts/contact_store_observer.h"
 #include "chrome/browser/chromeos/contacts/contact_test_util.h"
 #include "chrome/browser/chromeos/contacts/fake_contact_database.h"
 #include "chrome/browser/chromeos/contacts/gdata_contacts_service_stub.h"
-#include "chrome/browser/google_apis/gdata_util.h"
+#include "chrome/browser/google_apis/time_util.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "net/base/network_change_notifier.h"
+#include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
@@ -30,13 +31,13 @@ namespace test {
 class TestContactStoreObserver : public ContactStoreObserver {
  public:
   TestContactStoreObserver() : num_updates_(0) {}
-  ~TestContactStoreObserver() {}
+  virtual ~TestContactStoreObserver() {}
 
   int num_updates() const { return num_updates_; }
   void reset_stats() { num_updates_ = 0; }
 
   // ContactStoreObserver overrides:
-  void OnContactsUpdated(ContactStore* store) OVERRIDE {
+  virtual void OnContactsUpdated(ContactStore* store) OVERRIDE {
     DCHECK(store);
     num_updates_++;
   }
@@ -59,9 +60,11 @@ class GoogleContactStoreTest : public testing::Test {
     // Create a mock NetworkChangeNotifier so the store won't be notified about
     // changes to the system's actual network state.
     network_change_notifier_.reset(net::NetworkChangeNotifier::CreateMock());
+
     profile_.reset(new TestingProfile);
 
-    store_.reset(new GoogleContactStore(profile_.get()));
+    store_.reset(new GoogleContactStore(NULL,  // request_context_getter
+                                        profile_.get()));
     store_->AddObserver(&observer_);
 
     test_api_.reset(new GoogleContactStore::TestAPI(store_.get()));

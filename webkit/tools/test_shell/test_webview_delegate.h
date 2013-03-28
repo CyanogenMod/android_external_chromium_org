@@ -19,13 +19,14 @@
 #include "base/memory/weak_ptr.h"
 #include "base/string16.h"
 #include "build/build_config.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystemType.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebFileSystem.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebViewClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
 #include "webkit/glue/webcursor.h"
 #include "webkit/plugins/npapi/webplugin_page_delegate.h"
 #include "webkit/tools/test_shell/mock_spellcheck.h"
@@ -107,8 +108,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   virtual bool shouldDeleteRange(const WebKit::WebRange& range);
   virtual bool shouldApplyStyle(
       const WebKit::WebString& style, const WebKit::WebRange& range);
-  virtual bool isSmartInsertDeleteEnabled();
-  virtual bool isSelectTrailingWhitespaceEnabled();
   virtual void didBeginEditing();
   virtual void didChangeSelection(bool is_selection_empty);
   virtual void didChangeContents();
@@ -229,17 +228,17 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   virtual bool allowScript(WebKit::WebFrame* frame, bool enabled_per_settings);
   virtual void openFileSystem(
       WebKit::WebFrame* frame,
-      WebKit::WebFileSystem::Type type,
+      WebKit::WebFileSystemType type,
       long long size,
       bool create,
       WebKit::WebFileSystemCallbacks* callbacks);
 
   // webkit::npapi::WebPluginPageDelegate
   virtual webkit::npapi::WebPluginDelegate* CreatePluginDelegate(
-      const FilePath& url,
+      const base::FilePath& url,
       const std::string& mime_type) OVERRIDE;
   virtual WebKit::WebPlugin* CreatePluginReplacement(
-      const FilePath& file_path) OVERRIDE;
+      const base::FilePath& file_path) OVERRIDE;
   virtual void CreatedPluginWindow(
       gfx::PluginWindowHandle handle) OVERRIDE;
   virtual void WillDestroyPluginWindow(
@@ -253,9 +252,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   explicit TestWebViewDelegate(TestShell* shell);
   virtual ~TestWebViewDelegate();
   void Reset();
-
-  void SetSmartInsertDeleteEnabled(bool enabled);
-  void SetSelectTrailingWhitespaceEnabled(bool enabled);
 
   // Additional accessors
   WebKit::WebFrame* top_loading_frame() { return top_loading_frame_; }
@@ -417,12 +413,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   scoped_ptr<WebKit::WebPopupMenuInfo> popup_menu_info_;
   WebKit::WebRect popup_bounds_;
 #endif
-
-  // true if we want to enable smart insert/delete.
-  bool smart_insert_delete_enabled_;
-
-  // true if we want to enable selection of trailing whitespaces
-  bool select_trailing_whitespace_enabled_;
 
   // Set of headers to clear in willSendRequest.
   std::set<std::string> clear_headers_;

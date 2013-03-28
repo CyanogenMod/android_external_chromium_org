@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,10 +10,11 @@
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/task_runner.h"
 #include "base/threading/thread_checker.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/configure_reason.h"
@@ -72,12 +73,12 @@ struct SyncCredentials {
 //
 // Unless stated otherwise, all methods of SyncManager should be called on the
 // same thread.
-class SyncManager {
+class SYNC_EXPORT SyncManager {
  public:
   // An interface the embedding application implements to be notified
   // on change events.  Note that these methods may be called on *any*
   // thread.
-  class ChangeDelegate {
+  class SYNC_EXPORT ChangeDelegate {
    public:
     // Notify the delegate that changes have been applied to the sync model.
     //
@@ -130,7 +131,7 @@ class SyncManager {
   // Like ChangeDelegate, except called only on the sync thread and
   // not while a transaction is held.  For objects that want to know
   // when changes happen, but don't need to process them.
-  class ChangeObserver {
+  class SYNC_EXPORT_PRIVATE ChangeObserver {
    public:
     // Ids referred to in |changes| may or may not be in the write
     // transaction specified by |write_transaction_id|.  If they're
@@ -163,7 +164,7 @@ class SyncManager {
   // notifications from the SyncManager.  Register an observer via
   // SyncManager::AddObserver.  All methods are called only on the
   // sync thread.
-  class Observer {
+  class SYNC_EXPORT Observer {
    public:
     // A round-trip sync-cycle took place and the syncer has resolved any
     // conflicts that may have arisen.
@@ -285,8 +286,6 @@ class SyncManager {
   // |sync_server_and_path| and |sync_server_port| represent the Chrome sync
   // server to use, and |use_ssl| specifies whether to communicate securely;
   // the default is false.
-  // |blocking_task_runner| is a TaskRunner to be used for tasks that
-  // may block on disk I/O.
   // |post_factory| will be owned internally and used to create
   // instances of an HttpPostProvider.
   // |model_safe_worker| ownership is given to the SyncManager.
@@ -302,12 +301,11 @@ class SyncManager {
   // TODO(akalin): Replace the |post_factory| parameter with a
   // URLFetcher parameter.
   virtual void Init(
-      const FilePath& database_location,
+      const base::FilePath& database_location,
       const WeakHandle<JsEventHandler>& event_handler,
       const std::string& sync_server_and_path,
       int sync_server_port,
       bool use_ssl,
-      const scoped_refptr<base::TaskRunner>& blocking_task_runner,
       scoped_ptr<HttpPostProviderFactory> post_factory,
       const std::vector<ModelSafeWorker*>& workers,
       ExtensionsActivityMonitor* extensions_activity_monitor,
@@ -356,6 +354,11 @@ class SyncManager {
   virtual void UnregisterInvalidationHandler(
       InvalidationHandler* handler) = 0;
 
+  // Forwards to the underlying notifier (see comments in invalidator.h).
+  virtual void AcknowledgeInvalidation(
+      const invalidation::ObjectId& id,
+      const syncer::AckHandle& ack_handle) = 0;
+
   // Put the syncer in normal mode ready to perform nudges and polls.
   virtual void StartSyncingNormally(
       const ModelSafeRoutingInfo& routing_info) = 0;
@@ -364,6 +367,9 @@ class SyncManager {
   // any configuration tasks needed as determined by the params. Once complete,
   // syncer will remain in CONFIGURATION_MODE until StartSyncingNormally is
   // called.
+  // Data whose types are not in |new_routing_info| are purged from sync
+  // directory. The purged data is backed up in delete journal for recovery in
+  // next session if its type is in |failed_types|.
   // |ready_task| is invoked when the configuration completes.
   // |retry_task| is invoked if the configuration job could not immediately
   //              execute. |ready_task| will still be called when it eventually
@@ -371,6 +377,7 @@ class SyncManager {
   virtual void ConfigureSyncer(
       ConfigureReason reason,
       ModelTypeSet types_to_config,
+      ModelTypeSet failed_types,
       const ModelSafeRoutingInfo& new_routing_info,
       const base::Closure& ready_task,
       const base::Closure& retry_task) = 0;
@@ -409,6 +416,10 @@ class SyncManager {
   // May be called from any thread.
   virtual UserShare* GetUserShare() = 0;
 
+  // Returns the cache_guid of the currently open database.
+  // Requires that the SyncManager be initialized.
+  virtual const std::string cache_guid() = 0;
+
   // Reads the nigori node to determine if any experimental features should
   // be enabled.
   // Note: opens a transaction.  May be called on any thread.
@@ -420,6 +431,9 @@ class SyncManager {
 
   // Returns the SyncManager's encryption handler.
   virtual SyncEncryptionHandler* GetEncryptionHandler() = 0;
+
+  // Ask the SyncManager to fetch updates for the given types.
+  virtual void RefreshTypes(ModelTypeSet types) = 0;
 };
 
 }  // namespace syncer

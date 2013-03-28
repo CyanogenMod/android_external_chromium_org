@@ -13,11 +13,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/common/context_menu_params.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
 #include "ui/base/models/menu_model.h"
 
@@ -71,13 +71,14 @@ class TestRenderViewContextMenu : public RenderViewContextMenu {
  protected:
   // These two functions implement pure virtual methods of
   // RenderViewContextMenu.
-  virtual bool GetAcceleratorForCommandId(int command_id,
-                                          ui::Accelerator* accelerator) {
+  virtual bool GetAcceleratorForCommandId(
+      int command_id,
+      ui::Accelerator* accelerator) OVERRIDE {
     // None of our commands have accelerators, so always return false.
     return false;
   }
-  virtual void PlatformInit() {}
-  virtual void PlatformCancel() {}
+  virtual void PlatformInit() OVERRIDE {}
+  virtual void PlatformCancel() OVERRIDE {}
 };
 
 }  // namespace
@@ -88,14 +89,14 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
   // extensions test data dir.
   const extensions::Extension* LoadContextMenuExtension(
       std::string subdirectory) {
-    FilePath extension_dir =
+    base::FilePath extension_dir =
         test_data_dir_.AppendASCII("context_menus").AppendASCII(subdirectory);
     return LoadExtension(extension_dir);
   }
 
   const extensions::Extension* LoadContextMenuExtensionIncognito(
       std::string subdirectory) {
-    FilePath extension_dir =
+    base::FilePath extension_dir =
         test_data_dir_.AppendASCII("context_menus").AppendASCII(subdirectory);
     return LoadExtensionIncognito(extension_dir);
   }
@@ -104,7 +105,8 @@ class ExtensionContextMenuBrowserTest : public ExtensionBrowserTest {
                                         const GURL& page_url,
                                         const GURL& link_url,
                                         const GURL& frame_url) {
-    WebContents* web_contents = chrome::GetActiveWebContents(browser);
+    WebContents* web_contents =
+        browser->tab_strip_model()->GetActiveWebContents();
     WebContextMenuData data;
     content::ContextMenuParams params(data);
     params.page_url = page_url;
@@ -263,7 +265,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, Simple) {
   // Look for the extension item in the menu, and execute it.
   int command_id = IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST;
   ASSERT_TRUE(menu->IsCommandIdEnabled(command_id));
-  menu->ExecuteCommand(command_id);
+  menu->ExecuteCommand(command_id, 0);
 
   // Wait for the extension's script to tell us its onclick fired.
   ASSERT_TRUE(listener2.WaitUntilSatisfied());
@@ -483,7 +485,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, MAYBE_IncognitoSplit) {
   // Look for the extension item in the menu, and execute it.
   int command_id = IDC_EXTENSIONS_CONTEXT_CUSTOM_FIRST;
   ASSERT_TRUE(menu->IsCommandIdEnabled(command_id));
-  menu->ExecuteCommand(command_id);
+  menu->ExecuteCommand(command_id, 0);
 
   // Wait for the extension's script to tell us its onclick fired. Ensure
   // that the incognito version doesn't fire until we explicitly click the
@@ -492,7 +494,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, MAYBE_IncognitoSplit) {
   EXPECT_FALSE(onclick_incognito.was_satisfied());
 
   ASSERT_TRUE(menu_incognito->IsCommandIdEnabled(command_id));
-  menu_incognito->ExecuteCommand(command_id);
+  menu_incognito->ExecuteCommand(command_id, 0);
   ASSERT_TRUE(onclick_incognito.WaitUntilSatisfied());
 }
 
@@ -526,11 +528,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserTest, Enabled) {
 
 class ExtensionContextMenuBrowserLazyTest :
     public ExtensionContextMenuBrowserTest {
-  void SetUpCommandLine(CommandLine* command_line) {
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ExtensionContextMenuBrowserTest::SetUpCommandLine(command_line);
     // Set shorter delays to prevent test timeouts.
     command_line->AppendSwitchASCII(switches::kEventPageIdleTime, "0");
-    command_line->AppendSwitchASCII(switches::kEventPageUnloadingTime, "0");
+    command_line->AppendSwitchASCII(switches::kEventPageSuspendingTime, "0");
   }
 };
 
@@ -560,7 +562,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionContextMenuBrowserLazyTest, EventPage) {
 
   // Executing the checkbox also fires the onClicked event.
   ExtensionTestMessageListener listener("onClicked fired for checkbox1", false);
-  menu->ExecuteCommand(command_id);
+  menu->ExecuteCommand(command_id, 0);
   checkbox_checked.WaitUntilClosed();
 
   EXPECT_TRUE(menu->IsCommandIdChecked(command_id));

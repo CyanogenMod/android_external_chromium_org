@@ -6,13 +6,13 @@
 
 #include <utility>
 
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/instant/instant_loader.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/search/instant_overlay.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
@@ -31,7 +31,7 @@
 using content::NavigationEntry;
 using content::WebContents;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(HistoryTabHelper)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(HistoryTabHelper);
 
 HistoryTabHelper::HistoryTabHelper(WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
@@ -127,16 +127,16 @@ void HistoryTabHelper::DidNavigateAnyFrame(
     }
   }
 
-  InstantLoader* instant_loader =
-      InstantLoader::FromWebContents(web_contents());
-  if (instant_loader) {
-    instant_loader->DidNavigate(add_page_args);
+  InstantOverlay* instant_overlay =
+      InstantOverlay::FromWebContents(web_contents());
+  if (instant_overlay) {
+    instant_overlay->DidNavigate(add_page_args);
     return;
   }
 
 #if !defined(OS_ANDROID)
   // Don't update history if this web contents isn't associatd with a tab.
-  Browser* browser = browser::FindBrowserWithWebContents(web_contents());
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
   if (!browser || browser->is_app())
     return;
 #endif
@@ -192,6 +192,9 @@ HistoryService* HistoryTabHelper::GetHistoryService() {
 }
 
 void HistoryTabHelper::WebContentsDestroyed(WebContents* tab) {
+  // TODO(sky): nuke this since no one is using visit_duration (and this is all
+  // wrong).
+
   // We update the history for this URL.
   // The content returned from web_contents() has been destroyed by now.
   // We need to use tab value directly.

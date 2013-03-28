@@ -10,9 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chrome_browser_main_extra_parts.h"
 
-namespace aura {
-class DesktopStackingClient;
-}
+class ActiveDesktopMonitor;
 
 class ChromeBrowserMainExtraPartsAura : public ChromeBrowserMainExtraParts {
  public:
@@ -20,11 +18,11 @@ class ChromeBrowserMainExtraPartsAura : public ChromeBrowserMainExtraParts {
   virtual ~ChromeBrowserMainExtraPartsAura();
 
   // Overridden from ChromeBrowserMainExtraParts:
-  virtual void PreProfileInit() OVERRIDE;
+  virtual void ToolkitInitialized() OVERRIDE;
   virtual void PostMainMessageLoopRun() OVERRIDE;
 
  private:
-  scoped_ptr<aura::DesktopStackingClient> stacking_client_;
+  scoped_ptr<ActiveDesktopMonitor> active_desktop_monitor_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserMainExtraPartsAura);
 };

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * Scrollable thumbnail ribbon at the bottom of the Gallery in the Slide mode.
  *
@@ -48,7 +50,7 @@ Ribbon.decorate = function(self, metadataCache, dataModel, selectionModel,
 
 /**
  * Max number of thumbnails in the ribbon.
- * @type {Number}
+ * @type {number}
  */
 Ribbon.ITEMS_COUNT = 5;
 
@@ -324,15 +326,16 @@ Ribbon.prototype.renderThumbnail_ = function(index) {
 /**
  * Set the thumbnail image.
  *
- * @param {Element} thumbnail Thumbnail element
+ * @param {Element} thumbnail Thumbnail element.
  * @param {string} url Image url.
  * @param {Object} metadata Metadata.
  * @private
  */
 Ribbon.prototype.setThumbnailImage_ = function(thumbnail, url, metadata) {
-  new ThumbnailLoader(url, metadata).load(
+  new ThumbnailLoader(url, ThumbnailLoader.LoaderType.IMAGE, metadata).load(
       thumbnail.querySelector('.image-wrapper'),
-      true /* fill */,
+      ThumbnailLoader.FillMode.FILL /* fill */,
+      ThumbnailLoader.OptimizationMode.NEVER_DISCARD,
       null /* success callback */,
       this.onThumbnailError_.bind(null, url));
 };

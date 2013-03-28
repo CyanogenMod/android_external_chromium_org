@@ -2,22 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/bookmarks/bookmark_index.h"
+
 #include <string>
 #include <vector>
 
 #include "base/message_loop.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_index.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/history/history_database.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/history/in_memory_database.h"
+#include "chrome/browser/history/url_database.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -240,9 +242,9 @@ TEST_F(BookmarkIndexTest, GetResultsSortedByTypedCount) {
   profile.CreateHistoryService(true, false);
   profile.BlockUntilHistoryProcessesPendingRequests();
   profile.CreateBookmarkModel(true);
-  profile.BlockUntilBookmarkModelLoaded();
 
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(&profile);
+  ui_test_utils::WaitForBookmarkModelToLoad(model);
 
   HistoryService* const history_service =
       HistoryServiceFactory::GetForProfile(&profile, Profile::EXPLICIT_ACCESS);

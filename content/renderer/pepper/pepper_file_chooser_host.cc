@@ -4,7 +4,7 @@
 
 #include "content/renderer/pepper/pepper_file_chooser_host.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/utf_string_conversions.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "content/renderer/render_view_impl.h"
@@ -13,11 +13,11 @@
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/ppb_file_ref_proxy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebCString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileChooserCompletion.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileChooserParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
 
 namespace content {
@@ -91,8 +91,7 @@ int32_t PepperFileChooserHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
   IPC_BEGIN_MESSAGE_MAP(PepperFileChooserHost, msg)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileChooser_Show,
-                                      OnMsgShow)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileChooser_Show, OnShow)
   IPC_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
@@ -102,9 +101,9 @@ void PepperFileChooserHost::StoreChosenFiles(
   std::vector<ppapi::PPB_FileRef_CreateInfo> chosen_files;
   for (size_t i = 0; i < files.size(); i++) {
 #if defined(OS_WIN)
-    FilePath file_path(UTF8ToWide(files[i].path));
+    base::FilePath file_path(UTF8ToWide(files[i].path));
 #else
-    FilePath file_path(files[i].path);
+    base::FilePath file_path(files[i].path);
 #endif
 
     webkit::ppapi::PPB_FileRef_Impl* ref =
@@ -125,7 +124,7 @@ void PepperFileChooserHost::StoreChosenFiles(
   handler_ = NULL;  // Handler deletes itself.
 }
 
-int32_t PepperFileChooserHost::OnMsgShow(
+int32_t PepperFileChooserHost::OnShow(
     ppapi::host::HostMessageContext* context,
     bool save_as,
     bool open_multiple,

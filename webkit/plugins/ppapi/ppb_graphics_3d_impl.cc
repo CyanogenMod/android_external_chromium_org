@@ -11,7 +11,7 @@
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "ppapi/c/ppp_graphics_3d.h"
 #include "ppapi/thunk/enter.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
@@ -141,7 +141,9 @@ PP_Graphics3DTrustedState PPB_Graphics3D_Impl::GetState() {
 }
 
 int32_t PPB_Graphics3D_Impl::CreateTransferBuffer(uint32_t size) {
-  return GetCommandBuffer()->CreateTransferBuffer(size, -1);
+  int32_t id = -1;
+  GetCommandBuffer()->CreateTransferBuffer(size, &id);
+  return id;
 }
 
 PP_Bool PPB_Graphics3D_Impl::DestroyTransferBuffer(int32_t id) {
@@ -172,6 +174,10 @@ PP_Graphics3DTrustedState PPB_Graphics3D_Impl::FlushSyncFast(
     int32_t last_known_get) {
   return PPStateFromGPUState(
       GetCommandBuffer()->FlushSync(put_offset, last_known_get));
+}
+
+uint32_t PPB_Graphics3D_Impl::InsertSyncPoint() {
+  return GetCommandBuffer()->InsertSyncPoint();
 }
 
 bool PPB_Graphics3D_Impl::BindToInstance(bool bind) {

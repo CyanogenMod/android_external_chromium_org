@@ -5,10 +5,10 @@
 #include "chrome/browser/importer/safari_importer.h"
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string16.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
@@ -23,19 +23,19 @@
 // simulated Library directory containing dummy data files in the same
 // structure as ~/Library in the Chrome test data directory.
 // This function returns the path to that directory.
-FilePath GetTestSafariLibraryPath() {
-    FilePath test_dir;
-    PathService::Get(chrome::DIR_TEST_DATA, &test_dir);
+base::FilePath GetTestSafariLibraryPath() {
+  base::FilePath test_dir;
+  PathService::Get(chrome::DIR_TEST_DATA, &test_dir);
 
-    // Our simulated ~/Library directory
-    test_dir = test_dir.AppendASCII("safari_import");
-    return test_dir;
+  // Our simulated ~/Library directory
+  test_dir = test_dir.AppendASCII("safari_import");
+  return test_dir;
 }
 
 class SafariImporterTest : public PlatformTest {
  public:
   SafariImporter* GetSafariImporter() {
-    FilePath test_library_dir = GetTestSafariLibraryPath();
+    base::FilePath test_library_dir = GetTestSafariLibraryPath();
     CHECK(file_util::PathExists(test_library_dir))  <<
         "Missing test data directory";
 
@@ -193,7 +193,7 @@ TEST_F(SafariImporterTest, CanImport) {
   EXPECT_EQ(items & importer::HOME_PAGE, importer::NONE);
 
   // Check that we don't import anything from a bogus library directory.
-  ScopedTempDir fake_library_dir;
+  base::ScopedTempDir fake_library_dir;
   ASSERT_TRUE(fake_library_dir.CreateUniqueTempDir());
   EXPECT_FALSE(SafariImporter::CanImport(fake_library_dir.path(), &items));
 }

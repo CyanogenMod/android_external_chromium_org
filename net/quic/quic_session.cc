@@ -4,6 +4,7 @@
 
 #include "net/quic/quic_session.h"
 
+#include "base/stl_util.h"
 #include "net/quic/quic_connection.h"
 
 using base::StringPiece;
@@ -13,24 +14,80 @@ using std::vector;
 
 namespace net {
 
+// We want to make sure we delete any closed streams in a safe manner.
+// To avoid deleting a stream in mid-operation, we have a simple shim between
+// us and the stream, so we can delete any streams when we return from
+// processing.
+//
+// We could just override the base methods, but this makes it easier to make
+// sure we don't miss any.
+class VisitorShim : public QuicConnectionVisitorInterface {
+ public:
+  explicit VisitorShim(QuicSession* session) : session_(session) {}
+
+  virtual bool OnPacket(const IPEndPoint& self_address,
+                        const IPEndPoint& peer_address,
+                        const QuicPacketHeader& header,
+                        const vector<QuicStreamFrame>& frame) OVERRIDE {
+    bool accepted = session_->OnPacket(self_address, peer_address, header,
+                                       frame);
+    session_->PostProcessAfterData();
+    return accepted;
+  }
+  virtual void OnRstStream(const QuicRstStreamFrame& frame) OVERRIDE {
+    session_->OnRstStream(frame);
+    session_->PostProcessAfterData();
+  }
+
+  virtual void OnGoAway(const QuicGoAwayFrame& frame) OVERRIDE {
+    session_->OnGoAway(frame);
+    session_->PostProcessAfterData();
+  }
+
+  virtual void OnAck(const SequenceNumberSet& acked_packets) OVERRIDE {
+    session_->OnAck(acked_packets);
+    session_->PostProcessAfterData();
+  }
+
+  virtual bool OnCanWrite() OVERRIDE {
+    bool rc = session_->OnCanWrite();
+    session_->PostProcessAfterData();
+    return rc;
+  }
+
+  virtual void ConnectionClose(QuicErrorCode error, bool from_peer) OVERRIDE {
+    session_->ConnectionClose(error, from_peer);
+    // The session will go away, so don't bother with cleanup.
+  }
+
+ private:
+  QuicSession* session_;
+};
+
 QuicSession::QuicSession(QuicConnection* connection, bool is_server)
     : connection_(connection),
+      visitor_shim_(new VisitorShim(this)),
       max_open_streams_(kDefaultMaxStreamsPerConnection),
       next_stream_id_(is_server ? 2 : 3),
       is_server_(is_server),
-      largest_peer_created_stream_id_(0) {
-  connection_->set_visitor(this);
+      largest_peer_created_stream_id_(0),
+      goaway_received_(false),
+      goaway_sent_(false) {
+  connection->set_visitor(visitor_shim_.get());
 }
 
 QuicSession::~QuicSession() {
+  STLDeleteElements(&closed_streams_);
+  STLDeleteValues(&stream_map_);
 }
 
 bool QuicSession::OnPacket(const IPEndPoint& self_address,
                            const IPEndPoint& peer_address,
                            const QuicPacketHeader& header,
                            const vector<QuicStreamFrame>& frames) {
-  if (header.guid != connection()->guid()) {
-    DLOG(INFO) << "Got packet header for invalid GUID: " << header.guid;
+  if (header.public_header.guid != connection()->guid()) {
+    DLOG(INFO) << "Got packet header for invalid GUID: "
+               << header.public_header.guid;
     return false;
   }
   for (size_t i = 0; i < frames.size(); ++i) {
@@ -59,7 +116,12 @@ void QuicSession::OnRstStream(const QuicRstStreamFrame& frame) {
   if (!stream) {
     return;  // Errors are handled by GetStream.
   }
-  stream->OnStreamReset(frame.error_code, frame.offset);
+  stream->OnStreamReset(frame.error_code);
+}
+
+void QuicSession::OnGoAway(const QuicGoAwayFrame& frame) {
+  DCHECK(frame.last_good_stream_id < next_stream_id_);
+  goaway_received_ = true;
 }
 
 void QuicSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
@@ -75,16 +137,43 @@ void QuicSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
   }
 }
 
-int QuicSession::WriteData(QuicStreamId id, StringPiece data,
-                               QuicStreamOffset offset, bool fin) {
-  return connection_->SendStreamData(id, data, offset, fin, NULL);
+bool QuicSession::OnCanWrite() {
+  // We latch this here rather than doing a traditional loop, because streams
+  // may be modifying the list as we loop.
+  int remaining_writes = write_blocked_streams_.NumObjects();
+
+  while (!connection_->HasQueuedData() &&
+         remaining_writes > 0) {
+    DCHECK(!write_blocked_streams_.IsEmpty());
+    ReliableQuicStream* stream =
+        GetStream(write_blocked_streams_.GetNextBlockedObject());
+    if (stream != NULL) {
+      // If the stream can't write all bytes, it'll re-add itself to the blocked
+      // list.
+      stream->OnCanWrite();
+    }
+    --remaining_writes;
+  }
+
+  return write_blocked_streams_.IsEmpty();
+}
+
+QuicConsumedData QuicSession::WriteData(QuicStreamId id,
+                                        StringPiece data,
+                                        QuicStreamOffset offset,
+                                        bool fin) {
+  return connection_->SendStreamData(id, data, offset, fin);
 }
 
 void QuicSession::SendRstStream(QuicStreamId id,
-                                QuicErrorCode error,
-                                QuicStreamOffset offset) {
-  connection_->SendRstStream(id, error, offset);
+                                QuicErrorCode error) {
+  connection_->SendRstStream(id, error);
   CloseStream(id);
+}
+
+void QuicSession::SendGoAway(QuicErrorCode error_code, const string& reason) {
+  goaway_sent_ = true;
+  connection_->SendGoAway(error_code, largest_peer_created_stream_id_, reason);
 }
 
 void QuicSession::CloseStream(QuicStreamId stream_id) {
@@ -95,15 +184,21 @@ void QuicSession::CloseStream(QuicStreamId stream_id) {
     DLOG(INFO) << "Stream is already closed: " << stream_id;
     return;
   }
+  it->second->OnClose();
+  closed_streams_.push_back(it->second);
   stream_map_.erase(it);
 }
 
-bool QuicSession::IsHandshakeComplete() {
+bool QuicSession::IsCryptoHandshakeComplete() {
   return GetCryptoStream()->handshake_complete();
 }
 
+void QuicSession::OnCryptoHandshakeComplete(QuicErrorCode error) {
+  // TODO(rch): tear down the connection if error != QUIC_NO_ERROR.
+}
+
 void QuicSession::ActivateStream(ReliableQuicStream* stream) {
-  LOG(INFO) << "num_streams: " << stream_map_.size()
+  DLOG(INFO) << "num_streams: " << stream_map_.size()
             << ". activating " << stream->id();
   DCHECK(stream_map_.count(stream->id()) == 0);
   stream_map_[stream->id()] = stream;
@@ -125,6 +220,10 @@ ReliableQuicStream* QuicSession::GetStream(const QuicStreamId stream_id) {
     return it->second;
   }
 
+  if (IsClosedStream(stream_id)) {
+    return NULL;
+  }
+
   if (stream_id % 2 == next_stream_id_ % 2) {
     // We've received a frame for a locally-created stream that is not
     // currently active.  This is an error.
@@ -138,6 +237,12 @@ ReliableQuicStream* QuicSession::GetStream(const QuicStreamId stream_id) {
 ReliableQuicStream* QuicSession::GetIncomingReliableStream(
     QuicStreamId stream_id) {
   if (IsClosedStream(stream_id)) {
+    return NULL;
+  }
+
+  if (goaway_sent_) {
+    // We've already sent a GoAway
+    connection()->SendRstStream(stream_id, QUIC_PEER_GOING_AWAY);
     return NULL;
   }
 
@@ -159,7 +264,6 @@ ReliableQuicStream* QuicSession::GetIncomingReliableStream(
   }
   ReliableQuicStream* stream = CreateIncomingReliableStream(stream_id);
   if (stream == NULL) {
-    connection()->SendConnectionClose(QUIC_TOO_MANY_OPEN_STREAMS);
     return NULL;
   }
   ActivateStream(stream);
@@ -182,12 +286,21 @@ bool QuicSession::IsClosedStream(QuicStreamId id) {
   }
   // For peer created streams, we also need to consider implicitly created
   // streams.
-    return id <= largest_peer_created_stream_id_ &&
-        implicitly_created_streams_.count(id) == 0;
-  }
+  return id <= largest_peer_created_stream_id_ &&
+      implicitly_created_streams_.count(id) == 0;
+}
 
-size_t QuicSession::GetNumOpenStreams() {
+size_t QuicSession::GetNumOpenStreams() const {
   return stream_map_.size() + implicitly_created_streams_.size();
+}
+
+void QuicSession::MarkWriteBlocked(QuicStreamId id) {
+  write_blocked_streams_.AddBlockedObject(id);
+}
+
+void QuicSession::PostProcessAfterData() {
+  STLDeleteElements(&closed_streams_);
+  closed_streams_.clear();
 }
 
 }  // namespace net

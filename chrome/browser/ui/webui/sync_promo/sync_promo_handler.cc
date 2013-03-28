@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/time.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -21,6 +21,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
@@ -75,11 +76,13 @@ SyncPromoHandler::~SyncPromoHandler() {
 }
 
 // static
-void SyncPromoHandler::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterIntegerPref(prefs::kSyncPromoViewCount, 0,
-      PrefService::UNSYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kSyncPromoShowNTPBubble, false,
-      PrefService::UNSYNCABLE_PREF);
+void SyncPromoHandler::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterIntegerPref(prefs::kSyncPromoViewCount, 0,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kSyncPromoShowNTPBubble, false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kSyncPromoErrorMessage, std::string(),
+                               PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void SyncPromoHandler::RegisterMessages() {
@@ -193,7 +196,7 @@ void SyncPromoHandler::HandleCloseSyncPromo(const base::ListValue* args) {
   // another URL. This prevents the browser window from flashing during
   // close.
   Browser* browser =
-      browser::FindBrowserWithWebContents(web_ui()->GetWebContents());
+      chrome::FindBrowserWithWebContents(web_ui()->GetWebContents());
   if (!browser || !browser->IsAttemptingToCloseBrowser()) {
     // Close the window if it was opened in auto-close mode.
     const GURL& sync_url = web_ui()->GetWebContents()->GetURL();

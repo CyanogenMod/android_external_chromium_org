@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/time.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/util/syncer_error.h"
 #include "sync/sessions/sync_session.h"
@@ -17,6 +18,7 @@
 namespace sync_pb {
 class ClientToServerMessage;
 class ClientToServerResponse;
+class ClientToServerResponse_Error;
 class CommitResponse_EntryResponse;
 class EntitySpecifics;
 class SyncEntity;
@@ -37,7 +39,15 @@ class Directory;
 class Entry;
 }
 
-class SyncerProtoUtil {
+// Returns the types to migrate from the data in |response|.
+SYNC_EXPORT_PRIVATE ModelTypeSet GetTypesToMigrate(
+    const sync_pb::ClientToServerResponse& response);
+
+// Builds a SyncProtocolError from the data in |error|.
+SYNC_EXPORT_PRIVATE SyncProtocolError ConvertErrorPBToLocalType(
+    const sync_pb::ClientToServerResponse_Error& error);
+
+class SYNC_EXPORT_PRIVATE SyncerProtoUtil {
  public:
   // Posts the given message and fills the buffer with the returned value.
   // Returns true on success.  Also handles store birthday verification: will
@@ -114,14 +124,9 @@ class SyncerProtoUtil {
 
   // Verifies the store birthday, alerting/resetting as appropriate if there's a
   // mismatch. Return false if the syncer should be stuck.
-  static bool VerifyResponseBirthday(syncable::Directory* dir,
-      const sync_pb::ClientToServerResponse* response);
-
-  // Builds and sends a SyncEngineEvent to begin migration for types (specified
-  // in notification).
-  static void HandleMigrationDoneResponse(
-      const sync_pb::ClientToServerResponse* response,
-      sessions::SyncSession* session);
+  static bool VerifyResponseBirthday(
+      const sync_pb::ClientToServerResponse& response,
+      syncable::Directory* dir);
 
   // Post the message using the scm, and do some processing on the returned
   // headers. Decode the server response.

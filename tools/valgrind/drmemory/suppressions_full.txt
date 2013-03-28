@@ -465,6 +465,13 @@ UNINITIALIZED READ
 name=http://code.google.com/p/drmemory/issues/detail?id=471 b
 *!WebCore::FormDataElement::FormDataElement
 
+# Another default copy ctor uninit.
+UNINITIALIZED READ
+name=http://code.google.com/p/drmemory/issues/detail?id=471 c
+*!WebCore::CachedResourceLoader::InitiatorInfo::InitiatorInfo
+...
+*!WTF::Hash*
+
 UNINITIALIZED READ
 name=http://code.google.com/p/drmemory/issues/detail?id=473 a
 system call NtDeviceIoControlFile InputBuffer
@@ -1245,15 +1252,6 @@ name=http://crbug.com/113847 (2)
 ...
 *!openDatabase
 *!sqlite3_open
-
-# Some unit tests must not be waiting for the file thread after deleting the
-# AppNotificationManager.
-LEAK
-name=http://crbug.com/115197
-...
-*!operator new
-*!AppNotificationStorage::Create
-*!AppNotificationManager::LoadOnFileThread
 
 LEAK
 name=http://crbug.com/115328

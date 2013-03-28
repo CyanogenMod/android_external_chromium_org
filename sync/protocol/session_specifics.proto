@@ -9,6 +9,9 @@
 
 syntax = "proto2";
 
+option optimize_for = LITE_RUNTIME;
+option retain_unknown_fields = true;
+
 package sync_pb;
 
 import "sync_enums.proto";
@@ -66,6 +69,8 @@ message SessionTab {
   optional string extension_app_id = 6;
   // Tabs are navigated, and the navigation data is here.
   repeated TabNavigation navigation = 7;
+
+  // Fields 8 through 11 are deprecated.
   // The favicon for the current url the tab is displaying. Either empty
   // or a valid PNG encoded favicon.
   optional bytes favicon = 8;
@@ -101,7 +106,7 @@ message TabNavigation {
   optional int32 unique_id = 8;
   // Timestamp for when this navigation last occurred (in client time).
   // If the user goes back/foward in history the timestamp may refresh.
-  optional int64 timestamp = 9;
+  optional int64 timestamp_msec = 9;
   // User used the Forward or Back button to navigate among browsing history.
   optional bool navigation_forward_back = 10;
   // User used the address bar to trigger this navigation.
@@ -115,4 +120,8 @@ message TabNavigation {
   // The id for this navigation, which is globally unique with high
   // probability.
   optional int64 global_id = 15;
+  // Search terms extracted from the URL.
+  optional string search_terms = 16;
+  // The favicon url associated with this page.
+  optional string favicon_url = 17;
 }

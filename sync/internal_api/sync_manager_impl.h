@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "net/base/network_change_notifier.h"
+#include "sync/base/sync_export.h"
 #include "sync/engine/all_status.h"
 #include "sync/engine/net/server_connection_manager.h"
 #include "sync/engine/sync_engine_event.h"
@@ -46,7 +47,7 @@ class SyncSessionContext;
 //
 // Unless stated otherwise, all methods of SyncManager should be called on the
 // same thread.
-class SyncManagerImpl :
+class SYNC_EXPORT_PRIVATE SyncManagerImpl :
     public SyncManager,
     public net::NetworkChangeNotifier::IPAddressObserver,
     public net::NetworkChangeNotifier::ConnectionTypeObserver,
@@ -63,12 +64,11 @@ class SyncManagerImpl :
 
   // SyncManager implementation.
   virtual void Init(
-      const FilePath& database_location,
+      const base::FilePath& database_location,
       const WeakHandle<JsEventHandler>& event_handler,
       const std::string& sync_server_and_path,
       int sync_server_port,
       bool use_ssl,
-      const scoped_refptr<base::TaskRunner>& blocking_task_runner,
       scoped_ptr<HttpPostProviderFactory> post_factory,
       const std::vector<ModelSafeWorker*>& workers,
       ExtensionsActivityMonitor* extensions_activity_monitor,
@@ -96,11 +96,15 @@ class SyncManagerImpl :
       const ObjectIdSet& ids) OVERRIDE;
   virtual void UnregisterInvalidationHandler(
       InvalidationHandler* handler) OVERRIDE;
+  virtual void AcknowledgeInvalidation(
+      const invalidation::ObjectId& id,
+      const syncer::AckHandle& ack_handle) OVERRIDE;
   virtual void StartSyncingNormally(
       const ModelSafeRoutingInfo& routing_info) OVERRIDE;
   virtual void ConfigureSyncer(
       ConfigureReason reason,
       ModelTypeSet types_to_config,
+      ModelTypeSet failed_types,
       const ModelSafeRoutingInfo& new_routing_info,
       const base::Closure& ready_task,
       const base::Closure& retry_task) OVERRIDE;
@@ -111,6 +115,7 @@ class SyncManagerImpl :
   virtual void StopSyncingForShutdown(const base::Closure& callback) OVERRIDE;
   virtual void ShutdownOnSyncThread() OVERRIDE;
   virtual UserShare* GetUserShare() OVERRIDE;
+  virtual const std::string cache_guid() OVERRIDE;
   virtual bool ReceivedExperiment(Experiments* experiments) OVERRIDE;
   virtual bool HasUnsyncedItems() OVERRIDE;
   virtual SyncEncryptionHandler* GetEncryptionHandler() OVERRIDE;
@@ -132,10 +137,6 @@ class SyncManagerImpl :
   virtual void OnPassphraseTypeChanged(
       PassphraseType type,
       base::Time explicit_passphrase_time) OVERRIDE;
-
-  // Return the currently active (validated) username for use with syncable
-  // types.
-  const std::string& username_for_share() const;
 
   static int GetDefaultNudgeDelay();
   static int GetPreferencesNudgeDelay();
@@ -175,8 +176,10 @@ class SyncManagerImpl :
   // InvalidationHandler implementation.
   virtual void OnInvalidatorStateChange(InvalidatorState state) OVERRIDE;
   virtual void OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map,
-      IncomingInvalidationSource source) OVERRIDE;
+      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
+
+  // Handle explicit requests to fetch updates for the given types.
+  virtual void RefreshTypes(ModelTypeSet types) OVERRIDE;
 
   // These OnYYYChanged() methods are only called by our NetworkChangeNotifier.
   // Called when IP address of primary interface changes.
@@ -186,6 +189,8 @@ class SyncManagerImpl :
       net::NetworkChangeNotifier::ConnectionType) OVERRIDE;
 
   const SyncScheduler* scheduler() const;
+
+  bool GetHasInvalidAuthTokenForTest() const;
 
  private:
   friend class SyncManagerTest;
@@ -229,13 +234,14 @@ class SyncManagerImpl :
       const syncable::EntryKernelMutation& mutation,
       Cryptographer* cryptographer) const;
 
-  // Open the directory named with username_for_share
-  bool OpenDirectory();
+  // Open the directory named with |username|.
+  bool OpenDirectory(const std::string& username);
 
   // Purge those types from |previously_enabled_types| that are no longer
   // enabled in |currently_enabled_types|.
   bool PurgeDisabledTypes(ModelTypeSet previously_enabled_types,
-                          ModelTypeSet currently_enabled_types);
+                          ModelTypeSet currently_enabled_types,
+                          ModelTypeSet failed_types);
 
   void RequestNudgeForDataTypes(
       const tracked_objects::Location& nudge_location,
@@ -283,7 +289,7 @@ class SyncManagerImpl :
 
   syncable::Directory* directory();
 
-  FilePath database_path_;
+  base::FilePath database_path_;
 
   const std::string name_;
 
@@ -301,10 +307,6 @@ class SyncManagerImpl :
   // HandleCalculateChangesChangeEventFromSyncApi() and we'd pass it a
   // WeakHandle when we construct it.
   WeakHandle<SyncManagerImpl> weak_handle_this_;
-
-  // |blocking_task_runner| is a TaskRunner to be used for tasks that
-  // may block on disk I/O.
-  scoped_refptr<base::TaskRunner> blocking_task_runner_;
 
   // We give a handle to share_ to clients of the API for use when constructing
   // any transaction type.

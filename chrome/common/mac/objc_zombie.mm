@@ -11,13 +11,14 @@
 
 #include <algorithm>
 
+#include "base/debug/crash_logging.h"
 #include "base/debug/stack_trace.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/mac/crash_logging.h"
+#include "base/stringprintf.h"
 #include "base/synchronization/lock.h"
+#include "chrome/common/crash_keys.h"
 #import "chrome/common/mac/objc_method_swizzle.h"
-
 
 #if !defined(OS_IOS) && (MAC_OS_X_VERSION_MAX_ALLOWED <= MAC_OS_X_VERSION_10_6)
 // Apparently objc/runtime.h doesn't define this with the 10.6 SDK yet.
@@ -34,7 +35,10 @@ OBJC_EXPORT void *objc_destructInstance(id obj);
 //  The version of clang that ships with Xcode 4.5 does not include this
 //  warning, so it is disabled on iOS.  This may change in future Xcode
 //  releases.
-#if !defined(OS_IOS)
+//  TODO(justincohen): This is fixed in clang 4.2 in XCode 4.6.  Remove this
+//  once everyone is moved to XCode 4.6 b/7882496.
+#if !defined(OS_IOS) || \
+    (__clang_major__ > 4 || (__clang_major__ == 4 && __clang_minor__ >= 2))
 __attribute__((objc_root_class))
 #endif
 @interface CrZombie  {
@@ -116,11 +120,7 @@ void ZombieDealloc(id self, SEL _cmd) {
   // class without C++ destructors or associative references, so it
   // won't hurt anything.
   objc_destructInstance(self);
-  // TODO(shess): Temporarily disable clearing the object to debug
-  // http://crbug.com/154483
-#if 0
   memset(self, '!', size);
-#endif
 
   // If the instance is big enough, make it into a fat zombie and have
   // it remember the old |isa|.  Otherwise make it a regular zombie.
@@ -208,21 +208,20 @@ void ZombieObjectCrash(id object, SEL aSelector, SEL viaSelector) {
   }
   const char* wasaName = (wasa ? class_getName(wasa) : "<unknown>");
 
-  NSString* aString =
-      [NSString stringWithFormat:@"Zombie <%s: %p> received -%s",
-                                 wasaName, object, sel_getName(aSelector)];
+  std::string aString = base::StringPrintf("Zombie <%s: %p> received -%s",
+      wasaName, object, sel_getName(aSelector));
   if (viaSelector != NULL) {
     const char* viaName = sel_getName(viaSelector);
-    aString = [aString stringByAppendingFormat:@" (via -%s)", viaName];
+    base::StringAppendF(&aString, " (via -%s)", viaName);
   }
 
   // Set a value for breakpad to report.
-  base::mac::SetCrashKeyValue(@"zombie", aString);
+  base::debug::SetCrashKeyValue(crash_keys::mac::kZombie, aString);
 
   // Encode trace into a breakpad key.
   if (found) {
-    base::mac::SetCrashKeyFromAddresses(
-        @"zombie_dealloc_bt", record.trace, record.traceDepth);
+    base::debug::SetCrashKeyFromAddresses(
+        crash_keys::mac::kZombieTrace, record.trace, record.traceDepth);
   }
 
   // Log -dealloc backtrace in debug builds then crash with a useful
@@ -232,7 +231,7 @@ void ZombieObjectCrash(id object, SEL aSelector, SEL viaSelector) {
   } else {
     DLOG(INFO) << "Unable to generate backtrace from -dealloc.";
   }
-  DLOG(FATAL) << [aString UTF8String];
+  DLOG(FATAL) << aString;
 
   // This is how about:crash is implemented.  Using instead of
   // |base::debug::BreakDebugger()| or |LOG(FATAL)| to make the top of

@@ -8,9 +8,9 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/prefs/pref_service.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -71,16 +71,14 @@ void ResetScreenHandler::GetLocalizedStrings(
   localized_strings->SetString(
       "cancelButton", l10n_util::GetStringUTF16(IDS_CANCEL));
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kFirstBoot)) {
-    localized_strings->SetString(
-        "resetWarningDetails",
-        l10n_util::GetStringUTF16(IDS_RESET_SCREEN_WARNING_DETAILS));
+    localized_strings->SetString("resetWarningDetails",
+        l10n_util::GetStringFUTF16(IDS_RESET_SCREEN_WARNING_DETAILS,
+            l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)));
     localized_strings->SetString(
         "resetButton", l10n_util::GetStringUTF16(IDS_RESET_SCREEN_RESET));
   } else {
-    localized_strings->SetString(
-        "resetWarningDetails",
-        l10n_util::GetStringFUTF16(
-            IDS_OPTIONS_FACTORY_RESET_WARNING,
+    localized_strings->SetString("resetWarningDetails",
+        l10n_util::GetStringFUTF16(IDS_RESET_SCREEN_WARNING_DETAILS_RESTART,
             l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME)));
     localized_strings->SetString(
         "resetButton", l10n_util::GetStringUTF16(IDS_RELAUNCH_BUTTON));

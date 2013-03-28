@@ -12,7 +12,7 @@
 #include "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 
-class OmniboxPopupViewMac;
+class OmniboxPopupView;
 
 namespace ui {
 class Clipboard;
@@ -48,9 +48,11 @@ class OmniboxViewMac : public OmniboxView,
   virtual void UpdatePopup() OVERRIDE;
   virtual void CloseOmniboxPopup() OVERRIDE;
   virtual void SetFocus() OVERRIDE;
+  virtual void ApplyCaretVisibility() OVERRIDE;
   virtual void OnTemporaryTextMaybeChanged(
       const string16& display_text,
-      bool save_original_selection) OVERRIDE;
+      bool save_original_selection,
+      bool notify_text_changed) OVERRIDE;
   virtual bool OnInlineAutocompleteTextMaybeChanged(
       const string16& display_text, size_t user_text_length) OVERRIDE;
   virtual void OnStartingIME() OVERRIDE;
@@ -85,6 +87,7 @@ class OmniboxViewMac : public OmniboxView,
   virtual bool OnDoCommandBySelector(SEL cmd) OVERRIDE;
   virtual void OnSetFocus(bool control_down) OVERRIDE;
   virtual void OnKillFocus() OVERRIDE;
+  virtual void OnMouseDown(NSInteger button_number) OVERRIDE;
 
   // Helper for LocationBarViewMac.  Optionally selects all in |field_|.
   void FocusLocation(bool select_all);
@@ -96,6 +99,11 @@ class OmniboxViewMac : public OmniboxView,
   // If |resource_id| has a PDF image which can be used, return it.
   // Otherwise return the PNG image from the resource bundle.
   static NSImage* ImageForResource(int resource_id);
+
+  // Color used to draw suggest text.
+  static NSColor* SuggestTextColor();
+
+  AutocompleteTextField* field() const { return field_; }
 
  private:
   // Called when the user hits backspace in |field_|.  Checks whether
@@ -133,12 +141,6 @@ class OmniboxViewMac : public OmniboxView,
   void SetTextAndSelectedRange(const string16& display_text,
                                const NSRange range);
 
-  // Returns the non-suggest portion of |field_|'s string value.
-  NSString* GetNonSuggestTextSubstring() const;
-
-  // Returns the suggest portion of |field_|'s string value.
-  NSString* GetSuggestTextSubstring() const;
-
   // Pass the current content of |field_| to SetText(), maintaining
   // any selection.  Named to be consistent with GTK and Windows,
   // though here we cannot really do the in-place operation they do.
@@ -157,7 +159,7 @@ class OmniboxViewMac : public OmniboxView,
   // Returns true if the caret is at the end of the content.
   bool IsCaretAtEnd() const;
 
-  scoped_ptr<OmniboxPopupViewMac> popup_view_;
+  scoped_ptr<OmniboxPopupView> popup_view_;
 
   AutocompleteTextField* field_;  // owned by tab controller
 
@@ -171,10 +173,6 @@ class OmniboxViewMac : public OmniboxView,
   string16 text_before_change_;
   NSRange marked_range_before_change_;
 
-  // Length of the suggest text.  The suggest text always appears at the end of
-  // the field.
-  size_t suggest_text_length_;
-
   // Was delete pressed?
   bool delete_was_pressed_;
 
@@ -183,6 +181,8 @@ class OmniboxViewMac : public OmniboxView,
 
   // The maximum/standard line height for the displayed text.
   CGFloat line_height_;
+
+  string16 suggest_text_;
 
   DISALLOW_COPY_AND_ASSIGN(OmniboxViewMac);
 };

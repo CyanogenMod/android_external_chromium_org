@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * MetadataCache is a map from url to an object containing properties.
  * Properties are divided by types, and all properties of one type are accessed
@@ -10,23 +12,23 @@
  * {
  *   filesystem: size, modificationTime
  *   internal: presence
- *   gdata: pinned, present, hosted, editUrl, contentUrl, availableOffline
+ *   drive: pinned, present, hosted, editUrl, contentUrl, availableOffline
  *   streaming: url
  *
- *   Following are not fetched for non-present gdata files.
+ *   Following are not fetched for non-present drive files.
  *   media: artist, album, title, width, height, imageTransform, etc.
  *   thumbnail: url, transform
  *
  *   Following are always fetched from content, and so force the downloading
- *   of remote gdata files. One should use this for required content metadata,
+ *   of remote drive files. One should use this for required content metadata,
  *   i.e. image orientation.
  *   fetchedMedia: width, height, etc.
  * }
  *
  * Typical usages:
  * {
- *   cache.get([entry1, entry2], 'gdata|filesystem', function(metadata) {
- *     if (metadata[0].gdata.pinned && metadata[1].filesystem.size == 0)
+ *   cache.get([entry1, entry2], 'drive|filesystem', function(metadata) {
+ *     if (metadata[0].drive.pinned && metadata[1].filesystem.size == 0)
  *       alert("Pinned and empty!");
  *   });
  *
@@ -81,6 +83,10 @@ function MetadataCache() {
    * @private
    */
   this.lastBatchStart_ = new Date();
+
+  // Holds the directories known to contain files with stale metadata
+  // as URL to bool map.
+  this.directoriesWithStaleMetadata_ = {};
 }
 
 /**
@@ -112,9 +118,38 @@ MetadataCache.EVICTION_NUMBER = 1000;
 MetadataCache.createFull = function() {
   var cache = new MetadataCache();
   cache.providers_.push(new FilesystemProvider());
-  cache.providers_.push(new GDataProvider());
+  cache.providers_.push(new DriveProvider());
   cache.providers_.push(new ContentProvider());
   return cache;
+};
+
+/**
+ * Clones metadata entry. Metadata entries may contain scalars, arrays,
+ * hash arrays and Date object. Other objects are not supported.
+ * @param {Object} metadata Metadata object.
+ * @return {Object} Cloned entry.
+ */
+MetadataCache.cloneMetadata = function(metadata) {
+  if (metadata instanceof Array) {
+    var result = [];
+    for (var index = 0; index < metadata.length; index++) {
+      result[index] = MetadataCache.cloneMetadata(metadata[index]);
+    }
+    return result;
+  } else if (metadata instanceof Date) {
+    var result = new Date();
+    result.setTime(metadata.getTime());
+    return result;
+  } else if (metadata instanceof Object) {  // Hash array only.
+    var result = {};
+    for (var property in metadata) {
+      if (metadata.hasOwnProperty(property))
+        result[property] = MetadataCache.cloneMetadata(metadata[property]);
+    }
+    return result;
+  } else {
+    return metadata;
+  }
 };
 
 /**
@@ -133,7 +168,7 @@ MetadataCache.prototype.isInitialized = function() {
  * @param {string|Entry|Array.<string|Entry>} items The list of entries or
  *     file urls. May be just a single item.
  * @param {string} type The metadata type.
- * @param {Function(Object)} callback The metadata is passed to callback.
+ * @param {function(Object)} callback The metadata is passed to callback.
  */
 MetadataCache.prototype.get = function(items, type, callback) {
   if (!(items instanceof Array)) {
@@ -150,14 +185,14 @@ MetadataCache.prototype.get = function(items, type, callback) {
   var remaining = items.length;
   this.startBatchUpdates();
 
-  function onOneItem(index, value) {
+  var onOneItem = function(index, value) {
     result[index] = value;
     remaining--;
     if (remaining == 0) {
       this.endBatchUpdates();
       if (callback) setTimeout(callback, 0, result);
     }
-  }
+  };
 
   for (var index = 0; index < items.length; index++) {
     result.push(null);
@@ -169,7 +204,7 @@ MetadataCache.prototype.get = function(items, type, callback) {
  * Fetches the metadata for one Entry/FileUrl. See comments to |get|.
  * @param {Entry|string} item The entry or url.
  * @param {string} type Metadata type.
- * @param {Function(Object)} callback The callback.
+ * @param {function(Object)} callback The callback.
  */
 MetadataCache.prototype.getOne = function(item, type, callback) {
   if (type.indexOf('|') != -1) {
@@ -177,11 +212,11 @@ MetadataCache.prototype.getOne = function(item, type, callback) {
     var result = {};
     var typesLeft = types.length;
 
-    function onOneType(requestedType, metadata) {
+    var onOneType = function(requestedType, metadata) {
       result[requestedType] = metadata;
       typesLeft--;
       if (typesLeft == 0) callback(result);
-    }
+    };
 
     for (var index = 0; index < types.length; index++) {
       this.getOne(item, types[index], onOneType.bind(null, types[index]));
@@ -212,7 +247,7 @@ MetadataCache.prototype.getOne = function(item, type, callback) {
   var currentProvider;
   var self = this;
 
-  function onFetched() {
+  var onFetched = function() {
     if (type in entry.properties) {
       self.endBatchUpdates();
       // Got properties from provider.
@@ -220,9 +255,9 @@ MetadataCache.prototype.getOne = function(item, type, callback) {
     } else {
       tryNextProvider();
     }
-  }
+  };
 
-  function onProviderProperties(properties) {
+  var onProviderProperties = function(properties) {
     var id = currentProvider.getId();
     var fetchedCallbacks = entry[id].callbacks;
     delete entry[id].callbacks;
@@ -232,9 +267,9 @@ MetadataCache.prototype.getOne = function(item, type, callback) {
     for (var index = 0; index < fetchedCallbacks.length; index++) {
       fetchedCallbacks[index]();
     }
-  }
+  };
 
-  function queryProvider() {
+  var queryProvider = function() {
     var id = currentProvider.getId();
     if ('callbacks' in entry[id]) {
       // We are querying this provider now.
@@ -243,9 +278,9 @@ MetadataCache.prototype.getOne = function(item, type, callback) {
       entry[id].callbacks = [onFetched];
       currentProvider.fetch(url, type, onProviderProperties, fsEntry);
     }
-  }
+  };
 
-  function tryNextProvider() {
+  var tryNextProvider = function() {
     if (providers.length == 0) {
       self.endBatchUpdates();
       callback(entry.properties[type] || null);
@@ -259,7 +294,7 @@ MetadataCache.prototype.getOne = function(item, type, callback) {
     } else {
       tryNextProvider();
     }
-  }
+  };
 
   tryNextProvider();
 };
@@ -318,7 +353,7 @@ MetadataCache.prototype.set = function(items, type, values) {
  * Clears the cached metadata values.
  * @param {string|Entry|Array.<string|Entry>} items The list of entries or
  *     file urls. May be just a single item.
- * @param {string} type The metadata type.
+ * @param {string} type The metadata types or * for any type.
  */
 MetadataCache.prototype.clear = function(items, type) {
   if (!(items instanceof Array))
@@ -329,9 +364,38 @@ MetadataCache.prototype.clear = function(items, type) {
   for (var index = 0; index < items.length; index++) {
     var url = this.itemToUrl_(items[index]);
     if (url in this.cache_) {
-      for (var j = 0; j < types.length; j++) {
-        var type = types[j];
-        delete this.cache_[url].properties[type];
+      if (type === '*') {
+        this.cache_[url].properties = {};
+      } else {
+        for (var j = 0; j < types.length; j++) {
+          var type = types[j];
+          delete this.cache_[url].properties[type];
+        }
+      }
+    }
+  }
+};
+
+/**
+ * Clears the cached metadata values recursively.
+ * @param {Entry|string} item An entry or a url.
+ * @param {string} type The metadata types or * for any type.
+ */
+MetadataCache.prototype.clearRecursively = function(item, type) {
+  var types = type.split('|');
+  var keys = Object.keys(this.cache_);
+  var url = this.itemToUrl_(item);
+
+  for (var index = 0; index < keys.length; index++) {
+    var entryUrl = keys[index];
+    if (entryUrl.substring(0, url.length) === url) {
+      if (type === '*') {
+        this.cache_[entryUrl].properties = {};
+      } else {
+        for (var j = 0; j < types.length; j++) {
+          var type = types[j];
+          delete this.cache_[entryUrl].properties[type];
+        }
       }
     }
   }
@@ -343,7 +407,7 @@ MetadataCache.prototype.clear = function(items, type) {
  * @param {number} relation This defines, which items will trigger the observer.
  *     See comments to |MetadataCache.EXACT| and others.
  * @param {string} type The metadata type.
- * @param {Function(Array.<string>, Array.<Object>)} observer List of file urls
+ * @param {function(Array.<string>, Array.<Object>)} observer List of file urls
  *     and corresponding metadata values are passed to this callback.
  * @return {number} The observer id, which can be used to remove it.
  */
@@ -476,7 +540,15 @@ MetadataCache.prototype.itemToUrl_ = function(item) {
   if (typeof(item) == 'string')
     return item;
 
-  return item._URL_ || (item._URL_ = item.toURL());
+  if (!item._URL_) {
+    // Is a fake entry.
+    if (typeof item.toURL !== 'function')
+      item._URL_ = util.makeFilesystemUrl(item.fullPath);
+    else
+      item._URL_ = item.toURL();
+  }
+
+  return item._URL_;
 };
 
 /**
@@ -508,6 +580,38 @@ MetadataCache.prototype.mergeProperties_ = function(url, data) {
   }
 };
 
+/**
+ * Ask the Drive service to re-fetch the metadata. Ignores sequential requests.
+ * @param {string} url Directory URL.
+ */
+MetadataCache.prototype.refreshDirectory = function(url) {
+  // Skip if the current directory is now being refreshed.
+  if (this.directoriesWithStaleMetadata_[url] || !FileType.isOnDrive(url))
+    return;
+
+  this.directoriesWithStaleMetadata_[url] = true;
+  chrome.fileBrowserPrivate.requestDirectoryRefresh(url);
+};
+
+/**
+ * Ask the Drive service to re-fetch the metadata.
+ * @param {string} fileURL File URL.
+ */
+MetadataCache.prototype.refreshFileMetadata = function(fileURL) {
+  if (!FileType.isOnDrive(fileURL))
+    return;
+  // TODO(kaznacheev) This does not really work with Drive search.
+  var url = fileURL.substr(0, fileURL.lastIndexOf('/'));
+  this.refreshDirectory(url);
+};
+
+/**
+ * Resumes refreshes by resreshDirectory.
+ * @param {string} url Directory URL.
+ */
+MetadataCache.prototype.resumeRefresh = function(url) {
+  delete this.directoriesWithStaleMetadata_[url];
+};
 
 /**
  * Base class for metadata providers.
@@ -543,7 +647,7 @@ MetadataProvider.prototype.isInitialized = function() { return true; };
  * can fetch at once.
  * @param {string} url File url.
  * @param {string} type Requested metadata type.
- * @param {Function(Object)} callback Callback expects a map from metadata type
+ * @param {function(Object)} callback Callback expects a map from metadata type
  *     to metadata value.
  * @param {Entry=} opt_entry The file entry if present.
  */
@@ -591,7 +695,7 @@ FilesystemProvider.prototype.getId = function() { return 'filesystem'; };
  * Fetches the metadata.
  * @param {string} url File url.
  * @param {string} type Requested metadata type.
- * @param {Function(Object)} callback Callback expects a map from metadata type
+ * @param {function(Object)} callback Callback expects a map from metadata type
  *     to metadata value.
  * @param {Entry=} opt_entry The file entry if present.
  */
@@ -616,18 +720,18 @@ FilesystemProvider.prototype.fetch = function(url, type, callback, opt_entry) {
   if (opt_entry)
     onEntry(opt_entry);
   else
-    webkitResolveLocalFileSystemURL(url, onEntry, onError);
+    window.webkitResolveLocalFileSystemURL(url, onEntry, onError);
 };
 
 /**
- * Provider of gdata metadata.
+ * Provider of drive metadata.
  * This provider returns the following objects:
- *     gdata: { pinned, hosted, present, dirty, editUrl, contentUrl, driveApps }
+ *     drive: { pinned, hosted, present, dirty, editUrl, contentUrl, driveApps }
  *     thumbnail: { url, transform }
  *     streaming: { url }
  * @constructor
  */
-function GDataProvider() {
+function DriveProvider() {
   MetadataProvider.call(this);
 
   // We batch metadata fetches into single API call.
@@ -638,7 +742,7 @@ function GDataProvider() {
   this.callApiBound_ = this.callApi_.bind(this);
 }
 
-GDataProvider.prototype = {
+DriveProvider.prototype = {
   __proto__: MetadataProvider.prototype
 };
 
@@ -646,33 +750,33 @@ GDataProvider.prototype = {
  * @param {string} url The url.
  * @return {boolean} Whether this provider supports the url.
  */
-GDataProvider.prototype.supportsUrl = function(url) {
-  return FileType.isOnGDrive(url);
+DriveProvider.prototype.supportsUrl = function(url) {
+  return FileType.isOnDrive(url);
 };
 
 /**
  * @param {string} type The metadata type.
  * @return {boolean} Whether this provider provides this metadata.
  */
-GDataProvider.prototype.providesType = function(type) {
-  return type == 'gdata' || type == 'thumbnail' ||
+DriveProvider.prototype.providesType = function(type) {
+  return type == 'drive' || type == 'thumbnail' ||
       type == 'streaming' || type == 'media';
 };
 
 /**
  * @return {string} Unique provider id.
  */
-GDataProvider.prototype.getId = function() { return 'gdata'; };
+DriveProvider.prototype.getId = function() { return 'drive'; };
 
 /**
  * Fetches the metadata.
  * @param {string} url File url.
  * @param {string} type Requested metadata type.
- * @param {Function(Object)} callback Callback expects a map from metadata type
+ * @param {function(Object)} callback Callback expects a map from metadata type
  *     to metadata value.
  * @param {Entry=} opt_entry The file entry if present.
  */
-GDataProvider.prototype.fetch = function(url, type, callback, opt_entry) {
+DriveProvider.prototype.fetch = function(url, type, callback, opt_entry) {
   this.urls_.push(url);
   this.callbacks_.push(callback);
   if (!this.scheduled_) {
@@ -685,7 +789,7 @@ GDataProvider.prototype.fetch = function(url, type, callback, opt_entry) {
  * Schedules the API call.
  * @private
  */
-GDataProvider.prototype.callApi_ = function() {
+DriveProvider.prototype.callApi_ = function() {
   this.scheduled_ = false;
 
   var urls = this.urls_;
@@ -694,7 +798,7 @@ GDataProvider.prototype.callApi_ = function() {
   this.callbacks_ = [];
   var self = this;
 
-  chrome.fileBrowserPrivate.getGDataFileProperties(urls, function(props) {
+  chrome.fileBrowserPrivate.getDriveFileProperties(urls, function(props) {
     for (var index = 0; index < urls.length; index++) {
       callbacks[index](self.convert_(props[index], urls[index]));
     }
@@ -702,11 +806,11 @@ GDataProvider.prototype.callApi_ = function() {
 };
 
 /**
- * @param {GDataFileProperties} data GData file properties.
+ * @param {DriveFileProperties} data Drive file properties.
  * @param {string} url File url.
  * @return {boolean} True if the file is available offline.
  */
-GDataProvider.isAvailableOffline = function(data, url) {
+DriveProvider.isAvailableOffline = function(data, url) {
   if (data.isPresent)
     return true;
 
@@ -718,11 +822,11 @@ GDataProvider.isAvailableOffline = function(data, url) {
 };
 
 /**
- * @param {GDataFileProperties} data GData file properties.
+ * @param {DriveFileProperties} data Drive file properties.
  * @return {boolean} True if opening the file does not require downloading it
  *    via a metered connection.
  */
-GDataProvider.isAvailableWhenMetered = function(data) {
+DriveProvider.isAvailableWhenMetered = function(data) {
   return data.isPresent || data.isHosted;
 };
 
@@ -733,15 +837,15 @@ GDataProvider.isAvailableWhenMetered = function(data) {
  * @return {Object} Metadata in internal format.
  * @private
  */
-GDataProvider.prototype.convert_ = function(data, url) {
+DriveProvider.prototype.convert_ = function(data, url) {
   var result = {};
-  result.gdata = {
+  result.drive = {
     present: data.isPresent,
     pinned: data.isPinned,
     hosted: data.isHosted,
     dirty: data.isDirty,
-    availableOffline: GDataProvider.isAvailableOffline(data, url),
-    availableWhenMetered: GDataProvider.isAvailableWhenMetered(data),
+    availableOffline: DriveProvider.isAvailableOffline(data, url),
+    availableWhenMetered: DriveProvider.isAvailableWhenMetered(data),
     contentUrl: (data.contentUrl || '').replace(/\?.*$/gi, ''),
     editUrl: data.editUrl || '',
     driveApps: data.driveApps || [],
@@ -749,7 +853,7 @@ GDataProvider.prototype.convert_ = function(data, url) {
   };
 
   if (!data.isPresent) {
-    // Block the local fetch for gdata files, which require downloading.
+    // Block the local fetch for drive files, which require downloading.
     result.thumbnail = { url: '', transform: null };
     result.media = {};
   }
@@ -788,7 +892,13 @@ function ContentProvider() {
       path.substring(0, path.lastIndexOf('/') + 1) +
       'js/metadata/metadata_dispatcher.js';
 
-  this.dispatcher_ = new Worker(workerPath);
+  if (ContentProvider.USE_SHARED_WORKER) {
+    this.dispatcher_ = new SharedWorker(workerPath).port;
+    this.dispatcher_.start();
+  } else {
+    this.dispatcher_ = new Worker(workerPath);
+  }
+
   this.dispatcher_.onmessage = this.onMessage_.bind(this);
   this.dispatcher_.postMessage({verb: 'init'});
 
@@ -800,6 +910,13 @@ function ContentProvider() {
   // Note that simultaneous requests for same url are handled in MetadataCache.
   this.callbacks_ = {};
 }
+
+/**
+ * Flag defining which kind of a worker to use.
+ * TODO(kaznacheev): Observe for some time and remove if SharedWorker does not
+ * cause any problems.
+ */
+ContentProvider.USE_SHARED_WORKER = true;
 
 ContentProvider.prototype = {
   __proto__: MetadataProvider.prototype
@@ -830,7 +947,7 @@ ContentProvider.prototype.getId = function() { return 'content'; };
  * Fetches the metadata.
  * @param {string} url File url.
  * @param {string} type Requested metadata type.
- * @param {Function(Object)} callback Callback expects a map from metadata type
+ * @param {function(Object)} callback Callback expects a map from metadata type
  *     to metadata value.
  * @param {Entry=} opt_entry The file entry if present.
  */

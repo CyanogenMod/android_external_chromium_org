@@ -6,9 +6,9 @@
 
 #include <windows.h>
 
+#include <sddl.h>
 #include <fstream>
 #include <map>
-#include <sddl.h>
 
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -146,11 +146,11 @@ struct DumpJobInfo {
 }  // namespace
 
 // Command line switches:
-const char CrashService::kMaxReports[]  = "max-reports";
-const char CrashService::kNoWindow[]    = "no-window";
-const char CrashService::kReporterTag[] = "reporter";
-const char CrashService::kDumpsDir[]    = "dumps-dir";
-const char CrashService::kPipeName[]    = "pipe-name";
+const char CrashService::kMaxReports[]        = "max-reports";
+const char CrashService::kNoWindow[]          = "no-window";
+const char CrashService::kReporterTag[]       = "reporter";
+const char CrashService::kDumpsDir[]          = "dumps-dir";
+const char CrashService::kPipeName[]          = "pipe-name";
 
 CrashService::CrashService(const std::wstring& report_dir)
     : report_path_(report_dir),
@@ -179,12 +179,12 @@ bool CrashService::Initialize(const std::wstring& command_line) {
 
   // The checkpoint file allows CrashReportSender to enforce the the maximum
   // reports per day quota. Does not seem to serve any other purpose.
-  FilePath checkpoint_path = report_path_.Append(kCheckPointFile);
+  base::FilePath checkpoint_path = report_path_.Append(kCheckPointFile);
 
   // The dumps path is typically : '<user profile>\Local settings\
   // Application data\Goggle\Chrome\Crash Reports' and the report path is
   // Application data\Google\Chrome\Reported Crashes.txt
-  FilePath user_data_dir;
+  base::FilePath user_data_dir;
   if (!PathService::Get(chrome::DIR_USER_DATA, &user_data_dir)) {
     LOG(ERROR) << "could not get DIR_USER_DATA";
     return false;
@@ -193,9 +193,9 @@ bool CrashService::Initialize(const std::wstring& command_line) {
 
   CommandLine cmd_line = CommandLine::FromString(command_line);
 
-  FilePath dumps_path;
+  base::FilePath dumps_path;
   if (cmd_line.HasSwitch(kDumpsDir)) {
-    dumps_path = FilePath(cmd_line.GetSwitchValueNative(kDumpsDir));
+    dumps_path = base::FilePath(cmd_line.GetSwitchValueNative(kDumpsDir));
   } else {
     if (!PathService::Get(chrome::DIR_CRASH_DUMPS, &dumps_path)) {
       LOG(ERROR) << "could not get DIR_CRASH_DUMPS";
@@ -355,9 +355,6 @@ void CrashService::OnClientDumpRequest(void* context,
     return;
   }
 
-  DWORD pid = client_info->pid();
-  VLOG(1) << "dump for pid = " << pid << " is " << *file_path;
-
   CrashService* self = static_cast<CrashService*>(context);
   if (!self) {
     LOG(ERROR) << "dump with no context";
@@ -367,7 +364,22 @@ void CrashService::OnClientDumpRequest(void* context,
   CrashMap map;
   CustomInfoToMap(client_info, self->reporter_tag_, &map);
 
-  if (!WriteCustomInfoToFile(*file_path, map)) {
+  // Move dump file to the directory under client breakpad dump location.
+  base::FilePath dump_location = base::FilePath(*file_path);
+  CrashMap::const_iterator it = map.find(L"breakpad-dump-location");
+  if (it != map.end()) {
+    base::FilePath alternate_dump_location = base::FilePath(it->second);
+    file_util::CreateDirectoryW(alternate_dump_location);
+    alternate_dump_location = alternate_dump_location.Append(
+        dump_location.BaseName());
+    file_util::Move(dump_location, alternate_dump_location);
+    dump_location = alternate_dump_location;
+  }
+
+  DWORD pid = client_info->pid();
+  VLOG(1) << "dump for pid = " << pid << " is " << dump_location.value();
+
+  if (!WriteCustomInfoToFile(dump_location.value(), map)) {
     LOG(ERROR) << "could not write custom info file";
   }
 
@@ -376,7 +388,8 @@ void CrashService::OnClientDumpRequest(void* context,
 
   // Send the crash dump using a worker thread. This operation has retry
   // logic in case there is no internet connection at the time.
-  DumpJobInfo* dump_job = new DumpJobInfo(pid, self, map, *file_path);
+  DumpJobInfo* dump_job = new DumpJobInfo(pid, self, map,
+                                          dump_location.value());
   if (!::QueueUserWorkItem(&CrashService::AsyncSendDump,
                            dump_job, WT_EXECUTELONGFUNCTION)) {
     LOG(ERROR) << "could not queue job";

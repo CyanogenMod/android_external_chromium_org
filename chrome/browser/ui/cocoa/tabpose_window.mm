@@ -11,12 +11,12 @@
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/weak_ptr.h"
+#include "base/prefs/pref_service.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/debugger/devtools_window.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/thumbnails/render_widget_snapshot_taker.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
@@ -27,12 +27,12 @@
 #import "chrome/browser/ui/cocoa/tab_contents/favicon_util_mac.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_model_observer_bridge.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -214,7 +214,7 @@ void ThumbnailLoader::LoadThumbnail() {
 
   // Medium term, we want to show thumbs of the actual info bar views, which
   // means I need to create InfoBarControllers here.
-  NSWindow* window = [contents_->GetNativeView() window];
+  NSWindow* window = [contents_->GetView()->GetNativeView() window];
   NSWindowController* windowController = [window windowController];
   if ([windowController isKindOfClass:[BrowserWindowController class]]) {
     BrowserWindowController* bwc =
@@ -246,8 +246,8 @@ void ThumbnailLoader::LoadThumbnail() {
   int bottomOffset = 0;
   DevToolsWindow* devToolsWindow =
       DevToolsWindow::GetDockedInstanceForInspectedTab(contents_);
-  content::WebContents* devToolsContents = devToolsWindow ?
-      devToolsWindow->tab_contents()->web_contents() : NULL;
+  content::WebContents* devToolsContents =
+      devToolsWindow ? devToolsWindow->web_contents() : NULL;
   if (devToolsContents && devToolsContents->GetRenderViewHost() &&
       devToolsContents->GetRenderViewHost()->GetView()) {
     // The devtool's size might not be up-to-date, but since its height doesn't
@@ -1312,7 +1312,7 @@ void AnimateCALayerOpacityFromTo(
     CGPoint lp = [layer convertPoint:p fromLayer:rootLayer_];
     if ([static_cast<CALayer*>([layer presentationLayer]) containsPoint:lp] &&
         !layer.hidden) {
-      tabStripModel_->CloseTabContentsAt(i,
+      tabStripModel_->CloseWebContentsAt(i,
           TabStripModel::CLOSE_USER_GESTURE |
           TabStripModel::CLOSE_CREATE_HISTORICAL_TAB);
       return;

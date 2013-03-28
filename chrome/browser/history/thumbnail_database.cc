@@ -10,9 +10,10 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/string_number_conversions.h"
-#include "base/string_tokenizer.h"
+#include "base/metrics/histogram.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_tokenizer.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/diagnostics/sqlite_diagnostics.h"
@@ -125,7 +126,7 @@ ThumbnailDatabase::~ThumbnailDatabase() {
 }
 
 sql::InitStatus ThumbnailDatabase::Init(
-    const FilePath& db_name,
+    const base::FilePath& db_name,
     const HistoryPublisher* history_publisher,
     URLDatabase* url_db) {
   history_publisher_ = history_publisher;
@@ -197,13 +198,27 @@ sql::InitStatus ThumbnailDatabase::Init(
     return sql::INIT_FAILURE;
   }
 
+  // Raze the database if the structure of the favicons database is not what
+  // it should be. This error cannot be detected via the SQL error code because
+  // the error code for running SQL statements against a database with missing
+  // columns is SQLITE_ERROR which is not unique enough to act upon.
+  // TODO(pkotwicz): Revisit this in M27 and see if the razing can be removed.
+  // (crbug.com/166453)
+  if (IsFaviconDBStructureIncorrect()) {
+    LOG(ERROR) << "Raze thumbnail database because of invalid favicon db"
+               << "structure.";
+    UMA_HISTOGRAM_BOOLEAN("History.InvalidFaviconsDBStructure", true);
+
+    db_.RazeAndClose();
+    return sql::INIT_FAILURE;
+  }
+
   return sql::INIT_OK;
 }
 
 sql::InitStatus ThumbnailDatabase::OpenDatabase(sql::Connection* db,
-                                                const FilePath& db_name) {
-  // Set the exceptional sqlite error handler.
-  db->set_error_delegate(GetErrorHandlerForThumbnailDb());
+                                                const base::FilePath& db_name) {
+  db->set_error_histogram_name("Sqlite.Thumbnail.Error");
 
   // Thumbnails db now only stores favicons, so we don't need that big a page
   // size or cache.
@@ -218,6 +233,14 @@ sql::InitStatus ThumbnailDatabase::OpenDatabase(sql::Connection* db,
     return sql::INIT_FAILURE;
 
   return sql::INIT_OK;
+}
+
+void ThumbnailDatabase::ComputeDatabaseMetrics() {
+  sql::Statement favicon_count(
+      db_.GetCachedStatement(SQL_FROM_HERE, "SELECT COUNT(*) FROM favicons"));
+  UMA_HISTOGRAM_COUNTS_10000(
+      "History.NumFaviconsInDB",
+      favicon_count.Step() ? favicon_count.ColumnInt(0) : 0);
 }
 
 bool ThumbnailDatabase::InitThumbnailTable() {
@@ -321,6 +344,10 @@ bool ThumbnailDatabase::InitFaviconBitmapsIndex() {
                      "favicon_bitmaps(icon_id)");
 }
 
+bool ThumbnailDatabase::IsFaviconDBStructureIncorrect() {
+  return !db_.IsSQLValid("SELECT id, url, icon_type, sizes FROM favicons");
+}
+
 void ThumbnailDatabase::BeginTransaction() {
   db_.BeginTransaction();
 }
@@ -363,7 +390,7 @@ bool ThumbnailDatabase::SetPageThumbnail(
     return true;
 
   std::vector<unsigned char> jpeg_data;
-  bool encoded = gfx::JPEGEncodedDataFromImage(
+  bool encoded = gfx::JPEG1xEncodedDataFromImage(
       *thumbnail, kImageQuality, &jpeg_data);
   if (encoded) {
     sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
@@ -574,6 +601,17 @@ bool ThumbnailDatabase::SetFaviconBitmap(
   statement.BindInt64(1, time.ToInternalValue());
   statement.BindInt64(2, bitmap_id);
 
+  return statement.Run();
+}
+
+bool ThumbnailDatabase::SetFaviconBitmapLastUpdateTime(
+    FaviconBitmapID bitmap_id,
+    base::Time time) {
+  DCHECK(bitmap_id);
+  sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
+      "UPDATE favicon_bitmaps SET last_updated=? WHERE id=?"));
+  statement.BindInt64(0, time.ToInternalValue());
+  statement.BindInt64(1, bitmap_id);
   return statement.Run();
 }
 
@@ -918,8 +956,9 @@ bool ThumbnailDatabase::NeedsMigrationToTopSites() {
   return !use_top_sites_;
 }
 
-bool ThumbnailDatabase::RenameAndDropThumbnails(const FilePath& old_db_file,
-                                                const FilePath& new_db_file) {
+bool ThumbnailDatabase::RenameAndDropThumbnails(
+    const base::FilePath& old_db_file,
+    const base::FilePath& new_db_file) {
   // Init favicons tables - same schema as the thumbnails.
   sql::Connection favicons;
   if (OpenDatabase(&favicons, new_db_file) != sql::INIT_OK)
@@ -1115,7 +1154,7 @@ void ThumbnailDatabase::DatabaseStringToFaviconSizes(
     FaviconSizes* favicon_sizes) {
   bool parsing_errors = false;
 
-  StringTokenizer t(favicon_sizes_string, " ");
+  base::StringTokenizer t(favicon_sizes_string, " ");
   while (t.GetNext() && !parsing_errors) {
     int width, height = 0;
     parsing_errors |= !base::StringToInt(t.token(), &width);

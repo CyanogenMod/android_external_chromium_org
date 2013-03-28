@@ -4,19 +4,66 @@
 
 #include "ui/views/window/dialog_delegate.h"
 
+#include "base/command_line.h"
 #include "base/logging.h"
-#include "ui/views/controls/button/text_button.h"
+#include "grit/ui_strings.h"
+#include "ui/base/l10n/l10n_util.h"
+#include "ui/base/ui_base_switches.h"
+#include "ui/views/bubble/bubble_border.h"
+#include "ui/views/bubble/bubble_frame_view.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/dialog_client_view.h"
 
+#if defined(USE_AURA)
+#include "ui/views/corewm/shadow_types.h"
+#endif
+
 namespace views {
+
+namespace {
+
+// Create a widget to host the dialog.
+Widget* CreateDialogWidgetImpl(DialogDelegateView* dialog_delegate_view,
+                               gfx::NativeWindow context,
+                               gfx::NativeWindow parent) {
+  views::Widget* widget = new views::Widget;
+  views::Widget::InitParams params;
+  params.delegate = dialog_delegate_view;
+  if (DialogDelegate::UseNewStyle()) {
+    // TODO(msw): Avoid Windows native controls or support dialog transparency
+    //            with a separate border Widget, like BubbleDelegateView.
+    params.transparent = views::View::get_use_acceleration_when_possible();
+    params.remove_standard_frame = true;
+  }
+  params.context = context;
+  params.parent = parent;
+  params.top_level = true;
+  widget->Init(params);
+  if (DialogDelegate::UseNewStyle()) {
+#if defined(USE_AURA)
+    // TODO(msw): Add a matching shadow type and remove the bubble frame border?
+    corewm::SetShadowType(widget->GetNativeWindow(), corewm::SHADOW_TYPE_NONE);
+#endif
+  }
+  return widget;
+}
+
+}  // namespace
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // DialogDelegate:
 
-DialogDelegate* DialogDelegate::AsDialogDelegate() { return this; }
-
 DialogDelegate::~DialogDelegate() {
+}
+
+// static
+bool DialogDelegate::UseNewStyle() {
+  static const bool use_new_style = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableNewDialogStyle);
+  return use_new_style;
 }
 
 int DialogDelegate::GetDialogButtons() const {
@@ -32,8 +79,14 @@ int DialogDelegate::GetDefaultDialogButton() const {
 }
 
 string16 DialogDelegate::GetDialogButtonLabel(ui::DialogButton button) const {
-  // Empty string results in defaults for
-  // ui::DIALOG_BUTTON_OK or ui::DIALOG_BUTTON_CANCEL.
+  if (button == ui::DIALOG_BUTTON_OK)
+    return l10n_util::GetStringUTF16(IDS_APP_OK);
+  if (button == ui::DIALOG_BUTTON_CANCEL) {
+    if (GetDialogButtons() & ui::DIALOG_BUTTON_OK)
+      return l10n_util::GetStringUTF16(IDS_APP_CANCEL);
+    return l10n_util::GetStringUTF16(IDS_APP_CLOSE);
+  }
+  NOTREACHED();
   return string16();
 }
 
@@ -41,24 +94,16 @@ bool DialogDelegate::IsDialogButtonEnabled(ui::DialogButton button) const {
   return true;
 }
 
-bool DialogDelegate::IsDialogButtonVisible(ui::DialogButton button) const {
-  return true;
-}
-
-bool DialogDelegate::UseChromeStyle() const {
-  return false;
-}
-
-bool DialogDelegate::AreAcceleratorsEnabled(ui::DialogButton button) {
-  return true;
-}
-
-View* DialogDelegate::GetExtraView() {
+View* DialogDelegate::CreateExtraView() {
   return NULL;
 }
 
-bool DialogDelegate::GetSizeExtraViewHeightToButtons() {
-  return false;
+View* DialogDelegate::CreateTitlebarExtraView() {
+  return NULL;
+}
+
+View* DialogDelegate::CreateFootnoteView() {
+  return NULL;
 }
 
 bool DialogDelegate::Cancel() {
@@ -93,12 +138,36 @@ View* DialogDelegate::GetInitiallyFocusedView() {
   return NULL;
 }
 
-ClientView* DialogDelegate::CreateClientView(Widget* widget) {
-  DialogClientView::StyleParams params = UseChromeStyle() ?
-      DialogClientView::GetChromeStyleParams() :
-      DialogClientView::StyleParams();
+DialogDelegate* DialogDelegate::AsDialogDelegate() {
+  return this;
+}
 
-  return new DialogClientView(widget, GetContentsView(), params);
+ClientView* DialogDelegate::CreateClientView(Widget* widget) {
+  return new DialogClientView(widget, GetContentsView());
+}
+
+NonClientFrameView* DialogDelegate::CreateNonClientFrameView(Widget* widget) {
+  return UseNewStyle() ? CreateNewStyleFrameView(widget) :
+                         WidgetDelegate::CreateNonClientFrameView(widget);
+}
+
+// static
+NonClientFrameView* DialogDelegate::CreateNewStyleFrameView(Widget* widget) {
+  BubbleFrameView* frame = new BubbleFrameView(gfx::Insets(20, 20, 20, 20));
+  const SkColor color = widget->GetNativeTheme()->GetSystemColor(
+      ui::NativeTheme::kColorId_DialogBackground);
+  frame->SetBubbleBorder(
+      new BubbleBorder(BubbleBorder::FLOAT, BubbleBorder::SMALL_SHADOW, color));
+  frame->SetTitle(widget->widget_delegate()->GetWindowTitle());
+  DialogDelegate* delegate = widget->widget_delegate()->AsDialogDelegate();
+  if (delegate) {
+    View* titlebar_view = delegate->CreateTitlebarExtraView();
+    if (titlebar_view)
+      frame->SetTitlebarExtraView(titlebar_view);
+  }
+  frame->SetShowCloseButton(true);
+  frame->set_can_drag(true);
+  return frame;
 }
 
 const DialogClientView* DialogDelegate::GetDialogClientView() const {
@@ -117,9 +186,21 @@ ui::AccessibilityTypes::Role DialogDelegate::GetAccessibleWindowRole() const {
 // DialogDelegateView:
 
 DialogDelegateView::DialogDelegateView() {
+  // A WidgetDelegate should be deleted on DeleteDelegate.
+  set_owned_by_client();
 }
 
-DialogDelegateView::~DialogDelegateView() {
+DialogDelegateView::~DialogDelegateView() {}
+
+// static
+Widget* DialogDelegateView::CreateDialogWidget(DialogDelegateView* dialog,
+                                               gfx::NativeWindow context,
+                                               gfx::NativeWindow parent) {
+  return CreateDialogWidgetImpl(dialog, context, parent);
+}
+
+void DialogDelegateView::DeleteDelegate() {
+  delete this;
 }
 
 Widget* DialogDelegateView::GetWidget() {
@@ -128,6 +209,10 @@ Widget* DialogDelegateView::GetWidget() {
 
 const Widget* DialogDelegateView::GetWidget() const {
   return View::GetWidget();
+}
+
+View* DialogDelegateView::GetContentsView() {
+  return this;
 }
 
 }  // namespace views

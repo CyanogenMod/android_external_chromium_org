@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/stringprintf.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
@@ -16,8 +16,9 @@
 
 namespace extensions {
 
-MediaGalleriesCustomBindings::MediaGalleriesCustomBindings()
-    : ChromeV8Extension(NULL) {
+MediaGalleriesCustomBindings::MediaGalleriesCustomBindings(
+    Dispatcher* dispatcher, v8::Handle<v8::Context> v8_context)
+    : ChromeV8Extension(dispatcher, v8_context) {
   RouteFunction(
       "GetMediaFileSystemObject",
       base::Bind(&MediaGalleriesCustomBindings::GetMediaFileSystemObject,
@@ -56,14 +57,13 @@ v8::Handle<v8::Value> MediaGalleriesCustomBindings::GetMediaFileSystemObject(
 
   WebKit::WebFrame* webframe = WebKit::WebFrame::frameForCurrentContext();
   const GURL origin = GURL(webframe->document().securityOrigin().toString());
-  const GURL root_url =
-      fileapi::GetFileSystemRootURI(origin, fileapi::kFileSystemTypeIsolated);
-  const std::string url =
-      base::StringPrintf("%s%s/%s/", root_url.spec().c_str(), fsid.c_str(),
-                         extension_misc::kMediaFileSystemPathPart);
-  return webframe->createFileSystem(WebKit::WebFileSystem::TypeIsolated,
+  const std::string root_url =
+      fileapi::GetIsolatedFileSystemRootURIString(
+          origin, fsid, extension_misc::kMediaFileSystemPathPart);
+  return webframe->createFileSystem(
+                                    WebKit::WebFileSystemTypeIsolated,
                                     WebKit::WebString::fromUTF8(name),
-                                    WebKit::WebString::fromUTF8(url));
+                                    WebKit::WebString::fromUTF8(root_url));
 }
 
 v8::Handle<v8::Value> MediaGalleriesCustomBindings::ExtractEmbeddedThumbnails(

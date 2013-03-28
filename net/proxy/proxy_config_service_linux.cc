@@ -9,12 +9,6 @@
 #if defined(USE_GCONF)
 #include <gconf/gconf-client.h>
 #endif  // defined(USE_GCONF)
-#if defined(USE_GIO)
-#include <gio/gio.h>
-#if defined(DLOPEN_GSETTINGS)
-#include <dlfcn.h>
-#endif  // defined(DLOPEN_GSETTINGS)
-#endif  // defined(USE_GIO)
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,15 +20,15 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/environment.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/nix/xdg_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/string_number_conversions.h"
-#include "base/string_tokenizer.h"
 #include "base/string_util.h"
+#include "base/strings/string_tokenizer.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer.h"
 #include "googleurl/src/url_canon.h"
@@ -42,6 +36,10 @@
 #include "net/http/http_util.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_server.h"
+
+#if defined(USE_GIO)
+#include "library_loaders/libgio.h"
+#endif  // defined(USE_GIO)
 
 namespace net {
 
@@ -139,11 +137,11 @@ bool ProxyConfigServiceLinux::Delegate::GetConfigFromEnv(ProxyConfig* config) {
   ProxyServer proxy_server;
   if (GetProxyFromEnvVar("all_proxy", &proxy_server)) {
     config->proxy_rules().type = ProxyConfig::ProxyRules::TYPE_SINGLE_PROXY;
-    config->proxy_rules().single_proxy = proxy_server;
+    config->proxy_rules().single_proxies.SetSingleProxyServer(proxy_server);
   } else {
     bool have_http = GetProxyFromEnvVar("http_proxy", &proxy_server);
     if (have_http)
-      config->proxy_rules().proxy_for_http = proxy_server;
+      config->proxy_rules().proxies_for_http.SetSingleProxyServer(proxy_server);
     // It would be tempting to let http_proxy apply for all protocols
     // if https_proxy and ftp_proxy are not defined. Googling turns up
     // several documents that mention only http_proxy. But then the
@@ -151,10 +149,11 @@ bool ProxyConfigServiceLinux::Delegate::GetConfigFromEnv(ProxyConfig* config) {
     // like other apps do this. So we will refrain.
     bool have_https = GetProxyFromEnvVar("https_proxy", &proxy_server);
     if (have_https)
-      config->proxy_rules().proxy_for_https = proxy_server;
+      config->proxy_rules().proxies_for_https.
+          SetSingleProxyServer(proxy_server);
     bool have_ftp = GetProxyFromEnvVar("ftp_proxy", &proxy_server);
     if (have_ftp)
-      config->proxy_rules().proxy_for_ftp = proxy_server;
+      config->proxy_rules().proxies_for_ftp.SetSingleProxyServer(proxy_server);
     if (have_http || have_https || have_ftp) {
       // mustn't change type unless some rules are actually set.
       config->proxy_rules().type =
@@ -172,7 +171,7 @@ bool ProxyConfigServiceLinux::Delegate::GetConfigFromEnv(ProxyConfig* config) {
       scheme = ProxyServer::SCHEME_SOCKS4;
     if (GetProxyFromEnvVarForScheme("SOCKS_SERVER", scheme, &proxy_server)) {
       config->proxy_rules().type = ProxyConfig::ProxyRules::TYPE_SINGLE_PROXY;
-      config->proxy_rules().single_proxy = proxy_server;
+      config->proxy_rules().single_proxies.SetSingleProxyServer(proxy_server);
     }
   }
   // Look for the proxy bypass list.
@@ -515,16 +514,6 @@ class SettingGetterImplGSettings
     : public ProxyConfigServiceLinux::SettingGetter {
  public:
   SettingGetterImplGSettings() :
-#if defined(DLOPEN_GSETTINGS)
-    g_settings_new(NULL),
-    g_settings_get_child(NULL),
-    g_settings_get_boolean(NULL),
-    g_settings_get_string(NULL),
-    g_settings_get_int(NULL),
-    g_settings_get_strv(NULL),
-    g_settings_list_schemas(NULL),
-    gio_handle_(NULL),
-#endif
     client_(NULL),
     http_client_(NULL),
     https_client_(NULL),
@@ -554,16 +543,10 @@ class SettingGetterImplGSettings
       }
     }
     DCHECK(!client_);
-#if defined(DLOPEN_GSETTINGS)
-    if (gio_handle_) {
-      dlclose(gio_handle_);
-      gio_handle_ = NULL;
-    }
-#endif
   }
 
   bool SchemaExists(const char* schema_name) {
-    const gchar* const* schemas = g_settings_list_schemas();
+    const gchar* const* schemas = libgio_loader_.g_settings_list_schemas();
     while (*schemas) {
       if (strcmp(schema_name, static_cast<const char*>(*schemas)) == 0)
         return true;
@@ -582,17 +565,17 @@ class SettingGetterImplGSettings
     DCHECK(!task_runner_);
 
     if (!SchemaExists("org.gnome.system.proxy") ||
-        !(client_ = g_settings_new("org.gnome.system.proxy"))) {
+        !(client_ = libgio_loader_.g_settings_new("org.gnome.system.proxy"))) {
       // It's not clear whether/when this can return NULL.
       LOG(ERROR) << "Unable to create a gsettings client";
       return false;
     }
     task_runner_ = glib_thread_task_runner;
     // We assume these all work if the above call worked.
-    http_client_ = g_settings_get_child(client_, "http");
-    https_client_ = g_settings_get_child(client_, "https");
-    ftp_client_ = g_settings_get_child(client_, "ftp");
-    socks_client_ = g_settings_get_child(client_, "socks");
+    http_client_ = libgio_loader_.g_settings_get_child(client_, "http");
+    https_client_ = libgio_loader_.g_settings_get_child(client_, "https");
+    ftp_client_ = libgio_loader_.g_settings_get_child(client_, "ftp");
+    socks_client_ = libgio_loader_.g_settings_get_child(client_, "socks");
     DCHECK(http_client_ && https_client_ && ftp_client_ && socks_client_);
     return true;
   }
@@ -713,41 +696,10 @@ class SettingGetterImplGSettings
   }
 
  private:
-#if defined(DLOPEN_GSETTINGS)
-  // We replicate the prototypes for the g_settings APIs we need. We may not
-  // even be compiling on a system that has them. If we are, these won't
-  // conflict both because they are identical and also due to scoping. The
-  // scoping will also ensure that these get used instead of the global ones.
-  struct _GSettings;
-  typedef struct _GSettings GSettings;
-  GSettings* (*g_settings_new)(const gchar* schema);
-  GSettings* (*g_settings_get_child)(GSettings* settings, const gchar* name);
-  gboolean (*g_settings_get_boolean)(GSettings* settings, const gchar* key);
-  gchar* (*g_settings_get_string)(GSettings* settings, const gchar* key);
-  gint (*g_settings_get_int)(GSettings* settings, const gchar* key);
-  gchar** (*g_settings_get_strv)(GSettings* settings, const gchar* key);
-  const gchar* const* (*g_settings_list_schemas)();
-
-  // The library handle.
-  void* gio_handle_;
-
-  // Load a symbol from |gio_handle_| and store it into |*func_ptr|.
-  bool LoadSymbol(const char* name, void** func_ptr) {
-    dlerror();
-    *func_ptr = dlsym(gio_handle_, name);
-    const char* error = dlerror();
-    if (error) {
-      VLOG(1) << "Unable to load symbol " << name << ": " << error;
-      return false;
-    }
-    return true;
-  }
-#endif  // defined(DLOPEN_GSETTINGS)
-
   bool GetStringByPath(GSettings* client, const char* key,
                        std::string* result) {
     DCHECK(task_runner_->BelongsToCurrentThread());
-    gchar* value = g_settings_get_string(client, key);
+    gchar* value = libgio_loader_.g_settings_get_string(client, key);
     if (!value)
       return false;
     *result = value;
@@ -756,18 +708,19 @@ class SettingGetterImplGSettings
   }
   bool GetBoolByPath(GSettings* client, const char* key, bool* result) {
     DCHECK(task_runner_->BelongsToCurrentThread());
-    *result = static_cast<bool>(g_settings_get_boolean(client, key));
+    *result = static_cast<bool>(
+        libgio_loader_.g_settings_get_boolean(client, key));
     return true;
   }
   bool GetIntByPath(GSettings* client, const char* key, int* result) {
     DCHECK(task_runner_->BelongsToCurrentThread());
-    *result = g_settings_get_int(client, key);
+    *result = libgio_loader_.g_settings_get_int(client, key);
     return true;
   }
   bool GetStringListByPath(GSettings* client, const char* key,
                            std::vector<std::string>* result) {
     DCHECK(task_runner_->BelongsToCurrentThread());
-    gchar** list = g_settings_get_strv(client, key);
+    gchar** list = libgio_loader_.g_settings_get_strv(client, key);
     if (!list)
       return false;
     for (size_t i = 0; list[i]; ++i) {
@@ -818,6 +771,8 @@ class SettingGetterImplGSettings
   // thread. Only for assertions.
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
+  LibGioLoader libgio_loader_;
+
   DISALLOW_COPY_AND_ASSIGN(SettingGetterImplGSettings);
 };
 
@@ -838,40 +793,21 @@ bool SettingGetterImplGSettings::LoadAndCheckVersion(
   // but don't use gsettings for proxy settings, but they do have the old
   // binary, so we detect these systems that way.
 
-#ifdef DLOPEN_GSETTINGS
-  gio_handle_ = dlopen("libgio-2.0.so.0", RTLD_NOW | RTLD_GLOBAL);
-  if (!gio_handle_) {
-    // Try again without .0 at the end; on some systems this may be required.
-    gio_handle_ = dlopen("libgio-2.0.so", RTLD_NOW | RTLD_GLOBAL);
-    if (!gio_handle_) {
+  {
+    // TODO(phajdan.jr): Redesign the code to load library on different thread.
+    base::ThreadRestrictions::ScopedAllowIO allow_io;
+
+    // Try also without .0 at the end; on some systems this may be required.
+    if (!libgio_loader_.Load("libgio-2.0.so.0") &&
+        !libgio_loader_.Load("libgio-2.0.so")) {
       VLOG(1) << "Cannot load gio library. Will fall back to gconf.";
       return false;
     }
   }
-  if (!LoadSymbol("g_settings_new",
-                  reinterpret_cast<void**>(&g_settings_new)) ||
-      !LoadSymbol("g_settings_get_child",
-                  reinterpret_cast<void**>(&g_settings_get_child)) ||
-      !LoadSymbol("g_settings_get_string",
-                  reinterpret_cast<void**>(&g_settings_get_string)) ||
-      !LoadSymbol("g_settings_get_boolean",
-                  reinterpret_cast<void**>(&g_settings_get_boolean)) ||
-      !LoadSymbol("g_settings_get_int",
-                  reinterpret_cast<void**>(&g_settings_get_int)) ||
-      !LoadSymbol("g_settings_get_strv",
-                  reinterpret_cast<void**>(&g_settings_get_strv)) ||
-      !LoadSymbol("g_settings_list_schemas",
-                  reinterpret_cast<void**>(&g_settings_list_schemas))) {
-    VLOG(1) << "Cannot load gsettings API. Will fall back to gconf.";
-    dlclose(gio_handle_);
-    gio_handle_ = NULL;
-    return false;
-  }
-#endif
 
   GSettings* client;
   if (!SchemaExists("org.gnome.system.proxy") ||
-      !(client = g_settings_new("org.gnome.system.proxy"))) {
+      !(client = libgio_loader_.g_settings_new("org.gnome.system.proxy"))) {
     VLOG(1) << "Cannot create gsettings client. Will fall back to gconf.";
     return false;
   }
@@ -889,7 +825,7 @@ bool SettingGetterImplGSettings::LoadAndCheckVersion(
     std::vector<std::string> paths;
     Tokenize(path, ":", &paths);
     for (size_t i = 0; i < paths.size(); ++i) {
-      FilePath file(paths[i]);
+      base::FilePath file(paths[i]);
       if (file_util::PathExists(file.Append("gnome-network-properties"))) {
         VLOG(1) << "Found gnome-network-properties. Will fall back to gconf.";
         return false;
@@ -919,7 +855,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
     std::string home;
     if (env_var_getter->GetVar("KDEHOME", &home) && !home.empty()) {
       // $KDEHOME is set. Use it unconditionally.
-      kde_config_dir_ = KDEHomeToConfigPath(FilePath(home));
+      kde_config_dir_ = KDEHomeToConfigPath(base::FilePath(home));
     } else {
       // $KDEHOME is unset. Try to figure out what to use. This seems to be
       // the common case on most distributions.
@@ -929,7 +865,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
       if (base::nix::GetDesktopEnvironment(env_var_getter) ==
           base::nix::DESKTOP_ENVIRONMENT_KDE3) {
         // KDE3 always uses .kde for its configuration.
-        FilePath kde_path = FilePath(home).Append(".kde");
+        base::FilePath kde_path = base::FilePath(home).Append(".kde");
         kde_config_dir_ = KDEHomeToConfigPath(kde_path);
       } else {
         // Some distributions patch KDE4 to use .kde4 instead of .kde, so that
@@ -942,10 +878,10 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
         // settings (a gconf restriction). As noted below, the initial read of
         // the proxy settings will be done in this thread anyway, so we check
         // for .kde4 here in this thread as well.
-        FilePath kde3_path = FilePath(home).Append(".kde");
-        FilePath kde3_config = KDEHomeToConfigPath(kde3_path);
-        FilePath kde4_path = FilePath(home).Append(".kde4");
-        FilePath kde4_config = KDEHomeToConfigPath(kde4_path);
+        base::FilePath kde3_path = base::FilePath(home).Append(".kde");
+        base::FilePath kde3_config = KDEHomeToConfigPath(kde3_path);
+        base::FilePath kde4_path = base::FilePath(home).Append(".kde4");
+        base::FilePath kde4_config = KDEHomeToConfigPath(kde4_path);
         bool use_kde4 = false;
         if (file_util::DirectoryExists(kde4_path)) {
           base::PlatformFileInfo kde3_info;
@@ -1093,7 +1029,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
     reversed_bypass_list_ = false;
   }
 
-  FilePath KDEHomeToConfigPath(const FilePath& kde_home) {
+  base::FilePath KDEHomeToConfigPath(const base::FilePath& kde_home) {
     return kde_home.Append("share").Append("config");
   }
 
@@ -1118,7 +1054,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
 
   void AddHostList(StringListSetting key, const std::string& value) {
     std::vector<std::string> tokens;
-    StringTokenizer tk(value, ", ");
+    base::StringTokenizer tk(value, ", ");
     while (tk.GetNext()) {
       std::string token = tk.token();
       if (!token.empty())
@@ -1231,7 +1167,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
   // Reads kioslaverc one line at a time and calls AddKDESetting() to add
   // each relevant name-value pair to the appropriate value table.
   void UpdateCachedSettings() {
-    FilePath kioslaverc = kde_config_dir_.Append("kioslaverc");
+    base::FilePath kioslaverc = kde_config_dir_.Append("kioslaverc");
     file_util::ScopedFILE input(file_util::OpenFile(kioslaverc, "r"));
     if (!input.get())
       return;
@@ -1377,7 +1313,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
   base::MessagePumpLibevent::FileDescriptorWatcher inotify_watcher_;
   ProxyConfigServiceLinux::Delegate* notify_delegate_;
   base::OneShotTimer<SettingGetterImplKDE> debounce_timer_;
-  FilePath kde_config_dir_;
+  base::FilePath kde_config_dir_;
   bool indirect_manual_;
   bool auto_no_pac_;
   bool reversed_bypass_list_;
@@ -1510,21 +1446,23 @@ bool ProxyConfigServiceLinux::Delegate::GetConfigFromSettings(
     if (proxy_for_http.is_valid()) {
       // Use the http proxy for all schemes.
       config->proxy_rules().type = ProxyConfig::ProxyRules::TYPE_SINGLE_PROXY;
-      config->proxy_rules().single_proxy = proxy_for_http;
+      config->proxy_rules().single_proxies.SetSingleProxyServer(proxy_for_http);
     }
   } else if (num_proxies_specified > 0) {
     if (socks_proxy.is_valid() && num_proxies_specified == 1) {
       // If the only proxy specified was for SOCKS, use it for all schemes.
       config->proxy_rules().type = ProxyConfig::ProxyRules::TYPE_SINGLE_PROXY;
-      config->proxy_rules().single_proxy = socks_proxy;
+      config->proxy_rules().single_proxies.SetSingleProxyServer(socks_proxy);
     } else {
-      // Otherwise use the indicate proxies per-scheme.
+      // Otherwise use the indicated proxies per-scheme.
       config->proxy_rules().type =
           ProxyConfig::ProxyRules::TYPE_PROXY_PER_SCHEME;
-      config->proxy_rules().proxy_for_http = proxy_for_http;
-      config->proxy_rules().proxy_for_https = proxy_for_https;
-      config->proxy_rules().proxy_for_ftp = proxy_for_ftp;
-      config->proxy_rules().fallback_proxy = socks_proxy;
+      config->proxy_rules().proxies_for_http.
+          SetSingleProxyServer(proxy_for_http);
+      config->proxy_rules().proxies_for_https.
+          SetSingleProxyServer(proxy_for_https);
+      config->proxy_rules().proxies_for_ftp.SetSingleProxyServer(proxy_for_ftp);
+      config->proxy_rules().fallback_proxies.SetSingleProxyServer(socks_proxy);
     }
   }
 

@@ -90,7 +90,7 @@ class EventRouterForwarderTest : public testing::Test {
       : ui_thread_(BrowserThread::UI, &message_loop_),
         io_thread_(BrowserThread::IO),
         profile_manager_(
-            static_cast<TestingBrowserProcess*>(g_browser_process)) {
+            TestingBrowserProcess::GetGlobal()) {
 #if defined(OS_MACOSX)
     base::SystemMonitor::AllocateSystemIOPorts();
 #endif
@@ -172,7 +172,7 @@ TEST_F(EventRouterForwarderTest, BroadcastRendererIO) {
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
   ASSERT_TRUE(helper->Run());
 
-  MessageLoop::current()->RunAllPending();
+  MessageLoop::current()->RunUntilIdle();
 }
 
 TEST_F(EventRouterForwarderTest, UnicastRendererUIRestricted) {

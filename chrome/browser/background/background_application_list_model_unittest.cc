@@ -10,13 +10,14 @@
 #include "chrome/browser/background/background_application_list_model.h"
 
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_manifest_constants.h"
@@ -25,7 +26,6 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 // This value is used to seed the PRNG at the beginning of a sequence of
@@ -36,8 +36,8 @@ using extensions::APIPermission;
 using extensions::Extension;
 
 // For ExtensionService interface when it requires a path that is not used.
-FilePath bogus_file_path() {
-  return FilePath(FILE_PATH_LITERAL("//foobar_nonexistent"));
+base::FilePath bogus_file_path() {
+  return base::FilePath(FILE_PATH_LITERAL("//foobar_nonexistent"));
 }
 
 class BackgroundApplicationListModelTest : public ExtensionServiceTestBase {
@@ -73,7 +73,7 @@ static scoped_refptr<Extension> CreateExtension(const std::string& name,
   std::string error;
   scoped_refptr<Extension> extension = Extension::Create(
       bogus_file_path().AppendASCII(name),
-      Extension::INVALID,
+      extensions::Manifest::INVALID_LOCATION,
       manifest,
       Extension::NO_FLAGS,
       &error);
@@ -118,11 +118,19 @@ void RemoveBackgroundPermission(ExtensionService* service,
 }
 }  // namespace
 
+// Crashes on Mac tryslaves.
+// http://crbug.com/165458
+#if defined(OS_MACOSX) || defined(OS_LINUX)
+#define MAYBE_ExplicitTest DISABLED_ExplicitTest
+#else
+#define MAYBE_ExplicitTest ExplicitTest
+#endif
 // With minimal test logic, verifies behavior over an explicit set of
 // extensions, of which some are Background Apps and others are not.
-TEST_F(BackgroundApplicationListModelTest, ExplicitTest) {
+TEST_F(BackgroundApplicationListModelTest, MAYBE_ExplicitTest) {
   InitializeAndLoadEmptyExtensionService();
-  ExtensionService* service = profile_->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile_.get())->
+      extension_service();
   ASSERT_TRUE(service);
   ASSERT_TRUE(service->is_ready());
   ASSERT_TRUE(service->extensions());
@@ -188,7 +196,8 @@ TEST_F(BackgroundApplicationListModelTest, ExplicitTest) {
 // With minimal test logic, verifies behavior with dynamic permissions.
 TEST_F(BackgroundApplicationListModelTest, AddRemovePermissionsTest) {
   InitializeAndLoadEmptyExtensionService();
-  ExtensionService* service = profile_->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile_.get())->
+      extension_service();
   ASSERT_TRUE(service);
   ASSERT_TRUE(service->is_ready());
   ASSERT_TRUE(service->extensions());
@@ -337,7 +346,8 @@ void TogglePermission(ExtensionService* service,
 // removing extensions, of which some are Background Apps and others are not.
 TEST_F(BackgroundApplicationListModelTest, RandomTest) {
   InitializeAndLoadEmptyExtensionService();
-  ExtensionService* service = profile_->GetExtensionService();
+  ExtensionService* service = extensions::ExtensionSystem::Get(profile_.get())->
+      extension_service();
   ASSERT_TRUE(service);
   ASSERT_TRUE(service->is_ready());
   ASSERT_TRUE(service->extensions());

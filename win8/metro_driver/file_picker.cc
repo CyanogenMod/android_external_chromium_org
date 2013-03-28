@@ -8,13 +8,13 @@
 #include <windows.storage.pickers.h>
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/string_util.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/win/scoped_comptr.h"
 #include "base/win/metro.h"
+#include "base/win/scoped_comptr.h"
 #include "win8/metro_driver/chrome_app_view.h"
 #include "win8/metro_driver/winrt_utils.h"
 
@@ -45,7 +45,9 @@ class StringVectorImpl : public mswr::RuntimeClass<StringVectorItf> {
     return ::WindowsDuplicateString(strings_[index], item);
   }
   STDMETHOD(get_Size)(unsigned *size) {
-    *size = strings_.size();
+    if (strings_.size() > UINT_MAX)
+      return E_UNEXPECTED;
+    *size = static_cast<unsigned>(strings_.size());
     return S_OK;
   }
   STDMETHOD(GetView)(winfoundtn::Collections::IVectorView<HSTRING> **view) {
@@ -209,7 +211,7 @@ HRESULT OpenFilePickerSession::SinglePickerDone(SingleFileAsyncOp* async,
         hr = storage_item->get_Path(file_path.GetAddressOf());
 
       if (SUCCEEDED(hr)) {
-        size_t path_len = 0;
+        UINT32 path_len = 0;
         const wchar_t* path_str =
             ::WindowsGetStringRawBuffer(file_path.Get(), &path_len);
 
@@ -226,7 +228,7 @@ HRESULT OpenFilePickerSession::SinglePickerDone(SingleFileAsyncOp* async,
       LOG(ERROR) << "NULL IStorageItem";
     }
   } else {
-    LOG(ERROR) << "Unexpected async status " << status;
+    LOG(ERROR) << "Unexpected async status " << static_cast<int>(status);
   }
 
   event_.Signal();
@@ -258,7 +260,7 @@ HRESULT OpenFilePickerSession::MultiPickerDone(MultiFileAsyncOp* async,
       LOG(ERROR) << "NULL StorageFileVectorCollection";
     }
   } else {
-    LOG(ERROR) << "Unexpected async status " << status;
+    LOG(ERROR) << "Unexpected async status " << static_cast<int>(status);
   }
 
   event_.Signal();
@@ -317,7 +319,7 @@ HRESULT OpenFilePickerSession::StartFilePicker() {
           hr = extension.Set(L"*");
         } else {
           // Metro wants suffixes only, not patterns.
-          string16 ext = FilePath(extensions_win32_style[i]).Extension();
+          string16 ext = base::FilePath(extensions_win32_style[i]).Extension();
           if ((ext.size() < 2) ||
               (ext.find_first_of(L"*?") != string16::npos)) {
             continue;
@@ -377,7 +379,7 @@ HRESULT OpenFilePickerSession::ComposeMultiFileResult(
   // Empty the output string.
   result->clear();
 
-  size_t num_files = 0;
+  unsigned int num_files = 0;
   HRESULT hr = files->get_Size(&num_files);
   if (FAILED(hr))
     return hr;
@@ -389,10 +391,10 @@ HRESULT OpenFilePickerSession::ComposeMultiFileResult(
   }
 
   // This stores the base path that should be the parent of all the files.
-  FilePath base_path;
+  base::FilePath base_path;
 
   // Iterate through the collection and append the file paths to the result.
-  for (size_t i = 0; i < num_files; ++i) {
+  for (unsigned int i = 0; i < num_files; ++i) {
     mswr::ComPtr<winstorage::IStorageFile> file;
     hr = files->GetAt(i, file.GetAddressOf());
     if (FAILED(hr))
@@ -408,7 +410,7 @@ HRESULT OpenFilePickerSession::ComposeMultiFileResult(
     if (FAILED(hr))
       return hr;
 
-    FilePath file_path(MakeStdWString(file_path_str.Get()));
+    base::FilePath file_path(MakeStdWString(file_path_str.Get()));
     if (base_path.empty()) {
       DCHECK(result->empty());
       base_path = file_path.DirName();
@@ -422,7 +424,7 @@ HRESULT OpenFilePickerSession::ComposeMultiFileResult(
     DCHECK(base_path == file_path.DirName());
 
     // Append the base name, including the terminating zero.
-    FilePath base_name = file_path.BaseName();
+    base::FilePath base_name = file_path.BaseName();
     result->append(base_name.value().c_str(), base_name.value().size() + 1);
   }
 
@@ -482,7 +484,7 @@ HRESULT SaveFilePickerSession::StartFilePicker() {
       // the all files ("*") pattern in the save picker.
       std::vector<string16> extensions;
       for (size_t i = 0; i < extensions_win32_style.size(); ++i) {
-        string16 ext = FilePath(extensions_win32_style[i]).Extension();
+        string16 ext = base::FilePath(extensions_win32_style[i]).Extension();
         if ((ext.size() < 2) ||
             (ext.find_first_of(L"*?") != string16::npos))
           continue;
@@ -595,7 +597,7 @@ HRESULT SaveFilePickerSession::FilePickerDone(SaveFileAsyncOp* async,
       LOG(ERROR) << "NULL IStorageItem";
     }
   } else {
-    LOG(ERROR) << "Unexpected async status " << status;
+    LOG(ERROR) << "Unexpected async status " << static_cast<int>(status);
   }
 
   event_.Signal();

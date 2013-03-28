@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppp.idl modified Mon Nov  5 15:50:24 2012. */
+/* From ppp.idl modified Mon Feb 11 15:48:41 2013. */
 
 #ifndef PPAPI_C_PPP_H_
 #define PPAPI_C_PPP_H_
@@ -88,7 +88,7 @@ PP_EXPORT int32_t PPP_InitializeModule(PP_Module module,
  * implementations in certain circumstances when Chrome does "fast shutdown"
  * of a web page.
  */
-PP_EXPORT void PPP_ShutdownModule();
+PP_EXPORT void PPP_ShutdownModule(void);
 /**
  * @}
  */
@@ -145,7 +145,7 @@ typedef int32_t (*PP_InitializeModule_Func)(
 /**
  * Defines the type of the <code>PPP_ShutdownModule</code> function.
  */
-typedef void (*PP_ShutdownModule_Func)();
+typedef void (*PP_ShutdownModule_Func)(void);
 
 /**
  * Defines the type of the <code>PPP_ShutdownModule</code> function.

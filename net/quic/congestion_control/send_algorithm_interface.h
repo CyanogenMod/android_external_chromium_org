@@ -9,49 +9,72 @@
 
 #include "base/basictypes.h"
 #include "net/base/net_export.h"
+#include "net/quic/quic_bandwidth.h"
 #include "net/quic/quic_clock.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_time.h"
 
 namespace net {
 
-const int kNoValidEstimate = -1;
-
 class NET_EXPORT_PRIVATE SendAlgorithmInterface {
  public:
+  class SentPacket {
+   public:
+    SentPacket(QuicByteCount bytes, QuicTime timestamp)
+        : bytes_sent_(bytes),
+          send_timestamp_(timestamp) {
+    }
+    QuicByteCount BytesSent() { return bytes_sent_; }
+    QuicTime& SendTimestamp() { return send_timestamp_; }
+
+   private:
+    QuicByteCount bytes_sent_;
+    QuicTime send_timestamp_;
+  };
+
+  typedef std::map<QuicPacketSequenceNumber, SentPacket*> SentPacketsMap;
+
   static SendAlgorithmInterface* Create(const QuicClock* clock,
                                         CongestionFeedbackType type);
 
   virtual ~SendAlgorithmInterface() {}
 
-  // Called when we receive congestion information from remote peer.
-  virtual void OnIncomingCongestionInfo(
-      const CongestionInfo& congestion_info) = 0;
+  // Called when we receive congestion feedback from remote peer.
+  virtual void OnIncomingQuicCongestionFeedbackFrame(
+      const QuicCongestionFeedbackFrame& feedback,
+      QuicTime feedback_receive_time,
+      QuicBandwidth sent_bandwidth,
+      const SentPacketsMap& sent_packets) = 0;
 
   // Called for each received ACK, with sequence number from remote peer.
   virtual void OnIncomingAck(QuicPacketSequenceNumber acked_sequence_number,
-                             size_t acked_bytes,
+                             QuicByteCount acked_bytes,
                              QuicTime::Delta rtt) = 0;
 
-  virtual void OnIncomingLoss(int number_of_lost_packets) = 0;
+  virtual void OnIncomingLoss(QuicTime ack_receive_time) = 0;
 
   // Inform that we sent x bytes to the wire, and if that was a retransmission.
   // Note: this function must be called for every packet sent to the wire.
-  virtual void SentPacket(QuicPacketSequenceNumber sequence_number,
-                          size_t bytes,
-                          bool retransmit) = 0;
+  virtual void SentPacket(QuicTime sent_time,
+                          QuicPacketSequenceNumber sequence_number,
+                          QuicByteCount bytes,
+                          bool is_retransmission) = 0;
+
+  // Called when a packet is timed out.
+  virtual void AbandoningPacket(QuicPacketSequenceNumber sequence_number,
+                                QuicByteCount abandoned_bytes) = 0;
 
   // Calculate the time until we can send the next packet.
-  // Usage: When this returns 0, CongestionWindow returns the number of bytes
-  // of the congestion window.
-  virtual QuicTime::Delta TimeUntilSend(bool retransmit) = 0;
-
-  // The current available congestion window in bytes.
-  virtual size_t AvailableCongestionWindow() = 0;
+  virtual QuicTime::Delta TimeUntilSend(QuicTime now,
+                                        bool is_retransmission,
+                                        bool has_retransmittable_data) = 0;
 
   // What's the current estimated bandwidth in bytes per second.
-  // Returns KNoValidEstimate when it does not have an estimate.
-  virtual int BandwidthEstimate() = 0;
+  // Returns 0 when it does not have an estimate.
+  virtual QuicBandwidth BandwidthEstimate() = 0;
+
+  // TODO(satyamshekhar): Monitor MinRtt.
+  virtual QuicTime::Delta SmoothedRtt() = 0;
 };
 
 }  // namespace net

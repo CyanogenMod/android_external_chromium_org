@@ -87,15 +87,15 @@ class ResourcePrefetcher : public base::NonThreadSafe,
   ResourcePrefetcher(Delegate* delegate,
                      const ResourcePrefetchPredictorConfig& config,
                      const NavigationID& navigation_id,
+                     PrefetchKeyType key_type,
                      scoped_ptr<RequestVector> requests);
   virtual ~ResourcePrefetcher();
 
   void Start();  // Kicks off the prefetching. Can only be called once.
   void Stop();   // No additional prefetches will be queued after this.
 
-  const NavigationID& navigation_id() const {
-    return navigation_id_;
-  }
+  const NavigationID& navigation_id() const { return navigation_id_; }
+  PrefetchKeyType key_type() const { return key_type_; }
 
  private:
   friend class ResourcePrefetcherTest;
@@ -117,6 +117,10 @@ class ResourcePrefetcher : public base::NonThreadSafe,
   // Reads the response data from the response - required for the resource to
   // be cached correctly. Stubbed out during testing.
   virtual void ReadFullResponse(net::URLRequest* request);
+
+  // Returns true if the request has more data that needs to be read. If it
+  // returns false, the request should not be referenced again.
+  bool ShouldContinueReadingRequest(net::URLRequest* request, int bytes_read);
 
   // net::URLRequest::Delegate methods.
   virtual void OnReceivedRedirect(net::URLRequest* request,
@@ -145,6 +149,7 @@ class ResourcePrefetcher : public base::NonThreadSafe,
   Delegate* const delegate_;
   ResourcePrefetchPredictorConfig const config_;
   NavigationID navigation_id_;
+  PrefetchKeyType key_type_;
   scoped_ptr<RequestVector> request_vector_;
 
   std::map<net::URLRequest*, Request*> inflight_requests_;

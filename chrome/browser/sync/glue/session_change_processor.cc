@@ -236,7 +236,7 @@ void SessionChangeProcessor::Observe(
     LOG(WARNING) << "Reassociation of local models triggered.";
     syncer::SyncError error;
     error = session_model_associator_->DisassociateModels();
-    error = session_model_associator_->AssociateModels();
+    error = session_model_associator_->AssociateModels(NULL, NULL);
     if (error.IsSet()) {
       error_handler()->OnSingleDatatypeUnrecoverableError(
           error.location(),
@@ -254,7 +254,8 @@ void SessionChangeProcessor::ApplyChangesFromSyncModel(
   ScopedStopObserving<SessionChangeProcessor> stop_observing(this);
 
   syncer::ReadNode root(trans);
-  if (root.InitByTagLookup(kSessionsTag) != syncer::BaseNode::INIT_OK) {
+  if (root.InitByTagLookup(syncer::ModelTypeToRootTag(syncer::SESSIONS)) !=
+                           syncer::BaseNode::INIT_OK) {
     error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
         "Sessions root node lookup failed.");
     return;

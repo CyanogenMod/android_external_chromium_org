@@ -16,13 +16,11 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/sync_ui_util.h"
-#include "chrome/browser/ui/tab_contents/tab_contents.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/sync_internals_resources.h"
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/js/js_arg_list.h"
@@ -38,30 +36,29 @@ using content::WebContents;
 
 namespace {
 
-ChromeWebUIDataSource* CreateSyncInternalsHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUISyncInternalsHost);
+content::WebUIDataSource* CreateSyncInternalsHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUISyncInternalsHost);
 
-  source->set_json_path("strings.js");
-  source->add_resource_path("sync_index.js", IDR_SYNC_INTERNALS_INDEX_JS);
-  source->add_resource_path("chrome_sync.js",
-                            IDR_SYNC_INTERNALS_CHROME_SYNC_JS);
-  source->add_resource_path("sync_log.js", IDR_SYNC_INTERNALS_SYNC_LOG_JS);
-  source->add_resource_path("sync_node_browser.js",
-                            IDR_SYNC_INTERNALS_SYNC_NODE_BROWSER_JS);
-  source->add_resource_path("sync_search.js",
-                            IDR_SYNC_INTERNALS_SYNC_SEARCH_JS);
-  source->add_resource_path("about.js", IDR_SYNC_INTERNALS_ABOUT_JS);
-  source->add_resource_path("data.js", IDR_SYNC_INTERNALS_DATA_JS);
-  source->add_resource_path("events.js", IDR_SYNC_INTERNALS_EVENTS_JS);
-  source->add_resource_path("notifications.js",
-                            IDR_SYNC_INTERNALS_NOTIFICATIONS_JS);
-  source->add_resource_path("search.js", IDR_SYNC_INTERNALS_SEARCH_JS);
-  source->add_resource_path("node_browser.js",
-                            IDR_SYNC_INTERNALS_NODE_BROWSER_JS);
-  source->add_resource_path("traffic.js",
-                            IDR_SYNC_INTERNALS_TRAFFIC_JS);
-  source->set_default_resource(IDR_SYNC_INTERNALS_INDEX_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("sync_index.js", IDR_SYNC_INTERNALS_INDEX_JS);
+  source->AddResourcePath("chrome_sync.js",
+                          IDR_SYNC_INTERNALS_CHROME_SYNC_JS);
+  source->AddResourcePath("sync_log.js", IDR_SYNC_INTERNALS_SYNC_LOG_JS);
+  source->AddResourcePath("sync_node_browser.js",
+                          IDR_SYNC_INTERNALS_SYNC_NODE_BROWSER_JS);
+  source->AddResourcePath("sync_search.js",
+                          IDR_SYNC_INTERNALS_SYNC_SEARCH_JS);
+  source->AddResourcePath("about.js", IDR_SYNC_INTERNALS_ABOUT_JS);
+  source->AddResourcePath("data.js", IDR_SYNC_INTERNALS_DATA_JS);
+  source->AddResourcePath("events.js", IDR_SYNC_INTERNALS_EVENTS_JS);
+  source->AddResourcePath("notifications.js",
+                          IDR_SYNC_INTERNALS_NOTIFICATIONS_JS);
+  source->AddResourcePath("search.js", IDR_SYNC_INTERNALS_SEARCH_JS);
+  source->AddResourcePath("node_browser.js",
+                          IDR_SYNC_INTERNALS_NODE_BROWSER_JS);
+  source->AddResourcePath("traffic.js", IDR_SYNC_INTERNALS_TRAFFIC_JS);
+  source->SetDefaultResource(IDR_SYNC_INTERNALS_INDEX_HTML);
   return source;
 }
 
@@ -83,7 +80,7 @@ SyncInternalsUI::SyncInternalsUI(content::WebUI* web_ui)
       weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
   // TODO(akalin): Fix.
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, CreateSyncInternalsHTMLSource());
+  content::WebUIDataSource::Add(profile, CreateSyncInternalsHTMLSource());
   ProfileSyncService* sync_service = GetProfileSyncService(profile);
   if (sync_service) {
     js_controller_ = sync_service->GetJsController();

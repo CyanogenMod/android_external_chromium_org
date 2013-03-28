@@ -11,12 +11,13 @@
 
 #include "base/memory/scoped_ptr.h"
 
-class FilePath;
 class PrintPreviewHandlerTest;
 class PrefService;
+class PrefRegistrySyncable;
 
 namespace base {
 class DictionaryValue;
+class FilePath;
 }
 
 namespace printing {
@@ -29,20 +30,20 @@ class StickySettings {
   StickySettings();
   ~StickySettings();
 
-  FilePath* save_path();
+  base::FilePath* save_path();
   std::string* printer_app_state();
 
   // Stores app state for the last used printer.
   void StoreAppState(const std::string& app_state);
   // Stores the last path the user used to save to pdf.
-  void StoreSavePath(const FilePath& path);
+  void StoreSavePath(const base::FilePath& path);
 
   void SaveInPrefs(PrefService* profile);
   void RestoreFromPrefs(PrefService* profile);
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
  private:
 
-  scoped_ptr<FilePath> save_path_;
+  scoped_ptr<base::FilePath> save_path_;
   scoped_ptr<std::string> printer_app_state_;
 };
 

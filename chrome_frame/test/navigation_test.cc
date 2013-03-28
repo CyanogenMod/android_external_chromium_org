@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "base/file_util.h"
 #include "base/test/test_file_util.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/windows_version.h"
@@ -600,7 +601,7 @@ class NavigationTest : public MockIEEventSinkTest, public testing::Test {
 
 // Test navigation to a disallowed gcf: url with file scheme.
 // Times out sporadically; http://crbug.com/119718.
-TEST_F(NavigationTest, FLAKY_GcfProtocol1) {
+TEST_F(NavigationTest, DISABLED_GcfProtocol1) {
   // Make sure that we are not accidently enabling gcf protocol.
   SetConfigBool(kAllowUnsafeURLs, false);
   TestDisAllowedUrl(L"gcf:file:///C:/");
@@ -835,7 +836,7 @@ TEST_F(FullTabDownloadTest, CF_DownloadFileFromPost) {
   EXPECT_CALL(download_window_mock, OnLoad(false, _));
   EXPECT_CALL(download_window_mock, OnQuit()).Times(testing::AtMost(1));
 
-  FilePath temp_file_path;
+  base::FilePath temp_file_path;
   ASSERT_TRUE(file_util::CreateTemporaryFile(&temp_file_path));
   file_util::DieFileDie(temp_file_path, false);
 
@@ -856,7 +857,7 @@ TEST_F(FullTabDownloadTest, CF_DownloadFileFromPost) {
 
   EXPECT_CALL(save_dialog_watcher, OnWindowClose(_))
         .WillOnce(testing::DoAll(
-            WaitForFileSave(temp_file_path, 2000),
+            WaitForFileSave(temp_file_path, 3000),
             testing::InvokeWithoutArgs(
                 testing::CreateFunctor(CloseWindow, &owner_window)),
             CloseBrowserMock(&ie_mock_)));
@@ -880,7 +881,7 @@ class HttpHeaderTest : public MockIEEventSinkTest, public testing::Test {
         "Connection: close\r\n"
         "Content-Type: %s\r\n"
         "X-UA-Compatible: chrome=1\r\n";
-    std::string header = StringPrintf(kHeaderFormat, content_type);
+    std::string header = base::StringPrintf(kHeaderFormat, content_type);
     std::wstring url = server_mock_.Resolve(relative_url);
     EXPECT_CALL(server_mock_, Get(_, StrEq(relative_url), _))
         .WillRepeatedly(SendFast(header, data));

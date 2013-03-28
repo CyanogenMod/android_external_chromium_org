@@ -17,7 +17,7 @@
 #include "base/values.h"
 #include "chrome/common/extensions/features/feature.h"
 #include "chrome/common/extensions/features/feature_provider.h"
-#include "chrome/common/extensions/url_pattern_set.h"
+#include "extensions/common/url_pattern_set.h"
 
 namespace base {
 class DictionaryValue;
@@ -71,9 +71,10 @@ class ExtensionAPI : public FeatureProvider {
   // either a namespace name (like "bookmarks") or a member name (like
   // "bookmarks.create"). Returns true if the feature and all of its
   // dependencies are available to the specified context.
-  bool IsAvailable(const std::string& api_full_name,
-                   const Extension* extension,
-                   Feature::Context context);
+  Feature::Availability IsAvailable(const std::string& api_full_name,
+                                    const Extension* extension,
+                                    Feature::Context context,
+                                    const GURL& url);
 
   // Returns true if |name| is a privileged API path. Privileged paths can only
   // be called from extension code which is running in its own designated
@@ -85,11 +86,7 @@ class ExtensionAPI : public FeatureProvider {
   // Ownership remains with this object.
   const base::DictionaryValue* GetSchema(const std::string& full_name);
 
-  // Gets the APIs available to |context| given an |extension| and |url|. The
-  // extension or URL may not be relevant to all contexts, and may be left
-  // NULL/empty.
-  scoped_ptr<std::set<std::string> > GetAPIsForContext(
-      Feature::Context context, const Extension* extension, const GURL& url);
+  std::set<std::string> GetAllAPINames();
 
   // Gets a Feature object describing the API with the specified |full_name|.
   // This can be either an API namespace (like history, or
@@ -110,9 +107,6 @@ class ExtensionAPI : public FeatureProvider {
 
   void InitDefaultConfiguration();
 
-  // Loads the schemas registered with RegisterSchema().
-  void LoadAllSchemas();
-
  private:
   friend struct DefaultSingletonTraits<ExtensionAPI>;
 
@@ -125,11 +119,23 @@ class ExtensionAPI : public FeatureProvider {
   bool IsChildNamePrivileged(const base::DictionaryValue* namespace_node,
                              const std::string& child_name);
 
-  // Adds all APIs to |out| that |extension| has any permission (required or
-  // optional) to use.
-  // NOTE: This only works for non-feature-controlled APIs.
-  // TODO(aa): Remove this when all APIs are converted to the feature system.
-  void GetAllowedAPIs(const Extension* extension, std::set<std::string>* out);
+  // NOTE: This IsAPIAllowed() and IsNonFeatureAPIAvailable only work for
+  // non-feature-controlled APIs.
+  // TODO(aa): Remove these when all APIs are converted to the feature system.
+
+  // Checks if API |name| is allowed.
+  bool IsAPIAllowed(const std::string& name, const Extension* extension);
+
+  // Check if an API is available to |context| given an |extension| and |url|.
+  // The extension or URL may not be relevant to all contexts, and may be left
+  // NULL/empty.
+  bool IsNonFeatureAPIAvailable(const std::string& name,
+                                Feature::Context context,
+                                const Extension* extension,
+                                const GURL& url);
+
+  // Returns true if the API uses the feature system.
+  bool UsesFeatureSystem(const std::string& full_name);
 
   // Gets a feature from any dependency provider.
   Feature* GetFeatureDependency(const std::string& dependency_name);
@@ -146,19 +152,15 @@ class ExtensionAPI : public FeatureProvider {
       const std::set<std::string>& excluding,
       std::set<std::string>* out);
 
-  // Removes all APIs from |apis| which are *entirely* privileged. This won't
-  // include APIs such as "storage" which is entirely unprivileged, nor
-  // "extension" which has unprivileged components.
-  void RemovePrivilegedAPIs(std::set<std::string>* apis);
-
-  // Adds an APIs that match |url| to |out|.
-  // NOTE: This only works for non-feature-controlled APIs.
-  // TODO(aa): Remove this when all APIs are converted to the feature system.
-  void GetAPIsMatchingURL(const GURL& url, std::set<std::string>* out);
+  // Checks if an API is *entirely* privileged. This won't include APIs such as
+  // "storage" which is entirely unprivileged, nor "extension" which has
+  // unprivileged components.
+  bool IsPrivilegedAPI(const std::string& name);
 
   // Map from each API that hasn't been loaded yet to the schema which defines
   // it. Note that there may be multiple APIs per schema.
-  std::map<std::string, base::StringPiece> unloaded_schemas_;
+  typedef std::map<std::string, base::StringPiece> UnloadedSchemaMap;
+  UnloadedSchemaMap unloaded_schemas_;
 
   // Schemas for each namespace.
   typedef std::map<std::string, linked_ptr<const DictionaryValue> > SchemaMap;

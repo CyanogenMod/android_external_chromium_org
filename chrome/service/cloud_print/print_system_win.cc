@@ -9,8 +9,8 @@
 #include <xpsprint.h>
 
 #include "base/bind.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/object_watcher.h"
@@ -125,10 +125,11 @@ HRESULT PrintTicketToDevMode(const std::string& printer_name,
   if (SUCCEEDED(hr)) {
     ULONG size = 0;
     DEVMODE* dm = NULL;
+    // Use kPTJobScope, because kPTDocumentScope breaks duplex.
     hr = printing::XPSModule::ConvertPrintTicketToDevMode(provider,
                                                           pt_stream,
                                                           kUserDefaultDevmode,
-                                                          kPTDocumentScope,
+                                                          kPTJobScope,
                                                           &size,
                                                           &dm,
                                                           NULL);
@@ -361,7 +362,7 @@ class PrintSystemWin : public PrintSystem {
 
     // PrintSystem::JobSpooler implementation.
     virtual bool Spool(const std::string& print_ticket,
-                       const FilePath& print_data_file_path,
+                       const base::FilePath& print_data_file_path,
                        const std::string& print_data_mime_type,
                        const std::string& printer_name,
                        const std::string& job_title,
@@ -396,7 +397,7 @@ class PrintSystemWin : public PrintSystem {
       ~Core() {}
 
       bool Spool(const std::string& print_ticket,
-                 const FilePath& print_data_file_path,
+                 const base::FilePath& print_data_file_path,
                  const std::string& print_data_mime_type,
                  const std::string& printer_name,
                  const std::string& job_title,
@@ -562,7 +563,7 @@ class PrintSystemWin : public PrintSystem {
 
       // Called on the service process IO thread.
       void RenderPDFPagesInSandbox(
-          const FilePath& pdf_path, const gfx::Rect& render_area,
+          const base::FilePath& pdf_path, const gfx::Rect& render_area,
           int render_dpi, const std::vector<printing::PageRange>& page_ranges,
           const scoped_refptr<base::MessageLoopProxy>&
               client_message_loop_proxy) {
@@ -586,7 +587,7 @@ class PrintSystemWin : public PrintSystem {
 
       bool PrintXPSDocument(const std::string& printer_name,
                             const std::string& job_title,
-                            const FilePath& print_data_file_path,
+                            const base::FilePath& print_data_file_path,
                             const std::string& print_ticket) {
         if (!printing::XPSPrintModule::Init())
           return false;
@@ -654,7 +655,7 @@ class PrintSystemWin : public PrintSystem {
       PrintSystem::JobSpooler::Delegate* delegate_;
       int saved_dc_;
       base::win::ScopedCreateDC printer_dc_;
-      FilePath print_data_file_path_;
+      base::FilePath print_data_file_path_;
       base::win::ScopedHandle job_progress_event_;
       base::win::ObjectWatcher job_progress_watcher_;
       base::win::ScopedComPtr<IXpsPrintJob> xps_print_job_;

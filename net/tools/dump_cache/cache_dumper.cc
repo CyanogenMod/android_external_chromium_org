@@ -13,6 +13,10 @@
 #include "net/http/http_response_info.h"
 #include "net/tools/dump_cache/url_to_filename_encoder.h"
 
+CacheDumper::CacheDumper(disk_cache::Backend* cache)
+    : cache_(cache) {
+}
+
 int CacheDumper::CreateEntry(const std::string& key,
                              disk_cache::Entry** entry,
                              const net::CompletionCallback& callback) {
@@ -36,7 +40,7 @@ void CacheDumper::CloseEntry(disk_cache::Entry* entry, base::Time last_used,
 
 // A version of CreateDirectory which supports lengthy filenames.
 // Returns true on success, false on failure.
-bool SafeCreateDirectory(const FilePath& path) {
+bool SafeCreateDirectory(const base::FilePath& path) {
 #ifdef WIN32_LARGE_FILENAME_SUPPORT
   // Due to large paths on windows, it can't simply do a
   // CreateDirectory("a/b/c").  Instead, create each subdirectory manually.
@@ -52,7 +56,7 @@ bool SafeCreateDirectory(const FilePath& path) {
 
   // Create the subdirectories individually
   while ((pos = path.value().find(backslash, pos)) != std::wstring::npos) {
-    std::wstring subdir = path.value().substr(0, pos);
+    base::FilePath::StringType subdir = path.value().substr(0, pos);
     CreateDirectoryW(subdir.c_str(), NULL);
     // we keep going even if directory creation failed.
     pos++;
@@ -64,16 +68,21 @@ bool SafeCreateDirectory(const FilePath& path) {
 #endif
 }
 
+DiskDumper::DiskDumper(const base::FilePath& path)
+    : path_(path), entry_(NULL) {
+  file_util::CreateDirectory(path);
+}
+
 int DiskDumper::CreateEntry(const std::string& key,
                             disk_cache::Entry** entry,
                             const net::CompletionCallback& callback) {
   // The URL may not start with a valid protocol; search for it.
   int urlpos = key.find("http");
   std::string url = urlpos > 0 ? key.substr(urlpos) : key;
-  std::string base_path = WideToASCII(path_.value());
+  std::string base_path = path_.MaybeAsASCII();
   std::string new_path =
       net::UrlToFilenameEncoder::Encode(url, base_path, false);
-  entry_path_ = FilePath(ASCIIToWide(new_path));
+  entry_path_ = base::FilePath::FromUTF8Unsafe(new_path);
 
 #ifdef WIN32_LARGE_FILENAME_SUPPORT
   // In order for long filenames to work, we'll need to prepend
@@ -83,14 +92,14 @@ int DiskDumper::CreateEntry(const std::string& key,
   // to convert to a wstring to do this.
   std::wstring name = kLongFilenamePrefix;
   name.append(entry_path_.value());
-  entry_path_ = FilePath(name);
+  entry_path_ = base::FilePath(name);
 #endif
 
   entry_url_ = key;
 
   SafeCreateDirectory(entry_path_.DirName());
 
-  std::wstring file = entry_path_.value();
+  base::FilePath::StringType file = entry_path_.value();
 #ifdef WIN32_LARGE_FILENAME_SUPPORT
   entry_ = CreateFileW(file.c_str(), GENERIC_WRITE|GENERIC_READ, 0, 0,
                        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
@@ -185,10 +194,13 @@ int DiskDumper::WriteEntry(disk_cache::Entry* entry, int index, int offset,
 
     data = headers.c_str();
     len = headers.size();
-  } else if (index == 1) {  // Stream 1 is the data.
+  } else if (index == 1) {
     data = buf->data();
     len = buf_len;
+  } else {
+    return 0;
   }
+
 #ifdef WIN32_LARGE_FILENAME_SUPPORT
   DWORD bytes;
   if (!WriteFile(entry_, data, len, &bytes, 0))

@@ -7,10 +7,11 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/android/intent_helper.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/signin_manager.h"
@@ -23,6 +24,7 @@
 #include "chrome/browser/web_resource/promo_resource_service.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
@@ -49,8 +51,8 @@ void RecordImpressionOnHistogram(PromoImpressionBuckets type) {
 }
 
 // Helper to ask whether the promo is active.
-bool CanShowNotificationPromo(Profile* profile) {
-  NotificationPromo notification_promo(profile);
+bool CanShowNotificationPromo() {
+  NotificationPromo notification_promo;
   notification_promo.InitFromPrefs(NotificationPromo::MOBILE_NTP_SYNC_PROMO);
   return notification_promo.CanShow();
 }
@@ -121,10 +123,10 @@ void PromoHandler::RegisterMessages() {
 }
 
 // static
-void PromoHandler::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kNtpPromoDesktopSessionFound,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
+void PromoHandler::RegisterUserPrefs(PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(prefs::kNtpPromoDesktopSessionFound,
+                                false,
+                                PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void PromoHandler::Observe(int type,
@@ -168,16 +170,16 @@ void PromoHandler::HandlePromoSendEmail(const base::ListValue* args) {
     data_email = service->signin()->GetAuthenticatedUsername();
 
   chrome::android::SendEmail(
-      UTF8ToUTF16(data_email), data_subject, data_body, data_inv);
+      UTF8ToUTF16(data_email), data_subject, data_body, data_inv,
+      EmptyString16());
   RecordImpressionOnHistogram(PROMO_IMPRESSION_SEND_EMAIL_CLICKED);
 }
 
 void PromoHandler::HandlePromoActionTriggered(const base::ListValue* /*args*/) {
-  Profile* profile = Profile::FromWebUI(web_ui());
-  if (!profile || !CanShowNotificationPromo(profile))
+  if (!CanShowNotificationPromo())
     return;
 
-  NotificationPromoMobileNtp promo(profile);
+  NotificationPromoMobileNtp promo;
   if (!promo.InitFromPrefs())
     return;
 
@@ -186,12 +188,10 @@ void PromoHandler::HandlePromoActionTriggered(const base::ListValue* /*args*/) {
 }
 
 void PromoHandler::HandlePromoDisabled(const base::ListValue* /*args*/) {
-  Profile* profile = Profile::FromWebUI(web_ui());
-  if (!profile || !CanShowNotificationPromo(profile))
+  if (!CanShowNotificationPromo())
     return;
 
-  NotificationPromo::HandleClosed(
-      profile, NotificationPromo::MOBILE_NTP_SYNC_PROMO);
+  NotificationPromo::HandleClosed(NotificationPromo::MOBILE_NTP_SYNC_PROMO);
   RecordImpressionOnHistogram(PROMO_IMPRESSION_CLOSE_PROMO_CLICKED);
 
   content::NotificationService* service =
@@ -223,9 +223,7 @@ void PromoHandler::InjectPromoDecorations() {
 void PromoHandler::RecordPromotionImpression(const std::string& id) {
   // Update number of views a promotion has received and trigger refresh
   // if it exceeded max_views set for the promotion.
-  Profile* profile = Profile::FromWebUI(web_ui());
-  if (profile &&
-      NotificationPromo::HandleViewed(profile,
+  if (NotificationPromo::HandleViewed(
           NotificationPromo::MOBILE_NTP_SYNC_PROMO)) {
     Notify(this, chrome::NOTIFICATION_PROMO_RESOURCE_STATE_CHANGED);
   }
@@ -242,11 +240,10 @@ void PromoHandler::RecordPromotionImpression(const std::string& id) {
 
 bool PromoHandler::FetchPromotion(DictionaryValue* result) {
   DCHECK(result != NULL);
-  Profile* profile = Profile::FromWebUI(web_ui());
-  if (!profile || !CanShowNotificationPromo(profile))
+  if (!CanShowNotificationPromo())
     return false;
 
-  NotificationPromoMobileNtp promo(profile);
+  NotificationPromoMobileNtp promo;
   if (!promo.InitFromPrefs())
     return false;
 

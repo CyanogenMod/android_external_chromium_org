@@ -12,12 +12,12 @@
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 
 class DownloadRequestInfoBarDelegate;
-class TabContents;
 
 namespace content {
 class NavigationController;
@@ -108,15 +108,15 @@ class DownloadRequestLimiter
     // may result in invoking Remove on DownloadRequestLimiter.
     virtual void DidGetUserGesture() OVERRIDE;
 
+    virtual void AboutToNavigateRenderView(
+        content::RenderViewHost* render_view_host) OVERRIDE;
+
     // Asks the user if they really want to allow the download.
     // See description above CanDownloadOnIOThread for details on lifetime of
     // callback.
     void PromptUserForDownload(
         content::WebContents* tab,
         const DownloadRequestLimiter::Callback& callback);
-
-    // Are we showing a prompt to the user?
-    bool is_showing_prompt() const { return (infobar_ != NULL); }
 
     // Invoked from DownloadRequestDialogDelegate. Notifies the delegates and
     // changes the status appropriately. Virtual for testing.
@@ -128,6 +128,11 @@ class DownloadRequestLimiter
     TabDownloadState();
 
    private:
+    // Are we showing a prompt to the user?  Determined by whether
+    // we have an outstanding weak pointer--weak pointers are only
+    // given to the info bar delegate.
+    bool is_showing_prompt() const { return factory_.HasWeakPtrs(); }
+
     // content::NotificationObserver method.
     virtual void Observe(int type,
                          const content::NotificationSource& source,
@@ -155,8 +160,11 @@ class DownloadRequestLimiter
     // Used to remove observers installed on NavigationController.
     content::NotificationRegistrar registrar_;
 
-    // Handles showing the infobar to the user, may be null.
-    DownloadRequestInfoBarDelegate* infobar_;
+    // Weak pointer factory for generating a weak pointer to pass to the
+    // infobar.  User responses to the throttling prompt will be returned
+    // through this channel, and it can be revoked if the user prompt result
+    // becomes moot.
+    base::WeakPtrFactory<DownloadRequestLimiter::TabDownloadState> factory_;
 
     DISALLOW_COPY_AND_ASSIGN(TabDownloadState);
   };
@@ -182,16 +190,6 @@ class DownloadRequestLimiter
   friend class TabDownloadState;
 
   ~DownloadRequestLimiter();
-
-  // For unit tests. If non-null this is used instead of creating a dialog.
-  class TestingDelegate {
-   public:
-    virtual bool ShouldAllowDownload() = 0;
-
-   protected:
-    virtual ~TestingDelegate() {}
-  };
-  static void SetTestingDelegate(TestingDelegate* delegate);
 
   // Gets the download state for the specified controller. If the
   // TabDownloadState does not exist and |create| is true, one is created.
@@ -235,8 +233,6 @@ class DownloadRequestLimiter
   // the TabDownloadState is removed and deleted (by way of Remove).
   typedef std::map<content::WebContents*, TabDownloadState*> StateMap;
   StateMap state_map_;
-
-  static TestingDelegate* delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadRequestLimiter);
 };

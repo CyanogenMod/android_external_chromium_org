@@ -38,9 +38,10 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
         int command_id,
         ui::Accelerator* accelerator) = 0;
 
-    // Some command ids have labels and icons that change over time.
+    // Some command ids have labels, sublabels and icons that change over time.
     virtual bool IsItemForCommandIdDynamic(int command_id) const;
     virtual string16 GetLabelForCommandId(int command_id) const;
+    virtual string16 GetSublabelForCommandId(int command_id) const;
     // Gets the icon for the item with the specified id, returning true if there
     // is an icon, false otherwise.
     virtual bool GetIconForCommandId(int command_id,
@@ -50,11 +51,10 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
     // visually highlighted within the menu.
     virtual void CommandIdHighlighted(int command_id);
 
-    // Performs the action associated with the specified command id.
-    virtual void ExecuteCommand(int command_id) = 0;
-    // Performs the action associates with the specified command id
-    // with |event_flags|.
-    virtual void ExecuteCommand(int command_id, int event_flags);
+    // Performs the action associates with the specified command id.
+    // The passed |event_flags| are the flags from the event which issued this
+    // command and they can be examined to find modifier keys.
+    virtual void ExecuteCommand(int command_id, int event_flags) = 0;
 
     // Notifies the delegate that the menu is about to show.
     virtual void MenuWillShow(SimpleMenuModel* source);
@@ -74,11 +74,21 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
   // Methods for adding items to the model.
   void AddItem(int command_id, const string16& label);
   void AddItemWithStringId(int command_id, int string_id);
-  void AddSeparator(MenuSeparatorType separator_type);
   void AddCheckItem(int command_id, const string16& label);
   void AddCheckItemWithStringId(int command_id, int string_id);
   void AddRadioItem(int command_id, const string16& label, int group_id);
   void AddRadioItemWithStringId(int command_id, int string_id, int group_id);
+
+  // Adds a separator of the specified type to the model.
+  // - Adding a separator after another separator is always invalid if they
+  //   differ in type, but silently ignored if they are both NORMAL.
+  // - Adding a separator to an empty model is invalid, unless they are NORMAL
+  //   or SPACING. NORMAL separators are silently ignored if the model is empty.
+  void AddSeparator(MenuSeparatorType separator_type);
+
+  // Removes separators until the model's last entry is not a separator, or the
+  // model is empty.
+  void RemoveTrailingSeparators();
 
   // These three methods take pointers to various sub-models. These models
   // should be owned by the same owner of this SimpleMenuModel.
@@ -104,6 +114,9 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
   // Sets the icon for the item at |index|.
   void SetIcon(int index, const gfx::Image& icon);
 
+  // Sets the sublabel for the item at |index|.
+  void SetSublabel(int index, const string16& sublabel);
+
   // Clears all items. Note that it does not free MenuModel of submenu.
   void Clear();
 
@@ -118,6 +131,7 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
   virtual ui::MenuSeparatorType GetSeparatorTypeAt(int index) const OVERRIDE;
   virtual int GetCommandIdAt(int index) const OVERRIDE;
   virtual string16 GetLabelAt(int index) const OVERRIDE;
+  virtual string16 GetSublabelAt(int index) const OVERRIDE;
   virtual bool IsItemDynamicAt(int index) const OVERRIDE;
   virtual bool GetAcceleratorAt(int index,
                                 ui::Accelerator* accelerator) const OVERRIDE;
@@ -136,26 +150,18 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
   virtual void MenuClosed() OVERRIDE;
   virtual void SetMenuModelDelegate(
       ui::MenuModelDelegate* menu_model_delegate) OVERRIDE;
+  virtual MenuModelDelegate* GetMenuModelDelegate() const OVERRIDE;
 
  protected:
-  // Some variants of this model (SystemMenuModel) relies on items to be
-  // inserted backwards. This is counter-intuitive for the API, so rather than
-  // forcing customers to insert things backwards, we return the indices
-  // backwards instead. That's what this method is for. By default, it just
-  // returns what it's passed.
-  virtual int FlipIndex(int index) const;
-
   void set_delegate(Delegate* delegate) { delegate_ = delegate; }
   Delegate* delegate() { return delegate_; }
-
-  MenuModelDelegate* menu_model_delegate() { return menu_model_delegate_; }
 
  private:
   struct Item;
 
   typedef std::vector<Item> ItemVector;
 
-  // Caller needs to call FlipIndex() if necessary. Returns |index|.
+  // Returns |index|.
   int ValidateItemIndex(int index) const;
 
   // Functions for inserting items into |items_|.

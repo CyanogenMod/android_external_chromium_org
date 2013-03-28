@@ -11,8 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/prefs/public/pref_observer.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "base/timer.h"
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
@@ -21,6 +20,7 @@
 #include "net/http/http_server_properties_impl.h"
 
 class PrefService;
+class PrefRegistrySyncable;
 
 namespace chrome_browser_net {
 
@@ -47,8 +47,7 @@ namespace chrome_browser_net {
 // posted to IO from that method on UI. This is used to go through IO before
 // the actual update starts, and grab a WeakPtr.
 class HttpServerPropertiesManager
-    : public net::HttpServerProperties,
-      public PrefObserver {
+    : public net::HttpServerProperties {
  public:
   // Create an instance of the HttpServerPropertiesManager. The lifetime of the
   // PrefService objects must be longer than that of the
@@ -65,7 +64,7 @@ class HttpServerPropertiesManager
   void ShutdownOnUIThread();
 
   // Register |prefs| for properties managed here.
-  static void RegisterPrefs(PrefService* prefs);
+  static void RegisterUserPrefs(PrefRegistrySyncable* registry);
 
   // Deletes all data. Works asynchronously, but if a |completion| callback is
   // provided, it will be fired on the UI thread when everything is done.
@@ -194,9 +193,7 @@ class HttpServerPropertiesManager
       const base::Closure& completion);
 
  private:
-  // Callback for preference changes.
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
-                                   const std::string& pref_name) OVERRIDE;
+  void OnHttpServerPropertiesChanged();
 
   // ---------
   // UI thread

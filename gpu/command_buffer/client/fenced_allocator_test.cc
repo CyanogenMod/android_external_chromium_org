@@ -52,7 +52,7 @@ class BaseFencedAllocatorTest : public testing::Test {
     }
     command_buffer_.reset(
         new CommandBufferService(transfer_buffer_manager_.get()));
-    command_buffer_->Initialize();
+    EXPECT_TRUE(command_buffer_->Initialize());
 
     gpu_scheduler_.reset(new GpuScheduler(
         command_buffer_.get(), api_mock_.get(), NULL));
@@ -122,6 +122,14 @@ TEST_F(FencedAllocatorTest, TestBasic) {
   EXPECT_TRUE(allocator_->CheckConsistency());
 
   allocator_->Free(offset);
+  EXPECT_FALSE(allocator_->InUse());
+  EXPECT_TRUE(allocator_->CheckConsistency());
+}
+
+// Test alloc 0 fails.
+TEST_F(FencedAllocatorTest, TestAllocZero) {
+  FencedAllocator::Offset offset = allocator_->Alloc(0);
+  EXPECT_EQ(FencedAllocator::kInvalidOffset, offset);
   EXPECT_FALSE(allocator_->InUse());
   EXPECT_TRUE(allocator_->CheckConsistency());
 }
@@ -444,6 +452,15 @@ TEST_F(FencedAllocatorWrapperTest, TestBasic) {
   EXPECT_EQ(kBufferSize - kSize * sizeof(*pointer_uint),
             allocator_->GetLargestFreeSize());
   allocator_->Free(pointer_uint);
+}
+
+// Test alloc 0 fails.
+TEST_F(FencedAllocatorWrapperTest, TestAllocZero) {
+  allocator_->CheckConsistency();
+
+  void *pointer = allocator_->Alloc(0);
+  ASSERT_FALSE(pointer);
+  EXPECT_TRUE(allocator_->CheckConsistency());
 }
 
 // Checks out-of-memory condition.

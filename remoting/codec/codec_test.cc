@@ -180,7 +180,7 @@ class VideoDecoderTester {
     strict_ = strict;
   }
 
-  void set_capture_data(scoped_refptr<CaptureData> data) {
+  void set_capture_data(scoped_refptr<media::ScreenCaptureData> data) {
     capture_data_ = data;
   }
 
@@ -204,10 +204,10 @@ class VideoDecoderTester {
     EXPECT_EQ(expected_region_, update_region_);
     for (SkRegion::Iterator i(update_region_); !i.done(); i.next()) {
       const int stride = view_size_.width() * kBytesPerPixel;
-      EXPECT_EQ(stride, capture_data_->data_planes().strides[0]);
+      EXPECT_EQ(stride, capture_data_->stride());
       const int offset =  stride * i.rect().top() +
           kBytesPerPixel * i.rect().left();
-      const uint8* original = capture_data_->data_planes().data[0] + offset;
+      const uint8* original = capture_data_->data() + offset;
       const uint8* decoded = image_data_.get() + offset;
       const int row_size = kBytesPerPixel * i.rect().width();
       for (int y = 0; y < i.rect().height(); ++y) {
@@ -272,7 +272,7 @@ class VideoDecoderTester {
   SkRegion update_region_;
   VideoDecoder* decoder_;
   scoped_array<uint8> image_data_;
-  scoped_refptr<CaptureData> capture_data_;
+  scoped_refptr<media::ScreenCaptureData> capture_data_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoDecoderTester);
 };
@@ -317,11 +317,9 @@ class VideoEncoderTester {
   DISALLOW_COPY_AND_ASSIGN(VideoEncoderTester);
 };
 
-scoped_refptr<CaptureData> PrepareEncodeData(const SkISize& size,
-                                             media::VideoFrame::Format format,
-                                             scoped_array<uint8>* memory) {
-  // TODO(hclam): Support also YUV format.
-  CHECK_EQ(format, media::VideoFrame::RGB32);
+scoped_refptr<media::ScreenCaptureData> PrepareEncodeData(
+    const SkISize& size,
+    scoped_array<uint8>* memory) {
   int memory_size = size.width() * size.height() * kBytesPerPixel;
 
   memory->reset(new uint8[memory_size]);
@@ -331,20 +329,14 @@ scoped_refptr<CaptureData> PrepareEncodeData(const SkISize& size,
     (*memory)[i] = rand() % 256;
   }
 
-  DataPlanes planes;
-  memset(planes.data, 0, sizeof(planes.data));
-  memset(planes.strides, 0, sizeof(planes.strides));
-  planes.data[0] = memory->get();
-  planes.strides[0] = size.width() * kBytesPerPixel;
-
-  scoped_refptr<CaptureData> data =
-      new CaptureData(planes, size, format);
+  scoped_refptr<media::ScreenCaptureData> data = new media::ScreenCaptureData(
+      memory->get(), size.width() * kBytesPerPixel, size);
   return data;
 }
 
 static void TestEncodingRects(VideoEncoder* encoder,
                               VideoEncoderTester* tester,
-                              scoped_refptr<CaptureData> data,
+                              scoped_refptr<media::ScreenCaptureData> data,
                               const SkIRect* rects, int count) {
   data->mutable_dirty_region().setEmpty();
   for (int i = 0; i < count; ++i) {
@@ -369,8 +361,8 @@ void TestVideoEncoder(VideoEncoder* encoder, bool strict) {
   for (size_t xi = 0; xi < arraysize(kSizes); ++xi) {
     for (size_t yi = 0; yi < arraysize(kSizes); ++yi) {
       SkISize size = SkISize::Make(kSizes[xi], kSizes[yi]);
-      scoped_refptr<CaptureData> data =
-          PrepareEncodeData(size, media::VideoFrame::RGB32, &memory);
+      scoped_refptr<media::ScreenCaptureData> data =
+          PrepareEncodeData(size, &memory);
       std::vector<std::vector<SkIRect> > test_rect_lists =
           MakeTestRectLists(size);
       for (size_t i = 0; i < test_rect_lists.size(); ++i) {
@@ -385,7 +377,7 @@ void TestVideoEncoder(VideoEncoder* encoder, bool strict) {
 static void TestEncodeDecodeRects(VideoEncoder* encoder,
                                   VideoEncoderTester* encoder_tester,
                                   VideoDecoderTester* decoder_tester,
-                                  scoped_refptr<CaptureData> data,
+                                  scoped_refptr<media::ScreenCaptureData> data,
                                   const SkIRect* rects, int count) {
   data->mutable_dirty_region().setRects(rects, count);
   encoder_tester->AddRects(rects, count);
@@ -394,16 +386,15 @@ static void TestEncodeDecodeRects(VideoEncoder* encoder,
   // Generate random data for the updated region.
   srand(0);
   for (int i = 0; i < count; ++i) {
-    CHECK_EQ(data->pixel_format(), media::VideoFrame::RGB32);
     const int bytes_per_pixel = 4;  // Because of RGB32 on previous line.
     const int row_size = bytes_per_pixel * rects[i].width();
-    uint8* memory = data->data_planes().data[0] +
-      data->data_planes().strides[0] * rects[i].top() +
+    uint8* memory = data->data() +
+      data->stride() * rects[i].top() +
       bytes_per_pixel * rects[i].left();
     for (int y = 0; y < rects[i].height(); ++y) {
       for (int x = 0; x < row_size; ++x)
         memory[x] = rand() % 256;
-      memory += data->data_planes().strides[0];
+      memory += data->stride();
     }
   }
 
@@ -423,8 +414,8 @@ void TestVideoEncoderDecoder(
   VideoEncoderTester encoder_tester(&message_tester);
 
   scoped_array<uint8> memory;
-  scoped_refptr<CaptureData> data =
-      PrepareEncodeData(kSize, media::VideoFrame::RGB32, &memory);
+  scoped_refptr<media::ScreenCaptureData> data =
+      PrepareEncodeData(kSize, &memory);
 
   VideoDecoderTester decoder_tester(decoder, kSize, kSize);
   decoder_tester.set_strict(strict);
@@ -469,14 +460,9 @@ void TestVideoEncoderDecoderGradient(VideoEncoder* encoder,
       view_size.width() * view_size.height() * kBytesPerPixel]);
   FillWithGradient(expected_view_data.get(), view_size, view_rect);
 
-  DataPlanes planes;
-  memset(planes.data, 0, sizeof(planes.data));
-  memset(planes.strides, 0, sizeof(planes.strides));
-  planes.data[0] = screen_data.get();
-  planes.strides[0] = screen_size.width() * kBytesPerPixel;
-
-  scoped_refptr<CaptureData> capture_data =
-      new CaptureData(planes, screen_size, media::VideoFrame::RGB32);
+  scoped_refptr<media::ScreenCaptureData> capture_data =
+      new media::ScreenCaptureData(
+          screen_data.get(), screen_size.width() * kBytesPerPixel, screen_size);
   capture_data->mutable_dirty_region().op(screen_rect, SkRegion::kUnion_Op);
 
   VideoDecoderTester decoder_tester(decoder, screen_size, view_size);

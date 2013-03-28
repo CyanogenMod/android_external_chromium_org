@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/hash.h"
 #include "base/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -17,8 +17,8 @@
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/sys_info.h"
-#include "base/threading/worker_pool.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/threading/worker_pool.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "net/base/net_errors.h"
@@ -28,6 +28,7 @@
 #include "net/disk_cache/experiments.h"
 #include "net/disk_cache/file.h"
 #include "net/disk_cache/mem_backend_impl.h"
+#include "net/disk_cache/simple/simple_backend_impl.h"
 
 // This has to be defined before including histogram_macros.h from this file.
 #define NET_DISK_CACHE_BACKEND_IMPL_CC_
@@ -80,43 +81,45 @@ size_t GetIndexSize(int table_len) {
 // Returns a fully qualified name from path and name, using a given name prefix
 // and index number. For instance, if the arguments are "/foo", "bar" and 5, it
 // will return "/foo/old_bar_005".
-FilePath GetPrefixedName(const FilePath& path, const std::string& name,
-                         int index) {
+base::FilePath GetPrefixedName(const base::FilePath& path,
+                               const std::string& name,
+                               int index) {
   std::string tmp = base::StringPrintf("%s%s_%03d", "old_",
                                        name.c_str(), index);
   return path.AppendASCII(tmp);
 }
 
 // This is a simple callback to cleanup old caches.
-void CleanupCallback(const FilePath& path, const std::string& name) {
+void CleanupCallback(const base::FilePath& path, const std::string& name) {
   for (int i = 0; i < kMaxOldFolders; i++) {
-    FilePath to_delete = GetPrefixedName(path, name, i);
+    base::FilePath to_delete = GetPrefixedName(path, name, i);
     disk_cache::DeleteCache(to_delete, true);
   }
 }
 
 // Returns a full path to rename the current cache, in order to delete it. path
 // is the current folder location, and name is the current folder name.
-FilePath GetTempCacheName(const FilePath& path, const std::string& name) {
+base::FilePath GetTempCacheName(const base::FilePath& path,
+                                const std::string& name) {
   // We'll attempt to have up to kMaxOldFolders folders for deletion.
   for (int i = 0; i < kMaxOldFolders; i++) {
-    FilePath to_delete = GetPrefixedName(path, name, i);
+    base::FilePath to_delete = GetPrefixedName(path, name, i);
     if (!file_util::PathExists(to_delete))
       return to_delete;
   }
-  return FilePath();
+  return base::FilePath();
 }
 
 // Moves the cache files to a new folder and creates a task to delete them.
-bool DelayedCacheCleanup(const FilePath& full_path) {
+bool DelayedCacheCleanup(const base::FilePath& full_path) {
   // GetTempCacheName() and MoveCache() use synchronous file
   // operations.
   base::ThreadRestrictions::ScopedAllowIO allow_io;
 
-  FilePath current_path = full_path.StripTrailingSeparators();
+  base::FilePath current_path = full_path.StripTrailingSeparators();
 
-  FilePath path = current_path.DirName();
-  FilePath name = current_path.BaseName();
+  base::FilePath path = current_path.DirName();
+  base::FilePath name = current_path.BaseName();
 #if defined(OS_POSIX)
   std::string name_str = name.value();
 #elif defined(OS_WIN)
@@ -124,7 +127,7 @@ bool DelayedCacheCleanup(const FilePath& full_path) {
   std::string name_str = WideToASCII(name.value());
 #endif
 
-  FilePath to_delete = GetTempCacheName(path, name_str);
+  base::FilePath to_delete = GetTempCacheName(path, name_str);
   if (to_delete.empty()) {
     LOG(ERROR) << "Unable to get another cache folder";
     return false;
@@ -159,7 +162,7 @@ bool InitExperiment(disk_cache::IndexHeader* header) {
 // This class takes care of building an instance of the backend.
 class CacheCreator {
  public:
-  CacheCreator(const FilePath& path, bool force, int max_bytes,
+  CacheCreator(const base::FilePath& path, bool force, int max_bytes,
                net::CacheType type, uint32 flags,
                base::MessageLoopProxy* thread, net::NetLog* net_log,
                disk_cache::Backend** backend,
@@ -187,7 +190,7 @@ class CacheCreator {
   // Callback implementation.
   void OnIOComplete(int result);
 
-  const FilePath& path_;
+  const base::FilePath& path_;
   bool force_;
   bool retry_;
   int max_bytes_;
@@ -255,10 +258,12 @@ void FinalCleanupCallback(disk_cache::BackendImpl* backend) {
 
 namespace disk_cache {
 
-int CreateCacheBackend(net::CacheType type, const FilePath& path, int max_bytes,
+int CreateCacheBackend(net::CacheType type, const base::FilePath& path,
+                       int max_bytes,
                        bool force, base::MessageLoopProxy* thread,
                        net::NetLog* net_log, Backend** backend,
                        const net::CompletionCallback& callback) {
+  // TODO(pasko): Separate out cache creation when landing cache tracer.
   DCHECK(!callback.is_null());
   if (type == net::MEMORY_CACHE) {
     *backend = MemBackendImpl::CreateBackend(max_bytes, net_log);
@@ -266,8 +271,17 @@ int CreateCacheBackend(net::CacheType type, const FilePath& path, int max_bytes,
   }
   DCHECK(thread);
 
-  return BackendImpl::CreateBackend(path, force, max_bytes, type, kNone, thread,
-                                    net_log, backend, callback);
+#if defined(USE_SIMPLE_CACHE_BACKEND)
+  // TODO(gavinp,pasko): While simple backend development proceeds, we're only
+  // testing it against net::DISK_CACHE. Turn it on for more cache types as
+  // appropriate.
+  if (type == net::DISK_CACHE) {
+    return SimpleBackendImpl::CreateBackend(path, force, max_bytes, type, kNone,
+                                            thread, net_log, backend, callback);
+  }
+#endif
+  return BackendImpl::CreateBackend(path, force, max_bytes, type, kNone,
+                                    thread, net_log, backend, callback);
 }
 
 // Returns the preferred maximum number of bytes for the cache given the
@@ -301,7 +315,7 @@ int PreferedCacheSize(int64 available) {
 
 // ------------------------------------------------------------------------
 
-BackendImpl::BackendImpl(const FilePath& path,
+BackendImpl::BackendImpl(const base::FilePath& path,
                          base::MessageLoopProxy* cache_thread,
                          net::NetLog* net_log)
     : ALLOW_THIS_IN_INITIALIZER_LIST(background_queue_(this, cache_thread)),
@@ -326,7 +340,7 @@ BackendImpl::BackendImpl(const FilePath& path,
       ALLOW_THIS_IN_INITIALIZER_LIST(ptr_factory_(this)) {
 }
 
-BackendImpl::BackendImpl(const FilePath& path,
+BackendImpl::BackendImpl(const base::FilePath& path,
                          uint32 mask,
                          base::MessageLoopProxy* cache_thread,
                          net::NetLog* net_log)
@@ -385,7 +399,7 @@ BackendImpl::~BackendImpl() {
 // desired path) cannot be created.
 //
 // Static.
-int BackendImpl::CreateBackend(const FilePath& full_path, bool force,
+int BackendImpl::CreateBackend(const base::FilePath& full_path, bool force,
                                int max_bytes, net::CacheType type,
                                uint32 flags, base::MessageLoopProxy* thread,
                                net::NetLog* net_log, Backend** backend,
@@ -475,6 +489,8 @@ int BackendImpl::SyncInit() {
   if (cache_type() == net::APP_CACHE) {
     DCHECK(!new_eviction_);
     read_only_ = true;
+  } else if (cache_type() == net::SHADER_CACHE) {
+    DCHECK(!new_eviction_);
   }
 
   eviction_.Init(this);
@@ -485,9 +501,6 @@ int BackendImpl::SyncInit() {
     return net::ERR_FAILED;
 
   disabled_ = !rankings_.Init(this, new_eviction_);
-
-  if (!disabled_ && !(user_flags_ & kNoRandom) && base::RandInt(0, 99) < 2)
-    rankings_.SelfCheck();  // Ignore return value for now.
 
 #if defined(STRESS_CACHE_EXTENDED_VALIDATION)
   trace_object_->EnableTracing(false);
@@ -670,7 +683,7 @@ void BackendImpl::SyncOnExternalCacheHit(const std::string& key) {
   EntryImpl* cache_entry = MatchEntry(key, hash, false, Addr(), &error);
   if (cache_entry) {
     if (ENTRY_NORMAL == cache_entry->entry()->Data()->state) {
-      UpdateRank(cache_entry, false);
+      UpdateRank(cache_entry, cache_type() == net::SHADER_CACHE);
     }
     cache_entry->Release();
   }
@@ -815,7 +828,8 @@ EntryImpl* BackendImpl::CreateEntryImpl(const std::string& key) {
   SIMPLE_STATS_COUNTER("disk_cache.miss");
   Trace("create entry hit ");
   FlushIndex();
-  return cache_entry.release();
+  cache_entry->AddRef();
+  return cache_entry.get();
 }
 
 EntryImpl* BackendImpl::OpenNextEntryImpl(void** iter) {
@@ -849,10 +863,10 @@ void BackendImpl::SetType(net::CacheType type) {
   cache_type_ = type;
 }
 
-FilePath BackendImpl::GetFileName(Addr address) const {
+base::FilePath BackendImpl::GetFileName(Addr address) const {
   if (!address.is_separate_file() || !address.is_initialized()) {
     NOTREACHED();
-    return FilePath();
+    return base::FilePath();
   }
 
   std::string tmp = base::StringPrintf("f_%06x", address.FileNumber());
@@ -878,7 +892,7 @@ bool BackendImpl::CreateExternalFile(Addr* address) {
       file_number = 1;
       continue;
     }
-    FilePath name = GetFileName(file_address);
+    base::FilePath name = GetFileName(file_address);
     int flags = base::PLATFORM_FILE_READ |
                 base::PLATFORM_FILE_WRITE |
                 base::PLATFORM_FILE_CREATE |
@@ -921,9 +935,9 @@ LruData* BackendImpl::GetLruData() {
 }
 
 void BackendImpl::UpdateRank(EntryImpl* entry, bool modified) {
-  if (!read_only_) {
-    eviction_.UpdateRank(entry, modified);
-  }
+  if (read_only_ || (!modified && cache_type() == net::SHADER_CACHE))
+    return;
+  eviction_.UpdateRank(entry, modified);
 }
 
 void BackendImpl::RecoveredEntry(CacheRankingsBlock* rankings) {
@@ -1063,6 +1077,8 @@ void BackendImpl::ModifyStorageSize(int32 old_size, int32 new_size) {
     SubstractStorageSize(old_size - new_size);
   else
     AddStorageSize(new_size - old_size);
+
+  FlushIndex();
 
   // Update the usage statistics.
   stats_.ModifyStorageStats(old_size, new_size);
@@ -1462,7 +1478,7 @@ bool BackendImpl::InitBackingStore(bool* file_created) {
   if (!file_util::CreateDirectory(path_))
     return false;
 
-  FilePath index_name = path_.AppendASCII(kIndexName);
+  base::FilePath index_name = path_.AppendASCII(kIndexName);
 
   int flags = base::PLATFORM_FILE_READ |
               base::PLATFORM_FILE_WRITE |
@@ -1827,14 +1843,15 @@ EntryImpl* BackendImpl::OpenFollowingEntry(bool forward, void** iter) {
 
   EntryImpl* next_entry;
   if (forward) {
-    next_entry = entries[newest].release();
+    next_entry = entries[newest].get();
     iterator->list = static_cast<Rankings::List>(newest);
   } else {
-    next_entry = entries[oldest].release();
+    next_entry = entries[oldest].get();
     iterator->list = static_cast<Rankings::List>(oldest);
   }
 
   *iter = iterator.release();
+  next_entry->AddRef();
   return next_entry;
 }
 

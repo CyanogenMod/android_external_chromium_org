@@ -10,16 +10,24 @@
 
 #include "base/message_loop.h"
 #include "ui/aura/client/capture_client.h"
-#include "ui/aura/env.h"
+#include "ui/aura/client/cursor_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/cursor/cursor_loader_win.h"
 #include "ui/base/events/event.h"
 #include "ui/base/view_prop.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/insets.h"
+#include "ui/gfx/screen.h"
 
 using std::max;
 using std::min;
 
 namespace aura {
+namespace {
+
+bool use_popup_as_root_window_for_test = false;
+
+}  // namespace
 
 // static
 RootWindowHost* RootWindowHost::Create(const gfx::Rect& bounds) {
@@ -38,6 +46,8 @@ RootWindowHostWin::RootWindowHostWin(const gfx::Rect& bounds)
       has_capture_(false),
       saved_window_style_(0),
       saved_window_ex_style_(0) {
+  if (use_popup_as_root_window_for_test)
+    set_window_style(WS_POPUP);
   Init(NULL, bounds);
   SetWindowText(hwnd(), L"aura::RootWindow!");
 }
@@ -122,11 +132,26 @@ void RootWindowHostWin::SetBounds(const gfx::Rect& bounds) {
   SetWindowPos(
       hwnd(),
       NULL,
-      0,
-      0,
+      window_rect.left,
+      window_rect.top,
       window_rect.right - window_rect.left,
       window_rect.bottom - window_rect.top,
       SWP_NOMOVE | SWP_NOOWNERZORDER | SWP_NOREDRAW | SWP_NOREPOSITION);
+
+  // Explicity call OnHostResized when the scale has changed because
+  // the window size may not have changed.
+  float current_scale = delegate_->GetDeviceScaleFactor();
+  float new_scale = gfx::Screen::GetScreenFor(delegate_->AsRootWindow())->
+      GetDisplayNearestWindow(delegate_->AsRootWindow()).device_scale_factor();
+  if (current_scale != new_scale)
+    delegate_->OnHostResized(bounds.size());
+}
+
+gfx::Insets RootWindowHostWin::GetInsets() const {
+  return gfx::Insets();
+}
+
+void RootWindowHostWin::SetInsets(const gfx::Insets& insets) {
 }
 
 gfx::Point RootWindowHostWin::GetLocationOnNativeScreen() const {
@@ -161,6 +186,13 @@ void RootWindowHostWin::ReleaseCapture() {
 }
 
 bool RootWindowHostWin::QueryMouseLocation(gfx::Point* location_return) {
+  client::CursorClient* cursor_client =
+      client::GetCursorClient(GetRootWindow());
+  if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
+    *location_return = gfx::Point(0, 0);
+    return false;
+  }
+
   POINT pt;
   GetCursorPos(&pt);
   ScreenToClient(hwnd(), &pt);
@@ -196,10 +228,12 @@ void RootWindowHostWin::UnConfineCursor() {
   ClipCursor(NULL);
 }
 
+void RootWindowHostWin::OnCursorVisibilityChanged(bool show) {
+  NOTIMPLEMENTED();
+}
+
 void RootWindowHostWin::MoveCursorTo(const gfx::Point& location) {
-  POINT pt;
-  ClientToScreen(hwnd(), &pt);
-  SetCursorPos(pt.x, pt.y);
+  // Deliberately not implemented.
 }
 
 void RootWindowHostWin::SetFocusWhenShown(bool focus_when_shown) {
@@ -257,6 +291,19 @@ LRESULT RootWindowHostWin::OnCaptureChanged(UINT message,
   return 0;
 }
 
+LRESULT RootWindowHostWin::OnNCActivate(UINT message,
+                                        WPARAM w_param,
+                                        LPARAM l_param) {
+  if (!!w_param)
+    delegate_->OnHostActivated();
+  return DefWindowProc(hwnd(), message, w_param, l_param);
+}
+
+void RootWindowHostWin::OnMove(const CPoint& point) {
+  if (delegate_)
+    delegate_->OnHostMoved(gfx::Point(point.x, point.y));
+}
+
 void RootWindowHostWin::OnPaint(HDC dc) {
   delegate_->OnHostPaint();
   ValidateRect(hwnd(), NULL);
@@ -265,8 +312,17 @@ void RootWindowHostWin::OnPaint(HDC dc) {
 void RootWindowHostWin::OnSize(UINT param, const CSize& size) {
   // Minimizing resizes the window to 0x0 which causes our layout to go all
   // screwy, so we just ignore it.
-  if (param != SIZE_MINIMIZED)
+  if (delegate_ && param != SIZE_MINIMIZED)
     delegate_->OnHostResized(gfx::Size(size.cx, size.cy));
 }
+
+namespace test {
+
+// static
+void SetUsePopupAsRootWindowForTest(bool use) {
+  use_popup_as_root_window_for_test = use;
+}
+
+}  // namespace test
 
 }  // namespace aura

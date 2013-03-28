@@ -5,12 +5,12 @@
 #ifndef CHROME_BROWSER_UI_BROWSER_VIEW_PREFS_H_
 #define CHROME_BROWSER_UI_BROWSER_VIEW_PREFS_H_
 
-class PrefService;
+class PrefRegistrySimple;
 
 namespace chrome {
 
 // Register local state preferences specific to BrowserView.
-void RegisterBrowserViewPrefs(PrefService* prefs);
+void RegisterBrowserViewPrefs(PrefRegistrySimple* registry);
 
 }  // namespace chrome
 

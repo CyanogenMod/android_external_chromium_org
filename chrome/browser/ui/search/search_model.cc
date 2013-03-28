@@ -4,42 +4,80 @@
 
 #include "chrome/browser/ui/search/search_model.h"
 
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/search/search.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/search/search_model_observer.h"
-#include "content/public/browser/web_contents.h"
 
 namespace chrome {
 namespace search {
 
-SearchModel::SearchModel(content::WebContents* web_contents)
-    : web_contents_(web_contents) {
+SearchModel::SearchModel() {
 }
 
 SearchModel::~SearchModel() {
 }
 
-void SearchModel::SetMode(const Mode& new_mode) {
-  if (!web_contents_)
-    return;
+// static.
+bool SearchModel::ShouldChangeTopBarsVisibility(const State& old_state,
+                                                const State& new_state) {
+  // If mode has changed, only change top bars visibility if new mode is not
+  // |SEARCH_SUGGESTIONS| or |SEARCH_RESULTS|.  Top bars visibility for
+  // these 2 modes is determined when the mode stays the same, and:
+  // - for |NTP/SERP| pages: by SearchBox API, or
+  // - for |DEFAULT| pages: by platform-specific implementation of
+  //   |InstantOverlayController| when it shows/hides the Instant overlay.
+  return old_state.mode != new_state.mode ?
+      !new_state.mode.is_search() : new_state.mode.is_search();
+}
 
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents_->GetBrowserContext());
-  DCHECK(IsInstantExtendedAPIEnabled(profile))
+void SearchModel::SetState(const State& new_state) {
+  DCHECK(IsInstantExtendedAPIEnabled())
       << "Please do not try to set the SearchModel mode without first "
       << "checking if Search is enabled.";
 
-  if (mode_ == new_mode)
+  if (state_ == new_state)
     return;
 
-  const Mode old_mode = mode_;
-  mode_ = new_mode;
+  const State old_state = state_;
+  state_ = new_state;
 
   FOR_EACH_OBSERVER(SearchModelObserver, observers_,
-                    ModeChanged(old_mode, mode_));
+                    ModelChanged(old_state, state_));
+}
 
-  // Animation is transient, it is cleared after observers are notified.
-  mode_.animate = false;
+void SearchModel::SetMode(const Mode& new_mode) {
+  DCHECK(IsInstantExtendedAPIEnabled())
+      << "Please do not try to set the SearchModel mode without first "
+      << "checking if Search is enabled.";
+
+  if (state_.mode == new_mode)
+    return;
+
+  const State old_state = state_;
+  state_.mode = new_mode;
+
+  // For |SEARCH_SUGGESTIONS| and |SEARCH_RESULTS| modes, SearchBox API will
+  // determine visibility of top bars via SetTopBarsVisible(); for other modes,
+  // top bars are always visible, if available.
+  if (!state_.mode.is_search())
+    state_.top_bars_visible = true;
+
+  FOR_EACH_OBSERVER(SearchModelObserver, observers_,
+                    ModelChanged(old_state, state_));
+}
+
+void SearchModel::SetTopBarsVisible(bool visible) {
+  DCHECK(IsInstantExtendedAPIEnabled())
+      << "Please do not try to set the SearchModel mode without first "
+      << "checking if Search is enabled.";
+
+  if (state_.top_bars_visible == visible)
+    return;
+
+  const State old_state = state_;
+  state_.top_bars_visible = visible;
+
+  FOR_EACH_OBSERVER(SearchModelObserver, observers_,
+                    ModelChanged(old_state, state_));
 }
 
 void SearchModel::AddObserver(SearchModelObserver* observer) {

@@ -10,7 +10,6 @@
 #include <atlcrack.h>
 #include <atlctrls.h>
 #include <atlmisc.h>
-#include <peninputpanel.h>
 #include <tom.h>  // For ITextDocument, a COM interface to CRichEditCtrl.
 
 #include "base/memory/scoped_ptr.h"
@@ -21,8 +20,8 @@
 #include "ui/base/ime/win/tsf_event_router.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/win/extra_sdk_defines.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/font.h"
-#include "webkit/glue/window_open_disposition.h"
 
 class LocationBarView;
 class OmniboxPopupView;
@@ -98,9 +97,11 @@ class OmniboxViewWin
   virtual void RevertAll() OVERRIDE;
   virtual void UpdatePopup() OVERRIDE;
   virtual void SetFocus() OVERRIDE;
+  virtual void ApplyCaretVisibility() OVERRIDE;
   virtual void OnTemporaryTextMaybeChanged(
       const string16& display_text,
-      bool save_original_selection) OVERRIDE;
+      bool save_original_selection,
+      bool notify_text_changed) OVERRIDE;
   virtual bool OnInlineAutocompleteTextMaybeChanged(
       const string16& display_text, size_t user_text_length) OVERRIDE;
   virtual void OnRevertTemporaryText() OVERRIDE;
@@ -188,7 +189,7 @@ class OmniboxViewWin
       ui::Accelerator* accelerator) OVERRIDE;
   virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
   virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
  private:
   enum MouseButton {
@@ -395,7 +396,9 @@ class OmniboxViewWin
   bool ShouldEnableCopyURL() const;
   void CopyURL();
 
-  // Handle of RichEdit dll.
+  // The handle to the RichEdit DLL.  In the rare case where the user's system
+  // is missing this DLL (due to some kind of system corruption), we show an
+  // error dialog; see missing_system_file_dialog_win.h.
   static HMODULE loaded_library_module_;
 
   scoped_ptr<OmniboxPopupView> popup_view_;

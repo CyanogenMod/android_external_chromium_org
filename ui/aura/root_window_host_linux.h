@@ -7,14 +7,18 @@
 
 #include <X11/Xlib.h>
 
+#include <vector>
+
 // Get rid of a macro from Xlib.h that conflicts with Aura's RootWindow class.
 #undef RootWindow
 
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "ui/aura/env_observer.h"
 #include "ui/aura/root_window_host.h"
 #include "ui/base/x/x11_atom_cache.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/gfx/insets.h"
 #include "ui/gfx/rect.h"
 
 namespace ui {
@@ -28,9 +32,10 @@ class TouchEventCalibrate;
 }
 
 class RootWindowHostLinux : public RootWindowHost,
-                            public MessageLoop::Dispatcher {
+                            public MessageLoop::Dispatcher,
+                            public EnvObserver {
  public:
-  RootWindowHostLinux(const gfx::Rect& bounds);
+  explicit RootWindowHostLinux(const gfx::Rect& bounds);
   virtual ~RootWindowHostLinux();
 
   // Overridden from Dispatcher overrides:
@@ -45,6 +50,8 @@ class RootWindowHostLinux : public RootWindowHost,
   virtual void ToggleFullScreen() OVERRIDE;
   virtual gfx::Rect GetBounds() const OVERRIDE;
   virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
+  virtual gfx::Insets GetInsets() const OVERRIDE;
+  virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
   virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
   virtual void SetCapture() OVERRIDE;
   virtual void ReleaseCapture() OVERRIDE;
@@ -52,6 +59,7 @@ class RootWindowHostLinux : public RootWindowHost,
   virtual bool QueryMouseLocation(gfx::Point* location_return) OVERRIDE;
   virtual bool ConfineCursorToRootWindow() OVERRIDE;
   virtual void UnConfineCursor() OVERRIDE;
+  virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
   virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
   virtual bool CopyAreaToSkCanvas(const gfx::Rect& source_bounds,
@@ -64,7 +72,12 @@ class RootWindowHostLinux : public RootWindowHost,
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;
 
+  // EnvObserver overrides.
+  virtual void OnWindowInitialized(Window* window) OVERRIDE;
+  virtual void OnRootWindowInitialized(RootWindow* root_window) OVERRIDE;
  private:
+  class MouseMoveFilter;
+
   bool DispatchEventForRootWindow(const base::NativeEvent& event);
 
   // Dispatches XI2 events. Note that some events targetted for the X root
@@ -89,6 +102,9 @@ class RootWindowHostLinux : public RootWindowHost,
   // CopyAreaToSkCanvas() and GrabSnapshot().
   scoped_ptr<ui::XScopedImage> GetXImage(const gfx::Rect& snapshot_bounds);
 
+  // Update is_internal_display_ based on delegate_ state
+  void UpdateIsInternalDisplay();
+
   RootWindowHostDelegate* delegate_;
 
   // The display and the native X window hosting the root window.
@@ -107,15 +123,23 @@ class RootWindowHostLinux : public RootWindowHost,
   // The bounds of |xwindow_|.
   gfx::Rect bounds_;
 
+  // The insets that specifies the effective area within the |window_|.
+  gfx::Insets insets_;
+
   // The bounds of |x_root_window_|.
   gfx::Rect x_root_bounds_;
+
+  // True if the root host resides on the internal display
+  bool is_internal_display_;
 
   // True if the window should be focused when the window is shown.
   bool focus_when_shown_;
 
-  scoped_array<XID> pointer_barriers_;
+  scoped_ptr<XID[]> pointer_barriers_;
 
   scoped_ptr<internal::TouchEventCalibrate> touch_calibrate_;
+
+  scoped_ptr<MouseMoveFilter> mouse_move_filter_;
 
   ui::X11AtomCache atom_cache_;
 

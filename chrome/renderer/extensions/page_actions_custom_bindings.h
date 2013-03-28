@@ -13,10 +13,11 @@ class Dispatcher;
 // Implements custom bindings for the pageActions API.
 class PageActionsCustomBindings : public ChromeV8Extension {
  public:
-  explicit PageActionsCustomBindings(Dispatcher* extension_dispatcher);
+  PageActionsCustomBindings(Dispatcher* extension_dispatcher,
+                            v8::Handle<v8::Context> v8_context);
 
  private:
-  static v8::Handle<v8::Value> GetCurrentPageActions(const v8::Arguments& args);
+  v8::Handle<v8::Value> GetCurrentPageActions(const v8::Arguments& args);
 };
 
 }  // extensions

@@ -8,16 +8,19 @@
 #include <list>
 #include <map>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "base/time.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "chrome/browser/extensions/api/declarative/declarative_rule.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_with_cache.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/request_stage.h"
-#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_rule.h"
+#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_action.h"
+#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_condition.h"
 #include "chrome/browser/extensions/extension_info_map.h"
-#include "chrome/common/extensions/matcher/url_matcher.h"
+#include "extensions/common/matcher/url_matcher.h"
 
 class Profile;
 class WebRequestPermissions;
@@ -33,6 +36,10 @@ class URLRequest;
 namespace extensions {
 
 class RulesRegistryService;
+
+typedef linked_ptr<extension_web_request_api_helpers::EventResponseDelta>
+    LinkedPtrEventResponseDelta;
+typedef DeclarativeRule<WebRequestCondition, WebRequestAction> WebRequestRule;
 
 // The WebRequestRulesRegistry is responsible for managing
 // the internal representation of rules for the Declarative Web Request API.
@@ -68,14 +75,14 @@ class WebRequestRulesRegistry : public RulesRegistryWithCache {
 
   // TODO(battre): This will become an implementation detail, because we need
   // a way to also execute the actions of the rules.
-  std::set<WebRequestRule::GlobalRuleId> GetMatches(
-      const WebRequestRule::RequestData& request_data);
+  std::set<const WebRequestRule*> GetMatches(
+      const WebRequestData& request_data_without_ids) const;
 
   // Returns which modifications should be executed on the network request
   // according to the rules registered in this registry.
   std::list<LinkedPtrEventResponseDelta> CreateDeltas(
       const ExtensionInfoMap* extension_info_map,
-      const WebRequestRule::RequestData& request_data,
+      const WebRequestData& request_data,
       bool crosses_incognito);
 
   // Implementation of RulesRegistryWithCache:
@@ -100,20 +107,49 @@ class WebRequestRulesRegistry : public RulesRegistryWithCache {
       const std::string& extension_id) const;
   virtual void ClearCacheOnNavigation();
 
+  const std::set<const WebRequestRule*>&
+  rules_with_untriggered_conditions_for_test() const {
+    return rules_with_untriggered_conditions_;
+  }
+
  private:
+  // Checks whether the set of |conditions| and |actions| are consistent,
+  // meaning for example that we do not allow combining an |action| that needs
+  // to be executed before the |condition| can be fulfilled.
+  // Returns true in case of consistency and MUST set |error| otherwise.
+  static bool CheckConsistency(const WebRequestConditionSet* conditions,
+                               const WebRequestActionSet* actions,
+                               std::string* error);
+
   typedef std::map<URLMatcherConditionSet::ID, WebRequestRule*> RuleTriggers;
   typedef std::map<WebRequestRule::GlobalRuleId, linked_ptr<WebRequestRule> >
       RulesMap;
+  typedef std::set<URLMatcherConditionSet::ID> URLMatches;
+  typedef std::set<const WebRequestRule*> RuleSet;
+
+  // This is a helper function to GetMatches. Rules triggered by |url_matches|
+  // get added to |result| if one of their conditions is fulfilled.
+  // |request_data| gets passed to IsFulfilled of the rules' condition sets.
+  void AddTriggeredRules(const URLMatches& url_matches,
+                         const WebRequestCondition::MatchData& request_data,
+                         RuleSet* result) const;
 
   // Map that tells us which WebRequestRule may match under the condition that
   // the URLMatcherConditionSet::ID was returned by the |url_matcher_|.
   RuleTriggers rule_triggers_;
+
+  // These rules contain condition sets with conditions without URL attributes.
+  // Such conditions are not triggered by URL matcher, so we need to test them
+  // separately.
+  std::set<const WebRequestRule*> rules_with_untriggered_conditions_;
 
   RulesMap webrequest_rules_;
 
   URLMatcher url_matcher_;
 
   scoped_refptr<ExtensionInfoMap> extension_info_map_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebRequestRulesRegistry);
 };
 
 }  // namespace extensions

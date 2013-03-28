@@ -6,14 +6,13 @@
 
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/autofill/personal_data_manager.h"
+#include "chrome/browser/api/webdata/autofill_web_data_service.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/webdata/web_data_service.h"
-#include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_notification_types.h"
+#include "components/autofill/browser/personal_data_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -28,9 +27,9 @@ AutofillProfileDataTypeController::AutofillProfileDataTypeController(
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : NewNonFrontendDataTypeController(profile_sync_factory,
-                                       profile,
-                                       sync_service),
+    : NonUIDataTypeController(profile_sync_factory,
+                              profile,
+                              sync_service),
       personal_data_(NULL) {
 }
 
@@ -55,8 +54,7 @@ void AutofillProfileDataTypeController::OnPersonalDataChanged() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_EQ(state(), MODEL_STARTING);
   personal_data_->RemoveObserver(this);
-  web_data_service_ = WebDataServiceFactory::GetForProfile(
-      profile(), Profile::IMPLICIT_ACCESS);
+  web_data_service_ = AutofillWebDataService::FromBrowserContext(profile());
   if (web_data_service_.get() && web_data_service_->IsDatabaseLoaded()) {
     OnModelLoaded();
   } else {
@@ -82,19 +80,17 @@ bool AutofillProfileDataTypeController::StartModels() {
   // association, the local ids in the mappings would wind up colliding.
   personal_data_ = PersonalDataManagerFactory::GetForProfile(profile());
   if (!personal_data_->IsDataLoaded()) {
-    personal_data_->SetObserver(this);
+    personal_data_->AddObserver(this);
     return false;
   }
 
-  web_data_service_ = WebDataServiceFactory::GetForProfile(
-      profile(), Profile::IMPLICIT_ACCESS);
-  if (web_data_service_.get() && web_data_service_->IsDatabaseLoaded()) {
+  web_data_service_ = AutofillWebDataService::FromBrowserContext(profile());
+  if (web_data_service_.get() && web_data_service_->IsDatabaseLoaded())
     return true;
-  } else {
-    notification_registrar_.Add(this, chrome::NOTIFICATION_WEB_DATABASE_LOADED,
-                                content::NotificationService::AllSources());
-    return false;
-  }
+
+  notification_registrar_.Add(this, chrome::NOTIFICATION_WEB_DATABASE_LOADED,
+                              content::NotificationService::AllSources());
+  return false;
 }
 
 void AutofillProfileDataTypeController::StopModels() {

@@ -1,0 +1,41 @@
+{
+  "description": "A collection of difficult scrolling tests",
+  "pages": [
+    {
+      "url": "file:///tough_scrolling_cases/background_fixed.html",
+      "smoothness": { "action": "scroll" }
+    },
+    {
+      "url": "file:///tough_scrolling_cases/cust_scrollbar.html",
+      "smoothness": { "action": "scroll" }
+    },
+    {
+      "url": "file:///tough_scrolling_cases/div_scrolls.html",
+      "smoothness": { "action": "scroll" }
+    },
+    {
+      "url": "file:///tough_scrolling_cases/fixed_nonstacking.html",
+      "smoothness": { "action": "scroll" }
+    },
+    {
+      "url": "file:///tough_scrolling_cases/fixed_stacking.html",
+      "smoothness": { "action": "scroll" }
+    },
+    {
+      "url": "file:///tough_scrolling_cases/iframe_scrolls.html",
+      "smoothness": { "action": "scroll" }
+    },
+    {
+      "url": "file:///tough_scrolling_cases/simple.html",
+      "smoothness": { "action": "scroll" }
+    },
+    {
+      "url": "file:///tough_scrolling_cases/wheel_body_prevdefault.html",
+      "smoothness": { "action": "scroll" }
+    },
+    {
+      "url": "file:///tough_scrolling_cases/wheel_div_prevdefault.html",
+      "smoothness": { "action": "scroll" }
+    }
+  ]
+}

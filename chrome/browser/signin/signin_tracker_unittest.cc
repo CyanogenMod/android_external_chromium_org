@@ -8,7 +8,10 @@
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/fake_auth_status_provider.h"
 #include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_manager_fake.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -26,6 +29,8 @@ using ::testing::AnyNumber;
 using ::testing::Mock;
 using ::testing::Return;
 using ::testing::ReturnRef;
+
+namespace {
 
 class MockTokenService : public TokenService {
  public:
@@ -49,6 +54,8 @@ class MockObserver : public SigninTracker::Observer {
   MOCK_METHOD0(SigninSuccess, void(void));
 };
 
+}  // namespace
+
 class SigninTrackerTest : public testing::Test {
  public:
   SigninTrackerTest() {}
@@ -62,6 +69,11 @@ class SigninTrackerTest : public testing::Test {
             profile_.get(),
             ProfileSyncServiceMock::BuildMockProfileSyncService));
     mock_pss_->Initialize();
+
+    mock_signin_manager_ = static_cast<FakeSigninManager*>(
+        SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
+            profile_.get(), FakeSigninManager::Build));
+
     // Make gmock not spam the output with information about these uninteresting
     // calls.
     EXPECT_CALL(*mock_pss_, AddObserver(_)).Times(AnyNumber());
@@ -75,6 +87,7 @@ class SigninTrackerTest : public testing::Test {
   scoped_ptr<SigninTracker> tracker_;
   scoped_ptr<TestingProfile> profile_;
   ProfileSyncServiceMock* mock_pss_;
+  FakeSigninManager* mock_signin_manager_;
   MockTokenService* mock_token_service_;
   MockObserver observer_;
 };
@@ -131,6 +144,8 @@ TEST_F(SigninTrackerTest, GaiaSigninWhenServicesAlreadyRunning) {
   EXPECT_CALL(observer_, SigninSuccess());
   GoogleServiceAuthError error(GoogleServiceAuthError::NONE);
   ExpectSignedInSyncService(mock_pss_, mock_token_service_, error);
+  mock_signin_manager_->StartSignInWithCredentials("0", "username@gmail.com",
+                                                   "password");
   GoogleServiceSigninSuccessDetails details("username@gmail.com", "password");
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
@@ -169,6 +184,8 @@ TEST_F(SigninTrackerTest, GaiaSigninAfterOAuthTokenBecomesAvailable) {
   EXPECT_CALL(*mock_token_service_,
               HasTokenForService(GaiaConstants::kGaiaOAuth2LoginRefreshToken))
       .WillRepeatedly(Return(false));
+  mock_signin_manager_->StartSignInWithCredentials("0", "username@gmail.com",
+                                                   "password");
   GoogleServiceSigninSuccessDetails details("username@gmail.com", "password");
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
@@ -239,6 +256,8 @@ TEST_F(SigninTrackerTest, GaiaSigninAfterSyncStarts) {
       Return(false));
   EXPECT_CALL(*mock_token_service_, HasTokenForService(_))
       .WillRepeatedly(Return(true));
+  mock_signin_manager_->StartSignInWithCredentials("0", "username@gmail.com",
+                                                   "password");
   GoogleServiceSigninSuccessDetails details("username@gmail.com", "password");
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
@@ -262,6 +281,8 @@ TEST_F(SigninTrackerTest, SyncSigninError) {
       Return(false));
   EXPECT_CALL(*mock_token_service_, HasTokenForService(_))
       .WillRepeatedly(Return(true));
+  mock_signin_manager_->StartSignInWithCredentials("0", "username@gmail.com",
+                                                   "password");
   GoogleServiceSigninSuccessDetails details("username@gmail.com", "password");
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
@@ -275,8 +296,9 @@ TEST_F(SigninTrackerTest, SyncSigninError) {
   // auth, but still have no credentials).
   GoogleServiceAuthError error(
       GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
-  EXPECT_CALL(*mock_pss_, GetAuthError()).WillRepeatedly(ReturnRef(error));
-  EXPECT_CALL(*mock_pss_, waiting_for_auth()).WillOnce(Return(false));
+  FakeAuthStatusProvider provider(mock_signin_manager_->signin_global_error());
+  provider.SetAuthError(error);
+  EXPECT_CALL(*mock_pss_, waiting_for_auth()).WillRepeatedly(Return(false));
   EXPECT_CALL(observer_, SigninFailed(error));
   tracker_->OnStateChanged();
 }
@@ -288,6 +310,8 @@ TEST_F(SigninTrackerTest, SigninSuccess) {
   tracker_.reset();
   GoogleServiceAuthError error(GoogleServiceAuthError::NONE);
   ExpectSignedInSyncService(mock_pss_, mock_token_service_, error);
+  mock_signin_manager_->StartSignInWithCredentials("0", "username@gmail.com",
+                                                   "password");
   // Finally SigninSuccess() is expected to be called when everything is ready.
   EXPECT_CALL(observer_, SigninSuccess());
   tracker_.reset(new SigninTracker(profile_.get(), &observer_,
@@ -298,6 +322,8 @@ TEST_F(SigninTrackerTest, SigninFailedSyncTokenUnavailable) {
   tracker_.reset();
   EXPECT_CALL(*mock_token_service_, HasTokenForService(_))
       .WillRepeatedly(Return(true));
+  mock_signin_manager_->StartSignInWithCredentials("0", "username@gmail.com",
+                                                   "password");
   GoogleServiceAuthError error(GoogleServiceAuthError::NONE);
   EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn()).WillRepeatedly(
       Return(true));
@@ -319,8 +345,12 @@ TEST_F(SigninTrackerTest, SigninFailedGoogleServiceAuthError) {
   tracker_.reset();
   EXPECT_CALL(*mock_token_service_, HasTokenForService(_))
       .WillRepeatedly(Return(true));
+  mock_signin_manager_->StartSignInWithCredentials("0", "username@gmail.com",
+                                                   "password");
   // Inject authentication error.
   GoogleServiceAuthError error(GoogleServiceAuthError::SERVICE_UNAVAILABLE);
+  FakeAuthStatusProvider provider(mock_signin_manager_->signin_global_error());
+  provider.SetAuthError(error);
   EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn()).WillRepeatedly(
       Return(true));
   EXPECT_CALL(*mock_pss_, IsSyncTokenAvailable()).WillRepeatedly(
@@ -334,4 +364,15 @@ TEST_F(SigninTrackerTest, SigninFailedGoogleServiceAuthError) {
   EXPECT_CALL(observer_, SigninFailed(error));
   tracker_.reset(new SigninTracker(profile_.get(), &observer_,
                                    SigninTracker::SERVICES_INITIALIZING));
+}
+
+
+TEST_F(SigninTrackerTest, SigninFailedWhenInitializing) {
+  tracker_.reset();
+  // SigninFailed() should be called.
+  GoogleServiceAuthError error(GoogleServiceAuthError::REQUEST_CANCELED);
+  EXPECT_CALL(observer_, SigninFailed(error));
+  tracker_.reset(new SigninTracker(profile_.get(), &observer_,
+                                   SigninTracker::SERVICES_INITIALIZING));
+  tracker_->OnStateChanged();
 }

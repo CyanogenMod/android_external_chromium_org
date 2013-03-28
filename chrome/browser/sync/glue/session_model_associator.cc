@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,12 +13,14 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/browser/history/history.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/history/history_service.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sync/glue/device_info.h"
+#include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/glue/synced_session.h"
 #include "chrome/browser/sync/glue/synced_tab_delegate.h"
 #include "chrome/browser/sync/glue/synced_window_delegate.h"
@@ -27,6 +29,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -40,22 +43,31 @@
 #include "sync/internal_api/public/write_transaction.h"
 #include "sync/protocol/session_specifics.pb.h"
 #include "sync/syncable/directory.h"
-#include "sync/syncable/read_transaction.h"
-#include "sync/syncable/write_transaction.h"
-#include "sync/util/get_session_name.h"
-#include "ui/gfx/favicon_size.h"
+#include "sync/syncable/syncable_read_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 #if defined(OS_LINUX)
 #include "base/linux_util.h"
 #elif defined(OS_WIN)
 #include <windows.h>
-#elif defined(OS_ANDROID)
-#include "sync/util/session_utils_android.h"
 #endif
 
 using content::BrowserThread;
 using content::NavigationEntry;
 using prefs::kSyncSessionsGUID;
 using syncer::SESSIONS;
+
+namespace {
+// Given a transaction, returns the GUID-based string that should be used for
+// |current_machine_tag_|.
+std::string GetMachineTagFromTransaction(
+    syncer::WriteTransaction* trans) {
+  syncer::syncable::Directory* dir = trans->GetWrappedWriteTrans()->directory();
+  std::string machine_tag = "session_sync";
+  machine_tag.append(dir->cache_guid());
+  return machine_tag;
+}
+
+}  // namespace
 
 namespace browser_sync {
 
@@ -71,9 +83,14 @@ static const int kMaxSyncNavigationCount = 6;
 // stale and becomes a candidate for garbage collection.
 static const size_t kDefaultStaleSessionThresholdDays = 14;  // 2 weeks.
 
+// Maximum number of favicons to sync.
+// TODO(zea): pull this from the server.
+static const int kMaxSyncFavicons = 200;
+
 }  // namespace
 
-SessionModelAssociator::SessionModelAssociator(ProfileSyncService* sync_service,
+SessionModelAssociator::SessionModelAssociator(
+    ProfileSyncService* sync_service,
     DataTypeErrorHandler* error_handler)
     : tab_pool_(sync_service),
       local_session_syncid_(syncer::kInvalidId),
@@ -83,16 +100,14 @@ SessionModelAssociator::SessionModelAssociator(ProfileSyncService* sync_service,
       waiting_for_change_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(test_weak_factory_(this)),
       profile_(sync_service->profile()),
-      pref_service_(profile_->GetPrefs()),
-      error_handler_(error_handler) {
+      error_handler_(error_handler),
+      favicon_cache_(profile_, kMaxSyncFavicons) {
   DCHECK(CalledOnValidThread());
   DCHECK(sync_service_);
   DCHECK(profile_);
-  if (pref_service_->FindPreference(kSyncSessionsGUID) == NULL) {
-    pref_service_->RegisterStringPref(kSyncSessionsGUID,
-                                      std::string(),
-                                      PrefService::UNSYNCABLE_PREF);
-  }
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kSyncTabFavicons))
+    favicon_cache_.SetLegacyDelegate(this);
 }
 
 SessionModelAssociator::SessionModelAssociator(ProfileSyncService* sync_service,
@@ -105,8 +120,8 @@ SessionModelAssociator::SessionModelAssociator(ProfileSyncService* sync_service,
       waiting_for_change_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(test_weak_factory_(this)),
       profile_(sync_service->profile()),
-      pref_service_(NULL),
-      error_handler_(NULL) {
+      error_handler_(NULL),
+      favicon_cache_(profile_, kMaxSyncFavicons) {
   DCHECK(CalledOnValidThread());
   DCHECK(sync_service_);
   DCHECK(profile_);
@@ -130,7 +145,8 @@ bool SessionModelAssociator::SyncModelHasUserCreatedNodes(bool* has_nodes) {
   *has_nodes = false;
   syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
   syncer::ReadNode root(&trans);
-  if (root.InitByTagLookup(kSessionsTag) != syncer::BaseNode::INIT_OK) {
+  if (root.InitByTagLookup(syncer::ModelTypeToRootTag(syncer::SESSIONS)) !=
+                           syncer::BaseNode::INIT_OK) {
     LOG(ERROR) << kNoSessionsFolderError;
     return false;
   }
@@ -142,7 +158,8 @@ bool SessionModelAssociator::SyncModelHasUserCreatedNodes(bool* has_nodes) {
 
 int64 SessionModelAssociator::GetSyncIdFromChromeId(const size_t& id) {
   DCHECK(CalledOnValidThread());
-  return GetSyncIdFromSessionTag(TabIdToTag(GetCurrentMachineTag(), id));
+  return GetSyncIdFromSessionTag(
+      TabNodePool::TabIdToTag(GetCurrentMachineTag(), id));
 }
 
 int64 SessionModelAssociator::GetSyncIdFromSessionTag(const std::string& tag) {
@@ -154,7 +171,7 @@ int64 SessionModelAssociator::GetSyncIdFromSessionTag(const std::string& tag) {
   return node.GetId();
 }
 
-const SyncedTabDelegate*
+const size_t*
 SessionModelAssociator::GetChromeNodeFromSyncId(int64 sync_id) {
   NOTREACHED();
   return NULL;
@@ -308,7 +325,6 @@ bool SessionModelAssociator::AssociateTab(const SyncedTabDelegate& tab,
       return true;
     }
     tab_pool_.FreeTabNode(tab_iter->second->sync_id());
-    load_consumer_.CancelAllRequestsForClientData(tab_id);
     tab_map_.erase(tab_iter);
     return true;
   }
@@ -383,9 +399,8 @@ bool SessionModelAssociator::WriteTabContentsToSyncModel(
   // Trigger the favicon load if needed. We do this before opening the write
   // transaction to avoid jank.
   tab_link->set_url(new_url);
-  if (new_url != old_tab_url) {
-    LoadFaviconForTab(tab_link);
-  }
+  if (new_url != old_tab_url)
+    favicon_cache_.OnFaviconVisited(new_url, GURL());
 
   // Update our last modified time.
   synced_session_tracker_.GetSession(GetCurrentMachineTag())->modified_time =
@@ -407,9 +422,7 @@ bool SessionModelAssociator::WriteTabContentsToSyncModel(
   sync_pb::SessionSpecifics specifics = tab_node.GetSessionSpecifics();
   if (new_url == old_tab_url) {
     // Load the old specifics and copy over the favicon data if needed.
-    // TODO(zea): store local favicons in the |synced_favicons_| map and use
-    // that instead of reading from sync. This will be necessary to switch to
-    // the new api.
+    // TODO(zea): remove this once favicon sync is enabled as a separate type.
     tab_s.set_favicon(specifics.tab().favicon());
     tab_s.set_favicon_source(specifics.tab().favicon_source());
     tab_s.set_favicon_type(specifics.tab().favicon_type());
@@ -457,116 +470,21 @@ void SessionModelAssociator::SetSessionTabFromDelegate(
   session_tab->session_storage_persistent_id.clear();
 }
 
-void SessionModelAssociator::LoadFaviconForTab(TabLink* tab_link) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (!command_line.HasSwitch(switches::kSyncTabFavicons))
-    return;
-  FaviconService* favicon_service =
-      FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
-  if (!favicon_service)
-    return;
-  SessionID::id_type tab_id = tab_link->tab()->GetSessionId();
-  if (tab_link->favicon_load_handle()) {
-    // We have an outstanding favicon load for this tab. Cancel it.
-    load_consumer_.CancelAllRequestsForClientData(tab_id);
-  }
-  DVLOG(1) << "Triggering favicon load for url " << tab_link->url().spec();
-  FaviconService::Handle handle = favicon_service->GetRawFaviconForURL(
-      FaviconService::FaviconForURLParams(profile_, tab_link->url(),
-          history::FAVICON, gfx::kFaviconSize, &load_consumer_),
-      ui::SCALE_FACTOR_100P,
-      base::Bind(&SessionModelAssociator::OnFaviconDataAvailable,
-                 AsWeakPtr()));
-  load_consumer_.SetClientData(favicon_service, handle, tab_id);
-  tab_link->set_favicon_load_handle(handle);
-}
-
-void SessionModelAssociator::OnFaviconDataAvailable(
-    FaviconService::Handle handle,
-    const history::FaviconBitmapResult& bitmap_result) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (!command_line.HasSwitch(switches::kSyncTabFavicons))
-    return;
-  SessionID::id_type tab_id =
-      load_consumer_.GetClientData(
-          FaviconServiceFactory::GetForProfile(
-              profile_, Profile::EXPLICIT_ACCESS), handle);
-  TabLinksMap::iterator iter = tab_map_.find(tab_id);
-  if (iter == tab_map_.end()) {
-    DVLOG(1) << "Ignoring favicon for closed tab " << tab_id;
-    return;
-  }
-  TabLink* tab_link = iter->second.get();
-  DCHECK(tab_link);
-  DCHECK(tab_link->url().is_valid());
-  // The tab_link holds the current url. Because this load request would have
-  // been canceled if the url had changed, we know the url must still be
-  // up to date.
-
-  if (bitmap_result.is_valid()) {
-    DCHECK_EQ(handle, tab_link->favicon_load_handle());
-    tab_link->set_favicon_load_handle(0);
-    DCHECK_EQ(bitmap_result.icon_type, history::FAVICON);
-    DCHECK_NE(tab_link->sync_id(), syncer::kInvalidId);
-    // Load the sync tab node and update the favicon data.
-    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
-    syncer::WriteNode tab_node(&trans);
-    if (tab_node.InitByIdLookup(tab_link->sync_id()) !=
-            syncer::BaseNode::INIT_OK) {
-      LOG(WARNING) << "Failed to load sync tab node for tab id " << tab_id
-                   << " and url " << tab_link->url().spec();
-      return;
-    }
-    sync_pb::SessionSpecifics session_specifics =
-        tab_node.GetSessionSpecifics();
-    DCHECK(session_specifics.has_tab());
-    sync_pb::SessionTab* tab = session_specifics.mutable_tab();
-    if (bitmap_result.bitmap_data->size() > 0) {
-      DVLOG(1) << "Storing session favicon for "
-               << tab_link->url() << " with size "
-               << bitmap_result.bitmap_data->size() << " bytes.";
-      tab->set_favicon(bitmap_result.bitmap_data->front(),
-                       bitmap_result.bitmap_data->size());
-      tab->set_favicon_type(sync_pb::SessionTab::TYPE_WEB_FAVICON);
-      tab->set_favicon_source(bitmap_result.icon_url.spec());
-    } else {
-      LOG(WARNING) << "Null favicon stored for url " << tab_link->url().spec();
-    }
-    tab_node.SetSessionSpecifics(session_specifics);
-  } else {
-    // Else the favicon either isn't loaded yet or there is no favicon. We
-    // deliberately don't clear the tab_link's favicon_load_handle so we know
-    // that we're still waiting for a favicon. ReceivedFavicons(..) below will
-    // trigger another favicon load once/if the favicon for the current url
-    // becomes available.
-    DVLOG(1) << "Favicon load failed for url " << tab_link->url().spec();
-  }
-}
-
 void SessionModelAssociator::FaviconsUpdated(
     const std::set<GURL>& urls) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (!command_line.HasSwitch(switches::kSyncTabFavicons))
-    return;
-
   // TODO(zea): consider a separate container for tabs with outstanding favicon
   // loads so we don't have to iterate through all tabs comparing urls.
   for (std::set<GURL>::const_iterator i = urls.begin(); i != urls.end(); ++i) {
     for (TabLinksMap::iterator tab_iter = tab_map_.begin();
-         tab_iter != tab_map_.end(); ++tab_iter) {
-      // Only update the tab's favicon if it doesn't already have one (i.e.
-      // favicon_load_handle is not 0). Otherwise we can get into a situation
-      // where we rewrite tab specifics every time a favicon changes, since some
-      // favicons can in fact be web-controlled/animated.
-      if (tab_iter->second->url() == *i &&
-          tab_iter->second->favicon_load_handle() != 0) {
-        LoadFaviconForTab(tab_iter->second.get());
-      }
+         tab_iter != tab_map_.end();
+         ++tab_iter) {
+      if (tab_iter->second->url() == *i)
+        favicon_cache_.OnPageFaviconUpdated(*i);
     }
   }
 }
 
-void SessionModelAssociator::Associate(const SyncedTabDelegate* tab,
+void SessionModelAssociator::Associate(const size_t* tab,
                                        int64 sync_id) {
   NOTIMPLEMENTED();
 }
@@ -576,7 +494,56 @@ void SessionModelAssociator::Disassociate(int64 sync_id) {
   NOTIMPLEMENTED();
 }
 
-syncer::SyncError SessionModelAssociator::AssociateModels() {
+void SessionModelAssociator::OnFaviconUpdated(
+    const GURL& page_url,
+    const GURL& icon_url) {
+  TabLink* tab_link = NULL;
+  for (TabLinksMap::const_iterator iter = tab_map_.begin();
+       iter != tab_map_.end(); ++iter) {
+    if (iter->second->url() == page_url) {
+      tab_link = iter->second.get();
+      if (tab_link->sync_id() == syncer::kInvalidId)
+        continue;
+
+      scoped_refptr<base::RefCountedMemory> favicon_png;
+      if (!favicon_cache_.GetSyncedFaviconForPageURL(page_url, &favicon_png)) {
+        LOG(ERROR) << "Unable to look up favicon for page url after "
+                   << "notification";
+      }
+
+      // Load the sync tab node and update the favicon data.
+      syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
+      syncer::WriteNode tab_node(&trans);
+      if (tab_node.InitByIdLookup(tab_link->sync_id()) !=
+              syncer::BaseNode::INIT_OK) {
+        LOG(WARNING) << "Failed to load sync tab node for url "
+                     << tab_link->url().spec();
+        return;
+      }
+      sync_pb::SessionSpecifics session_specifics =
+          tab_node.GetSessionSpecifics();
+      DCHECK(session_specifics.has_tab());
+      sync_pb::SessionTab* tab = session_specifics.mutable_tab();
+      if (favicon_png.get() && favicon_png->size() > 0) {
+        DVLOG(1) << "Storing session favicon for "
+                 << tab_link->url() << " with size "
+                 << favicon_png->size() << " bytes.";
+        tab->set_favicon(favicon_png->front(),
+                         favicon_png->size());
+        tab->set_favicon_type(sync_pb::SessionTab::TYPE_WEB_FAVICON);
+        tab->set_favicon_source(icon_url.spec());
+      } else {
+        LOG(WARNING) << "Null favicon stored for url "
+                     << tab_link->url().spec();
+      }
+      tab_node.SetSessionSpecifics(session_specifics);
+    }
+  }
+}
+
+syncer::SyncError SessionModelAssociator::AssociateModels(
+    syncer::SyncMergeResult* local_merge_result,
+    syncer::SyncMergeResult* syncer_merge_result) {
   DCHECK(CalledOnValidThread());
   syncer::SyncError error;
 
@@ -586,6 +553,11 @@ syncer::SyncError SessionModelAssociator::AssociateModels() {
 
   local_session_syncid_ = syncer::kInvalidId;
 
+  scoped_ptr<DeviceInfo> local_device_info(sync_service_->GetLocalDeviceInfo());
+
+#if defined(OS_ANDROID)
+  std::string transaction_tag;
+#endif
   // Read any available foreign sessions and load any session data we may have.
   // If we don't have any local session data in the db, create a header node.
   {
@@ -601,12 +573,15 @@ syncer::SyncError SessionModelAssociator::AssociateModels() {
     }
 
     // Make sure we have a machine tag.
-    if (current_machine_tag_.empty()) {
+    if (current_machine_tag_.empty())
       InitializeCurrentMachineTag(&trans);
-      // The session name is retrieved asynchronously so it might not come back
-      // for the writing of the session. However, we write to the session often
-      // enough (on every navigation) that we'll pick it up quickly.
-      InitializeCurrentSessionName();
+    if (local_device_info.get()) {
+      current_session_name_ = local_device_info->client_name();
+    } else {
+      return error_handler_->CreateAndUploadError(
+          FROM_HERE,
+          "Failed to get device info.",
+          model_type());
     }
     synced_session_tracker_.SetLocalSessionTag(current_machine_tag_);
     if (!UpdateAssociationsFromSyncModel(root, &trans, &error)) {
@@ -641,7 +616,17 @@ syncer::SyncError SessionModelAssociator::AssociateModels() {
 
       local_session_syncid_ = write_node.GetId();
     }
+#if defined(OS_ANDROID)
+    transaction_tag = GetMachineTagFromTransaction(&trans);
+#endif
   }
+#if defined(OS_ANDROID)
+  // We need to delete foreign sessions after giving up our
+  // syncer::WriteTransaction, since DeleteForeignSession(std::string&) uses
+  // its own syncer::WriteTransaction.
+  if (current_machine_tag_.compare(transaction_tag) != 0)
+    DeleteForeignSession(transaction_tag);
+#endif
 
   // Check if anything has changed on the client side.
   if (!UpdateSyncModelDataFromClient(&error)) {
@@ -657,15 +642,13 @@ syncer::SyncError SessionModelAssociator::AssociateModels() {
 syncer::SyncError SessionModelAssociator::DisassociateModels() {
   DCHECK(CalledOnValidThread());
   DVLOG(1) << "Disassociating local session " << GetCurrentMachineTag();
+  favicon_cache_.RemoveLegacyDelegate();
   synced_session_tracker_.Clear();
   tab_map_.clear();
   tab_pool_.clear();
   local_session_syncid_ = syncer::kInvalidId;
   current_machine_tag_ = "";
   current_session_name_ = "";
-  load_consumer_.CancelAllRequests();
-  synced_favicons_.clear();
-  synced_favicon_pages_.clear();
 
   // There is no local model stored with which to disassociate, just notify
   // foreign session handlers.
@@ -681,78 +664,25 @@ void SessionModelAssociator::InitializeCurrentMachineTag(
   DCHECK(CalledOnValidThread());
   DCHECK(current_machine_tag_.empty());
   std::string persisted_guid;
-  if (pref_service_)
-    persisted_guid = pref_service_->GetString(kSyncSessionsGUID);
+  browser_sync::SyncPrefs prefs(profile_->GetPrefs());
+  persisted_guid = prefs.GetSyncSessionsGUID();
   if (!persisted_guid.empty()) {
     current_machine_tag_ = persisted_guid;
     DVLOG(1) << "Restoring persisted session sync guid: "
              << persisted_guid;
   } else {
-    syncer::syncable::Directory* dir =
-        trans->GetWrappedWriteTrans()->directory();
-    current_machine_tag_ = "session_sync";
-#if defined(OS_ANDROID)
-    const std::string android_id = syncer::internal::GetAndroidId();
-    // There are reports that sometimes the android_id can't be read. Those
-    // are supposed to be fixed as of Gingerbread, but if it happens we fall
-    // back to use the same GUID generation as on other platforms.
-    current_machine_tag_.append(android_id.empty() ?
-                                    dir->cache_guid() : android_id);
-#else
-    current_machine_tag_.append(dir->cache_guid());
-#endif
+    current_machine_tag_ = GetMachineTagFromTransaction(trans);
     DVLOG(1) << "Creating session sync guid: " << current_machine_tag_;
-    if (pref_service_)
-      pref_service_->SetString(kSyncSessionsGUID, current_machine_tag_);
+    prefs.SetSyncSessionsGUID(current_machine_tag_);
   }
 
   tab_pool_.set_machine_tag(current_machine_tag_);
 }
 
-void SessionModelAssociator::OnSessionNameInitialized(
-    const std::string& name) {
-  DCHECK(CalledOnValidThread());
-  // Only use the default machine name if it hasn't already been set.
-  if (current_session_name_.empty()) {
-    current_session_name_ = name;
-    // Force a reassociation so we update our header node with the current name.
-    // TODO(zea): Pull the name from somewhere shared with the sync manager.
-    // crbug.com/124287
-    SessionModelAssociator::AssociateWindows(false, NULL);
-  }
-}
-
 bool SessionModelAssociator::GetSyncedFaviconForPageURL(
-    const std::string& url,
-    std::string* png_favicon) const {
-  std::map<std::string, std::string>::const_iterator iter =
-      synced_favicon_pages_.find(url);
-  if (iter == synced_favicon_pages_.end())
-    return false;
-  DCHECK(synced_favicons_.find(iter->second) != synced_favicons_.end());
-  const std::string& favicon =
-      synced_favicons_.find(iter->second)->second->data;
-  png_favicon->assign(favicon);
-  DCHECK_GT(favicon.size(), 0U);
-  return true;
-}
-
-void SessionModelAssociator::InitializeCurrentSessionName() {
-  DCHECK(CalledOnValidThread());
-  if (setup_for_test_) {
-    // We post this task to break out of any transactional locks a caller may be
-    // holding.
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&SessionModelAssociator::OnSessionNameInitialized,
-                   AsWeakPtr(),
-                   std::string("TestSessionName")));
-  } else {
-    syncer::GetSessionName(
-        BrowserThread::GetBlockingPool(),
-        base::Bind(&SessionModelAssociator::OnSessionNameInitialized,
-                   AsWeakPtr()));
-  }
+    const std::string& page_url,
+    scoped_refptr<base::RefCountedMemory>* favicon_png) const {
+  return favicon_cache_.GetSyncedFaviconForPageURL(GURL(page_url), favicon_png);
 }
 
 bool SessionModelAssociator::UpdateAssociationsFromSyncModel(
@@ -784,7 +714,7 @@ bool SessionModelAssociator::UpdateAssociationsFromSyncModel(
     if (specifics.session_tag().empty()) {
       // This is a corrupted node. Just delete it.
       LOG(WARNING) << "Found node with no session tag, deleting.";
-      sync_node.Remove();
+      sync_node.Tombstone();
     } else if (specifics.session_tag() != GetCurrentMachineTag()) {
       AssociateForeignSpecifics(specifics, modification_time);
     } else {
@@ -807,7 +737,7 @@ bool SessionModelAssociator::UpdateAssociationsFromSyncModel(
         // TODO(zea): fix this once we add support for reassociating
         // pre-existing tabs with pre-existing tab nodes. We'll need to load
         // the tab_node_id and ensure the tab_pool_ keeps track of them.
-        sync_node.Remove();
+        sync_node.Tombstone();
       }
     }
     id = next_id;
@@ -868,36 +798,12 @@ void SessionModelAssociator::AssociateForeignSpecifics(
     SessionTab* tab =
         synced_session_tracker_.GetTab(foreign_session_tag, tab_id);
 
-    // Figure out what the previous url for this tab was (may be empty string
-    // if this is a new tab).
-    std::string previous_url;
-    if (tab->navigations.size() > 0) {
-      int selected_index = tab->current_navigation_index;
-      selected_index = std::max(
-          0,
-          std::min(selected_index,
-                   static_cast<int>(tab->navigations.size() - 1)));
-      if (tab->navigations[selected_index].virtual_url().is_valid())
-        previous_url = tab->navigations[selected_index].virtual_url().spec();
-      if (synced_favicon_pages_.find(previous_url) ==
-          synced_favicon_pages_.end()) {
-        // The previous url didn't have a favicon. No need to decrement it.
-        previous_url.clear();
-      }
-    }
-
     // Update SessionTab based on protobuf.
     tab->SetFromSyncData(tab_s, modification_time);
 
-    // Loads the tab favicon, increments the usage counter, and updates
-    // synced_favicon_pages_.
+    // If a favicon or favicon urls are present, load them into the in-memory
+    // favicon cache.
     LoadForeignTabFavicon(tab_s);
-
-    // Now check to see if the favicon associated with the previous url is no
-    // longer in use. This will have no effect if the current url matches the
-    // previous url (LoadForeignTabFavicon increments, this decrements, no net
-    // change in usage), or if the previous_url was not set (new tab).
-    DecrementAndCleanFaviconForURL(previous_url);
 
     // Update the last modified time.
     if (foreign_session->modified_time < modification_time)
@@ -906,38 +812,6 @@ void SessionModelAssociator::AssociateForeignSpecifics(
     LOG(WARNING) << "Ignoring foreign session node with missing header/tab "
                  << "fields and tag " << foreign_session_tag << ".";
   }
-}
-
-void SessionModelAssociator::DecrementAndCleanFaviconForURL(
-    const std::string& page_url) {
-  if (page_url.empty())
-    return;
-  std::map<std::string, std::string>::const_iterator iter =
-      synced_favicon_pages_.find(page_url);
-  if (iter != synced_favicon_pages_.end()) {
-    std::string favicon_url = iter->second;
-    DCHECK_GT(synced_favicons_[favicon_url]->usage_count, 0);
-    --(synced_favicons_[favicon_url]->usage_count);
-    if (synced_favicons_[favicon_url]->usage_count <= 0) {
-      // No more tabs using this favicon. Erase it.
-      synced_favicons_.erase(favicon_url);
-      // Erase the page mappings to the favicon url. We iterate through all
-      // page urls in case multiple pages share the same favicon.
-      std::map<std::string, std::string>::iterator page_iter;
-      for (page_iter = synced_favicon_pages_.begin();
-           page_iter != synced_favicon_pages_.end();) {
-        std::map<std::string, std::string>::iterator to_delete = page_iter;
-        ++page_iter;
-        if (to_delete->second == favicon_url) {
-          synced_favicon_pages_.erase(to_delete);
-        }
-      }
-    }
-  }
-}
-
-size_t SessionModelAssociator::NumFaviconsForTesting() const {
-  return synced_favicons_.size();
 }
 
 bool SessionModelAssociator::DisassociateForeignSession(
@@ -1022,6 +896,21 @@ void SessionModelAssociator::PopulateSessionWindowFromSpecifics(
 
 void SessionModelAssociator::LoadForeignTabFavicon(
     const sync_pb::SessionTab& tab) {
+  // First go through and iterate over all the navigations, checking if any
+  // have valid favicon urls.
+  for (int i = 0; i < tab.navigation_size(); ++i) {
+    if (!tab.navigation(i).favicon_url().empty()) {
+      const std::string& page_url = tab.navigation(i).virtual_url();
+      const std::string& favicon_url = tab.navigation(i).favicon_url();
+      favicon_cache_.OnReceivedSyncFavicon(GURL(page_url),
+                                           GURL(favicon_url),
+                                           std::string(),
+                                           syncer::TimeToProtoTime(
+                                               base::Time::Now()));
+    }
+  }
+
+  // Then go through and check for any legacy favicon data.
   if (!tab.has_favicon() || tab.favicon().empty())
     return;
   if (!tab.has_favicon_type() ||
@@ -1046,16 +935,11 @@ void SessionModelAssociator::LoadForeignTabFavicon(
   const std::string& favicon = tab.favicon();
   DVLOG(1) << "Storing synced favicon for url " << navigation_url.spec()
            << " with size " << favicon.size() << " bytes.";
-  std::map<std::string, linked_ptr<SyncedFaviconInfo> >::iterator favicon_iter;
-  favicon_iter = synced_favicons_.find(favicon_source.spec());
-  if (favicon_iter == synced_favicons_.end()) {
-    synced_favicons_[favicon_source.spec()] =
-        make_linked_ptr<SyncedFaviconInfo>(new SyncedFaviconInfo(favicon));
-  } else {
-    favicon_iter->second->data = favicon;
-    ++favicon_iter->second->usage_count;
-  }
-  synced_favicon_pages_[navigation_url.spec()] = favicon_source.spec();
+  favicon_cache_.OnReceivedSyncFavicon(navigation_url,
+                                       favicon_source,
+                                       favicon,
+                                       syncer::TimeToProtoTime(
+                                           base::Time::Now()));
 }
 
 bool SessionModelAssociator::UpdateSyncModelDataFromClient(
@@ -1064,66 +948,6 @@ bool SessionModelAssociator::UpdateSyncModelDataFromClient(
 
   // Associate all open windows and their tabs.
   return AssociateWindows(true, error);
-}
-
-SessionModelAssociator::TabNodePool::TabNodePool(
-    ProfileSyncService* sync_service)
-    : tab_pool_fp_(-1),
-      sync_service_(sync_service) {
-}
-
-SessionModelAssociator::TabNodePool::~TabNodePool() {}
-
-void SessionModelAssociator::TabNodePool::AddTabNode(int64 sync_id) {
-  tab_syncid_pool_.resize(tab_syncid_pool_.size() + 1);
-  tab_syncid_pool_[static_cast<size_t>(++tab_pool_fp_)] = sync_id;
-}
-
-int64 SessionModelAssociator::TabNodePool::GetFreeTabNode() {
-  DCHECK_GT(machine_tag_.length(), 0U);
-  if (tab_pool_fp_ == -1) {
-    // Tab pool has no free nodes, allocate new one.
-    syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
-    syncer::ReadNode root(&trans);
-    if (root.InitByTagLookup(kSessionsTag) != syncer::BaseNode::INIT_OK) {
-      LOG(ERROR) << kNoSessionsFolderError;
-      return syncer::kInvalidId;
-    }
-    size_t tab_node_id = tab_syncid_pool_.size();
-    std::string tab_node_tag = TabIdToTag(machine_tag_, tab_node_id);
-    syncer::WriteNode tab_node(&trans);
-    syncer::WriteNode::InitUniqueByCreationResult result =
-        tab_node.InitUniqueByCreation(SESSIONS, root, tab_node_tag);
-    if (result != syncer::WriteNode::INIT_SUCCESS) {
-      LOG(ERROR) << "Could not create new node with tag "
-                 << tab_node_tag << "!";
-      return syncer::kInvalidId;
-    }
-    // We fill the new node with just enough data so that in case of a crash/bug
-    // we can identify the node as our own on re-association and reuse it.
-    tab_node.SetTitle(UTF8ToWide(tab_node_tag));
-    sync_pb::SessionSpecifics specifics;
-    specifics.set_session_tag(machine_tag_);
-    specifics.set_tab_node_id(tab_node_id);
-    tab_node.SetSessionSpecifics(specifics);
-
-    // Grow the pool by 1 since we created a new node. We don't actually need
-    // to put the node's id in the pool now, since the pool is still empty.
-    // The id will be added when that tab is closed and the node is freed.
-    tab_syncid_pool_.resize(tab_node_id + 1);
-    DVLOG(1) << "Adding sync node "
-             << tab_node.GetId() << " to tab syncid pool";
-    return tab_node.GetId();
-  } else {
-    // There are nodes available, grab next free and decrement free pointer.
-    return tab_syncid_pool_[static_cast<size_t>(tab_pool_fp_--)];
-  }
-}
-
-void SessionModelAssociator::TabNodePool::FreeTabNode(int64 sync_id) {
-  // Pool size should always match # of free tab nodes.
-  DCHECK_LT(tab_pool_fp_, static_cast<int64>(tab_syncid_pool_.size()));
-  tab_syncid_pool_[static_cast<size_t>(++tab_pool_fp_)] = sync_id;
 }
 
 void SessionModelAssociator::AttemptSessionsDataRefresh() const {
@@ -1227,7 +1051,8 @@ void SessionModelAssociator::DeleteForeignSession(const std::string& tag) {
 
   syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
   syncer::ReadNode root(&trans);
-  if (root.InitByTagLookup(kSessionsTag) != syncer::BaseNode::INIT_OK) {
+  if (root.InitByTagLookup(syncer::ModelTypeToRootTag(syncer::SESSIONS)) !=
+                           syncer::BaseNode::INIT_OK) {
     LOG(ERROR) << kNoSessionsFolderError;
     return;
   }
@@ -1242,7 +1067,7 @@ void SessionModelAssociator::DeleteForeignSession(const std::string& tag) {
     const sync_pb::SessionSpecifics& specifics =
         sync_node.GetSessionSpecifics();
     if (specifics.session_tag() == tag)
-      sync_node.Remove();
+      sync_node.Tombstone();
   }
 }
 
@@ -1296,6 +1121,10 @@ void SessionModelAssociator::QuitLoopForSubtleTesting() {
     test_weak_factory_.InvalidateWeakPtrs();
     MessageLoop::current()->Quit();
   }
+}
+
+FaviconCache* SessionModelAssociator::GetFaviconCache() {
+  return &favicon_cache_;
 }
 
 void SessionModelAssociator::BlockUntilLocalChangeForTest(

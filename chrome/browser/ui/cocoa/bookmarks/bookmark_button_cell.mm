@@ -8,14 +8,16 @@
 #include "base/sys_string_conversions.h"
 #import "chrome/browser/bookmarks/bookmark_model.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
-#import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_context_menu_cocoa_controller.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
+#include "grit/ui_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
-#include "ui/gfx/mac/nsimage_cache.h"
+#include "ui/base/resource/resource_bundle.h"
 
 using content::UserMetricsAction;
 
+const int kHierarchyButtonXMargin = 4;
 
 @interface BookmarkButtonCell(Private)
 - (void)configureBookmarkButtonCell;
@@ -29,31 +31,42 @@ using content::UserMetricsAction;
 @synthesize drawFolderArrow = drawFolderArrow_;
 
 + (id)buttonCellForNode:(const BookmarkNode*)node
-            contextMenu:(NSMenu*)contextMenu
-               cellText:(NSString*)cellText
-              cellImage:(NSImage*)cellImage {
+                   text:(NSString*)text
+                  image:(NSImage*)image
+         menuController:(BookmarkContextMenuCocoaController*)menuController {
   id buttonCell =
       [[[BookmarkButtonCell alloc] initForNode:node
-                                   contextMenu:contextMenu
-                                      cellText:cellText
-                                     cellImage:cellImage]
+                                          text:text
+                                         image:image
+                                menuController:menuController]
+       autorelease];
+  return buttonCell;
+}
+
++ (id)buttonCellWithText:(NSString*)text
+                   image:(NSImage*)image
+          menuController:(BookmarkContextMenuCocoaController*)menuController {
+  id buttonCell =
+      [[[BookmarkButtonCell alloc] initWithText:text
+                                          image:image
+                                 menuController:menuController]
        autorelease];
   return buttonCell;
 }
 
 - (id)initForNode:(const BookmarkNode*)node
-      contextMenu:(NSMenu*)contextMenu
-         cellText:(NSString*)cellText
-        cellImage:(NSImage*)cellImage {
-  if ((self = [super initTextCell:cellText])) {
+             text:(NSString*)text
+            image:(NSImage*)image
+   menuController:(BookmarkContextMenuCocoaController*)menuController {
+  if ((self = [super initTextCell:text])) {
+    menuController_ = menuController;
     [self configureBookmarkButtonCell];
     [self setTextColor:[NSColor blackColor]];
     [self setBookmarkNode:node];
 
     if (node) {
       NSString* title = base::SysUTF16ToNSString(node->GetTitle());
-      [self setBookmarkCellText:title image:cellImage];
-      [self setMenu:contextMenu];
+      [self setBookmarkCellText:title image:image];
     } else {
       [self setEmpty:YES];
       [self setBookmarkCellText:l10n_util::GetNSString(IDS_MENU_EMPTY_SUBMENU)
@@ -64,8 +77,25 @@ using content::UserMetricsAction;
   return self;
 }
 
+- (id)initWithText:(NSString*)text
+             image:(NSImage*)image
+    menuController:(BookmarkContextMenuCocoaController*)menuController {
+  if ((self = [super initTextCell:text])) {
+    menuController_ = menuController;
+    [self configureBookmarkButtonCell];
+    [self setTextColor:[NSColor blackColor]];
+    [self setBookmarkNode:NULL];
+    [self setBookmarkCellText:text image:image];
+    // This is a custom button not attached to any node. It is no considered
+    // empty even if its bookmark node is NULL.
+    [self setEmpty:NO];
+  }
+
+  return self;
+}
+
 - (id)initTextCell:(NSString*)string {
-  return [self initForNode:nil contextMenu:nil cellText:string cellImage:nil];
+  return [self initForNode:nil text:string image:nil menuController:nil];
 }
 
 // Used by the off-the-side menu, the only case where a
@@ -90,6 +120,10 @@ using content::UserMetricsAction;
   // NSLineBreakByTruncatingMiddle seems more common on OSX but let's
   // try to match Windows for a bit to see what happens.
   [self setLineBreakMode:NSLineBreakByTruncatingTail];
+
+  // The overflow button chevron bitmap is not 16 units high, so it'd be scaled
+  // at paint time without this.
+  [self setImageScaling:NSImageScaleNone];
 
   // Theming doesn't work for bookmark buttons yet (cell text is chucked).
   [super setShouldTheme:NO];
@@ -148,25 +182,21 @@ using content::UserMetricsAction;
                                             pointerValue]);
 }
 
-// We share the context menu among all bookmark buttons.  To allow us
-// to disambiguate when needed (e.g. "open bookmark"), we set the
-// menu's associated bookmark node ID to be our represented object.
 - (NSMenu*)menu {
   if (empty_)
     return nil;
-  BookmarkMenu* menu = (BookmarkMenu*)[super menu];
-  const BookmarkNode* node =
-      static_cast<const BookmarkNode*>([[self representedObject] pointerValue]);
 
-  if (node->parent() && node->parent()->type() == BookmarkNode::FOLDER) {
+  // If node is NULL, this is a custom button, the menu does not represent
+  // anything.
+  const BookmarkNode* node = [self bookmarkNode];
+
+  if (node && node->parent() &&
+      node->parent()->type() == BookmarkNode::FOLDER) {
     content::RecordAction(UserMetricsAction("BookmarkBarFolder_CtxMenu"));
   } else {
     content::RecordAction(UserMetricsAction("BookmarkBar_CtxMenu"));
   }
-
-  [menu setRepresentedObject:[NSNumber numberWithLongLong:node->id()]];
-
-  return menu;
+  return [menuController_ menuForBookmarkNode:node];
 }
 
 - (void)setTitle:(NSString*)title {
@@ -219,8 +249,9 @@ using content::UserMetricsAction;
 - (void)setDrawFolderArrow:(BOOL)draw {
   drawFolderArrow_ = draw;
   if (draw && !arrowImage_) {
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     arrowImage_.reset(
-        [gfx::GetCachedImageWithName(@"menu_hierarchy_arrow.pdf") retain]);
+        [rb.GetNativeImageNamed(IDR_MENU_HIERARCHY_ARROW).ToNSImage() retain]);
   }
 }
 
@@ -229,7 +260,7 @@ using content::UserMetricsAction;
 - (NSSize)cellSize {
   NSSize cellSize = [super cellSize];
   if (drawFolderArrow_) {
-    cellSize.width += [arrowImage_ size].width;  // plus margin?
+    cellSize.width += [arrowImage_ size].width + 2 * kHierarchyButtonXMargin;
   }
   return cellSize;
 }
@@ -248,7 +279,8 @@ using content::UserMetricsAction;
     NSRect imageRect = NSZeroRect;
     imageRect.size = [arrowImage_ size];
     const CGFloat kArrowOffset = 1.0;  // Required for proper centering.
-    CGFloat dX = NSWidth(cellFrame) - NSWidth(imageRect);
+    CGFloat dX =
+        NSWidth(cellFrame) - NSWidth(imageRect) - kHierarchyButtonXMargin;
     CGFloat dY = (NSHeight(cellFrame) / 2.0) - (NSHeight(imageRect) / 2.0) +
         kArrowOffset;
     NSRect drawRect = NSOffsetRect(imageRect, dX, dY);

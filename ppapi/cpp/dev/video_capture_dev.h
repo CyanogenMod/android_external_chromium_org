@@ -29,6 +29,8 @@ class VideoCapture_Dev : public Resource {
   int32_t EnumerateDevices(
       const CompletionCallbackWithOutput<std::vector<DeviceRef_Dev> >&
           callback);
+  int32_t MonitorDeviceChange(PP_MonitorDeviceChangeCallback callback,
+                              void* user_data);
   int32_t Open(const DeviceRef_Dev& device_ref,
                const PP_VideoCaptureDeviceInfo_Dev& requested_info,
                uint32_t buffer_count,
@@ -37,11 +39,6 @@ class VideoCapture_Dev : public Resource {
   int32_t ReuseBuffer(uint32_t buffer);
   int32_t StopCapture();
   void Close();
-
- private:
-  // Used to store the arguments of Open() when using the v0.1 interface.
-  PP_VideoCaptureDeviceInfo_Dev requested_info_;
-  uint32_t buffer_count_;
 };
 
 }  // namespace pp

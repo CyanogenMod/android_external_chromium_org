@@ -10,14 +10,15 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/string_search.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "base/string16.h"
-#include "base/string_split.h"
+#include "base/stringprintf.h"
+#include "base/strings/string_split.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -25,7 +26,7 @@
 #include "content/public/browser/download_item.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
-#include "unicode/regex.h"
+#include "third_party/icu/public/i18n/unicode/regex.h"
 
 using content::DownloadDangerType;
 using content::DownloadItem;
@@ -83,14 +84,34 @@ static int64 GetStartTimeMsEpoch(const DownloadItem& item) {
   return (item.GetStartTime() - base::Time::UnixEpoch()).InMilliseconds();
 }
 
-// TODO(benjhayden) These timestamps don't fit in int32, and base::Value doesn't
-// support int64. Use ISO 8601 date-time strings instead.
-static int GetStartTime(const DownloadItem& item) {
-  return (item.GetStartTime() - base::Time::UnixEpoch()).InMilliseconds();
+static int64 GetEndTimeMsEpoch(const DownloadItem& item) {
+  return (item.GetEndTime() - base::Time::UnixEpoch()).InMilliseconds();
+}
+
+std::string TimeToISO8601(const base::Time& t) {
+  base::Time::Exploded exploded;
+  t.UTCExplode(&exploded);
+  return base::StringPrintf(
+      "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", exploded.year, exploded.month,
+      exploded.day_of_month, exploded.hour, exploded.minute, exploded.second,
+      exploded.millisecond);
+}
+
+static std::string GetStartTime(const DownloadItem& item) {
+  return TimeToISO8601(item.GetStartTime());
+}
+
+static std::string GetEndTime(const DownloadItem& item) {
+  return TimeToISO8601(item.GetEndTime());
 }
 
 static bool GetDangerAccepted(const DownloadItem& item) {
-  return (item.GetSafetyState() == DownloadItem::DANGEROUS_BUT_VALIDATED);
+  return (item.GetDangerType() ==
+          content::DOWNLOAD_DANGER_TYPE_USER_VALIDATED);
+}
+
+static bool GetExists(const DownloadItem& item) {
+  return !item.GetFileExternallyRemoved();
 }
 
 static string16 GetFilename(const DownloadItem& item) {
@@ -239,6 +260,8 @@ bool DownloadQuery::AddFilter(DownloadQuery::FilterType type,
       return AddFilter(BuildFilter<int>(value, EQ, &GetReceivedBytes));
     case FILTER_DANGER_ACCEPTED:
       return AddFilter(BuildFilter<bool>(value, EQ, &GetDangerAccepted));
+    case FILTER_EXISTS:
+      return AddFilter(BuildFilter<bool>(value, EQ, &GetExists));
     case FILTER_FILENAME:
       return AddFilter(BuildFilter<string16>(value, EQ, &GetFilename));
     case FILTER_FILENAME_REGEX:
@@ -252,12 +275,18 @@ bool DownloadQuery::AddFilter(DownloadQuery::FilterType type,
       return GetAs(value, &query) &&
              AddFilter(base::Bind(&MatchesQuery, query));
     }
+    case FILTER_ENDED_AFTER:
+      return AddFilter(BuildFilter<std::string>(value, GT, &GetEndTime));
+    case FILTER_ENDED_BEFORE:
+      return AddFilter(BuildFilter<std::string>(value, LT, &GetEndTime));
+    case FILTER_END_TIME:
+      return AddFilter(BuildFilter<std::string>(value, EQ, &GetEndTime));
     case FILTER_STARTED_AFTER:
-      return AddFilter(BuildFilter<int>(value, GT, &GetStartTime));
+      return AddFilter(BuildFilter<std::string>(value, GT, &GetStartTime));
     case FILTER_STARTED_BEFORE:
-      return AddFilter(BuildFilter<int>(value, LT, &GetStartTime));
+      return AddFilter(BuildFilter<std::string>(value, LT, &GetStartTime));
     case FILTER_START_TIME:
-      return AddFilter(BuildFilter<int>(value, EQ, &GetStartTime));
+      return AddFilter(BuildFilter<std::string>(value, EQ, &GetStartTime));
     case FILTER_TOTAL_BYTES:
       return AddFilter(BuildFilter<int>(value, EQ, &GetTotalBytes));
     case FILTER_TOTAL_BYTES_GREATER:
@@ -347,6 +376,9 @@ bool DownloadQuery::DownloadComparator::operator() (
 void DownloadQuery::AddSorter(DownloadQuery::SortType type,
                               DownloadQuery::SortDirection direction) {
   switch (type) {
+    case SORT_END_TIME:
+      sorters_.push_back(Sorter::Build<int64>(direction, &GetEndTimeMsEpoch));
+      break;
     case SORT_START_TIME:
       sorters_.push_back(Sorter::Build<int64>(direction, &GetStartTimeMsEpoch));
       break;
@@ -362,6 +394,9 @@ void DownloadQuery::AddSorter(DownloadQuery::SortType type,
       break;
     case SORT_DANGER_ACCEPTED:
       sorters_.push_back(Sorter::Build<bool>(direction, &GetDangerAccepted));
+      break;
+    case SORT_EXISTS:
+      sorters_.push_back(Sorter::Build<bool>(direction, &GetExists));
       break;
     case SORT_STATE:
       sorters_.push_back(Sorter::Build<DownloadItem::DownloadState>(

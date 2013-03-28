@@ -10,12 +10,14 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/pickle.h"
 #include "base/process_util.h"
 #include "base/rand_util.h"
 #include "base/string_number_conversions.h"
 #include "base/threading/thread_checker.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_handle.h"
+#include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_utils.h"
 
@@ -152,17 +154,24 @@ bool Channel::ChannelImpl::WillDispatchInputMessage(Message* msg) {
 
 void Channel::ChannelImpl::HandleHelloMessage(const Message& msg) {
   // The hello message contains one parameter containing the PID.
-  MessageIterator it = MessageIterator(msg);
-  int32 claimed_pid =  it.NextInt();
-  if (validate_client_ && (it.NextInt() != client_secret_)) {
+  PickleIterator it(msg);
+  int32 claimed_pid;
+  bool failed = !it.ReadInt(&claimed_pid);
+
+  if (!failed && validate_client_) {
+    int32 secret;
+    failed = it.ReadInt(&secret) ? (secret != client_secret_) : true;
+  }
+
+  if (failed) {
     NOTREACHED();
-    // Something went wrong. Abort connection.
     Close();
     listener()->OnChannelError();
     return;
   }
+
   peer_pid_ = claimed_pid;
-  // validation completed.
+  // Validation completed.
   validate_client_ = false;
   listener()->OnChannelConnected(claimed_pid);
 }
@@ -419,7 +428,8 @@ void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
 
     // We don't support recursion through OnMessageReceived yet!
     DCHECK(!processing_incoming_);
-    AutoReset<bool> auto_reset_processing_incoming(&processing_incoming_, true);
+    base::AutoReset<bool> auto_reset_processing_incoming(
+        &processing_incoming_, true);
 
     // Process the new data.
     if (input_state_.is_pending) {
@@ -427,7 +437,7 @@ void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
       input_state_.is_pending = false;
       if (!bytes_transfered)
         ok = false;
-      else
+      else if (pipe_ != INVALID_HANDLE_VALUE)
         ok = AsyncReadComplete(bytes_transfered);
     } else {
       DCHECK(!bytes_transfered);
@@ -465,10 +475,6 @@ bool Channel::Connect() {
 void Channel::Close() {
   if (channel_impl_)
     channel_impl_->Close();
-}
-
-void Channel::set_listener(Listener* listener) {
-  channel_impl_->set_listener(listener);
 }
 
 base::ProcessId Channel::peer_pid() const {

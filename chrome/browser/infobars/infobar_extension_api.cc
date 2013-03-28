@@ -4,21 +4,21 @@
 
 #include "chrome/browser/infobars/infobar_extension_api.h"
 
-#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_infobar_delegate.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/window_controller.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/error_utils.h"
 #include "grit/generated_resources.h"
 
 using extensions::Extension;
@@ -29,12 +29,9 @@ const char kHtmlPath[] = "path";
 const char kTabId[] = "tabId";
 const char kHeight[] = "height";
 
-const char kNoCurrentWindowError[] = "No current browser window was found";
-const char kTabNotFoundError[] = "Specified tab (or default tab) not found";
-
 }  // namespace
 
-bool ShowInfoBarFunction::RunImpl() {
+bool InfobarsShowFunction::RunImpl() {
   DictionaryValue* args;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &args));
 
@@ -61,17 +58,15 @@ bool ShowInfoBarFunction::RunImpl() {
       NULL,
       &web_contents,
       NULL)) {
-    error_ = ExtensionErrorUtils::FormatErrorMessage(
+    error_ = extensions::ErrorUtils::FormatErrorMessage(
         extensions::tabs_constants::kTabNotFoundError,
         base::IntToString(tab_id));
     return false;
   }
 
-  InfoBarTabHelper* infobar_tab_helper =
-      InfoBarTabHelper::FromWebContents(web_contents);
-  infobar_tab_helper->AddInfoBar(
-      new ExtensionInfoBarDelegate(browser, infobar_tab_helper,
-                                   GetExtension(), url, height));
+  ExtensionInfoBarDelegate::Create(
+      InfoBarService::FromWebContents(web_contents), browser, GetExtension(),
+      url, height);
 
   // TODO(finnur): Return the actual DOMWindow object. Bug 26463.
   DCHECK(browser->extension_window_controller());

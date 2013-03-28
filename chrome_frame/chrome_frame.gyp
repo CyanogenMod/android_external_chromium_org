@@ -122,6 +122,7 @@
         'chrome_launcher.h',
         'chrome_launcher_unittest.cc',
         'function_stub_unittest.cc',
+        'scoped_initialization_manager_unittest.cc',
         'test/chrome_tab_mocks.h',
         'test/chrome_frame_test_utils.h',
         'test/chrome_frame_test_utils.cc',
@@ -417,7 +418,7 @@
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
         '../skia/skia.gyp:skia',
-        '../sync/sync.gyp:syncapi_core',
+        '../sync/sync.gyp:sync',
         '../testing/gtest.gyp:gtest',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
@@ -745,6 +746,8 @@
         'infobars/infobar_manager.cc',
         'metrics_service.cc',
         'metrics_service.h',
+        'pin_module.cc',
+        'pin_module.h',
         'policy_settings.cc',
         'policy_settings.h',
         'protocol_sink_wrap.cc',
@@ -800,7 +803,7 @@
             '../chrome/chrome.gyp:installer_util',
             '../google_update/google_update.gyp:google_update',
             # Make the archive build happy.
-            '../sync/sync.gyp:syncapi_core',
+            '../sync/sync.gyp:sync',
             # Crash Reporting
             'crash_reporting/crash_reporting.gyp:crash_report',
           ],
@@ -897,6 +900,7 @@
         'chrome_frame_reporting.h',
         'chrome_tab.cc',
         'chrome_tab.def',
+        'scoped_initialization_manager.h',
         '<(SHARED_INTERMEDIATE_DIR)/chrome_frame/chrome_tab.h',
         '<(SHARED_INTERMEDIATE_DIR)/chrome_frame/npchrome_frame_dll_version.rc',
         # FIXME(slightlyoff): For chrome_tab.tlb. Giant hack until we can
@@ -917,13 +921,13 @@
             '<(SHARED_INTERMEDIATE_DIR)/chrome_frame/chrome_frame_resources.rc',
           ],
           'dependencies': [
-            '../breakpad/breakpad.gyp:breakpad_handler_dll',
+            '../breakpad/breakpad.gyp:breakpad_handler',
             '../chrome/chrome.gyp:automation',
             # Installer
             '../chrome/chrome.gyp:installer_util',
             '../google_update/google_update.gyp:google_update',
             # Make the archive build happy.
-            '../sync/sync.gyp:syncapi_core',
+            '../sync/sync.gyp:sync',
             # Crash Reporting
             'crash_reporting/crash_reporting.gyp:crash_report',
           ],
@@ -985,10 +989,10 @@
         # Intended as the build phase for our coverage bots.
         #
         # Builds unit test bundles needed for coverage.
-        # Outputs this list of bundles into coverage_bundles.py.
+        # Outputs this list of bundles into gcf_coverage_bundles.py.
         #
         # If you want to both build and run coverage from your IDE,
-        # use the 'coverage' target.
+        # use the 'gcf_coverage' target.
         {
           'target_name': 'gcf_coverage_build',
           'suppress_wildcard': 1,
@@ -1021,22 +1025,22 @@
               # output executable name.
               # Is there a better way to force this action to run, always?
               #
-              # If a test bundle is added to this coverage_build target it
+              # If a test bundle is added to this gcf_coverage_build target it
               # necessarily means this file (chrome_frame.gyp) is changed,
-              # so the action is run (coverage_bundles.py is generated).
+              # so the action is run (gcf_coverage_bundles.py is generated).
               # Exceptions to that rule are theoretically possible
               # (e.g. re-gyp with a GYP_DEFINES set).
               # Else it's the same list of bundles as last time.  They are
               # built (since on the deps list) but the action may not run.
               # For now, things work, but it's less than ideal.
               'inputs': [ 'chrome_frame.gyp' ],
-              'outputs': [ '<(PRODUCT_DIR)/coverage_bundles.py' ],
+              'outputs': [ '<(PRODUCT_DIR)/gcf_coverage_bundles.py' ],
               'action_name': 'gcf_coverage_build',
               'action': [ 'python', '-c',
                           'import os; '
                           'f = open(' \
                           '\'<(PRODUCT_DIR)\' + os.path.sep + ' \
-                          '\'coverage_bundles.py\'' \
+                          '\'gcf_coverage_bundles.py\'' \
                           ', \'w\'); ' \
                           'deplist = \'' \
                           '<@(_dependencies)' \
@@ -1064,8 +1068,8 @@
           'actions': [
             {
               # MSVS must have an input file and an output file.
-              'inputs': [ '<(PRODUCT_DIR)/coverage_bundles.py' ],
-              'outputs': [ '<(PRODUCT_DIR)/coverage.info' ],
+              'inputs': [ '<(PRODUCT_DIR)/gcf_coverage_bundles.py' ],
+              'outputs': [ '<(PRODUCT_DIR)/gcf_coverage.info' ],
               'action_name': 'gcf_coverage_run',
               'action': [ 'python',
                           '../tools/code_coverage/coverage_posix.py',
@@ -1074,7 +1078,7 @@
                           '--src_root',
                           '.',
                           '--bundles',
-                          '<(PRODUCT_DIR)/coverage_bundles.py',
+                          '<(PRODUCT_DIR)/gcf_coverage_bundles.py',
                         ],
               # Use outputs of this action as inputs for the main target build.
               # Seems as a misnomer but makes this happy on Linux (scons).

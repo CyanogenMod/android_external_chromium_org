@@ -4,9 +4,11 @@
 
 body {
   margin: 10px;
+<if expr="not pp_ifdef('android')">
   min-width: 47em;
-  /* Should match needs-restart.(height + padding-top + padding-bottom + 5) */
-  padding-bottom: 65px;
+</if>
+  /* Should match needs-restart.height + 5 */
+  padding-bottom: 75px;
 }
 
 a {
@@ -14,29 +16,28 @@ a {
   font-size: 103%;
 }
 
-div#header {
-  -webkit-padding-start: 0;
+#header {
+  -webkit-padding-start: 75px;
+  background: -webkit-image-set(
+      url('../../app/theme/default_100_percent/flags_section.png') 1x,
+      url('../../app/theme/default_200_percent/flags_section.png') 2x)
+      no-repeat left center;
   box-sizing: border-box;
+  display: table;
   margin-bottom: 1.05em;
-  /* 67px is the height of the header's background image. */
+  /* 67px is the height of the header's image. */
   min-height: 67px;
   overflow: hidden;
-  padding-bottom: 20px;
-  padding-top: 20px;
   position: relative;
 }
 
-#header h1 {
-  -webkit-padding-start: 75px;
-  background: url('../../app/theme/flags_section.png') 0 20px no-repeat;
-  display: inline;
-  margin: 0;
-  padding-bottom: 40px;
-  padding-top: 40px;
+#title-spacer {
+  display: table-cell;
+  vertical-align: middle;
 }
 
-html[dir=rtl] #header h1 {
-  background: url('../../app/theme/flags_section.png') right no-repeat;
+html[dir=rtl] #header {
+  background-position: right center;
 }
 
 h1 {
@@ -46,7 +47,7 @@ h1 {
   padding: 0;
 }
 
-#blurb-container {
+.blurb-container {
   font-size: 120%;
   padding-bottom: 1.5em;
 }
@@ -62,12 +63,10 @@ div.content {
 }
 
 .section-header {
-  -webkit-padding-start: 5px;
   background: rgb(235, 239, 249);
   border-top: 1px solid rgb(181, 199, 222);
   font-size: 99%;
-  padding-bottom: 2px;
-  padding-top: 3px;
+  padding: 2px 5px 3px;
   width: 100%;
 }
 
@@ -81,6 +80,15 @@ div.content {
 
 .section-header-title {
   font-weight: bold;
+  line-height: 200%;
+}
+
+#experiment-reset-all {
+  float: right;
+}
+
+html[dir=rtl] #experiment-reset-all {
+  float: left;
 }
 
 .vbox-container {
@@ -147,13 +155,13 @@ div.needs-restart {
   background: #FFF;
   border-top: 1px solid rgb(181, 199, 222);
   bottom: 0;
+  box-sizing: border-box;
   /* If you change this, update body.padding-bottom */
-  height: 30px;
+  height: 70px;
   left: 0;
-  /* If you change this, update body.padding-bottom */
   padding-bottom: 25px;
   padding-left: 15px;
-  /* If you change this, update body.padding-bottom */
+  padding-right: 15px;
   padding-top: 15px;
   position: fixed;
   width: 100%;

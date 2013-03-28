@@ -23,7 +23,7 @@ using content::NavigationController;
 using content::NavigationEntry;
 using content::WebContents;
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(SearchEngineTabHelper)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(SearchEngineTabHelper);
 
 namespace {
 
@@ -95,7 +95,8 @@ void SearchEngineTabHelper::OnPageHasOSDD(
   // keyword.
 
   // Make sure page_id is the current page and other basic checks.
-  DCHECK(doc_url.is_valid());
+  if (!doc_url.is_valid())
+    return;
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
   if (!web_contents()->IsActiveEntry(page_id) ||

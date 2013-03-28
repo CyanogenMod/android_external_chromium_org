@@ -10,12 +10,12 @@
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/hash_tables.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process_util.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/test/test_suite.h"
@@ -33,7 +33,7 @@
 
 #if defined(OS_WIN)
 #include "base/base_switches.h"
-#include "content/common/sandbox_policy.h"
+#include "content/common/sandbox_win.h"
 #include "sandbox/win/src/sandbox_factory.h"
 #include "sandbox/win/src/sandbox_types.h"
 #elif defined(OS_MACOSX)
@@ -43,14 +43,6 @@
 namespace content {
 
 namespace {
-
-// A multiplier for slow tests. We generally avoid multiplying
-// test timeouts by any constants. Here it is used as last resort
-// to implement the SLOW_ test prefix.
-const int kSlowTestTimeoutMultiplier = 5;
-
-// Tests with this prefix have a longer timeout, see above.
-const char kSlowTestPrefix[] = "SLOW_";
 
 // Tests with this prefix run before the same test without it, and use the same
 // profile. i.e. Foo.PRE_Test runs and then Foo.Test. This allows writing tests
@@ -76,7 +68,7 @@ const char kTestTotalShards[] = "GTEST_TOTAL_SHARDS";
 const char kTestShardIndex[] = "GTEST_SHARD_INDEX";
 
 // The default output file for XML output.
-const FilePath::CharType kDefaultOutputFile[] = FILE_PATH_LITERAL(
+const base::FilePath::CharType kDefaultOutputFile[] = FILE_PATH_LITERAL(
     "test_detail.xml");
 
 // Quit test execution after this number of tests has timed out.
@@ -174,23 +166,24 @@ ResultsPrinter::ResultsPrinter(const CommandLine& command_line) : out_(NULL) {
     return;
   std::string flag = command_line.GetSwitchValueASCII(kGTestOutputFlag);
   size_t colon_pos = flag.find(':');
-  FilePath path;
+  base::FilePath path;
   if (colon_pos != std::string::npos) {
-    FilePath flag_path = command_line.GetSwitchValuePath(kGTestOutputFlag);
-    FilePath::StringType path_string = flag_path.value();
-    path = FilePath(path_string.substr(colon_pos + 1));
+    base::FilePath flag_path =
+        command_line.GetSwitchValuePath(kGTestOutputFlag);
+    base::FilePath::StringType path_string = flag_path.value();
+    path = base::FilePath(path_string.substr(colon_pos + 1));
     // If the given path ends with '/', consider it is a directory.
     // Note: This does NOT check that a directory (or file) actually exists
     // (the behavior is same as what gtest does).
     if (file_util::EndsWithSeparator(path)) {
-      FilePath executable = command_line.GetProgram().BaseName();
+      base::FilePath executable = command_line.GetProgram().BaseName();
       path = path.Append(executable.ReplaceExtension(
-          FilePath::StringType(FILE_PATH_LITERAL("xml"))));
+          base::FilePath::StringType(FILE_PATH_LITERAL("xml"))));
     }
   }
   if (path.value().empty())
-    path = FilePath(kDefaultOutputFile);
-  FilePath dir_name = path.DirName();
+    path = base::FilePath(kDefaultOutputFile);
+  base::FilePath dir_name = path.DirName();
   if (!file_util::DirectoryExists(dir_name)) {
     LOG(WARNING) << "The output directory does not exist. "
                  << "Creating the directory: " << dir_name.value();
@@ -307,19 +300,6 @@ bool MatchesFilter(const std::string& name, const std::string& filter) {
   }
 }
 
-base::TimeDelta GetTestTerminationTimeout(const std::string& test_name,
-                                          base::TimeDelta default_timeout) {
-  base::TimeDelta timeout = default_timeout;
-
-  // Make it possible for selected tests to request a longer timeout.
-  // Generally tests should really avoid doing too much, and splitting
-  // a test instead of using SLOW prefix is strongly preferred.
-  if (test_name.find(kSlowTestPrefix) != std::string::npos)
-    timeout *= kSlowTestTimeoutMultiplier;
-
-  return timeout;
-}
-
 int RunTestInternal(const testing::TestCase* test_case,
                     const std::string& test_name,
                     CommandLine* command_line,
@@ -378,12 +358,11 @@ int RunTestInternal(const testing::TestCase* test_case,
   if (!base::LaunchProcess(new_cmd_line, options, &process_handle))
     return -1;
 
-  base::TimeDelta timeout = GetTestTerminationTimeout(
-      test_name, default_timeout);
-
   int exit_code = 0;
-  if (!base::WaitForExitCodeWithTimeout(process_handle, &exit_code, timeout)) {
-    LOG(ERROR) << "Test timeout (" << timeout.InMilliseconds()
+  if (!base::WaitForExitCodeWithTimeout(process_handle,
+                                        &exit_code,
+                                        default_timeout)) {
+    LOG(ERROR) << "Test timeout (" << default_timeout.InMilliseconds()
                << " ms) exceeded for " << test_name;
 
     if (was_timeout)
@@ -444,11 +423,7 @@ int RunTest(TestLauncherDelegate* launcher_delegate,
     new_cmd_line.AppendSwitchNative((*iter).first, (*iter).second);
   }
 
-  // Do not let the child ignore failures.  We need to propagate the
-  // failure status back to the parent.
-  new_cmd_line.AppendSwitch(base::TestSuite::kStrictFailureHandling);
-
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   // Create a new data dir and pass it to the child.
   if (!temp_dir.CreateUniqueTempDir() || !temp_dir.IsValid()) {
     LOG(ERROR) << "Error creating temp data directory";
@@ -545,7 +520,7 @@ bool RunTests(TestLauncherDelegate* launcher_delegate,
         continue;
       }
 
-      base::Time start_time = base::Time::Now();
+      base::TimeTicks start_time = base::TimeTicks::Now();
       ++test_run_count;
       bool was_timeout = false;
       int exit_code = RunTest(launcher_delegate,
@@ -555,22 +530,18 @@ bool RunTests(TestLauncherDelegate* launcher_delegate,
                               &was_timeout);
       if (exit_code == 0) {
         // Test passed.
-        printer.OnTestEnd(test_info->name(), test_case->name(), true, false,
-                          false,
-                          (base::Time::Now() - start_time).InMillisecondsF());
+        printer.OnTestEnd(
+            test_info->name(), test_case->name(), true, false,
+            false,
+            (base::TimeTicks::Now() - start_time).InMillisecondsF());
       } else {
         failed_tests.push_back(test_name);
 
         bool ignore_failure = false;
-
-        // Never ignore crashes or hangs/timeouts, they are serious and should
-        // always be visible.
-        if (exit_code != -1 && !was_timeout)
-          ignore_failure = base::TestSuite::ShouldIgnoreFailure(*test_info);
-
-        printer.OnTestEnd(test_info->name(), test_case->name(), true, true,
-                          ignore_failure,
-                          (base::Time::Now() - start_time).InMillisecondsF());
+        printer.OnTestEnd(
+            test_info->name(), test_case->name(), true, true,
+            ignore_failure,
+            (base::TimeTicks::Now() - start_time).InMillisecondsF());
         if (ignore_failure)
           ignored_tests.insert(test_name);
 
@@ -643,7 +614,6 @@ const char kLaunchAsBrowser[] = "as-browser";
 const char kRunManualTestsFlag[] = "run-manual";
 
 const char kSingleProcessTestsFlag[]   = "single_process";
-const char kSingleProcessTestsAndChromeFlag[]   = "single-process";
 
 const char kWarmupFlag[] = "warmup";
 
@@ -696,7 +666,7 @@ int LaunchTests(TestLauncherDelegate* launcher_delegate,
   }
 
   if (command_line->HasSwitch(kSingleProcessTestsFlag) ||
-      (command_line->HasSwitch(kSingleProcessTestsAndChromeFlag) &&
+      (command_line->HasSwitch(switches::kSingleProcess) &&
        command_line->HasSwitch(kGTestFilterFlag)) ||
       command_line->HasSwitch(kGTestListTestsFlag) ||
       command_line->HasSwitch(kGTestHelpFlag)) {

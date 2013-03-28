@@ -14,20 +14,20 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/platform_file.h"
+#include "base/prefs/pref_member.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "base/string_number_conversions.h"
 #include "base/string_piece.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/threading/worker_pool.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/api/prefs/pref_member.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
@@ -40,8 +40,7 @@
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
+#include "chrome/common/cancelable_task_tracker.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_version_info.h"
@@ -53,20 +52,21 @@
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "grit/generated_resources.h"
 #include "grit/net_internals_resources.h"
 #include "net/base/host_cache.h"
-#include "net/base/host_resolver.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "net/base/transport_security_state.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_stream_factory.h"
+#include "net/http/transport_security_state.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -78,6 +78,7 @@
 #include "chrome/browser/chromeos/system/syslogs_provider.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/debug_daemon_client.h"
+#include "chromeos/network/onc/onc_constants.h"
 #endif
 #if defined(OS_WIN)
 #include "chrome/browser/net/service_providers_win.h"
@@ -106,6 +107,41 @@ const int kLogFormatVersion = 1;
 // there is none.
 net::HostCache* GetHostResolverCache(net::URLRequestContext* context) {
   return context->host_resolver()->GetHostCache();
+}
+
+std::string HashesToBase64String(const net::HashValueVector& hashes) {
+  std::string str;
+  for (size_t i = 0; i != hashes.size(); ++i) {
+    if (i != 0)
+      str += ",";
+    str += hashes[i].ToString();
+  }
+  return str;
+}
+
+bool Base64StringToHashes(const std::string& hashes_str,
+                          net::HashValueVector* hashes) {
+  hashes->clear();
+  std::vector<std::string> vector_hash_str;
+  base::SplitString(hashes_str, ',', &vector_hash_str);
+
+  for (size_t i = 0; i != vector_hash_str.size(); ++i) {
+    std::string hash_str;
+    RemoveChars(vector_hash_str[i], " \t\r\n", &hash_str);
+    net::HashValue hash;
+    // Skip past unrecognized hash algos
+    // But return false on malformatted input
+    if (hash_str.empty())
+      return false;
+    if (hash_str.compare(0, 5, "sha1/") != 0 &&
+        hash_str.compare(0, 7, "sha256/") != 0) {
+      continue;
+    }
+    if (!hash.FromString(hash_str))
+      return false;
+    hashes->push_back(hash);
+  }
+  return true;
 }
 
 // Returns a Value representing the state of a pre-existing URLRequest when
@@ -181,15 +217,15 @@ Value* ExperimentToValue(const ConnectionTester::Experiment& experiment) {
   return dict;
 }
 
-ChromeWebUIDataSource* CreateNetInternalsHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUINetInternalsHost);
+content::WebUIDataSource* CreateNetInternalsHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUINetInternalsHost);
 
-  source->set_default_resource(IDR_NET_INTERNALS_INDEX_HTML);
-  source->add_resource_path("help.html", IDR_NET_INTERNALS_HELP_HTML);
-  source->add_resource_path("help.js", IDR_NET_INTERNALS_HELP_JS);
-  source->add_resource_path("index.js", IDR_NET_INTERNALS_INDEX_JS);
-  source->set_json_path("strings.js");
+  source->SetDefaultResource(IDR_NET_INTERNALS_INDEX_HTML);
+  source->AddResourcePath("help.html", IDR_NET_INTERNALS_HELP_HTML);
+  source->AddResourcePath("help.js", IDR_NET_INTERNALS_HELP_JS);
+  source->AddResourcePath("index.js", IDR_NET_INTERNALS_INDEX_JS);
+  source->SetJsonPath("strings.js");
   return source;
 }
 
@@ -207,7 +243,8 @@ class DebugLogFileHelper {
   typedef base::Callback<void(PassPlatformFile pass_platform_file,
                               bool created,
                               PlatformFileError error,
-                              const FilePath& file_path)> DebugLogFileCallback;
+                              const base::FilePath& file_path)>
+      DebugLogFileCallback;
 
   DebugLogFileHelper()
       : file_handle_(base::kInvalidPlatformFileValue),
@@ -218,8 +255,8 @@ class DebugLogFileHelper {
   ~DebugLogFileHelper() {
   }
 
-  void DoWork(const FilePath& fileshelf) {
-    const FilePath::CharType kLogFileName[] =
+  void DoWork(const base::FilePath& fileshelf) {
+    const base::FilePath::CharType kLogFileName[] =
         FILE_PATH_LITERAL("debug-log.tgz");
 
     file_path_ = fileshelf.Append(kLogFileName);
@@ -242,7 +279,7 @@ class DebugLogFileHelper {
   PlatformFile file_handle_;
   bool created_;
   PlatformFileError error_;
-  FilePath file_path_;
+  base::FilePath file_path_;
 
   DISALLOW_COPY_AND_ASSIGN(DebugLogFileHelper);
 };
@@ -253,7 +290,7 @@ class DebugLogFileHelper {
 // Called once StoreDebugLogs is complete. Takes two parameters:
 // - log_path: where the log file was saved in the case of success;
 // - succeeded: was the log file saved successfully.
-typedef base::Callback<void(const FilePath& log_path,
+typedef base::Callback<void(const base::FilePath& log_path,
                             bool succeded)> StoreDebugLogsCallback;
 
 // Closes file handle, so, should be called on the WorkerPool thread.
@@ -264,7 +301,7 @@ void CloseDebugLogFile(PassPlatformFile pass_platform_file) {
 // Closes file handle and deletes debug log file, so, should be called
 // on the WorkerPool thread.
 void CloseAndDeleteDebugLogFile(PassPlatformFile pass_platform_file,
-                                const FilePath& file_path) {
+                                const base::FilePath& file_path) {
   CloseDebugLogFile(pass_platform_file);
   file_util::Delete(file_path, false);
 }
@@ -274,7 +311,7 @@ void CloseAndDeleteDebugLogFile(PassPlatformFile pass_platform_file,
 // |callback|.
 void WriteDebugLogToFileCompleted(const StoreDebugLogsCallback& callback,
                                   PassPlatformFile pass_platform_file,
-                                  const FilePath& file_path,
+                                  const base::FilePath& file_path,
                                   bool succeeded) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!succeeded) {
@@ -296,7 +333,7 @@ void WriteDebugLogToFile(const StoreDebugLogsCallback& callback,
                          PassPlatformFile pass_platform_file,
                          bool created,
                          PlatformFileError error,
-                         const FilePath& file_path) {
+                         const base::FilePath& file_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!created) {
     LOG(ERROR) <<
@@ -322,7 +359,7 @@ void WriteDebugLogToFile(const StoreDebugLogsCallback& callback,
 void StoreDebugLogs(const StoreDebugLogsCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
-  const FilePath fileshelf = download_util::GetDefaultDownloadDirectory();
+  const base::FilePath fileshelf = download_util::GetDefaultDownloadDirectory();
   DebugLogFileHelper* helper = new DebugLogFileHelper();
   bool posted = base::WorkerPool::PostTaskAndReply(FROM_HERE,
       base::Bind(&DebugLogFileHelper::DoWork,
@@ -367,7 +404,8 @@ class NetInternalsMessageHandler
   void OnGetSystemLog(const ListValue* list);
   void OnImportONCFile(const ListValue* list);
   void OnStoreDebugLogs(const ListValue* list);
-  void OnStoreDebugLogsCompleted(const FilePath& log_path, bool succeeded);
+  void OnStoreDebugLogsCompleted(const base::FilePath& log_path,
+                                 bool succeeded);
   void OnSetNetworkDebugMode(const ListValue* list);
   void OnSetNetworkDebugModeCompleted(const std::string& subsystem,
                                       bool succeeded);
@@ -425,9 +463,9 @@ class NetInternalsMessageHandler
     scoped_ptr<chromeos::system::LogDictionaryType> logs_;
     bool logs_received_;
     bool logs_requested_;
-    CancelableRequestConsumer consumer_;
-    // Libcros request handle.
-    CancelableRequestProvider::Handle syslogs_request_id_;
+    CancelableTaskTracker tracker_;
+    // Libcros request task ID.
+    CancelableTaskTracker::TaskId syslogs_task_id_;
   };
 #endif  // defined(OS_CHROMEOS)
 
@@ -512,6 +550,7 @@ class NetInternalsMessageHandler::IOThreadImpl
   void OnGetSpdySessionInfo(const ListValue* list);
   void OnGetSpdyStatus(const ListValue* list);
   void OnGetSpdyAlternateProtocolMappings(const ListValue* list);
+  void OnGetQuicInfo(const ListValue* list);
 #if defined(OS_WIN)
   void OnGetServiceProviders(const ListValue* list);
 #endif
@@ -543,7 +582,7 @@ class NetInternalsMessageHandler::IOThreadImpl
   typedef std::list<scoped_refptr<net::URLRequestContextGetter> >
       ContextGetterList;
 
-  ~IOThreadImpl();
+  virtual ~IOThreadImpl();
 
   // Adds |entry| to the queue of pending log entries to be sent to the page via
   // Javascript.  Must be called on the IO Thread.  Also creates a delayed task
@@ -720,6 +759,10 @@ void NetInternalsMessageHandler::RegisterMessages() {
       "getSpdyAlternateProtocolMappings",
       base::Bind(&IOThreadImpl::CallbackHelper,
                  &IOThreadImpl::OnGetSpdyAlternateProtocolMappings, proxy_));
+  web_ui()->RegisterMessageCallback(
+      "getQuicInfo",
+      base::Bind(&IOThreadImpl::CallbackHelper,
+                 &IOThreadImpl::OnGetQuicInfo, proxy_));
 #if defined(OS_WIN)
   web_ui()->RegisterMessageCallback(
       "getServiceProviders",
@@ -847,7 +890,7 @@ NetInternalsMessageHandler::SystemLogsGetter::~SystemLogsGetter() {
 
 void NetInternalsMessageHandler::SystemLogsGetter::DeleteSystemLogs() {
   if (syslogs_provider_ && logs_requested_ && !logs_received_) {
-    syslogs_provider_->CancelRequest(syslogs_request_id_);
+    tracker_.TryCancel(syslogs_task_id_);
   }
   logs_requested_ = false;
   logs_received_ = false;
@@ -875,13 +918,13 @@ void NetInternalsMessageHandler::SystemLogsGetter::LoadSystemLogs() {
   if (logs_requested_ || !syslogs_provider_)
     return;
   logs_requested_ = true;
-  syslogs_request_id_ = syslogs_provider_->RequestSyslogs(
+  syslogs_task_id_ = syslogs_provider_->RequestSyslogs(
       false,  // compress logs.
       chromeos::system::SyslogsProvider::SYSLOGS_NETWORK,
-      &consumer_,
       base::Bind(
           &NetInternalsMessageHandler::SystemLogsGetter::OnSystemLogsLoaded,
-          base::Unretained(this)));
+          base::Unretained(this)),
+      &tracker_);
 }
 
 void NetInternalsMessageHandler::SystemLogsGetter::OnSystemLogsLoaded(
@@ -1169,21 +1212,6 @@ void NetInternalsMessageHandler::IOThreadImpl::OnStartConnectionTests(
   connection_tester_->RunAllTests(url);
 }
 
-void SPKIHashesToString(const net::HashValueVector& hashes,
-                        std::string* string) {
-  for (net::HashValueVector::const_iterator
-       i = hashes.begin(); i != hashes.end(); ++i) {
-    base::StringPiece hash_str(reinterpret_cast<const char*>(i->data()),
-                               i->size());
-    std::string encoded;
-    base::Base64Encode(hash_str, &encoded);
-
-    if (i != hashes.begin())
-      *string += ",";
-    *string += net::TransportSecurityState::HashValueLabel(*i) + encoded;
-  }
-}
-
 void NetInternalsMessageHandler::IOThreadImpl::OnHSTSQuery(
     const ListValue* list) {
   // |list| should be: [<domain to query>].
@@ -1212,13 +1240,10 @@ void NetInternalsMessageHandler::IOThreadImpl::OnHSTSQuery(
         result->SetDouble("dynamic_spki_hashes_expiry",
                           state.dynamic_spki_hashes_expiry.ToDoubleT());
 
-        std::string hashes;
-        SPKIHashesToString(state.static_spki_hashes, &hashes);
-        result->SetString("static_spki_hashes", hashes);
-
-        hashes.clear();
-        SPKIHashesToString(state.dynamic_spki_hashes, &hashes);
-        result->SetString("dynamic_spki_hashes", hashes);
+        result->SetString("static_spki_hashes",
+                          HashesToBase64String(state.static_spki_hashes));
+        result->SetString("dynamic_spki_hashes",
+                          HashesToBase64String(state.dynamic_spki_hashes));
       }
     }
   }
@@ -1246,25 +1271,16 @@ void NetInternalsMessageHandler::IOThreadImpl::OnHSTSAdd(
   if (!transport_security_state)
     return;
 
-  net::TransportSecurityState::DomainState state;
-  state.upgrade_expiry = state.created + base::TimeDelta::FromDays(1000);
-  state.include_subdomains = include_subdomains;
+  base::Time expiry = base::Time::Now() + base::TimeDelta::FromDays(1000);
+  net::HashValueVector hashes;
   if (!hashes_str.empty()) {
-    std::vector<std::string> type_and_b64s;
-    base::SplitString(hashes_str, ',', &type_and_b64s);
-    for (std::vector<std::string>::const_iterator
-         i = type_and_b64s.begin(); i != type_and_b64s.end(); ++i) {
-      std::string type_and_b64;
-      RemoveChars(*i, " \t\r\n", &type_and_b64);
-      net::HashValue hash;
-      if (!net::TransportSecurityState::ParsePin(type_and_b64, &hash))
-        continue;
-
-      state.dynamic_spki_hashes.push_back(hash);
-    }
+    if (!Base64StringToHashes(hashes_str, &hashes))
+      return;
   }
 
-  transport_security_state->EnableHost(domain, state);
+  transport_security_state->AddHSTS(domain, expiry, include_subdomains);
+  transport_security_state->AddHPKP(domain, expiry, include_subdomains,
+                                    hashes);
 }
 
 void NetInternalsMessageHandler::IOThreadImpl::OnHSTSDelete(
@@ -1281,7 +1297,7 @@ void NetInternalsMessageHandler::IOThreadImpl::OnHSTSDelete(
   if (!transport_security_state)
     return;
 
-  transport_security_state->DeleteHost(domain);
+  transport_security_state->DeleteDynamicDataForHost(domain);
 }
 
 void NetInternalsMessageHandler::IOThreadImpl::OnGetHttpCacheInfo(
@@ -1423,6 +1439,17 @@ NetInternalsMessageHandler::IOThreadImpl::OnGetSpdyAlternateProtocolMappings(
   SendJavascriptCommand("receivedSpdyAlternateProtocolMappings", dict_list);
 }
 
+void NetInternalsMessageHandler::IOThreadImpl::OnGetQuicInfo(
+    const ListValue* list) {
+  DCHECK(!list);
+  net::HttpNetworkSession* http_network_session =
+      GetHttpNetworkSession(GetMainContext());
+
+  Value* quic_info = http_network_session ?
+      http_network_session->QuicInfoToValue() : NULL;
+  SendJavascriptCommand("receivedQuicInfo", quic_info);
+}
+
 #if defined(OS_WIN)
 void NetInternalsMessageHandler::IOThreadImpl::OnGetServiceProviders(
     const ListValue* list) {
@@ -1490,10 +1517,12 @@ void NetInternalsMessageHandler::OnImportONCFile(const ListValue* list) {
   std::string error;
   chromeos::NetworkLibrary* cros_network =
       chromeos::CrosLibrary::Get()->GetNetworkLibrary();
-  cros_network->LoadOncNetworks(onc_blob, passcode,
-                                chromeos::NetworkUIData::ONC_SOURCE_USER_IMPORT,
-                                false,  // allow_web_trust_from_policy
-                                &error);
+  if (!cros_network->LoadOncNetworks(onc_blob, passcode,
+                                     chromeos::onc::ONC_SOURCE_USER_IMPORT,
+                                     false)) {  // allow web trust from policy
+    error = "Errors occurred during the ONC import.";
+    LOG(ERROR) << error;
+  }
 
   // Now that we've added the networks, we need to rescan them so they'll be
   // available from the menu more immediately.
@@ -1504,14 +1533,14 @@ void NetInternalsMessageHandler::OnImportONCFile(const ListValue* list) {
 }
 
 void NetInternalsMessageHandler::OnStoreDebugLogs(const ListValue* list) {
-  DCHECK(!list);
+  DCHECK(list);
   StoreDebugLogs(
       base::Bind(&NetInternalsMessageHandler::OnStoreDebugLogsCompleted,
                  AsWeakPtr()));
 }
 
 void NetInternalsMessageHandler::OnStoreDebugLogsCompleted(
-    const FilePath& log_path, bool succeeded) {
+    const base::FilePath& log_path, bool succeeded) {
   std::string status;
   if (succeeded)
     status = "Created log file: " + log_path.BaseName().AsUTF8Unsafe();
@@ -1914,5 +1943,5 @@ NetInternalsUI::NetInternalsUI(content::WebUI* web_ui)
 
   // Set up the chrome://net-internals/ source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, CreateNetInternalsHTMLSource());
+  content::WebUIDataSource::Add(profile, CreateNetInternalsHTMLSource());
 }

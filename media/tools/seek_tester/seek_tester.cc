@@ -15,6 +15,7 @@
 
 #include "base/at_exit.h"
 #include "base/bind.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/string_number_conversions.h"
@@ -52,6 +53,11 @@ void TimestampExtractor(uint64* timestamp_ms,
   loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
 }
 
+static void NeedKey(const std::string& type, scoped_array<uint8> init_data,
+             int init_data_size) {
+  LOG(INFO) << "File is encrypted.";
+}
+
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
   media::InitializeMediaLibraryForTesting();
@@ -61,13 +67,15 @@ int main(int argc, char** argv) {
   CHECK(base::StringToUint64(argv[2], &seek_target_ms));
   scoped_refptr<media::FileDataSource> file_data_source(
       new media::FileDataSource());
-  CHECK(file_data_source->Initialize(argv[1]));
+  CHECK(file_data_source->Initialize(base::FilePath::FromUTF8Unsafe(argv[1])));
 
   DemuxerHostImpl host;
   MessageLoop loop;
   media::PipelineStatusCB quitter = base::Bind(&QuitMessageLoop, &loop);
+  media::FFmpegNeedKeyCB need_key_cb = base::Bind(&NeedKey);
   scoped_refptr<media::FFmpegDemuxer> demuxer(
-      new media::FFmpegDemuxer(loop.message_loop_proxy(), file_data_source));
+      new media::FFmpegDemuxer(loop.message_loop_proxy(), file_data_source,
+                               need_key_cb));
   demuxer->Initialize(&host, quitter);
   loop.Run();
 

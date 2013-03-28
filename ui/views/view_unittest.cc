@@ -8,6 +8,7 @@
 #include "base/rand_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "grit/ui_strings.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/clipboard/clipboard.h"
@@ -24,6 +25,7 @@
 #include "ui/views/background.h"
 #include "ui/views/controls/button/button_dropdown.h"
 #include "ui/views/controls/button/checkbox.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -232,9 +234,9 @@ class TestView : public View {
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
 
-  virtual ui::EventResult OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
   // Ignores GestureEvent by default.
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   virtual void Paint(gfx::Canvas* canvas) OVERRIDE;
   virtual void SchedulePaintInRect(const gfx::Rect& rect) OVERRIDE;
@@ -277,7 +279,7 @@ class TestViewIgnoreTouch : public TestView {
   virtual ~TestViewIgnoreTouch() {}
 
  private:
-  virtual ui::EventResult OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
 };
 
 // A view subclass that consumes all Gesture events for testing purposes.
@@ -287,10 +289,10 @@ class TestViewConsumeGesture : public TestView {
   virtual ~TestViewConsumeGesture() {}
 
  protected:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
     last_gesture_event_type_ = event->type();
     location_.SetPoint(event->x(), event->y());
-    return ui::ER_CONSUMED;
+    event->StopPropagation();
   }
 
  private:
@@ -304,8 +306,7 @@ class TestViewIgnoreGesture: public TestView {
   virtual ~TestViewIgnoreGesture() {}
 
  private:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
-    return ui::ER_UNHANDLED;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
   }
 
   DISALLOW_COPY_AND_ASSIGN(TestViewIgnoreGesture);
@@ -319,10 +320,10 @@ class TestViewIgnoreScrollGestures : public TestViewConsumeGesture {
   virtual ~TestViewIgnoreScrollGestures() {}
 
  private:
-  virtual ui::EventResult OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
     if (event->IsScrollGestureEvent())
-      return ui::ER_UNHANDLED;
-    return TestViewConsumeGesture::OnGestureEvent(event);
+      return;
+    TestViewConsumeGesture::OnGestureEvent(event);
   }
 
   DISALLOW_COPY_AND_ASSIGN(TestViewIgnoreScrollGestures);
@@ -391,7 +392,7 @@ TEST_F(ViewTest, MouseEvent) {
   v2->SetBoundsRect(gfx::Rect(100, 100, 100, 100));
 
   scoped_ptr<Widget> widget(new Widget);
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
@@ -453,7 +454,7 @@ TEST_F(ViewTest, DeleteOnPressed) {
   v2->Reset();
 
   scoped_ptr<Widget> widget(new Widget);
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
@@ -475,27 +476,30 @@ TEST_F(ViewTest, DeleteOnPressed) {
 ////////////////////////////////////////////////////////////////////////////////
 // TouchEvent
 ////////////////////////////////////////////////////////////////////////////////
-ui::EventResult TestView::OnTouchEvent(ui::TouchEvent* event) {
+void TestView::OnTouchEvent(ui::TouchEvent* event) {
   last_touch_event_type_ = event->type();
   location_.SetPoint(event->x(), event->y());
   if (!in_touch_sequence_) {
     if (event->type() == ui::ET_TOUCH_PRESSED) {
       in_touch_sequence_ = true;
-      return ui::ER_CONSUMED;
+      event->StopPropagation();
+      return;
     }
   } else {
     if (event->type() == ui::ET_TOUCH_RELEASED) {
       in_touch_sequence_ = false;
-      return ui::ER_HANDLED;
+      event->SetHandled();
+      return;
     }
-    return ui::ER_CONSUMED;
+    event->StopPropagation();
+    return;
   }
-  return last_touch_event_was_handled_ ? ui::ER_CONSUMED :
-                                         ui::ER_UNHANDLED;
+
+  if (last_touch_event_was_handled_)
+   event->StopPropagation();
 }
 
-ui::EventResult TestViewIgnoreTouch::OnTouchEvent(ui::TouchEvent* event) {
-  return ui::ER_UNHANDLED;
+void TestViewIgnoreTouch::OnTouchEvent(ui::TouchEvent* event) {
 }
 
 TEST_F(ViewTest, TouchEvent) {
@@ -509,7 +513,7 @@ TEST_F(ViewTest, TouchEvent) {
   v3->SetBoundsRect(gfx::Rect(0, 0, 100, 100));
 
   scoped_ptr<Widget> widget(new Widget());
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
@@ -594,8 +598,7 @@ TEST_F(ViewTest, TouchEvent) {
   widget->CloseNow();
 }
 
-ui::EventResult TestView::OnGestureEvent(ui::GestureEvent* event) {
-  return ui::ER_UNHANDLED;
+void TestView::OnGestureEvent(ui::GestureEvent* event) {
 }
 
 TEST_F(ViewTest, GestureEvent) {
@@ -610,7 +613,7 @@ TEST_F(ViewTest, GestureEvent) {
   v3->SetBoundsRect(gfx::Rect(0, 0, 100, 100));
 
   scoped_ptr<Widget> widget(new Widget());
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
@@ -676,7 +679,7 @@ TEST_F(ViewTest, ScrollGestureEvent) {
   v3->SetBoundsRect(gfx::Rect(0, 0, 100, 100));
 
   scoped_ptr<Widget> widget(new Widget());
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
@@ -839,7 +842,7 @@ TEST_F(ViewTest, DISABLED_Painting) {
 TEST_F(ViewTest, RemoveNotification) {
   ViewStorage* vs = ViewStorage::GetInstance();
   Widget* widget = new Widget;
-  widget->Init(Widget::InitParams(Widget::InitParams::TYPE_POPUP));
+  widget->Init(CreateParams(Widget::InitParams::TYPE_POPUP));
   View* root_view = widget->GetRootView();
 
   View* v1 = new View;
@@ -934,10 +937,10 @@ class HitTestView : public View {
 
  protected:
   // Overridden from View:
-  virtual bool HasHitTestMask() const {
+  virtual bool HasHitTestMask() const OVERRIDE {
     return has_hittest_mask_;
   }
-  virtual void GetHitTestMask(gfx::Path* mask) const {
+  virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {
     DCHECK(has_hittest_mask_);
     DCHECK(mask);
 
@@ -985,7 +988,8 @@ void RotateClockwise(gfx::Transform* transform) {
 
 TEST_F(ViewTest, HitTestMasks) {
   Widget* widget = new Widget;
-  widget->Init(Widget::InitParams(Widget::InitParams::TYPE_POPUP));
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  widget->Init(params);
   View* root_view = widget->GetRootView();
   root_view->SetBoundsRect(gfx::Rect(0, 0, 500, 500));
 
@@ -1041,7 +1045,8 @@ TEST_F(ViewTest, HitTestMasks) {
 
 TEST_F(ViewTest, NotifyEnterExitOnChild) {
   Widget* widget = new Widget;
-  widget->Init(Widget::InitParams(Widget::InitParams::TYPE_POPUP));
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  widget->Init(params);
   View* root_view = widget->GetRootView();
   root_view->SetBoundsRect(gfx::Rect(0, 0, 500, 500));
 
@@ -1176,7 +1181,7 @@ TEST_F(ViewTest, Textfield) {
   const string16 kEmptyString;
 
   Widget* widget = new Widget;
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.bounds = gfx::Rect(0, 0, 100, 100);
   widget->Init(params);
   View* root_view = widget->GetRootView();
@@ -1203,8 +1208,6 @@ TEST_F(ViewTest, Textfield) {
   widget->CloseNow();
 }
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-
 // Tests that the Textfield view respond appropiately to cut/copy/paste.
 TEST_F(ViewTest, TextfieldCutCopyPaste) {
   const string16 kNormalText = ASCIIToUTF16("Normal");
@@ -1214,7 +1217,7 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
 
   Widget* widget = new Widget;
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.bounds = gfx::Rect(0, 0, 100, 100);
   widget->Init(params);
   View* root_view = widget->GetRootView();
@@ -1235,26 +1238,23 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
   //
   // Test cut.
   //
-  ASSERT_TRUE(normal->GetTestingHandle());
-  normal->SelectAll(false);
-  ::SendMessage(normal->GetTestingHandle(), WM_CUT, 0, 0);
 
+  normal->SelectAll(false);
+  normal->ExecuteCommand(IDS_APP_CUT);
   string16 result;
   clipboard->ReadText(ui::Clipboard::BUFFER_STANDARD, &result);
   EXPECT_EQ(kNormalText, result);
   normal->SetText(kNormalText);  // Let's revert to the original content.
 
-  ASSERT_TRUE(read_only->GetTestingHandle());
   read_only->SelectAll(false);
-  ::SendMessage(read_only->GetTestingHandle(), WM_CUT, 0, 0);
+  read_only->ExecuteCommand(IDS_APP_CUT);
   result.clear();
   clipboard->ReadText(ui::Clipboard::BUFFER_STANDARD, &result);
   // Cut should have failed, so the clipboard content should not have changed.
   EXPECT_EQ(kNormalText, result);
 
-  ASSERT_TRUE(password->GetTestingHandle());
   password->SelectAll(false);
-  ::SendMessage(password->GetTestingHandle(), WM_CUT, 0, 0);
+  password->ExecuteCommand(IDS_APP_CUT);
   result.clear();
   clipboard->ReadText(ui::Clipboard::BUFFER_STANDARD, &result);
   // Cut should have failed, so the clipboard content should not have changed.
@@ -1264,58 +1264,47 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
   // Test copy.
   //
 
-  // Let's start with read_only as the clipboard already contains the content
-  // of normal.
+  // Start with |read_only| to observe a change in clipboard text.
   read_only->SelectAll(false);
-  ::SendMessage(read_only->GetTestingHandle(), WM_COPY, 0, 0);
+  read_only->ExecuteCommand(IDS_APP_COPY);
   result.clear();
   clipboard->ReadText(ui::Clipboard::BUFFER_STANDARD, &result);
   EXPECT_EQ(kReadOnlyText, result);
 
   normal->SelectAll(false);
-  ::SendMessage(normal->GetTestingHandle(), WM_COPY, 0, 0);
+  normal->ExecuteCommand(IDS_APP_COPY);
   result.clear();
   clipboard->ReadText(ui::Clipboard::BUFFER_STANDARD, &result);
   EXPECT_EQ(kNormalText, result);
 
   password->SelectAll(false);
-  ::SendMessage(password->GetTestingHandle(), WM_COPY, 0, 0);
+  password->ExecuteCommand(IDS_APP_COPY);
   result.clear();
   clipboard->ReadText(ui::Clipboard::BUFFER_STANDARD, &result);
-  // We don't let you copy from an obscured field, clipboard should not have
-  // changed.
+  // Text cannot be copied from an obscured field; the clipboard won't change.
   EXPECT_EQ(kNormalText, result);
 
   //
-  // Test Paste.
+  // Test paste.
   //
-  // Note that we use GetWindowText instead of Textfield::GetText below as the
-  // text in the Textfield class is synced to the text of the HWND on
-  // WM_KEYDOWN messages that we are not simulating here.
 
-  // Attempting to copy kNormalText in a read-only text-field should fail.
+  // Attempting to paste kNormalText in a read-only text-field should fail.
   read_only->SelectAll(false);
-  ::SendMessage(read_only->GetTestingHandle(), WM_KEYDOWN, 0, 0);
-  wchar_t buffer[1024] = { 0 };
-  ::GetWindowText(read_only->GetTestingHandle(), buffer, 1024);
-  EXPECT_EQ(kReadOnlyText, string16(buffer));
+  read_only->ExecuteCommand(IDS_APP_PASTE);
+  EXPECT_EQ(kReadOnlyText, read_only->text());
 
   password->SelectAll(false);
-  ::SendMessage(password->GetTestingHandle(), WM_PASTE, 0, 0);
-  ::GetWindowText(password->GetTestingHandle(), buffer, 1024);
-  EXPECT_EQ(kNormalText, string16(buffer));
+  password->ExecuteCommand(IDS_APP_PASTE);
+  EXPECT_EQ(kNormalText, password->text());
 
-  // Copy from read_only so the string we are pasting is not the same as the
-  // current one.
+  // Copy from |read_only| to observe a change in the normal textfield text.
   read_only->SelectAll(false);
-  ::SendMessage(read_only->GetTestingHandle(), WM_COPY, 0, 0);
+  read_only->ExecuteCommand(IDS_APP_COPY);
   normal->SelectAll(false);
-  ::SendMessage(normal->GetTestingHandle(), WM_PASTE, 0, 0);
-  ::GetWindowText(normal->GetTestingHandle(), buffer, 1024);
-  EXPECT_EQ(kReadOnlyText, string16(buffer));
+  normal->ExecuteCommand(IDS_APP_PASTE);
+  EXPECT_EQ(kReadOnlyText, normal->text());
   widget->CloseNow();
 }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // Accelerators
@@ -1336,7 +1325,7 @@ TEST_F(ViewTest, ActivateAccelerator) {
 
   // Create a window and add the view as its child.
   scoped_ptr<Widget> widget(new Widget);
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(0, 0, 100, 100);
   widget->Init(params);
@@ -1401,7 +1390,7 @@ TEST_F(ViewTest, HiddenViewWithAccelerator) {
   EXPECT_EQ(view->accelerator_count_map_[return_accelerator], 0);
 
   scoped_ptr<Widget> widget(new Widget);
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(0, 0, 100, 100);
   widget->Init(params);
@@ -1431,7 +1420,7 @@ TEST_F(ViewTest, ViewInHiddenWidgetWithAccelerator) {
   EXPECT_EQ(view->accelerator_count_map_[return_accelerator], 0);
 
   scoped_ptr<Widget> widget(new Widget);
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(0, 0, 100, 100);
   widget->Init(params);
@@ -1555,7 +1544,6 @@ TEST_F(ViewTest, DISABLED_RerouteMouseWheelTest) {
 class MockMenuModel : public ui::MenuModel {
  public:
   MOCK_CONST_METHOD0(HasIcons, bool());
-  MOCK_CONST_METHOD1(GetFirstItemIndex, int(gfx::NativeMenu native_menu));
   MOCK_CONST_METHOD0(GetItemCount, int());
   MOCK_CONST_METHOD1(GetTypeAt, ItemType(int index));
   MOCK_CONST_METHOD1(GetSeparatorTypeAt, ui::MenuSeparatorType(int index));
@@ -1578,6 +1566,7 @@ class MockMenuModel : public ui::MenuModel {
   MOCK_METHOD0(MenuWillShow, void());
   MOCK_METHOD0(MenuClosed, void());
   MOCK_METHOD1(SetMenuModelDelegate, void(ui::MenuModelDelegate* delegate));
+  MOCK_CONST_METHOD0(GetMenuModelDelegate, ui::MenuModelDelegate*());
   MOCK_METHOD3(GetModelAndIndexForCommandId, bool(int command_id,
       MenuModel** model, int* index));
 };
@@ -1615,8 +1604,8 @@ class TestDialog : public DialogDelegate, public ButtonListener {
   virtual View* GetContentsView() OVERRIDE {
     if (!contents_) {
       contents_ = new View;
-      button1_ = new NativeTextButton(this, ASCIIToUTF16("Button1"));
-      button2_ = new NativeTextButton(this, ASCIIToUTF16("Button2"));
+      button1_ = new LabelButton(this, ASCIIToUTF16("Button1"));
+      button2_ = new LabelButton(this, ASCIIToUTF16("Button2"));
       checkbox_ = new Checkbox(ASCIIToUTF16("My checkbox"));
       button_drop_ = new ButtonDropDown(this, mock_menu_model_);
       contents_->AddChildView(button1_);
@@ -1661,15 +1650,14 @@ class TestDialog : public DialogDelegate, public ButtonListener {
   void ExpectShowDropMenu() {
     if (mock_menu_model_) {
       EXPECT_CALL(*mock_menu_model_, HasIcons());
-      EXPECT_CALL(*mock_menu_model_, GetFirstItemIndex(_));
       EXPECT_CALL(*mock_menu_model_, GetItemCount());
       EXPECT_CALL(*mock_menu_model_, MenuClosed());
     }
   }
 
   View* contents_;
-  NativeTextButton* button1_;
-  NativeTextButton* button2_;
+  LabelButton* button1_;
+  LabelButton* button2_;
   Checkbox* checkbox_;
   ButtonDropDown* button_drop_;
   Button* last_pressed_button_;
@@ -1701,8 +1689,13 @@ class DefaultButtonTest : public ViewTest {
   virtual void SetUp() OVERRIDE {
     ViewTest::SetUp();
     test_dialog_ = new TestDialog(NULL);
-    Widget* window =
-        Widget::CreateWindowWithBounds(test_dialog_, gfx::Rect(0, 0, 100, 100));
+
+    Widget* window = new Widget;
+    Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+    params.delegate = test_dialog_;
+    params.bounds = gfx::Rect(0, 0, 100, 100);
+    window->Init(params);
+
     test_dialog_->widget_ = window;
     window->Show();
     focus_manager_ = test_dialog_->contents_->GetFocusManager();
@@ -1751,8 +1744,8 @@ class DefaultButtonTest : public ViewTest {
   FocusManager* focus_manager_;
   TestDialog* test_dialog_;
   DialogClientView* client_view_;
-  TextButton* ok_button_;
-  TextButton* cancel_button_;
+  LabelButton* ok_button_;
+  LabelButton* cancel_button_;
 };
 
 TEST_F(DefaultButtonTest, DialogDefaultButtonTest) {
@@ -1812,8 +1805,13 @@ class ButtonDropDownTest : public ViewTest {
   virtual void SetUp() OVERRIDE {
     ViewTest::SetUp();
     test_dialog_ = new TestDialog(new MockMenuModel());
-    Widget* window =
-        Widget::CreateWindowWithBounds(test_dialog_, gfx::Rect(0, 0, 100, 100));
+
+    Widget* window = new Widget;
+    Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+    params.delegate = test_dialog_;
+    params.bounds = gfx::Rect(0, 0, 100, 100);
+    window->Init(params);
+
     test_dialog_->widget_ = window;
     window->Show();
     test_dialog_->button_drop_->SetBoundsRect(gfx::Rect(0, 0, 100, 100));
@@ -1884,9 +1882,10 @@ class TestNativeViewHierarchy : public View {
   TestNativeViewHierarchy() {
   }
 
-  virtual void NativeViewHierarchyChanged(bool attached,
-                                          gfx::NativeView native_view,
-                                          internal::RootView* root_view) {
+  virtual void NativeViewHierarchyChanged(
+      bool attached,
+      gfx::NativeView native_view,
+      internal::RootView* root_view) OVERRIDE {
     NotificationInfo info;
     info.attached = attached;
     info.native_view = native_view;
@@ -1908,7 +1907,8 @@ class TestChangeNativeViewHierarchy {
     view_test_ = view_test;
     native_host_ = new NativeViewHost();
     host_ = new Widget;
-    Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+    Widget::InitParams params =
+        view_test->CreateParams(Widget::InitParams::TYPE_POPUP);
     params.bounds = gfx::Rect(0, 0, 500, 300);
     host_->Init(params);
     host_->GetRootView()->AddChildView(native_host_);
@@ -2020,7 +2020,7 @@ class TransformPaintView : public TestView {
   gfx::Rect scheduled_paint_rect() const { return scheduled_paint_rect_; }
 
   // Overridden from View:
-  virtual void SchedulePaintInRect(const gfx::Rect& rect) {
+  virtual void SchedulePaintInRect(const gfx::Rect& rect) OVERRIDE {
     gfx::Rect xrect = ConvertRectToParent(rect);
     scheduled_paint_rect_.Union(xrect);
   }
@@ -2039,7 +2039,7 @@ TEST_F(ViewTest, TransformPaint) {
   v2->SetBoundsRect(gfx::Rect(100, 100, 200, 100));
 
   Widget* widget = new Widget;
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
   widget->Show();
@@ -2057,7 +2057,7 @@ TEST_F(ViewTest, TransformPaint) {
   // Rotate |v1| counter-clockwise.
   gfx::Transform transform;
   RotateCounterclockwise(&transform);
-  transform.SetTranslateY(500.0f);
+  transform.matrix().set(1, 3, 500.0);
   v1->SetTransform(transform);
 
   // |v2| now occupies (100, 200) to (200, 400) in |root|.
@@ -2078,7 +2078,7 @@ TEST_F(ViewTest, TransformEvent) {
   v2->SetBoundsRect(gfx::Rect(100, 100, 200, 100));
 
   Widget* widget = new Widget;
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
   View* root = widget->GetRootView();
@@ -2091,7 +2091,7 @@ TEST_F(ViewTest, TransformEvent) {
   // Rotate |v1| counter-clockwise.
   gfx::Transform transform(v1->GetTransform());
   RotateCounterclockwise(&transform);
-  transform.SetTranslateY(500.0f);
+  transform.matrix().set(1, 3, 500.0);
   v1->SetTransform(transform);
 
   // |v2| now occupies (100, 200) to (200, 400) in |root|.
@@ -2113,7 +2113,7 @@ TEST_F(ViewTest, TransformEvent) {
   // Now rotate |v2| inside |v1| clockwise.
   transform = v2->GetTransform();
   RotateClockwise(&transform);
-  transform.SetTranslateX(100.0f);
+  transform.matrix().setDouble(0, 3, 100.0);
   v2->SetTransform(transform);
 
   // Now, |v2| occupies (100, 100) to (200, 300) in |v1|, and (100, 300) to
@@ -2143,12 +2143,13 @@ TEST_F(ViewTest, TransformEvent) {
   // Rotate |v3| clockwise with respect to |v2|.
   transform = v1->GetTransform();
   RotateClockwise(&transform);
-  transform.SetTranslateX(30.0f);
+  transform.matrix().setDouble(0, 3, 30.0);
   v3->SetTransform(transform);
 
   // Scale |v2| with respect to |v1| along both axis.
   transform = v2->GetTransform();
-  transform.SetScale(0.8f, 0.5f);
+  transform.matrix().setDouble(0, 0, 0.8);
+  transform.matrix().setDouble(1, 1, 0.5);
   v2->SetTransform(transform);
 
   // |v3| occupies (108, 105) to (132, 115) in |root|.
@@ -2179,16 +2180,19 @@ TEST_F(ViewTest, TransformEvent) {
   // Rotate |v3| clockwise with respect to |v2|, and scale it along both axis.
   transform = v3->GetTransform();
   RotateClockwise(&transform);
-  transform.SetTranslateX(30.0f);
+  transform.matrix().setDouble(0, 3, 30.0);
   // Rotation sets some scaling transformation. Using SetScale would overwrite
   // that and pollute the rotation. So combine the scaling with the existing
   // transforamtion.
-  transform.ConcatScale(0.8f, 0.5f);
+  gfx::Transform scale;
+  scale.Scale(0.8, 0.5);
+  transform.ConcatTransform(scale);
   v3->SetTransform(transform);
 
   // Translate |v2| with respect to |v1|.
   transform = v2->GetTransform();
-  transform.SetTranslate(10, 10);
+  transform.matrix().setDouble(0, 3, 10.0);
+  transform.matrix().setDouble(1, 3, 10.0);
   v2->SetTransform(transform);
 
   // |v3| now occupies (120, 120) to (144, 130) in |root|.
@@ -2211,7 +2215,7 @@ TEST_F(ViewTest, TransformVisibleBound) {
   gfx::Rect viewport_bounds(0, 0, 100, 100);
 
   scoped_ptr<Widget> widget(new Widget);
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = viewport_bounds;
   widget->Init(params);
@@ -2232,7 +2236,7 @@ TEST_F(ViewTest, TransformVisibleBound) {
   // Rotate |child| counter-clockwise
   gfx::Transform transform;
   RotateCounterclockwise(&transform);
-  transform.SetTranslateY(50.0f);
+  transform.matrix().setDouble(1, 3, 50.0);
   child->SetTransform(transform);
   EXPECT_EQ(gfx::Rect(40, 0, 10, 50), child->GetVisibleBounds());
 
@@ -2254,10 +2258,10 @@ class VisibleBoundsView : public View {
 
  private:
   // Overridden from View:
-  virtual bool NeedsNotificationWhenVisibleBoundsChange() const {
+  virtual bool NeedsNotificationWhenVisibleBoundsChange() const OVERRIDE {
      return true;
   }
-  virtual void OnVisibleBoundsChanged() {
+  virtual void OnVisibleBoundsChanged() OVERRIDE {
     received_notification_ = true;
   }
 
@@ -2270,7 +2274,7 @@ TEST_F(ViewTest, OnVisibleBoundsChanged) {
   gfx::Rect viewport_bounds(0, 0, 100, 100);
 
   scoped_ptr<Widget> widget(new Widget);
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = viewport_bounds;
   widget->Init(params);
@@ -2346,20 +2350,20 @@ TEST_F(ViewTest, ConvertPointToViewWithTransform) {
 
   child->SetBoundsRect(gfx::Rect(7, 19, 500, 500));
   gfx::Transform transform;
-  transform.SetScale(3.0f, 4.0f);
+  transform.Scale(3.0, 4.0);
   child->SetTransform(transform);
 
   child_child->SetBoundsRect(gfx::Rect(17, 13, 100, 100));
-  transform = gfx::Transform();
-  transform.SetScale(5.0f, 7.0f);
+  transform.MakeIdentity();
+  transform.Scale(5.0, 7.0);
   child_child->SetTransform(transform);
 
   // Sanity check to make sure basic transforms act as expected.
   {
     gfx::Transform transform;
-    transform.ConcatTranslate(1, 1);
-    transform.ConcatScale(100, 55);
-    transform.ConcatTranslate(110, -110);
+    transform.Translate(110.0, -110.0);
+    transform.Scale(100.0, 55.0);
+    transform.Translate(1.0, 1.0);
 
     // convert to a 3x3 matrix.
     const SkMatrix& matrix = transform.matrix();
@@ -2374,11 +2378,11 @@ TEST_F(ViewTest, ConvertPointToViewWithTransform) {
 
   {
     gfx::Transform transform;
-    transform.SetTranslate(1, 1);
+    transform.Translate(1.0, 1.0);
     gfx::Transform t2;
-    t2.SetScale(100, 55);
+    t2.Scale(100.0, 55.0);
     gfx::Transform t3;
-    t3.SetTranslate(110, -110);
+    t3.Translate(110.0, -110.0);
     transform.ConcatTransform(t2);
     transform.ConcatTransform(t3);
 
@@ -2445,7 +2449,7 @@ TEST_F(ViewTest, ConvertPointToViewWithTransform) {
 // Tests conversion methods for rectangles.
 TEST_F(ViewTest, ConvertRectWithTransform) {
   scoped_ptr<Widget> widget(new Widget);
-  Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
@@ -2467,7 +2471,7 @@ TEST_F(ViewTest, ConvertRectWithTransform) {
   // Rotate |v2|
   gfx::Transform t2;
   RotateCounterclockwise(&t2);
-  t2.SetTranslateY(100.0f);
+  t2.matrix().setDouble(1, 3, 100.0);
   v2->SetTransform(t2);
 
   // |v2| now occupies (30, 30) to (230, 130) in |widget|
@@ -2476,16 +2480,15 @@ TEST_F(ViewTest, ConvertRectWithTransform) {
 
   // Scale down |v1|
   gfx::Transform t1;
-  t1.SetScale(0.5, 0.5);
+  t1.Scale(0.5, 0.5);
   v1->SetTransform(t1);
 
   // The rectangle should remain the same for |v1|.
   EXPECT_EQ(gfx::Rect(25, 100, 40, 15), v2->ConvertRectToParent(rect));
 
   // |v2| now occupies (20, 20) to (120, 70) in |widget|
-  // There are some rounding of floating values here. These values may change if
-  // floating operations are improved/changed.
-  EXPECT_EQ(gfx::Rect(22, 60, 20, 7), v2->ConvertRectToWidget(rect));
+  EXPECT_EQ(gfx::Rect(22, 60, 21, 8).ToString(),
+            v2->ConvertRectToWidget(rect).ToString());
 
   widget->CloseNow();
 }
@@ -2880,7 +2883,7 @@ class TestLayerAnimator : public ui::LayerAnimator {
   virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
 
  protected:
-  ~TestLayerAnimator() { }
+  virtual ~TestLayerAnimator() { }
 
  private:
   gfx::Rect last_bounds_;
@@ -2908,8 +2911,7 @@ class ViewLayerTest : public ViewsTestBase {
   // Returns the Layer used by the RootView.
   ui::Layer* GetRootLayer() {
     ui::Layer* root_layer = NULL;
-    gfx::Point origin;
-    widget()->CalculateOffsetToAncestorWithLayer(&origin, &root_layer);
+    widget()->CalculateOffsetToAncestorWithLayer(&root_layer);
     return root_layer;
   }
 
@@ -2919,7 +2921,7 @@ class ViewLayerTest : public ViewsTestBase {
     View::set_use_acceleration_when_possible(true);
 
     widget_ = new Widget;
-    Widget::InitParams params(Widget::InitParams::TYPE_POPUP);
+    Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
     params.bounds = gfx::Rect(50, 50, 200, 200);
     widget_->Init(params);
     widget_->Show();
@@ -2944,8 +2946,7 @@ TEST_F(ViewLayerTest, LayerToggling) {
   // Because we lazily create textures the calls to DrawTree are necessary to
   // ensure we trigger creation of textures.
   ui::Layer* root_layer = NULL;
-  gfx::Point origin;
-  widget()->CalculateOffsetToAncestorWithLayer(&origin, &root_layer);
+  widget()->CalculateOffsetToAncestorWithLayer(&root_layer);
   View* content_view = new View;
   widget()->SetContentsView(content_view);
 
@@ -2983,7 +2984,7 @@ TEST_F(ViewLayerTest, LayerToggling) {
 
   // Make v1 have a layer again and verify v2s layer is wired up correctly.
   gfx::Transform transform;
-  transform.SetScale(2.0f, 2.0f);
+  transform.Scale(2.0, 2.0);
   v1->SetTransform(transform);
   EXPECT_TRUE(v1->layer() != NULL);
   EXPECT_TRUE(v2->layer() != NULL);
@@ -3135,7 +3136,7 @@ TEST_F(ViewLayerTest, BoundInRTL) {
 TEST_F(ViewLayerTest, ToggleVisibilityWithTransform) {
   View* view = new View;
   gfx::Transform transform;
-  transform.SetScale(2.0f, 2.0f);
+  transform.Scale(2.0, 2.0);
   view->SetTransform(transform);
   widget()->SetContentsView(view);
   EXPECT_EQ(2.0f, view->GetTransform().matrix().get(0, 0));
@@ -3151,7 +3152,7 @@ TEST_F(ViewLayerTest, ToggleVisibilityWithTransform) {
 TEST_F(ViewLayerTest, ResetTransformOnLayerAfterAdd) {
   View* view = new View;
   gfx::Transform transform;
-  transform.SetScale(2.0f, 2.0f);
+  transform.Scale(2.0, 2.0);
   view->SetTransform(transform);
   widget()->SetContentsView(view);
   EXPECT_EQ(2.0f, view->GetTransform().matrix().get(0, 0));

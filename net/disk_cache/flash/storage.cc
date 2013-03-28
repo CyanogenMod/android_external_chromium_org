@@ -13,7 +13,9 @@
 
 namespace disk_cache {
 
-Storage::Storage(const FilePath& path, int32 size) : path_(path), size_(size) {
+Storage::Storage(const base::FilePath& path,
+                 int32 size)
+    : path_(path), size_(size) {
   COMPILE_ASSERT(kFlashPageSize % 2 == 0, invalid_page_size);
   COMPILE_ASSERT(kFlashBlockSize % kFlashPageSize == 0, invalid_block_size);
   DCHECK(size_ % kFlashBlockSize == 0);
@@ -43,7 +45,6 @@ Storage::~Storage() {
 }
 
 bool Storage::Read(void* buffer, int32 size, int32 offset) {
-  DCHECK(buffer);
   DCHECK(offset >= 0 && offset + size <= size_);
 
   int rv = base::ReadPlatformFile(file_, offset, static_cast<char*>(buffer),
@@ -52,7 +53,6 @@ bool Storage::Read(void* buffer, int32 size, int32 offset) {
 }
 
 bool Storage::Write(const void* buffer, int32 size, int32 offset) {
-  DCHECK(buffer);
   DCHECK(offset >= 0 && offset + size <= size_);
 
   int rv = base::WritePlatformFile(file_, offset,

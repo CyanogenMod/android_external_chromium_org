@@ -4,25 +4,26 @@
 
 #include "chrome/browser/download/download_status_updater.h"
 
-#include <string>
 #include <shobjidl.h>
+#include <string>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/win/metro.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "win8/util/win8_util.h"
 
 // This code doesn't compile with Aura on. TODO(avi): hook it up so that
 // win_aura can do platform integration.
@@ -55,9 +56,8 @@ void UpdateTaskbarProgressBar(int download_count,
   }
 
   // Iterate through all the browser windows, and draw the progress bar.
-  for (BrowserList::const_iterator browser_iterator = BrowserList::begin();
-      browser_iterator != BrowserList::end(); browser_iterator++) {
-    Browser* browser = *browser_iterator;
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    Browser* browser = *it;
     BrowserWindow* window = browser->window();
     if (!window)
       continue;
@@ -77,9 +77,9 @@ void MetroDownloadNotificationClickedHandler(const wchar_t* download_path) {
 
   // Ensure that we invoke the function to display the downloaded item on the
   // UI thread.
-  content::BrowserThread::PostTask(
-      content::BrowserThread::UI, FROM_HERE,
-      base::Bind(platform_util::ShowItemInFolder, FilePath(download_path)));
+  content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
+                                   base::Bind(platform_util::ShowItemInFolder,
+                                              base::FilePath(download_path)));
 }
 
 }  // namespace
@@ -94,7 +94,7 @@ void DownloadStatusUpdater::UpdateAppIconDownloadProgress(
   UpdateTaskbarProgressBar(download_count, progress_known, progress);
 
   // Fire notifications when downloads complete.
-  if (!base::win::IsMetroProcess())
+  if (!win8::IsSingleWindowMetroMode())
     return;
 
   if (download->GetState() != content::DownloadItem::COMPLETE)

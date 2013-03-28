@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/shell_util.h"
+#include "chrome/installer/util/util_constants.h"
 
 class CommandLine;
 
@@ -85,10 +86,10 @@ class Product {
   // command line parameter.  |paths| may be empty on return, but is guaranteed
   // not to contain empty paths otherwise. If more than one path is returned,
   // they are guaranteed to be siblings.
-  void GetUserDataPaths(std::vector<FilePath>* paths) const;
+  void GetUserDataPaths(std::vector<base::FilePath>* paths) const;
 
   // Launches Chrome without waiting for it to exit.
-  bool LaunchChrome(const FilePath& application_path) const;
+  bool LaunchChrome(const base::FilePath& application_path) const;
 
   // Launches Chrome with given command line, waits for Chrome indefinitely
   // (until it terminates), and gets the process exit code if available.
@@ -96,7 +97,7 @@ class Product {
   // The status of Chrome at the return of the function is given by exit_code.
   // NOTE: The 'options' CommandLine object should only contain parameters.
   // The program part will be ignored.
-  bool LaunchChromeAndWait(const FilePath& application_path,
+  bool LaunchChromeAndWait(const base::FilePath& application_path,
                            const CommandLine& options,
                            int32* exit_code) const;
 
@@ -110,10 +111,10 @@ class Product {
   bool ShouldCreateUninstallEntry() const;
 
   // See ProductOperations::AddKeyFiles.
-  void AddKeyFiles(std::vector<FilePath>* key_files) const;
+  void AddKeyFiles(std::vector<base::FilePath>* key_files) const;
 
   // See ProductOperations::AddComDllList.
-  void AddComDllList(std::vector<FilePath>* com_dll_list) const;
+  void AddComDllList(std::vector<base::FilePath>* com_dll_list) const;
 
   // See ProductOperations::AppendProductFlags.
   void AppendProductFlags(CommandLine* command_line) const;
@@ -126,8 +127,12 @@ class Product {
 
   // See ProductOperations::AddDefaultShortcutProperties.
   void AddDefaultShortcutProperties(
-      const FilePath& target_exe,
+      const base::FilePath& target_exe,
       ShellUtil::ShortcutProperties* properties) const;
+
+  void LaunchUserExperiment(const base::FilePath& setup_path,
+                            InstallStatus status,
+                            bool system_level) const;
 
  protected:
   enum CacheStateFlags {

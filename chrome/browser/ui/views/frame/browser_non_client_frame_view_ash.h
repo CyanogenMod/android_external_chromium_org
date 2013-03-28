@@ -18,6 +18,7 @@ class FramePainter;
 }
 namespace views {
 class ImageButton;
+class ToggleImageButton;
 }
 
 class BrowserNonClientFrameViewAsh
@@ -67,6 +68,7 @@ class BrowserNonClientFrameViewAsh
 
  private:
   FRIEND_TEST_ALL_PREFIXES(BrowserNonClientFrameViewAshTest, WindowHeader);
+  FRIEND_TEST_ALL_PREFIXES(BrowserNonClientFrameViewAshTest, ImmersiveMode);
 
   // Distance between top of window and client area.
   int NonClientTopBorderHeight(bool force_restored) const;
@@ -77,7 +79,10 @@ class BrowserNonClientFrameViewAsh
   // Layout the incognito icon.
   void LayoutAvatar();
 
-  void PaintTitleBar(gfx::Canvas* canvas);
+  // Returns true if there is anything to paint. Some fullscreen windows do not
+  // need their frames painted.
+  bool ShouldPaint() const;
+
   void PaintToolbarBackground(gfx::Canvas* canvas);
 
   // Windows without a toolbar need to draw their own line under the header,

@@ -1,6 +1,9 @@
 <div id="clear-browser-data-overlay" class="page" hidden>
   <div class="close-button"></div>
   <h1 i18n-content="clearBrowserDataOverlay"></h1>
+  <div id="info-banner" hidden>
+    <span i18n-content="clearBrowserDataInfoBar"></span>
+  </div>
   <div id="cbd-content-area" class="content-area">
     <span i18n-content="clearBrowserDataLabel"></span>
     <select id="clear-browser-data-time-period"
@@ -25,19 +28,19 @@
       </div>
       <div class="checkbox">
         <label>
-          <input id="delete-cache-checkbox"
-              pref="browser.clear_data.cache" type="checkbox">
-          <span i18n-content="deleteCacheCheckbox"></span>
-        </label>
-      </div>
-      <div class="checkbox">
-        <label>
           <input id="delete-cookies-checkbox"
               pref="browser.clear_data.cookies" type="checkbox">
           <span i18n-content="deleteCookiesFlashCheckbox"
               class="clear-plugin-lso-data-enabled"></span>
           <span i18n-content="deleteCookiesCheckbox"
               class="clear-plugin-lso-data-disabled"></span>
+        </label>
+      </div>
+      <div class="checkbox">
+        <label>
+          <input id="delete-cache-checkbox"
+              pref="browser.clear_data.cache" type="checkbox">
+          <span i18n-content="deleteCacheCheckbox"></span>
         </label>
       </div>
       <div class="checkbox">

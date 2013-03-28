@@ -20,10 +20,11 @@
             "description": "A human readable description of the resource."
           }
         },
-        "description": "The only content type using resource identifiers is <a href=\"contentSettings.html#property-plugins\"><var>plugins</var></a>. For more information, see <a href=\"contentSettings.html#resource-identifiers\">Resource Identifiers</a>."
+        "description": "The only content type using resource identifiers is $ref:contentSettings.plugins. For more information, see <a href=\"contentSettings.html#resource-identifiers\">Resource Identifiers</a>."
       },
       {
         "id": "ContentSetting",
+        "js_module": "ContentSetting",
         "type": "object",
         "functions": [
           {
@@ -39,7 +40,7 @@
                     "type": "string",
                     "enum": ["regular", "incognito_session_only"],
                     "optional": true,
-                    "description": "Where to set the setting (default: regular). One of<br><var>regular</var>: setting for regular profile (which is inherited by the incognito profile if not overridden elsewhere),<br><var>incognito_session_only</var>: setting for incognito profile that can only be set during an incognito session and is deleted when the incognito session ends (overrides regular settings)."
+                    "description": "Where to clear the setting (default: regular). One of<br><var>regular</var>: setting for regular profile (which is inherited by the incognito profile if not overridden elsewhere),<br><var>incognito_session_only</var>: setting for incognito profile that can only be set during an incognito session and is deleted when the incognito session ends (overrides regular settings)."
                   }
                 }
               },
@@ -130,7 +131,7 @@
                     "type": "string",
                     "enum": ["regular", "incognito_session_only"],
                     "optional": true,
-                    "description": "Where to clear the setting (default: regular). One of<br><var>regular</var>: setting for regular profile (which is inherited by the incognito profile if not overridden elsewhere),<br><var>incognito_session_only</var>: setting for incognito profile that can only be set during an incognito session and is deleted when the incognito session ends (overrides regular settings)."
+                    "description": "Where to set the setting (default: regular). One of<br><var>regular</var>: setting for regular profile (which is inherited by the incognito profile if not overridden elsewhere),<br><var>incognito_session_only</var>: setting for incognito profile that can only be set during an incognito session and is deleted when the incognito session ends (overrides regular settings)."
                   }
                 }
               },

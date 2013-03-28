@@ -12,10 +12,10 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
@@ -695,7 +695,7 @@ std::string NativeBackendGnome::GetProfileSpecificAppString() const {
   // Originally, the application string was always just "chrome" and used only
   // so that we had *something* to search for since GNOME Keyring won't search
   // for nothing. Now we use it to distinguish passwords for different profiles.
-  return StringPrintf("%s-%d", kGnomeKeyringAppString, profile_id_);
+  return base::StringPrintf("%s-%d", kGnomeKeyringAppString, profile_id_);
 }
 
 void NativeBackendGnome::MigrateToProfileSpecificLogins() {

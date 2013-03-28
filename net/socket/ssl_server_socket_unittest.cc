@@ -20,8 +20,8 @@
 #include <queue>
 
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "crypto/nss_util.h"
@@ -36,14 +36,14 @@
 #include "net/base/mock_cert_verifier.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
-#include "net/base/ssl_config_service.h"
-#include "net/base/ssl_info.h"
 #include "net/base/test_data_directory.h"
 #include "net/base/x509_certificate.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket.h"
+#include "net/ssl/ssl_config_service.h"
+#include "net/ssl/ssl_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -237,15 +237,15 @@ class FakeSocket : public StreamSocket {
     return base::TimeDelta::FromMicroseconds(-1);
   }
 
-  virtual bool WasNpnNegotiated() const {
+  virtual bool WasNpnNegotiated() const OVERRIDE {
     return false;
   }
 
-  virtual NextProto GetNegotiatedProtocol() const {
+  virtual NextProto GetNegotiatedProtocol() const OVERRIDE {
     return kProtoUnknown;
   }
 
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) {
+  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE {
     return false;
   }
 
@@ -311,16 +311,16 @@ class SSLServerSocketTest : public PlatformTest {
     FakeSocket* fake_client_socket = new FakeSocket(&channel_1_, &channel_2_);
     FakeSocket* fake_server_socket = new FakeSocket(&channel_2_, &channel_1_);
 
-    FilePath certs_dir(GetTestCertsDirectory());
+    base::FilePath certs_dir(GetTestCertsDirectory());
 
-    FilePath cert_path = certs_dir.AppendASCII("unittest.selfsigned.der");
+    base::FilePath cert_path = certs_dir.AppendASCII("unittest.selfsigned.der");
     std::string cert_der;
     ASSERT_TRUE(file_util::ReadFileToString(cert_path, &cert_der));
 
     scoped_refptr<net::X509Certificate> cert =
         X509Certificate::CreateFromBytes(cert_der.data(), cert_der.size());
 
-    FilePath key_path = certs_dir.AppendASCII("unittest.key.bin");
+    base::FilePath key_path = certs_dir.AppendASCII("unittest.key.bin");
     std::string key_string;
     ASSERT_TRUE(file_util::ReadFileToString(key_path, &key_string));
     std::vector<uint8> key_vector(

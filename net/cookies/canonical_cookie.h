@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/time.h"
 #include "net/base/net_export.h"
+#include "net/cookies/cookie_options.h"
 
 class GURL;
 
@@ -30,8 +31,6 @@ class NET_EXPORT CanonicalCookie {
                   const std::string& value,
                   const std::string& domain,
                   const std::string& path,
-                  const std::string& mac_key,
-                  const std::string& mac_algorithm,
                   const base::Time& creation,
                   const base::Time& expiration,
                   const base::Time& last_access,
@@ -47,11 +46,13 @@ class NET_EXPORT CanonicalCookie {
 
   // Supports the default copy constructor.
 
-  // Creates a canonical cookie from parsed cookie.
-  // Canonicalizes and validates inputs.  May return NULL if an attribute
-  // value is invalid.
+  // Creates a new |CanonicalCookie| from the |cookie_line| and the
+  // |creation_time|. Canonicalizes and validates inputs. May return NULL if
+  // an attribut value is invalid.
   static CanonicalCookie* Create(const GURL& url,
-                                 const ParsedCookie& pc);
+                                 const std::string& cookie_line,
+                                 const base::Time& creation_time,
+                                 const CookieOptions& options);
 
   // Creates a canonical cookie from unparsed attribute values.
   // Canonicalizes and validates inputs.  May return NULL if an attribute
@@ -61,8 +62,6 @@ class NET_EXPORT CanonicalCookie {
                                  const std::string& value,
                                  const std::string& domain,
                                  const std::string& path,
-                                 const std::string& mac_key,
-                                 const std::string& mac_algorithm,
                                  const base::Time& creation,
                                  const base::Time& expiration,
                                  bool secure,
@@ -73,8 +72,6 @@ class NET_EXPORT CanonicalCookie {
   const std::string& Value() const { return value_; }
   const std::string& Domain() const { return domain_; }
   const std::string& Path() const { return path_; }
-  const std::string& MACKey() const { return mac_key_; }
-  const std::string& MACAlgorithm() const { return mac_algorithm_; }
   const base::Time& CreationDate() const { return creation_date_; }
   const base::Time& LastAccessDate() const { return last_access_date_; }
   bool IsPersistent() const { return !expiry_date_.is_null(); }
@@ -107,12 +104,24 @@ class NET_EXPORT CanonicalCookie {
     last_access_date_ = date;
   }
 
+  // Returns true if the given |url_path| path-matches the cookie-path as
+  // described in section 5.1.4 in RFC 6265.
   bool IsOnPath(const std::string& url_path) const;
-  bool IsDomainMatch(const std::string& scheme, const std::string& host) const;
+
+  // Returns true if the cookie domain matches the given |host| as described in
+  // section 5.1.3 of RFC 6265.
+  bool IsDomainMatch(const std::string& host) const;
+
+  // Returns true if the cookie should be included for the given request |url|.
+  // HTTP only cookies can be filter by using appropriate cookie |options|.
+  // PLEASE NOTE that this method does not check whether a cookie is expired or
+  // not!
+  bool IncludeForRequestURL(const GURL& url,
+                            const CookieOptions& options) const;
 
   std::string DebugString() const;
 
-  // Returns the cookie source when cookies are set for |url|.  This function
+  // Returns the cookie source when cookies are set for |url|. This function
   // is public for unit test purposes only.
   static std::string GetCookieSourceFromURL(const GURL& url);
   static std::string CanonPath(const GURL& url, const ParsedCookie& pc);
@@ -129,14 +138,11 @@ class NET_EXPORT CanonicalCookie {
   // this field will be null.  CanonicalCookie consumers should not rely on
   // this field unless they guarantee that the creator of those
   // CanonicalCookies properly initialized the field.
-  // TODO(abarth): We might need to make this field persistent for MAC cookies.
   std::string source_;
   std::string name_;
   std::string value_;
   std::string domain_;
   std::string path_;
-  std::string mac_key_;  // TODO(abarth): Persist to disk.
-  std::string mac_algorithm_;  // TODO(abarth): Persist to disk.
   base::Time creation_date_;
   base::Time expiry_date_;
   base::Time last_access_date_;

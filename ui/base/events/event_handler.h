@@ -5,36 +5,58 @@
 #ifndef UI_BASE_EVENTS_EVENT_HANDLER_H_
 #define UI_BASE_EVENTS_EVENT_HANDLER_H_
 
+#include <stack>
 #include <vector>
 
+#include "base/basictypes.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/ui_export.h"
 
 namespace ui {
 
+class CancelModeEvent;
+class Event;
+class EventDispatcher;
+class EventTarget;
 class GestureEvent;
 class KeyEvent;
 class MouseEvent;
 class ScrollEvent;
 class TouchEvent;
 
-class EventTarget;
-
-// Dispatches events to appropriate targets.
+// Dispatches events to appropriate targets.  The default implementations of
+// all of the specific handlers (e.g. OnKeyEvent, OnMouseEvent) do nothing.
 class UI_EXPORT EventHandler {
  public:
-  EventHandler() {}
-  virtual ~EventHandler() {}
+  EventHandler();
+  virtual ~EventHandler();
 
-  virtual EventResult OnKeyEvent(KeyEvent* event) = 0;
+  // This is called for all events. The default implementation routes the event
+  // to one of the event-specific callbacks (OnKeyEvent, OnMouseEvent etc.). If
+  // this is overridden, then normally, the override should chain into the
+  // default implementation for un-handled events.
+  virtual void OnEvent(Event* event);
 
-  virtual EventResult OnMouseEvent(MouseEvent* event) = 0;
+  virtual void OnKeyEvent(KeyEvent* event);
 
-  virtual EventResult OnScrollEvent(ScrollEvent* event) = 0;
+  virtual void OnMouseEvent(MouseEvent* event);
 
-  virtual EventResult OnTouchEvent(TouchEvent* event) = 0;
+  virtual void OnScrollEvent(ScrollEvent* event);
 
-  virtual EventResult OnGestureEvent(GestureEvent* event) = 0;
+  virtual void OnTouchEvent(TouchEvent* event);
+
+  virtual void OnGestureEvent(GestureEvent* event);
+
+  virtual void OnCancelMode(CancelModeEvent* event);
+
+ private:
+  friend class EventDispatcher;
+
+  // EventDispatcher pushes itself on the top of this stack while dispatching
+  // events to this then pops itself off when done.
+  std::stack<EventDispatcher*> dispatchers_;
+
+  DISALLOW_COPY_AND_ASSIGN(EventHandler);
 };
 
 typedef std::vector<EventHandler*> EventHandlerList;

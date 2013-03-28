@@ -90,6 +90,7 @@ var MainView = (function() {
     tabs.addTab(SocketsView.TAB_HANDLE_ID, SocketsView.getInstance(),
                 false, true);
     tabs.addTab(SpdyView.TAB_HANDLE_ID, SpdyView.getInstance(), false, true);
+    tabs.addTab(QuicView.TAB_HANDLE_ID, QuicView.getInstance(), false, true);
     tabs.addTab(HttpPipelineView.TAB_HANDLE_ID, HttpPipelineView.getInstance(),
                 false, true);
     tabs.addTab(HttpCacheView.TAB_HANDLE_ID, HttpCacheView.getInstance(),
@@ -169,7 +170,7 @@ var MainView = (function() {
      * without reloading the page.  Must be called before passing loaded data
      * to the individual views.
      *
-     * @param {String} opt_fileName The name of the log file that has been
+     * @param {string} opt_fileName The name of the log file that has been
      *     loaded, if we're loading a log file.
      */
     onLoadLog: function(opt_fileName) {

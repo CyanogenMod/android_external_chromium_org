@@ -109,6 +109,17 @@ cr.define('options.contentSettings', function() {
       if (this.pattern)
         select.setAttribute('displaymode', 'edit');
 
+      if (this.contentType == 'media-stream') {
+        this.settingLabel.classList.add('media-audio-setting');
+
+        var videoSettingLabel = cr.doc.createElement('span');
+        videoSettingLabel.textContent = this.videoSettingForDisplay();
+        videoSettingLabel.className = 'exception-setting';
+        videoSettingLabel.classList.add('media-video-setting');
+        videoSettingLabel.setAttribute('displaymode', 'static');
+        this.contentElement.appendChild(videoSettingLabel);
+      }
+
       // Used to track whether the URL pattern in the input is valid.
       // This will be true if the browser process has informed us that the
       // current text in the input is valid. Changing the text resets this to
@@ -227,10 +238,29 @@ cr.define('options.contentSettings', function() {
     /**
      * Gets a human-readable setting string.
      *
-     * @type {string}
+     * @return {string} The display string.
      */
     settingForDisplay: function() {
-      var setting = this.setting;
+      return this.getDisplayStringForSetting(this.setting);
+    },
+
+    /**
+     * media video specific function.
+     * Gets a human-readable video setting string.
+     *
+     * @return {string} The display string.
+     */
+    videoSettingForDisplay: function() {
+      return this.getDisplayStringForSetting(this.dataItem.video);
+    },
+
+    /**
+     * Gets a human-readable display string for setting.
+     *
+     * @param {string} setting The setting to be displayed.
+     * @return {string} The display string.
+     */
+    getDisplayStringForSetting: function(setting) {
       if (setting == 'allow')
         return loadTimeData.getString('allowException');
       else if (setting == 'block')
@@ -281,12 +311,12 @@ cr.define('options.contentSettings', function() {
         settingOption.selected = true;
     },
 
-    /** @inheritDoc */
+    /** @override */
     get currentInputIsValid() {
       return this.inputValidityKnown && this.inputIsValid;
     },
 
-    /** @inheritDoc */
+    /** @override */
     get hasBeenEdited() {
       var livePattern = this.input.value;
       var liveSetting = this.select.value;
@@ -386,7 +416,7 @@ cr.define('options.contentSettings', function() {
       this.input.value = '';
     },
 
-    /** @inheritDoc */
+    /** @override */
     get hasBeenEdited() {
       return this.input.value != '';
     },
@@ -435,8 +465,7 @@ cr.define('options.contentSettings', function() {
       this.mode = this.getAttribute('mode');
 
       // Whether the exceptions in this list allow an 'Ask every time' option.
-      this.enableAskOption = this.contentType == 'plugins' ||
-                             this.contentType == 'pepper-flash-cameramic';
+      this.enableAskOption = this.contentType == 'plugins';
 
       this.autoExpands = true;
       this.reset();
@@ -524,7 +553,7 @@ cr.define('options.contentSettings', function() {
       }
     },
 
-    /** @inheritDoc */
+    /** @override */
     deleteItemAtIndex: function(index) {
       var listItem = this.getListItemByIndex(index);
       if (!listItem.deletable)
@@ -592,6 +621,9 @@ cr.define('options.contentSettings', function() {
         else
           divs[i].hidden = true;
       }
+
+      var mediaHeader = this.pageDiv.querySelector('.media-header');
+      mediaHeader.hidden = type != 'media-stream';
     },
 
     /**

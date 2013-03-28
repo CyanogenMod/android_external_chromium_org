@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
+#include "sync/base/sync_export.h"
 #include "sync/protocol/encryption.pb.h"
 #include "sync/util/nigori.h"
 
@@ -23,7 +24,7 @@ namespace syncer {
 
 class Encryptor;
 
-extern const char kNigoriTag[];
+SYNC_EXPORT_PRIVATE extern const char kNigoriTag[];
 
 // The parameters used to initialize a Nigori instance.
 struct KeyParams {
@@ -46,7 +47,7 @@ struct KeyParams {
 // CanDecrypt should be used to verify whether the Cryptographer can decrypt
 // that node. If it cannot, then the application of that update should be
 // delayed until after it can be decrypted.
-class Cryptographer {
+class SYNC_EXPORT Cryptographer {
  public:
   // Does not take ownership of |encryptor|.
   explicit Cryptographer(Encryptor* encryptor);

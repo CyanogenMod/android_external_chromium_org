@@ -2,26 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "testing/gtest/include/gtest/gtest.h"
+#include "chrome/browser/bookmarks/bookmark_html_writer.h"
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/i18n/time_formatting.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string16.h"
 #include "base/string_util.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_html_writer.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/importer/firefox2_importer.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/test_browser_thread.h"
 #include "grit/generated_resources.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -30,8 +33,8 @@ using content::BrowserThread;
 
 namespace {
 
-static const int kIconWidth = 16;
-static const int kIconHeight = 16;
+const int kIconWidth = 16;
+const int kIconHeight = 16;
 
 void MakeTestSkBitmap(int w, int h, SkBitmap* bmp) {
   bmp->setConfig(SkBitmap::kARGB_8888_Config, w, h);
@@ -116,8 +119,8 @@ class BookmarkHTMLWriterTest : public testing::Test {
               BookmarkEntryToString(entry));
   }
 
-  ScopedTempDir temp_dir_;
-  FilePath path_;
+  base::ScopedTempDir temp_dir_;
+  base::FilePath path_;
 };
 
 // Class that will notify message loop when file is written.
@@ -127,7 +130,7 @@ class BookmarksObserver : public BookmarksExportObserver {
     DCHECK(loop);
   }
 
-  virtual void OnExportFinished() {
+  virtual void OnExportFinished() OVERRIDE {
     loop_->Quit();
   }
 
@@ -149,8 +152,9 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   profile.BlockUntilHistoryProcessesPendingRequests();
   profile.CreateFaviconService();
   profile.CreateBookmarkModel(true);
-  profile.BlockUntilBookmarkModelLoaded();
+
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(&profile);
+  ui_test_utils::WaitForBookmarkModelToLoad(model);
 
   // Create test PNG representing favicon for url1.
   SkBitmap bitmap;
@@ -174,6 +178,7 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   //       url1
   // Mobile
   //   url1
+  //   <bookmark without a title.  Not supported by Firefox 2 import>
   string16 f1_title = ASCIIToUTF16("F\"&;<1\"");
   string16 f2_title = ASCIIToUTF16("F2");
   string16 f3_title = ASCIIToUTF16("F 3");
@@ -182,11 +187,13 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   string16 url2_title = ASCIIToUTF16("url&2");
   string16 url3_title = ASCIIToUTF16("url\"3");
   string16 url4_title = ASCIIToUTF16("url\"&;");
+  string16 unnamed_bookmark_title = ASCIIToUTF16("");
   GURL url1("http://url1");
   GURL url1_favicon("http://url1/icon.ico");
   GURL url2("http://url2");
   GURL url3("http://url3");
   GURL url4("javascript:alert(\"Hello!\");");
+  GURL unnamed_bookmark_url("about:blank");
   base::Time t1(base::Time::Now());
   base::Time t2(t1 + base::TimeDelta::FromHours(1));
   base::Time t3(t1 + base::TimeDelta::FromHours(1));
@@ -198,8 +205,9 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
       AddPage(url1, base::Time::Now(), history::SOURCE_BROWSED);
   FaviconServiceFactory::GetForProfile(
       &profile, Profile::EXPLICIT_ACCESS)->SetFavicons(
-          url1, url1_favicon, history::FAVICON, gfx::Image(bitmap));
-  message_loop.RunAllPending();
+          url1, url1_favicon, history::FAVICON,
+          gfx::Image::CreateFrom1xBitmap(bitmap));
+  message_loop.RunUntilIdle();
   const BookmarkNode* f2 = model->AddFolder(f1, 1, f2_title);
   model->AddURLWithCreationTime(f2, 0, url2_title, url2, t2);
   model->AddURLWithCreationTime(model->bookmark_bar_node(),
@@ -213,6 +221,8 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   model->AddURLWithCreationTime(model->bookmark_bar_node(), 2, url4_title,
                                 url4, t4);
   model->AddURLWithCreationTime(model->mobile_node(), 0, url1_title, url1, t1);
+  model->AddURLWithCreationTime(model->mobile_node(), 1, unnamed_bookmark_title,
+                                unnamed_bookmark_url, t2);
 
   // Write to a temp file.
   BookmarksObserver observer(&message_loop);
@@ -223,7 +233,7 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   FaviconServiceFactory::GetForProfile(
       &profile, Profile::EXPLICIT_ACCESS)->SetFavicons(
           url1, url1_favicon, history::FAVICON, gfx::Image());
-  message_loop.RunAllPending();
+  message_loop.RunUntilIdle();
 
   // Read the bookmarks back in.
   std::vector<ProfileWriter::BookmarkEntry> parsed_bookmarks;

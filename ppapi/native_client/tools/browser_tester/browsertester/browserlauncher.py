@@ -266,13 +266,24 @@ class ChromeLauncher(BrowserLauncher):
 
   def MakeCmd(self, url, port):
     cmd = [self.binary,
+            # Note that we do not use "--enable-logging" here because
+            # it actually turns off logging to the Buildbot logs on
+            # Windows (see http://crbug.com/169941).
             '--disable-web-resources',
             '--disable-preconnect',
+            # This is speculative, sync should not occur with a clean profile.
+            '--disable-sync',
+            # This prevents Chrome from making "hidden" network requests at
+            # startup.  These requests could be a source of non-determinism,
+            # and they also add noise to the netlogs.
+            '--dns-prefetch-disable',
             '--no-first-run',
             '--no-default-browser-check',
-            '--enable-logging',
             '--log-level=1',
             '--safebrowsing-disable-auto-update',
+            # Suppress metrics reporting.  This prevents misconfigured bots,
+            # people testing at their desktop, etc from poisoning the UMA data.
+            '--metrics-recording-only',
             # Chrome explicitly blacklists some ports as "unsafe" because
             # certain protocols use them.  Chrome gives an error like this:
             # Error 312 (net::ERR_UNSAFE_PORT): Unknown error
@@ -286,11 +297,6 @@ class ChromeLauncher(BrowserLauncher):
     if self.options.ppapi_plugin is None:
       cmd.append('--enable-nacl')
       disable_sandbox = False
-      # Sandboxing Chrome on Linux requires a SUIDed helper binary.  This
-      # binary may not be installed, so disable sandboxing to avoid the
-      # corner cases where it may fail.  This is a little scarry, because it
-      # means we are not testing NaCl inside the outer sandbox on Linux.
-      disable_sandbox |= PLATFORM == 'linux'
       # Chrome process can't access file within sandbox
       disable_sandbox |= self.options.nacl_exe_stdin is not None
       disable_sandbox |= self.options.nacl_exe_stdout is not None
@@ -305,6 +311,8 @@ class ChromeLauncher(BrowserLauncher):
       cmd.append('--load-extension=%s' %
                  ','.join(self.options.browser_extensions))
       cmd.append('--enable-experimental-extension-apis')
+    if self.options.enable_crash_reporter:
+      cmd.append('--enable-crash-reporter-for-testing')
     if self.options.tool == 'memcheck':
       cmd = ['src/third_party/valgrind/memcheck.sh',
              '-v',

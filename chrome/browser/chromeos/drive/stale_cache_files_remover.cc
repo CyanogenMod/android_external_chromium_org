@@ -17,9 +17,8 @@ namespace drive {
 namespace {
 
 // Emits the log when the remove failed.
-void EmitErrorLog(DriveFileError error,
-                  const std::string& resource_id,
-                  const std::string& md5) {
+void EmitErrorLog(const std::string& resource_id,
+                  DriveFileError error) {
   if (error != DRIVE_FILE_OK) {
     LOG(WARNING) << "Failed to remove a stale cache file. resource_id:"
                  << resource_id;
@@ -41,16 +40,14 @@ StaleCacheFilesRemover::~StaleCacheFilesRemover() {
   file_system_->RemoveObserver(this);
 }
 
-void StaleCacheFilesRemover::OnInitialLoadFinished(DriveFileError error) {
+void StaleCacheFilesRemover::OnInitialLoadFinished() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (error == DRIVE_FILE_OK) {
-    cache_->Iterate(
-        base::Bind(
-            &StaleCacheFilesRemover::GetEntryInfoAndRemoveCacheIfNecessary,
-            weak_ptr_factory_.GetWeakPtr()),
-        base::Bind(&base::DoNothing));
-  }
+  cache_->Iterate(
+      base::Bind(
+          &StaleCacheFilesRemover::GetEntryInfoAndRemoveCacheIfNecessary,
+          weak_ptr_factory_.GetWeakPtr()),
+      base::Bind(&base::DoNothing));
 }
 
 void StaleCacheFilesRemover::GetEntryInfoAndRemoveCacheIfNecessary(
@@ -70,13 +67,13 @@ void StaleCacheFilesRemover::RemoveCacheIfNecessary(
     const std::string& resource_id,
     const std::string& cache_md5,
     DriveFileError error,
-    const FilePath& drive_file_path,
+    const base::FilePath& drive_file_path,
     scoped_ptr<DriveEntryProto> entry_proto) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // The entry is not found in the file system.
   if (error != DRIVE_FILE_OK) {
-    cache_->Remove(resource_id, base::Bind(&EmitErrorLog));
+    cache_->Remove(resource_id, base::Bind(&EmitErrorLog, resource_id));
     return;
   }
 
@@ -84,7 +81,7 @@ void StaleCacheFilesRemover::RemoveCacheIfNecessary(
   DCHECK(entry_proto.get());
   if (!entry_proto->has_file_specific_info() ||
       cache_md5 != entry_proto->file_specific_info().file_md5()) {
-    cache_->Remove(resource_id, base::Bind(&EmitErrorLog));
+    cache_->Remove(resource_id, base::Bind(&EmitErrorLog, resource_id));
     return;
   }
 }

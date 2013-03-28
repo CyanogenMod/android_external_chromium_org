@@ -8,7 +8,10 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "chromeos/dbus/ibus/ibus_constants.h"
+#include "chromeos/dbus/ibus/ibus_engine_service.h"
+#include "chromeos/dbus/ibus/ibus_panel_service.h"
 #include "chromeos/dbus/ibus/ibus_text.h"
+#include "chromeos/ime/ibus_bridge.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -16,8 +19,7 @@
 
 namespace chromeos {
 
-// TODO(nona): Remove after complete libibus removal.
-using chromeos::ibus::IBusText;
+using chromeos::IBusText;
 
 namespace {
 
@@ -26,6 +28,7 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
  public:
   IBusInputContextClientImpl()
       : proxy_(NULL),
+        is_xkb_layout_(true),
         weak_ptr_factory_(this) {
   }
 
@@ -45,6 +48,24 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
   }
 
   // IBusInputContextClient override.
+  virtual void SetInputContextHandler(
+      IBusInputContextHandlerInterface* handler) OVERRIDE {
+    handler_ = handler;
+  }
+
+  // IBusInputContextClient override.
+  virtual void SetSetCursorLocationHandler(
+      const SetCursorLocationHandler& set_cursor_location_handler) OVERRIDE {
+    DCHECK(!set_cursor_location_handler.is_null());
+    set_cursor_location_handler_ = set_cursor_location_handler;
+  }
+
+  // IBusInputContextClient override.
+  virtual void UnsetSetCursorLocationHandler() OVERRIDE {
+    set_cursor_location_handler_.Reset();
+  }
+
+  // IBusInputContextClient override.
   virtual void ResetObjectProxy() OVERRIDE {
     // Do not delete proxy here, proxy object is managed by dbus::Bus object.
     proxy_ = NULL;
@@ -53,66 +74,6 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
   // IBusInputContextClient override.
   virtual bool IsObjectProxyReady() const OVERRIDE {
     return proxy_ != NULL;
-  }
-
-  // IBusInputContextClient override.
-  virtual void SetCommitTextHandler(
-      const CommitTextHandler& commit_text_handler) OVERRIDE {
-    DCHECK(!commit_text_handler.is_null());
-    commit_text_handler_ = commit_text_handler;
-  }
-
-  // IBusInputContextClient override.
-  virtual void SetForwardKeyEventHandler(
-      const ForwardKeyEventHandler& forward_key_event_handler) OVERRIDE {
-    DCHECK(!forward_key_event_handler.is_null());
-    forward_key_event_handler_ = forward_key_event_handler;
-  }
-
-  // IBusInputContextClient override.
-  virtual void SetUpdatePreeditTextHandler(
-      const UpdatePreeditTextHandler& update_preedit_text_handler) OVERRIDE {
-    DCHECK(!update_preedit_text_handler.is_null());
-    update_preedit_text_handler_ = update_preedit_text_handler;
-  }
-
-  // IBusInputContextClient override.
-  virtual void SetShowPreeditTextHandler(
-      const ShowPreeditTextHandler& show_preedit_text_handler) OVERRIDE {
-    DCHECK(!show_preedit_text_handler.is_null());
-    show_preedit_text_handler_ = show_preedit_text_handler;
-  }
-
-  // IBusInputContextClient override.
-  virtual void SetHidePreeditTextHandler(
-      const HidePreeditTextHandler& hide_preedit_text_handler) OVERRIDE {
-    DCHECK(!hide_preedit_text_handler.is_null());
-    hide_preedit_text_handler_ = hide_preedit_text_handler;
-  }
-
-  // IBusInputContextClient override.
-  virtual void UnsetCommitTextHandler() OVERRIDE {
-    commit_text_handler_.Reset();
-  }
-
-  // IBusInputContextClient override.
-  virtual void UnsetForwardKeyEventHandler() OVERRIDE {
-    forward_key_event_handler_.Reset();
-  }
-
-  // IBusInputContextClient override.
-  virtual void UnsetUpdatePreeditTextHandler() OVERRIDE {
-    update_preedit_text_handler_.Reset();
-  }
-
-  // IBusInputContextClient override.
-  virtual void UnsetShowPreeditTextHandler() OVERRIDE {
-    show_preedit_text_handler_.Reset();
-  }
-
-  // IBusInputContextClient override.
-  virtual void UnsetHidePreeditTextHandler() OVERRIDE {
-    hide_preedit_text_handler_.Reset();
   }
 
   // IBusInputContextClient override.
@@ -147,17 +108,10 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
   }
 
   // IBusInputContextClient override.
-  virtual void SetCursorLocation(int32 x, int32 y, int32 width,
-                                 int32 height) OVERRIDE {
-    dbus::MethodCall method_call(ibus::input_context::kServiceInterface,
-                                 ibus::input_context::kSetCursorLocationMethod);
-    dbus::MessageWriter writer(&method_call);
-    writer.AppendInt32(x);
-    writer.AppendInt32(y);
-    writer.AppendInt32(width);
-    writer.AppendInt32(height);
-    CallNoResponseMethod(&method_call,
-                         ibus::input_context::kSetCursorLocationMethod);
+  virtual void SetCursorLocation(const ibus::Rect& cursor_location,
+                                 const ibus::Rect& composition_head) OVERRIDE {
+    if (!set_cursor_location_handler_.is_null())
+      set_cursor_location_handler_.Run(cursor_location, composition_head);
   }
 
   // IBusInputContextClient override.
@@ -191,7 +145,7 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
         ibus::input_context::kServiceInterface,
         ibus::input_context::kSetSurroundingTextMethod);
     dbus::MessageWriter writer(&method_call);
-    ibus::AppendStringAsIBusText(text, &writer);
+    AppendStringAsIBusText(text, &writer);
     writer.AppendUint32(start_index);
     writer.AppendUint32(end_index);
     CallNoResponseMethod(&method_call,
@@ -213,6 +167,17 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
     CallNoResponseMethod(&method_call,
                          ibus::input_context::kPropertyActivateMethod);
   }
+
+  // IBusInputContextClient override.
+  virtual bool IsXKBLayout() OVERRIDE {
+    return is_xkb_layout_;
+  }
+
+  // IBusInputContextClient override.
+  virtual void SetIsXKBLayout(bool is_xkb_layout) OVERRIDE {
+    is_xkb_layout_ = is_xkb_layout;
+  }
+
  private:
   void CallNoResponseMethod(dbus::MethodCall* method_call,
                             const std::string& method_name) {
@@ -269,7 +234,7 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
 
   // Handles CommitText signal.
   void OnCommitText(dbus::Signal* signal) {
-    if (commit_text_handler_.is_null())
+    if (!handler_)
       return;
     dbus::MessageReader reader(signal);
     IBusText ibus_text;
@@ -278,12 +243,12 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
       LOG(ERROR) << "Invalid signal: " << signal->ToString();
       return;
     }
-    commit_text_handler_.Run(ibus_text);
+    handler_->CommitText(ibus_text);
   }
 
   // Handles ForwardKeyEvetn signal.
   void OnForwardKeyEvent(dbus::Signal* signal) {
-    if (forward_key_event_handler_.is_null())
+    if (!handler_)
       return;
     dbus::MessageReader reader(signal);
     uint32 keyval = 0;
@@ -296,12 +261,12 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
       LOG(ERROR) << "Invalid signal: " << signal->ToString();
       return;
     }
-    forward_key_event_handler_.Run(keyval, keycode, state);
+    handler_->ForwardKeyEvent(keyval, keycode, state);
   }
 
   // Handles UpdatePreeditText signal.
   void OnUpdatePreeditText(dbus::Signal* signal) {
-    if (update_preedit_text_handler_.is_null())
+    if (!handler_)
       return;
     dbus::MessageReader reader(signal);
     IBusText ibus_text;
@@ -314,19 +279,19 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
       LOG(ERROR) << "Invalid signal: " << signal->ToString();
       return;
     }
-    update_preedit_text_handler_.Run(ibus_text, cursor_pos, visible);
+    handler_->UpdatePreeditText(ibus_text, cursor_pos, visible);
   }
 
   // Handles ShowPreeditText signal.
   void OnShowPreeditText(dbus::Signal* signal) {
-    if (!show_preedit_text_handler_.is_null())
-      show_preedit_text_handler_.Run();
+    if (handler_)
+      handler_->ShowPreeditText();
   }
 
   // Handles HidePreeditText signal.
   void OnHidePreeditText(dbus::Signal* signal) {
-    if (!hide_preedit_text_handler_.is_null())
-      hide_preedit_text_handler_.Run();
+    if (handler_)
+      handler_->HidePreeditText();
   }
 
   // Connects signals to signal handlers.
@@ -382,72 +347,129 @@ class IBusInputContextClientImpl : public IBusInputContextClient {
 
   dbus::ObjectProxy* proxy_;
 
-  // Signal handlers.
-  CommitTextHandler commit_text_handler_;
-  ForwardKeyEventHandler forward_key_event_handler_;
-  HidePreeditTextHandler hide_preedit_text_handler_;
-  ShowPreeditTextHandler show_preedit_text_handler_;
-  UpdatePreeditTextHandler update_preedit_text_handler_;
+  // The pointer for input context handler. This can be NULL.
+  IBusInputContextHandlerInterface* handler_;
+
+  SetCursorLocationHandler set_cursor_location_handler_;
+
+  // True if the current input method is xkb layout.
+  bool is_xkb_layout_;
 
   base::WeakPtrFactory<IBusInputContextClientImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(IBusInputContextClientImpl);
 };
 
-// A stub implementation of IBusInputContextClient.
-class IBusInputContextClientStubImpl : public IBusInputContextClient {
+// An implementation of IBusInputContextClient without ibus-daemon interaction.
+// Currently this class is used only on linux desktop.
+// TODO(nona): Use this on ChromeOS device once crbug.com/171351 is fixed.
+class IBusInputContextClientDaemonlessImpl : public IBusInputContextClient {
  public:
-  IBusInputContextClientStubImpl() {}
+  IBusInputContextClientDaemonlessImpl()
+      : is_xkb_layout_(true),
+        initialized_(false)
+  {}
+  virtual ~IBusInputContextClientDaemonlessImpl() {}
 
-  virtual ~IBusInputContextClientStubImpl() {}
-
- public:
   // IBusInputContextClient override.
   virtual void Initialize(dbus::Bus* bus,
-                          const dbus::ObjectPath& object_path) OVERRIDE {}
-  // IBusInputContextClient override.
-  virtual void ResetObjectProxy() OVERRIDE {}
-  // IBusInputContextClient override.
-  virtual bool IsObjectProxyReady() const OVERRIDE {
-    return true;
+                          const dbus::ObjectPath& object_path) OVERRIDE {
+    initialized_ = true;
   }
-  // IBusInputContextClient overrides.
-  virtual void SetCommitTextHandler(
-      const CommitTextHandler& commit_text_handler) OVERRIDE {}
-  virtual void SetForwardKeyEventHandler(
-      const ForwardKeyEventHandler& forward_key_event_handler) OVERRIDE {}
-  virtual void SetUpdatePreeditTextHandler(
-      const UpdatePreeditTextHandler& update_preedit_text_handler) OVERRIDE {}
-  virtual void SetShowPreeditTextHandler(
-      const ShowPreeditTextHandler& show_preedit_text_handler) OVERRIDE {}
-  virtual void SetHidePreeditTextHandler(
-      const HidePreeditTextHandler& hide_preedit_text_handler) OVERRIDE {}
-  virtual void UnsetCommitTextHandler() OVERRIDE {}
-  virtual void UnsetForwardKeyEventHandler() OVERRIDE {}
-  virtual void UnsetUpdatePreeditTextHandler() OVERRIDE {}
-  virtual void UnsetShowPreeditTextHandler() OVERRIDE {}
-  virtual void UnsetHidePreeditTextHandler() OVERRIDE {}
-  virtual void SetCapabilities(uint32 capability) OVERRIDE {}
-  virtual void FocusIn() OVERRIDE {}
-  virtual void FocusOut() OVERRIDE {}
-  virtual void Reset() OVERRIDE {}
-  virtual void SetCursorLocation(int32 x, int32 y, int32 w, int32 h) OVERRIDE {}
+
+  virtual void SetInputContextHandler(
+      IBusInputContextHandlerInterface* handler) OVERRIDE {
+    IBusBridge::Get()->SetInputContextHandler(handler);
+  }
+
+  virtual void SetSetCursorLocationHandler(
+      const SetCursorLocationHandler& set_cursor_location_handler) OVERRIDE {
+  }
+
+  virtual void UnsetSetCursorLocationHandler() OVERRIDE {
+  }
+
+  virtual void ResetObjectProxy() OVERRIDE {
+    initialized_ = false;
+  }
+
+  virtual bool IsObjectProxyReady() const OVERRIDE {
+    return initialized_;
+  }
+
+  virtual void SetCapabilities(uint32 capability) OVERRIDE {
+    IBusEngineHandlerInterface* engine = IBusBridge::Get()->GetEngineHandler();
+    if (engine)
+      engine->SetCapability(
+          static_cast<IBusEngineHandlerInterface::IBusCapability>(capability));
+  }
+
+  virtual void FocusIn() OVERRIDE {
+    IBusEngineHandlerInterface* engine = IBusBridge::Get()->GetEngineHandler();
+    if (engine)
+      engine->FocusIn();
+  }
+
+  virtual void FocusOut() OVERRIDE {
+    IBusEngineHandlerInterface* engine = IBusBridge::Get()->GetEngineHandler();
+    if (engine)
+      engine->FocusOut();
+  }
+
+  virtual void Reset() OVERRIDE {
+    IBusEngineHandlerInterface* engine = IBusBridge::Get()->GetEngineHandler();
+    if (engine)
+      engine->Reset();
+  }
+
+  virtual void SetCursorLocation(const ibus::Rect& cursor_location,
+                                 const ibus::Rect& composition_head) OVERRIDE {
+    IBusPanelCandidateWindowHandlerInterface* candidate_window =
+        IBusBridge::Get()->GetCandidateWindowHandler();
+
+    if (candidate_window)
+      candidate_window->SetCursorLocation(cursor_location, composition_head);
+  }
+
   virtual void ProcessKeyEvent(
       uint32 keyval,
       uint32 keycode,
       uint32 state,
       const ProcessKeyEventCallback& callback,
       const ErrorCallback& error_callback) OVERRIDE {
-    callback.Run(false);
+    IBusEngineHandlerInterface* engine = IBusBridge::Get()->GetEngineHandler();
+    if (engine)
+      engine->ProcessKeyEvent(keyval, keycode, state, callback);
   }
+
   virtual void SetSurroundingText(const std::string& text,
                                   uint32 start_index,
-                                  uint32 end_index) OVERRIDE {}
+                                  uint32 end_index) OVERRIDE {
+    // TODO(nona): Implement this.
+  }
+
   virtual void PropertyActivate(const std::string& key,
-                                ibus::IBusPropertyState state) OVERRIDE {}
+                                ibus::IBusPropertyState state) OVERRIDE {
+    IBusEngineHandlerInterface* engine = IBusBridge::Get()->GetEngineHandler();
+    if (engine)
+      engine->PropertyActivate(key,
+                               static_cast<ibus::IBusPropertyState>(state));
+  }
+
+  virtual bool IsXKBLayout() OVERRIDE {
+    return is_xkb_layout_;
+  }
+
+  virtual void SetIsXKBLayout(bool is_xkb_layout) OVERRIDE {
+    is_xkb_layout_ = is_xkb_layout;
+  }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(IBusInputContextClientStubImpl);
+  // True if the current input method is xkb layout.
+  bool is_xkb_layout_;
+  bool initialized_;
+
+  DISALLOW_COPY_AND_ASSIGN(IBusInputContextClientDaemonlessImpl);
 };
 
 }  // namespace
@@ -466,6 +488,6 @@ IBusInputContextClient* IBusInputContextClient::Create(
     return new IBusInputContextClientImpl();
   }
   DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new IBusInputContextClientStubImpl();
+  return new IBusInputContextClientDaemonlessImpl();
 }
 }  // namespace chromeos

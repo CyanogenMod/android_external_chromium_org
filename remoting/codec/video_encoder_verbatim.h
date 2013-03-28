@@ -5,6 +5,7 @@
 #ifndef REMOTING_CODEC_VIDEO_ENCODER_VERBATIM_H_
 #define REMOTING_CODEC_VIDEO_ENCODER_VERBATIM_H_
 
+#include "base/time.h"
 #include "remoting/codec/video_encoder.h"
 #include "remoting/proto/video.pb.h"
 #include "third_party/skia/include/core/SkRect.h"
@@ -23,7 +24,7 @@ class VideoEncoderVerbatim : public VideoEncoder {
 
   // VideoEncoder interface.
   virtual void Encode(
-      scoped_refptr<CaptureData> capture_data,
+      scoped_refptr<media::ScreenCaptureData> capture_data,
       bool key_frame,
       const DataAvailableCallback& data_available_callback) OVERRIDE;
 
@@ -42,8 +43,9 @@ class VideoEncoderVerbatim : public VideoEncoder {
   // Submit |packet| to |callback_|.
   void SubmitMessage(VideoPacket* packet, size_t rect_index);
 
-  scoped_refptr<CaptureData> capture_data_;
+  scoped_refptr<media::ScreenCaptureData> capture_data_;
   DataAvailableCallback callback_;
+  base::Time encode_start_time_;
 
   // The most recent screen size.
   SkISize screen_size_;

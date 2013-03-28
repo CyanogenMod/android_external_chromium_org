@@ -12,6 +12,7 @@
 #include "chrome/browser/chromeos/login/authenticator.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/online_attempt_host.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -82,27 +83,36 @@ class LoginPerformer : public LoginStatusConsumer,
 
   // LoginStatusConsumer implementation:
   virtual void OnLoginFailure(const LoginFailure& error) OVERRIDE;
-  virtual void OnDemoUserLoginSuccess() OVERRIDE;
+  virtual void OnRetailModeLoginSuccess() OVERRIDE;
   virtual void OnLoginSuccess(
-      const std::string& username,
-      const std::string& password,
+      const UserCredentials& credentials,
       bool pending_requests,
       bool using_oauth) OVERRIDE;
   virtual void OnOffTheRecordLoginSuccess() OVERRIDE;
   virtual void OnPasswordChangeDetected() OVERRIDE;
 
-  // Performs a login for |username| and |password|. If auth_mode is
-  // AUTH_MODE_EXTENSION, there are no further auth checks, AUTH_MODE_INTERNAL
-  // will perform auth checks.
-  void PerformLogin(const std::string& username,
-                    const std::string& password,
+  // Performs a login for |credentials|.
+  // If auth_mode is AUTH_MODE_EXTENSION, there are no further auth checks,
+  // AUTH_MODE_INTERNAL will perform auth checks.
+  void PerformLogin(const UserCredentials& credentials,
                     AuthorizationMode auth_mode);
 
-  // Performs login for the demo user.
-  void LoginDemoUser();
+  // Performs locally managed user creation and login.
+  void CreateLocallyManagedUser(const string16& display_name,
+                                const std::string& password);
 
-  // Performs actions to prepare Guest mode login.
+  // Performs locally managed user login with a given |username| and |password|.
+  // Managed user creation should be done with CreateLocallyManagedUser().
+  void LoginAsLocallyManagedUser(const UserCredentials& credentials);
+
+  // Performs retail mode login.
+  void LoginRetailMode();
+
+  // Performs actions to prepare guest mode login.
   void LoginOffTheRecord();
+
+  // Performs a login into the public account identified by |username|.
+  void LoginAsPublicAccount(const std::string& username);
 
   // Migrates cryptohome using |old_password| specified.
   void RecoverEncryptedData(const std::string& old_password);
@@ -146,10 +156,6 @@ class LoginPerformer : public LoginStatusConsumer,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // Callback for asynchronous profile creation.
-  void OnProfileCreated(Profile* profile,
-                        Profile::CreateStatus status);
-
   // Requests screen lock and subscribes to screen lock notifications.
   void RequestScreenLock();
 
@@ -187,12 +193,11 @@ class LoginPerformer : public LoginStatusConsumer,
   OnlineAttemptHost online_attempt_host_;
 
   // Represents last login failure that was encountered when communicating to
-  // sign-in server. LoginFailure.None() by default.
+  // sign-in server. LoginFailure.LoginFailureNone() by default.
   LoginFailure last_login_failure_;
 
-  // Username and password for the current login attempt.
-  std::string username_;
-  std::string password_;
+  // User credentials for the current login attempt.
+  UserCredentials credentials_;
 
   // Notifications receiver.
   Delegate* delegate_;
@@ -216,9 +221,6 @@ class LoginPerformer : public LoginStatusConsumer,
 
   // Authorization mode type.
   AuthorizationMode auth_mode_;
-
-  // True if we use OAuth during authorization process.
-  bool using_oauth_;
 
   base::WeakPtrFactory<LoginPerformer> weak_factory_;
 

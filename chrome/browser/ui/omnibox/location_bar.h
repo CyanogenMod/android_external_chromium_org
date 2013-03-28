@@ -16,7 +16,7 @@
 #include "base/string16.h"
 #include "chrome/common/instant_types.h"
 #include "content/public/common/page_transition_types.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class ExtensionAction;
 class LocationBarTesting;
@@ -65,9 +65,6 @@ class LocationBar {
   // Called when the page-action data needs to be refreshed, e.g. when an
   // extension is unloaded or crashes.
   virtual void InvalidatePageActions() = 0;
-
-  // Updates the state of the web intents use-another-service button.
-  virtual void UpdateWebIntentsButton() = 0;
 
   // Updates the state of the button to open a PDF in Adobe Reader.
   virtual void UpdateOpenPDFInReaderPrompt() = 0;

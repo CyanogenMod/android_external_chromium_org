@@ -6,13 +6,12 @@
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/scoped_temp_dir.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/common/chrome_paths.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/webdata/keyword_table.h"
 #include "chrome/browser/webdata/web_database.h"
@@ -31,10 +30,17 @@ class KeywordTableTest : public testing::Test {
   virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     file_ = temp_dir_.path().AppendASCII("TestWebDatabase");
+
+    table_.reset(new KeywordTable);
+    db_.reset(new WebDatabase);
+    db_->AddTable(table_.get());
+    ASSERT_EQ(sql::INIT_OK, db_->Init(file_, std::string()));
   }
 
-  FilePath file_;
-  ScopedTempDir temp_dir_;
+  base::FilePath file_;
+  base::ScopedTempDir temp_dir_;
+  scoped_ptr<KeywordTable> table_;
+  scoped_ptr<WebDatabase> db_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KeywordTableTest);
@@ -42,10 +48,6 @@ class KeywordTableTest : public testing::Test {
 
 
 TEST_F(KeywordTableTest, Keywords) {
-  WebDatabase db;
-  ASSERT_EQ(sql::INIT_OK, db.Init(file_));
-  KeywordTable* keyword_table = db.GetKeywordTable();
-
   TemplateURLData keyword;
   keyword.short_name = ASCIIToUTF16("short_name");
   keyword.SetKeyword(ASCIIToUTF16("keyword"));
@@ -63,10 +65,10 @@ TEST_F(KeywordTableTest, Keywords) {
   keyword.created_by_policy = true;
   keyword.usage_count = 32;
   keyword.prepopulate_id = 10;
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
+  EXPECT_TRUE(table_->AddKeyword(keyword));
 
   KeywordTable::Keywords keywords;
-  EXPECT_TRUE(keyword_table->GetKeywords(&keywords));
+  EXPECT_TRUE(table_->GetKeywords(&keywords));
   EXPECT_EQ(1U, keywords.size());
   const TemplateURLData& restored_keyword = keywords.front();
 
@@ -92,20 +94,16 @@ TEST_F(KeywordTableTest, Keywords) {
   EXPECT_EQ(keyword.usage_count, restored_keyword.usage_count);
   EXPECT_EQ(keyword.prepopulate_id, restored_keyword.prepopulate_id);
 
-  EXPECT_TRUE(keyword_table->RemoveKeyword(restored_keyword.id));
+  EXPECT_TRUE(table_->RemoveKeyword(restored_keyword.id));
 
   KeywordTable::Keywords empty_keywords;
-  EXPECT_TRUE(keyword_table->GetKeywords(&empty_keywords));
+  EXPECT_TRUE(table_->GetKeywords(&empty_keywords));
   EXPECT_EQ(0U, empty_keywords.size());
 }
 
 TEST_F(KeywordTableTest, KeywordMisc) {
-  WebDatabase db;
-  ASSERT_EQ(sql::INIT_OK, db.Init(file_));
-  KeywordTable* keyword_table = db.GetKeywordTable();
-
-  EXPECT_EQ(kInvalidTemplateURLID, keyword_table->GetDefaultSearchProviderID());
-  EXPECT_EQ(0, keyword_table->GetBuiltinKeywordVersion());
+  EXPECT_EQ(kInvalidTemplateURLID, table_->GetDefaultSearchProviderID());
+  EXPECT_EQ(0, table_->GetBuiltinKeywordVersion());
 
   TemplateURLData keyword;
   keyword.short_name = ASCIIToUTF16("short_name");
@@ -124,129 +122,16 @@ TEST_F(KeywordTableTest, KeywordMisc) {
   keyword.created_by_policy = true;
   keyword.usage_count = 32;
   keyword.prepopulate_id = 10;
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
+  EXPECT_TRUE(table_->AddKeyword(keyword));
 
-  EXPECT_TRUE(keyword_table->SetDefaultSearchProviderID(10));
-  EXPECT_TRUE(keyword_table->SetBuiltinKeywordVersion(11));
+  EXPECT_TRUE(table_->SetDefaultSearchProviderID(10));
+  EXPECT_TRUE(table_->SetBuiltinKeywordVersion(11));
 
-  EXPECT_EQ(10, keyword_table->GetDefaultSearchProviderID());
-  EXPECT_EQ(11, keyword_table->GetBuiltinKeywordVersion());
-}
-
-TEST_F(KeywordTableTest, DefaultSearchProviderBackup) {
-  // TODO(ivankr): suppress keyword_table.cc ERROR logs.
-  WebDatabase db;
-  ASSERT_EQ(sql::INIT_OK, db.Init(file_));
-  KeywordTable* keyword_table = db.GetKeywordTable();
-
-  EXPECT_EQ(kInvalidTemplateURLID, keyword_table->GetDefaultSearchProviderID());
-
-  TemplateURLData keyword;
-  keyword.short_name = ASCIIToUTF16("short_name");
-  keyword.SetKeyword(ASCIIToUTF16("keyword"));
-  keyword.SetURL("http://url/");
-  keyword.suggestions_url = "url2";
-  keyword.favicon_url = GURL("http://favicon.url/");
-  keyword.show_in_default_list = true;
-  keyword.safe_for_autoreplace = true;
-  keyword.id = 1;
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
-
-  EXPECT_TRUE(keyword_table->SetDefaultSearchProviderID(1));
-  EXPECT_TRUE(keyword_table->IsBackupSignatureValid(
-      WebDatabase::kCurrentVersionNumber));
-  EXPECT_EQ(1, keyword_table->GetDefaultSearchProviderID());
-
-  TemplateURLData backup;
-  EXPECT_TRUE(keyword_table->GetDefaultSearchProviderBackup(&backup));
-  // Backup URL should have an invalid ID.
-  EXPECT_EQ(kInvalidTemplateURLID, backup.id);
-  EXPECT_EQ(keyword.short_name, backup.short_name);
-  EXPECT_EQ(keyword.keyword(), backup.keyword());
-  EXPECT_EQ(keyword.url(), backup.url());
-  EXPECT_EQ(keyword.favicon_url, backup.favicon_url);
-  EXPECT_EQ(keyword.suggestions_url, backup.suggestions_url);
-  EXPECT_EQ(keyword.show_in_default_list, backup.show_in_default_list);
-  EXPECT_EQ(keyword.safe_for_autoreplace, backup.safe_for_autoreplace);
-  EXPECT_FALSE(keyword_table->DidDefaultSearchProviderChange());
-
-  // Change the actual setting.
-  EXPECT_TRUE(keyword_table->meta_table_->SetValue(
-      KeywordTable::kDefaultSearchProviderKey, 2));
-  EXPECT_TRUE(keyword_table->IsBackupSignatureValid(
-      WebDatabase::kCurrentVersionNumber));
-  EXPECT_EQ(2, keyword_table->GetDefaultSearchProviderID());
-
-  EXPECT_TRUE(keyword_table->GetDefaultSearchProviderBackup(&backup));
-  EXPECT_EQ(kInvalidTemplateURLID, backup.id);
-  EXPECT_EQ(keyword.short_name, backup.short_name);
-  EXPECT_EQ(keyword.keyword(), backup.keyword());
-  EXPECT_EQ(keyword.url(), backup.url());
-  EXPECT_EQ(keyword.favicon_url, backup.favicon_url);
-  EXPECT_EQ(keyword.suggestions_url, backup.suggestions_url);
-  EXPECT_EQ(keyword.show_in_default_list, backup.show_in_default_list);
-  EXPECT_EQ(keyword.safe_for_autoreplace, backup.safe_for_autoreplace);
-  EXPECT_TRUE(keyword_table->DidDefaultSearchProviderChange());
-
-  // Change the backup.
-  EXPECT_TRUE(keyword_table->meta_table_->SetValue(
-      KeywordTable::kDefaultSearchProviderKey, 1));
-  EXPECT_TRUE(keyword_table->meta_table_->SetValue(
-      KeywordTable::kDefaultSearchIDBackupKey, 2));
-  EXPECT_FALSE(keyword_table->IsBackupSignatureValid(
-      WebDatabase::kCurrentVersionNumber));
-  EXPECT_EQ(1, keyword_table->GetDefaultSearchProviderID());
-  EXPECT_FALSE(keyword_table->GetDefaultSearchProviderBackup(&backup));
-  EXPECT_TRUE(keyword_table->DidDefaultSearchProviderChange());
-
-  // Change the signature.
-  EXPECT_TRUE(keyword_table->meta_table_->SetValue(
-      KeywordTable::kDefaultSearchIDBackupKey, 1));
-  EXPECT_TRUE(keyword_table->meta_table_->SetValue(
-      KeywordTable::kBackupSignatureKey, std::string()));
-  EXPECT_FALSE(keyword_table->IsBackupSignatureValid(
-      WebDatabase::kCurrentVersionNumber));
-  EXPECT_EQ(1, keyword_table->GetDefaultSearchProviderID());
-  EXPECT_FALSE(keyword_table->GetDefaultSearchProviderBackup(&backup));
-  EXPECT_TRUE(keyword_table->DidDefaultSearchProviderChange());
-
-  // Change keywords.
-  EXPECT_TRUE(keyword_table->UpdateBackupSignature(
-      WebDatabase::kCurrentVersionNumber));
-  sql::Statement remove_keyword(keyword_table->db_->GetUniqueStatement(
-      "DELETE FROM keywords WHERE id=1"));
-  EXPECT_TRUE(remove_keyword.Run());
-  EXPECT_TRUE(keyword_table->IsBackupSignatureValid(
-      WebDatabase::kCurrentVersionNumber));
-  EXPECT_EQ(1, keyword_table->GetDefaultSearchProviderID());
-
-  EXPECT_TRUE(keyword_table->GetDefaultSearchProviderBackup(&backup));
-  EXPECT_EQ(kInvalidTemplateURLID, backup.id);
-  EXPECT_EQ(keyword.short_name, backup.short_name);
-  EXPECT_EQ(keyword.keyword(), backup.keyword());
-  EXPECT_EQ(keyword.url(), backup.url());
-  EXPECT_EQ(keyword.suggestions_url, backup.suggestions_url);
-  EXPECT_EQ(keyword.favicon_url, backup.favicon_url);
-  EXPECT_EQ(keyword.show_in_default_list, backup.show_in_default_list);
-  EXPECT_EQ(keyword.safe_for_autoreplace, backup.safe_for_autoreplace);
-  EXPECT_TRUE(keyword_table->DidDefaultSearchProviderChange());
-
-  // Change keywords backup.
-  sql::Statement remove_keyword_backup(keyword_table->db_->GetUniqueStatement(
-      "DELETE FROM keywords_backup WHERE id=1"));
-  EXPECT_TRUE(remove_keyword_backup.Run());
-  EXPECT_FALSE(keyword_table->IsBackupSignatureValid(
-      WebDatabase::kCurrentVersionNumber));
-  EXPECT_EQ(1, keyword_table->GetDefaultSearchProviderID());
-  EXPECT_FALSE(keyword_table->GetDefaultSearchProviderBackup(&backup));
-  EXPECT_TRUE(keyword_table->DidDefaultSearchProviderChange());
+  EXPECT_EQ(10, table_->GetDefaultSearchProviderID());
+  EXPECT_EQ(11, table_->GetBuiltinKeywordVersion());
 }
 
 TEST_F(KeywordTableTest, GetTableContents) {
-  WebDatabase db;
-  ASSERT_EQ(sql::INIT_OK, db.Init(file_));
-  KeywordTable* keyword_table = db.GetKeywordTable();
-
   TemplateURLData keyword;
   keyword.short_name = ASCIIToUTF16("short_name");
   keyword.SetKeyword(ASCIIToUTF16("keyword"));
@@ -261,7 +146,8 @@ TEST_F(KeywordTableTest, GetTableContents) {
   keyword.sync_guid = "1234-5678-90AB-CDEF";
   keyword.alternate_urls.push_back("a_url1");
   keyword.alternate_urls.push_back("a_url2");
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
+  keyword.search_terms_replacement_key = "espv";
+  EXPECT_TRUE(table_->AddKeyword(keyword));
 
   keyword.SetKeyword(ASCIIToUTF16("url"));
   keyword.instant_url = "http://instant2/";
@@ -271,28 +157,21 @@ TEST_F(KeywordTableTest, GetTableContents) {
   keyword.prepopulate_id = 5;
   keyword.sync_guid = "FEDC-BA09-8765-4321";
   keyword.alternate_urls.clear();
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
+  keyword.search_terms_replacement_key.clear();
+  EXPECT_TRUE(table_->AddKeyword(keyword));
 
   const char kTestContents[] = "1short_namekeywordhttp://favicon.url/"
-      "http://url/1001url20001234-5678-90AB-CDEF[\"a_url1\",\"a_url2\"]"
+      "http://url/1001url20001234-5678-90AB-CDEF[\"a_url1\",\"a_url2\"]espv"
       "2short_nameurlhttp://favicon.url/http://url/1http://originating.url/00"
       "Shift_JIS1url250http://instant2/0FEDC-BA09-8765-4321[]";
 
   std::string contents;
-  EXPECT_TRUE(keyword_table->GetTableContents("keywords",
-      WebDatabase::kCurrentVersionNumber, &contents));
-  EXPECT_EQ(kTestContents, contents);
-
-  EXPECT_TRUE(keyword_table->GetTableContents("keywords_backup",
+  EXPECT_TRUE(table_->GetTableContents("keywords",
       WebDatabase::kCurrentVersionNumber, &contents));
   EXPECT_EQ(kTestContents, contents);
 }
 
 TEST_F(KeywordTableTest, GetTableContentsOrdering) {
-  WebDatabase db;
-  ASSERT_EQ(sql::INIT_OK, db.Init(file_));
-  KeywordTable* keyword_table = db.GetKeywordTable();
-
   TemplateURLData keyword;
   keyword.short_name = ASCIIToUTF16("short_name");
   keyword.SetKeyword(ASCIIToUTF16("keyword"));
@@ -307,7 +186,8 @@ TEST_F(KeywordTableTest, GetTableContentsOrdering) {
   keyword.sync_guid = "1234-5678-90AB-CDEF";
   keyword.alternate_urls.push_back("a_url1");
   keyword.alternate_urls.push_back("a_url2");
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
+  keyword.search_terms_replacement_key = "espv";
+  EXPECT_TRUE(table_->AddKeyword(keyword));
 
   keyword.SetKeyword(ASCIIToUTF16("url"));
   keyword.instant_url = "http://instant2/";
@@ -317,29 +197,22 @@ TEST_F(KeywordTableTest, GetTableContentsOrdering) {
   keyword.prepopulate_id = 5;
   keyword.sync_guid = "FEDC-BA09-8765-4321";
   keyword.alternate_urls.clear();
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
+  keyword.search_terms_replacement_key.clear();
+  EXPECT_TRUE(table_->AddKeyword(keyword));
 
   const char kTestContents[] = "1short_nameurlhttp://favicon.url/http://url/1"
       "http://originating.url/00Shift_JIS1url250http://instant2/0"
       "FEDC-BA09-8765-4321[]"
       "2short_namekeywordhttp://favicon.url/http://url/1001"
-      "url20001234-5678-90AB-CDEF[\"a_url1\",\"a_url2\"]";
+      "url20001234-5678-90AB-CDEF[\"a_url1\",\"a_url2\"]espv";
 
   std::string contents;
-  EXPECT_TRUE(keyword_table->GetTableContents("keywords",
-      WebDatabase::kCurrentVersionNumber, &contents));
-  EXPECT_EQ(kTestContents, contents);
-
-  EXPECT_TRUE(keyword_table->GetTableContents("keywords_backup",
+  EXPECT_TRUE(table_->GetTableContents("keywords",
       WebDatabase::kCurrentVersionNumber, &contents));
   EXPECT_EQ(kTestContents, contents);
 }
 
 TEST_F(KeywordTableTest, UpdateKeyword) {
-  WebDatabase db;
-  ASSERT_EQ(sql::INIT_OK, db.Init(file_));
-  KeywordTable* keyword_table = db.GetKeywordTable();
-
   TemplateURLData keyword;
   keyword.short_name = ASCIIToUTF16("short_name");
   keyword.SetKeyword(ASCIIToUTF16("keyword"));
@@ -349,17 +222,17 @@ TEST_F(KeywordTableTest, UpdateKeyword) {
   keyword.show_in_default_list = true;
   keyword.safe_for_autoreplace = true;
   keyword.id = 1;
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
+  EXPECT_TRUE(table_->AddKeyword(keyword));
 
   keyword.SetKeyword(ASCIIToUTF16("url"));
   keyword.instant_url = "http://instant2/";
   keyword.originating_url = GURL("http://originating.url/");
   keyword.input_encodings.push_back("Shift_JIS");
   keyword.prepopulate_id = 5;
-  EXPECT_TRUE(keyword_table->UpdateKeyword(keyword));
+  EXPECT_TRUE(table_->UpdateKeyword(keyword));
 
   KeywordTable::Keywords keywords;
-  EXPECT_TRUE(keyword_table->GetKeywords(&keywords));
+  EXPECT_TRUE(table_->GetKeywords(&keywords));
   EXPECT_EQ(1U, keywords.size());
   const TemplateURLData& restored_keyword = keywords.front();
 
@@ -379,20 +252,16 @@ TEST_F(KeywordTableTest, UpdateKeyword) {
 }
 
 TEST_F(KeywordTableTest, KeywordWithNoFavicon) {
-  WebDatabase db;
-  ASSERT_EQ(sql::INIT_OK, db.Init(file_));
-  KeywordTable* keyword_table = db.GetKeywordTable();
-
   TemplateURLData keyword;
   keyword.short_name = ASCIIToUTF16("short_name");
   keyword.SetKeyword(ASCIIToUTF16("keyword"));
   keyword.SetURL("http://url/");
   keyword.safe_for_autoreplace = true;
   keyword.id = -100;
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
+  EXPECT_TRUE(table_->AddKeyword(keyword));
 
   KeywordTable::Keywords keywords;
-  EXPECT_TRUE(keyword_table->GetKeywords(&keywords));
+  EXPECT_TRUE(table_->GetKeywords(&keywords));
   EXPECT_EQ(1U, keywords.size());
   const TemplateURLData& restored_keyword = keywords.front();
 
@@ -405,38 +274,32 @@ TEST_F(KeywordTableTest, KeywordWithNoFavicon) {
 }
 
 TEST_F(KeywordTableTest, SanitizeURLs) {
-  WebDatabase db;
-  ASSERT_EQ(sql::INIT_OK, db.Init(file_));
-  KeywordTable* keyword_table = db.GetKeywordTable();
-
   TemplateURLData keyword;
   keyword.short_name = ASCIIToUTF16("legit");
   keyword.SetKeyword(ASCIIToUTF16("legit"));
   keyword.SetURL("http://url/");
   keyword.id = 1000;
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
+  EXPECT_TRUE(table_->AddKeyword(keyword));
 
   keyword.short_name = ASCIIToUTF16("bogus");
   keyword.SetKeyword(ASCIIToUTF16("bogus"));
   keyword.id = 2000;
-  EXPECT_TRUE(keyword_table->AddKeyword(keyword));
+  EXPECT_TRUE(table_->AddKeyword(keyword));
 
   KeywordTable::Keywords keywords;
-  EXPECT_TRUE(keyword_table->GetKeywords(&keywords));
+  EXPECT_TRUE(table_->GetKeywords(&keywords));
   EXPECT_EQ(2U, keywords.size());
   keywords.clear();
 
   // Erase the URL field for the second keyword to simulate having bogus data
   // previously saved into the database.
-  sql::Statement s(keyword_table->db_->GetUniqueStatement(
+  sql::Statement s(table_->db_->GetUniqueStatement(
       "UPDATE keywords SET url=? WHERE id=?"));
   s.BindString16(0, string16());
   s.BindInt64(1, 2000);
   EXPECT_TRUE(s.Run());
-  EXPECT_TRUE(keyword_table->UpdateBackupSignature(
-      WebDatabase::kCurrentVersionNumber));
 
   // GetKeywords() should erase the entry with the empty URL field.
-  EXPECT_TRUE(keyword_table->GetKeywords(&keywords));
+  EXPECT_TRUE(table_->GetKeywords(&keywords));
   EXPECT_EQ(1U, keywords.size());
 }

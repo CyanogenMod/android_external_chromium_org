@@ -16,6 +16,8 @@ class Profile;
 
 namespace chromeos {
 
+struct UserCredentials;
+
 // An interface for objects that will authenticate a Chromium OS user.
 // When authentication successfully completes, will call
 // consumer_->OnLoginSuccess() on the UI thread.
@@ -29,33 +31,38 @@ class Authenticator : public base::RefCountedThreadSafe<Authenticator> {
   // Given externally authenticated |username| and |password|, this method
   // attempts to complete authentication process.
   virtual void CompleteLogin(Profile* profile,
-                             const std::string& username,
-                             const std::string& password) = 0;
+                             const UserCredentials& credentials) = 0;
 
   // Given a |username| and |password|, this method attempts to authenticate
   // to login.
   // Optionally |login_token| and |login_captcha| could be provided.
   // Must be called on the UI thread.
   virtual void AuthenticateToLogin(Profile* profile,
-                                   const std::string& username,
-                                   const std::string& password,
+                                   const UserCredentials& credentials,
                                    const std::string& login_token,
                                    const std::string& login_captcha) = 0;
 
   // Given a |username| and |password|, this method attempts to
   // authenticate to unlock the computer.
   // Must be called on the UI thread.
-  virtual void AuthenticateToUnlock(const std::string& username,
-                                    const std::string& password) = 0;
+  virtual void AuthenticateToUnlock(
+      const UserCredentials& credentials) = 0;
 
-  // Initiates demo user login.
-  virtual void LoginDemoUser() = 0;
+  // Initiates locally managed user login.
+  virtual void LoginAsLocallyManagedUser(
+      const UserCredentials& credentials) = 0;
+
+  // Initiates retail mode login.
+  virtual void LoginRetailMode() = 0;
 
   // Initiates incognito ("browse without signing in") login.
   virtual void LoginOffTheRecord() = 0;
 
-  // Initiates a demo user login.
-  virtual void OnDemoUserLoginSuccess() = 0;
+  // Initiates login into the public account identified by |username|.
+  virtual void LoginAsPublicAccount(const std::string& username) = 0;
+
+  // Completes retail mode login.
+  virtual void OnRetailModeLoginSuccess() = 0;
 
   // |request_pending| is true if we still plan to call consumer_ with the
   // results of more requests.
@@ -81,8 +88,7 @@ class Authenticator : public base::RefCountedThreadSafe<Authenticator> {
 
   // Attempt to authenticate online again.
   virtual void RetryAuth(Profile* profile,
-                         const std::string& username,
-                         const std::string& password,
+                         const UserCredentials& credentials,
                          const std::string& login_token,
                          const std::string& login_captcha) = 0;
 

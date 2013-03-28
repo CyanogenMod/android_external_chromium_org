@@ -9,13 +9,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "net/base/address_list.h"
 #include "net/base/io_buffer.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/net_log_unittest.h"
-#include "net/base/net_errors.h"
 #include "net/base/tcp_listen_socket.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/winsock_init.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/socket/client_socket_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -43,22 +43,22 @@ class TransportClientSocketTest
         close_server_socket_on_next_send_(false) {
   }
 
-  ~TransportClientSocketTest() {
+  virtual ~TransportClientSocketTest() {
   }
 
   // Implement StreamListenSocket::Delegate methods
   virtual void DidAccept(StreamListenSocket* server,
-                         StreamListenSocket* connection) {
+                         StreamListenSocket* connection) OVERRIDE {
     connected_sock_ = reinterpret_cast<TCPListenSocket*>(connection);
   }
-  virtual void DidRead(StreamListenSocket*, const char* str, int len) {
+  virtual void DidRead(StreamListenSocket*, const char* str, int len) OVERRIDE {
     // TODO(dkegel): this might not be long enough to tickle some bugs.
     connected_sock_->Send(kServerReply, arraysize(kServerReply) - 1,
                           false /* Don't append line feed */);
     if (close_server_socket_on_next_send_)
       CloseServerSocket();
   }
-  virtual void DidClose(StreamListenSocket* sock) {}
+  virtual void DidClose(StreamListenSocket* sock) OVERRIDE {}
 
   // Testcase hooks
   virtual void SetUp();

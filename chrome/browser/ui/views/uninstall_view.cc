@@ -23,8 +23,10 @@
 #include "ui/views/widget/widget.h"
 
 UninstallView::UninstallView(int* user_selection,
-                             const base::Closure& quit_closure)
+                             const base::Closure& quit_closure,
+                             bool show_delete_profile)
     : confirm_label_(NULL),
+      show_delete_profile_(show_delete_profile),
       delete_profile_(NULL),
       change_default_browser_(NULL),
       browsers_combo_(NULL),
@@ -59,15 +61,17 @@ void UninstallView::SetupControls() {
   layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
 
   // The "delete profile" check box.
-  ++column_set_id;
-  column_set = layout->AddColumnSet(column_set_id);
-  column_set->AddPaddingColumn(0, views::kPanelHorizIndentation);
-  column_set->AddColumn(GridLayout::LEADING, GridLayout::CENTER, 0,
-                        GridLayout::USE_PREF, 0, 0);
-  layout->StartRow(0, column_set_id);
-  delete_profile_ = new views::Checkbox(
-      l10n_util::GetStringUTF16(IDS_UNINSTALL_DELETE_PROFILE));
-  layout->AddView(delete_profile_);
+  if (show_delete_profile_) {
+    ++column_set_id;
+    column_set = layout->AddColumnSet(column_set_id);
+    column_set->AddPaddingColumn(0, views::kPanelHorizIndentation);
+    column_set->AddColumn(GridLayout::LEADING, GridLayout::CENTER, 0,
+                          GridLayout::USE_PREF, 0, 0);
+    layout->StartRow(0, column_set_id);
+    delete_profile_ = new views::Checkbox(
+        l10n_util::GetStringUTF16(IDS_UNINSTALL_DELETE_PROFILE));
+    layout->AddView(delete_profile_);
+  }
 
   // Set default browser combo box. If the default should not or cannot be
   // changed, widgets are not shown. We assume here that if Chrome cannot
@@ -75,7 +79,7 @@ void UninstallView::SetupControls() {
   // instance because the OS doesn't permit that).
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   if (dist->CanSetAsDefault() &&
-      ShellIntegration::IsDefaultBrowser() &&
+      ShellIntegration::GetDefaultBrowser() == ShellIntegration::IS_DEFAULT &&
       (ShellIntegration::CanSetAsDefaultBrowser() !=
           ShellIntegration::SET_DEFAULT_INTERACTIVE)) {
     browsers_.reset(new BrowsersMap());
@@ -85,7 +89,7 @@ void UninstallView::SetupControls() {
 
       ++column_set_id;
       column_set = layout->AddColumnSet(column_set_id);
-      column_set->AddPaddingColumn(0, views::kRelatedControlHorizontalSpacing);
+      column_set->AddPaddingColumn(0, views::kPanelHorizIndentation);
       column_set->AddColumn(GridLayout::LEADING, GridLayout::CENTER, 0,
                             GridLayout::USE_PREF, 0, 0);
       column_set->AddPaddingColumn(0, views::kRelatedControlHorizontalSpacing);
@@ -107,7 +111,7 @@ void UninstallView::SetupControls() {
 
 bool UninstallView::Accept() {
   user_selection_ = content::RESULT_CODE_NORMAL_EXIT;
-  if (delete_profile_->checked())
+  if (show_delete_profile_ && delete_profile_->checked())
     user_selection_ = chrome::RESULT_CODE_UNINSTALL_DELETE_PROFILE;
   if (change_default_browser_ && change_default_browser_->checked()) {
     BrowsersMap::const_iterator i = browsers_->begin();
@@ -125,11 +129,10 @@ bool UninstallView::Cancel() {
 }
 
 string16 UninstallView::GetDialogButtonLabel(ui::DialogButton button) const {
-  // We only want to give custom name to OK button - 'Uninstall'. Cancel
-  // button remains same.
+  // Label the OK button 'Uninstall'; Cancel remains the same.
   if (button == ui::DIALOG_BUTTON_OK)
     return l10n_util::GetStringUTF16(IDS_UNINSTALL_BUTTON_TEXT);
-  return string16();
+  return views::DialogDelegateView::GetDialogButtonLabel(button);
 }
 
 void UninstallView::ButtonPressed(views::Button* sender,
@@ -143,10 +146,6 @@ void UninstallView::ButtonPressed(views::Button* sender,
 
 string16 UninstallView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_UNINSTALL_CHROME);
-}
-
-views::View* UninstallView::GetContentsView() {
-  return this;
 }
 
 int UninstallView::GetItemCount() const {
@@ -163,12 +162,14 @@ string16 UninstallView::GetItemAt(int index) {
 
 namespace chrome {
 
-int ShowUninstallBrowserPrompt() {
+int ShowUninstallBrowserPrompt(bool show_delete_profile) {
   DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
   int result = content::RESULT_CODE_NORMAL_EXIT;
   views::AcceleratorHandler accelerator_handler;
   base::RunLoop run_loop(&accelerator_handler);
-  UninstallView* view = new UninstallView(&result, run_loop.QuitClosure());
+  UninstallView* view = new UninstallView(&result,
+                                          run_loop.QuitClosure(),
+                                          show_delete_profile);
   views::Widget::CreateWindow(view)->Show();
   run_loop.Run();
   return result;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include <vector>
 
-#include "ash/desktop_background/desktop_background_controller.h"
 #include "ash/shell.h"
 #include "ash/wm/window_cycle_controller.h"
 #include "ash/wm/window_util.h"
@@ -14,7 +13,11 @@
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/string_number_conversions.h"
+#include "base/stringprintf.h"
 #include "base/synchronization/cancellation_flag.h"
+#include "base/threading/sequenced_worker_pool.h"
+#include "base/threading/worker_pool.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_image.h"
@@ -28,15 +31,69 @@
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_status.h"
 #include "googleurl/src/gurl.h"
+#include "grit/app_locale_settings.h"
 #include "grit/generated_resources.h"
 #include "grit/platform_locale_settings.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/webui/web_ui_util.h"
 
 using base::BinaryValue;
 using content::BrowserThread;
 
 namespace {
+
+// Keeps in sync (same order) with WallpaperLayout enum in header file.
+const char* kWallpaperLayoutArrays[] = {
+    "CENTER",
+    "CENTER_CROPPED",
+    "STRETCH",
+    "TILE"
+};
+
+const char kOnlineSource[] = "ONLINE";
+const char kCustomSource[] = "CUSTOM";
+
+const int kWallpaperLayoutCount = arraysize(kWallpaperLayoutArrays);
+
+ash::WallpaperLayout GetLayoutEnum(const std::string& layout) {
+  for (int i = 0; i < kWallpaperLayoutCount; i++) {
+    if (layout.compare(kWallpaperLayoutArrays[i]) == 0)
+      return static_cast<ash::WallpaperLayout>(i);
+  }
+  // Default to use CENTER layout.
+  return ash::WALLPAPER_LAYOUT_CENTER;
+}
+
+// Saves |data| as |file_name| to directory with |key|. Return false if the
+// directory can not be found/created or failed to write file.
+bool SaveData(int key, const std::string& file_name, const std::string& data) {
+  base::FilePath data_dir;
+  CHECK(PathService::Get(key, &data_dir));
+  if (!file_util::DirectoryExists(data_dir) &&
+      !file_util::CreateDirectory(data_dir)) {
+    return false;
+  }
+  base::FilePath file_path = data_dir.Append(file_name);
+
+  return file_util::PathExists(file_path) ||
+         (file_util::WriteFile(file_path, data.c_str(),
+                               data.size()) != -1);
+}
+
+// Gets |file_name| from directory with |key|. Return false if the directory can
+// not be found or failed to read file to string |data|. Note if the |file_name|
+// can not be found in the directory, return true with empty |data|. It is
+// expected that we may try to access file which did not saved yet.
+bool GetData(const base::FilePath& path, std::string* data) {
+  base::FilePath data_dir = path.DirName();
+  if (!file_util::DirectoryExists(data_dir) &&
+      !file_util::CreateDirectory(data_dir))
+    return false;
+
+  return !file_util::PathExists(path) ||
+         file_util::ReadFileToString(path, data);
+}
 
 class WindowStateManager;
 
@@ -69,7 +126,7 @@ class WindowStateManager : public aura::WindowObserver {
  private:
   WindowStateManager() {}
 
-  ~WindowStateManager() {
+  virtual ~WindowStateManager() {
     for (std::vector<aura::Window*>::iterator iter = windows_.begin();
          iter != windows_.end(); ++iter) {
       (*iter)->RemoveObserver(this);
@@ -118,7 +175,7 @@ class WindowStateManager : public aura::WindowObserver {
 
 }  // namespace
 
-bool WallpaperStringsFunction::RunImpl() {
+bool WallpaperPrivateGetStringsFunction::RunImpl() {
   DictionaryValue* dict = new DictionaryValue();
   SetResult(dict);
 
@@ -126,18 +183,14 @@ bool WallpaperStringsFunction::RunImpl() {
   dict->SetString(id, l10n_util::GetStringUTF16(idr))
   SET_STRING("webFontFamily", IDS_WEB_FONT_FAMILY);
   SET_STRING("webFontSize", IDS_WEB_FONT_SIZE);
-  SET_STRING("searchTextLabel", IDS_WALLPAPER_MANAGER_SEARCH_TEXT_LABEL);
-  SET_STRING("authorLabel", IDS_WALLPAPER_MANAGER_AUTHOR_LABEL);
+  SET_STRING("allCategoryLabel", IDS_WALLPAPER_MANAGER_ALL_CATEGORY_LABEL);
+  SET_STRING("deleteCommandLabel", IDS_WALLPAPER_MANAGER_DELETE_COMMAND_LABEL);
   SET_STRING("customCategoryLabel",
              IDS_WALLPAPER_MANAGER_CUSTOM_CATEGORY_LABEL);
   SET_STRING("selectCustomLabel",
              IDS_WALLPAPER_MANAGER_SELECT_CUSTOM_LABEL);
   SET_STRING("positionLabel", IDS_WALLPAPER_MANAGER_POSITION_LABEL);
   SET_STRING("colorLabel", IDS_WALLPAPER_MANAGER_COLOR_LABEL);
-  SET_STRING("previewLabel", IDS_WALLPAPER_MANAGER_PREVIEW_LABEL);
-  SET_STRING("downloadingLabel", IDS_WALLPAPER_MANAGER_DOWNLOADING_LABEL);
-  SET_STRING("setWallpaperDaily", IDS_OPTIONS_SET_WALLPAPER_DAILY);
-  SET_STRING("searchTextLabel", IDS_WALLPAPER_MANAGER_SEARCH_TEXT_LABEL);
   SET_STRING("centerCroppedLayout",
              IDS_OPTIONS_WALLPAPER_CENTER_CROPPED_LAYOUT);
   SET_STRING("centerLayout", IDS_OPTIONS_WALLPAPER_CENTER_LAYOUT);
@@ -149,20 +202,18 @@ bool WallpaperStringsFunction::RunImpl() {
              IDS_WALLPAPER_MANAGER_SHOW_CUSTOM_WALLPAPER_ON_START_WARNING);
   SET_STRING("accessFileFailure", IDS_WALLPAPER_MANAGER_ACCESS_FILE_FAILURE);
   SET_STRING("invalidWallpaper", IDS_WALLPAPER_MANAGER_INVALID_WALLPAPER);
+  SET_STRING("surpriseMeLabel", IDS_WALLPAPER_MANAGER_SURPRISE_ME_LABEL);
+  SET_STRING("learnMore", IDS_LEARN_MORE);
 #undef SET_STRING
 
-  ChromeURLDataManager::DataSource::SetFontAndTextDirection(dict);
+  webui::SetFontAndTextDirection(dict);
 
   chromeos::WallpaperManager* wallpaper_manager =
       chromeos::WallpaperManager::Get();
   chromeos::WallpaperInfo info;
 
-  if (wallpaper_manager->GetLoggedInUserWallpaperInfo(&info)) {
-    if (info.type == chromeos::User::ONLINE)
-      dict->SetString("currentWallpaper", info.file);
-    else if (info.type == chromeos::User::CUSTOMIZED)
-      dict->SetString("currentWallpaper", "CUSTOM");
-  }
+  if (wallpaper_manager->GetLoggedInUserWallpaperInfo(&info))
+    dict->SetString("currentWallpaper", info.file);
 
   return true;
 }
@@ -174,9 +225,12 @@ class WallpaperFunctionBase::WallpaperDecoder : public ImageDecoder::Delegate {
   }
 
   void Start(const std::string& image_data) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     image_decoder_ = new ImageDecoder(this, image_data,
                                       ImageDecoder::ROBUST_JPEG_CODEC);
-    image_decoder_->Start();
+    scoped_refptr<base::MessageLoopProxy> task_runner =
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
+    image_decoder_->Start(task_runner);
   }
 
   void Cancel() {
@@ -185,7 +239,12 @@ class WallpaperFunctionBase::WallpaperDecoder : public ImageDecoder::Delegate {
 
   virtual void OnImageDecoded(const ImageDecoder* decoder,
                               const SkBitmap& decoded_image) OVERRIDE {
-    gfx::ImageSkia final_image(decoded_image);
+    // Make the SkBitmap immutable as we won't modify it. This is important
+    // because otherwise it gets duplicated during painting, wasting memory.
+    SkBitmap immutable(decoded_image);
+    immutable.setImmutable();
+    gfx::ImageSkia final_image =
+        gfx::ImageSkia::CreateFrom1xBitmap(immutable);
     final_image.MakeThreadSafe();
     if (cancel_flag_.IsSet()) {
       function_->OnFailureOrCancel("");
@@ -219,6 +278,14 @@ WallpaperFunctionBase::WallpaperFunctionBase() {
 WallpaperFunctionBase::~WallpaperFunctionBase() {
 }
 
+void WallpaperFunctionBase::StartDecode(const std::string& data) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (wallpaper_decoder_)
+    wallpaper_decoder_->Cancel();
+  wallpaper_decoder_ = new WallpaperDecoder(this);
+  wallpaper_decoder_->Start(data);
+}
+
 void WallpaperFunctionBase::OnFailureOrCancel(const std::string& error) {
   wallpaper_decoder_ = NULL;
   if (!error.empty())
@@ -226,95 +293,216 @@ void WallpaperFunctionBase::OnFailureOrCancel(const std::string& error) {
   SendResponse(false);
 }
 
-WallpaperSetWallpaperFunction::WallpaperSetWallpaperFunction() {
-}
+WallpaperPrivateSetWallpaperIfExistsFunction::
+    WallpaperPrivateSetWallpaperIfExistsFunction() {}
 
-WallpaperSetWallpaperFunction::~WallpaperSetWallpaperFunction() {
-}
+WallpaperPrivateSetWallpaperIfExistsFunction::
+    ~WallpaperPrivateSetWallpaperIfExistsFunction() {}
 
-bool WallpaperSetWallpaperFunction::RunImpl() {
-  BinaryValue* input = NULL;
-  if (args_ == NULL || !args_->GetBinary(0, &input)) {
-    return false;
-  }
+bool WallpaperPrivateSetWallpaperIfExistsFunction::RunImpl() {
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &urlOrFile_));
+  EXTENSION_FUNCTION_VALIDATE(!urlOrFile_.empty());
+
   std::string layout_string;
-  if (!args_->GetString(1, &layout_string) || layout_string.empty()) {
-    return false;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(1, &layout_string));
+  EXTENSION_FUNCTION_VALIDATE(!layout_string.empty());
+  layout_ = GetLayoutEnum(layout_string);
+
+  std::string source;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(2, &source));
+  EXTENSION_FUNCTION_VALIDATE(!source.empty());
+
+  std::string file_name;
+  std::string email = chromeos::UserManager::Get()->GetLoggedInUser()->email();
+
+  base::FilePath wallpaper_path;
+  base::FilePath fallback_path;
+  ash::WallpaperResolution resolution = ash::Shell::GetInstance()->
+      desktop_background_controller()->GetAppropriateResolution();
+
+  if (source == kOnlineSource) {
+    type_ = chromeos::User::ONLINE;
+    file_name = GURL(urlOrFile_).ExtractFileName();
+    CHECK(PathService::Get(chrome::DIR_CHROMEOS_WALLPAPERS,
+                           &wallpaper_path));
+    fallback_path = wallpaper_path.Append(file_name);
+    if (layout_ != ash::WALLPAPER_LAYOUT_STRETCH &&
+        resolution == ash::WALLPAPER_RESOLUTION_SMALL) {
+      file_name = base::FilePath(file_name).InsertBeforeExtension(
+          chromeos::kSmallWallpaperSuffix).value();
+    }
+    wallpaper_path = wallpaper_path.Append(file_name);
+  } else {
+    type_ = chromeos::User::CUSTOMIZED;
+    file_name = urlOrFile_;
+    const char* sub_dir = (resolution == ash::WALLPAPER_RESOLUTION_SMALL) ?
+        chromeos::kSmallWallpaperSubDir : chromeos::kLargeWallpaperSubDir;
+    wallpaper_path = chromeos::WallpaperManager::Get()->GetCustomWallpaperPath(
+        sub_dir, email, file_name);
+    fallback_path = chromeos::WallpaperManager::Get()->GetCustomWallpaperPath(
+        chromeos::kOriginalWallpaperSubDir, email, file_name);
   }
-  layout_ = ash::GetLayoutEnum(layout_string);
-  if (!args_->GetString(2, &url_) || url_.empty())
-    return false;
+
+  sequence_token_ = BrowserThread::GetBlockingPool()->
+      GetNamedSequenceToken(chromeos::kWallpaperSequenceTokenName);
+  scoped_refptr<base::SequencedTaskRunner> task_runner =
+      BrowserThread::GetBlockingPool()->
+          GetSequencedTaskRunnerWithShutdownBehavior(sequence_token_,
+              base::SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
+
+  task_runner->PostTask(FROM_HERE,
+      base::Bind(
+          &WallpaperPrivateSetWallpaperIfExistsFunction::
+              ReadFileAndInitiateStartDecode,
+          this, wallpaper_path, fallback_path));
+  return true;
+}
+
+void WallpaperPrivateSetWallpaperIfExistsFunction::
+    ReadFileAndInitiateStartDecode(const base::FilePath& file_path,
+                                   const base::FilePath& fallback_path) {
+  DCHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
+      sequence_token_));
+  std::string data;
+  base::FilePath path = file_path;
+
+  if (!file_util::PathExists(file_path))
+    path = fallback_path;
+
+  if (file_util::PathExists(path) &&
+      file_util::ReadFileToString(path, &data)) {
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+        base::Bind(&WallpaperPrivateSetWallpaperIfExistsFunction::StartDecode,
+                   this, data));
+    return;
+  }
+  std::string error = base::StringPrintf(
+        "Failed to set wallpaper %s from file system.",
+        path.BaseName().value().c_str());
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&WallpaperPrivateSetWallpaperIfExistsFunction::OnFileNotExists,
+                 this, error));
+}
+
+void WallpaperPrivateSetWallpaperIfExistsFunction::OnWallpaperDecoded(
+    const gfx::ImageSkia& wallpaper) {
+  // Set wallpaper_decoder_ to null since the decoding already finished.
+  wallpaper_decoder_ = NULL;
+
+  chromeos::WallpaperManager* wallpaper_manager =
+      chromeos::WallpaperManager::Get();
+  wallpaper_manager->SetWallpaperFromImageSkia(wallpaper, layout_);
+  bool is_persistent =
+      !chromeos::UserManager::Get()->IsCurrentUserNonCryptohomeDataEphemeral();
+  chromeos::WallpaperInfo info = {
+      urlOrFile_,
+      layout_,
+      type_,
+      base::Time::Now().LocalMidnight()
+  };
+  std::string email = chromeos::UserManager::Get()->GetLoggedInUser()->email();
+  wallpaper_manager->SetUserWallpaperInfo(email, info, is_persistent);
+  SetResult(base::Value::CreateBooleanValue(true));
+  SendResponse(true);
+}
+
+void WallpaperPrivateSetWallpaperIfExistsFunction::OnFileNotExists(
+    const std::string& error) {
+  SetResult(base::Value::CreateBooleanValue(false));
+  OnFailureOrCancel(error);
+};
+
+WallpaperPrivateSetWallpaperFunction::WallpaperPrivateSetWallpaperFunction() {
+}
+
+WallpaperPrivateSetWallpaperFunction::~WallpaperPrivateSetWallpaperFunction() {
+}
+
+bool WallpaperPrivateSetWallpaperFunction::RunImpl() {
+  BinaryValue* input = NULL;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetBinary(0, &input));
+
+  std::string layout_string;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(1, &layout_string));
+  EXTENSION_FUNCTION_VALIDATE(!layout_string.empty());
+  layout_ = GetLayoutEnum(layout_string);
+
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(2, &url_));
+  EXTENSION_FUNCTION_VALIDATE(!url_.empty());
 
   // Gets email address while at UI thread.
   email_ = chromeos::UserManager::Get()->GetLoggedInUser()->email();
 
   image_data_.assign(input->GetBuffer(), input->GetSize());
-  if (wallpaper_decoder_)
-    wallpaper_decoder_->Cancel();
-  wallpaper_decoder_ = new WallpaperDecoder(this);
-  wallpaper_decoder_->Start(image_data_);
+  StartDecode(image_data_);
 
   return true;
 }
 
-void WallpaperSetWallpaperFunction::OnWallpaperDecoded(
+void WallpaperPrivateSetWallpaperFunction::OnWallpaperDecoded(
     const gfx::ImageSkia& wallpaper) {
   wallpaper_ = wallpaper;
   // Set wallpaper_decoder_ to null since the decoding already finished.
   wallpaper_decoder_ = NULL;
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&WallpaperSetWallpaperFunction::SaveToFile,
-                 this));
+
+  sequence_token_ = BrowserThread::GetBlockingPool()->
+      GetNamedSequenceToken(chromeos::kWallpaperSequenceTokenName);
+  scoped_refptr<base::SequencedTaskRunner> task_runner =
+      BrowserThread::GetBlockingPool()->
+          GetSequencedTaskRunnerWithShutdownBehavior(sequence_token_,
+              base::SequencedWorkerPool::BLOCK_SHUTDOWN);
+
+  task_runner->PostTask(FROM_HERE,
+      base::Bind(&WallpaperPrivateSetWallpaperFunction::SaveToFile, this));
 }
 
-void WallpaperSetWallpaperFunction::SaveToFile() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  FilePath wallpaper_dir;
-  CHECK(PathService::Get(chrome::DIR_CHROMEOS_WALLPAPERS, &wallpaper_dir));
-  if (!file_util::DirectoryExists(wallpaper_dir) &&
-      !file_util::CreateDirectory(wallpaper_dir)) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(&WallpaperSetWallpaperFunction::OnFailureOrCancel,
-                   this, ""));
-    LOG(ERROR) << "Failed to create wallpaper directory.";
-    return;
-  }
+void WallpaperPrivateSetWallpaperFunction::SaveToFile() {
+  DCHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
+      sequence_token_));
   std::string file_name = GURL(url_).ExtractFileName();
-  FilePath file_path = wallpaper_dir.Append(file_name);
-  if (file_util::PathExists(file_path) ||
-      file_util::WriteFile(file_path, image_data_.c_str(),
-                           image_data_.size()) != -1 ) {
+  if (SaveData(chrome::DIR_CHROMEOS_WALLPAPERS, file_name, image_data_)) {
+    wallpaper_.EnsureRepsForSupportedScaleFactors();
+    scoped_ptr<gfx::ImageSkia> deep_copy(wallpaper_.DeepCopy());
+    // ImageSkia is not RefCountedThreadSafe. Use a deep copied ImageSkia if
+    // post to another thread.
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        base::Bind(&WallpaperSetWallpaperFunction::SetDecodedWallpaper,
-                   this));
+        base::Bind(&WallpaperPrivateSetWallpaperFunction::SetDecodedWallpaper,
+                   this, base::Passed(&deep_copy)));
     chromeos::UserImage wallpaper(wallpaper_);
 
+    base::FilePath wallpaper_dir;
+    CHECK(PathService::Get(chrome::DIR_CHROMEOS_WALLPAPERS, &wallpaper_dir));
+    base::FilePath file_path = wallpaper_dir.Append(
+        file_name).InsertBeforeExtension(chromeos::kSmallWallpaperSuffix);
+    if (file_util::PathExists(file_path))
+      return;
     // Generates and saves small resolution wallpaper. Uses CENTER_CROPPED to
     // maintain the aspect ratio after resize.
     chromeos::WallpaperManager::Get()->ResizeAndSaveWallpaper(
         wallpaper,
-        file_path.InsertBeforeExtension(chromeos::kSmallWallpaperSuffix),
-        ash::CENTER_CROPPED,
+        file_path,
+        ash::WALLPAPER_LAYOUT_CENTER_CROPPED,
         ash::kSmallWallpaperMaxWidth,
         ash::kSmallWallpaperMaxHeight);
   } else {
+    std::string error = base::StringPrintf(
+        "Failed to create/write wallpaper to %s.", file_name.c_str());
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        base::Bind(&WallpaperSetWallpaperFunction::OnFailureOrCancel,
-                   this, ""));
-    LOG(ERROR) << "Failed to save downloaded wallpaper.";
+        base::Bind(&WallpaperPrivateSetWallpaperFunction::OnFailureOrCancel,
+                   this, error));
   }
 }
 
-void WallpaperSetWallpaperFunction::SetDecodedWallpaper() {
+void WallpaperPrivateSetWallpaperFunction::SetDecodedWallpaper(
+    scoped_ptr<gfx::ImageSkia> wallpaper) {
   chromeos::WallpaperManager* wallpaper_manager =
       chromeos::WallpaperManager::Get();
-  wallpaper_manager->SetWallpaperFromImageSkia(wallpaper_, layout_);
+  wallpaper_manager->SetWallpaperFromImageSkia(*wallpaper.get(), layout_);
   bool is_persistent =
-      !chromeos::UserManager::Get()->IsCurrentUserEphemeral();
+      !chromeos::UserManager::Get()->IsCurrentUserNonCryptohomeDataEphemeral();
   chromeos::WallpaperInfo info = {
       url_,
       layout_,
@@ -325,71 +513,406 @@ void WallpaperSetWallpaperFunction::SetDecodedWallpaper() {
   SendResponse(true);
 }
 
-WallpaperSetCustomWallpaperFunction::WallpaperSetCustomWallpaperFunction() {
+WallpaperPrivateResetWallpaperFunction::
+    WallpaperPrivateResetWallpaperFunction() {}
+
+WallpaperPrivateResetWallpaperFunction::
+    ~WallpaperPrivateResetWallpaperFunction() {}
+
+bool WallpaperPrivateResetWallpaperFunction::RunImpl() {
+  chromeos::WallpaperManager* wallpaper_manager =
+      chromeos::WallpaperManager::Get();
+  chromeos::UserManager* user_manager = chromeos::UserManager::Get();
+
+  std::string email = user_manager->GetLoggedInUser()->email();
+  wallpaper_manager->RemoveUserWallpaperInfo(email);
+
+  chromeos::WallpaperInfo info = {
+      "",
+      ash::WALLPAPER_LAYOUT_CENTER,
+      chromeos::User::DEFAULT,
+      base::Time::Now().LocalMidnight()
+  };
+  bool is_persistent =
+      !user_manager->IsCurrentUserNonCryptohomeDataEphemeral();
+  wallpaper_manager->SetUserWallpaperInfo(email, info, is_persistent);
+  wallpaper_manager->SetDefaultWallpaper();
+  return true;
 }
 
-WallpaperSetCustomWallpaperFunction::~WallpaperSetCustomWallpaperFunction() {
-}
+WallpaperPrivateSetCustomWallpaperFunction::
+    WallpaperPrivateSetCustomWallpaperFunction() {}
 
-bool WallpaperSetCustomWallpaperFunction::RunImpl() {
+WallpaperPrivateSetCustomWallpaperFunction::
+    ~WallpaperPrivateSetCustomWallpaperFunction() {}
+
+bool WallpaperPrivateSetCustomWallpaperFunction::RunImpl() {
   BinaryValue* input = NULL;
-  if (args_ == NULL || !args_->GetBinary(0, &input)) {
-    return false;
-  }
+  EXTENSION_FUNCTION_VALIDATE(args_->GetBinary(0, &input));
+
   std::string layout_string;
-  if (!args_->GetString(1, &layout_string) || layout_string.empty()) {
-    return false;
-  }
-  layout_ = ash::GetLayoutEnum(layout_string);
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(1, &layout_string));
+  EXTENSION_FUNCTION_VALIDATE(!layout_string.empty());
+  layout_ = GetLayoutEnum(layout_string);
+
+  EXTENSION_FUNCTION_VALIDATE(args_->GetBoolean(2, &generate_thumbnail_));
+
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(3, &file_name_));
+  EXTENSION_FUNCTION_VALIDATE(!file_name_.empty());
 
   // Gets email address while at UI thread.
   email_ = chromeos::UserManager::Get()->GetLoggedInUser()->email();
 
   image_data_.assign(input->GetBuffer(), input->GetSize());
-  if (wallpaper_decoder_)
-    wallpaper_decoder_->Cancel();
-  wallpaper_decoder_ = new WallpaperDecoder(this);
-  wallpaper_decoder_->Start(image_data_);
+  StartDecode(image_data_);
 
   return true;
 }
 
-void WallpaperSetCustomWallpaperFunction::OnWallpaperDecoded(
+void WallpaperPrivateSetCustomWallpaperFunction::OnWallpaperDecoded(
     const gfx::ImageSkia& wallpaper) {
+  chromeos::WallpaperManager* wallpaper_manager =
+      chromeos::WallpaperManager::Get();
   chromeos::UserImage::RawImage raw_image(image_data_.begin(),
                                           image_data_.end());
   chromeos::UserImage image(wallpaper, raw_image);
+  base::FilePath thumbnail_path = wallpaper_manager->GetCustomWallpaperPath(
+      chromeos::kThumbnailWallpaperSubDir, email_, file_name_);
+
+  sequence_token_ = BrowserThread::GetBlockingPool()->
+      GetNamedSequenceToken(chromeos::kWallpaperSequenceTokenName);
+  scoped_refptr<base::SequencedTaskRunner> task_runner =
+      BrowserThread::GetBlockingPool()->
+          GetSequencedTaskRunnerWithShutdownBehavior(sequence_token_,
+              base::SequencedWorkerPool::BLOCK_SHUTDOWN);
+
   // In the new wallpaper picker UI, we do not depend on WallpaperDelegate
   // to refresh thumbnail. Uses a null delegate here.
-  chromeos::WallpaperManager::Get()->SetCustomWallpaper(
-      email_, layout_, chromeos::User::CUSTOMIZED,
-      base::WeakPtr<chromeos::WallpaperDelegate>(), image);
+  wallpaper_manager->SetCustomWallpaper(email_, file_name_, layout_,
+                                        chromeos::User::CUSTOMIZED,
+                                        image);
   wallpaper_decoder_ = NULL;
+
+  if (generate_thumbnail_) {
+    wallpaper.EnsureRepsForSupportedScaleFactors();
+    scoped_ptr<gfx::ImageSkia> deep_copy(wallpaper.DeepCopy());
+    // Generates thumbnail before call api function callback. We can then
+    // request thumbnail in the javascript callback.
+    task_runner->PostTask(FROM_HERE,
+        base::Bind(
+            &WallpaperPrivateSetCustomWallpaperFunction::GenerateThumbnail,
+            this, thumbnail_path, base::Passed(&deep_copy)));
+  } else {
+    SendResponse(true);
+  }
+}
+
+void WallpaperPrivateSetCustomWallpaperFunction::GenerateThumbnail(
+    const base::FilePath& thumbnail_path, scoped_ptr<gfx::ImageSkia> image) {
+  DCHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
+      sequence_token_));
+  chromeos::UserImage wallpaper(*image.get());
+  if (!file_util::PathExists(thumbnail_path.DirName()))
+    file_util::CreateDirectory(thumbnail_path.DirName());
+
+  scoped_refptr<base::RefCountedBytes> data;
+  chromeos::WallpaperManager::Get()->ResizeWallpaper(
+      wallpaper,
+      ash::WALLPAPER_LAYOUT_STRETCH,
+      ash::kWallpaperThumbnailWidth,
+      ash::kWallpaperThumbnailHeight,
+      &data);
+  BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(
+            &WallpaperPrivateSetCustomWallpaperFunction::ThumbnailGenerated,
+            this, data));
+}
+
+void WallpaperPrivateSetCustomWallpaperFunction::ThumbnailGenerated(
+    base::RefCountedBytes* data) {
+  BinaryValue* result = BinaryValue::CreateWithCopiedBuffer(
+      reinterpret_cast<const char*>(data->front()), data->size());
+  SetResult(result);
   SendResponse(true);
 }
 
-WallpaperMinimizeInactiveWindowsFunction::
-    WallpaperMinimizeInactiveWindowsFunction() {
+WallpaperPrivateSetCustomWallpaperLayoutFunction::
+    WallpaperPrivateSetCustomWallpaperLayoutFunction() {}
+
+WallpaperPrivateSetCustomWallpaperLayoutFunction::
+    ~WallpaperPrivateSetCustomWallpaperLayoutFunction() {}
+
+bool WallpaperPrivateSetCustomWallpaperLayoutFunction::RunImpl() {
+  std::string layout_string;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &layout_string));
+  EXTENSION_FUNCTION_VALIDATE(!layout_string.empty());
+
+  chromeos::WallpaperManager* wallpaper_manager =
+      chromeos::WallpaperManager::Get();
+  chromeos::WallpaperInfo info;
+  wallpaper_manager->GetLoggedInUserWallpaperInfo(&info);
+  if (info.type != chromeos::User::CUSTOMIZED) {
+    SetError("Only custom wallpaper can change layout.");
+    SendResponse(false);
+    return false;
+  }
+  info.layout = GetLayoutEnum(layout_string);
+
+  std::string email = chromeos::UserManager::Get()->GetLoggedInUser()->email();
+  bool is_persistent =
+      !chromeos::UserManager::Get()->IsCurrentUserNonCryptohomeDataEphemeral();
+  wallpaper_manager->SetUserWallpaperInfo(email, info, is_persistent);
+  wallpaper_manager->UpdateWallpaper();
+  SendResponse(true);
+
+  // Gets email address while at UI thread.
+  return true;
 }
 
-WallpaperMinimizeInactiveWindowsFunction::
-    ~WallpaperMinimizeInactiveWindowsFunction() {
+WallpaperPrivateMinimizeInactiveWindowsFunction::
+    WallpaperPrivateMinimizeInactiveWindowsFunction() {
 }
 
-bool WallpaperMinimizeInactiveWindowsFunction::RunImpl() {
+WallpaperPrivateMinimizeInactiveWindowsFunction::
+    ~WallpaperPrivateMinimizeInactiveWindowsFunction() {
+}
+
+bool WallpaperPrivateMinimizeInactiveWindowsFunction::RunImpl() {
   WindowStateManager::MinimizeInactiveWindows();
   return true;
 }
 
-WallpaperRestoreMinimizedWindowsFunction::
-    WallpaperRestoreMinimizedWindowsFunction() {
+WallpaperPrivateRestoreMinimizedWindowsFunction::
+    WallpaperPrivateRestoreMinimizedWindowsFunction() {
 }
 
-WallpaperRestoreMinimizedWindowsFunction::
-    ~WallpaperRestoreMinimizedWindowsFunction() {
+WallpaperPrivateRestoreMinimizedWindowsFunction::
+    ~WallpaperPrivateRestoreMinimizedWindowsFunction() {
 }
 
-bool WallpaperRestoreMinimizedWindowsFunction::RunImpl() {
+bool WallpaperPrivateRestoreMinimizedWindowsFunction::RunImpl() {
   WindowStateManager::RestoreWindows();
   return true;
+}
+
+WallpaperPrivateGetThumbnailFunction::WallpaperPrivateGetThumbnailFunction() {
+}
+
+WallpaperPrivateGetThumbnailFunction::~WallpaperPrivateGetThumbnailFunction() {
+}
+
+bool WallpaperPrivateGetThumbnailFunction::RunImpl() {
+  std::string urlOrFile;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &urlOrFile));
+  EXTENSION_FUNCTION_VALIDATE(!urlOrFile.empty());
+
+  std::string source;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(1, &source));
+  EXTENSION_FUNCTION_VALIDATE(!source.empty());
+
+  std::string file_name;
+  base::FilePath thumbnail_path;
+  std::string email = chromeos::UserManager::Get()->GetLoggedInUser()->email();
+  if (source == kOnlineSource) {
+    file_name = GURL(urlOrFile).ExtractFileName();
+    CHECK(PathService::Get(chrome::DIR_CHROMEOS_WALLPAPER_THUMBNAILS,
+                           &thumbnail_path));
+    thumbnail_path = thumbnail_path.Append(file_name);
+  } else {
+    file_name = urlOrFile;
+    thumbnail_path = chromeos::WallpaperManager::Get()->
+        GetCustomWallpaperPath(chromeos::kThumbnailWallpaperSubDir, email,
+                               file_name);
+  }
+
+  sequence_token_ = BrowserThread::GetBlockingPool()->
+      GetNamedSequenceToken(chromeos::kWallpaperSequenceTokenName);
+  scoped_refptr<base::SequencedTaskRunner> task_runner =
+      BrowserThread::GetBlockingPool()->
+          GetSequencedTaskRunnerWithShutdownBehavior(sequence_token_,
+              base::SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
+
+  task_runner->PostTask(FROM_HERE,
+      base::Bind(&WallpaperPrivateGetThumbnailFunction::Get, this,
+                 thumbnail_path));
+  return true;
+}
+
+void WallpaperPrivateGetThumbnailFunction::Failure(
+    const std::string& file_name) {
+  SetError(base::StringPrintf("Failed to access wallpaper thumbnails for %s.",
+                              file_name.c_str()));
+  SendResponse(false);
+}
+
+void WallpaperPrivateGetThumbnailFunction::FileNotLoaded() {
+  SendResponse(true);
+}
+
+void WallpaperPrivateGetThumbnailFunction::FileLoaded(
+    const std::string& data) {
+  BinaryValue* thumbnail = BinaryValue::CreateWithCopiedBuffer(data.c_str(),
+                                                               data.size());
+  SetResult(thumbnail);
+  SendResponse(true);
+}
+
+void WallpaperPrivateGetThumbnailFunction::Get(const base::FilePath& path) {
+  DCHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
+      sequence_token_));
+  std::string data;
+  if (GetData(path, &data)) {
+    if (data.empty()) {
+      BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&WallpaperPrivateGetThumbnailFunction::FileNotLoaded, this));
+    } else {
+      BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&WallpaperPrivateGetThumbnailFunction::FileLoaded, this,
+                   data));
+    }
+  } else {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&WallpaperPrivateGetThumbnailFunction::Failure, this,
+                   path.BaseName().value()));
+  }
+}
+
+WallpaperPrivateSaveThumbnailFunction::WallpaperPrivateSaveThumbnailFunction() {
+}
+
+WallpaperPrivateSaveThumbnailFunction::
+    ~WallpaperPrivateSaveThumbnailFunction() {}
+
+bool WallpaperPrivateSaveThumbnailFunction::RunImpl() {
+  std::string url;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &url));
+  EXTENSION_FUNCTION_VALIDATE(!url.empty());
+
+  BinaryValue* input = NULL;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetBinary(1, &input));
+
+  std::string file_name = GURL(url).ExtractFileName();
+  std::string data(input->GetBuffer(), input->GetSize());
+
+  sequence_token_ = BrowserThread::GetBlockingPool()->
+      GetNamedSequenceToken(chromeos::kWallpaperSequenceTokenName);
+  scoped_refptr<base::SequencedTaskRunner> task_runner =
+      BrowserThread::GetBlockingPool()->
+          GetSequencedTaskRunnerWithShutdownBehavior(sequence_token_,
+              base::SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
+
+  task_runner->PostTask(FROM_HERE,
+      base::Bind(&WallpaperPrivateSaveThumbnailFunction::Save,
+                 this, data, file_name));
+  return true;
+}
+
+void WallpaperPrivateSaveThumbnailFunction::Failure(
+    const std::string& file_name) {
+  SetError(base::StringPrintf("Failed to create/write thumbnail of %s.",
+                              file_name.c_str()));
+  SendResponse(false);
+}
+
+void WallpaperPrivateSaveThumbnailFunction::Success() {
+  SendResponse(true);
+}
+
+void WallpaperPrivateSaveThumbnailFunction::Save(const std::string& data,
+                                          const std::string& file_name) {
+  DCHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
+      sequence_token_));
+  if (SaveData(chrome::DIR_CHROMEOS_WALLPAPER_THUMBNAILS, file_name, data)) {
+    BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&WallpaperPrivateSaveThumbnailFunction::Success, this));
+  } else {
+    BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE,
+          base::Bind(&WallpaperPrivateSaveThumbnailFunction::Failure,
+                     this, file_name));
+  }
+}
+
+WallpaperPrivateGetOfflineWallpaperListFunction::
+    WallpaperPrivateGetOfflineWallpaperListFunction() {
+}
+
+WallpaperPrivateGetOfflineWallpaperListFunction::
+    ~WallpaperPrivateGetOfflineWallpaperListFunction() {
+}
+
+bool WallpaperPrivateGetOfflineWallpaperListFunction::RunImpl() {
+  std::string source;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &source));
+  EXTENSION_FUNCTION_VALIDATE(!source.empty());
+
+  std::string email = chromeos::UserManager::Get()->GetLoggedInUser()->email();
+
+  sequence_token_ = BrowserThread::GetBlockingPool()->
+      GetNamedSequenceToken(chromeos::kWallpaperSequenceTokenName);
+  scoped_refptr<base::SequencedTaskRunner> task_runner =
+      BrowserThread::GetBlockingPool()->
+          GetSequencedTaskRunnerWithShutdownBehavior(sequence_token_,
+              base::SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
+
+  task_runner->PostTask(FROM_HERE,
+      base::Bind(&WallpaperPrivateGetOfflineWallpaperListFunction::GetList,
+                 this, email, source));
+  return true;
+}
+
+void WallpaperPrivateGetOfflineWallpaperListFunction::GetList(
+    const std::string& email,
+    const std::string& source) {
+  DCHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
+      sequence_token_));
+  std::vector<std::string> file_list;
+  if (source == kOnlineSource) {
+    base::FilePath wallpaper_dir;
+    CHECK(PathService::Get(chrome::DIR_CHROMEOS_WALLPAPERS, &wallpaper_dir));
+    if (file_util::DirectoryExists(wallpaper_dir)) {
+      file_util::FileEnumerator files(wallpaper_dir, false,
+                                      file_util::FileEnumerator::FILES);
+      for (base::FilePath current = files.Next(); !current.empty();
+           current = files.Next()) {
+        std::string file_name = current.BaseName().RemoveExtension().value();
+        // Do not add file name of small resolution wallpaper to the list.
+        if (!EndsWith(file_name, chromeos::kSmallWallpaperSuffix, true))
+          file_list.push_back(current.BaseName().value());
+      }
+    }
+  } else {
+    base::FilePath custom_thumbnails_dir = chromeos::WallpaperManager::Get()->
+        GetCustomWallpaperPath(chromeos::kThumbnailWallpaperSubDir, email, "");
+    if (file_util::DirectoryExists(custom_thumbnails_dir)) {
+      file_util::FileEnumerator files(custom_thumbnails_dir, false,
+                                      file_util::FileEnumerator::FILES);
+      std::set<std::string> file_name_set;
+      for (base::FilePath current = files.Next(); !current.empty();
+           current = files.Next()) {
+        file_name_set.insert(current.BaseName().value());
+      }
+      for (std::set<std::string>::reverse_iterator rit = file_name_set.rbegin();
+           rit != file_name_set.rend(); ++rit) {
+        file_list.push_back(*rit);
+      }
+    }
+  }
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&WallpaperPrivateGetOfflineWallpaperListFunction::OnComplete,
+                 this, file_list));
+}
+
+void WallpaperPrivateGetOfflineWallpaperListFunction::OnComplete(
+    const std::vector<std::string>& file_list) {
+  ListValue* results = new ListValue();
+  results->AppendStrings(file_list);
+  SetResult(results);
+  SendResponse(true);
 }

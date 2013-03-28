@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/api/sync/profile_sync_service_observer.h"
+#include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/ui/global_error/global_error.h"
 
 class ProfileSyncService;
@@ -39,10 +39,6 @@ class SyncGlobalError : public GlobalError,
 
   // ProfileSyncServiceObserver implementation.
   virtual void OnStateChanged() OVERRIDE;
-
-  // For non-ChromeOS we customize the "Sign in to sync" wrench menu item
-  // instead of adding a new wrench menu item at the bottom.
-  bool HasCustomizedSyncMenuItem();
 
  private:
   string16 bubble_accept_label_;

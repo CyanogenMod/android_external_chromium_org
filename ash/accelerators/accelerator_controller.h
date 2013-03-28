@@ -121,10 +121,6 @@ class ASH_EXPORT AcceleratorController : public ui::AcceleratorTarget {
   // Initializes the accelerators this class handles as a target.
   void Init();
 
-  // Switches to a 0-indexed (in order of creation) window.
-  // A negative index switches to the last window in the list.
-  void SwitchToWindow(int window);
-
   // Registers the specified accelerators.
   void RegisterAccelerators(const AcceleratorData accelerators[],
                             size_t accelerators_length);
@@ -160,6 +156,8 @@ class ASH_EXPORT AcceleratorController : public ui::AcceleratorTarget {
   std::set<int> reserved_actions_;
   // Actions which will not be repeated while holding the accelerator key.
   std::set<int> nonrepeatable_actions_;
+  // Actions allowed in app mode.
+  std::set<int> actions_allowed_in_app_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(AcceleratorController);
 };

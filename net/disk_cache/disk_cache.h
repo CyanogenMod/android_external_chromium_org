@@ -17,9 +17,8 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 
-class FilePath;
-
 namespace base {
+class FilePath;
 class MessageLoopProxy;
 }
 
@@ -48,7 +47,8 @@ class Backend;
 // be invoked when a backend is available or a fatal error condition is reached.
 // The pointer to receive the |backend| must remain valid until the operation
 // completes (the callback is notified).
-NET_EXPORT int CreateCacheBackend(net::CacheType type, const FilePath& path,
+NET_EXPORT int CreateCacheBackend(net::CacheType type,
+                                  const base::FilePath& path,
                                   int max_bytes, bool force,
                                   base::MessageLoopProxy* thread,
                                   net::NetLog* net_log, Backend** backend,
@@ -106,14 +106,14 @@ class NET_EXPORT Backend {
   // either direction by using null Time values for either argument. The return
   // value is a net error code. If this method returns ERR_IO_PENDING, the
   // |callback| will be invoked when the operation completes.
-  virtual int DoomEntriesBetween(const base::Time initial_time,
-                                 const base::Time end_time,
+  virtual int DoomEntriesBetween(base::Time initial_time,
+                                 base::Time end_time,
                                  const CompletionCallback& callback) = 0;
 
   // Marks all entries accessed since |initial_time| for deletion. The return
   // value is a net error code. If this method returns ERR_IO_PENDING, the
   // |callback| will be invoked when the operation completes.
-  virtual int DoomEntriesSince(const base::Time initial_time,
+  virtual int DoomEntriesSince(base::Time initial_time,
                                const CompletionCallback& callback) = 0;
 
   // Enumerates the cache. Initialize |iter| to NULL before calling this method
@@ -127,7 +127,12 @@ class NET_EXPORT Backend {
   // remain valid until the operation completes.
   //
   // NOTE: This method does not modify the last_used field of the entry, and
-  // therefore it does not impact the eviction ranking of the entry.
+  // therefore it does not impact the eviction ranking of the entry. However,
+  // an enumeration will go through all entries on the cache only if the cache
+  // is not modified while the enumeration is taking place. Significantly
+  // altering the entry pointed by |iter| (for example, deleting the entry) will
+  // invalidate |iter|. Performing operations on an entry that modify the entry
+  // may result in loops in the iteration, skipped entries or similar.
   virtual int OpenNextEntry(void** iter, Entry** next_entry,
                             const CompletionCallback& callback) = 0;
 
@@ -172,31 +177,27 @@ class NET_EXPORT Entry {
   // Returns the size of the cache data with the given index.
   virtual int32 GetDataSize(int index) const = 0;
 
-  // Copies cache data into the given buffer of length |buf_len|.  If
-  // completion_callback is null, then this call blocks until the read
-  // operation is complete.  Otherwise, completion_callback will be
-  // called on the current thread once the read completes.  Returns the
-  // number of bytes read or a network error code. If a completion callback is
-  // provided then it will be called if this function returns ERR_IO_PENDING,
-  // and a reference to |buf| will be retained until the callback is called.
-  // Note that the callback will be invoked in any case, even after Close has
-  // been called; in other words, the caller may close this entry without
-  // having to wait for all the callbacks, and still rely on the cleanup
-  // performed from the callback code.
+  // Copies cached data into the given buffer of length |buf_len|. Returns the
+  // number of bytes read or a network error code. If this function returns
+  // ERR_IO_PENDING, the completion callback will be called on the current
+  // thread when the operation completes, and a reference to |buf| will be
+  // retained until the callback is called. Note that as long as the function
+  // does not complete immediately, the callback will always be invoked, even
+  // after Close has been called; in other words, the caller may close this
+  // entry without having to wait for all the callbacks, and still rely on the
+  // cleanup performed from the callback code.
   virtual int ReadData(int index, int offset, IOBuffer* buf, int buf_len,
                        const CompletionCallback& callback) = 0;
 
-  // Copies cache data from the given buffer of length |buf_len|.  If
-  // completion_callback is null, then this call blocks until the write
-  // operation is complete.  Otherwise, completion_callback will be
-  // called on the current thread once the write completes.  Returns the
-  // number of bytes written or a network error code. If a completion callback
-  // is provided then it will be called if this function returns ERR_IO_PENDING,
-  // and a reference to |buf| will be retained until the callback is called.
-  // Note that the callback will be invoked in any case, even after Close has
-  // been called; in other words, the caller may close this entry without
-  // having to wait for all the callbacks, and still rely on the cleanup
-  // performed from the callback code.
+  // Copies data from the given buffer of length |buf_len| into the cache.
+  // Returns the number of bytes written or a network error code. If this
+  // function returns ERR_IO_PENDING, the completion callback will be called
+  // on the current thread when the operation completes, and a reference to
+  // |buf| will be retained until the callback is called. Note that as long as
+  // the function does not complete immediately, the callback will always be
+  // invoked, even after Close has been called; in other words, the caller may
+  // close this entry without having to wait for all the callbacks, and still
+  // rely on the cleanup performed from the callback code.
   // If truncate is true, this call will truncate the stored data at the end of
   // what we are writing here.
   virtual int WriteData(int index, int offset, IOBuffer* buf, int buf_len,

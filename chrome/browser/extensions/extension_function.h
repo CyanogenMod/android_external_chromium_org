@@ -14,12 +14,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/process.h"
 #include "base/sequenced_task_runner_helpers.h"
+#include "chrome/browser/extensions/extension_function_histogram_value.h"
 #include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/render_view_host_observer.h"
+#include "content/public/common/console_message_level.h"
 #include "ipc/ipc_message.h"
 
 class Browser;
@@ -62,8 +62,14 @@ class WindowController;
     return false; \
   } while (0)
 
-#define DECLARE_EXTENSION_FUNCTION_NAME(name) \
-  public: static const char* function_name() { return name; }
+// Declares a callable extension function with the given |name|. You must also
+// supply a unique |histogramvalue| used for histograms of extension function
+// invocation (add new ones at the end of the enum in
+// extension_function_histogram_value.h).
+#define DECLARE_EXTENSION_FUNCTION(name, histogramvalue) \
+  public: static const char* function_name() { return name; } \
+  public: static extensions::functions::HistogramValue histogram_value() \
+    { return extensions::functions::histogramvalue; }
 
 // Traits that describe how ExtensionFunction should be deleted. This just calls
 // the virtual "Destruct" method on ExtensionFunction, allowing derived classes
@@ -164,6 +170,12 @@ class ExtensionFunction
   void set_user_gesture(bool user_gesture) { user_gesture_ = user_gesture; }
   bool user_gesture() const { return user_gesture_; }
 
+  void set_histogram_value(
+      extensions::functions::HistogramValue histogram_value) {
+    histogram_value_ = histogram_value; }
+  extensions::functions::HistogramValue histogram_value() const {
+    return histogram_value_; }
+
  protected:
   friend struct ExtensionFunctionDeleteTraits;
 
@@ -237,6 +249,10 @@ class ExtensionFunction
   // Any class that gets a malformed message should set this to true before
   // returning.  The calling renderer process will be killed.
   bool bad_message_;
+
+  // The sample value to record with the histogram API when the function
+  // is invoked.
+  extensions::functions::HistogramValue histogram_value_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionFunction);
 };
@@ -316,6 +332,10 @@ class UIThreadExtensionFunction : public ExtensionFunction {
       const extensions::WindowController* window_controller) const;
 
  protected:
+  // Emits a message to the extension's devtools console.
+  void WriteToConsole(content::ConsoleMessageLevel level,
+                      const std::string& message);
+
   friend struct content::BrowserThread::DeleteOnThread<
       content::BrowserThread::UI>;
   friend class base::DeleteHelper<UIThreadExtensionFunction>;
@@ -336,27 +356,18 @@ class UIThreadExtensionFunction : public ExtensionFunction {
  private:
   // Helper class to track the lifetime of ExtensionFunction's RenderViewHost
   // pointer and NULL it out when it dies. It also allows us to filter IPC
-  // messages coming from the RenderViewHost. We use this separate class
-  // (instead of implementing NotificationObserver on ExtensionFunction) because
-  // it is/ common for subclasses of ExtensionFunction to be
-  // NotificationObservers, and it would be an easy error to forget to call the
-  // base class's Observe() method.
-  class RenderViewHostTracker : public content::NotificationObserver,
-                                public content::RenderViewHostObserver {
+  // messages coming from the RenderViewHost.
+  class RenderViewHostTracker : public content::RenderViewHostObserver {
    public:
-    RenderViewHostTracker(UIThreadExtensionFunction* function,
-                          content::RenderViewHost* render_view_host);
-   private:
-    virtual void Observe(int type,
-                         const content::NotificationSource& source,
-                         const content::NotificationDetails& details) OVERRIDE;
+    explicit RenderViewHostTracker(UIThreadExtensionFunction* function);
 
+   private:
+    // content::RenderViewHostObserver:
     virtual void RenderViewHostDestroyed(
         content::RenderViewHost* render_view_host) OVERRIDE;
     virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
     UIThreadExtensionFunction* function_;
-    content::NotificationRegistrar registrar_;
 
     DISALLOW_COPY_AND_ASSIGN(RenderViewHostTracker);
   };

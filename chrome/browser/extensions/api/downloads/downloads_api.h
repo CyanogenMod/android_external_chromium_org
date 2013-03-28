@@ -5,15 +5,14 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_DOWNLOADS_DOWNLOADS_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_DOWNLOADS_DOWNLOADS_API_H_
 
-#include <map>
-#include <set>
 #include <string>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/singleton.h"
 #include "base/string16.h"
 #include "base/values.h"
 #include "chrome/browser/download/all_download_item_notifier.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "content/public/browser/download_id.h"
 #include "content/public/browser/download_item.h"
@@ -33,10 +32,11 @@ class ResourceDispatcherHost;
 
 namespace download_extension_errors {
 
-// Errors that can be returned through chrome.extension.lastError.message.
+// Errors that can be returned through chrome.runtime.lastError.message.
 extern const char kGenericError[];
 extern const char kIconNotFoundError[];
 extern const char kInvalidDangerTypeError[];
+extern const char kInvalidFilenameError[];
 extern const char kInvalidFilterError[];
 extern const char kInvalidOperationError[];
 extern const char kInvalidOrderByError[];
@@ -44,13 +44,14 @@ extern const char kInvalidQueryLimit[];
 extern const char kInvalidStateError[];
 extern const char kInvalidURLError[];
 extern const char kNotImplementedError[];
+extern const char kTooManyListenersError[];
 
 }  // namespace download_extension_errors
 
 
 class DownloadsDownloadFunction : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.download");
+  DECLARE_EXTENSION_FUNCTION("downloads.download", DOWNLOADS_DOWNLOAD)
   DownloadsDownloadFunction();
   virtual bool RunImpl() OVERRIDE;
 
@@ -65,7 +66,7 @@ class DownloadsDownloadFunction : public AsyncExtensionFunction {
 
 class DownloadsSearchFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.search");
+  DECLARE_EXTENSION_FUNCTION("downloads.search", DOWNLOADS_SEARCH)
   DownloadsSearchFunction();
   virtual bool RunImpl() OVERRIDE;
 
@@ -78,7 +79,7 @@ class DownloadsSearchFunction : public SyncExtensionFunction {
 
 class DownloadsPauseFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.pause");
+  DECLARE_EXTENSION_FUNCTION("downloads.pause", DOWNLOADS_PAUSE)
   DownloadsPauseFunction();
   virtual bool RunImpl() OVERRIDE;
 
@@ -91,7 +92,7 @@ class DownloadsPauseFunction : public SyncExtensionFunction {
 
 class DownloadsResumeFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.resume");
+  DECLARE_EXTENSION_FUNCTION("downloads.resume", DOWNLOADS_RESUME)
   DownloadsResumeFunction();
   virtual bool RunImpl() OVERRIDE;
 
@@ -104,7 +105,7 @@ class DownloadsResumeFunction : public SyncExtensionFunction {
 
 class DownloadsCancelFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.cancel");
+  DECLARE_EXTENSION_FUNCTION("downloads.cancel", DOWNLOADS_CANCEL)
   DownloadsCancelFunction();
   virtual bool RunImpl() OVERRIDE;
 
@@ -115,9 +116,9 @@ class DownloadsCancelFunction : public SyncExtensionFunction {
   DISALLOW_COPY_AND_ASSIGN(DownloadsCancelFunction);
 };
 
-class DownloadsEraseFunction : public AsyncExtensionFunction {
+class DownloadsEraseFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.erase");
+  DECLARE_EXTENSION_FUNCTION("downloads.erase", DOWNLOADS_ERASE)
   DownloadsEraseFunction();
   virtual bool RunImpl() OVERRIDE;
 
@@ -128,27 +129,15 @@ class DownloadsEraseFunction : public AsyncExtensionFunction {
   DISALLOW_COPY_AND_ASSIGN(DownloadsEraseFunction);
 };
 
-class DownloadsSetDestinationFunction : public AsyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.setDestination");
-  DownloadsSetDestinationFunction();
-  virtual bool RunImpl() OVERRIDE;
-
- protected:
-  virtual ~DownloadsSetDestinationFunction();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DownloadsSetDestinationFunction);
-};
-
 class DownloadsAcceptDangerFunction : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.acceptDanger");
+  DECLARE_EXTENSION_FUNCTION("downloads.acceptDanger", DOWNLOADS_ACCEPTDANGER)
   DownloadsAcceptDangerFunction();
   virtual bool RunImpl() OVERRIDE;
 
  protected:
   virtual ~DownloadsAcceptDangerFunction();
+  void DangerPromptCallback(bool accept, int download_id);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DownloadsAcceptDangerFunction);
@@ -156,7 +145,7 @@ class DownloadsAcceptDangerFunction : public AsyncExtensionFunction {
 
 class DownloadsShowFunction : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.show");
+  DECLARE_EXTENSION_FUNCTION("downloads.show", DOWNLOADS_SHOW)
   DownloadsShowFunction();
   virtual bool RunImpl() OVERRIDE;
 
@@ -167,9 +156,9 @@ class DownloadsShowFunction : public AsyncExtensionFunction {
   DISALLOW_COPY_AND_ASSIGN(DownloadsShowFunction);
 };
 
-class DownloadsOpenFunction : public AsyncExtensionFunction {
+class DownloadsOpenFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.open");
+  DECLARE_EXTENSION_FUNCTION("downloads.open", DOWNLOADS_OPEN)
   DownloadsOpenFunction();
   virtual bool RunImpl() OVERRIDE;
 
@@ -182,7 +171,7 @@ class DownloadsOpenFunction : public AsyncExtensionFunction {
 
 class DownloadsDragFunction : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.drag");
+  DECLARE_EXTENSION_FUNCTION("downloads.drag", DOWNLOADS_DRAG)
   DownloadsDragFunction();
   virtual bool RunImpl() OVERRIDE;
 
@@ -195,7 +184,7 @@ class DownloadsDragFunction : public AsyncExtensionFunction {
 
 class DownloadsGetFileIconFunction : public AsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("downloads.getFileIcon");
+  DECLARE_EXTENSION_FUNCTION("downloads.getFileIcon", DOWNLOADS_GETFILEICON)
   DownloadsGetFileIconFunction();
   virtual bool RunImpl() OVERRIDE;
   void SetIconExtractorForTesting(DownloadFileIconExtractor* extractor);
@@ -205,22 +194,52 @@ class DownloadsGetFileIconFunction : public AsyncExtensionFunction {
 
  private:
   void OnIconURLExtracted(const std::string& url);
-  FilePath path_;
-  int icon_size_;
+  base::FilePath path_;
   scoped_ptr<DownloadFileIconExtractor> icon_extractor_;
   DISALLOW_COPY_AND_ASSIGN(DownloadsGetFileIconFunction);
 };
 
 // Observes a single DownloadManager and many DownloadItems and dispatches
 // onCreated and onErased events.
-class ExtensionDownloadsEventRouter
-  : public AllDownloadItemNotifier::Observer {
+class ExtensionDownloadsEventRouter : public extensions::EventRouter::Observer,
+                                      public AllDownloadItemNotifier::Observer {
  public:
+  typedef base::Callback<void(const base::FilePath& changed_filename,
+                              bool overwrite)> FilenameChangedCallback;
+
+  // A downloads.onDeterminingFilename listener has returned. If the extension
+  // wishes to override the download's filename, then |filename| will be
+  // non-empty. |filename| will be interpreted as a relative path, appended to
+  // the default downloads directory. If the extension wishes to overwrite any
+  // existing files, then |overwrite| will be true. Returns true on success,
+  // false otherwise.
+  static bool DetermineFilename(
+      Profile* profile,
+      bool include_incognito,
+      const std::string& ext_id,
+      int download_id,
+      const base::FilePath& filename,
+      bool overwrite,
+      std::string* error);
+
   explicit ExtensionDownloadsEventRouter(
       Profile* profile, content::DownloadManager* manager);
   virtual ~ExtensionDownloadsEventRouter();
 
-  // AllDownloadItemNotifier::Observer interface
+  // Called by ChromeDownloadManagerDelegate during the filename determination
+  // process, allows extensions to change the item's target filename. If no
+  // extension wants to change the target filename, then |no_change| will be
+  // called and the filename determination process will continue as normal. If
+  // an extension wants to change the target filename, then |change| will be
+  // called with the new filename and a flag indicating whether the new file
+  // should overwrite any old files of the same name.
+  void OnDeterminingFilename(
+      content::DownloadItem* item,
+      const base::FilePath& suggested_path,
+      const base::Closure& no_change,
+      const FilenameChangedCallback& change);
+
+  // AllDownloadItemNotifier::Observer
   virtual void OnDownloadCreated(
       content::DownloadManager* manager,
       content::DownloadItem* download_item) OVERRIDE;
@@ -231,6 +250,10 @@ class ExtensionDownloadsEventRouter
       content::DownloadManager* manager,
       content::DownloadItem* download_item) OVERRIDE;
 
+  // extensions::EventRouter::Observer
+  virtual void OnListenerRemoved(
+      const extensions::EventListenerInfo& details) OVERRIDE;
+
   // Used for testing.
   struct DownloadsNotificationSource {
     std::string event_name;
@@ -238,7 +261,11 @@ class ExtensionDownloadsEventRouter
   };
 
  private:
-  void DispatchEvent(const char* event_name, base::Value* json_arg);
+  void DispatchEvent(
+      const char* event_name,
+      bool include_incognito,
+      const extensions::Event::WillDispatchCallback& will_dispatch_callback,
+      base::Value* json_arg);
 
   Profile* profile_;
   AllDownloadItemNotifier notifier_;

@@ -7,7 +7,7 @@
 
 #include <string>
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/command_updater.h"
+#include "chrome/browser/command_updater_delegate.h"
 #include "chrome/browser/ui/toolbar/toolbar_model_delegate.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "content/public/browser/page_navigator.h"
@@ -16,9 +16,9 @@
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/widget/widget_delegate.h"
 
+class CommandUpdater;
 class Profile;
 class ReloadButton;
-class TabContents;
 class ToolbarModel;
 
 namespace views {
@@ -30,7 +30,7 @@ namespace chromeos {
 
 class StubBubbleModelDelegate;
 
-// View class which shows the light version of the toolbar and the tab contents.
+// View class which shows the light version of the toolbar and the web contents.
 // Light version of the toolbar includes back, forward buttons and location
 // bar. Location bar is shown in read only mode, because this view is designed
 // to be used for sign in to captive portal on login screen (when Browser
@@ -39,7 +39,7 @@ class SimpleWebViewDialog : public views::ButtonListener,
                             public views::WidgetDelegateView,
                             public LocationBarView::Delegate,
                             public ToolbarModelDelegate,
-                            public CommandUpdater::CommandUpdaterDelegate,
+                            public CommandUpdaterDelegate,
                             public content::PageNavigator,
                             public content::WebContentsDelegate {
  public:
@@ -70,7 +70,7 @@ class SimpleWebViewDialog : public views::ButtonListener,
   // Implements LocationBarView::Delegate:
   virtual void NavigationStateChanged(const content::WebContents* source,
                                       unsigned changed_flags) OVERRIDE;
-  virtual TabContents* GetTabContents() const OVERRIDE;
+  virtual content::WebContents* GetWebContents() const OVERRIDE;
   virtual InstantController* GetInstant() OVERRIDE;
   virtual views::Widget* CreateViewsBubble(
       views::BubbleDelegateView* bubble_delegate) OVERRIDE;
@@ -79,10 +79,10 @@ class SimpleWebViewDialog : public views::ButtonListener,
       ExtensionAction* action) OVERRIDE;
   virtual ContentSettingBubbleModelDelegate*
   GetContentSettingBubbleModelDelegate() OVERRIDE;
-  virtual void ShowPageInfo(content::WebContents* web_contents,
-                            const GURL& url,
-                            const content::SSLStatus& ssl,
-                            bool show_history) OVERRIDE;
+  virtual void ShowWebsiteSettings(content::WebContents* web_contents,
+                                   const GURL& url,
+                                   const content::SSLStatus& ssl,
+                                   bool show_history) OVERRIDE;
   virtual void OnInputInProgress(bool in_progress) OVERRIDE;
 
   // Implements ToolbarModelDelegate:
@@ -108,8 +108,6 @@ class SimpleWebViewDialog : public views::ButtonListener,
   ReloadButton* reload_;
   LocationBarView* location_bar_;
   views::WebView* web_view_;
-  // TODO: remove, needed to create a password manager for web_view_'s WC.
-  scoped_ptr<TabContents> tab_contents_;
 
   // Contains |web_view_| while it isn't owned by the view.
   scoped_ptr<views::WebView> web_view_container_;

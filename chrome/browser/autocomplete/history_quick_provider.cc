@@ -12,21 +12,26 @@
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
+#include "base/prefs/pref_service.h"
 #include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_field_trial.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/history/history_database.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_url_index.h"
 #include "chrome/browser/history/in_memory_url_index_types.h"
 #include "chrome/browser/history/scored_history_match.h"
 #include "chrome/browser/net/url_fixer_upper.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
+#include "chrome/browser/search_engines/template_url.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -78,7 +83,7 @@ HistoryQuickProvider::HistoryQuickProvider(
 
     // For the field trial stuff to work correctly, we must be running
     // on the same thread as the thread that created the field trial,
-    // which happens via a call to AutocompleteFieldTrial::Active in
+    // which happens via a call to OmniboxFieldTrial::Active in
     // chrome_browser_main.cc on the main thread.  Let's check this to
     // be sure.  We check "if we've heard of the UI thread then we'd better
     // be on it."  The first part is necessary so unit tests pass.  (Many
@@ -87,9 +92,8 @@ HistoryQuickProvider::HistoryQuickProvider(
     DCHECK(!content::BrowserThread::IsWellKnownThread(
                content::BrowserThread::UI) ||
            content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-    if (AutocompleteFieldTrial::InDisallowInlineHQPFieldTrial()) {
-      if (AutocompleteFieldTrial::
-          InDisallowInlineHQPFieldTrialExperimentGroup()) {
+    if (OmniboxFieldTrial::InDisallowInlineHQPFieldTrial()) {
+      if (OmniboxFieldTrial::InDisallowInlineHQPFieldTrialExperimentGroup()) {
         always_prevent_inline_autocomplete_ = true;
         inlining_option = INLINING_FIELD_TRIAL_EXPERIMENT_GROUP;
       } else {
@@ -142,7 +146,7 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
       base::TimeTicks end_time = base::TimeTicks::Now();
       std::string name = "HistoryQuickProvider.QueryIndexTime." +
           base::IntToString(input.text().length());
-      base::Histogram* counter = base::Histogram::FactoryGet(
+      base::HistogramBase* counter = base::Histogram::FactoryGet(
           name, 1, 1000, 50, base::Histogram::kUmaTargetedHistogramFlag);
       counter->Add(static_cast<int>((end_time - start_time).InMilliseconds()));
     }
@@ -162,16 +166,23 @@ HistoryQuickProvider::~HistoryQuickProvider() {}
 
 void HistoryQuickProvider::DoAutocomplete() {
   // Get the matching URLs from the DB.
-  string16 term_string = autocomplete_input_.text();
-  ScoredHistoryMatches matches = GetIndex()->HistoryItemsForTerms(term_string);
+  ScoredHistoryMatches matches = GetIndex()->HistoryItemsForTerms(
+      autocomplete_input_.text(),
+      autocomplete_input_.cursor_position());
   if (matches.empty())
     return;
 
-  if (reorder_for_inlining_) {
-    // If we're allowed to reorder results in order to get an
-    // inlineable result to appear first (and hence have a
-    // HistoryQuickProvider suggestion possibly appear first), find
-    // the first inlineable result and then swap it to the front.
+  // If we're allowed to reorder results in order to get an inlineable
+  // result to appear first (and hence have a HistoryQuickProvider
+  // suggestion possibly appear first), find the first inlineable
+  // result and then swap it to the front.  Obviously, don't do this
+  // if we're told to prevent inline autocompletion.  (If we're told
+  // we're going to prevent inline autocompletion, we're going to
+  // later demote the score of all results so none will be inlined.
+  // Hence there's no need to reorder the results so an inlineable one
+  // appears first.)
+  if (reorder_for_inlining_ &&
+      !PreventInlineAutocomplete(autocomplete_input_)) {
     for (ScoredHistoryMatches::iterator i(matches.begin());
          (i != matches.end()) &&
              (i->raw_score >= AutocompleteResult::kLowestDefaultScore);
@@ -185,8 +196,9 @@ void HistoryQuickProvider::DoAutocomplete() {
   }
 
   // Figure out if HistoryURL provider has a URL-what-you-typed match
-  // that ought to go first.
+  // that ought to go first and what its score will be.
   bool will_have_url_what_you_typed_match_first = false;
+  int url_what_you_typed_match_score = -1;  // undefined
   // These are necessary (but not sufficient) conditions for the omnibox
   // input to be a URL-what-you-typed match.  The username test checks that
   // either the username does not exist (a regular URL such as http://site/)
@@ -237,16 +249,33 @@ void HistoryQuickProvider::DoAutocomplete() {
         // the URL-what-you-typed match are on the same host (i.e., aren't
         // from a longer internet hostname for which the omnibox input is
         // a prefix).
-        will_have_url_what_you_typed_match_first =
-            (url_db->GetRowForURL(autocomplete_input_.canonicalized_url(),
-                                  NULL) != 0) ||
-            (url_db->IsTypedHost(host) &&
+        if (url_db->GetRowForURL(
+            autocomplete_input_.canonicalized_url(), NULL) != 0) {
+          // We visited this URL before.
+          will_have_url_what_you_typed_match_first = true;
+          // HistoryURLProvider gives visited what-you-typed URLs a high score.
+          url_what_you_typed_match_score =
+              HistoryURLProvider::kScoreForBestInlineableResult;
+        } else if (url_db->IsTypedHost(host) &&
              (!autocomplete_input_.parts().path.is_nonempty() ||
               ((autocomplete_input_.parts().path.len == 1) &&
                (autocomplete_input_.text()[
                    autocomplete_input_.parts().path.begin] == '/'))) &&
              !autocomplete_input_.parts().query.is_nonempty() &&
-             !autocomplete_input_.parts().ref.is_nonempty());
+             !autocomplete_input_.parts().ref.is_nonempty()) {
+          // Not visited, but we've seen the host before.
+          will_have_url_what_you_typed_match_first = true;
+          if (net::RegistryControlledDomainService::GetRegistryLength(
+              host, false) == 0) {
+            // Known intranet hosts get one score.
+            url_what_you_typed_match_score =
+                HistoryURLProvider::kScoreForUnvisitedIntranetResult;
+          } else {
+            // Known internet hosts get another.
+            url_what_you_typed_match_score =
+                HistoryURLProvider::kScoreForWhatYouTypedResult;
+          }
+        }
       }
     }
   }
@@ -259,23 +288,39 @@ void HistoryQuickProvider::DoAutocomplete() {
   // artificially reduce the starting |max_match_score| (which
   // therefore applies to all results) to something low enough that
   // guarantees no result will be offered as an autocomplete
-  // suggestion.  Also do this reduction if we think there will be
+  // suggestion.  Also do a similar reduction if we think there will be
   // a URL-what-you-typed match.  (We want URL-what-you-typed matches for
   // visited URLs to beat out any longer URLs, no matter how frequently
-  // they're visited.)
+  // they're visited.)  The strength of this last reduction depends on the
+  // likely score for the URL-what-you-typed result.
+
+  // |template_url_service| or |template_url| can be NULL in unit tests.
+  TemplateURLService* template_url_service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  TemplateURL* template_url = template_url_service ?
+      template_url_service->GetDefaultSearchProvider() : NULL;
   int max_match_score = (PreventInlineAutocomplete(autocomplete_input_) ||
-      !matches.begin()->can_inline ||
-      will_have_url_what_you_typed_match_first) ?
+      !matches.begin()->can_inline) ?
       (AutocompleteResult::kLowestDefaultScore - 1) :
       matches.begin()->raw_score;
+  if (will_have_url_what_you_typed_match_first) {
+    max_match_score = std::min(max_match_score,
+        url_what_you_typed_match_score - 1);
+  }
   for (ScoredHistoryMatches::const_iterator match_iter = matches.begin();
        match_iter != matches.end(); ++match_iter) {
     const ScoredHistoryMatch& history_match(*match_iter);
-    // Set max_match_score to the score we'll assign this result:
-    max_match_score = std::min(max_match_score, history_match.raw_score);
-    matches_.push_back(QuickMatchToACMatch(history_match, max_match_score));
-    // Mark this max_match_score as being used:
-    max_match_score--;
+    // Culls results corresponding to queries from the default search engine.
+    // These are low-quality, difficult-to-understand matches for users, and the
+    // SearchProvider should surface past queries in a better way anyway.
+    if (!template_url ||
+        !template_url->IsSearchURL(history_match.url_info.url())) {
+      // Set max_match_score to the score we'll assign this result:
+      max_match_score = std::min(max_match_score, history_match.raw_score);
+      matches_.push_back(QuickMatchToACMatch(history_match, max_match_score));
+      // Mark this max_match_score as being used:
+      max_match_score--;
+    }
   }
 }
 

@@ -7,14 +7,14 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
-#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/strings/string_split.h"
 #include "base/test/mock_time_provider.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_notifications.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/search_engines/search_host_to_urls_map.h"
 #include "chrome/browser/search_engines/search_terms_data.h"
@@ -27,6 +27,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -253,6 +254,7 @@ void TemplateURLServiceTest::AssertEquals(const TemplateURL& expected,
   ASSERT_EQ(expected.url(), actual.url());
   ASSERT_EQ(expected.suggestions_url(), actual.suggestions_url());
   ASSERT_EQ(expected.favicon_url(), actual.favicon_url());
+  ASSERT_EQ(expected.alternate_urls(), actual.alternate_urls());
   ASSERT_EQ(expected.show_in_default_list(), actual.show_in_default_list());
   ASSERT_EQ(expected.safe_for_autoreplace(), actual.safe_for_autoreplace());
   ASSERT_EQ(expected.input_encodings(), actual.input_encodings());
@@ -260,6 +262,8 @@ void TemplateURLServiceTest::AssertEquals(const TemplateURL& expected,
   ASSERT_EQ(expected.date_created(), actual.date_created());
   ASSERT_EQ(expected.last_modified(), actual.last_modified());
   ASSERT_EQ(expected.sync_guid(), actual.sync_guid());
+  ASSERT_EQ(expected.search_terms_replacement_key(),
+            actual.search_terms_replacement_key());
 }
 
 void TemplateURLServiceTest::ExpectSimilar(const TemplateURL* expected,
@@ -271,9 +275,12 @@ void TemplateURLServiceTest::ExpectSimilar(const TemplateURL* expected,
   EXPECT_EQ(expected->url(), actual->url());
   EXPECT_EQ(expected->suggestions_url(), actual->suggestions_url());
   EXPECT_EQ(expected->favicon_url(), actual->favicon_url());
+  EXPECT_EQ(expected->alternate_urls(), actual->alternate_urls());
   EXPECT_EQ(expected->show_in_default_list(), actual->show_in_default_list());
   EXPECT_EQ(expected->safe_for_autoreplace(), actual->safe_for_autoreplace());
   EXPECT_EQ(expected->input_encodings(), actual->input_encodings());
+  EXPECT_EQ(expected->search_terms_replacement_key(),
+            actual->search_terms_replacement_key());
 }
 
 TemplateURL* TemplateURLServiceTest::CreatePreloadedTemplateURL(
@@ -501,7 +508,7 @@ TEST_F(TemplateURLServiceTest, AddExtensionKeyword) {
       "http://test2", std::string(), std::string(), false, "UTF-8", Time(),
       Time());
   TemplateURL* original3 = AddKeywordWithDate("extension", "keyword3",
-      std::string(chrome::kExtensionScheme) + "://test3", std::string(),
+      std::string(extensions::kExtensionScheme) + "://test3", std::string(),
       std::string(), false, "UTF-8", Time(), Time());
 
   // Add an extension keyword that conflicts with each of the above three
@@ -509,7 +516,7 @@ TEST_F(TemplateURLServiceTest, AddExtensionKeyword) {
   TemplateURLData data;
   data.short_name = ASCIIToUTF16("test");
   data.SetKeyword(ASCIIToUTF16("keyword1"));
-  data.SetURL(std::string(chrome::kExtensionScheme) + "://test4");
+  data.SetURL(std::string(extensions::kExtensionScheme) + "://test4");
   data.safe_for_autoreplace = false;
 
   // Extension keywords should override replaceable keywords.
@@ -551,7 +558,7 @@ TEST_F(TemplateURLServiceTest, AddSameKeywordWithExtensionPresent) {
   AddKeywordWithDate("replaceable", "keyword", "http://test1", std::string(),
                      std::string(), true, "UTF-8", Time(), Time());
   TemplateURL* extension = AddKeywordWithDate("extension", "keyword",
-      std::string(chrome::kExtensionScheme) + "://test2", std::string(),
+      std::string(extensions::kExtensionScheme) + "://test2", std::string(),
       std::string(), false, "UTF-8", Time(), Time());
 
   // Adding another replaceable keyword should remove the existing one, but
@@ -1302,10 +1309,8 @@ TEST_F(TemplateURLServiceTest, FailedInit) {
 
   test_util_.ClearModel();
   scoped_refptr<WebDataService> web_service =
-      WebDataServiceFactory::GetForProfile(test_util_.profile(),
-                                           Profile::EXPLICIT_ACCESS);
-  web_service->UnloadDatabase();
-  web_service->set_failed_init(true);
+      WebDataService::FromBrowserContext(test_util_.profile());
+  web_service->ShutdownDatabase();
 
   test_util_.ResetModel(false);
   model()->Load();
@@ -1340,8 +1345,11 @@ TEST_F(TemplateURLServiceTest, TestManagedDefaultSearch) {
   const char kSearchURL[] = "http://test.com/search?t={searchTerms}";
   const char kIconURL[] = "http://test.com/icon.jpg";
   const char kEncodings[] = "UTF-16;UTF-32";
+  const char kAlternateURL[] = "http://test.com/search#t={searchTerms}";
+  const char kSearchTermsReplacementKey[] = "espv";
   test_util_.SetManagedDefaultSearchPreferences(true, kName, kKeyword,
-      kSearchURL, std::string(), kIconURL, kEncodings);
+      kSearchURL, std::string(), kIconURL, kEncodings, kAlternateURL,
+      kSearchTermsReplacementKey);
   VerifyObserverFired();
   EXPECT_TRUE(model()->is_default_search_managed());
   EXPECT_EQ(initial_count + 2, model()->GetTemplateURLs().size());
@@ -1354,6 +1362,8 @@ TEST_F(TemplateURLServiceTest, TestManagedDefaultSearch) {
   data.favicon_url = GURL(kIconURL);
   data.show_in_default_list = true;
   base::SplitString(kEncodings, ';', &data.input_encodings);
+  data.alternate_urls.push_back(kAlternateURL);
+  data.search_terms_replacement_key = kSearchTermsReplacementKey;
   Profile* profile = test_util_.profile();
   scoped_ptr<TemplateURL> expected_managed_default1(new TemplateURL(profile,
                                                                     data));
@@ -1368,7 +1378,8 @@ TEST_F(TemplateURLServiceTest, TestManagedDefaultSearch) {
   const char kNewSearchURL[] = "http://other.com/search?t={searchTerms}";
   const char kNewSuggestURL[] = "http://other.com/suggest?t={searchTerms}";
   test_util_.SetManagedDefaultSearchPreferences(true, kNewName, kNewKeyword,
-      kNewSearchURL, kNewSuggestURL, std::string(), std::string());
+      kNewSearchURL, kNewSuggestURL, std::string(), std::string(),
+      std::string(), std::string());
   VerifyObserverFired();
   EXPECT_TRUE(model()->is_default_search_managed());
   EXPECT_EQ(initial_count + 2, model()->GetTemplateURLs().size());
@@ -1401,7 +1412,7 @@ TEST_F(TemplateURLServiceTest, TestManagedDefaultSearch) {
   // Disable the default search provider through policy.
   test_util_.SetManagedDefaultSearchPreferences(false, std::string(),
       std::string(), std::string(), std::string(), std::string(),
-      std::string());
+      std::string(), std::string(), std::string());
   VerifyObserverFired();
   EXPECT_TRUE(model()->is_default_search_managed());
   EXPECT_TRUE(NULL == model()->GetDefaultSearchProvider());
@@ -1409,7 +1420,8 @@ TEST_F(TemplateURLServiceTest, TestManagedDefaultSearch) {
 
   // Re-enable it.
   test_util_.SetManagedDefaultSearchPreferences(true, kName, kKeyword,
-      kSearchURL, std::string(), kIconURL, kEncodings);
+      kSearchURL, std::string(), kIconURL, kEncodings, kAlternateURL,
+      kSearchTermsReplacementKey);
   VerifyObserverFired();
   EXPECT_TRUE(model()->is_default_search_managed());
   EXPECT_EQ(initial_count + 2, model()->GetTemplateURLs().size());
@@ -1436,7 +1448,7 @@ TEST_F(TemplateURLServiceTest, TestManagedDefaultSearch) {
   test_util_.ResetModel(false);
   test_util_.SetManagedDefaultSearchPreferences(false, std::string(),
       std::string(), std::string(), std::string(), std::string(),
-      std::string());
+      std::string(), std::string(), std::string());
   test_util_.VerifyLoad();
   EXPECT_TRUE(model()->is_default_search_managed());
   EXPECT_TRUE(model()->GetDefaultSearchProvider() == NULL);

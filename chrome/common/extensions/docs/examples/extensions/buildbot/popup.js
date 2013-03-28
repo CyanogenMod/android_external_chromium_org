@@ -2,153 +2,253 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var botRoot = "http://build.chromium.org/p/chromium";
-var waterfallURL = botRoot + "/waterfall/bot_status.json?json=1";
-var botList;
-var checkinResults;
-var bots;
-var failures;
+var lkgrURL = 'http://chromium-status.appspot.com/lkgr';
 
-function updateBotList(text) {
-  var results = (new RegExp('(.*)<\/body>', 'g')).exec(text);
-  if (!results || results.index < 0) {
-    console.log("Error: couldn't find bot JSON");
-    console.log(text);
-    return;
-  }
-  var data;
-  try {
-    // The build bot returns invalid JSON. Namely it uses single
-    // quotes and includes commas in some invalid locations. We have to
-    // run some regexps across the text to fix it up.
-    var jsonString = results[1].replace(/'/g, '"').replace(/},]/g,'}]');
-    data = JSON.parse(jsonString);
-  } catch (e) {
-    console.dir(e);
-    console.log(text);
-    return;
-  }
-  if (!data) {
-    throw new Error("JSON parse fail: " + results[1]);
-  }
-  botList = data[0];
-  checkinResults = data[1];
+function getClassForTryJobResult(result) {
+  // Some win bots seem to report a null result while building.
+  if (result === null)
+    result = RUNNING;
 
-  failures = botList.filter(function(bot) {
-    return (bot.color != "success");
+  switch (parseInt(result)) {
+  case RUNNING:
+    return "running";
+
+  case SUCCESS:
+    return "success";
+
+  case WARNINGS:
+    return "warnings";
+
+  case FAILURE:
+    return "failure";
+
+  case SKIPPED:
+    return "skipped";
+
+  case EXCEPTION:
+    return "exception";
+
+  case RETRY:
+    return "retry";
+
+  case NOT_STARTED:
+  default:
+    return "never";
+  }
+}
+
+// Remove try jobs that have been supplanted by newer runs.
+function filterOldTryJobs(tryJobs) {
+  var latest = {};
+  tryJobs.forEach(function(tryJob) {
+    if (!latest[tryJob.builder] ||
+        latest[tryJob.builder].buildnumber < tryJob.buildnumber)
+      latest[tryJob.builder] = tryJob;
   });
-  displayFailures();
+
+  var result = [];
+  tryJobs.forEach(function(tryJob) {
+    if (tryJob.buildnumber == latest[tryJob.builder].buildnumber)
+      result.push(tryJob);
+  });
+
+  return result;
 }
 
-function displayFailures() {
-  bots.innerText = "";
+function createTryJobAnchorTitle(tryJob, fullTryJob) {
+  var title = tryJob.builder;
 
-  if (failures.length == 0) {
-    var anchor = document.createElement("a");
-    anchor.addEventListener("click", showConsole);
-    anchor.className = "open";
-    anchor.innerText = "The tree is completely green.";
-    bots.appendChild(anchor);
-    bots.appendChild(document.createTextNode(" (no way!)"));
+  if (!fullTryJob)
+    return title;
+
+  var stepText = [];
+  if (fullTryJob.currentStep)
+    stepText.push("running " + fullTryJob.currentStep.name);
+
+  if (fullTryJob.results == FAILURE && fullTryJob.text) {
+    stepText.push(fullTryJob.text.join(" "));
   } else {
-    var anchor = document.createElement("a");
-    anchor.addEventListener("click", showFailures);
-    anchor.innerText = "failures:";
-    var div = document.createElement("div");
-    div.appendChild(anchor);
-    bots.appendChild(div);
-
-    failures.forEach(function(bot, i) {
-      var div = document.createElement("div");
-      div.className = "bot " + bot.color;
-      div.addEventListener("click", function() {
-        // Requires closure for each iteration to retain local value of |i|.
-        return function() { showBot(i); }
-      }());
-      div.innerText = bot.title;
-      bots.appendChild(div);
+    // Sometimes a step can fail without setting the try job text.  Look
+    // through all the steps to identify if this is the case.
+    var text = [];
+    fullTryJob.steps.forEach(function(step) {
+      if (step.results[0] == FAILURE)
+        text.push(step.results[1][0]);
     });
-  }
-}
 
-function showURL(url) {
-  window.open(url);
-  window.event.stopPropagation();
-}
-
-function showBot(botIndex) {
-  var bot = failures[botIndex];
-  var url = botRoot + "/waterfall/waterfall?builder=" + bot.name;
-  showURL(url);
-}
-
-function showConsole() {
-  var url = botRoot + "/waterfall/console";
-  showURL(url);
-}
-
-function showTry() {
-  var url = botRoot + "/try-server/waterfall";
-  showURL(url);
-}
-
-function showFyi() {
-  var url = botRoot + "/waterfall.fyi/console";
-  showURL(url);
-}
-
-function showFailures() {
-  var url = botRoot +
-      "/waterfall/waterfall?show_events=true&failures_only=true";
-  showURL(url);
-}
-
-function requestURL(url, callback) {
-  console.log("requestURL: " + url);
-  var xhr = new XMLHttpRequest();
-  try {
-    xhr.onreadystatechange = function(state) {
-      if (xhr.readyState == 4) {
-        if (xhr.status == 200) {
-          var text = xhr.responseText;
-          //console.log(text);
-          callback(text);
-        } else {
-          bots.innerText = "Error.";
-        }
-      }
+    if (text.length > 0) {
+      text.unshift("failure");
+      stepText.push(text.join(" "));
     }
-
-    xhr.onerror = function(error) {
-      console.log("xhr error: " + JSON.stringify(error));
-      console.dir(error);
-    }
-
-    xhr.open("GET", url, true);
-    xhr.send({});
-  } catch(e) {
-    console.log("exception: " + e);
   }
+
+  if (stepText.length > 0)
+    title += ": " + stepText.join("; ");
+
+  return title;
 }
 
-function toggle_size() {
-  if (document.body.className == "big") {
-    document.body.className = "small";
-  } else {
-    document.body.className = "big";
-  }
+// Create an iframe mimicking the horizontal_one_box_per_builder format and
+// reuse its CSS, to get the same visual styling.
+function createPatchsetStatusElement(patchset) {
+  var cssURL = "http://chromium-build.appspot.com/p/chromium/default.css";
+  var content =
+    "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" " +
+    "\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\
+    <html>\
+  <head>\
+    <meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />\
+    <link href=\"" + cssURL + "\" rel=\"stylesheet\" type=\"text/css\" />\
+    <style>td {vertical-align: bottom;}</style>\
+  </head>\
+  <body vlink=\"#800080\">\
+    <table style=\"width: 100%\"><tr id=\"bot-table-row\"></tr></table>\
+  </body>\
+</html>";
+  var doc = (new DOMParser()).parseFromString(content, "text/xml");
+  var row = doc.getElementById("bot-table-row");
+
+  var tryJobs = filterOldTryJobs(patchset.try_job_results);
+  tryJobs.forEach(function(tryJob) {
+    var cell = doc.createElement("td");
+    cell.className = "mini-box";
+    row.appendChild(cell);
+
+    var key = tryJob.builder + "-" + tryJob.buildnumber;
+    var fullTryJob = patchset.full_try_job_results &&
+        patchset.full_try_job_results[key];
+
+    var tryJobAnchor = document.createElement("a");
+    tryJobAnchor.textContent = "  ";
+    tryJobAnchor.title = createTryJobAnchorTitle(tryJob, fullTryJob);
+    tryJobAnchor.className = "LastBuild " +
+      getClassForTryJobResult(tryJob.result);
+    tryJobAnchor.target = "_blank";
+    tryJobAnchor.href = tryJob.url;
+    cell.appendChild(tryJobAnchor);
+  });
+
+  var iframe = document.createElement("iframe");
+  iframe.className="statusiframe";
+  iframe.scrolling="no";
+  iframe.srcdoc = (new XMLSerializer).serializeToString(doc);
+  return iframe;
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-  toggle_size();
+function addTryStatusRows(table) {
+  var codereviewBaseURL = "https://codereview.chromium.org";
 
-  bots = document.getElementById("bots");
+  var background = chrome.extension.getBackgroundPage();
 
-  // XHR from onload winds up blocking the load, so we put it in a setTimeout.
-  window.setTimeout(requestURL, 0, waterfallURL, updateBotList);
+  var issues = [];
+  for (var key in background.activeIssues)
+    issues.push(background.activeIssues[key]);
 
-  // Setup event handlers
-  document.querySelector('#console').addEventListener('click', showConsole);
-  document.querySelector('#try').addEventListener('click', showTry);
-  document.querySelector('#fyi').addEventListener('click', showFyi);
-});
+  // Sort issues in descending order.
+  issues.sort(function(a, b) {return parseInt(b.issue) - parseInt(a.issue);});
+
+  issues.forEach(function(issue) {
+    var codereviewURL = codereviewBaseURL + "/" + issue.issue;
+
+    if (!issue.full_patchsets)
+      return;
+
+    var lastPatchset = issue.patchsets[issue.patchsets.length - 1];
+    var lastFullPatchset = issue.full_patchsets[lastPatchset];
+
+    if (!lastFullPatchset.try_job_results ||
+        lastFullPatchset.try_job_results.length == 0)
+      return;
+
+    var row = table.insertRow(-1);
+    var label = row.insertCell(-1);
+    label.className = "status-label";
+    var clAnchor = document.createElement("a");
+    clAnchor.textContent = "CL " + issue.issue;
+    clAnchor.href = codereviewURL;
+    clAnchor.title = issue.subject;
+    if (lastFullPatchset.message)
+      clAnchor.title += " | " + lastFullPatchset.message;
+    clAnchor.target = "_blank";
+    label.appendChild(clAnchor);
+
+    var status = row.insertCell(-1);
+    status.appendChild(createPatchsetStatusElement(lastFullPatchset));
+  });
+
+  if (issues.length > 0)
+    table.insertRow(-1).insertCell().className = "spacer";
+}
+
+function updateLKGR(lkgr) {
+  var link = document.getElementById('link_lkgr');
+  link.textContent = 'LKGR (' + lkgr + ')';
+}
+
+function addBotStatusRow(table, bot) {
+  var baseURL = "http://build.chromium.org/p/chromium" +
+    (bot.id != "" ? "." + bot.id : "");
+  var consoleURL = baseURL + "/console";
+  var statusURL = baseURL + "/horizontal_one_box_per_builder";
+
+  var row = table.insertRow(-1);
+  var label = row.insertCell(-1);
+  label.className = "status-label";
+  var labelAnchor = document.createElement("a");
+  labelAnchor.href = consoleURL;
+  labelAnchor.target = "_blank";
+  labelAnchor.id = "link_" + bot.id;
+  labelAnchor.textContent = bot.label;
+  label.appendChild(labelAnchor);
+
+  var status = row.insertCell(-1);
+  status.className = "botstatus";
+  var statusIframe = document.createElement("iframe");
+  statusIframe.className = "statusiframe";
+  statusIframe.scrolling = "no";
+  statusIframe.src = statusURL;
+  status.appendChild(statusIframe);
+}
+
+function addBotStatusRows(table) {
+  var closerBots = [
+    {id: "", label: "Chromium"},
+    {id: "win", label: "Win"},
+    {id: "mac", label: "Mac"},
+    {id: "linux", label: "Linux"},
+    {id: "chromiumos", label: "ChromiumOS"},
+    {id: "chrome", label: "Official"},
+    {id: "memory", label: "Memory"}
+  ];
+
+  var otherBots = [
+    {id: "lkgr", label: "LKGR"},
+    {id: "perf", label: "Perf"},
+    {id: "memory.fyi", label: "Memory FYI"},
+    {id: "gpu", label: "GPU"},
+    {id: "gpu.fyi", label: "GPU FYI"}
+  ];
+
+  closerBots.forEach(function(bot) {
+    addBotStatusRow(table, bot);
+  });
+
+  table.insertRow(-1).insertCell().className = "spacer";
+
+  otherBots.forEach(function(bot) {
+    addBotStatusRow(table, bot);
+  });
+}
+
+function fillStatusTable() {
+  var table = document.getElementById("status-table");
+  addTryStatusRows(table);
+  addBotStatusRows(table);
+}
+
+function main() {
+  requestURL(lkgrURL, "text", updateLKGR);
+  fillStatusTable();
+}
+
+main();

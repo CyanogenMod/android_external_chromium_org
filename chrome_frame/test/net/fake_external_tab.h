@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/cancelable_callback.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/message_loop.h"
 #include "base/process.h"
 #include "base/win/scoped_handle.h"
@@ -18,12 +18,15 @@
 #include "chrome_frame/test_utils.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/net_test_suite.h"
+#include "net/test/net_test_suite.h"
 
 class CommandLine;
 class FakeBrowserProcessImpl;
 class ProcessSingleton;
+
+namespace net {
 class ScopedCustomUrlRequestTestHttpHost;
+}  // namespace net
 
 namespace content {
 class NotificationService;
@@ -46,7 +49,7 @@ class FakeExternalTab {
   virtual void InitializePostThreadsCreated();
   virtual void Shutdown();
 
-  const FilePath& user_data() const {
+  const base::FilePath& user_data() const {
     return user_data_dir_;
   }
 
@@ -54,8 +57,8 @@ class FakeExternalTab {
 
  private:
   scoped_ptr<FakeBrowserProcessImpl> browser_process_;
-  FilePath overridden_user_dir_;
-  FilePath user_data_dir_;
+  base::FilePath overridden_user_dir_;
+  base::FilePath user_data_dir_;
   scoped_ptr<content::NotificationService> notificaton_service_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeExternalTab);
@@ -122,7 +125,7 @@ class CFUrlRequestUnittestRunner
   base::ProcessHandle crash_service_;
   DWORD test_thread_id_;
 
-  scoped_ptr<ScopedCustomUrlRequestTestHttpHost> override_http_host_;
+  scoped_ptr<net::ScopedCustomUrlRequestTestHttpHost> override_http_host_;
 
   scoped_ptr<test_server::SimpleWebServer> test_http_server_;
   test_server::SimpleResponse chrome_frame_html_;
@@ -144,8 +147,9 @@ class CFUrlRequestUnittestRunner
   void StartInitializationTimeout();
   void OnInitializationTimeout();
 
-  bool ProcessSingletonNotificationCallback(const CommandLine& command_line,
-                                            const FilePath& current_directory);
+  bool ProcessSingletonNotificationCallback(
+      const CommandLine& command_line,
+      const base::FilePath& current_directory);
 
   bool launch_browser_;
   bool prompt_after_setup_;
@@ -153,7 +157,7 @@ class CFUrlRequestUnittestRunner
   scoped_ptr<ProcessSingleton> process_singleton_;
   base::CancelableClosure timeout_closure_;
   scoped_ptr<logging_win::FileLogger> file_logger_;
-  FilePath log_file_;
+  base::FilePath log_file_;
   scoped_ptr<chrome_frame_test::IEConfigurator> ie_configurator_;
 
   DISALLOW_COPY_AND_ASSIGN(CFUrlRequestUnittestRunner);

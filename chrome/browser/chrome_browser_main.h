@@ -17,8 +17,8 @@
 #include "chrome/browser/task_profiler/auto_tracking.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "content/public/browser/browser_main_parts.h"
-#include "content/public/browser/browser_thread.h"
 
+class ActiveTabTracker;
 class BrowserProcessImpl;
 class ChromeBrowserMainExtraParts;
 class FieldTrialSynchronizer;
@@ -28,6 +28,7 @@ class Profile;
 class StartupBrowserCreator;
 class StartupTimeBomb;
 class ShutdownWatcherHelper;
+class ThreeDAPIObserver;
 class TranslateManager;
 
 namespace chrome_browser {
@@ -104,7 +105,6 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   const PrefService* local_state() const { return local_state_; }
 
  private:
-
   // Methods for |SetupMetricsAndFieldTrials()| --------------------------------
 
   // Constructs metrics service and does related initialization, including
@@ -177,16 +177,20 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   Profile* profile_;
   bool run_message_loop_;
   ProcessSingleton::NotifyResult notify_result_;
+  scoped_ptr<ThreeDAPIObserver> three_d_observer_;
 
   // Initialized in SetupMetricsAndFieldTrials.
   scoped_refptr<FieldTrialSynchronizer> field_trial_synchronizer_;
 
   // Members initialized in PreMainMessageLoopRun, needed in
   // PreMainMessageLoopRunThreadsCreated.
-  bool is_first_run_;
-  bool first_run_ui_bypass_;
+  bool do_first_run_tasks_;
   PrefService* local_state_;
-  FilePath user_data_dir_;
+  base::FilePath user_data_dir_;
+
+#if !defined(OS_ANDROID)
+  scoped_ptr<ActiveTabTracker> active_tab_tracker_;
+#endif
 
   // Members needed across shutdown methods.
   bool restart_last_session_;

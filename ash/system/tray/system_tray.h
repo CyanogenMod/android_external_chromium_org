@@ -34,6 +34,7 @@ class IMEObserver;
 class LocaleObserver;
 class LogoutButtonObserver;
 class PowerStatusObserver;
+class SystemTrayDelegate;
 class UpdateObserver;
 class UserObserver;
 #if defined(OS_CHROMEOS)
@@ -46,6 +47,7 @@ class SystemTrayItem;
 namespace internal {
 class SystemBubbleWrapper;
 class SystemTrayContainer;
+class TrayAccessibility;
 class TrayGestureHandler;
 }
 
@@ -61,8 +63,9 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   explicit SystemTray(internal::StatusAreaWidget* status_area_widget);
   virtual ~SystemTray();
 
-  // Creates the default set of items for the sytem tray.
-  void CreateItems();
+  // Calls TrayBackgroundView::Initialize(), creates the tray items, and
+  // adds them to SystemTrayNotifier.
+  void InitializeTrayItems(SystemTrayDelegate* delegate);
 
   // Adds a new item in the tray.
   void AddTrayItem(SystemTrayItem* item);
@@ -109,6 +112,12 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // of being created).
   bool HasSystemBubble() const;
 
+  // Returns true if there is a notification bubble.
+  bool HasNotificationBubble() const;
+
+  // Returns true if the system_bubble_ exists and is of type |type|.
+  bool HasSystemBubbleType(internal::SystemTrayBubble::BubbleType type);
+
   // Returns a pointer to the system bubble or NULL if none.
   internal::SystemTrayBubble* GetSystemBubble();
 
@@ -118,64 +127,13 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // Returns true if the mouse is inside the notification bubble.
   bool IsMouseInNotificationBubble() const;
 
-  AccessibilityObserver* accessibility_observer() {
-    return accessibility_observer_;
-  }
-  AudioObserver* audio_observer() {
-    return audio_observer_;
-  }
-  BluetoothObserver* bluetooth_observer() {
-    return bluetooth_observer_;
-  }
-  BrightnessObserver* brightness_observer() {
-    return brightness_observer_;
-  }
-  CapsLockObserver* caps_lock_observer() {
-    return caps_lock_observer_;
-  }
-  ClockObserver* clock_observer() {
-    return clock_observer_;
-  }
-  DriveObserver* drive_observer() {
-    return drive_observer_;
-  }
-  IMEObserver* ime_observer() {
-    return ime_observer_;
-  }
-  LocaleObserver* locale_observer() {
-    return locale_observer_;
-  }
-  LogoutButtonObserver* logout_button_observer() {
-    return logout_button_observer_;
-  }
-#if defined(OS_CHROMEOS)
-  NetworkObserver* network_observer() {
-    return network_observer_;
-  }
-  NetworkObserver* vpn_observer() {
-    return vpn_observer_;
-  }
-  SmsObserver* sms_observer() {
-    return sms_observer_;
-  }
-#endif
-  ObserverList<PowerStatusObserver>& power_status_observers() {
-    return power_status_observers_;
-  }
-  UpdateObserver* update_observer() {
-    return update_observer_;
-  }
-  UserObserver* user_observer() {
-    return user_observer_;
-  }
-
   // Accessors for testing.
 
   // Returns true if the bubble exists.
-  bool CloseBubbleForTest() const;
+  bool CloseSystemBubbleForTest() const;
+  bool CloseNotificationBubbleForTest() const;
 
   // Overridden from TrayBackgroundView.
-  virtual void Initialize() OVERRIDE;
   virtual void SetShelfAlignment(ShelfAlignment alignment) OVERRIDE;
   virtual void AnchorUpdated() OVERRIDE;
   virtual string16 GetAccessibleNameForTray() OVERRIDE;
@@ -193,9 +151,13 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
                                   AnchorAlignment anchor_alignment) OVERRIDE;
   virtual void HideBubble(const views::TrayBubbleView* bubble_view) OVERRIDE;
 
+  internal::TrayAccessibility* GetTrayAccessibilityForTest() {
+    return tray_accessibility_;
+  }
+
  private:
-  // Returns true if the system_bubble_ exists and is of type |type|.
-  bool HasSystemBubbleType(internal::SystemTrayBubble::BubbleType type);
+  // Creates the default set of items for the sytem tray.
+  void CreateItems(SystemTrayDelegate* delegate);
 
   // Resets |system_bubble_| and clears any related state.
   void DestroySystemBubble();
@@ -237,26 +199,6 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // Mappings of system tray item and it's view in the tray.
   std::map<SystemTrayItem*, views::View*> tray_item_map_;
 
-  // These observers are not owned by the tray.
-  AccessibilityObserver* accessibility_observer_;
-  AudioObserver* audio_observer_;
-  BluetoothObserver* bluetooth_observer_;
-  BrightnessObserver* brightness_observer_;
-  CapsLockObserver* caps_lock_observer_;
-  ClockObserver* clock_observer_;
-  DriveObserver* drive_observer_;
-  IMEObserver* ime_observer_;
-  LocaleObserver* locale_observer_;
-  LogoutButtonObserver* logout_button_observer_;
-#if defined(OS_CHROMEOS)
-  NetworkObserver* network_observer_;
-  NetworkObserver* vpn_observer_;
-  SmsObserver* sms_observer_;
-#endif
-  ObserverList<PowerStatusObserver> power_status_observers_;
-  UpdateObserver* update_observer_;
-  UserObserver* user_observer_;
-
   // Bubble for default and detailed views.
   scoped_ptr<internal::SystemBubbleWrapper> system_bubble_;
 
@@ -270,6 +212,8 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // Set to true when system notifications should be hidden (e.g. web
   // notification bubble is visible).
   bool hide_notifications_;
+
+  internal::TrayAccessibility* tray_accessibility_;  // not owned
 
   DISALLOW_COPY_AND_ASSIGN(SystemTray);
 };

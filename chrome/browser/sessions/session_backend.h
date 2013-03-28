@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/sessions/base_session_service.h"
 #include "chrome/browser/sessions/session_command.h"
+#include "chrome/common/cancelable_task_tracker.h"
 
 namespace net {
 class FileStream;
@@ -46,13 +47,14 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
   // indicates which service is using this backend. |type| is used to determine
   // the name of the files to use as well as for logging.
   SessionBackend(BaseSessionService::SessionType type,
-                 const FilePath& path_to_dir);
+                 const base::FilePath& path_to_dir);
 
   // Moves the current file to the last file, and recreates the current file.
   //
   // NOTE: this is invoked before every command, and does nothing if we've
   // already Init'ed.
   void Init();
+  bool inited() const { return inited_; }
 
   // Appends the specified commands to the current file. If reset_first is
   // true the the current file is recreated.
@@ -65,7 +67,8 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
   // Invoked from the service to read the commands that make up the last
   // session, invokes ReadLastSessionCommandsImpl to do the work.
   void ReadLastSessionCommands(
-      scoped_refptr<BaseSessionService::InternalGetCommandsRequest> request);
+      const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+      const BaseSessionService::InternalGetCommandsCallback& callback);
 
   // Reads the commands from the last file.
   //
@@ -80,11 +83,6 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
   // called during startup and if the user launchs the app and no tabbed
   // browsers are running.
   void MoveCurrentSessionToLastSession();
-
-  // Invoked from the service to read the commands that make up the current
-  // session, invokes ReadCurrentSessionCommandsImpl to do the work.
-  void ReadCurrentSessionCommands(
-      scoped_refptr<BaseSessionService::InternalGetCommandsRequest> request);
 
   // Reads the commands from the current file.
   //
@@ -107,7 +105,7 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
 
   // Opens the current file and writes the header. On success a handle to
   // the file is returned.
-  net::FileStream* OpenAndWriteHeader(const FilePath& path);
+  net::FileStream* OpenAndWriteHeader(const base::FilePath& path);
 
   // Appends the specified commands to the specified file.
   bool AppendCommandsToFile(net::FileStream* file,
@@ -116,13 +114,13 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
   const BaseSessionService::SessionType type_;
 
   // Returns the path to the last file.
-  FilePath GetLastSessionPath();
+  base::FilePath GetLastSessionPath();
 
   // Returns the path to the current file.
-  FilePath GetCurrentSessionPath();
+  base::FilePath GetCurrentSessionPath();
 
   // Directory files are relative to.
-  const FilePath path_to_dir_;
+  const base::FilePath path_to_dir_;
 
   // Whether the previous target file is valid.
   bool last_session_valid_;

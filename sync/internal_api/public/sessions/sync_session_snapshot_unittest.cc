@@ -33,12 +33,6 @@ TEST_F(SyncSessionSnapshotTest, SyncSessionSnapshotToValue) {
   model_neutral.num_local_overwrites = 15;
   model_neutral.num_server_overwrites = 18;
 
-  const bool kIsShareUsable = true;
-
-  const ModelTypeSet initial_sync_ended(BOOKMARKS, PREFERENCES);
-  scoped_ptr<ListValue> expected_initial_sync_ended_value(
-      ModelTypeSetToValue(initial_sync_ended));
-
   ProgressMarkerMap download_progress_markers;
   download_progress_markers[BOOKMARKS] = "test";
   download_progress_markers[APPS] = "apps";
@@ -53,18 +47,24 @@ TEST_F(SyncSessionSnapshotTest, SyncSessionSnapshotToValue) {
   SyncSourceInfo source;
   scoped_ptr<DictionaryValue> expected_source_value(source.ToValue());
 
+  std::vector<SyncSourceInfo> debug_info_sources_list;
+  debug_info_sources_list.push_back(source);
+  scoped_ptr<ListValue> expected_sources_list_value(new ListValue());
+  expected_sources_list_value->Append(source.ToValue());
+
   SyncSessionSnapshot snapshot(model_neutral,
-                               kIsShareUsable,
-                               initial_sync_ended,
                                download_progress_markers,
                                kIsSilenced,
                                kNumEncryptionConflicts,
                                kNumHierarchyConflicts,
                                kNumServerConflicts,
                                source,
+                               debug_info_sources_list,
                                false,
                                0,
-                               base::Time::Now());
+                               base::Time::Now(),
+                               std::vector<int>(MODEL_TYPE_COUNT,0),
+                               std::vector<int>(MODEL_TYPE_COUNT, 0));
   scoped_ptr<DictionaryValue> value(snapshot.ToValue());
   EXPECT_EQ(18u, value->size());
   ExpectDictIntegerValue(model_neutral.num_successful_commits,
@@ -83,9 +83,6 @@ TEST_F(SyncSessionSnapshotTest, SyncSessionSnapshotToValue) {
                          *value, "numServerOverwrites");
   ExpectDictIntegerValue(model_neutral.num_server_changes_remaining,
                          *value, "numServerChangesRemaining");
-  ExpectDictBooleanValue(kIsShareUsable, *value, "isShareUsable");
-  ExpectDictListValue(*expected_initial_sync_ended_value, *value,
-                      "initialSyncEnded");
   ExpectDictDictionaryValue(*expected_download_progress_markers_value,
                             *value, "downloadProgressMarkers");
   ExpectDictBooleanValue(kIsSilenced, *value, "isSilenced");
@@ -96,6 +93,7 @@ TEST_F(SyncSessionSnapshotTest, SyncSessionSnapshotToValue) {
   ExpectDictIntegerValue(kNumServerConflicts, *value,
                          "numServerConflicts");
   ExpectDictDictionaryValue(*expected_source_value, *value, "source");
+  ExpectDictListValue(*expected_sources_list_value, *value, "sourcesList");
   ExpectDictBooleanValue(false, *value, "notificationsEnabled");
 }
 

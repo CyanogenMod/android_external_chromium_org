@@ -14,7 +14,7 @@
 #include "chrome/renderer/automation/automation_renderer_helper.h"
 #include "content/public/renderer/render_view.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
 
 namespace {
@@ -34,7 +34,8 @@ void CompareSnapshot(const std::vector<unsigned char>& png_data,
   std::string png_data_str(reinterpret_cast<const char*>(&png_data[0]),
                            png_data.size());
   if (CommandLine::ForCurrentProcess()->HasSwitch("dump-test-image")) {
-    FilePath path = FilePath().AppendASCII("snapshot" + reference_md5 + ".png");
+    base::FilePath path =
+        base::FilePath().AppendASCII("snapshot" + reference_md5 + ".png");
     EXPECT_EQ(file_util::WriteFile(path, png_data_str.c_str(), png_data.size()),
               static_cast<int>(png_data.size()));
   }

@@ -8,8 +8,8 @@
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
 #include "base/string_util.h"
-#include "net/base/host_resolver.h"
 #include "net/cookies/cookie_store.h"
+#include "net/dns/host_resolver.h"
 #include "net/ftp/ftp_transaction_factory.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/http_user_agent_settings.h"
@@ -83,11 +83,6 @@ URLRequest* URLRequestContext::CreateRequest(
 
 void URLRequestContext::set_cookie_store(CookieStore* cookie_store) {
   cookie_store_ = cookie_store;
-}
-
-std::string URLRequestContext::GetAcceptCharset() const {
-  return http_user_agent_settings_ ?
-      http_user_agent_settings_->GetAcceptCharset() : EmptyString();
 }
 
 std::string URLRequestContext::GetAcceptLanguage() const {

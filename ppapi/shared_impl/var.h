@@ -9,12 +9,17 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/platform_file.h"
+#include "base/shared_memory.h"
 #include "ppapi/c/pp_var.h"
+#include "ppapi/shared_impl/host_resource.h"
 #include "ppapi/shared_impl/ppapi_shared_export.h"
 
 namespace ppapi {
 
 class ArrayBufferVar;
+class ArrayVar;
+class DictionaryVar;
 class NPObjectVar;
 class ProxyObjectVar;
 class StringVar;
@@ -34,6 +39,8 @@ class PPAPI_SHARED_EXPORT Var : public base::RefCounted<Var> {
   virtual ArrayBufferVar* AsArrayBufferVar();
   virtual NPObjectVar* AsNPObjectVar();
   virtual ProxyObjectVar* AsProxyObjectVar();
+  virtual ArrayVar* AsArrayVar();
+  virtual DictionaryVar* AsDictionaryVar();
 
   // Creates a PP_Var corresponding to this object. The return value will have
   // one reference addrefed on behalf of the caller.
@@ -155,6 +162,18 @@ class PPAPI_SHARED_EXPORT ArrayBufferVar : public Var {
   virtual void* Map() = 0;
   virtual void Unmap() = 0;
   virtual uint32 ByteLength() = 0;
+
+  // Creates a new shared memory region, and copies the data in the
+  // ArrayBufferVar into it. On the plugin side, host_shm_handle_id will be set
+  // to some value that is not -1. On the host side, plugin_shm_handle will be
+  // set to a valid SharedMemoryHandle.
+  //
+  // Returns true if creating the shared memory (and copying) is successful,
+  // false otherwise.
+  virtual bool CopyToNewShmem(
+      PP_Instance instance,
+      int *host_shm_handle_id,
+      base::SharedMemoryHandle *plugin_shm_handle) = 0;
 
   // Var override.
   virtual ArrayBufferVar* AsArrayBufferVar() OVERRIDE;

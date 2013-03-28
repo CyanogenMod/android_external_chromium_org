@@ -9,13 +9,13 @@
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/webdata/webdata_constants.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/common/content_constants.h"
 #include "sql/connection.h"
-#include "sql/diagnostic_error_delegate.h"
 #include "sql/statement.h"
 #include "third_party/sqlite/sqlite3.h"
 #include "webkit/appcache/appcache_interfaces.h"
@@ -27,16 +27,16 @@ namespace {
 class SqliteIntegrityTest : public DiagnosticTest {
  public:
   SqliteIntegrityTest(bool critical, const string16& title,
-                      const FilePath& profile_relative_db_path)
+                      const base::FilePath& profile_relative_db_path)
       : DiagnosticTest(title),
         critical_(critical),
         db_path_(profile_relative_db_path) {
   }
 
-  virtual int GetId() { return 0; }
+  virtual int GetId() OVERRIDE { return 0; }
 
-  virtual bool ExecuteImpl(DiagnosticsModel::Observer* observer) {
-    FilePath path = GetUserDefaultProfileDir();
+  virtual bool ExecuteImpl(DiagnosticsModel::Observer* observer) OVERRIDE {
+    base::FilePath path = GetUserDefaultProfileDir();
     path = path.Append(db_path_);
     if (!file_util::PathExists(path)) {
       RecordOutcome(ASCIIToUTF16("File not found"),
@@ -84,74 +84,49 @@ class SqliteIntegrityTest : public DiagnosticTest {
 
  private:
   bool critical_;
-  FilePath db_path_;
+  base::FilePath db_path_;
   DISALLOW_COPY_AND_ASSIGN(SqliteIntegrityTest);
-};
-
-// Uniquifier to use the sql::DiagnosticErrorDelegate template which
-// requires a static name() method.
-template <size_t unique>
-class HistogramUniquifier {
- public:
-  static const char* name() {
-    const char* kHistogramNames[] = {
-      "Sqlite.Thumbnail.Error",
-      "Sqlite.Text.Error",
-      "Sqlite.Web.Error"
-    };
-    return kHistogramNames[unique];
-  }
 };
 
 }  // namespace
 
-sql::ErrorDelegate* GetErrorHandlerForThumbnailDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier<0> >();
-}
-
-sql::ErrorDelegate* GetErrorHandlerForTextDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier<1> >();
-}
-
-sql::ErrorDelegate* GetErrorHandlerForWebDb() {
-  return new sql::DiagnosticErrorDelegate<HistogramUniquifier<2> >();
-}
-
 DiagnosticTest* MakeSqliteWebDbTest() {
   return new SqliteIntegrityTest(true, ASCIIToUTF16("Web DB"),
-                                 FilePath(chrome::kWebDataFilename));
+                                 base::FilePath(kWebDataFilename));
 }
 
 DiagnosticTest* MakeSqliteCookiesDbTest() {
   return new SqliteIntegrityTest(true, ASCIIToUTF16("Cookies DB"),
-                                 FilePath(chrome::kCookieFilename));
+                                 base::FilePath(chrome::kCookieFilename));
 }
 
 DiagnosticTest* MakeSqliteHistoryDbTest() {
   return new SqliteIntegrityTest(true, ASCIIToUTF16("History DB"),
-                                 FilePath(chrome::kHistoryFilename));
+                                 base::FilePath(chrome::kHistoryFilename));
 }
 
 DiagnosticTest* MakeSqliteArchivedHistoryDbTest() {
-  return new SqliteIntegrityTest(false, ASCIIToUTF16("Archived History DB"),
-                                 FilePath(chrome::kArchivedHistoryFilename));
+  return new SqliteIntegrityTest(
+      false, ASCIIToUTF16("Archived History DB"),
+      base::FilePath(chrome::kArchivedHistoryFilename));
 }
 
 DiagnosticTest* MakeSqliteThumbnailsDbTest() {
   return new SqliteIntegrityTest(false, ASCIIToUTF16("Thumbnails DB"),
-                                 FilePath(chrome::kThumbnailsFilename));
+                                 base::FilePath(chrome::kThumbnailsFilename));
 }
 
 DiagnosticTest* MakeSqliteAppCacheDbTest() {
-  FilePath appcache_dir(content::kAppCacheDirname);
-  FilePath appcache_db = appcache_dir.Append(appcache::kAppCacheDatabaseName);
+  base::FilePath appcache_dir(content::kAppCacheDirname);
+  base::FilePath appcache_db =
+      appcache_dir.Append(appcache::kAppCacheDatabaseName);
   return new SqliteIntegrityTest(false, ASCIIToUTF16("AppCache DB"),
                                  appcache_db);
 }
 
 DiagnosticTest* MakeSqliteWebDatabaseTrackerDbTest() {
-  FilePath databases_dir(webkit_database::kDatabaseDirectoryName);
-  FilePath tracker_db =
+  base::FilePath databases_dir(webkit_database::kDatabaseDirectoryName);
+  base::FilePath tracker_db =
       databases_dir.Append(webkit_database::kTrackerDatabaseFileName);
   return new SqliteIntegrityTest(false, ASCIIToUTF16("DatabaseTracker DB"),
                                  tracker_db);

@@ -4,18 +4,19 @@
 
 #include "net/http/http_stream_parser.h"
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
-#include "base/scoped_temp_dir.h"
 #include "base/string_piece.h"
 #include "base/stringprintf.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
-#include "net/base/upload_data.h"
+#include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_data_stream.h"
+#include "net/base/upload_file_element_reader.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_info.h"
@@ -95,65 +96,68 @@ TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_NoBody) {
 }
 
 TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_EmptyBody) {
-  scoped_refptr<UploadData> upload_data = new UploadData;
-  scoped_ptr<UploadDataStream> body(new UploadDataStream(upload_data));
-  ASSERT_EQ(OK, body->InitSync());
+  ScopedVector<UploadElementReader> element_readers;
+  scoped_ptr<UploadDataStream> body(new UploadDataStream(&element_readers, 0));
+  ASSERT_EQ(OK, body->Init(CompletionCallback()));
   // Shouldn't be merged if upload data is empty.
   ASSERT_FALSE(HttpStreamParser::ShouldMergeRequestHeadersAndBody(
       "some header", body.get()));
 }
 
 TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_ChunkedBody) {
-  scoped_refptr<UploadData> upload_data = new UploadData;
-  upload_data->set_is_chunked(true);
   const std::string payload = "123";
-  upload_data->AppendChunk(payload.data(), payload.size(), true);
-
-  scoped_ptr<UploadDataStream> body(new UploadDataStream(upload_data));
-  ASSERT_EQ(OK, body->InitSync());
+  scoped_ptr<UploadDataStream> body(
+      new UploadDataStream(UploadDataStream::CHUNKED, 0));
+  body->AppendChunk(payload.data(), payload.size(), true);
+  ASSERT_EQ(OK, body->Init(CompletionCallback()));
   // Shouldn't be merged if upload data carries chunked data.
   ASSERT_FALSE(HttpStreamParser::ShouldMergeRequestHeadersAndBody(
       "some header", body.get()));
 }
 
 TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_FileBody) {
-  scoped_refptr<UploadData> upload_data = new UploadData;
+  ScopedVector<UploadElementReader> element_readers;
 
   // Create an empty temporary file.
-  ScopedTempDir temp_dir;
+  base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  FilePath temp_file_path;
+  base::FilePath temp_file_path;
   ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir.path(),
                                                   &temp_file_path));
 
-  upload_data->AppendFileRange(temp_file_path, 0, 0, base::Time());
+  element_readers.push_back(new UploadFileElementReader(
+      base::MessageLoopProxy::current(), temp_file_path, 0, 0, base::Time()));
 
-  scoped_ptr<UploadDataStream> body(new UploadDataStream(upload_data));
-  ASSERT_EQ(OK, body->InitSync());
+  scoped_ptr<UploadDataStream> body(new UploadDataStream(&element_readers, 0));
+  TestCompletionCallback callback;
+  ASSERT_EQ(ERR_IO_PENDING, body->Init(callback.callback()));
+  ASSERT_EQ(OK, callback.WaitForResult());
   // Shouldn't be merged if upload data carries a file, as it's not in-memory.
   ASSERT_FALSE(HttpStreamParser::ShouldMergeRequestHeadersAndBody(
       "some header", body.get()));
 }
 
 TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_SmallBodyInMemory) {
-  scoped_refptr<UploadData> upload_data = new UploadData;
+  ScopedVector<UploadElementReader> element_readers;
   const std::string payload = "123";
-  upload_data->AppendBytes(payload.data(), payload.size());
+  element_readers.push_back(new UploadBytesElementReader(
+      payload.data(), payload.size()));
 
-  scoped_ptr<UploadDataStream> body(new UploadDataStream(upload_data));
-  ASSERT_EQ(OK, body->InitSync());
+  scoped_ptr<UploadDataStream> body(new UploadDataStream(&element_readers, 0));
+  ASSERT_EQ(OK, body->Init(CompletionCallback()));
   // Yes, should be merged if the in-memory body is small here.
   ASSERT_TRUE(HttpStreamParser::ShouldMergeRequestHeadersAndBody(
       "some header", body.get()));
 }
 
 TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_LargeBodyInMemory) {
-  scoped_refptr<UploadData> upload_data = new UploadData;
+  ScopedVector<UploadElementReader> element_readers;
   const std::string payload(10000, 'a');  // 'a' x 10000.
-  upload_data->AppendBytes(payload.data(), payload.size());
+  element_readers.push_back(new UploadBytesElementReader(
+      payload.data(), payload.size()));
 
-  scoped_ptr<UploadDataStream> body(new UploadDataStream(upload_data));
-  ASSERT_EQ(OK, body->InitSync());
+  scoped_ptr<UploadDataStream> body(new UploadDataStream(&element_readers, 0));
+  ASSERT_EQ(OK, body->Init(CompletionCallback()));
   // Shouldn't be merged if the in-memory body is large here.
   ASSERT_FALSE(HttpStreamParser::ShouldMergeRequestHeadersAndBody(
       "some header", body.get()));
@@ -194,14 +198,9 @@ TEST(HttpStreamParser, AsyncChunkAndAsyncSocket) {
     MockRead(SYNCHRONOUS, 0, 8),  // EOF
   };
 
-  scoped_refptr<UploadData> upload_data(new UploadData);
-  upload_data->set_is_chunked(true);
-
-  upload_data->AppendChunk(kChunk1, arraysize(kChunk1) - 1, false);
-
-  scoped_ptr<UploadDataStream> upload_stream(
-      new UploadDataStream(upload_data));
-  ASSERT_EQ(OK, upload_stream->InitSync());
+  UploadDataStream upload_stream(UploadDataStream::CHUNKED, 0);
+  upload_stream.AppendChunk(kChunk1, arraysize(kChunk1) - 1, false);
+  ASSERT_EQ(OK, upload_stream.Init(CompletionCallback()));
 
   DeterministicSocketData data(reads, arraysize(reads),
                                writes, arraysize(writes));
@@ -223,6 +222,7 @@ TEST(HttpStreamParser, AsyncChunkAndAsyncSocket) {
   request_info.method = "GET";
   request_info.url = GURL("http://localhost");
   request_info.load_flags = LOAD_NORMAL;
+  request_info.upload_data_stream = &upload_stream;
 
   scoped_refptr<GrowableIOBuffer> read_buffer(new GrowableIOBuffer);
   HttpStreamParser parser(socket_handle.get(), &request_info, read_buffer,
@@ -237,8 +237,7 @@ TEST(HttpStreamParser, AsyncChunkAndAsyncSocket) {
   // This will attempt to Write() the initial request and headers, which will
   // complete asynchronously.
   rv = parser.SendRequest("GET /one.html HTTP/1.1\r\n", request_headers,
-                          upload_stream.get(), &response_info,
-                          callback.callback());
+                          &response_info, callback.callback());
   ASSERT_EQ(ERR_IO_PENDING, rv);
 
   // Complete the initial request write. Additionally, this should enqueue the
@@ -248,7 +247,7 @@ TEST(HttpStreamParser, AsyncChunkAndAsyncSocket) {
 
   // Now append another chunk (while the first write is still pending), which
   // should not confuse the state machine.
-  upload_data->AppendChunk(kChunk2, arraysize(kChunk2) - 1, false);
+  upload_stream.AppendChunk(kChunk2, arraysize(kChunk2) - 1, false);
   ASSERT_FALSE(callback.have_result());
 
   // Complete writing the first chunk, which should then enqueue the second
@@ -265,7 +264,7 @@ TEST(HttpStreamParser, AsyncChunkAndAsyncSocket) {
 
   // Add the final chunk. This will enqueue another write, but it will not
   // complete due to the async nature.
-  upload_data->AppendChunk(kChunk3, arraysize(kChunk3) - 1, true);
+  upload_stream.AppendChunk(kChunk3, arraysize(kChunk3) - 1, true);
   ASSERT_FALSE(callback.have_result());
 
   // Finalize writing the last chunk, which will enqueue the trailer.

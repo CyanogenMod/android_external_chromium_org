@@ -20,6 +20,9 @@ class CONTENT_EXPORT NavigationEntryImpl
  public:
   static NavigationEntryImpl* FromNavigationEntry(NavigationEntry* entry);
 
+  // The value of bindings() before it is set during commit.
+  static int kInvalidBindings;
+
   NavigationEntryImpl();
   NavigationEntryImpl(SiteInstanceImpl* instance,
                       int page_id,
@@ -73,6 +76,13 @@ class CONTENT_EXPORT NavigationEntryImpl
   virtual base::Time GetTimestamp() const OVERRIDE;
   virtual void SetCanLoadLocalResources(bool allow) OVERRIDE;
   virtual bool GetCanLoadLocalResources() const OVERRIDE;
+  virtual void SetFrameToNavigate(const std::string& frame_name) OVERRIDE;
+  virtual const std::string& GetFrameToNavigate() const OVERRIDE;
+  virtual void SetExtraData(const std::string& key,
+                            const string16& data) OVERRIDE;
+  virtual bool GetExtraData(const std::string& key,
+                            string16* data) const OVERRIDE;
+  virtual void ClearExtraData(const std::string& key) OVERRIDE;
 
   void set_unique_id(int unique_id) {
     unique_id_ = unique_id;
@@ -87,6 +97,14 @@ class CONTENT_EXPORT NavigationEntryImpl
   void set_site_instance(SiteInstanceImpl* site_instance);
   SiteInstanceImpl* site_instance() const {
     return site_instance_.get();
+  }
+
+  // Remember the set of bindings granted to this NavigationEntry at the time
+  // of commit, to ensure that we do not grant it additional bindings if we
+  // navigate back to it in the future.  This can only be changed once.
+  void SetBindings(int bindings);
+  int bindings() const {
+    return bindings_;
   }
 
   void set_page_type(PageType page_type) {
@@ -157,25 +175,34 @@ class CONTENT_EXPORT NavigationEntryImpl
     return transferred_global_request_id_;
   }
 
-  // Whether this (pending) navigation is reload across site instances.
+  // Whether this (pending) navigation needs to replace current entry.
   // Resets to false after commit.
-  void set_is_cross_site_reload(bool is_cross_site_reload) {
-    is_cross_site_reload_ = is_cross_site_reload;
+  bool should_replace_entry() const {
+    return should_replace_entry_;
   }
-  bool is_cross_site_reload() const {
-    return is_cross_site_reload_;
+
+  void set_should_replace_entry(bool should_replace_entry) {
+    should_replace_entry_ = should_replace_entry;
+  }
+
+  void SetScreenshotPNGData(const std::vector<unsigned char>& png_data);
+  const scoped_refptr<base::RefCountedBytes> screenshot() const {
+    return screenshot_;
   }
 
  private:
   // WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
   // Session/Tab restore save portions of this class so that it can be recreated
   // later. If you add a new field that needs to be persisted you'll have to
-  // update SessionService/TabRestoreService appropriately.
+  // update SessionService/TabRestoreService and Android WebView
+  // state_serializer.cc appropriately.
   // WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
 
   // See the accessors above for descriptions.
   int unique_id_;
   scoped_refptr<SiteInstanceImpl> site_instance_;
+  // TODO(creis): Persist bindings_. http://crbug.com/173672.
+  int bindings_;
   PageType page_type_;
   GURL url_;
   Referrer referrer_;
@@ -201,10 +228,20 @@ class CONTENT_EXPORT NavigationEntryImpl
   // copied with compiler provided copy constructor.
   scoped_refptr<const base::RefCountedMemory> browser_initiated_post_data_;
 
+  // This is also a transient member (i.e. is not persisted with session
+  // restore). The screenshot of a page is taken when navigating away from the
+  // page. This screenshot is displayed during an overscroll-navigation
+  // gesture. |screenshot_| will be NULL when the screenshot is not available
+  // (e.g. after a session restore, or if taking the screenshot of a page
+  // failed). The UI is responsible for dealing with missing screenshots
+  // appropriately (e.g. display a placeholder image instead).
+  scoped_refptr<base::RefCountedBytes> screenshot_;
+
   // This member is not persisted with session restore.
   std::string extra_headers_;
 
-  // Used for specifying base URL for pages loaded via data URLs. Not persisted.
+  // Used for specifying base URL for pages loaded via data URLs. Only used and
+  // persisted by Android WebView.
   GURL base_url_for_data_url_;
 
   // Whether the entry, while loading, was created for a renderer-initiated
@@ -232,11 +269,24 @@ class CONTENT_EXPORT NavigationEntryImpl
   // In such case, we must treat it as an existing navigation in the new site
   // instance, instead of a new navigation. This value should not be persisted
   // and is not needed after the entry commits.
-  bool is_cross_site_reload_;
+  //
+  // We also use this flag for cross-process redirect navigations, so that the
+  // browser will replace the current navigation entry (which is the page
+  // doing the redirect).
+  bool should_replace_entry_;
 
   // Set when this entry should be able to access local file:// resources. This
   // value is not needed after the entry commits and is not persisted.
   bool can_load_local_resources_;
+
+  // If not empty, the name of the frame to navigate. This field is not
+  // persisted, because it is currently only used in tests.
+  std::string frame_to_navigate_;
+
+  // Used to store extra data to support browser features. This member is not
+  // persisted, unless specific data is taken out/put back in at save/restore
+  // time (see TabNavigation for an example of this).
+  std::map<std::string, string16> extra_data_;
 
   // Copy and assignment is explicitly allowed for this class.
 };

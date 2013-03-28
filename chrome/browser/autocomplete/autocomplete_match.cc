@@ -6,10 +6,10 @@
 
 #include "base/i18n/time_formatting.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
 #include "base/string16.h"
+#include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
@@ -343,7 +343,7 @@ void AutocompleteMatch::AddLastClassificationIfNecessary(
 // static
 string16 AutocompleteMatch::SanitizeString(const string16& text) {
   // NOTE: This logic is mirrored by |sanitizeString()| in
-  // schema_generated_bindings.js.
+  // omnibox_custom_bindings.js.
   string16 result;
   TrimWhitespace(text, TRIM_LEADING, &result);
   RemoveChars(result, kInvalidChars, &result);
@@ -450,7 +450,7 @@ void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,
 
 void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,
                                              int value) {
-  RecordAdditionalInfo(property, StringPrintf("%d", value));
+  RecordAdditionalInfo(property, base::StringPrintf("%d", value));
 }
 
 void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,

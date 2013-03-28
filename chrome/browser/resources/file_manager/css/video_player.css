@@ -56,6 +56,14 @@ video {
   opacity: 0;
 }
 
+#video-player:not([tools]) {
+  cursor: none;
+}
+
+#video-player[disabled] .tool {
+  display: none;
+}
+
 .tool {
   -webkit-transition: opacity 180ms linear;
 }

@@ -13,10 +13,10 @@ namespace {
 
 ppapi::DeviceRefData FromStreamDeviceInfo(const StreamDeviceInfo& info) {
   ppapi::DeviceRefData data;
-  data.id = info.device_id;
-  data.name = info.name;
+  data.id = info.device.id;
+  data.name = info.device.name;
   data.type = PepperDeviceEnumerationEventHandler::FromMediaStreamType(
-      info.stream_type);
+      info.device.type);
   return data;
 }
 
@@ -35,6 +35,11 @@ int PepperDeviceEnumerationEventHandler::RegisterEnumerateDevicesCallback(
     const webkit::ppapi::PluginDelegate::EnumerateDevicesCallback& callback) {
   enumerate_callbacks_[next_id_] = callback;
   return next_id_++;
+}
+
+void PepperDeviceEnumerationEventHandler::UnregisterEnumerateDevicesCallback(
+    int request_id) {
+  enumerate_callbacks_.erase(request_id);
 }
 
 int PepperDeviceEnumerationEventHandler::RegisterOpenDeviceCallback(
@@ -121,7 +126,6 @@ void PepperDeviceEnumerationEventHandler::NotifyDevicesEnumerated(
 
   webkit::ppapi::PluginDelegate::EnumerateDevicesCallback callback =
       iter->second;
-  enumerate_callbacks_.erase(iter);
 
   std::vector<ppapi::DeviceRefData> devices;
   if (succeeded) {

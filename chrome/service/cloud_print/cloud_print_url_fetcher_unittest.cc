@@ -21,13 +21,14 @@
 using base::Time;
 using base::TimeDelta;
 
-namespace {
+namespace cloud_print {
 
-const FilePath::CharType kDocRoot[] = FILE_PATH_LITERAL("chrome/test/data");
+const base::FilePath::CharType kDocRoot[] =
+    FILE_PATH_LITERAL("chrome/test/data");
 
 int g_request_context_getter_instances = 0;
 class TrackingTestURLRequestContextGetter
-    : public TestURLRequestContextGetter {
+    : public net::TestURLRequestContextGetter {
  public:
   explicit TrackingTestURLRequestContextGetter(
       base::MessageLoopProxy* io_message_loop_proxy,
@@ -38,9 +39,9 @@ class TrackingTestURLRequestContextGetter
     g_request_context_getter_instances++;
   }
 
-  virtual TestURLRequestContext* GetURLRequestContext() OVERRIDE {
+  virtual net::TestURLRequestContext* GetURLRequestContext() OVERRIDE {
     if (!context_.get()) {
-      context_.reset(new TestURLRequestContext(true));
+      context_.reset(new net::TestURLRequestContext(true));
       context_->set_throttler_manager(throttler_manager_);
       context_->Init();
     }
@@ -55,7 +56,7 @@ class TrackingTestURLRequestContextGetter
  private:
   // Not owned here.
   net::URLRequestThrottlerManager* throttler_manager_;
-  scoped_ptr<TestURLRequestContext> context_;
+  scoped_ptr<net::TestURLRequestContext> context_;
 };
 
 class TestCloudPrintURLFetcher : public CloudPrintURLFetcher {
@@ -65,7 +66,7 @@ class TestCloudPrintURLFetcher : public CloudPrintURLFetcher {
       : io_message_loop_proxy_(io_message_loop_proxy) {
   }
 
-  virtual net::URLRequestContextGetter* GetRequestContextGetter() {
+  virtual net::URLRequestContextGetter* GetRequestContextGetter() OVERRIDE {
     return new TrackingTestURLRequestContextGetter(
         io_message_loop_proxy_.get(), throttler_manager());
   }
@@ -99,14 +100,14 @@ class CloudPrintURLFetcherTest : public testing::Test,
       const net::URLRequestStatus& status,
       int response_code,
       const net::ResponseCookies& cookies,
-      const std::string& data);
+      const std::string& data) OVERRIDE;
 
-  virtual CloudPrintURLFetcher::ResponseAction OnRequestAuthError() {
+  virtual CloudPrintURLFetcher::ResponseAction OnRequestAuthError() OVERRIDE {
     ADD_FAILURE();
     return CloudPrintURLFetcher::STOP_PROCESSING;
   }
 
-  virtual std::string GetAuthHeader() {
+  virtual std::string GetAuthHeader() OVERRIDE {
     return std::string();
   }
 
@@ -126,7 +127,7 @@ class CloudPrintURLFetcherTest : public testing::Test,
     // Deleting the fetcher causes a task to be posted to the IO thread to
     // release references to the URLRequestContextGetter. We need to run all
     // pending tasks to execute that (this is the IO thread).
-    MessageLoop::current()->RunAllPending();
+    MessageLoop::current()->RunUntilIdle();
     EXPECT_EQ(0, g_request_context_getter_instances);
   }
 
@@ -152,18 +153,18 @@ class CloudPrintURLFetcherBasicTest : public CloudPrintURLFetcherTest {
       const net::URLRequestStatus& status,
       int response_code,
       const net::ResponseCookies& cookies,
-      const std::string& data);
+      const std::string& data) OVERRIDE;
 
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
       const net::URLFetcher* source,
       const GURL& url,
-      const std::string& data);
+      const std::string& data) OVERRIDE;
 
   virtual CloudPrintURLFetcher::ResponseAction HandleJSONData(
       const net::URLFetcher* source,
       const GURL& url,
       DictionaryValue* json_data,
-      bool succeeded);
+      bool succeeded) OVERRIDE;
 
   void SetHandleRawResponse(bool handle_raw_response) {
     handle_raw_response_ = handle_raw_response;
@@ -186,7 +187,7 @@ class CloudPrintURLFetcherOverloadTest : public CloudPrintURLFetcherTest {
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
       const net::URLFetcher* source,
       const GURL& url,
-      const std::string& data);
+      const std::string& data) OVERRIDE;
 
  private:
   int response_count_;
@@ -202,9 +203,9 @@ class CloudPrintURLFetcherRetryBackoffTest : public CloudPrintURLFetcherTest {
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
       const net::URLFetcher* source,
       const GURL& url,
-      const std::string& data);
+      const std::string& data) OVERRIDE;
 
-  virtual void OnRequestGiveUp();
+  virtual void OnRequestGiveUp() OVERRIDE;
 
  private:
   int response_count_;
@@ -326,11 +327,10 @@ void CloudPrintURLFetcherRetryBackoffTest::OnRequestGiveUp() {
   io_message_loop_proxy()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
 }
 
-// http://code.google.com/p/chromium/issues/detail?id=60426
-TEST_F(CloudPrintURLFetcherBasicTest, DISABLED_HandleRawResponse) {
+TEST_F(CloudPrintURLFetcherBasicTest, HandleRawResponse) {
   net::TestServer test_server(net::TestServer::TYPE_HTTP,
                               net::TestServer::kLocalhost,
-                              FilePath(kDocRoot));
+                              base::FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
   SetHandleRawResponse(true);
 
@@ -338,11 +338,10 @@ TEST_F(CloudPrintURLFetcherBasicTest, DISABLED_HandleRawResponse) {
   MessageLoop::current()->Run();
 }
 
-// http://code.google.com/p/chromium/issues/detail?id=60426
-TEST_F(CloudPrintURLFetcherBasicTest, DISABLED_HandleRawData) {
+TEST_F(CloudPrintURLFetcherBasicTest, HandleRawData) {
   net::TestServer test_server(net::TestServer::TYPE_HTTP,
                               net::TestServer::kLocalhost,
-                              FilePath(kDocRoot));
+                              base::FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
 
   SetHandleRawData(true);
@@ -353,7 +352,7 @@ TEST_F(CloudPrintURLFetcherBasicTest, DISABLED_HandleRawData) {
 TEST_F(CloudPrintURLFetcherOverloadTest, Protect) {
   net::TestServer test_server(net::TestServer::TYPE_HTTP,
                               net::TestServer::kLocalhost,
-                              FilePath(kDocRoot));
+                              base::FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
 
   GURL url(test_server.GetURL("defaultresponse"));
@@ -362,11 +361,10 @@ TEST_F(CloudPrintURLFetcherOverloadTest, Protect) {
   MessageLoop::current()->Run();
 }
 
-// http://code.google.com/p/chromium/issues/detail?id=60426
-TEST_F(CloudPrintURLFetcherRetryBackoffTest, DISABLED_GiveUp) {
+TEST_F(CloudPrintURLFetcherRetryBackoffTest, GiveUp) {
   net::TestServer test_server(net::TestServer::TYPE_HTTP,
                               net::TestServer::kLocalhost,
-                              FilePath(kDocRoot));
+                              base::FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
 
   GURL url(test_server.GetURL("defaultresponse"));
@@ -375,4 +373,4 @@ TEST_F(CloudPrintURLFetcherRetryBackoffTest, DISABLED_GiveUp) {
   MessageLoop::current()->Run();
 }
 
-}  // namespace.
+}  // namespace cloud_print

@@ -68,6 +68,12 @@
           '-m', 'x86',
         ],
       }],
+      [ 'OS=="win" and target_arch=="x64"', {
+        'yasm_flags': [
+          '-fwin64',
+          '-m', 'amd64',
+        ],
+      }],
 
       # Define output extension.
       ['OS=="win"', {

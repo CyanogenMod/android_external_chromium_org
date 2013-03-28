@@ -9,6 +9,7 @@
 
 #include "base/android/jni_helper.h"
 #include "base/basictypes.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "googleurl/src/gurl.h"
@@ -47,7 +48,28 @@ class WebContentsObserverAndroid : public WebContentsObserver {
                            RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidNavigateMainFrame(const LoadCommittedDetails& details,
                                     const FrameNavigateParams& params) OVERRIDE;
+  virtual void DidNavigateAnyFrame(const LoadCommittedDetails& details,
+                                   const FrameNavigateParams& params) OVERRIDE;
+  virtual void DidStartProvisionalLoadForFrame(
+      int64 frame_id,
+      int64 parent_frame_id,
+      bool is_main_frame,
+      const GURL& validated_url,
+      bool is_error_page,
+      bool is_iframe_srcdoc,
+      RenderViewHost* render_view_host) OVERRIDE;
+  virtual void DidCommitProvisionalLoadForFrame(
+      int64 frame_id,
+      bool is_main_frame,
+      const GURL& url,
+      PageTransition transition_type,
+      RenderViewHost* render_view_host) OVERRIDE;
+  virtual void DidFinishLoad(int64 frame_id,
+                             const GURL& validated_url,
+                             bool is_main_frame,
+                             RenderViewHost* render_view_host) OVERRIDE;
   virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void DidChangeVisibleSSLState() OVERRIDE;
 
   void DidFailLoadInternal(bool is_provisional_load,
                            bool is_main_frame,

@@ -64,6 +64,11 @@ bool LauncherViewTestAPI::IsOverflowButtonVisible() {
   return launcher_view_->overflow_button_->visible();
 }
 
+void LauncherViewTestAPI::ShowOverflowBubble() {
+  if (!launcher_view_->IsShowingOverflowBubble())
+    launcher_view_->ToggleOverflowBubble();
+}
+
 const gfx::Rect& LauncherViewTestAPI::GetBoundsByIndex(int index) {
   return launcher_view_->view_model_->view_at(index)->bounds();
 }

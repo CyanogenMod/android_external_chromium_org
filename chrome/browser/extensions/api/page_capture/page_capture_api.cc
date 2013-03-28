@@ -32,8 +32,6 @@ namespace {
 // Error messages.
 const char* const kFileTooBigError = "The MHTML file generated is too big.";
 const char* const kMHTMLGenerationFailedError = "Failed to generate MHTML.";
-const char* const kSizeRetrievalError =
-    "Failed to retrieve size of generated MHTML.";
 const char* const kTemporaryFileError = "Failed to create a temporary file.";
 const char* const kTabClosedError = "Cannot find the tab for thie request.";
 
@@ -46,8 +44,10 @@ PageCaptureSaveAsMHTMLFunction::PageCaptureSaveAsMHTMLFunction() {
 
 PageCaptureSaveAsMHTMLFunction::~PageCaptureSaveAsMHTMLFunction() {
   if (mhtml_file_.get()) {
-    BrowserThread::ReleaseSoon(BrowserThread::IO, FROM_HERE,
-                               mhtml_file_.release());
+    webkit_blob::ShareableFileReference* to_release = mhtml_file_.get();
+    to_release->AddRef();
+    mhtml_file_ = NULL;
+    BrowserThread::ReleaseSoon(BrowserThread::IO, FROM_HERE, to_release);
   }
 }
 
@@ -134,8 +134,9 @@ void PageCaptureSaveAsMHTMLFunction::TemporaryFileCreated(bool success) {
       base::Bind(&PageCaptureSaveAsMHTMLFunction::MHTMLGenerated, this));
 }
 
-void PageCaptureSaveAsMHTMLFunction::MHTMLGenerated(const FilePath& file_path,
-                                                    int64 mhtml_file_size) {
+void PageCaptureSaveAsMHTMLFunction::MHTMLGenerated(
+    const base::FilePath& file_path,
+    int64 mhtml_file_size) {
   DCHECK(mhtml_path_ == file_path);
   if (mhtml_file_size <= 0) {
     ReturnFailure(kMHTMLGenerationFailedError);

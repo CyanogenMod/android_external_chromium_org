@@ -18,6 +18,9 @@ namespace pp {
 
 class Instance;
 
+// TODO(tomfinegan): Remove redundant pp:: usage, and pass VarArrayBuffers as
+// const references.
+
 class ContentDecryptor_Private {
  public:
   explicit ContentDecryptor_Private(Instance* instance);
@@ -62,14 +65,19 @@ class ContentDecryptor_Private {
                 const std::string& session_id);
   void KeyMessage(const std::string& key_system,
                   const std::string& session_id,
-                  pp::Buffer_Dev message,
+                  pp::VarArrayBuffer message,
                   const std::string& default_url);
   void KeyError(const std::string& key_system,
                 const std::string& session_id,
                 int32_t media_error,
                 int32_t system_code);
+
+  // The plugin must not hold a reference to the encrypted buffer resource
+  // provided to Decrypt() when it calls this method. The browser will reuse
+  // the buffer in a subsequent Decrypt() call.
   void DeliverBlock(pp::Buffer_Dev decrypted_block,
                     const PP_DecryptedBlockInfo& decrypted_block_info);
+
   void DecoderInitializeDone(PP_DecryptorStreamType decoder_type,
                              uint32_t request_id,
                              bool status);
@@ -77,8 +85,16 @@ class ContentDecryptor_Private {
                                uint32_t request_id);
   void DecoderResetDone(PP_DecryptorStreamType decoder_type,
                         uint32_t request_id);
+
+  // The plugin must not hold a reference to the encrypted buffer resource
+  // provided to DecryptAndDecode() when it calls this method. The browser will
+  // reuse the buffer in a subsequent DecryptAndDecode() call.
   void DeliverFrame(pp::Buffer_Dev decrypted_frame,
                     const PP_DecryptedFrameInfo& decrypted_frame_info);
+
+  // The plugin must not hold a reference to the encrypted buffer resource
+  // provided to DecryptAndDecode() when it calls this method. The browser will
+  // reuse the buffer in a subsequent DecryptAndDecode() call.
   void DeliverSamples(pp::Buffer_Dev audio_frames,
                       const PP_DecryptedBlockInfo& decrypted_block_info);
 

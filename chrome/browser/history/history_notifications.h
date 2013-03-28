@@ -60,22 +60,13 @@ struct URLsDeletedDetails : public HistoryDetails {
   // an explicit user action through the History UI.
   bool archived;
 
-  // The URLRows of URLs deleted. This is valid only when all_history is false
+  // The URLRows of URLs deleted. This is valid only when |all_history| is false
   // indicating that a subset of history has been deleted.
   URLRows rows;
-};
 
-// Details for NOTIFY_URLS_STARRED.
-struct URLsStarredDetails : public HistoryDetails {
-  explicit URLsStarredDetails(bool being_starred);
-  virtual ~URLsStarredDetails();
-
-  // The new starred state of the list of URLs. True when they are being
-  // starred, false when they are being unstarred.
-  bool starred;
-
-  // The list of URLs that are changing.
-  std::set<GURL> changed_urls;
+  // The list of deleted favicon urls. This is valid only when |all_history| is
+  // false, indicating that a subset of history has been deleted.
+  std::set<GURL> favicon_urls;
 };
 
 // Details for NOTIFY_FAVICON_CHANGED.

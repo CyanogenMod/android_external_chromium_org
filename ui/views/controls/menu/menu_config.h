@@ -32,11 +32,9 @@ struct VIEWS_EXPORT MenuConfig {
   // Color for the arrow to scroll bookmarks.
   SkColor arrow_color;
 
-  // Submenu horizontal margin size.
-  int submenu_horizontal_margin_size;
-
-  // Submenu vertical margin size.
-  int submenu_vertical_margin_size;
+  // Menu border sizes.
+  int menu_vertical_border_size;
+  int menu_horizontal_border_size;
 
   // Submenu horizontal inset with parent menu. This is the horizontal overlap
   // between the submenu and its parent menu, not including the borders of
@@ -126,14 +124,24 @@ struct VIEWS_EXPORT MenuConfig {
 
   const ui::NativeTheme* native_theme;
 
+  // Delay, in ms, between when menus are selected or moused over and the menu
+  // appears.
+  int show_delay;
+
+  // Radius of the rounded corners of the menu border. Must be >= 0.
+  int corner_radius;
+
  private:
   // Configures a MenuConfig as appropriate for the current platform.
   void Init(const ui::NativeTheme* theme);
 
   // TODO: temporary until we standardize.
 #if defined(USE_AURA)
-  void InitAura();
+  void InitAura(const ui::NativeTheme* theme);
 #endif
+
+  // Adjust some values for a new UI style.
+  void AdjustForCommonTheme();
 };
 
 }  // namespace views

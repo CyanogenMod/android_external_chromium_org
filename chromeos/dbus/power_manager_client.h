@@ -19,13 +19,13 @@ namespace dbus {
 class Bus;
 }
 
+namespace power_manager {
+class PowerManagementPolicy;
+}
+
 namespace chromeos {
 
-// Callback used for processing the idle time.  The int64 param is the number of
-// seconds the user has been idle.
-typedef base::Callback<void(int64)> CalculateIdleTimeCallback;
 typedef base::Callback<void(void)> IdleNotificationCallback;
-typedef base::Callback<void(uint32)> PowerStateRequestIdCallback;
 
 // Callback used for getting the current screen brightness.  The param is in the
 // range [0.0, 100.0].
@@ -44,32 +44,17 @@ class CHROMEOS_EXPORT PowerManagerClient {
 
     virtual ~Observer() {}
 
+    // Called if the power manager process restarts.
+    virtual void PowerManagerRestarted() {}
+
     // Called when the brightness is changed.
     // |level| is of the range [0, 100].
     // |user_initiated| is true if the action is initiated by the user.
     virtual void BrightnessChanged(int level, bool user_initiated) {}
 
-    // Called when a screen is turned on or off to request that Chrome enable or
-    // disable the corresponding CRTC for the output.
-    // |power_on| The new state of the power setting.
-    // |all_displays| True if this applies to all displays or false if it is
-    // the internal display only.
-    virtual void ScreenPowerSet(bool power_on, bool all_displays) {}
-
     // Called when power supply polling takes place.  |status| is a data
     // structure that contains the current state of the power supply.
     virtual void PowerChanged(const PowerSupplyStatus& status) {}
-
-    // Called when the system resumes from suspend.
-    virtual void SystemResumed() {}
-
-    // Called when the power button is pressed or released.
-    virtual void PowerButtonStateChanged(bool down,
-                                         const base::TimeTicks& timestamp) {}
-
-    // Called when the lock button is pressed or released.
-    virtual void LockButtonStateChanged(bool down,
-                                        const base::TimeTicks& timestamp) {}
 
     // Called when we go idle for threshold time.
     virtual void IdleNotify(int64 threshold_secs) {}
@@ -77,19 +62,39 @@ class CHROMEOS_EXPORT PowerManagerClient {
     // Called when a request is received to dim or undim the screen in software
     // (as opposed to the more-common method of adjusting the backlight).
     virtual void ScreenDimmingRequested(ScreenDimmingState state) {}
+
+    // Called when the system is about to suspend. Suspend is deferred until
+    // all observers' implementations of this method have finished running.
+    //
+    // If an observer wishes to asynchronously delay suspend,
+    // PowerManagerClient::GetSuspendReadinessCallback() may be called from
+    // within SuspendImminent().  The returned callback must be called once
+    // the observer is ready for suspend.
+    virtual void SuspendImminent() {}
+
+    // Called when the power button is pressed or released.
+    virtual void PowerButtonEventReceived(bool down,
+                                          const base::TimeTicks& timestamp) {}
+
+    // Called when the device's lid is opened or closed.
+    virtual void LidEventReceived(bool open,
+                                  const base::TimeTicks& timestamp) {}
+
+    // Called when the system resumes from sleep.
+    virtual void SystemResumed(const base::TimeDelta& sleep_duration) {}
+
+    // Called when the idle action will be performed soon.
+    virtual void IdleActionImminent() {}
+
+    // Called after IdleActionImminent() when the inactivity timer is reset
+    // before the idle action has been performed.
+    virtual void IdleActionDeferred() {}
   };
 
   enum UpdateRequestType {
     UPDATE_INITIAL,  // Initial update request.
     UPDATE_USER,     // User initialted update request.
     UPDATE_POLL      // Update requested by poll signal.
-  };
-
-  enum PowerStateOverrideType {
-    DISABLE_IDLE_DIM         = 1 << 0,  // Disable screen dimming on idle.
-    DISABLE_IDLE_BLANK       = 1 << 1,  // Disable screen blanking on idle.
-    DISABLE_IDLE_SUSPEND     = 1 << 2,  // Disable suspend on idle.
-    DISABLE_IDLE_LID_SUSPEND = 1 << 3,  // Disable suspend on lid closed.
   };
 
   // Adds and removes the observer.
@@ -130,11 +135,6 @@ class CHROMEOS_EXPORT PowerManagerClient {
 
   // Idle management functions:
 
-  // Calculates idle time asynchronously, after the idle time request has
-  // replied.  It passes the idle time in seconds to |callback|.  If it
-  // encounters some error, it passes -1 to |callback|.
-  virtual void CalculateIdleTime(const CalculateIdleTimeCallback& callback) = 0;
-
   // Requests notification for Idle at a certain threshold.
   // NOTE: This notification is one shot, once the machine has been idle for
   // threshold time, a notification will be sent and then that request will be
@@ -144,8 +144,7 @@ class CHROMEOS_EXPORT PowerManagerClient {
 
   // Notifies the power manager that the user is active (i.e. generating input
   // events).
-  virtual void NotifyUserActivity(
-      const base::TimeTicks& last_activity_time) = 0;
+  virtual void NotifyUserActivity() = 0;
 
   // Notifies the power manager that a video is currently playing. It also
   // includes whether or not the containing window for the video is fullscreen.
@@ -153,27 +152,18 @@ class CHROMEOS_EXPORT PowerManagerClient {
       const base::TimeTicks& last_activity_time,
       bool is_fullscreen) = 0;
 
-  // Override the current power state on the machine. The overrides will be
-  // applied to the request ID specified. To specify a new request; use 0 as the
-  // request id and the method will call the provided callback with the new
-  // request ID for use with further calls.  |duration| will be rounded down to
-  // the nearest second.  The overrides parameter will & out the
-  // PowerStateOverrideType types to allow specific selection of overrides. For
-  // example, to override just dim and suspending but leaving blanking in, set
-  // overrides to, DISABLE_IDLE_DIM | DISABLE_IDLE_SUSPEND.
-  virtual void RequestPowerStateOverrides(
-      uint32 request_id,
-      base::TimeDelta duration,
-      int overrides,
-      const PowerStateRequestIdCallback& callback) = 0;
-
-  // Cancels the power state override request specified by request_id.
-  virtual void CancelPowerStateOverrides(uint32 request_id) = 0;
+  // Tells the power manager to begin using |policy|.
+  virtual void SetPolicy(
+      const power_manager::PowerManagementPolicy& policy) = 0;
 
   // Tells powerd whether or not we are in a projecting mode.  This is used to
   // adjust idleness thresholds and derived, on this side, from the number of
   // video outputs attached.
   virtual void SetIsProjecting(bool is_projecting) = 0;
+
+  // Returns a callback that can be called by an observer to report
+  // readiness for suspend.  See Observer::SuspendImminent().
+  virtual base::Closure GetSuspendReadinessCallback() = 0;
 
   // Creates the instance.
   static PowerManagerClient* Create(DBusClientImplementationType type,

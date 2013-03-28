@@ -24,55 +24,74 @@ var remoting = remoting || {};
 
 /**
  * @param {string} hostJid The jid of the host to connect to.
+ * @param {string} clientJid The jid of the WCS client.
  * @param {string} hostPublicKey The base64 encoded version of the host's
  *     public key.
- * @param {string} sharedSecret The access code for IT2Me or the PIN
- *     for Me2Me.
+ * @param {string} accessCode The IT2Me access code. Blank for Me2Me.
+ * @param {function(function(string): void): void} fetchPin Called by Me2Me
+ *     connections when a PIN needs to be obtained interactively.
  * @param {string} authenticationMethods Comma-separated list of
  *     authentication methods the client should attempt to use.
- * @param {string} authenticationTag A host-specific tag to mix into
- *     authentication hashes.
- * @param {string} email The username for the talk network.
+ * @param {string} hostId The host identifier for Me2Me, or empty for IT2Me.
+ *     Mixed into authentication hashes for some authentication methods.
  * @param {remoting.ClientSession.Mode} mode The mode of this connection.
- * @param {function(remoting.ClientSession.State,
-                    remoting.ClientSession.State):void} onStateChange
- *     The callback to invoke when the session changes state.
+ * @param {string} hostDisplayName The name of the host for display purposes.
  * @constructor
  */
-remoting.ClientSession = function(hostJid, hostPublicKey, sharedSecret,
-                                  authenticationMethods, authenticationTag,
-                                  email, mode, onStateChange) {
+remoting.ClientSession = function(hostJid, clientJid, hostPublicKey, accessCode,
+                                  fetchPin, authenticationMethods, hostId,
+                                  mode, hostDisplayName) {
   this.state = remoting.ClientSession.State.CREATED;
 
   this.hostJid = hostJid;
+  this.clientJid = clientJid;
   this.hostPublicKey = hostPublicKey;
-  this.sharedSecret = sharedSecret;
+  /** @private */
+  this.accessCode_ = accessCode;
+  /** @private */
+  this.fetchPin_ = fetchPin;
   this.authenticationMethods = authenticationMethods;
-  this.authenticationTag = authenticationTag;
-  this.email = email;
+  this.hostId = hostId;
+  /** @type {string} */
+  this.hostDisplayName = hostDisplayName;
+  /** @type {remoting.ClientSession.Mode} */
   this.mode = mode;
-  this.clientJid = '';
   this.sessionId = '';
   /** @type {remoting.ClientPlugin} */
   this.plugin = null;
-  this.scaleToFit = false;
+  /** @private */
+  this.shrinkToFit_ = true;
+  /** @private */
+  this.resizeToClient_ = false;
+  /** @private */
   this.hasReceivedFrame_ = false;
   this.logToServer = new remoting.LogToServer();
-  this.onStateChange = onStateChange;
+  /** @type {?function(remoting.ClientSession.State,
+                       remoting.ClientSession.State):void} */
+  this.onStateChange_ = null;
 
   /** @type {number?} @private */
-  this.notifyClientDimensionsTimer_ = null;
+  this.notifyClientResolutionTimer_ = null;
+  /** @type {number?} @private */
+  this.bumpScrollTimer_ = null;
+
+  /**
+   * Allow host-offline error reporting to be suppressed in situations where it
+   * would not be useful, for example, when using a cached host JID.
+   *
+   * @type {boolean} @private
+   */
+  this.logHostOfflineErrors_ = true;
 
   /** @private */
   this.callPluginLostFocus_ = this.pluginLostFocus_.bind(this);
   /** @private */
   this.callPluginGotFocus_ = this.pluginGotFocus_.bind(this);
   /** @private */
-  this.callEnableShrink_ = this.setScaleToFit.bind(this, true);
-  /** @private */
-  this.callDisableShrink_ = this.setScaleToFit.bind(this, false);
+  this.callSetScreenMode_ = this.onSetScreenMode_.bind(this);
   /** @private */
   this.callToggleFullScreen_ = this.toggleFullScreen_.bind(this);
+
   /** @private */
   this.screenOptionsMenu_ = new remoting.MenuButton(
       document.getElementById('screen-options-menu'),
@@ -83,32 +102,45 @@ remoting.ClientSession = function(hostJid, hostPublicKey, sharedSecret,
   );
 
   /** @type {HTMLElement} @private */
-  this.shrinkToFit_ = document.getElementById('enable-shrink-to-fit');
+  this.resizeToClientButton_ =
+      document.getElementById('screen-resize-to-client');
   /** @type {HTMLElement} @private */
-  this.originalSize_ = document.getElementById('disable-shrink-to-fit');
+  this.shrinkToFitButton_ = document.getElementById('screen-shrink-to-fit');
   /** @type {HTMLElement} @private */
-  this.fullScreen_ = document.getElementById('toggle-full-screen');
+  this.fullScreenButton_ = document.getElementById('toggle-full-screen');
 
-  this.shrinkToFit_.addEventListener('click', this.callEnableShrink_, false);
-  this.originalSize_.addEventListener('click', this.callDisableShrink_, false);
-  this.fullScreen_.addEventListener('click', this.callToggleFullScreen_, false);
-  /** @type {number?} @private */
-  this.bumpScrollTimer_ = null;
-  /**
-   * Allow error reporting to be suppressed in situations where it would not
-   * be useful, for example, when the device is offline.
-   *
-   * @type {boolean} @private
-   */
-  this.logErrors_ = true;
+  if (this.mode == remoting.ClientSession.Mode.IT2ME) {
+    // Resize-to-client is not supported for IT2Me hosts.
+    this.resizeToClientButton_.parentNode.removeChild(
+        this.resizeToClientButton_);
+  } else {
+    this.resizeToClientButton_.addEventListener(
+        'click', this.callSetScreenMode_, false);
+  }
+
+  this.shrinkToFitButton_.addEventListener(
+      'click', this.callSetScreenMode_, false);
+  this.fullScreenButton_.addEventListener(
+      'click', this.callToggleFullScreen_, false);
+};
+
+/**
+ * @param {?function(remoting.ClientSession.State,
+                     remoting.ClientSession.State):void} onStateChange
+ *     The callback to invoke when the session changes state.
+ */
+remoting.ClientSession.prototype.setOnStateChange = function(onStateChange) {
+  this.onStateChange_ = onStateChange;
 };
 
 // Note that the positive values in both of these enums are copied directly
 // from chromoting_scriptable_object.h and must be kept in sync. The negative
-// values represent states transitions that occur within the web-app that have
+// values represent state transitions that occur within the web-app that have
 // no corresponding plugin state transition.
 /** @enum {number} */
 remoting.ClientSession.State = {
+  CONNECTION_CANCELED: -5,  // Connection closed (gracefully) before connecting.
+  CONNECTION_DROPPED: -4,  // Succeeded, but subsequently closed with an error.
   CREATED: -3,
   BAD_PLUGIN_VERSION: -2,
   UNKNOWN_PLUGIN_ERROR: -1,
@@ -167,6 +199,10 @@ remoting.ClientSession.STATS_KEY_DECODE_LATENCY = 'decodeLatency';
 remoting.ClientSession.STATS_KEY_RENDER_LATENCY = 'renderLatency';
 remoting.ClientSession.STATS_KEY_ROUNDTRIP_LATENCY = 'roundtripLatency';
 
+// Keys for per-host settings.
+remoting.ClientSession.KEY_RESIZE_TO_CLIENT = 'resizeToClient';
+remoting.ClientSession.KEY_SHRINK_TO_FIT = 'shrinkToFit';
+
 /**
  * The current state of the session.
  * @type {remoting.ClientSession.State}
@@ -176,8 +212,9 @@ remoting.ClientSession.prototype.state = remoting.ClientSession.State.UNKNOWN;
 /**
  * The last connection error. Set when state is set to FAILED.
  * @type {remoting.ClientSession.ConnectionError}
+ * @private
  */
-remoting.ClientSession.prototype.error =
+remoting.ClientSession.prototype.error_ =
     remoting.ClientSession.ConnectionError.NONE;
 
 /**
@@ -186,15 +223,6 @@ remoting.ClientSession.prototype.error =
  * @const
  */
 remoting.ClientSession.prototype.PLUGIN_ID = 'session-client-plugin';
-
-/**
- * Callback to invoke when the state is changed.
- *
- * @param {remoting.ClientSession.State} oldState The previous state.
- * @param {remoting.ClientSession.State} newState The current state.
- */
-remoting.ClientSession.prototype.onStateChange =
-    function(oldState, newState) { };
 
 /**
  * @param {Element} container The element to add the plugin to.
@@ -242,29 +270,53 @@ remoting.ClientSession.prototype.pluginLostFocus_ = function() {
  * Adds <embed> element to |container| and readies the sesion object.
  *
  * @param {Element} container The element to add the plugin to.
- * @param {string} oauth2AccessToken A valid OAuth2 access token.
  */
 remoting.ClientSession.prototype.createPluginAndConnect =
-    function(container, oauth2AccessToken) {
+    function(container) {
   this.plugin = this.createClientPlugin_(container, this.PLUGIN_ID);
+  remoting.HostSettings.load(this.hostId,
+                             this.onHostSettingsLoaded_.bind(this));
+};
 
-  this.plugin.element().focus();
+/**
+ * @param {Object.<string>} options The current options for the host, or {}
+ *     if this client has no saved settings for the host.
+ * @private
+ */
+remoting.ClientSession.prototype.onHostSettingsLoaded_ = function(options) {
+  if (remoting.ClientSession.KEY_RESIZE_TO_CLIENT in options &&
+      typeof(options[remoting.ClientSession.KEY_RESIZE_TO_CLIENT]) ==
+          'boolean') {
+    this.resizeToClient_ = /** @type {boolean} */
+        options[remoting.ClientSession.KEY_RESIZE_TO_CLIENT];
+  }
+  if (remoting.ClientSession.KEY_SHRINK_TO_FIT in options &&
+      typeof(options[remoting.ClientSession.KEY_SHRINK_TO_FIT]) ==
+          'boolean') {
+    this.shrinkToFit_ = /** @type {boolean} */
+        options[remoting.ClientSession.KEY_SHRINK_TO_FIT];
+  }
 
   /** @param {boolean} result */
-  this.plugin.initialize(
-      this.onPluginInitialized_.bind(this, oauth2AccessToken));
+  this.plugin.initialize(this.onPluginInitialized_.bind(this));
+};
+
+/**
+ * Constrains the focus to the plugin element.
+ * @private
+ */
+remoting.ClientSession.prototype.setFocusHandlers_ = function() {
   this.plugin.element().addEventListener(
       'focus', this.callPluginGotFocus_, false);
   this.plugin.element().addEventListener(
       'blur', this.callPluginLostFocus_, false);
+  this.plugin.element().focus();
 };
 
 /**
- * @param {string} oauth2AccessToken
  * @param {boolean} initialized
  */
-remoting.ClientSession.prototype.onPluginInitialized_ =
-    function(oauth2AccessToken, initialized) {
+remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
   if (!initialized) {
     console.error('ERROR: remoting plugin not loaded');
     this.plugin.cleanup();
@@ -297,11 +349,6 @@ remoting.ClientSession.prototype.onPluginInitialized_ =
     this.plugin.remapKey(0x0700e4, 0x0700e7);
   }
 
-  // Enable scale-to-fit if and only if the plugin is new enough for
-  // high-quality scaling.
-  this.setScaleToFit(this.plugin.hasFeature(
-      remoting.ClientPlugin.Feature.HIGH_QUALITY_SCALING));
-
   /** @param {string} msg The IQ stanza to send. */
   this.plugin.onOutgoingIqHandler = this.sendIq_.bind(this);
   /** @param {string} msg The message to log. */
@@ -316,7 +363,7 @@ remoting.ClientSession.prototype.onPluginInitialized_ =
   this.plugin.onDesktopSizeUpdateHandler =
       this.onDesktopSizeChanged_.bind(this);
 
-  this.connectPluginToWcs_(oauth2AccessToken);
+  this.connectPluginToWcs_();
 };
 
 /**
@@ -335,42 +382,66 @@ remoting.ClientSession.prototype.removePlugin = function() {
     this.plugin.cleanup();
     this.plugin = null;
   }
-  this.shrinkToFit_.removeEventListener('click', this.callEnableShrink_, false);
-  this.originalSize_.removeEventListener('click', this.callDisableShrink_,
-                                         false);
-  this.fullScreen_.removeEventListener('click', this.callToggleFullScreen_,
-                                       false);
+  this.resizeToClientButton_.removeEventListener(
+      'click', this.callSetScreenMode_, false);
+  this.shrinkToFitButton_.removeEventListener(
+      'click', this.callSetScreenMode_, false);
+  this.fullScreenButton_.removeEventListener(
+      'click', this.callToggleFullScreen_, false);
 };
 
 /**
  * Deletes the <embed> element from the container and disconnects.
  *
+ * @param {boolean} isUserInitiated True for user-initiated disconnects, False
+ *     for disconnects due to connection failures.
  * @return {void} Nothing.
  */
-remoting.ClientSession.prototype.disconnect = function() {
-  // The plugin won't send a state change notification, so we explicitly log
-  // the fact that the connection has closed.
-  this.logToServer.logClientSessionStateChange(
-      remoting.ClientSession.State.CLOSED,
-      remoting.ClientSession.ConnectionError.NONE, this.mode);
-  if (remoting.wcs) {
-    remoting.wcs.setOnIq(function(stanza) {});
-    this.sendIq_(
-        '<cli:iq ' +
-            'to="' + this.hostJid + '" ' +
-            'type="set" ' +
-            'id="session-terminate" ' +
-            'xmlns:cli="jabber:client">' +
-          '<jingle ' +
-              'xmlns="urn:xmpp:jingle:1" ' +
-              'action="session-terminate" ' +
-              'initiator="' + this.clientJid + '" ' +
-              'sid="' + this.sessionId + '">' +
-            '<reason><success/></reason>' +
-          '</jingle>' +
-        '</cli:iq>');
+remoting.ClientSession.prototype.disconnect = function(isUserInitiated) {
+  if (isUserInitiated) {
+    // The plugin won't send a state change notification, so we explicitly log
+    // the fact that the connection has closed.
+    this.logToServer.logClientSessionStateChange(
+        remoting.ClientSession.State.CLOSED,
+        remoting.ClientSession.ConnectionError.NONE, this.mode);
   }
+  remoting.wcsSandbox.setOnIq(null);
+  this.sendIq_(
+      '<cli:iq ' +
+          'to="' + this.hostJid + '" ' +
+          'type="set" ' +
+          'id="session-terminate" ' +
+          'xmlns:cli="jabber:client">' +
+        '<jingle ' +
+            'xmlns="urn:xmpp:jingle:1" ' +
+            'action="session-terminate" ' +
+            'initiator="' + this.clientJid + '" ' +
+            'sid="' + this.sessionId + '">' +
+          '<reason><success/></reason>' +
+        '</jingle>' +
+      '</cli:iq>');
   this.removePlugin();
+};
+
+/**
+ * @return {?remoting.Error} The current error code, or null if the connection
+ *     is not in an error state.
+ */
+remoting.ClientSession.prototype.getError = function() {
+  switch (this.error_) {
+    case remoting.ClientSession.ConnectionError.HOST_IS_OFFLINE:
+      return remoting.Error.HOST_IS_OFFLINE;
+    case remoting.ClientSession.ConnectionError.SESSION_REJECTED:
+      return remoting.Error.INVALID_ACCESS_CODE;
+    case remoting.ClientSession.ConnectionError.INCOMPATIBLE_PROTOCOL:
+      return remoting.Error.INCOMPATIBLE_PROTOCOL;
+    case remoting.ClientSession.ConnectionError.NETWORK_FAILURE:
+      return remoting.Error.P2P_FAILURE;
+    case remoting.ClientSession.ConnectionError.HOST_OVERLOAD:
+      return remoting.Error.HOST_OVERLOAD;
+    default:
+      return null;
+  }
 };
 
 /**
@@ -409,27 +480,65 @@ remoting.ClientSession.prototype.sendPrintScreen = function() {
 }
 
 /**
- * Enables or disables the client's scale-to-fit feature.
+ * Callback for the two "screen mode" related menu items: Resize desktop to
+ * fit and Shrink to fit.
  *
- * @param {boolean} scaleToFit True to enable scale-to-fit, false otherwise.
+ * @param {Event} event The click event indicating which mode was selected.
  * @return {void} Nothing.
+ * @private
  */
-remoting.ClientSession.prototype.setScaleToFit = function(scaleToFit) {
-  this.scaleToFit = scaleToFit;
-  this.updateDimensions();
-  // If enabling scaling, reset bump-scroll offsets.
-  if (scaleToFit) {
-    this.scroll_(0, 0);
+remoting.ClientSession.prototype.onSetScreenMode_ = function(event) {
+  var shrinkToFit = this.shrinkToFit_;
+  var resizeToClient = this.resizeToClient_;
+  if (event.target == this.shrinkToFitButton_) {
+    shrinkToFit = !shrinkToFit;
   }
-}
+  if (event.target == this.resizeToClientButton_) {
+    resizeToClient = !resizeToClient;
+  }
+  this.setScreenMode_(shrinkToFit, resizeToClient);
+};
 
 /**
- * Returns whether the client is currently scaling the host to fit the tab.
+ * Set the shrink-to-fit and resize-to-client flags and save them if this is
+ * a Me2Me connection.
  *
- * @return {boolean} The current scale-to-fit setting.
+ * @param {boolean} shrinkToFit True if the remote desktop should be scaled
+ *     down if it is larger than the client window; false if scroll-bars
+ *     should be added in this case.
+ * @param {boolean} resizeToClient True if window resizes should cause the
+ *     host to attempt to resize its desktop to match the client window size;
+ *     false to disable this behaviour for subsequent window resizes--the
+ *     current host desktop size is not restored in this case.
+ * @return {void} Nothing.
+ * @private
  */
-remoting.ClientSession.prototype.getScaleToFit = function() {
-  return this.scaleToFit;
+remoting.ClientSession.prototype.setScreenMode_ =
+    function(shrinkToFit, resizeToClient) {
+
+  if (resizeToClient && !this.resizeToClient_) {
+    this.plugin.notifyClientResolution(window.innerWidth,
+                                       window.innerHeight,
+                                       window.devicePixelRatio);
+  }
+
+  // If enabling shrink, reset bump-scroll offsets.
+  var needsScrollReset = shrinkToFit && !this.shrinkToFit_;
+
+  this.shrinkToFit_ = shrinkToFit;
+  this.resizeToClient_ = resizeToClient;
+
+  if (this.hostId != '') {
+    var options = {};
+    options[remoting.ClientSession.KEY_SHRINK_TO_FIT] = this.shrinkToFit_;
+    options[remoting.ClientSession.KEY_RESIZE_TO_CLIENT] = this.resizeToClient_;
+    remoting.HostSettings.save(this.hostId, options);
+  }
+
+  this.updateDimensions();
+  if (needsScrollReset) {
+    this.scroll_(0, 0);
+  }
 }
 
 /**
@@ -456,7 +565,6 @@ remoting.ClientSession.prototype.hasReceivedFrame = function() {
  * @return {void} Nothing.
  */
 remoting.ClientSession.prototype.sendIq_ = function(msg) {
-  console.log(remoting.timestamp(), remoting.formatIq.prettifySendIq(msg));
   // Extract the session id, so we can close the session later.
   var parser = new DOMParser();
   var iqNode = parser.parseFromString(msg, 'text/xml').firstChild;
@@ -468,41 +576,89 @@ remoting.ClientSession.prototype.sendIq_ = function(msg) {
     }
   }
 
-  // Send the stanza.
-  if (remoting.wcs) {
-    remoting.wcs.sendIq(msg);
-  } else {
-    console.error('Tried to send IQ before WCS was ready.');
-    this.setState_(remoting.ClientSession.State.FAILED);
+  // HACK: Add 'x' prefix to the IDs of the outgoing messages to make sure that
+  // stanza IDs used by host and client do not match. This is necessary to
+  // workaround bug in the signaling endpoint used by chromoting.
+  // TODO(sergeyu): Remove this hack once the server-side bug is fixed.
+  var type = iqNode.getAttribute('type');
+  if (type == 'set') {
+    var id = iqNode.getAttribute('id');
+    iqNode.setAttribute('id', 'x' + id);
+    msg = (new XMLSerializer()).serializeToString(iqNode);
   }
+
+  console.log(remoting.timestamp(), remoting.formatIq.prettifySendIq(msg));
+
+  // Send the stanza.
+  remoting.wcsSandbox.sendIq(msg);
 };
 
 /**
  * Connects the plugin to WCS.
  *
  * @private
- * @param {string} oauth2AccessToken A valid OAuth2 access token.
  * @return {void} Nothing.
  */
-remoting.ClientSession.prototype.connectPluginToWcs_ =
-    function(oauth2AccessToken) {
-  this.clientJid = remoting.wcs.getJid();
-  if (this.clientJid == '') {
-    console.error('Tried to connect without a full JID.');
-  }
+remoting.ClientSession.prototype.connectPluginToWcs_ = function() {
   remoting.formatIq.setJids(this.clientJid, this.hostJid);
+  /** @type {remoting.ClientPlugin} */
   var plugin = this.plugin;
   var forwardIq = plugin.onIncomingIq.bind(plugin);
   /** @param {string} stanza The IQ stanza received. */
   var onIncomingIq = function(stanza) {
+    // HACK: Remove 'x' prefix added to the id in sendIq_().
+    try {
+      var parser = new DOMParser();
+      var iqNode = parser.parseFromString(stanza, 'text/xml').firstChild;
+      var type = iqNode.getAttribute('type');
+      var id = iqNode.getAttribute('id');
+      if (type != 'set' && id.charAt(0) == 'x') {
+        iqNode.setAttribute('id', id.substr(1));
+        stanza = (new XMLSerializer()).serializeToString(iqNode);
+      }
+    } catch (err) {
+      // Pass message as is when it is malformed.
+    }
+
     console.log(remoting.timestamp(),
                 remoting.formatIq.prettifyReceiveIq(stanza));
     forwardIq(stanza);
+  };
+  remoting.wcsSandbox.setOnIq(onIncomingIq);
+
+  if (this.accessCode_) {
+    // Shared secret was already supplied before connecting (It2Me case).
+    this.connectToHost_(this.accessCode_);
+
+  } else if (plugin.hasFeature(
+      remoting.ClientPlugin.Feature.ASYNC_PIN)) {
+    // Plugin supports asynchronously asking for the PIN.
+    plugin.useAsyncPinDialog();
+    /** @type remoting.ClientSession */
+    var that = this;
+    var fetchPin = function() {
+      that.fetchPin_(plugin.onPinFetched.bind(plugin));
+    };
+    plugin.fetchPinHandler = fetchPin;
+    this.connectToHost_('');
+
+  } else {
+    // Plugin doesn't support asynchronously asking for the PIN, ask now.
+    this.fetchPin_(this.connectToHost_.bind(this));
   }
-  remoting.wcs.setOnIq(onIncomingIq);
+};
+
+/**
+ * Connects to the host.
+ *
+ * @param {string} sharedSecret Shared secret for SPAKE negotiation.
+ * @return {void} Nothing.
+ * @private
+ */
+remoting.ClientSession.prototype.connectToHost_ = function(sharedSecret) {
   this.plugin.connect(this.hostJid, this.hostPublicKey, this.clientJid,
-                      this.sharedSecret, this.authenticationMethods,
-                      this.authenticationTag);
+                      sharedSecret, this.authenticationMethods,
+                      this.hostId);
 };
 
 /**
@@ -516,10 +672,15 @@ remoting.ClientSession.prototype.connectPluginToWcs_ =
 remoting.ClientSession.prototype.onConnectionStatusUpdate_ =
     function(status, error) {
   if (status == remoting.ClientSession.State.CONNECTED) {
+    this.setFocusHandlers_();
     this.onDesktopSizeChanged_();
-    this.plugin.notifyClientDimensions(window.innerWidth, window.innerHeight)
+    if (this.resizeToClient_) {
+      this.plugin.notifyClientResolution(window.innerWidth,
+                                         window.innerHeight,
+                                         window.devicePixelRatio);
+    }
   } else if (status == remoting.ClientSession.State.FAILED) {
-    this.error = /** @type {remoting.ClientSession.ConnectionError} */ (error);
+    this.error_ = /** @type {remoting.ClientSession.ConnectionError} */ (error);
   }
   this.setState_(/** @type {remoting.ClientSession.State} */ (status));
 };
@@ -547,18 +708,26 @@ remoting.ClientSession.prototype.onConnectionReady_ = function(ready) {
 remoting.ClientSession.prototype.setState_ = function(newState) {
   var oldState = this.state;
   this.state = newState;
-  if (this.onStateChange) {
-    this.onStateChange(oldState, newState);
-  }
-  // If connection errors are being suppressed from the logs, translate
-  // FAILED to CLOSED here. This ensures that the duration is still logged.
   var state = this.state;
-  if (this.state == remoting.ClientSession.State.FAILED &&
-      !this.logErrors_) {
-    console.log('Suppressing error.');
-    state = remoting.ClientSession.State.CLOSED;
+  if (oldState == remoting.ClientSession.State.CONNECTING) {
+    if (this.state == remoting.ClientSession.State.CLOSED) {
+      state = remoting.ClientSession.State.CONNECTION_CANCELED;
+    } else if (this.state == remoting.ClientSession.State.FAILED &&
+        this.error_ == remoting.ClientSession.ConnectionError.HOST_IS_OFFLINE &&
+        !this.logHostOfflineErrors_) {
+      // The application requested host-offline errors to be suppressed, for
+      // example, because this connection attempt is using a cached host JID.
+      console.log('Suppressing host-offline error.');
+      state = remoting.ClientSession.State.CONNECTION_CANCELED;
+    }
+  } else if (oldState == remoting.ClientSession.State.CONNECTED &&
+             this.state == remoting.ClientSession.State.FAILED) {
+    state = remoting.ClientSession.State.CONNECTION_DROPPED;
   }
-  this.logToServer.logClientSessionStateChange(state, this.error, this.mode);
+  this.logToServer.logClientSessionStateChange(state, this.error_, this.mode);
+  if (this.onStateChange_) {
+    this.onStateChange_(oldState, newState);
+  }
 };
 
 /**
@@ -569,18 +738,21 @@ remoting.ClientSession.prototype.setState_ = function(newState) {
 remoting.ClientSession.prototype.onResize = function() {
   this.updateDimensions();
 
-  if (this.notifyClientDimensionsTimer_) {
-    window.clearTimeout(this.notifyClientDimensionsTimer_);
-    this.notifyClientDimensionsTimer_ = null;
+  if (this.notifyClientResolutionTimer_) {
+    window.clearTimeout(this.notifyClientResolutionTimer_);
+    this.notifyClientResolutionTimer_ = null;
   }
 
   // Defer notifying the host of the change until the window stops resizing, to
   // avoid overloading the control channel with notifications.
-  this.notifyClientDimensionsTimer_ = window.setTimeout(
-      this.plugin.notifyClientDimensions.bind(this.plugin,
-                                              window.innerWidth,
-                                              window.innerHeight),
-      1000);
+  if (this.resizeToClient_) {
+    this.notifyClientResolutionTimer_ = window.setTimeout(
+        this.plugin.notifyClientResolution.bind(this.plugin,
+                                                window.innerWidth,
+                                                window.innerHeight,
+                                                window.devicePixelRatio),
+        1000);
+  }
 
   // If bump-scrolling is enabled, adjust the plugin margins to fully utilize
   // the new window area.
@@ -643,12 +815,30 @@ remoting.ClientSession.prototype.updateDimensions = function() {
   var windowHeight = window.innerHeight;
   var desktopWidth = this.plugin.desktopWidth;
   var desktopHeight = this.plugin.desktopHeight;
-  var scale = 1.0;
 
-  if (this.getScaleToFit()) {
-    // Scale to fit the entire desktop in the client window.
-    var scaleFitWidth = Math.min(1.0, 1.0 * windowWidth / desktopWidth);
-    var scaleFitHeight = Math.min(1.0, 1.0 * windowHeight / desktopHeight);
+  // When configured to display a host at its original size, we aim to display
+  // it as close to its physical size as possible, without losing data:
+  // - If client and host have matching DPI, render the host pixel-for-pixel.
+  // - If the host has higher DPI then still render pixel-for-pixel.
+  // - If the host has lower DPI then let Chrome up-scale it to natural size.
+
+  // We specify the plugin dimensions in Density-Independent Pixels, so to
+  // render pixel-for-pixel we need to down-scale the host dimensions by the
+  // devicePixelRatio of the client. To match the host pixel density, we choose
+  // an initial scale factor based on the client devicePixelRatio and host DPI.
+
+  // Determine the effective device pixel ratio of the host, based on DPI.
+  var hostPixelRatioX = Math.ceil(this.plugin.desktopXDpi / 96);
+  var hostPixelRatioY = Math.ceil(this.plugin.desktopYDpi / 96);
+  var hostPixelRatio = Math.min(hostPixelRatioX, hostPixelRatioY);
+
+  // Down-scale by the smaller of the client and host ratios.
+  var scale = 1.0 / Math.min(window.devicePixelRatio, hostPixelRatio);
+
+  if (this.shrinkToFit_) {
+    // Reduce the scale, if necessary, to fit the whole desktop in the window.
+    var scaleFitWidth = Math.min(scale, 1.0 * windowWidth / desktopWidth);
+    var scaleFitHeight = Math.min(scale, 1.0 * windowHeight / desktopHeight);
     scale = Math.min(scaleFitHeight, scaleFitWidth);
 
     // If we're running full-screen then try to handle common side-by-side
@@ -722,14 +912,15 @@ remoting.ClientSession.prototype.logStatistics = function(stats) {
 };
 
 /**
- * Enable or disable logging of connection errors. For example, if attempting
- * a connection using a cached JID, errors should not be logged because the
- * JID will be refreshed and the connection retried.
+ * Enable or disable logging of connection errors due to a host being offline.
+ * For example, if attempting a connection using a cached JID, host-offline
+ * errors should not be logged because the JID will be refreshed and the
+ * connection retried.
  *
- * @param {boolean} enable True to log errors; false to suppress them.
+ * @param {boolean} enable True to log host-offline errors; false to suppress.
  */
-remoting.ClientSession.prototype.logErrors = function(enable) {
-  this.logErrors_ = enable;
+remoting.ClientSession.prototype.logHostOfflineErrors = function(enable) {
+  this.logHostOfflineErrors_ = enable;
 };
 
 /**
@@ -757,9 +948,10 @@ remoting.ClientSession.prototype.toggleFullScreen_ = function() {
  * @private
  */
 remoting.ClientSession.prototype.onShowOptionsMenu_ = function() {
-  remoting.MenuButton.select(this.shrinkToFit_, this.scaleToFit);
-  remoting.MenuButton.select(this.originalSize_, !this.scaleToFit);
-  remoting.MenuButton.select(this.fullScreen_, document.webkitIsFullScreen);
+  remoting.MenuButton.select(this.resizeToClientButton_, this.resizeToClient_);
+  remoting.MenuButton.select(this.shrinkToFitButton_, this.shrinkToFit_);
+  remoting.MenuButton.select(this.fullScreenButton_,
+      document.webkitIsFullScreen);
 };
 
 /**
@@ -808,7 +1000,8 @@ remoting.ClientSession.prototype.scroll_ = function(dx, dy) {
 }
 
 /**
- * Enable or disable bump-scrolling.
+ * Enable or disable bump-scrolling. When disabling bump scrolling, also reset
+ * the scroll offsets to (0, 0).
  * @private
  * @param {boolean} enable True to enable bump-scrolling, false to disable it.
  */
@@ -822,6 +1015,8 @@ remoting.ClientSession.prototype.enableBumpScroll_ = function(enable) {
     this.plugin.element().removeEventListener('mousemove', this.onMouseMoveRef_,
                                               false);
     this.onMouseMoveRef_ = null;
+    this.plugin.element().style.marginLeft = 0;
+    this.plugin.element().style.marginTop = 0;
   }
 };
 
